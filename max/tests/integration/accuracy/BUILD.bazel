@@ -223,7 +223,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_verify_pipelines_results",
-    size = "small",
+    size = "large",
     srcs = ["test_verify_pipelines_results.py"],
     deps = [
         ":verify_pipelines",

@@ -15,7 +15,6 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    IntTuple,
     RuntimeInt,
     TileTensor,
     col_major,
@@ -319,28 +318,27 @@ def test_blocked_product_basic() raises:
     Example from legacy layout docs:
     - block = 2x2 row-major: shape (2,2), stride (2,1)
     - tiler = 2x3 row-major: shape (2,3), stride (3,1)
-    - result: shape ((2,2), (2,3)), stride ((2,1), (12,4))
+    - result: shape ((2,2), (2,3)), stride ((2,12), (1,4))
+    Each mode i zips block[i] with tiler[i].
     """
     var block = row_major[2, 2]()
     var tiler = row_major[2, 3]()
     var blocked = blocked_product(block, tiler)
 
-    # Check inner shape (block shape)
+    # Mode 0: (block_shape[0], tiler_shape[0]) = (2, 2)
     assert_equal(blocked.shape[0]()[0].value(), 2)
     assert_equal(blocked.shape[0]()[1].value(), 2)
 
-    # Check outer shape (tiler shape)
+    # Mode 1: (block_shape[1], tiler_shape[1]) = (2, 3)
     assert_equal(blocked.shape[1]()[0].value(), 2)
     assert_equal(blocked.shape[1]()[1].value(), 3)
 
-    # Check inner stride (block stride)
+    # Mode 0 stride: (block_stride[0], cosize * tiler_stride[0]) = (2, 12)
     assert_equal(blocked.stride[0]()[0].value(), 2)
-    assert_equal(blocked.stride[0]()[1].value(), 1)
+    assert_equal(blocked.stride[0]()[1].value(), 12)
 
-    # Check outer stride = block.cosize * tiler.stride
-    # block.cosize = 4 (2x2), tiler.stride = (3, 1)
-    # outer_stride = (4*3, 4*1) = (12, 4)
-    assert_equal(blocked.stride[1]()[0].value(), 12)
+    # Mode 1 stride: (block_stride[1], cosize * tiler_stride[1]) = (1, 4)
+    assert_equal(blocked.stride[1]()[0].value(), 1)
     assert_equal(blocked.stride[1]()[1].value(), 4)
 
 
@@ -350,28 +348,22 @@ def test_blocked_product_type_alias() raises:
     comptime tiler = row_major[2, 3]()
     comptime layout = BlockedProductLayout[type_of(block), type_of(tiler)]
 
-    # inner_shape types should be (ComptimeInt[2], ComptimeInt[2])
+    # Mode 0: (block_shape[0], tiler_shape[0]) = (2, 2)
     assert_equal(layout._shape_types[0].VariadicType[0].static_value, 2)
     assert_equal(layout._shape_types[0].VariadicType[1].static_value, 2)
 
-    # outer_shape types should be (ComptimeInt[2], ComptimeInt[3])
+    # Mode 1: (block_shape[1], tiler_shape[1]) = (2, 3)
     assert_equal(layout._shape_types[1].VariadicType[0].static_value, 2)
     assert_equal(layout._shape_types[1].VariadicType[1].static_value, 3)
 
-    # inner_stride types should be (ComptimeInt[2], ComptimeInt[1])
+    # Mode 0 stride: (block_stride[0], cosize * tiler_stride[0]) = (2, 12)
+    # block = row_major[2, 2](): stride = (2, 1), cosize = 4
+    # tiler = row_major[2, 3](): stride = (3, 1)
     assert_equal(layout._stride_types[0].VariadicType[0].static_value, 2)
-    assert_equal(layout._stride_types[0].VariadicType[1].static_value, 1)
+    assert_equal(layout._stride_types[0].VariadicType[1].static_value, 12)
 
-    # outer_stride types should be (ComptimeInt[12], ComptimeInt[4])
-    # = tiler.stride * block.row_major_strides
-    # = (3, 1) * (2*2, 2) ... wait, that's not right
-    # Let me recalculate: outer_stride = tiler.stride * row_major_strides_of_block_shape
-    # row_major_strides of (2, 2) = (2, 1)
-    # So outer_stride = (3 * 2, 1 * ... hmm
-    # Actually the formula is: outer_stride[i] = tiler.stride[i] * block.cosize
-    # For row-major block, cosize = 4
-    # So outer_stride = (3*4, 1*4) = (12, 4)
-    assert_equal(layout._stride_types[1].VariadicType[0].static_value, 12)
+    # Mode 1 stride: (block_stride[1], cosize * tiler_stride[1]) = (1, 4)
+    assert_equal(layout._stride_types[1].VariadicType[0].static_value, 1)
     assert_equal(layout._stride_types[1].VariadicType[1].static_value, 4)
 
 
@@ -618,14 +610,14 @@ def test_coord_flatten_blocked_product_stride() raises:
     var tiler = row_major[2, 3]()
     var blocked = blocked_product(block, tiler)
 
-    # blocked.stride is Coord(Coord(2, 1), Coord(12, 4))
+    # blocked.stride is Coord(Coord(2, 12), Coord(1, 4))
     var flat_stride = blocked.stride_coord().flatten()
 
-    # Should flatten to (2, 1, 12, 4)
+    # Should flatten to (2, 12, 1, 4)
     assert_equal(len(flat_stride), 4)
     assert_equal(flat_stride[0].value(), 2)
-    assert_equal(flat_stride[1].value(), 1)
-    assert_equal(flat_stride[2].value(), 12)
+    assert_equal(flat_stride[1].value(), 12)
+    assert_equal(flat_stride[2].value(), 1)
     assert_equal(flat_stride[3].value(), 4)
 
 

@@ -15,9 +15,12 @@ from std.math import ceildiv
 from std.sys import argv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import block_dim
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor

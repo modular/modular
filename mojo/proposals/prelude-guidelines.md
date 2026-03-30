@@ -38,7 +38,8 @@ including a particular item.
       structures. They are typically fundamental in many other languages, often
       with built-in syntax.
 - **Present in the Python prelude.**
-  - The item appears in the [Python ‘builtin’ module](https://docs.python.org/3/library/builtins.html).
+  - The item appears in the
+    [Python ‘builtin’ module](https://docs.python.org/3/library/builtins.html).
     We include it in our prelude for better compatibility.
   - *Examples:*
     - `all`, `divmod`, `repr`, `str`

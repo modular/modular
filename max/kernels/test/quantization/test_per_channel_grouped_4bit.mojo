@@ -14,10 +14,9 @@
 from std.math import ceildiv
 from std.sys.info import align_of, size_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from quantization import Q4sym
 from std.testing import assert_true
+from layout import TileTensor, row_major
 
 from std.utils import IndexList
 
@@ -25,8 +24,8 @@ from std.utils import IndexList
 def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var uniform = SIMD[DType.float32, group_size]()
     for i in range(group_size):
-        uniform[i] = i
-    uniform -= group_size // 2
+        uniform[i] = Float32(i)
+    uniform -= Float32(group_size // 2)
 
     var skew_pos = uniform + 30
     var skew_neg = uniform - 30
@@ -147,11 +146,9 @@ def _read_write_to_tensors[
     var data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var data_matrix = NDBuffer[
-        rank=rank, DType.float32, _, DimList[num_elements]()
-    ](data_matrix_backing.unsafe_ptr())
+    var data_matrix = TileTensor(data_matrix_backing, row_major[num_elements]())
     for i in range(num_elements):
-        data_matrix[i] = i
+        data_matrix[i] = Float32(i)
 
     # Tensor to store the packed data
     comptime assert num_elements % group_size == 0
@@ -160,40 +157,38 @@ def _read_write_to_tensors[
     var packed_blob_backing = InlineArray[UInt8, num_blocks * block_size](
         uninitialized=True
     )
-    var packed_blob = NDBuffer[
-        rank=rank, DType.uint8, _, DimList[num_blocks * block_size]()
-    ](packed_blob_backing.unsafe_ptr())
+    var packed_blob = TileTensor(
+        packed_blob_backing, row_major[num_blocks * block_size]()
+    )
 
     # Tensor to store the dequantized data
     var out_data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var out_data_matrix = NDBuffer[
-        rank=1, DType.float32, _, DimList[num_elements]()
-    ](out_data_matrix_backing.unsafe_ptr())
+    var out_data_matrix = TileTensor(
+        out_data_matrix_backing, row_major[num_elements]()
+    )
     for i in range(num_elements):
-        out_data_matrix[i] = 0
+        out_data_matrix[i] = Float32(0)
 
-    var rebound_data_matrix = rebind[
-        NDBuffer[rank=rank, DType.float32, data_matrix.origin]
-    ](data_matrix)
-    var rebound_packed_block = rebind[
-        NDBuffer[rank=rank, DType.uint8, packed_blob.origin]
-    ](packed_blob)
-    var rebound_out_data_matrix = rebind[
-        NDBuffer[rank=rank, DType.float32, out_data_matrix.origin]
-    ](out_data_matrix)
-
-    Q4sym[group_size, DType.float32].quantize_and_write_to_tensor[rank](
-        rebound_data_matrix,
-        rebound_packed_block,
-        IndexList[rank](num_elements),
+    Q4sym[group_size, DType.float32].quantize_and_write_to_tensor(
+        data_matrix.make_dynamic[DType.int64]().to_layout_tensor(),
+        packed_blob.make_dynamic[DType.int64]().to_layout_tensor(),
+        IndexList[
+            type_of(
+                data_matrix.make_dynamic[DType.int64]().to_layout_tensor()
+            ).rank
+        ](num_elements),
     )
 
     Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor(
-        rebound_packed_block,
-        rebound_out_data_matrix,
-        IndexList[rank](num_elements),
+        packed_blob.make_dynamic[DType.int64]().to_layout_tensor(),
+        out_data_matrix.make_dynamic[DType.int64]().to_layout_tensor(),
+        IndexList[
+            type_of(
+                out_data_matrix.make_dynamic[DType.int64]().to_layout_tensor()
+            ).rank
+        ](num_elements),
     )
 
     var allClose: Bool = True

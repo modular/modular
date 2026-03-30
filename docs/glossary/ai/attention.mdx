@@ -36,11 +36,11 @@ gathered from the tokens it attended to.
 ## Self-attention
 
 The most well-known form of attention is self-attention, used in
-[transformer](transformer.mdx) models. In self-attention, the queries, keys,
-and values all come from the same sequence, which means every token attends to every other
-token **in its own input**. This allows the model to build a rich understanding of
-context by evaluating how each token relates to all others, regardless of their
-distance in the sequence.
+[transformer](transformer.mdx) models. In self-attention, the queries, keys, and
+values all come from the same sequence, which means every token attends to every
+other token **in its own input**. This allows the model to build a rich
+understanding of context by evaluating how each token relates to all others,
+regardless of their distance in the sequence.
 
 Because self-attention recomputes scores for every token in the sequence, doing
 so from scratch at each generation step would be expensive. To avoid this, the

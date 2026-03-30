@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE
@@ -24,8 +24,12 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200, _is_sm10x_gpu
-from std.gpu import block_id_in_cluster, lane_id, thread_idx_uint as thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import (
+    block_id_in_cluster,
+    lane_id_uint as lane_id,
+    thread_idx_uint as thread_idx,
+)
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -48,8 +52,6 @@ from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
-    umma_arrive_leader_cta,
-    mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
@@ -62,15 +64,13 @@ from layout import (
     UNKNOWN_VALUE,
     lt_to_tt,
 )
-from layout.layout import flatten, coalesce, zipped_divide
+from layout.layout import zipped_divide
 from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
-    st_matrix_n_layout,
     tile_layout_k_major,
     tile_layout_mn_major,
-    tile_to_descriptor,
     tile_sf_layout_k_major,
 )
 from layout.tma_async import (
@@ -108,7 +108,6 @@ from linalg.fp4_utils import (
 from linalg.matmul.gpu.sm100.matmul import (
     WarpRole as _WarpRole,
     stsm_helper,
-    shared_memory_epilogue_transpose,
     shared_memory_epilogue,
     register_epilogue,
     accum_arrive,
@@ -1899,7 +1898,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
-    # Conumer phase = 1 so that producer's wait on consumer passes trivially
+    # Consumer phase = 1 so that producer's wait on consumer passes trivially
     # at the start when buffer is empty.
     var load_mma_pipeline = ProducerConsumerPipeline[
         config.num_pipeline_stages // config.k_group_size

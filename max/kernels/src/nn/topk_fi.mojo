@@ -15,23 +15,19 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim,
+    block_dim_uint as block_dim,
     block_idx_int as block_idx,
-    grid_dim,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.primitives import block, warp
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.dim import Dim
 from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from layout import (
     ComptimeInt,
-    Coord,
-    CoordLike,
     Idx,
     RuntimeInt,
     TensorLayout,
@@ -44,7 +40,7 @@ from std.math import ceildiv, gcd, exp
 from std.memory import stack_allocation
 from std.os import Atomic
 from std.random import Random
-from std.sys import align_of, bit_width_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 from std.utils.static_tuple import StaticTuple
 from .normalization import (
     _APPLE_STATIC_SHMEM_MAX_COUNT,

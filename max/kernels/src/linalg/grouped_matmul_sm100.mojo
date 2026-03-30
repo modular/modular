@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
-from std.bit import next_power_of_two, prev_power_of_two
+from std.bit import next_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -28,12 +28,10 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu import (
     block_id_in_cluster,
-    block_idx,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    grid_dim,
+    warp_id_uint as get_warp_id,
 )
-from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -58,22 +56,11 @@ from layout import (
     RuntimeInt,
     RuntimeLayout,
     UNKNOWN_VALUE,
-    row_major,
 )
-from layout.layout import blocked_product
 from layout.tile_tensor import TileTensor
-from layout.runtime_tuple import idx2crd, crd2idx
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tile_layout import (
-    col_major as tl_col_major,
-    row_major as tl_row_major,
-)
-from layout.tensor_core_async import (
-    st_matrix_n_layout,
-    tile_layout_k_major_typed,
-    tile_layout_mn_major,
-    tile_to_descriptor,
-)
+from layout.swizzle import Swizzle, make_swizzle
+from layout.tile_layout import col_major as tl_col_major
+from layout.tensor_core_async import tile_layout_k_major_typed
 from structured_kernels.tile_types import (
     SMemTileArray2D,
     swizzle_mode_to_bytes,
@@ -86,7 +73,6 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -94,7 +80,7 @@ from std.utils.static_tuple import StaticTuple
 from .arch.sm100 import MmaOpSM100_SS
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
-from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
+from .grouped_matmul_tile_scheduler import TileScheduler
 
 
 @fieldwise_init
@@ -321,49 +307,63 @@ def load_AB_cuda_core[
 
     var tid = Int32(lane_id())
 
-    # TV layout: col_major(WARP_SIZE, per_thread) → stride (1, WARP_SIZE)
-    # Maps (tid, v) → tid + v * WARP_SIZE (striped for coalesced reads).
-    # Tile layout: row_major(rows, BK) decomposes linear idx → (row, col).
-    # smem: swizzle(linear_idx) — all Int32.
-    # gmem: LayoutTensor[row, col] — Int32 coords, Int64 linear offset.
+    # TV layout maps threads to rows for vectorized gmem loads.
+    # col_major(WARP_SIZE, rows_per_thread) gives row_idx = tid + v * WARP_SIZE
+    # (coalesced across threads). Per row: vector-load K_actual elements,
+    # scatter-store BK to swizzled smem with zero-padding.
+
+    # Row alignment for vectorized gmem loads: largest power of 2
+    # dividing K_actual * sizeof(dtype).
+    comptime a_row_align = (K_actual * size_of[a_type]()) & (
+        -(K_actual * size_of[a_type]())
+    )
+    comptime b_row_align = (K_actual * size_of[b_type]()) & (
+        -(K_actual * size_of[b_type]())
+    )
 
     # A tile [BM, BK]
-    var a_sw = make_swizzle[a_type, a_swizzle]()
+    comptime a_sw = make_swizzle[a_type, a_swizzle]()
     var a_smem_ptr = a_smem_tiles[stage].ptr
-    var a_tv = tl_col_major(
-        Coord(Idx[WARP_SIZE](), Idx[BM * BK // WARP_SIZE]())
+    comptime a_rows_per_thread = BM // WARP_SIZE
+    comptime a_tv = tl_col_major(
+        Coord(Idx[WARP_SIZE](), Idx[a_rows_per_thread]())
     )
-    var a_tile = tl_row_major(Coord(Idx[BM](), Idx[BK]()))
 
-    comptime for v in range(BM * BK // WARP_SIZE):
-        var idx = a_tv[linear_idx_type=DType.int32](
+    comptime for v in range(a_rows_per_thread):
+        var m = a_tv[linear_idx_type=DType.int32](
             Coord(RuntimeInt[DType.int32](tid), Idx[v]())
         )
-        var crd = a_tile.idx2crd[out_dtype=DType.int32](Int(idx))
-        var m = Int32(crd[0].value())
-        var k = Int32(crd[1].value())
-        a_smem_ptr[a_sw(idx)] = a_gmem[a_row0 + m, a_col0 + k][0] if k < Int32(
-            K_actual
-        ) else Scalar[a_type](0)
+        var vec = a_gmem.load[K_actual, a_row_align](
+            Int(a_row0 + m), Int(a_col0)
+        )
+        comptime for k in range(BK):
+            var smem_off = a_sw(m * Int32(BK) + Int32(k))
+            comptime if k < K_actual:
+                a_smem_ptr[smem_off] = vec[k]
+            else:
+                a_smem_ptr[smem_off] = Scalar[a_type](0)
 
     # B tile [BN, BK]
-    var b_sw = make_swizzle[b_type, b_swizzle]()
+    comptime b_sw = make_swizzle[b_type, b_swizzle]()
     var b_smem_ptr = b_smem_tiles[stage].ptr
-    var b_tv = tl_col_major(
-        Coord(Idx[WARP_SIZE](), Idx[BN * BK // WARP_SIZE]())
+    comptime b_rows_per_thread = BN // WARP_SIZE
+    comptime b_tv = tl_col_major(
+        Coord(Idx[WARP_SIZE](), Idx[b_rows_per_thread]())
     )
-    var b_tile = tl_row_major(Coord(Idx[BN](), Idx[BK]()))
 
-    comptime for v in range(BN * BK // WARP_SIZE):
-        var idx = b_tv[linear_idx_type=DType.int32](
+    comptime for v in range(b_rows_per_thread):
+        var n = b_tv[linear_idx_type=DType.int32](
             Coord(RuntimeInt[DType.int32](tid), Idx[v]())
         )
-        var crd = b_tile.idx2crd[out_dtype=DType.int32](Int(idx))
-        var n = Int32(crd[0].value())
-        var k = Int32(crd[1].value())
-        b_smem_ptr[b_sw(idx)] = b_gmem[b_row0 + n, b_col0 + k][0] if k < Int32(
-            K_actual
-        ) else Scalar[b_type](0)
+        var vec = b_gmem.load[K_actual, b_row_align](
+            Int(b_row0 + n), Int(b_col0)
+        )
+        comptime for k in range(BK):
+            var smem_off = b_sw(n * Int32(BK) + Int32(k))
+            comptime if k < K_actual:
+                b_smem_ptr[smem_off] = vec[k]
+            else:
+                b_smem_ptr[smem_off] = Scalar[b_type](0)
 
     # fence.proxy.async makes smem stores visible through the
     # mbarrier async proxy before signaling completion.

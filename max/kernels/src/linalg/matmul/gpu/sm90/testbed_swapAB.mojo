@@ -25,7 +25,7 @@ from std.math import ceildiv
 from std.sys import align_of
 
 from std.gpu.host import DeviceContext
-from layout import Coord, CoordLike, Idx, TileTensor, row_major
+from layout import Coord, CoordLike, TileTensor, row_major
 from std.utils.index import IndexList
 from internal_utils import assert_almost_equal
 from std.random import rand

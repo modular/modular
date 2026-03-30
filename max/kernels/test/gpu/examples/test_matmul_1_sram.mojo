@@ -16,8 +16,7 @@ from std.math import align_down, ceildiv
 from std.algorithm.functional import tile_and_unswitch
 from std.gpu import (
     barrier,
-    block_dim,
-    global_idx,
+    global_idx_uint as global_idx,
     thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext

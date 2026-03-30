@@ -13,21 +13,20 @@
 
 from std.math import ceildiv
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import block_dim, global_idx
 from std.gpu.host import DeviceContext
-from std.memory import memcpy
+from layout import Idx, TileTensor, row_major
+from layout.tile_tensor import stack_allocation
 from std.testing import assert_false
 
-from std.utils.index import Index
+from std.utils import IndexList
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
 # with value of 256).
 comptime MAX_THREADS_PER_BLOCK = 256
 
 
-# TODO: Follow-up: Eliminate offsets calculations and use NDBuffers directly.
+# TODO: Follow-up: Eliminate offsets calculations and use tensors directly.
 def scatter_nd_gpu[
     dtype: DType,
     indices_type: DType,
@@ -44,8 +43,9 @@ def scatter_nd_gpu[
     if id >= num_indices:
         return
 
-    var element_counts_and_input_dims = NDBuffer[rank=1, DType.int64](
-        element_counts_and_input_dims_ptr, Index(last_index_dimension * 2)
+    var element_counts_and_input_dims = TileTensor(
+        element_counts_and_input_dims_ptr,
+        row_major(Idx(last_index_dimension * 2)),
     )
 
     var data_offset = 0
@@ -98,10 +98,10 @@ def scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[rank=data_rank, dtype, _, _, _],
-    indices: NDBuffer[rank=indices_rank, indices_type, _, _, _],
-    updates: NDBuffer[rank=updates_rank, dtype, _, _, _],
-    output: NDBuffer[rank=data_rank, dtype, _, _, _],
+    data: TileTensor[dtype=dtype, ...],
+    indices: TileTensor[dtype=indices_type, ...],
+    updates: TileTensor[dtype=dtype, ...],
+    output: TileTensor[mut=True, dtype=dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -124,13 +124,26 @@ def scatter_nd[
         output: Tensor of rank data_rank, shaped the same as data tensor.
         ctx: DeviceContext.
     """
-    if data.get_shape() != output.get_shape():
+    # Build shape arrays for iteration.
+    var data_shape = IndexList[data_rank]()
+    comptime for i in range(data_rank):
+        data_shape[i] = Int(data.dim[i]())
+    var indices_shape = IndexList[indices_rank]()
+    comptime for i in range(indices_rank):
+        indices_shape[i] = Int(indices.dim[i]())
+    var updates_shape = IndexList[updates_rank]()
+    comptime for i in range(updates_rank):
+        updates_shape[i] = Int(updates.dim[i]())
+
+    var output_shape = IndexList[data_rank]()
+    comptime for i in range(data_rank):
+        output_shape[i] = Int(output.dim[i]())
+    if data_shape != output_shape:
         print("Input and output shapes in scatter_nd must be the same.")
 
-    if (
-        len(updates.get_shape())
-        != data_rank + indices_rank - indices.get_shape()[indices_rank - 1] - 1
-    ):
+    var last_shape_of_indices = indices_shape[indices_rank - 1]
+
+    if updates_rank != data_rank + indices_rank - last_shape_of_indices - 1:
         print(
             "updates rank must be: data_rank + indices_rank -"
             " indices_shape[-1] - 1"
@@ -138,15 +151,8 @@ def scatter_nd[
 
     # Copy input data to output (appropriate elements will be updated as needed
     # by the end of scatternd kernel).
-    var output_flat = output.flatten()
-    var data_flat = data.flatten()
-    memcpy(dest=output_flat.data, src=data_flat.data, count=len(output_flat))
-
-    # Get shapes of buffers to be used in subsequent calculations.
-    var data_shape = data.get_shape()
-    var indices_shape = indices.get_shape()
-    var last_shape_of_indices = indices_shape[indices_rank - 1]
-    var updates_shape = updates.get_shape()
+    for _i in range(output.num_elements()):
+        output.ptr[_i] = data.ptr[_i]
 
     # Depending on r_minus_m = data_rank - last_shape_of_indices,
     # we will be copying:
@@ -166,33 +172,28 @@ def scatter_nd[
     for i in range(data_rank):
         data_count_copy = data_count_copy * data_shape[data_rank - 1 - i]
 
-    # Calculate number of indices NDBuffer elements to copy to GPU.
+    # Calculate number of indices elements to copy to GPU.
     var indices_count_copy = 1
     for i in range(indices_rank):
         indices_count_copy = (
             indices_count_copy * indices_shape[indices_rank - 1 - i]
         )
 
-    # Calculate number of updates NDBuffer elements to copy to GPU.
+    # Calculate number of updates elements to copy to GPU.
     var updates_count_copy = 1
     for i in range(updates_rank):
         updates_count_copy = (
             updates_count_copy * updates_shape[updates_rank - 1 - i]
         )
 
-    # NDBuffer below will store both input_strides and data NDBuffer dimensions.
+    # Buffer below will store both input_strides and data dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
     var ptr = alloc[Int64](last_shape_of_indices * 2)
-    var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
-        ptr, DimList[last_shape_of_indices * 2]()
-    )
 
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
-    var input_strides = NDBuffer[
-        rank=1, DType.int64, MutAnyOrigin, DimList[data_rank]()
-    ]().stack_allocation()
+    var input_strides = InlineArray[Int64, data_rank](uninitialized=True)
     for i in range(data_rank):
         var total_stride = 1
         for j in range(i + 1, data_rank):
@@ -200,8 +201,8 @@ def scatter_nd[
         input_strides[i] = total_stride
 
     for i in range(last_shape_of_indices):
-        element_counts_and_input_dims[i] = input_strides[i]
-        element_counts_and_input_dims[i + last_shape_of_indices] = data_shape[i]
+        ptr[i] = input_strides[i]
+        ptr[i + last_shape_of_indices] = data_shape[i]
 
     # Allocate and copy output data, elements_counts_and_input_dims, updates,
     # indices to GPU.
@@ -213,20 +214,17 @@ def scatter_nd[
     var indices_device = ctx.enqueue_create_buffer[indices_type](
         indices_count_copy
     )
-    ctx.enqueue_copy(output_device, output_flat.data)
-    ctx.enqueue_copy(
-        element_counts_and_input_dims_device,
-        element_counts_and_input_dims.data,
-    )
-    ctx.enqueue_copy(updates_device, updates.data)
-    ctx.enqueue_copy(indices_device, indices.data)
+    ctx.enqueue_copy(output_device, output.ptr)
+    ctx.enqueue_copy(element_counts_and_input_dims_device, ptr)
+    ctx.enqueue_copy(updates_device, updates.ptr)
+    ctx.enqueue_copy(indices_device, indices.ptr)
 
     # Number of indices (that is without last dimension).
     # Each thread will handle one index.
     # e.g., 3,2,3 ==> 6
     var num_indices = 1
-    for i in range(len(indices.get_shape()) - 1):
-        num_indices *= indices.get_shape()[i]
+    for i in range(indices_rank - 1):
+        num_indices *= indices_shape[i]
 
     var num_updates_elements = count_copy
     comptime kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
@@ -244,7 +242,7 @@ def scatter_nd[
     )
 
     # Copy back output data from GPU to CPU.
-    ctx.enqueue_copy(output.data, output_device)
+    ctx.enqueue_copy(output.ptr, output_device)
     ctx.synchronize()
 
     _ = output_device
@@ -257,56 +255,51 @@ def scatter_nd[
 
 def linear_fill[
     dtype: DType
-](buf: NDBuffer[rank=_, dtype, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
+](buf: TileTensor[mut=True, dtype=dtype, ...], elems: Span[Scalar[dtype], _]):
     assert buf.num_elements() == len(elems), "must fill all elements of tensor"
 
     for i in range(buf.num_elements()):
-        buf[i] = elems[i]
+        buf.ptr[i] = elems[i]
 
 
 def test_case[
     dtype: DType,
-    input_shape: DimList,
-    indices_shape: DimList,
-    updates_shape: DimList,
+    d0: Int,
+    d1: Int,
+    d2: Int,
+    id0: Int,
+    id1: Int,
+    ud0: Int,
+    ud1: Int,
+    ud2: Int,
 ](
-    data_vals: Span[Scalar[dtype]],
-    indices_vals: Span[Int64],
-    updates_vals: Span[Scalar[dtype]],
-    output_ref_vals: Span[Scalar[dtype]],
+    data_vals: Span[Scalar[dtype], _],
+    indices_vals: Span[Int64, _],
+    updates_vals: Span[Scalar[dtype], _],
+    output_ref_vals: Span[Scalar[dtype], _],
 ) raises:
-    var data = NDBuffer[
-        rank=3, dtype, MutAnyOrigin, input_shape
-    ].stack_allocation()
+    var data = stack_allocation[dtype=dtype](row_major[d0, d1, d2]())
     linear_fill(data, data_vals)
-    var indices = NDBuffer[
-        rank=2, DType.int64, MutAnyOrigin, indices_shape
-    ].stack_allocation()
+    var indices = stack_allocation[dtype=DType.int64](row_major[id0, id1]())
     linear_fill(indices, indices_vals)
-    var updates = NDBuffer[
-        rank=3, dtype, MutAnyOrigin, updates_shape
-    ].stack_allocation()
+    var updates = stack_allocation[dtype=dtype](row_major[ud0, ud1, ud2]())
     linear_fill(updates, updates_vals)
-    var output = NDBuffer[
-        rank=3, dtype, MutAnyOrigin, input_shape
-    ].stack_allocation()
+    var output = stack_allocation[dtype=dtype](row_major[d0, d1, d2]())
 
-    # Note: This is for the specific set of examples
-    #      (due to _to_ndbuffer[] parameters).
     with DeviceContext() as ctx:
-        scatter_nd(data, indices, updates, output, ctx)
+        scatter_nd[
+            dtype, DType.int64, data_rank=3, indices_rank=2, updates_rank=3
+        ](data, indices, updates, output, ctx)
 
     _ = data
     _ = indices
     _ = updates
 
-    var output_ref = NDBuffer[
-        rank=3, dtype, MutAnyOrigin, input_shape
-    ].stack_allocation()
+    var output_ref = stack_allocation[dtype=dtype](row_major[d0, d1, d2]())
     linear_fill(output_ref, output_ref_vals)
 
-    for i in range(output.size()):
-        if output_ref[i] != output[i]:
+    for i in range(output.num_elements()):
+        if output_ref.ptr[i] != output.ptr[i]:
             print("FAILURE: Mismatch at idx: ", end="")
             print(i)
             assert_false(True)
@@ -374,9 +367,14 @@ def main():
 
         _ = test_case[
             DType.float32,
-            input_shape=DimList[4, 4, 4](),
-            indices_shape=DimList[2, 1](),
-            updates_shape=DimList[2, 4, 4](),
+            d0=4,
+            d1=4,
+            d2=4,
+            id0=2,
+            id1=1,
+            ud0=2,
+            ud1=4,
+            ud2=4,
         ]
         (
             data,

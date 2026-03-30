@@ -218,6 +218,7 @@ def compile_info[
     compile_options: StaticString = CompilationTarget[
         target
     ].default_compile_options(),
+    link_options: StaticString = "",
 ]() -> CompiledFunctionInfo[func_type, func, target]:
     """Compiles a function and returns detailed compilation information.
 
@@ -238,6 +239,7 @@ def compile_info[
         target: The target architecture to compile for. Defaults to current
             architecture.
         compile_options: Additional compiler flags and options as a string.
+        link_options: Additional linking flags and options as a string.
 
     Returns:
         A `CompiledFunctionInfo` struct containing:
@@ -269,6 +271,7 @@ def compile_info[
         target_type=target,
         emission_kind=_get_emission_kind_id[emission_kind]()._mlir_value,
         emission_option=_get_kgen_string[compile_options](),
+        emission_link_option=_get_kgen_string[link_options](),
         func=func,
         _type=_Info,
     ]()

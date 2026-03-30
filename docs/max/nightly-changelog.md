@@ -19,6 +19,8 @@ This version is still a work in progress.
 
 ### Inference server {#26-3-max-serve}
 
+- Added periodic "still building/compiling" log messages during model
+  compilation so that long operations produce visible signs of progress.
 - Consolidated KV connector CLI flags (`--host-kvcache-swap-space-gb`,
   `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
   `--lmcache-config-file`) into the `--kv-connector-config` JSON dict.
@@ -55,6 +57,8 @@ This version is still a work in progress.
   axis.
 - Added `scatter` op handler to the experimental eager interpreter (CPU),
   scattering updates into a copy of the input tensor along a specified axis.
+- Added `conv2d` and `conv2d_transpose` op handlers to the experimental eager
+  interpreter with CPU and GPU support.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

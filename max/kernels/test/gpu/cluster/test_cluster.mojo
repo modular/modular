@@ -13,7 +13,12 @@
 
 from std.sys import size_of
 
-from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu import (
+    barrier,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_acquire,
@@ -25,7 +30,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from std.gpu.host import DeviceContext
-from std.gpu import block_id_in_cluster, lane_id
+from std.gpu import block_id_in_cluster, lane_id_uint as lane_id
 from std.gpu.intrinsics import Scope
 from std.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier

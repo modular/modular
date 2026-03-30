@@ -16,7 +16,7 @@ from std.sys import size_of
 
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.memory import ReduceOp, fence_async_view_proxy
 from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
@@ -37,7 +37,6 @@ from std.testing import assert_equal
 from std.utils.index import Index, IndexList
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.swizzle import make_swizzle
-from layout.int_tuple import product
 
 
 @__llvm_arg_metadata(ragged_tensor_map, `nvvm.grid_constant`)

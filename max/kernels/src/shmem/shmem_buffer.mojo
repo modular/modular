@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os import abort
 from std.sys import (
     CompilationTarget,
     has_nvidia_gpu_accelerator,

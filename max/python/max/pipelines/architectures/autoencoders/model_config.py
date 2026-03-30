@@ -86,7 +86,7 @@ class AutoencoderKLQwenImageConfigBase(MAXModelConfigBase):
     dim_mult: list[int] = Field(default_factory=lambda: [1, 2, 4, 4])
     num_res_blocks: int = 2
     attn_scales: list[float] = Field(default_factory=list)
-    temperal_downsample: list[bool] = Field(
+    temporal_downsample: list[bool] = Field(
         default_factory=lambda: [False, True, True]
     )
     dropout: float = 0.0

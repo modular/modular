@@ -33,7 +33,7 @@ Tensor layout (all row-major):
 from std.math import clamp, floor
 
 from std.gpu import (
-    block_dim,
+    block_dim_uint as block_dim,
     block_idx_int as block_idx,
     thread_idx_int as thread_idx,
 )

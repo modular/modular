@@ -13,6 +13,7 @@ package(default_visibility = [
 [
     modular_py_test(
         name = file.replace(".py", ""),
+        size = "large",
         srcs = [file],
         deps = [
             "//max/python/max/dtype",

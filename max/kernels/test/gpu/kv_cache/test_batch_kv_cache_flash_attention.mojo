@@ -23,8 +23,8 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import MaterializedMask
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
 from std.sys import has_amd_gpu_accelerator
 from std.utils import Index, IndexList
@@ -94,23 +94,6 @@ def execute_flash_attention[
     for i in range(batch_size):
         valid_lengths_host[i] = valid_length[i]
 
-    # Define layouts for mask tensor
-    comptime mask_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
-    var mask_shape = IndexList[4](
-        batch_size, num_q_heads, max_prompt_len, max_context_len
-    )
-    var mask_runtime_layout = RuntimeLayout[mask_static_layout].row_major(
-        mask_shape
-    )
-
-    var mask = ManagedLayoutTensor[dtype, mask_static_layout](
-        mask_runtime_layout, ctx
-    )
-    var mask_host_tensor = mask.tensor[update=False]()
-    random(mask_host_tensor)
-
     # Define layouts for output tensors
     comptime output_static_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
@@ -136,21 +119,9 @@ def execute_flash_attention[
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
     )
-    var cache_lengths_for_mask = ManagedLayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
-        ctx,
-    )
     var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
-    var cache_lengths_for_mask_host = cache_lengths_for_mask.tensor[
-        update=False
-    ]()
     for i in range(batch_size):
         cache_lengths_host[i] = cache_valid_length[i]
-        cache_lengths_for_mask_host[i] = cache_valid_length[i]
 
     var cache_lengths_device = cache_lengths_managed.device_tensor()
 
@@ -198,7 +169,6 @@ def execute_flash_attention[
     # Create layout tensors for GPU operations
     var q_tensor = q.device_tensor()
     var valid_lengths_tensor = valid_lengths.device_tensor()
-    var mask_tensor = mask.device_tensor()
     var ref_output_tensor = ref_output.device_tensor()
     var test_output_tensor = test_output.device_tensor()
     var kv_block_tensor = kv_block.device_tensor()
@@ -220,20 +190,7 @@ def execute_flash_attention[
         q_tensor,
         k_cache_device,
         v_cache_device,
-        MaterializedMask(
-            LayoutTensor[dtype, mask_static_layout, MutAnyOrigin](
-                mask_tensor.ptr,
-                RuntimeLayout[mask_static_layout].row_major(
-                    mask_tensor.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            start_pos=LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                cache_lengths_for_mask.device_tensor().ptr,
-                cache_lengths_for_mask.device_tensor().runtime_layout,
-            ),
-        ),
+        NullMask(),
         valid_lengths_tensor,
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -243,20 +200,7 @@ def execute_flash_attention[
         q_tensor,
         k_cache_device,
         v_cache_device,
-        MaterializedMask(
-            LayoutTensor[dtype, mask_static_layout, MutAnyOrigin](
-                mask_tensor.ptr,
-                RuntimeLayout[mask_static_layout].row_major(
-                    mask_tensor.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            start_pos=LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                cache_lengths_for_mask.device_tensor().ptr,
-                cache_lengths_for_mask.device_tensor().runtime_layout,
-            ),
-        ),
+        NullMask(),
         ref_output_tensor,
         valid_lengths_tensor,
         rsqrt(Float32(kv_params.head_size)),

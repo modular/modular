@@ -11,53 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.itertools import product
 from std.math import ceildiv
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane, _type_is_eq
-from std.sys.info import _cdna_4_or_newer
-from std.gpu import (
-    WARP_SIZE,
-    block_idx,
-    lane_id,
-    thread_idx,
-)
-from std.gpu import warp_id as get_warp_id
+from std.gpu import WARP_SIZE
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
     s_waitcnt,
 )
-from std.memory.pointer import AddressSpace as BaseAddressSpace
 from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
 )
 from layout.layout import blocked_product
-from layout._utils import make_amd_buffer_resource, idx2crd
-from layout.element import Element
 from layout.swizzle import Swizzle
-from layout.tensor_core import (
-    TensorCore,
-    get_mma_shape,
-    num_matrix_reg,
-    TiledTensorCore,
-)
-from std.memory import bitcast, stack_allocation
-from nn.mha_mask import MHAMask, TileMaskStatus, CausalMask
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import (
-    MHAConfig,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
+from layout.tensor_core import TiledTensorCore
+from std.memory import bitcast
+from nn.attention.mha_mask import TileMaskStatus, CausalMask
+from nn.attention.mha_operand import MHAOperand
 
-from std.utils import Index, IndexList
-from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
 from .mha_gfx942 import Attention
 from .utils import load_b, load_b_tr, copy_dram_to_sram_lds
 
@@ -507,7 +485,13 @@ __extension Attention:
 
     @always_inline
     def online_softmax_step_0_fma[stage: Int, mask: Bool = True](mut self):
-        """Step 0 with FMA-exp fusion: mask (no scale), max, scale_rowmax, exp_fma.
+        """Step 0 with deferred scaling: mask (no scale), max, exp_scaled.
+
+        Avoids pre-scaling all scores by deferring the scale multiply into the
+        exp computation. Uses exp_scaled which subtracts the unscaled max first
+        (exact for the maximum element), then scales inside exp2.
+        score_frag_rowmax remains unscaled after this call — scale_rowmax is
+        deferred to step_1_fma (before calculate_correction needs it).
         """
         comptime if mask:
             self.apply_mask[stage, scale=False]()
@@ -517,8 +501,7 @@ __extension Attention:
         ](0, 0)
         var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
         self.softmax.calculate_qk_max(score_reg_tile, warp_scratch)
-        self.softmax.scale_rowmax(self.scale)
-        self.softmax.exp_fma[start=0, stride=2](score_reg_tile, self.scale)
+        self.softmax.exp_scaled[start=0, stride=2](score_reg_tile, self.scale)
 
     @always_inline
     def online_softmax_step_1[stage: Int](mut self):
@@ -534,12 +517,18 @@ __extension Attention:
 
     @always_inline
     def online_softmax_step_1_fma[stage: Int](mut self):
-        """Step 1 with FMA-exp fusion."""
+        """Step 1 with deferred scaling for odd-indexed tiles.
+
+        Processes remaining score tiles with exp_scaled, then scales the
+        rowmax before calculate_correction (which compares against the
+        previous iteration's scaled rowmax_tensor).
+        """
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
-        self.softmax.exp_fma[start=1, stride=2](score_reg_tile, self.scale)
+        self.softmax.exp_scaled[start=1, stride=2](score_reg_tile, self.scale)
+        self.softmax.scale_rowmax(self.scale)
         self.softmax.calculate_qk_sum(score_reg_tile, warp_scratch)
         self.softmax.calculate_correction()
         self.softmax.update_max()
@@ -916,7 +905,7 @@ __extension Attention:
         self.store_output()
 
     @always_inline
-    def mha_prefill_experimental(mut self):
+    def mha_prefill_gfx950(mut self):
         """Double-buffered gfx950 MHA with V-load-later optimization.
 
         Uses both LDS slots for K and V: compute from one slot while
@@ -928,7 +917,13 @@ __extension Attention:
         comptime assert (
             Self.depth == 64 or Self.depth == 128 or Self.depth == 256
         ), "depth must be 64, 128, or 256"
-        comptime prescale_q = get_defined_bool["PRESCALE_Q", False]()
+        # Pre-scale Q by default for depth<=128 to eliminate per-element
+        # scale multiply from the softmax hot loop. Disabled for depth>128
+        # to work around LLVM Machine Instruction Scheduler crash (isReg
+        # assertion in RewriteMFMAFormStage).
+        comptime prescale_q = get_defined_bool[
+            "PRESCALE_Q", True
+        ]() and Self.depth <= 128
 
         var warp_id = UInt32(
             readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
@@ -1020,19 +1015,18 @@ __extension Attention:
                     )
 
         # Calculate iteration bounds using mask helpers.
-        # start_column: first KV column not fully masked.
-        # last_masked_set_end: last tile index (from 0) that needs processing.
-        # For CausalMask: start=0, end=ceildiv(min(row+BM, num_keys), BN).
-        # For ChunkedCausalMask: start may skip chunks, end covers all tiles.
+        # start_column returns the first non-fully-masked column,
+        # aligned down to BN.  last_masked_set_end returns the total
+        # number of BN-wide tiles to process (a count, not an index).
         var score_row = UInt32(self.mask_block_row + UInt32(self.start_pos))
         var start_col = self.mask.start_column[Int(Self.BM), Int(Self.BN), 1](
             score_row
         )
-        var end_tile = self.mask.last_masked_set_end[
-            Int(Self.BM), Int(Self.BN), 1
-        ](score_row, UInt32(self.num_keys))
-        var start_tile = start_col // UInt32(Self.BN)
-        var num_tiles = Int(end_tile - start_tile)
+        var num_tiles = Int(
+            self.mask.last_masked_set_end[Int(Self.BM), Int(Self.BN), 1](
+                score_row, UInt32(self.num_keys)
+            )
+        )
 
         # Advance KV iterators and mask tracking to start_col.
         k_buffer.kv_cache_iter.tile_start_row = Int(start_col)
@@ -1107,13 +1101,10 @@ __extension Attention:
                 _ = k_buffer.load_from_dram[next_slot]()
                 _ = v_buffer.load_from_dram[next_slot]()
 
-            # Use non-FMA softmax for depth>128 to work around LLVM
-            # Machine Instruction Scheduler crash (isReg assertion) triggered
-            # by exp_fma codegen combined with the larger QK unroll.
             comptime if prescale_q:
                 self.online_softmax_step_0_prescaled[0]()
                 self.online_softmax_step_1_prescaled[0]()
-            elif Self.depth > 128:
+            elif Self.depth > 128 or Self.mask_t.apply_log2e_after_mask:
                 self.online_softmax_step_0[0]()
                 self.online_softmax_step_1[0]()
             else:
@@ -1128,6 +1119,12 @@ __extension Attention:
                     vmcnt=k_buffer.vm_instrs_per_load
                     + v_buffer.vm_instrs_per_load
                 ]()
+            # Barrier ensures all waves' V DMA is visible before any
+            # wave reads V from LDS (cross-wave coherence).
+            barrier[
+                schedule_barrier_before=False,
+                schedule_barrier_after=False,
+            ]()
             v_buffer.load_from_shared(UInt(slot))
 
             self.online_softmax_update_output()

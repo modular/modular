@@ -16,7 +16,7 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of
 from std.os import abort
 
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable
 from std.builtin.variadics import (
@@ -24,28 +24,20 @@ from std.builtin.variadics import (
     _MapVariadicAndIdxToType,
     _ReduceVariadicAndIdxToVariadic,
 )
-from std.builtin.dtype import _unsigned_integral_type_of
 from std.builtin.int import index as _index
 from std.memory import stack_allocation as _std_stack_allocation
-from std.gpu import thread_idx, block_dim, lane_id
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from std.utils.numerics import max_finite
 from layout._fillers import BATCH_SIZE
 from std.sys import prefetch
-from std.sys.intrinsics import (
-    PrefetchOptions,
-    readfirstlane,
-    _type_is_eq_parse_time,
-)
+from std.sys.intrinsics import PrefetchOptions, _type_is_eq_parse_time
 from std.utils import IndexList
 
-from .swizzle import Swizzle, make_ldmatrix_swizzle
+from .swizzle import Swizzle
 
 from .tile_layout import (
     Layout,
     RowMajorLayout,
     TensorLayout,
-    ZippedDivideLayout,
     WeaklyCompatible,
     _RowMajor,
     row_major,
@@ -57,15 +49,12 @@ from .coord import (
     Coord,
     CoordLike,
     _All,
-    _AllEqual,
     _IntToComptimeInt,
     coord,
     coord_to_int_tuple,
     coord_to_index_list,
-    _CoordToDimList,
     _DimsToCoordLike,
     _CoordToDynamic,
-    _IntTupleToCoordLike,
     _Multiply,
     _Divide,
     _CeilDiv,
@@ -262,47 +251,6 @@ struct TileTensor[
         """
         self.ptr = span.unsafe_ptr()
         self.layout = layout
-
-    @always_inline("nodebug")
-    def __init__(
-        buffer: NDBuffer[...],
-        out self: TileTensor[
-            buffer.dtype,
-            RowMajorLayout[*_DimsToCoordLike[DType.int64, buffer.shape]],
-            buffer.origin,
-            address_space=buffer.address_space,
-        ],
-    ):
-        """Create a TileTensor from an NDBuffer.
-
-        Converts an NDBuffer to a TileTensor, preserving shape and stride
-        information. Static dimensions in the NDBuffer become ComptimeInt,
-        dynamic dimensions become RuntimeInt. Strides are computed as
-        row-major from the shape types via `RowMajorLayout`, recovering
-        static stride info that NDBuffer's default all-unknown strides
-        would lose.
-
-        Args:
-            buffer: The NDBuffer to convert.
-        """
-        self.ptr = buffer.data
-        var shape = Coord[*_DimsToCoordLike[DType.int64, buffer.shape]]()
-        comptime _stride_types = _RowMajor[
-            *_DimsToCoordLike[DType.int64, buffer.shape]
-        ]
-        var stride = Coord[*_stride_types]()
-
-        comptime for i in range(buffer.rank):
-            comptime if not shape.element_types[i].is_static_value:
-                shape[i] = rebind[shape.element_types[i]](
-                    Scalar[DType.int64](buffer.dynamic_shape[i])
-                )
-
-            comptime if not stride.element_types[i].is_static_value:
-                stride[i] = rebind[stride.element_types[i]](
-                    Scalar[DType.int64](buffer.dynamic_stride[i])
-                )
-        self.layout = Layout(shape, stride)
 
     @always_inline
     def __init__(
@@ -1913,41 +1861,13 @@ struct TileTensor[
         """
         return {
             self.ptr,
-            layout.RuntimeLayout[result.layout](
-                coord_to_index_list(self.layout.shape_coord()),
-                coord_to_index_list(self.layout.stride_coord()),
-            ),
-        }
-
-    @always_inline("nodebug")
-    def _to_ndbuffer(
-        self,
-        out result: NDBuffer[
-            rank=Self.rank,
-            Self.dtype,
-            Self.origin,
-            _CoordToDimList[*Self.LayoutType._shape_types],
-            _CoordToDimList[*Self.LayoutType._stride_types],
-            address_space=Self.address_space,
-        ],
-    ):
-        """Return an NDBuffer with the same shape, stride, and address space
-        of this tensor. Currently it expects flat layouts.
-
-        This is a utility to help with porting NDBuffer methods to this type.
-
-        Returns:
-            An NDBuffer with the same shape, stride, and address space of
-            this tensor.
-        """
-
-        return {
-            self.ptr,
-            rebind[IndexList[Self.rank]](
-                coord_to_index_list(self.layout.shape_coord())
-            ),
-            rebind[IndexList[Self.rank]](
-                coord_to_index_list(self.layout.stride_coord())
+            type_of(result.runtime_layout)(
+                coord_to_index_list(self.layout.shape_coord()).cast[
+                    result.layout_int_type
+                ](),
+                coord_to_index_list(self.layout.stride_coord()).cast[
+                    result.linear_idx_type
+                ](),
             ),
         }
 

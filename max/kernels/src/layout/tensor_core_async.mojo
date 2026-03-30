@@ -685,7 +685,7 @@ def st_matrix_m_layout[
     """Creates a layout for M-major `st_matrix` in the context of WGMMA C
     matrix. This meant to be used with swapAB, since the C
     matrix must be transposed during the write phase. This must also be used
-    in conjuction with st_matrix transposed modifier.
+    in conjunction with st_matrix transposed modifier.
 
     The M-dimension tiling size `WG_BM // 16`, the number of MMA tiles `num_m_mmas`
     in the N-dimension, and the number of consumers `num_consumer`. The output is an

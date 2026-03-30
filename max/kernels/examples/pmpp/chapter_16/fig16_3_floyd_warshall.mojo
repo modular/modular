@@ -15,7 +15,6 @@
 # All-pairs shortest path algorithm using dynamic programming
 
 from std.itertools import product
-from std.math import ceildiv
 
 comptime INF = Float32.MAX
 

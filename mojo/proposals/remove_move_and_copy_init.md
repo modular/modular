@@ -109,7 +109,8 @@ are removed.
 
 ### Standard library
 
-Types in the standard library that define custom copy or move behavior migrate from:
+Types in the standard library that define custom copy or move behavior migrate
+from:
 
 - `__copyinit__` to `__init__(out self, other: Self)`
 - `__moveinit__` to `__init__(out self, *, deinit take: Self)`
@@ -138,5 +139,6 @@ developed by our users, which will need migration/fixits.
 | Movable  | A value capability: the value may be safely consumed and transferred.                                                                                 |
 | Take     | “Move and own.” Construction moves the value and transfers<br />ownership to the new instance. The term already<br />appears in `UnsafePointer` APIs. |
 
-This pitch adds a required argument label `take` for transfer and `copy` for copy
-initialization. This terminology is inspired from `UnsafePointer`'s `take_pointee`.
+This pitch adds a required argument label `take` for transfer and `copy` for
+copy initialization. This terminology is inspired from `UnsafePointer`'s
+`take_pointee`.

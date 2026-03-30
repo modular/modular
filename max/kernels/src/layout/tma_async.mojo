@@ -32,7 +32,7 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from std.math import ceildiv, log2
+from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from std.sys._assembly import inlined_assembly
@@ -58,6 +58,7 @@ from std.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global_im2col,
     cp_async_bulk_tensor_shared_cluster_global_im2col_multicast,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
+    cp_async_bulk_tensor_2d_gather4,
     CacheEviction,
 )
 from std.gpu.sync import (
@@ -69,18 +70,16 @@ from std.gpu.sync import (
     mbarrier_init,
 )
 from layout import IntTuple, Layout, LayoutTensor, TileTensor
-from layout.coord import ComptimeInt, Coord, Idx
 from layout.runtime_tuple import (
     coalesce_nested_tuple,
     flatten,
     to_index_list as runtime_tuple_to_index_list,
 )
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tensor_core_async import tile_layout_k_major
 
 from std.utils.index import Index, IndexList
 from std.builtin.device_passable import DevicePassable
 from std.utils.static_tuple import StaticTuple
-from std.os import abort
 from layout.layout_tensor import LayoutTensorIter
 
 
@@ -1522,6 +1521,76 @@ struct TMATensorTile[
                 (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
 
+    @always_inline("nodebug")
+    def async_copy_gather4[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        col_idx: Int32,
+        row0: Int32,
+        row1: Int32,
+        row2: Int32,
+        row3: Int32,
+    ):
+        """Schedules an asynchronous gather4 copy of 4 non-contiguous rows from global memory to shared memory.
+
+        This method uses the TMA gather4 hardware instruction (SM100/Blackwell) to load 4 rows
+        at arbitrary row indices from a 2D tensor in global memory, placing them contiguously
+        in shared memory. The TMA descriptor must be configured with box dim1=1 (one row per tile).
+
+        Parameters:
+            cta_group: If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion. Defaults to 1.
+            eviction_policy: Cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: The destination tensor in shared memory where data will be copied.
+                Must be 128-byte aligned.
+            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
+            col_idx: Column offset in the source tensor (typically 0 for full-row loads).
+            row0: Row index of the first row to gather.
+            row1: Row index of the second row to gather.
+            row2: Row index of the third row to gather.
+            row3: Row index of the fourth row to gather.
+
+        Constraints:
+            - Requires rank == 2 (gather4 is 2D only).
+            - Requires desc_shape[0] == 1 (gather4 hardware requirement: one row per tile).
+            - The destination tensor must be 128-byte aligned in shared memory.
+            - Requires SM100 (Blackwell) or newer GPU architecture.
+        """
+        comptime assert (
+            Self.rank == 2
+        ), "gather4 is only supported for 2D tensors (rank == 2)"
+        comptime assert (
+            Self.desc_shape[0] == 1
+        ), "gather4 requires desc_shape row dimension == 1 (one row per tile)"
+        comptime assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
+
+        comptime assert (
+            type_of(dst).dtype == Self.dtype
+        ), "Input tensor has a different type than the TMA op"
+
+        cp_async_bulk_tensor_2d_gather4[
+            cta_group=cta_group,
+            eviction_policy=eviction_policy,
+        ](
+            dst.ptr.mut_cast[True](),
+            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            mem_barrier.unsafe_ptr(),
+            col_idx,
+            row0,
+            row1,
+            row2,
+            row3,
+        )
+
     @always_inline
     def async_store[
         coord_rank: Int, //, cta_group: Int = 1
@@ -2678,7 +2747,7 @@ struct TMATensorTile[
                 ](desc_ptr, gmem_dims[tensor_rank - i - 1])
 
             # Replace strides - note: stride for innermost dimension is implicitly 1
-            # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
+            # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides should be left shifted by 4 for CUDA versions < 12.5
             comptime for i in range(1, tensor_rank):
                 comptime temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
                     i - 1
@@ -2743,7 +2812,7 @@ struct TMATensorTile[
         ](desc_ptr, dim_value)
 
         # Replace strides - note: stride for innermost dimension is implicitly 1
-        # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
+        # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides should be left shifted by 4 for CUDA versions < 12.5
         comptime if dim_idx > 0:
             assert (
                 dim_stride is not None
@@ -2831,6 +2900,118 @@ def create_tma_tile[
         (tensor.dim(0), tensor.dim(1)),
         (tensor.stride(0), tensor.stride(1)),
         (tile_sizes[0], tile_sizes[1]),
+    )
+
+
+@always_inline
+def create_tma_tile_gather4[
+    dtype: DType,
+    row_width: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+](
+    ctx: DeviceContext,
+    device_buf: DeviceBuffer[dtype],
+    num_rows: Int,
+) raises -> TMATensorTile[
+    dtype,
+    2,
+    tile_shape=IndexList[2](4, row_width),
+    desc_shape=IndexList[2](1, row_width),
+]:
+    """Creates a TMATensorTile configured for gather4 operations.
+
+    Gather4 loads 4 non-contiguous rows from a 2D tensor using a single TMA
+    instruction (SM100/Blackwell). The descriptor's box shape (desc_shape) is
+    (1, row_width) because the hardware requires one row per tile — gather4
+    internally issues 4 single-row copies at 4 different row indices. The tile
+    shape is (4, row_width) to reflect the total shared memory footprint of the
+    4 gathered rows.
+
+    Parameters:
+        dtype: The element data type of the tensor.
+        row_width: Number of elements per row (innermost dimension).
+        swizzle_mode: TMA swizzle mode for shared memory access pattern.
+            Defaults to SWIZZLE_NONE. Use SWIZZLE_64B or SWIZZLE_128B for
+            bandwidth-optimized access (e.g. BF16 RoPE data in FlashMLA).
+
+    Args:
+        ctx: The CUDA device context used to create the TMA descriptor.
+        device_buf: Device buffer containing the 2D tensor data in row-major
+            layout.
+        num_rows: Total number of rows in the tensor (outermost dimension).
+
+    Returns:
+        A TMATensorTile with tile_shape=(4, row_width) and
+        desc_shape=(1, row_width), configured for use with
+        `async_copy_gather4`.
+
+    Raises:
+        If TMA descriptor creation fails.
+    """
+    comptime assert row_width > 0, "row_width must be positive"
+
+    return create_tma_descriptor[dtype, 2, swizzle_mode](
+        device_buf,
+        IndexList[2](num_rows, row_width),
+        IndexList[2](row_width, 1),
+        IndexList[2](1, row_width),
+    )
+
+
+@always_inline
+def create_tma_tile_gather4[
+    dtype: DType,
+    row_width: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[dtype], _],
+    num_rows: Int,
+) raises -> TMATensorTile[
+    dtype,
+    2,
+    tile_shape=IndexList[2](4, row_width),
+    desc_shape=IndexList[2](1, row_width),
+]:
+    """Creates a TMATensorTile configured for gather4 operations from a raw
+    pointer.
+
+    This overload accepts a raw device pointer instead of a DeviceBuffer,
+    matching the pattern used by ``create_split_tma`` and the KV cache TMA
+    tile factories.  A non-owning ``DeviceBuffer`` is constructed internally.
+
+    Parameters:
+        dtype: The element data type of the tensor.
+        row_width: Number of elements per row (innermost dimension).
+        swizzle_mode: TMA swizzle mode for shared memory access pattern.
+            Defaults to SWIZZLE_NONE. Use SWIZZLE_64B or SWIZZLE_128B for
+            bandwidth-optimized access (e.g. BF16 RoPE data in FlashMLA).
+
+    Args:
+        ctx: The CUDA device context used to create the TMA descriptor.
+        ptr: Raw device pointer to the 2D tensor data in row-major layout.
+        num_rows: Total number of rows in the tensor (outermost dimension).
+
+    Returns:
+        A TMATensorTile with tile_shape=(4, row_width) and
+        desc_shape=(1, row_width), configured for use with
+        ``async_copy_gather4``.
+
+    Raises:
+        If TMA descriptor creation fails.
+    """
+    comptime assert row_width > 0, "row_width must be positive"
+
+    return create_tma_descriptor[dtype, 2, swizzle_mode](
+        DeviceBuffer(
+            ctx,
+            ptr.address_space_cast[AddressSpace.GENERIC](),
+            1,
+            owning=False,
+        ),
+        IndexList[2](num_rows, row_width),
+        IndexList[2](row_width, 1),
+        IndexList[2](1, row_width),
     )
 
 
@@ -3016,7 +3197,10 @@ def create_tensor_tile[
                 + String(swizzle_mode.bytes())
                 + "B. K dim is now "
                 + String(tile_shape[1] * size_of[dtype]())
-                + " bytes."
+                + " bytes, tile_shape[1] = "
+                + String(tile_shape[1])
+                + "\ndtype ="
+                + String(dtype)
             )
 
         return create_tma_descriptor[dtype, 2, swizzle_mode](
@@ -3976,7 +4160,7 @@ struct RaggedTensorMap[
     Creates a TMA descriptor that can handle stores with varying lengths. This struct is mainly used
     for MHA, where sequence lengths may vary between sample.
 
-    This struct only supports one dimension being ragged. The continous dimension (where stride is 1) cannot be ragged.
+    This struct only supports one dimension being ragged. The continuous dimension (where stride is 1) cannot be ragged.
 
     Parameters:
         descriptor_rank:
@@ -4248,7 +4432,7 @@ struct RaggedTensorMap[
 
         comptime assert rank == Self.global_rank
 
-        # Assume we have the folowing ragged tensor:
+        # Assume we have the following ragged tensor:
 
         # It has 16 heads, head depth of 128, and 4 sequences of length
         # [43, 32, 10, 64]
@@ -4268,8 +4452,8 @@ struct RaggedTensorMap[
         # remaining_global_dims = [16] (the only value not supplied, the head dimension)
         # remaining_global_stride = [128] (the stride of the head dimension)
 
-        # We also compute values such as the cummulative length using this formula:
-        # cummulative_length = (batch_size + 1) * max_length = (4 + 1) * 64 = 320
+        # We also compute values such as the cumulative length using this formula:
+        # cumulative_length = (batch_size + 1) * max_length = (4 + 1) * 64 = 320
 
         # With these values we create our descriptor with an artificial layout of:
 
@@ -4291,7 +4475,7 @@ struct RaggedTensorMap[
         # Instead we will utilize the cumulative_length dimension and max_length dimension to mask the out of bounds
         # segments in each ragged store.
 
-        # One prerequsite for this to work is that the starting pointer must be negatively offset by ragged_stride * max_length.
+        # One prerequisite for this to work is that the starting pointer must be negatively offset by ragged_stride * max_length.
         # Which in our case is 2048 * 64 or 64 sequences.
 
         # Now to get bounds checked store we set the
@@ -4300,7 +4484,7 @@ struct RaggedTensorMap[
 
         # This would make our new coordinate starting global coordinates: [(43, 7, 21, 0), (43, 7, 45, 0)]
 
-        # When adding 43 + 21 we get a starting offset of 64, which is how much we offset our orignal pointer. This gives
+        # When adding 43 + 21 we get a starting offset of 64, which is how much we offset our original pointer. This gives
         # us the correct starting offset for our store. Finally our max_length dimension is set to start at 21. It is hardbounded
         # by 64 (the max length) so this ensure that anything we load past 64 will be masked out. So when we end at 68 for the second store,
         # the last 5 sequences will be masked out.
@@ -4313,12 +4497,12 @@ struct RaggedTensorMap[
 
         comptime if using_max_descriptor_size:
             # if the max length is the same as the descriptor size we dont need to do
-            # multiple stores and generate multiple coords so we can avoid unnessecary
+            # multiple stores and generate multiple coords so we can avoid unnecessary
             # branching in this case.
-            var cummulative_length = preceding_cumulative_length + store_length
+            var cumulative_length = preceding_cumulative_length + store_length
 
             var adjusted_coordinates = coordinates
-            adjusted_coordinates[Self.global_rank - 1] = cummulative_length
+            adjusted_coordinates[Self.global_rank - 1] = cumulative_length
             adjusted_coordinates[1] = self.max_length - store_length
 
             cp_async_bulk_tensor_global_shared_cta(
@@ -4333,10 +4517,10 @@ struct RaggedTensorMap[
 
             var descriptor_iters = ceildiv(store_length, descriptor_load_length)
 
-            var cummulative_length = preceding_cumulative_length + store_length
+            var cumulative_length = preceding_cumulative_length + store_length
 
             var adjusted_coordinates = coordinates
-            adjusted_coordinates[Self.global_rank - 1] = cummulative_length
+            adjusted_coordinates[Self.global_rank - 1] = cumulative_length
 
             for i in range(descriptor_iters):
                 var max_length_offset = (

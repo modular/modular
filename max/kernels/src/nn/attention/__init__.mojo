@@ -10,4 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Attention operations."""
+"""Multi-head attention (MHA) and multi-head latent attention (MLA) kernels.
+
+Shared utilities live here (masks, operands, config), with platform-specific
+implementations under cpu/ and gpu/.
+"""

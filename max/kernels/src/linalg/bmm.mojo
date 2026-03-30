@@ -25,8 +25,7 @@ from std.sys.info import (
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
-from std.algorithm.reduction import _reduce_generator
-from std.gpu import block_idx, global_idx
+from std.gpu import block_idx_uint as block_idx, global_idx_uint as global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target
@@ -46,12 +45,12 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
+from layout.tma_async import TMATensorTile, create_tensor_tile
 from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from std.gpu.host.info import B200, H100, _is_sm10x_gpu
+from std.gpu.host.info import H100, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -761,15 +760,13 @@ def _batched_matmul_gpu[
                 # SM100+ supports 32B load/store to global memory.
                 comptime simd_size = 32 // size_of[c_type]()
 
-                var c_ndbuf = c_tensor_reshaped._to_ndbuffer()
-
                 @parameter
-                @__copy_capture(c_ndbuf)
+                @__copy_capture(c_tensor_reshaped)
                 def epilogue_wrapper[
                     simd_width: Int, rank: Int, alignment: Int = 1
                 ](idx: IndexList[rank]):
                     var c_coord = Index(idx[0], idx[1], idx[2])
-                    var c_val = c_ndbuf.load[
+                    var c_val = c_tensor_reshaped.load_linear[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
                     ](c_coord)

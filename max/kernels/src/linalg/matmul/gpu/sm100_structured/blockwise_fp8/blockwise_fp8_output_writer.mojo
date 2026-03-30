@@ -24,8 +24,12 @@ Supports two write modes:
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx_int as thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import (
+    WARP_SIZE,
+    lane_id_uint as lane_id,
+    thread_idx_int as thread_idx,
+)
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import named_barrier
@@ -33,15 +37,10 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    RuntimeTuple,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout.layout import zipped_divide
-from layout.layout_tensor import upcast
-from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tile_layout import Layout, UpcastLayout, ZippedDivideLayout
 from layout.tma_async import TMATensorTile

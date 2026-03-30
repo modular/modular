@@ -17,7 +17,11 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import warp_id, block_idx, lane_id, thread_idx
+from std.gpu import (
+    warp_id_uint as warp_id,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -36,9 +40,8 @@ from layout import (
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
-from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
+from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
     tile_layout_k_major,
@@ -51,7 +54,6 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile,
 )
-from std.bit import log2_floor
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type

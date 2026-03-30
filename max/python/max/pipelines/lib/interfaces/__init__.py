@@ -22,9 +22,13 @@ from .cache_mixin import (
     DenoisingCacheConfig,
     DenoisingCacheState,
     fbcache_conditional_execution,
+    teacache_conditional_execution,
 )
 from .component_model import ComponentModel
-from .diffusion_pipeline import DiffusionPipeline, PixelModelInputs
+from .diffusion_pipeline import (
+    DiffusionPipeline,
+    DiffusionPipelineOutput,
+)
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
@@ -44,12 +48,13 @@ __all__ = [
     "DenoisingCacheConfig",
     "DenoisingCacheState",
     "DiffusionPipeline",
+    "DiffusionPipelineOutput",
     "GenerateMixin",
     "ModelInputs",
     "ModelOutputs",
     "PipelineModel",
     "PipelineModelWithKVCache",
-    "PixelModelInputs",
     "fbcache_conditional_execution",
     "get_paged_manager",
+    "teacache_conditional_execution",
 ]

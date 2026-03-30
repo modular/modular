@@ -37,7 +37,7 @@ from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 
 def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[

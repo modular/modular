@@ -15,7 +15,6 @@ from std.collections.string.string_slice import get_static_string
 from std.math import align_down, ceildiv
 from std.sys import simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
-from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
 from std.algorithm.functional import tile
@@ -34,7 +33,7 @@ from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from tensor import ManagedTensorSlice
 
-from std.utils import Index, IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 from std.collections import OptionalReg
 
 
@@ -271,7 +270,7 @@ def gather_reduce[
                 comptime for unroll_idx in range(j_tile_size):
                     accum = reduce_fn(accum, accums[unroll_idx])
 
-                for j in range(j_residual_start, indices.dim[1](), 1):
+                for j in range(j_residual_start, Int(indices.dim[1]()), 1):
                     accum = reduce_j_tile[1](
                         StaticTuple[SIMD[dtype, simd_width], 1](accum), j
                     )[0]
@@ -516,7 +515,7 @@ def gather_guards(
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
-    for i in range(axis, Int(axis) + indices_shape.size):
+    for i in range(Int(axis), Int(axis) + indices_shape.size):
         if output_shape[i] != indices_shape[i - Int(axis)]:
             raise Error(
                 "gather: output_shape[axis:axis+indices_rank] does not"

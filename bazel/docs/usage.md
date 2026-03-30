@@ -94,8 +94,8 @@ to see what the current tools being run are.
 
 The Mojo version in
 [`bazel/mojo.MODULE.bazel`](https://github.com/modular/modular/blob/main/bazel/mojo.MODULE.bazel)
-is automatically updated with each nightly, but can be manually replaced
-locally to use a different version if desired.
+is automatically updated with each nightly, but can be manually replaced locally
+to use a different version if desired.
 
 ## `BUILD.bazel` file
 
@@ -227,9 +227,9 @@ tags = ["gpu"],
 
 ### Adding support for a new GPU
 
-In order to run GPU tests in this repo, Mojo must support the GPU
-architecture, and bazel must be configured to detect the GPU. To add a
-new GPU to bazel, update the `mojo.gpu_toolchains` section of the
+In order to run GPU tests in this repo, Mojo must support the GPU architecture,
+and bazel must be configured to detect the GPU. To add a new GPU to bazel,
+update the `mojo.gpu_toolchains` section of the
 [`common.MODULE.bazel`](https://github.com/modular/modular/blob/main/bazel/common.MODULE.bazel)
 file.
 

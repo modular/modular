@@ -16,13 +16,13 @@ from std.random import rand
 from std.sys.info import num_physical_cores, simd_width_of
 
 from layout import Layout, LayoutTensor, RuntimeLayout
-from nn.conv import (
+from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
-    pack_filter,
+    pack_filter_lt,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvShape,
     get_conv_num_partitions,
     get_conv_num_tasks,
@@ -130,7 +130,7 @@ def test[
     )
 
     comptime if filter_packed:
-        pack_filter[simd_size, micro_kernel_f_size](
+        pack_filter_lt[simd_size, micro_kernel_f_size](
             filter, packed_filter, conv_shape.num_groups
         )
 

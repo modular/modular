@@ -43,7 +43,7 @@ from std.math import ceildiv
 from std.memory import Pointer
 from std.sys import size_of
 
-from std.gpu import WARP_SIZE, thread_idx
+from std.gpu import WARP_SIZE
 from std.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,

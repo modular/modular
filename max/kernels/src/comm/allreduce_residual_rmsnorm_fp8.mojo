@@ -59,14 +59,13 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
-from std.sys.info import _accelerator_arch
 
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
     thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -80,7 +79,7 @@ from layout import (
     row_major,
 )
 from std.utils import IndexList, StaticTuple
-from std.utils.numerics import get_accum_type, max_finite
+from std.utils.numerics import get_accum_type
 
 from std.runtime.asyncrt import DeviceContextPtr
 from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize

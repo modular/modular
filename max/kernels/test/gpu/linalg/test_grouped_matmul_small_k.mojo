@@ -20,7 +20,6 @@ TMA OOB zero-fill handles the padding.  This test exercises K=4 (CUDA
 core path) and K=8 (TMA with OOB zero-fill).
 """
 
-from std.collections import Optional
 
 from std.gpu.host import DeviceContext
 from layout import (
@@ -35,7 +34,6 @@ from layout import (
 )
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.utils import elementwise_epilogue_type
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -219,7 +217,7 @@ def test[
 
 def main() raises:
     with DeviceContext() as ctx:
-        # K=8, bf16: matches SGMV LoRA expand Q path (q_dim=256, rank=8)
+        # K=8: TMA path (stride=16 bytes, meets TMA alignment).
         test[
             DType.bfloat16,
             DType.bfloat16,
@@ -241,12 +239,15 @@ def main() raises:
             expert_shape=Index(256, 8),
         ](3, [16, 32, 24], [0, 2, 1], ctx)
 
-        # K=4
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            num_experts=1,
-            expert_shape=Index(128, 4),
-        ](1, [64], [0], ctx)
+        # K=1..7: CUDA core path (stride < 16 bytes).
+        comptime for K in range(1, 8):
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                num_experts=1,
+                expert_shape=Index(128, K),
+            ](1, [64], [0], ctx)
+
+        print("All small-K grouped matmul tests passed!")
 
         print("All small-K grouped matmul tests passed!")

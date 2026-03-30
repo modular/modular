@@ -20,17 +20,15 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    print_layout,
 )
-from layout.layout import blocked_product, zipped_divide
-from layout._fillers import random
+from layout.layout import zipped_divide
 from layout._utils import ManagedLayoutTensor
 from layout.tma_async import SharedMemBarrier
 from std.memory import stack_allocation
 from std.memory.pointer import _GPUAddressSpace
 from std.testing import assert_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from layout.int_tuple import product, depth, to_index_list
 
 from std.random import random_si64
@@ -41,7 +39,6 @@ from linalg.arch.sm100._tma import (
     UInt32Indices,
     to_swizzle,
 )
-from std.gpu.memory import AddressSpace
 from std.gpu.host._tensormap import SwizzleMode
 from std.gpu import WARP_SIZE
 from std.testing import assert_equal
@@ -357,7 +354,7 @@ def test_tma_load[
 
     comptime assert (
         total_smem_elements % total_load_elements == 0
-    ), "shared memory shape must be divisble by load shape"
+    ), "shared memory shape must be divisible by load shape"
 
     comptime total_tiles = ceildiv(total_global_elements, total_smem_elements)
 

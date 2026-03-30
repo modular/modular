@@ -13,8 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import block_idx, grid_dim
-from std.hashlib.hasher import Hasher
+from std.gpu import block_idx_uint as block_idx, grid_dim_uint as grid_dim
 
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList

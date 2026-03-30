@@ -538,7 +538,7 @@ http_file(
     ],
 )
 
-# Intersphinx oject inventory for Python
+# Intersphinx object inventory for Python
 http_archive(
     name = "python-objects-inv",
     build_file_content = """
@@ -551,7 +551,7 @@ filegroup(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/python-objects-inv/3.14/e160e55c13c7fa6db17fc81da0a5d4845b877d6810f231b3d9ea050c486474e5/python-objects-inv.tar.gz",
 )
 
-# Intersphinx oject inventory for Numpy
+# Intersphinx object inventory for Numpy
 http_archive(
     name = "numpy-objects-inv",
     build_file_content = """
@@ -570,7 +570,7 @@ http_file(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
 )
 
-RUMDL_VERSION = "0.1.57"
+RUMDL_VERSION = "0.1.62"
 
 [
     http_archive(
@@ -585,8 +585,8 @@ RUMDL_VERSION = "0.1.57"
         ],
     )
     for arch, sha in [
-        ("x86_64-unknown-linux-musl", "sha256-nHDJg0jKW4vs9KkASIUKktEv7RFj8V6JKCErCjvYtYg="),
-        ("aarch64-unknown-linux-musl", "sha256-I233jybnrZLmItFk5RZ4r92x2OxWHuEHbFauKbQouew="),
-        ("aarch64-apple-darwin", "sha256-yDzzZo0xQwY8QQPxJ7Cufr4gQNSHQbJ8N7BlqjqH5SU="),
+        ("x86_64-unknown-linux-musl", "sha256-Se09mqkYH02VKDhOyKhp1DM5E9OBnsmbvO4TWpmnJOQ="),
+        ("aarch64-unknown-linux-musl", "sha256-fRBlBoF6IYiYR7CIIKCvNHjFFvKpBoeWdRx5MV0qQ/4="),
+        ("aarch64-apple-darwin", "sha256-kzo6eHzmTy+IDbxXihO9UD7yLS1fn6oxqR9R5V72NZk="),
     ]
 ]

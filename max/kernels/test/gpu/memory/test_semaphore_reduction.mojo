@@ -14,8 +14,8 @@
 from std.random import rand
 
 from std.gpu import (
-    block_dim,
-    block_idx,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
     grid_dim,
     thread_idx_uint as thread_idx,
 )
@@ -123,7 +123,7 @@ def semaphore_matrix_reduce[
     sema.fetch()
 
     sema.wait(Int(block_idx))
-    for x in range(tid, M * N, block_dim.x):
+    for x in range(Int(tid), M * N, Int(block_dim.x)):
         var row = x // N
         var col = x % N
         c_ptr[row * N + col] += a_ptr[

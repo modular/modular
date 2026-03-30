@@ -63,6 +63,7 @@ from max.benchmark.benchmark_shared.cpu_metrics import (
     collect_pids_for_port,
 )
 from max.benchmark.benchmark_shared.datasets import (
+    AgenticCodeBenchmarkDataset,
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
     BatchJobBenchmarkDataset,
@@ -2200,6 +2201,24 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 ),
                 image_dir=args.batch_job_image_dir,
             )
+        elif isinstance(benchmark_dataset, AgenticCodeBenchmarkDataset):
+            if args.num_chat_sessions:
+                samples = benchmark_dataset.gen_multiturn_sessions(
+                    num_sessions=args.num_chat_sessions,
+                    shuffle=(not args.record_output_lengths),
+                )
+            else:
+                assert args.num_prompts is not None
+                samples = benchmark_dataset.sample_requests(
+                    num_requests=args.num_prompts,
+                    tokenizer=tokenizer,
+                    output_lengths=output_lengths,
+                    shuffle=(
+                        output_lengths is None
+                        and not args.record_output_lengths
+                    ),
+                    enable_tool_calls=args.tool_calls,
+                )
         else:
             raise ValueError(
                 f"Unknown / unsupported dataset: {benchmark_dataset}"

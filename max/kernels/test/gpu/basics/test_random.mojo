@@ -22,7 +22,7 @@ from std.sys import has_apple_gpu_accelerator
 
 from std.utils.index import Index, IndexList
 
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Idx, row_major
 
 
 def run_elementwise[
@@ -89,7 +89,7 @@ def main() raises:
         run_elementwise[DType.float32](ctx)
         run_elementwise[DType.float16, "normal"](ctx)
         run_elementwise[DType.float32, "normal"](ctx)
-        if not has_apple_gpu_accelerator():
+        comptime if not has_apple_gpu_accelerator():
             # Metal does not support DType.float64
             run_elementwise[DType.float64](ctx)
             run_elementwise[DType.float64, "normal"](ctx)

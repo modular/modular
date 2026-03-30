@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.hashlib import default_comp_time_hasher
 from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
@@ -31,15 +30,14 @@ from layout import (
     CoordLike,
     row_major,
     Idx,
-    UNKNOWN_VALUE,
 )
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.utils import elementwise_epilogue_type
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
@@ -88,6 +86,7 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     num_accum_pipeline_stages: Int = 0,
     num_clc_pipeline_stages: Int = 2,
     scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
+    normal_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
     m: MType,
@@ -303,11 +302,33 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
         num_clc_pipeline_stages=num_clc_pipeline_stages,
     )
 
+    var c_device_lt = c_tensor.to_layout_tensor()
+
+    # Epilogue multiplies output by 2 so we can verify the lambda is actually
+    # invoked — if TileWriter skips the lambda the result will be 1x, not 2x,
+    # and the comparison against 2x reference will fail.
+    @parameter
+    @always_inline
+    @__copy_capture(c_device_lt)
+    def epilogue_fn[
+        _dtype: DType,
+        width: Int,
+        *,
+        alignment: Int = 1,
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
+        c_device_lt.store[alignment=alignment * size_of[c_type](),](idx, scaled)
+
+    comptime epi = Optional[elementwise_epilogue_type](
+        epilogue_fn
+    ) if normal_epilogue else None
+
     comptime K_phys = KType.static_value
     blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         K=K_phys,
         config=matmul_config,
+        elementwise_lambda_fn=epi,
     ](
         c_tensor,
         a_tensor,
@@ -351,6 +372,11 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     ctx.enqueue_copy(c_host_ptr, c_device)
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
+
+    # When epilogue multiplies by 2, scale reference to match.
+    comptime if normal_epilogue:
+        for i in range(c_host_ref.num_elements()):
+            c_host_ref.ptr[i] = c_host_ref.ptr[i] * Scalar[c_type](2)
 
     assert_almost_equal(
         c_host.ptr,
@@ -418,6 +444,7 @@ def run_matmul_sm100_block_scaled_fp4_suite[
             SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
             num_accum_pipeline_stages: Int = 0,
             num_clc_pipeline_stages: Int = 2,
+            normal_epilogue: Bool = False,
         ](
             ctx: DeviceContext,
             m: MType,
@@ -446,6 +473,7 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                 num_accum_pipeline_stages=num_accum_pipeline_stages,
                 num_clc_pipeline_stages=num_clc_pipeline_stages,
                 scaling_kind=suite_scaling_kind,
+                normal_epilogue=normal_epilogue,
             ](ctx, m, n, k, alpha)
 
         comptime for cta_group in [1, 2]:
@@ -664,6 +692,58 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                 Idx[16384](),
                 Idx[k_val](),
             )
+
+        # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path.
+        print("\n--- Epilogue fusion tests ---")
+        comptime for cta_group in [1, 2]:
+            comptime for mma_n in [64, 128]:
+                comptime epi_block_tile = Index(128, mma_n // cta_group, BK)
+                comptime epi_umma = Index(cta_group * 128, mma_n, MMA_K)
+
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scales_dtype,
+                    epi_block_tile,
+                    epi_umma,
+                    cluster_shape=StaticTuple[Int32, 3](Int32(cta_group), 1, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    normal_epilogue=True,
+                ](
+                    ctx,
+                    Idx(Int(16)),
+                    Idx(1024),
+                    Idx[1024 + 32](),
+                )
+
+        # swapAB + epilogue fusion
+        comptime epi_swap_bt = Index(128, 64, BK)
+        comptime epi_swap_mma = Index(128, 64, MMA_K)
+        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            dtype,
+            dtype,
+            out_dtype,
+            scales_dtype,
+            epi_swap_bt,
+            epi_swap_mma,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            swapAB=True,
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            normal_epilogue=True,
+        ](
+            ctx,
+            Idx(Int(16)),
+            Idx(1024),
+            Idx[1024 + 32](),
+        )
 
 
 def main() raises:

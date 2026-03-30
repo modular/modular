@@ -27,11 +27,12 @@ first **down-projected** to a much lower-dimension space and then
 **up-projected** to the full dimension of `head_dim * num_heads` . `K` and `V`
 share the same compressed representation `KV_lora`.
 
-![original compute graph of multi-head latent
-attention](img/multi-head-latent-attention/img02-multi-head-latent-attention.png)
+![original compute graph of multi-head latent attention](img/multi-head-latent-attention/img02-multi-head-latent-attention.png)
+<!-- rumdl-disable MD013 -->
 /// caption
 Original compute graph of multi-head latent attention
 ///
+<!-- rumdl-enable MD013 -->
 
 #### Rotary Position Embedding (ROPE) in MLA
 
@@ -59,11 +60,12 @@ than being stored in a compressed format throughout the process.
 
 #### Optimized Attention Computation in MLA
 
-![Optimized compute graph of multi-head latent
-attention](img/multi-head-latent-attention/img03-optimized-multi-head-latent-attention.png)
+![Optimized compute graph of multi-head latent attention](img/multi-head-latent-attention/img03-optimized-multi-head-latent-attention.png)
+<!-- rumdl-disable MD013 -->
 /// caption
 Optimized compute graph of multi-head latent attention
 ///
+<!-- rumdl-enable MD013 -->
 
 We calculate attention scores using
 

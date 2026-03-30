@@ -19,49 +19,25 @@ http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.6.pdf
 The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
-from std.collections.optional import OptionalReg
-from std.os import getenv, setenv
+from std.os import getenv
 from std.sys import (
     CompilationTarget,
-    argv,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     size_of,
 )
-from std.ffi import c_int, c_size_t, external_call
+from std.ffi import c_int, c_size_t
 
 from std.gpu.host import (
-    ConstantMemoryMapping,
-    DeviceAttribute,
     DeviceContext,
     DeviceFunction,
     DeviceStream,
-    Dim,
-    FuncAttribute,
-    LaunchAttribute,
 )
 from std.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
 from std.gpu.host._amdgpu_hip import HIP, HIP_MODULE
-from std.gpu.host.device_context import (
-    _CString,
-    _checked,
-    _DeviceContextPtr,
-    _DumpPath,
-)
-from std.gpu.host.launch_attribute import (
-    LaunchAttributeID,
-    LaunchAttributeValue,
-)
 
-from ._mpi import (
-    MPI_Comm_rank,
-    MPI_Comm_size,
-    MPI_Finalize,
-    MPI_Init,
-    get_mpi_comm_world,
-)
 from ._rocshmem import (
     rocshmem_my_pe,
     rocshmem_create_uniqueid,
@@ -99,9 +75,7 @@ from ._nvshmem import (
     NVSHMEM_TEAM_INVALID,
     NVSHMEM_TEAM_SHARED,
     NVSHMEM_TEAM_WORLD,
-    NVSHMEMX_INIT_WITH_MPI_COMM,
     NVSHMEMX_TEAM_NODE,
-    NVSHMEMXInitAttr,
     nvshmem_barrier_all,
     nvshmem_calloc,
     nvshmem_fence,
@@ -124,7 +98,6 @@ from ._nvshmem import (
     nvshmemx_hostlib_finalize,
     nvshmemx_init,
     nvshmemx_init_thread,
-    nvshmemx_init_status,
     nvshmemx_signal_op,
 )
 

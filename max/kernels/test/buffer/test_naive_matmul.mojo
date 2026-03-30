@@ -63,100 +63,69 @@
 #     print_matrix(c)
 
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.testing import TestSuite
-
-from std.utils.index import IndexList
 
 
 def _test_my_naive_matmul[
-    shape: DimList, dtype: DType
+    size: Int, dtype: DType
 ](
-    c: NDBuffer[mut=True, rank=2, dtype, _, shape],
-    a: NDBuffer[rank=2, dtype, _, shape],
-    b: NDBuffer[rank=2, dtype, _, shape],
+    c: UnsafePointer[mut=True, Scalar[dtype], _],
+    a: UnsafePointer[Scalar[dtype], _],
+    b: UnsafePointer[Scalar[dtype], _],
 ):
     """Computes matrix multiplication with a naive algorithm.
 
     Args:
-        c: NDBuffer with allocated output space.
-        a: NDBuffer containing matrix operand A.
-        b: NDBuffer containing matrix operand B.
+        c: Pointer to output space (size x size row-major).
+        a: Pointer to matrix operand A (size x size row-major).
+        b: Pointer to matrix operand B (size x size row-major).
     """
-    for m in range(c.dim[0]()):
-        for n in range(c.dim[1]()):
+    for m in range(size):
+        for n in range(size):
             var c_val: Scalar[dtype] = 0
-            for k in range(a.dim[1]()):
-                c_val += a[m, k] * b[k, n]
-            c[IndexList[2](m, n)] = c_val
+            for k in range(size):
+                c_val += a[m * size + k] * b[k * size + n]
+            c[m * size + n] = c_val
 
 
-def fill_a[
-    size: Int
-](buf: NDBuffer[mut=True, rank=2, DType.float32, _, DimList[size, size]()]):
+def fill_a[size: Int](buf: UnsafePointer[mut=True, Float32, _]):
     """Fills the matrix with the values `row + 2*col`."""
 
     for i in range(size):
         for j in range(size):
-            var val = Float32(i + 2 * j)
-            buf[IndexList[2](i, j)] = val
+            buf[i * size + j] = Float32(i + 2 * j)
 
 
-def fill_b[
-    size: Int
-](buf: NDBuffer[mut=True, rank=2, DType.float32, _, DimList[size, size]()]):
+def fill_b[size: Int](buf: UnsafePointer[mut=True, Float32, _]):
     """Fills the matrix with the values `row/(col + 1) + col`."""
 
     for i in range(size):
         for j in range(size):
-            var val = Float32(i // (j + 1) + j)
-            buf[IndexList[2](i, j)] = val
+            buf[i * size + j] = Float32(i // (j + 1) + j)
 
 
-def print_matrix[
-    size: Int
-](buf: NDBuffer[rank=2, DType.float32, _, DimList[size, size]()]):
+def print_matrix[size: Int](buf: UnsafePointer[Float32, _]):
     """Prints each element of the input matrix, element-wise."""
     for i in range(size):
         for j in range(size):
-            print(buf[i, j])
+            print(buf[i * size + j])
 
 
 # CHECK-LABEL: _test_naive_matmul
 def _test_naive_matmul[size: Int]():
     print("== _test_naive_matmul")
-    var c_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var c = NDBuffer[
-        rank=2,
-        DType.float32,
-        _,
-        DimList[size, size](),
-    ](c_stack.unsafe_ptr())
-    c.fill(0)
+    var c_stack = InlineArray[Float32, size * size](fill=0)
+    var c = c_stack.unsafe_ptr().mut_cast[True]()
 
     var b_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var b = NDBuffer[
-        rank=2,
-        DType.float32,
-        _,
-        DimList[size, size](),
-    ](b_stack.unsafe_ptr())
+    var b = b_stack.unsafe_ptr().mut_cast[True]()
     fill_b[size](b)
 
     var a_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var a = NDBuffer[
-        rank=2,
-        DType.float32,
-        _,
-        DimList[size, size](),
-    ](a_stack.unsafe_ptr())
+    var a = a_stack.unsafe_ptr().mut_cast[True]()
     fill_a[size](a)
 
-    _test_my_naive_matmul[
-        DimList[size, size](),
-        DType.float32,
-    ](c, a, b)
+    _test_my_naive_matmul[size, DType.float32](c, a, b)
 
     print_matrix[size](c)
 

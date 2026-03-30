@@ -42,8 +42,10 @@ PINS = {
     "av": "av@14.2.0",
     "boto3": "boto3@1.40.61",
     "botocore": "botocore@1.40.61",
+    "cachetools": "cachetools@5.4.0",
     "click": "click@8.1.7",
     "clickhouse-connect": "clickhouse-connect@0.14.1",
+    "clickhouse-driver": "clickhouse-driver@0.2.10",
     "codeowners": "codeowners@0.8.0",
     "compressed-tensors": "compressed-tensors@0.13.0",
     "cyclopts": "cyclopts@4.2.5",
@@ -165,8 +167,7 @@ PINS = {
     "torchvision": "torchvision@multiple",
     "tqdm": "tqdm@4.66.5",
     "transformers": "transformers@4.57.1",
-    "triton": "triton@3.6.0",
-    "triton-rocm": "triton-rocm@3.6.0",
+    "triton": "triton@multiple",
     "types-aioboto3": "types-aioboto3@15.5.0",
     "types-boto3": "types-boto3@1.42.44",
     "types-protobuf": "types-protobuf@5.28.3.20241030",
@@ -196,7 +197,7 @@ def targets():
     native.alias(
         name = "torch@multiple",
         actual = select({
-            "@@//:amd_gpu": ":torch@2.10.0+rocm7.1",
+            "@@//:amd_gpu": ":torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
             "@@//:nvidia_gpu": ":torch@2.10.0+cu128",
             "@platforms//os:macos": ":torch@2.10.0",
             "//conditions:default": ":torch@2.10.0+cpu",
@@ -206,7 +207,7 @@ def targets():
     native.alias(
         name = "torchaudio@multiple",
         actual = select({
-            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.1",
+            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.1.1.git5047768f",
             "@@//:nvidia_gpu": ":torchaudio@2.10.0+cu128",
             "@platforms//os:macos": ":torchaudio@2.10.0",
             "@@//:linux_aarch64": ":torchaudio@2.10.0",
@@ -218,7 +219,7 @@ def targets():
         name = "torchvision@multiple",
         testonly = True,
         actual = select({
-            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.1",
+            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.1.1.git82df5f59",
             "@@//:nvidia_gpu": ":torchvision@0.25.0+cu128",
             "@platforms//os:macos": ":torchvision@0.25.0",
             "@@//:linux_aarch64": ":torchvision@0.25.0+cpu",
@@ -230,7 +231,7 @@ def targets():
         name = "triton@multiple",
         testonly = True,
         actual = select({
-            "@@//:amd_gpu": ":triton@3.6.0+rocm7.1",
+            "@@//:amd_gpu": ":triton@3.6.0+rocm7.1.1.gitba5c1517",
             "//conditions:default": ":triton@3.6.0",
         }),
     )
@@ -1456,6 +1457,61 @@ def targets():
         deps = _clickhouse_connect_0_14_1_deps,
         wheel = ":_wheel_clickhouse-connect@0.14.1",
         testonly = "clickhouse-connect" in _TESTONLY_DEPS,
+    )
+
+    _clickhouse_driver_0_2_10_deps = [
+        ":pytz@2024.1",
+        ":tzlocal@5.3.1",
+    ]
+
+    _clickhouse_driver_0_2_10_build_deps = [
+        ":setuptools",
+        ":wheel",
+    ]
+
+    native.alias(
+        name = "_sdist_clickhouse-driver@0.2.10",
+        actual = "@pycross_lock_file_sdist_clickhouse_driver_0.2.10//file",
+    )
+
+    pycross_wheel_build(
+        name = "_build_clickhouse-driver@0.2.10",
+        sdist = ":_sdist_clickhouse-driver@0.2.10",
+        target_environment = _target,
+        deps = _clickhouse_driver_0_2_10_deps + _clickhouse_driver_0_2_10_build_deps,
+        testonly = "clickhouse-driver" in _TESTONLY_DEPS,
+        **extra_build_args
+    )
+
+    native.alias(
+        name = "_wheel_clickhouse-driver@0.2.10",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_clickhouse-driver@0.2.10",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": ":_build_clickhouse-driver@0.2.10",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": ":_build_clickhouse-driver@0.2.10",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "clickhouse-driver@0.2.10",
+        deps = _clickhouse_driver_0_2_10_deps,
+        wheel = ":_wheel_clickhouse-driver@0.2.10",
+        testonly = "clickhouse-driver" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -10490,6 +10546,7 @@ def targets():
     )
 
     _torch_2_10_0_cu128_deps = [
+        ":triton@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":cuda-bindings@12.9.4",
@@ -10513,7 +10570,6 @@ def targets():
             ":nvidia-nvshmem-cu12@3.4.5",
             ":nvidia-nvtx-cu12@12.8.90",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -10538,7 +10594,6 @@ def targets():
             ":nvidia-nvshmem-cu12@3.4.5",
             ":nvidia-nvtx-cu12@12.8.90",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -10564,7 +10619,6 @@ def targets():
             ":nvidia-nvtx-cu12@12.8.90",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -10590,7 +10644,6 @@ def targets():
             ":nvidia-nvtx-cu12@12.8.90",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
@@ -10616,7 +10669,6 @@ def targets():
             ":nvidia-nvtx-cu12@12.8.90",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -10642,7 +10694,6 @@ def targets():
             ":nvidia-nvtx-cu12@12.8.90",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
     })
@@ -10674,7 +10725,8 @@ def targets():
         testonly = "torch" in _TESTONLY_DEPS,
     )
 
-    _torch_2_10_0_rocm7_1_deps = [
+    _torch_2_10_0_rocm7_1_1_lw_gitd9556b05_deps = [
+        ":triton@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": [
             ":filelock@3.16.1",
@@ -10682,7 +10734,6 @@ def targets():
             ":jinja2@3.1.6",
             ":networkx@3.2.1",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu": [
@@ -10691,7 +10742,6 @@ def targets():
             ":jinja2@3.1.6",
             ":networkx@3.2.1",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu": [
@@ -10701,7 +10751,6 @@ def targets():
             ":networkx@3.2.1",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu": [
@@ -10711,7 +10760,6 @@ def targets():
             ":networkx@3.2.1",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_amd_gpu": [
@@ -10721,7 +10769,6 @@ def targets():
             ":networkx@3.2.1",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu": [
@@ -10731,27 +10778,19 @@ def targets():
             ":networkx@3.2.1",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
     })
 
     native.alias(
-        name = "_wheel_torch@2.10.0+rocm7.1",
-        actual = select({
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64//file",
-        }),
+        name = "_wheel_torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
+        actual = "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1.1.lw.gitd9556b05_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
-        name = "torch@2.10.0+rocm7.1",
-        deps = _torch_2_10_0_rocm7_1_deps,
-        wheel = ":_wheel_torch@2.10.0+rocm7.1",
+        name = "torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
+        deps = _torch_2_10_0_rocm7_1_1_lw_gitd9556b05_deps,
+        wheel = ":_wheel_torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
         testonly = "torch" in _TESTONLY_DEPS,
@@ -10898,26 +10937,19 @@ def targets():
         testonly = "torchaudio" in _TESTONLY_DEPS,
     )
 
-    _torchaudio_2_10_0_rocm7_1_deps = [
+    _torchaudio_2_10_0_rocm7_1_1_git5047768f_deps = [
         ":torch@multiple",
     ]
 
     native.alias(
-        name = "_wheel_torchaudio@2.10.0+rocm7.1",
-        actual = select({
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64//file",
-        }),
+        name = "_wheel_torchaudio@2.10.0+rocm7.1.1.git5047768f",
+        actual = "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1.1.git5047768f_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
-        name = "torchaudio@2.10.0+rocm7.1",
-        deps = _torchaudio_2_10_0_rocm7_1_deps,
-        wheel = ":_wheel_torchaudio@2.10.0+rocm7.1",
+        name = "torchaudio@2.10.0+rocm7.1.1.git5047768f",
+        deps = _torchaudio_2_10_0_rocm7_1_1_git5047768f_deps,
+        wheel = ":_wheel_torchaudio@2.10.0+rocm7.1.1.git5047768f",
         testonly = "torchaudio" in _TESTONLY_DEPS,
     )
 
@@ -11101,7 +11133,7 @@ def targets():
         testonly = "torchvision" in _TESTONLY_DEPS,
     )
 
-    _torchvision_0_25_0_rocm7_1_deps = [
+    _torchvision_0_25_0_rocm7_1_1_git82df5f59_deps = [
         ":numpy@multiple",
         ":torch@multiple",
     ] + select({
@@ -11126,21 +11158,14 @@ def targets():
     })
 
     native.alias(
-        name = "_wheel_torchvision@0.25.0+rocm7.1",
-        actual = select({
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64//file",
-        }),
+        name = "_wheel_torchvision@0.25.0+rocm7.1.1.git82df5f59",
+        actual = "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1.1.git82df5f59_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
-        name = "torchvision@0.25.0+rocm7.1",
-        deps = _torchvision_0_25_0_rocm7_1_deps,
-        wheel = ":_wheel_torchvision@0.25.0+rocm7.1",
+        name = "torchvision@0.25.0+rocm7.1.1.git82df5f59",
+        deps = _torchvision_0_25_0_rocm7_1_1_git82df5f59_deps,
+        wheel = ":_wheel_torchvision@0.25.0+rocm7.1.1.git82df5f59",
         testonly = "torchvision" in _TESTONLY_DEPS,
     )
 
@@ -11246,21 +11271,14 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_triton-rocm@3.6.0",
-        actual = select({
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp310_cp310_linux_x86_64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp311_cp311_linux_x86_64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp312_cp312_linux_x86_64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp313_cp313_linux_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp314_cp314_linux_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp314_cp314t_linux_x86_64//file",
-        }),
+        name = "_wheel_triton@3.6.0+rocm7.1.1.gitba5c1517",
+        actual = "@pycross_lock_file_wheel_triton_3.6.0_rocm7.1.1.gitba5c1517_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
-        name = "triton-rocm@3.6.0",
-        wheel = ":_wheel_triton-rocm@3.6.0",
-        testonly = "triton-rocm" in _TESTONLY_DEPS,
+        name = "triton@3.6.0+rocm7.1.1.gitba5c1517",
+        wheel = ":_wheel_triton@3.6.0+rocm7.1.1.gitba5c1517",
+        testonly = "triton" in _TESTONLY_DEPS,
     )
 
     _typepy_1_3_2_deps = [
@@ -12068,6 +12086,17 @@ def targets():
     )
 
     native.alias(
+        name = "_wheel_tzlocal@5.3.1",
+        actual = "@pycross_lock_file_wheel_tzlocal_5.3.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "tzlocal@5.3.1",
+        wheel = ":_wheel_tzlocal@5.3.1",
+        testonly = "tzlocal" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
         name = "_wheel_uri-template@1.3.0",
         actual = "@pycross_lock_file_wheel_uri_template_1.3.0_py3_none_any//file",
     )
@@ -12745,35 +12774,31 @@ def targets():
     _xgrammar_0_1_29_deps = [
         ":numpy@multiple",
         ":torch@multiple",
+        ":triton@multiple",
     ] + select({
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         "//conditions:default": [],
@@ -13092,6 +13117,16 @@ def repositories():
         ],
         sha256 = "e310f77e41941c13340a95976fe66a8a95b01e783d430eeaf7a2f87e0a57dd0a",
         downloaded_file_path = "brotli-1.2.0.tar.gz",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_sdist_clickhouse_driver_0.2.10",
+        urls = [
+            "https://files.pythonhosted.org/packages/46/9e/d8e40b29b6269a84552441a553fc64dff28f2d7e2d92e81c6be84fe12b4c/clickhouse_driver-0.2.10.tar.gz",
+        ],
+        sha256 = "925fc6ecda1e5314e3f03bcb493955c068b070cdba221fb8ce27329ee8a7f71b",
+        downloaded_file_path = "clickhouse_driver-0.2.10.tar.gz",
     )
 
     maybe(
@@ -15492,6 +15527,156 @@ def repositories():
         ],
         sha256 = "0ad7f648a555e2e19bbf16fb4b05d3094f9b10dbdbe1e54ca1b7b3e2639ec8bd",
         downloaded_file_path = "clickhouse_connect-0.14.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/f4/8f/67d3a1b81f8eb4ace6b18d0cb930a4a1cf1537c281fc9ee083adf16d0c77/clickhouse_driver-0.2.10-cp310-cp310-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "5be143e33e330e856e65d40cdfdd38c0f215ba5140807aee5e923fd0c8cf04c8",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp310-cp310-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b9/eb/c5aed06221c229108f4e6774eda4425e1db9fc6b4cc3a16dbb328f7017f8/clickhouse_driver-0.2.10-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "27397d41661b8aa29b304c70e06ba820c8158e8c6708beac4edb360aa56e7755",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/86/df/cf6e9059f289c4a779ace15e7988fb63ca09560c5128dcc8881e3fd151f1/clickhouse_driver-0.2.10-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "ea94c2f6d42263395d0d86ce21788c167009451044046b825ecffb6746803b67",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ec/e0/1ae285f4d5bb61bb62016deb38dc175a2b8cbe578dffdad5e1a5a02a176c/clickhouse_driver-0.2.10-cp311-cp311-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "3572e74cd65828f72284bf607de259c059178b44b19a93cb67766b7e7458cf8e",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp311-cp311-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/28/04/e2fb47a4aaf9653c9ed872e1505e997d42f834b0891351ef54169e100c5c/clickhouse_driver-0.2.10-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "767af2b2d2e02fb7abd8fc9619f8aa2de65be010d3024029d68bc9b1be564466",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/f5/08/4419ce43b27b6349fd14af0d8f5d8594d270b9bb24cbaca575bacfec630e/clickhouse_driver-0.2.10-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "a9f65e71c99f0c8a64afa348977793967f897c4f731984ed54fed4eca8d375a0",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/32/7b/8e526f6ffb9983c0c6d082e358df4b20fe1a9e95f453e704bc7a25ef4aab/clickhouse_driver-0.2.10-cp312-cp312-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "188775d38ff7cb36e7045441aabf3a6a8751127d8b37b6eb1b1518494eaac5bd",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp312-cp312-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/65/96/40f274896abf287c378575f025c602fa4e834278930dd63574ff548815c4/clickhouse_driver-0.2.10-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "0ff5cba860df61845d6ae12f31d4a70ff4ae3be4e6a8a876e68af8aa4b0e45bc",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/55/f7/57a80ff9cc44a333021e2caf8d35fc23da6ec7b602bbc3bf8dfac0253a6e/clickhouse_driver-0.2.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "c5744daafdd0ff7520c6ae95a78211a0ff5c2cfb3513a20f5602d2bc7eed580d",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/34/92/ee5a2d7a812b65d9690e46222218f33064c4bd44f3535b1ba564fb4b528b/clickhouse_driver-0.2.10-cp313-cp313-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "8be64c77d58d4a33b3c957cdb7c5a4deeac56bf93f4188dbfb5c5454eb04c985",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp313-cp313-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/03/00/6c532a0aea89e3d09dd4150b1df0b92e787a306b8711d54d003d18fd1ddd/clickhouse_driver-0.2.10-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "23abafd0c883ccc1baea527c1d05a6bc0c59aae6c29ae65e1b84d498b265f8c0",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/41/e5/0686ad3ef1b594c16e8b13394c73ee4860fd025d70211a360f797dd7a28a/clickhouse_driver-0.2.10-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "85e46e31e4b14626571819e669341a3017376ce935d25b2cc0bfea9343b1b562",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/1c/6e/842610028ca39c826865402d46b7d7f499a9a249de219edfce889c0e025d/clickhouse_driver-0.2.10-cp314-cp314-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "b6f35a9ee7f7a8ce3483764c3bc2d23c8be1c5ce3aef537b1a3cebe59fdb0c4d",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp314-cp314-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/c6/94/ddbcda962f7ca36cbcf7ded105f68f99b261dc29b9c28ca2eaec70382f66/clickhouse_driver-0.2.10-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "888ab59b2cccda24680cfbaeb723fd8922c6148b9a43ad4cf067fef55959f19f",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ef/e3/e60fbcd5ec1458da9fe313984527e9ce5f95636c178bd2d08d6257c42c30/clickhouse_driver-0.2.10-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "74b36dfb79311bcf1ba6edde926908a46778a5e9db6302f126a799550f1fb807",
+        downloaded_file_path = "clickhouse_driver-0.2.10-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
@@ -28586,62 +28771,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1.1.lw.gitd9556b05_cp313_cp313_linux_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torch-2.10.0%2Brocm7.1.1.lw.gitd9556b05-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "5e4b4b1c576dc5f8a8257a97cc9d5f65ae407fcd0bf6f31def545c026508f631",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "958298b19aceed29a9f3579ef19859c6fa6b7d2a527a67160d8ad5c52e8860e1",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "008ee0d77bb8b5f9f4ee1f00212019c4619171e3c4195de56f253331b3bc320d",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "3f18b06f233d4871baaafdb8ba662ae69ff91ec11aa1bf76ca76dde31b43e9cd",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "65bb4b115023d692d4f230a43e117cbf0373a2de46d6973b113540cfc0243fb6",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "0c9ad0e87065d1fe981f7dc38d072baaf2ec9994480d5165da98ff6531f33548",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
+        sha256 = "7c0fa770a28ad40887166de40e6bfba5c4ff5ba8c4f5ef08c9d8c73700f8fce7",
+        downloaded_file_path = "torch-2.10.0+rocm7.1.1.lw.gitd9556b05-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -29106,62 +29241,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1.1.git5047768f_cp313_cp313_linux_x86_64",
         urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchaudio-2.10.0%2Brocm7.1.1.git5047768f-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "a82625ed176ccbd89a44e8e00b02958ffa59e9890fd54e45aa0c849b63e4a318",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "8d4f5e090e516b6c26f4009ba0d45c5582823457f504019a56a3bf5ae1b7048b",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "a54b8c1f61de01b1ab946589aa015821dd11093544702249d20aba56913c68bb",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "3a623b447cdb2c3b90fdd78ecfafa513782f0f71ca9561200051ba7d50704b76",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "880c56a31728f109bb4f49bb66dfaae222f87173509e4b10623c322d23f659ce",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "b51a0d1b90334e79288b93c0768751f48ffdf3f351b8be675d99e6659e0252d0",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
+        sha256 = "c9ef5352406e360cfe597fb56d3a651cdfd8dc558042f865520ba17cf2408946",
+        downloaded_file_path = "torchaudio-2.10.0+rocm7.1.1.git5047768f-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -29476,62 +29561,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1.1.git82df5f59_cp313_cp313_linux_x86_64",
         urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchvision-0.25.0%2Brocm7.1.1.git82df5f59-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "53f43d42aea0cc1ed6521b8b512ce2a5cf5e92037fdf59b39833f0862ad03c40",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "e79577ea367ed1652d70bb18f4dcf97f0e6aa17b503a28020be7dee0895347eb",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "8aea3ddbdb74801d3374577a10b3f04d49897c27add235cb25313df6e65b1929",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "54c06f29e20efa36522eedcc5a0fb6f03627ff0ff23cc7bef46f71a3042db074",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "c5ef6693052f8a6dd69abb1aec4efd8996e5e05b5cc9b55ae402f77841ae07d6",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "9e01fb2bb9a8bfa50deffa0eac08eff9aa9c16d2e74c709a6f41b79a94b3e537",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
+        sha256 = "72d30e6b6a69c21afd4e52556d593b8ba297655f4b9541a34241f49a823ca050",
+        downloaded_file_path = "torchvision-0.25.0+rocm7.1.1.git82df5f59-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -29716,62 +29751,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp310_cp310_linux_x86_64",
+        name = "pycross_lock_file_wheel_triton_3.6.0_rocm7.1.1.gitba5c1517_cp313_cp313_linux_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp310-cp310-linux_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/triton-3.6.0%2Brocm7.1.1.gitba5c1517-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "043c2d44e24632cb5aba814b547731d8b46a58a7a69818720221d0e406600605",
-        downloaded_file_path = "triton_rocm-3.6.0-cp310-cp310-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp311_cp311_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp311-cp311-linux_x86_64.whl",
-        ],
-        sha256 = "3286c59eb97e65ab705e207689b6a47807cb73a27ce53e9e774e46bab01318fe",
-        downloaded_file_path = "triton_rocm-3.6.0-cp311-cp311-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp312_cp312_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp312-cp312-linux_x86_64.whl",
-        ],
-        sha256 = "cff15082784c7056b0af9347770e034ab0a8ccbce0642723ddc8c8de1bd6af3f",
-        downloaded_file_path = "triton_rocm-3.6.0-cp312-cp312-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp313_cp313_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp313-cp313-linux_x86_64.whl",
-        ],
-        sha256 = "d43b44f045d7f78d1dfe03b2debce36e0d756041a853633a2677ce5a890a269e",
-        downloaded_file_path = "triton_rocm-3.6.0-cp313-cp313-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp314_cp314_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp314-cp314-linux_x86_64.whl",
-        ],
-        sha256 = "f77e6da822a8a76e097a061e61a7fef8ae0a33e8b6989498736e16ed120fc6f8",
-        downloaded_file_path = "triton_rocm-3.6.0-cp314-cp314-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp314_cp314t_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp314-cp314t-linux_x86_64.whl",
-        ],
-        sha256 = "1ef3560cf10d120da52ef6273033d952726a08893cc4f264c45600402cc608d7",
-        downloaded_file_path = "triton_rocm-3.6.0-cp314-cp314t-linux_x86_64.whl",
+        sha256 = "ca6ffb7dd14ba2cd2a36d251b564099e0908de69d36b10fa80c8f4f76c28da0f",
+        downloaded_file_path = "triton-3.6.0+rocm7.1.1.gitba5c1517-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -30072,6 +30057,16 @@ def repositories():
         ],
         sha256 = "9068bc196136463f5245e51efda838afa15aaeca9903f49050dfa2679db4d252",
         downloaded_file_path = "tzdata-2024.1-py2.py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_tzlocal_5.3.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl",
+        ],
+        sha256 = "eb1a66c3ef5847adf7a834f1be0800581b683b5608e74f86ecbcef8ab91bb85d",
+        downloaded_file_path = "tzlocal-5.3.1-py3-none-any.whl",
     )
 
     maybe(

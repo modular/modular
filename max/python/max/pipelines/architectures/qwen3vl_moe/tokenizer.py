@@ -309,7 +309,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
     to handle multimodal inputs for the Qwen3VL model. It mimics the interface
     of the transformers Qwen3VLProcessor.
 
-    - iamge_processor is a custom image processor that handles image preprocessing without PyTorch dependencies.
+    - image_processor is a custom image processor that handles image preprocessing without PyTorch dependencies.
     - tokenizer uses transformers' tokenizer directly instead of AutoProcessor to avoid dependency on PyTorch.
     - no video support yet.
     """

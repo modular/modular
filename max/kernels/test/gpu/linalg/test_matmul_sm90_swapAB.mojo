@@ -23,7 +23,7 @@ from linalg.matmul.gpu.sm90.testbed_swapAB import (
 )
 from linalg.utils import elementwise_compute_lambda_type
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 from layout import Idx
 

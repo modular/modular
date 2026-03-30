@@ -15,11 +15,10 @@
 import std.sys
 
 from std.gpu import thread_idx_uint as thread_idx
-from std.gpu.host import DeviceContext
 from std.gpu.host.compile import _compile_code, get_gpu_target
 from layout.tile_layout import Layout
-from layout import Coord, Idx, IntTuple
-from std.testing import assert_equal, assert_true
+from layout import Coord, Idx
+from std.testing import assert_true
 
 
 def test_codegen_memory[

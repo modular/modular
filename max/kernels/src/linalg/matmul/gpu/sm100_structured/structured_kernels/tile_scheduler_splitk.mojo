@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.gpu.memory import AddressSpace
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
@@ -23,16 +22,13 @@ from structured_kernels.tile_types import (
     _strided_layout,
 )
 from std.gpu import (
-    grid_dim,
-    thread_idx,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
     NamedBarrierSemaphore,
     WARP_SIZE,
 )
-from std.gpu.primitives.cluster import elect_one_sync
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.compute.arch.tcgen05 import *
-from std.gpu.sync import named_barrier
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
 

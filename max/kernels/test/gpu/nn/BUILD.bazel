@@ -64,10 +64,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "test_toppminp_gpu.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: KERN-2651 — NaN on bfloat16 with static shmem on Metal
     "test_argmaxmin_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -94,7 +90,6 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: PRDT-506
     "test_flash_attention.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
-        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: MSTDL-2240
         "//conditions:default": [],
     }),  # FIXME: MOCO-3049
     "test_padding_gpu.mojo": select({
@@ -159,7 +154,15 @@ _EXTRA_CONSTRAINTS = {
     "test_group_norm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),  # FIXME: GEX-3155
+    }),  # FIXME: MOCO-3587 — Metal compilation failure
+    "test_topk_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Apple GPU shared memory limit (32768) exceeded by second stage top-k kernel
+    "test_toppminp_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # NaN in BFloat16 top-p sampling on Apple GPU
 }
 
 _FILECHECK_TESTS = [
@@ -196,9 +199,8 @@ _FILECHECK_TESTS = [
         copts = [],
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
-            # On B200, the SM100 MLA path OOB was fixed (kv_row clamping),
-            # so test_mla.mojo can run with assertions enabled.
-            "//:b200_gpu": src not in [
+            "//:amd_gpu": src not in [
+                "test_flash_attention.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
             # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
@@ -209,7 +211,6 @@ _FILECHECK_TESTS = [
             "//conditions:default": src not in [
                 "test_mla.mojo",
                 "test_mha_chunked_causal_mask.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions (amdgpu)
-                "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
         }),
         exec_properties = {

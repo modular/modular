@@ -19,7 +19,7 @@ import torch
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Dim, Graph, TensorType, ops
 
 
 @pytest.mark.parametrize(
@@ -44,7 +44,7 @@ def test_argsort_execution(
         input_types=[
             TensorType(
                 DType.float32,
-                shape=input_shape,
+                shape=[Dim("n")],
                 device=DeviceRef.from_device(session.devices[0]),
             )
         ],

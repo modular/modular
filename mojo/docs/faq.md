@@ -159,11 +159,11 @@ learning accelerators is MLIR.
 [MLIR](https://mlir.llvm.org/) provides a flexible infrastructure for building
 compilers. It’s based upon layers of intermediate representations (IRs) that
 allow for progressive lowering of any code for any hardware, and it has been
-widely adopted by the hardware accelerator industry since [its first
-release](https://blog.google/technology/ai/mlir-accelerating-ai-open-source-infrastructure/).
+widely adopted by the hardware accelerator industry since
+[its first release](https://blog.google/technology/ai/mlir-accelerating-ai-open-source-infrastructure/).
 Its greatest strength is its ability to build _domain specific_ compilers,
-particularly for weird domains that aren’t traditional CPUs and GPUs, such as
-AI ASICS, [quantum computing systems](https://github.com/PennyLaneAI/catalyst),
+particularly for weird domains that aren’t traditional CPUs and GPUs, such as AI
+ASICS, [quantum computing systems](https://github.com/PennyLaneAI/catalyst),
 FPGAs, and [custom silicon](https://circt.llvm.org/).
 
 Although you can use MLIR to create a flexible and powerful compiler for any
@@ -197,8 +197,8 @@ language that will support more architectures over time and includes a
 debugger, a full tool suite, etc.
 
 For more about our thoughts on embedded domain-specific languages (EDSLs) like
-Triton, read [Democratizing AI Compute, Part
-7](https://www.modular.com/blog/democratizing-ai-compute-part-7-what-about-triton-and-python-edsls).
+Triton, read
+[Democratizing AI Compute, Part 7](https://www.modular.com/blog/democratizing-ai-compute-part-7-what-about-triton-and-python-edsls).
 
 ### Does Mojo support distributed execution?
 
@@ -238,14 +238,13 @@ will contribute additional hardware support in the future.
 ### Are there any AI related performance benchmarks for Mojo?
 
 It’s important to remember that Mojo is designed to be a general-purpose
-programming language, and any AI-related benchmarks will rely heavily upon
-other framework components. For example, our in-house CPU and GPU graph
-operations that power the Modular Platform are all written in Mojo and you can
-learn more about performance in our [matrix multiplication blog
-post](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
-For details about our end-to-end model performance, read about [how we measure
-performance at
-Modular](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
+programming language, and any AI-related benchmarks will rely heavily upon other
+framework components. For example, our in-house CPU and GPU graph operations
+that power the Modular Platform are all written in Mojo and you can learn more
+about performance in our
+[matrix multiplication blog post](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
+For details about our end-to-end model performance, read about
+[how we measure performance at Modular](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
 
 ## Mojo SDK
 
@@ -320,9 +319,8 @@ You can obtain the extension from either the
 [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 or the
 [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
-See
-[Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension) for
-more information.
+See [Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension)
+for more information.
 
 ### Does the Mojo SDK collect telemetry?
 
@@ -387,8 +385,8 @@ Clang, Swift, MLIR, etc.).
 
 ### Where can I ask more questions or share feedback?
 
-If you have questions about upcoming features or have suggestions
-for the language, be sure you first read the [Mojo roadmap](/mojo/roadmap), which
+If you have questions about upcoming features or have suggestions for the
+language, be sure you first read the [Mojo roadmap](/mojo/roadmap), which
 provides important information about our current priorities.
 
 To get in touch with the Mojo team and developer community, use the resources

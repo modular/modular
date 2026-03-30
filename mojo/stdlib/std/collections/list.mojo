@@ -120,7 +120,7 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
         ]()
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
-        # Destory the remaiing elements that have not yet been
+        # Destroy the remaiing elements that have not yet been
         # iterated over.
         destroy_n(
             self._list.unsafe_ptr().bitcast[TDestructible]() + self._index,

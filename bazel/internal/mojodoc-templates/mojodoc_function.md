@@ -1,4 +1,4 @@
-<!-- markdownlint-disable -->
+<!-- rumdl-disable -->
 {% import 'macros.jinja' as macros %}
 {# Print YAML front matter #}
 {% set api_path = "/mojo" %}

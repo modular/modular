@@ -24,7 +24,6 @@ BlockScaledMatmulConfig extends this with 3 scaling-specific fields
 ranges and alignment requirements differ between standard and scaled kernels.
 """
 
-from std.bit import next_power_of_two
 from std.collections.set import Set
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
@@ -36,7 +35,6 @@ from std.math import align_down
 from ...tile_scheduler import RasterOrder
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
-    SF_K_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
     NVFP4_SF_VECTOR_SIZE,
@@ -222,6 +220,7 @@ def _write_common_config[
     raster_order: RasterOrder,
     num_split_k: Int,
     register_based_epilogue: Bool,
+    is_small_bn: Bool,
 ):
     """Write common config fields to string."""
     writer.write(a_type, "_")
@@ -251,8 +250,9 @@ def _write_common_config[
     writer.write("bz", block_swizzle_size, "_", raster_order)
     writer.write("splitk", num_split_k, "_")
     writer.write(
-        "rbe" if register_based_epilogue else "sbe"
+        "rbe_" if register_based_epilogue else "sbe_"
     )  # (rbe) register based epilogue or (sbe) shared memory based epilogue
+    writer.write("small_bn" if is_small_bn else "large_bn", "_")
 
 
 @fieldwise_init
@@ -396,6 +396,7 @@ struct MatmulConfig[
             self.raster_order,
             self.num_split_k,
             self.register_based_epilogue,
+            False,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -720,7 +721,7 @@ struct BlockScaledMatmulConfig[
                 * size_of[Self.sfb_dtype]()
             )
 
-        # right now we only need 8 bytes (one barrier only for producer) but when we seperate the sfb tma load and sfb tmem load, we will need 16 bytes.
+        # right now we only need 8 bytes (one barrier only for producer) but when we separate the sfb tma load and sfb tmem load, we will need 16 bytes.
         var sfb_tmem_load_mbars_size = 16
         var sf_smem_per_stage = (
             a_scales_smem_bytes_per_stage
@@ -809,6 +810,7 @@ struct BlockScaledMatmulConfig[
             self.raster_order,
             self.num_split_k,
             self.register_based_epilogue,
+            self.is_small_bn,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -872,7 +874,7 @@ def choose_block_scaled_config[
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             N_alignby64 = align_up(N, 64)
             max_mma_n = min(N_alignby64, 256)
-            # In pratice 64x16 mma creates too many ctas and increase L2
+            # In practice 64x16 mma creates too many ctas and increase L2
             # load volume, ends up hurting performance.
             min_mma_n = min(N_alignby64, 64)
             for bm in [128]:

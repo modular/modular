@@ -27,7 +27,10 @@ from max.pipelines.lib.interfaces import (
     DenoisingCacheState,
     DiffusionPipeline,
 )
-from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.lib.interfaces.diffusion_pipeline import (
+    DiffusionPipelineOutput,
+    max_compile,
+)
 from max.pipelines.lib.utils import BoundedCache
 from max.profiler import Tracer, traced
 
@@ -54,12 +57,6 @@ class Flux2ModelInputs:
 
     guidance: Tensor
     """Guidance scale broadcast tensor on device."""
-
-    latent_h: int
-    """Latent height in patches (height // vae_scale_factor)."""
-
-    latent_w: int
-    """Latent width in patches (width // vae_scale_factor)."""
 
     image_seq_len: int
     """Packed image sequence length ((latent_h // 2) * (latent_w // 2))."""
@@ -114,20 +111,6 @@ class Flux2ModelInputs:
             raise ValueError(
                 f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
             )
-
-
-@dataclass
-class Flux2PipelineOutput:
-    """Container for Flux2 pipeline results.
-
-    Attributes:
-        images:
-            Either a list of decoded PIL images, a NumPy array, or a MAX Tensor.
-            When a Tensor is returned, it may represent decoded image data or
-            intermediate latents depending on the selected output mode.
-    """
-
-    images: np.ndarray | Tensor
 
 
 class Flux2Pipeline(DiffusionPipeline):
@@ -268,8 +251,6 @@ class Flux2Pipeline(DiffusionPipeline):
             ),
             sigmas=sigmas,
             guidance=guidance,
-            latent_h=latent_h,
-            latent_w=latent_w,
             image_seq_len=image_seq_len,
             h_carrier=h_carrier,
             w_carrier=w_carrier,
@@ -712,30 +693,43 @@ class Flux2Pipeline(DiffusionPipeline):
         cache_state: DenoisingCacheState,
         **kwargs: Any,
     ) -> tuple[Tensor, ...]:
-        return self.transformer(
+        base_args = (
             kwargs["latents"],
             kwargs["prompt_embeds"],
             kwargs["timestep"],
             kwargs["latent_image_ids"],
             kwargs["text_ids"],
             kwargs["guidance"],
-            prev_residual=cache_state.prev_residual,
-            prev_output=cache_state.prev_output,
-            residual_threshold=kwargs.get("residual_threshold"),
         )
+        if self.cache_config.teacache:
+            return self.transformer(
+                *base_args,
+                teacache_prev_modulated_input=cache_state.teacache_prev_modulated_input,
+                teacache_cached_residual=cache_state.teacache_cached_residual,
+                teacache_accumulated_rel_l1=cache_state.teacache_accumulated_rel_l1,
+                force_compute=kwargs["force_compute"],
+            )
+        if self.cache_config.first_block_caching:
+            return self.transformer(
+                *base_args,
+                prev_residual=cache_state.prev_residual,
+                prev_output=cache_state.prev_output,
+                residual_threshold=kwargs.get("residual_threshold"),
+            )
+        return self.transformer(*base_args)
 
     @traced(message="Flux2Pipeline.execute")
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2ModelInputs,
-    ) -> Flux2PipelineOutput:
+    ) -> DiffusionPipelineOutput:
         """Run the Flux2 denoising loop and decode outputs.
 
         Args:
             model_inputs: Inputs containing tokens, latents, timesteps, sigmas, and IDs.
 
         Returns:
-            Flux2PipelineOutput containing one output per batch element.
+            DiffusionPipelineOutput containing one output per batch element.
         """
         # 1) Encode prompts.
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
@@ -780,7 +774,10 @@ class Flux2Pipeline(DiffusionPipeline):
         if image_latents is not None:
             seq_len_for_cache += int(image_latents.shape[1])
         cache = self.create_cache_state(
-            batch_size, seq_len_for_cache, self.transformer.config
+            batch_size,
+            seq_len_for_cache,
+            self.transformer.config,
+            text_seq_len=int(prompt_embeds.shape[1]),
         )
 
         with Tracer("denoising_loop"):
@@ -804,10 +801,7 @@ class Flux2Pipeline(DiffusionPipeline):
                         latents_concat = latents
                         latent_image_ids_concat = latent_image_ids
 
-                    noise_pred = self.run_denoising_step(
-                        step=i,
-                        cache_state=cache,
-                        device=device,
+                    step_kwargs: dict[str, Any] = dict(
                         latents=latents_concat,
                         prompt_embeds=prompt_embeds,
                         timestep=timestep,
@@ -815,6 +809,25 @@ class Flux2Pipeline(DiffusionPipeline):
                         text_ids=text_ids,
                         guidance=guidance,
                         residual_threshold=model_inputs.residual_threshold,
+                    )
+                    if self.cache_config.teacache:
+                        step_kwargs["force_compute"] = Tensor(
+                            storage=Buffer.from_dlpack(
+                                np.array(
+                                    [
+                                        i == 0
+                                        or i
+                                        == model_inputs.num_inference_steps - 1
+                                    ],
+                                    dtype=bool,
+                                )
+                            ).to(device)
+                        )
+                    noise_pred = self.run_denoising_step(
+                        step=i,
+                        cache_state=cache,
+                        device=device,
+                        **step_kwargs,
                     )
 
                     with Tracer("scheduler_step"):
@@ -828,4 +841,4 @@ class Flux2Pipeline(DiffusionPipeline):
                 model_inputs.w_carrier,
             )
 
-        return Flux2PipelineOutput(images=images)
+        return DiffusionPipelineOutput(images=images)

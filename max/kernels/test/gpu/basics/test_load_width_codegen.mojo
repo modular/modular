@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.info import simd_width_of
 
 from std.gpu.host.compile import _compile_code, get_gpu_target
-from std.gpu.host.info import GPUInfo
-from std.testing import assert_equal, assert_true
+from std.testing import assert_true
 
 comptime _TargetType = __mlir_type.`!kgen.target`
 

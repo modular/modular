@@ -14,7 +14,11 @@
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
-from std.gpu import thread_idx_uint as thread_idx, warp_id, lane_id
+from std.gpu import (
+    lane_id_uint as lane_id,
+    thread_idx_uint as thread_idx,
+    warp_id_uint as warp_id,
+)
 from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,

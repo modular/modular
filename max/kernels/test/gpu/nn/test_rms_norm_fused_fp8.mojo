@@ -13,10 +13,9 @@
 
 """Tests for fused RMSNorm + FP8 quantization kernel."""
 
-from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
-    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,

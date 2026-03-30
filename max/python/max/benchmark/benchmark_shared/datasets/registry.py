@@ -112,4 +112,8 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="SyntheticPixelBenchmarkDataset",
         has_multiturn_chat_support=False,
     ),
+    "agentic-code": DatasetRegistryEntry(
+        class_name="AgenticCodeBenchmarkDataset",
+        has_multiturn_chat_support=True,
+    ),
 }

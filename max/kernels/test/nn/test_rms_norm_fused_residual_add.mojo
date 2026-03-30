@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import sqrt
 from std.sys.info import simd_width_of
 
 from std.algorithm.functional import elementwise

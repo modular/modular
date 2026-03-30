@@ -17,7 +17,7 @@ from std.sys.info import align_of
 from std.sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import partial_simd_load, partial_simd_store
-from layout import Layout, LayoutTensor, RuntimeTuple
+from layout import LayoutTensor, RuntimeTuple
 
 from std.utils.index import Index, IndexList
 

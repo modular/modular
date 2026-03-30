@@ -300,10 +300,10 @@ The lifetime of the inner `num` ends exactly where the `if` code block ends,
 because that's the scope in which the variable was defined.
 
 This is in contrast to [implicitly-declared](#implicitly-declared-variables)
-variables (those without the `var` keyword), which use **function-level scoping**
-(consistent with Python variable behavior). That means, when you change the
-value of an implicitly-declared variable inside the `if` block, it actually
-changes the value for the entire function.
+variables (those without the `var` keyword), which use
+**function-level scoping** (consistent with Python variable behavior). That
+means, when you change the value of an implicitly-declared variable inside the
+`if` block, it actually changes the value for the entire function.
 
 For example, here's the same code but *without* the `var` declarations:
 
@@ -358,15 +358,15 @@ value from `first` to `second`? Or create a copy of the original value?
 These choices depend on some features of the type of the values involved:
 specifically, if the values are movable, copyable, or implicitly copyable.
 
-- A *copyable* type can be copied explicitly, by calling its copy initializer
-  or the `copy()` method.
+- A *copyable* type can be copied explicitly, by calling its copy initializer or
+  the `copy()` method.
 
   ```mojo
   second = first.copy()
   ```
 
-  This leaves `first` unchanged and assigns `second` its own, uniquely owned copy
-  of the list.
+  This leaves `first` unchanged and assigns `second` its own, uniquely owned
+  copy of the list.
 
 - An *implicitly copyable* type can be copied without an explicit signal from
   the user.

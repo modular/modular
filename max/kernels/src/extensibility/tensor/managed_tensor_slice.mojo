@@ -21,13 +21,14 @@ from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import _type_is_eq, strided_load, strided_store
 
 import std.algorithm
-from buffer.dimlist import DimList, Dim, _make_partially_static_index_list
+from buffer.dimlist import DimList, _make_partially_static_index_list
 from std.builtin.device_passable import DevicePassable
 from compiler_internal.directives import (
     StaticTensorSpec,
     __mogg_intrinsic_attr,
     StaticTensorSpecInternal,
     get_row_major_tensor_spec,
+    get_row_major_tensor_spec_static,
     InputFusion,
     OutputFusion,
     ComputeOutputFusion,
@@ -35,6 +36,7 @@ from compiler_internal.directives import (
     _NoFusionIn,
     _NoFusionOut,
     _NoComputeFusion,
+    _DimListToTileLayout,
 )
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
@@ -347,7 +349,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
+        dtype, rank, _, InFusion, OutFusion, ComputeFusion
     ],
 ](DevicePassable, TrivialRegisterPassable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
@@ -739,6 +741,15 @@ struct ManagedTensorSlice[
             product *= self.dim_size[i]()
 
         return product
+
+    @always_inline
+    def bytecount(self) -> Int:
+        """Returns the size of the tensor slice in bytes.
+
+        Returns:
+            The total number of bytes in the tensor slice.
+        """
+        return self.size() * size_of[Self.dtype]()
 
     @always_inline
     def unsafe_ptr[
@@ -1289,8 +1300,10 @@ struct StaticTensorSpecList[
         out result: StaticTensorSpec[
             Self.dtype,
             Self.rank,
-            DimList.from_index_list[Self.shapes_list[index]](),
-            DimList.from_index_list[Self.strides_list[index]](),
+            static_layout=_DimListToTileLayout[
+                DimList.from_index_list[Self.shapes_list[index]](),
+                DimList.from_index_list[Self.strides_list[index]](),
+            ],
         ],
     ):
         return {Self.internals_list[index]}
@@ -1826,9 +1839,7 @@ def view_copy_impl[
     InFusion: InputFusion,
     OutFusion: OutputFusion,
     ComputeFusion: ComputeOutputFusion,
-    spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
-    ],
+    spec: StaticTensorSpec[dtype, rank, _, InFusion, OutFusion, ComputeFusion],
     //,
     *,
     target: StaticString,

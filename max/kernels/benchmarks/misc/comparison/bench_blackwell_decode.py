@@ -303,7 +303,7 @@ def bench_max(
     )
 
     # Define input types.
-    # Avoid using KVCacheManager for its complecity.
+    # Avoid using KVCacheManager for its complexity.
     # For decode: query is [total_tokens, num_heads, head_dim] where total_tokens = batch_size
     q_type = TensorType(
         max_dtype,

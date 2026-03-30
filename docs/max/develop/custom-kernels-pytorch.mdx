@@ -40,9 +40,9 @@ compiler—everything needed to build high-performance custom operations.
 
 ## Build the PyTorch interface
 
-Let's start by creating the PyTorch side of our integration. We'll build a simple
-function that uses our custom operation, but first we need to establish the
-interface.
+Let's start by creating the PyTorch side of our integration. We'll build a
+simple function that uses our custom operation, but first we need to establish
+the interface.
 
 Create a new file called `grayscale.py` and add the following code:
 
@@ -60,14 +60,14 @@ def grayscale(pic: torch.Tensor):
 The `grayscale` function transforms a color image (with red, green, and blue
 channels) into a single-channel grayscale image. While PyTorch has built-in
 operations for this, implementing it as a Mojo custom op demonstrates the
-integration pattern you can apply to any performance-critical computation. Now we
-need to bridge to our Mojo implementation.
+integration pattern you can apply to any performance-critical computation. Now
+we need to bridge to our Mojo implementation.
 
 ## Integrate the custom operation
 
 The [`max.torch`](/max/api/python/experimental.torch) module provides
-[`CustomOpLibrary`](/max/api/python/generated/max.experimental.torch.CustomOpLibrary), which
-allows you to load and use compiled Mojo operations directly in PyTorch.
+[`CustomOpLibrary`](/max/api/python/generated/max.experimental.torch.CustomOpLibrary),
+which allows you to load and use compiled Mojo operations directly in PyTorch.
 
 Update the `grayscale.py` file to include the following code:
 
@@ -93,8 +93,8 @@ PyTorch function. The operations automatically handle data movement between
 PyTorch and MAX, and integrate with PyTorch when needed.
 
 The compilation of your Mojo code into a `.mojopkg` file is handled when you run
-your Python script. You don't need to manually invoke the Mojo compiler or manage
-build steps.
+your Python script. You don't need to manually invoke the Mojo compiler or
+manage build steps.
 
 ## Implement the Mojo kernel
 
@@ -148,7 +148,8 @@ First, the `@register("grayscale")` decorator makes this operation available to
 PyTorch under the name `grayscale`. This is the `ops.grayscale(output, pic)`
 function called in the PyTorch model.
 
-Then, the [`foreach`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
+Then, the
+[`foreach`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
 primitive automatically parallelizes the operation across available compute
 units.
 
@@ -201,8 +202,8 @@ The following image shows the result of the grayscale operation.
     alt="" width="420" />
 </figure>
 
-This example demonstrates the complete pipeline: downloading an image, converting
-it to a PyTorch tensor, processing it with our Mojo custom op, and
+This example demonstrates the complete pipeline: downloading an image,
+converting it to a PyTorch tensor, processing it with our Mojo custom op, and
 converting back to a standard Python image format. The operation automatically
 leverages GPU acceleration when available, providing significant performance
 improvements over CPU-only implementations.

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier, warp_id, lane_id_int as lane_id
+from std.gpu import barrier, warp_id_uint as warp_id, lane_id_int as lane_id
 from std.gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
@@ -25,7 +25,7 @@ from std.gpu.compute.mma import (
 )
 from internal_utils import assert_equal
 from std.random import rand
-from layout import Layout, LayoutTensor, TileTensor, Coord, Idx, row_major
+from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,

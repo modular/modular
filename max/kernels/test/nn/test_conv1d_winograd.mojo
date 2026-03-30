@@ -14,7 +14,7 @@
 from std.math import isclose
 from std.random import rand
 
-from nn.conv import Naive2dConvolution
+from nn.conv.conv import Naive2dConvolution
 
 from std.utils.index import Index
 

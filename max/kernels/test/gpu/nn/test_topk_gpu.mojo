@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, iota
-from std.random import random_float64, seed
+from std.random import random_float64
 
 from std.algorithm.reduction import max as reduce_max
 from std.benchmark import (
@@ -22,7 +22,6 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major

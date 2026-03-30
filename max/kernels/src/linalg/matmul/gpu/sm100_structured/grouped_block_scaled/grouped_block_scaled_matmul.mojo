@@ -48,7 +48,7 @@ Usage:
 """
 
 from std.collections import Optional
-from std.math import align_up, ceildiv
+from std.math import align_up
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -57,7 +57,7 @@ from layout import TileTensor
 
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import elementwise_compute_lambda_type

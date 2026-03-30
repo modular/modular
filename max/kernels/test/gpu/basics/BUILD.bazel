@@ -61,7 +61,7 @@ _EXTRA_CONSTRAINTS = {
     "test_shuffle.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
     "test_simd_reduction.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
     "test_verify_buffers_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # Uses block.sum/block.max (llvm.ctlz issue)
-    "test_fast_div.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-3155 — FastDiv remainder produces wrong results on Apple GPU
+    "test_fast_div.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3587 — Metal compilation failure (originally wrong FastDiv remainder)
 }
 
 [

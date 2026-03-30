@@ -35,19 +35,27 @@ from std.sys import align_of
 from std.testing import assert_false
 
 import linalg.matmul.vendor.blas as vendor_blas
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    lt_to_tt,
+    row_major,
+)
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from nn.conv import conv_gpu
-from nn.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.conv import conv_gpu
+from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from std.random import rand
 from std.utils.index import IndexList
-from nn.conv_sm100.conv2d import (
+from nn.conv.gpu.nvidia.sm100.conv2d import (
     conv2d_fprop,
     conv2d_fprop_with_residual,
     im2col,
 )
-from nn.conv_sm100.conv_config import (
+from nn.conv.gpu.nvidia.sm100.conv_config import (
     Conv2dConfig,
     Conv2dProblemShape,
 )
@@ -381,7 +389,6 @@ def test_conv2d_1sm[
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    # Create 2D NDBuffers for cuBLAS reference
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
@@ -1265,17 +1272,14 @@ def test_conv_gpu_scale_epilogue[
         )
 
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
         Optional[elementwise_simd_epilogue_type](scale_epilogue),
     ](
-        input_lt.as_any_origin(),
-        filter_lt.as_any_origin(),
-        out_epilogue_lt.as_any_origin(),
+        lt_to_tt(input_lt.as_any_origin()),
+        lt_to_tt(filter_lt.as_any_origin()),
+        lt_to_tt(out_epilogue_lt.as_any_origin()),
         IndexList[2](1, 1),
         IndexList[2](1, 1),
         IndexList[4](pad, pad, pad, pad),
@@ -1284,16 +1288,13 @@ def test_conv_gpu_scale_epilogue[
     )
 
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
     ](
-        input_lt.as_any_origin(),
-        filter_lt.as_any_origin(),
-        out_ref_lt.as_any_origin(),
+        lt_to_tt(input_lt.as_any_origin()),
+        lt_to_tt(filter_lt.as_any_origin()),
+        lt_to_tt(out_ref_lt.as_any_origin()),
         IndexList[2](1, 1),
         IndexList[2](1, 1),
         IndexList[4](pad, pad, pad, pad),
@@ -1408,17 +1409,14 @@ def test_conv_gpu_additive_epilogue[
         out_epilogue_tt.store[width=_width](coord, result)
 
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
         Optional[elementwise_simd_epilogue_type](add_bias_epilogue),
     ](
-        input_lt.as_any_origin(),
-        filter_lt.as_any_origin(),
-        out_epilogue_lt.as_any_origin(),
+        lt_to_tt(input_lt.as_any_origin()),
+        lt_to_tt(filter_lt.as_any_origin()),
+        lt_to_tt(out_epilogue_lt.as_any_origin()),
         IndexList[2](1, 1),
         IndexList[2](1, 1),
         IndexList[4](pad, pad, pad, pad),
@@ -1427,16 +1425,13 @@ def test_conv_gpu_additive_epilogue[
     )
 
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
     ](
-        input_lt.as_any_origin(),
-        filter_lt.as_any_origin(),
-        out_ref_lt.as_any_origin(),
+        lt_to_tt(input_lt.as_any_origin()),
+        lt_to_tt(filter_lt.as_any_origin()),
+        lt_to_tt(out_ref_lt.as_any_origin()),
         IndexList[2](1, 1),
         IndexList[2](1, 1),
         IndexList[4](pad, pad, pad, pad),
@@ -1536,17 +1531,14 @@ def test_conv_gpu_residual[
     )
 
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
         has_residual=True,
     ](
-        input_lt.as_any_origin(),
-        filter_lt.as_any_origin(),
-        out_residual_lt.as_any_origin(),
+        lt_to_tt(input_lt.as_any_origin()),
+        lt_to_tt(filter_lt.as_any_origin()),
+        lt_to_tt(out_residual_lt.as_any_origin()),
         IndexList[2](1, 1),
         IndexList[2](1, 1),
         IndexList[4](pad, pad, pad, pad),
@@ -1557,16 +1549,13 @@ def test_conv_gpu_residual[
     )
 
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
     ](
-        input_lt.as_any_origin(),
-        filter_lt.as_any_origin(),
-        out_ref_lt.as_any_origin(),
+        lt_to_tt(input_lt.as_any_origin()),
+        lt_to_tt(filter_lt.as_any_origin()),
+        lt_to_tt(out_ref_lt.as_any_origin()),
         IndexList[2](1, 1),
         IndexList[2](1, 1),
         IndexList[4](pad, pad, pad, pad),

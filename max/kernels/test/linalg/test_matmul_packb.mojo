@@ -13,7 +13,6 @@
 
 from std.sys.info import simd_width_of
 
-from layout import Coord, Idx, TileTensor
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.packing import PackMatrixCols

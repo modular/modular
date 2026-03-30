@@ -388,8 +388,13 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
                 freqs_cis=freqs_cis,
                 adaln_input=t_emb,
             )
-        u = self.final_layer(u, c=t_emb)
         return u[:, :img_len, :]
+
+    def _forward_postamble(
+        self, hidden_states: Tensor, t_emb: Tensor
+    ) -> Tensor:
+        """Final layer after the transformer backbone."""
+        return self.final_layer(hidden_states, c=t_emb)
 
     def _forward_standard(self, *args: Tensor) -> tuple[Tensor]:
         hidden_states, encoder_hidden_states, timestep, img_ids, txt_ids = args[
@@ -403,13 +408,13 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
             txt_ids,
         )
         u1 = self._run_first_main_layer(unified0, t_emb, unified_freqs)
-        out = self._run_remaining_after_first(
+        remaining = self._run_remaining_after_first(
             u1,
             img_len=img_len,
             t_emb=t_emb,
             freqs_cis=unified_freqs,
         )
-        return (out,)
+        return (self._forward_postamble(remaining, t_emb),)
 
     def _forward_step_cache(self, *args: Tensor) -> tuple[Tensor, Tensor]:
         (
@@ -446,6 +451,8 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
                 t_emb=t_emb,
                 freqs_cis=unified_freqs,
             ),
+            self._forward_postamble,
+            t_emb,
             self._fbcache_conditional_execution_output_types(),
         )
 

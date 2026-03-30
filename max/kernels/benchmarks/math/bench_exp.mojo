@@ -18,8 +18,6 @@ from std.ffi import external_call
 from std.sys import llvm_intrinsic, simd_width_of, size_of
 from std.sys.arg import argv
 from std.utils import IndexList
-from buffer import DimList
-
 from std.algorithm.functional import vectorize
 from std.benchmark import (
     Bench,
@@ -29,10 +27,14 @@ from std.benchmark import (
     ThroughputMeasure,
     keep,
 )
-from buffer import NDBuffer
+from layout import Coord, RuntimeInt, TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
-from std.memory import bitcast
+from std.memory import bitcast, stack_allocation
+
+
+def _ri(v: Int) -> RuntimeInt[DType.int64]:
+    return RuntimeInt[DType.int64](Int64(v))
 
 
 def apply[
@@ -41,13 +43,16 @@ def apply[
     ],
     dtype: DType,
 ](
-    input: NDBuffer[rank=1, dtype, ...],
-    output: NDBuffer[mut=True, rank=1, dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
 ):
     def _func[width: Int](idx: Int) unified {mut}:
-        output.store((idx,), func(input.load[width=width](idx)))
+        output.store_linear[width=width](
+            IndexList[1](idx),
+            func(input.load_linear[width=width](IndexList[1](idx))),
+        )
 
-    vectorize[simd_width_of[dtype]()](len(input), _func)
+    vectorize[simd_width_of[dtype]()](input.num_elements(), _func)
 
 
 def bench_unary[
@@ -80,8 +85,8 @@ def bench_unary[
         @parameter
         def iter_fn():
             apply[func](
-                NDBuffer[rank=1, dtype](input_ptr, IndexList[1](size)),
-                NDBuffer[rank=1, dtype](output_ptr, IndexList[1](size)),
+                TileTensor(input_ptr, row_major(Coord(_ri(size)))),
+                TileTensor(output_ptr, row_major(Coord(_ri(size)))),
             )
             keep(output_ptr)
 
@@ -392,10 +397,9 @@ def accuracy_test() raises:
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
 
-    var deltas = NDBuffer[
-        rank=1, DType.int32, MutAnyOrigin, DimList[delta_range]()
-    ].stack_allocation()
-    deltas.zero()
+    var deltas_ptr = stack_allocation[delta_range, DType.int32]()
+    var deltas = TileTensor(deltas_ptr, row_major[delta_range]())
+    _ = deltas.fill(Scalar[DType.int32](0))
 
     for i in range(0x3000_0000, 0x42B0_0000, 1):
         var f = bitcast[DType.float32, 1](UInt32(i))

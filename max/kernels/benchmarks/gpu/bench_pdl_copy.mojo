@@ -15,7 +15,14 @@ from std.sys import get_defined_int
 
 from std.benchmark import Bench, Bencher, BenchId
 from std.builtin._closure import __ownership_keepalive
-from std.gpu import *
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
+    launch_dependent_grids,
+    thread_idx_uint as thread_idx,
+    wait_on_dependent_grids,
+)
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceContext
 
@@ -27,14 +34,18 @@ def copy1(
 ):
     var tmp = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         tmp += b[i]
 
     launch_dependent_grids()
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         b[i] = a[i] + tmp
 
@@ -47,14 +58,18 @@ def copy2(
 ):
     var result = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         result += d[i]
 
     wait_on_dependent_grids()
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         c[i] = b[i] + result + 2.0
 
@@ -66,12 +81,16 @@ def copy1_n(
 ):
     var tmp = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         tmp += b[i]
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         b[i] = a[i] + tmp
 
@@ -84,12 +103,16 @@ def copy2_n(
 ):
     var result = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         result += d[i]
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         c[i] = b[i] + result + 2.0
 

@@ -22,6 +22,8 @@ The module is designed to work seamlessly across different GPU architectures whi
 optimal performance through hardware-specific optimizations where applicable."""
 
 import std.math
+
+from std.math.uutils import ufloordiv
 from std.sys import llvm_intrinsic
 from std.sys.info import (
     CompilationTarget,
@@ -73,27 +75,56 @@ def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-comptime lane_id_int = lane_id[Int]
-"""Returns the lane ID of the current thread within its warp.
-
-See `lane_id()`.
-"""
-
-
+# Note: MOCO-3600 prevents this being a comptime alias.
 @always_inline("nodebug")
-def lane_id[ResultType: _FromInt = UInt]() -> ResultType:
+def lane_id_int() -> Int:
+    """Returns the lane ID of the current thread within its warp.
+
+    See `lane_id()`.
+
+    Returns:
+        The lane ID (0 to WARP_SIZE-1) of the current thread.
+    """
+    return _lane_id[Int]()
+
+
+# Note: MOCO-3600 prevents this being a comptime alias.
+@always_inline("nodebug")
+def lane_id_uint() -> UInt:
+    """Returns the lane ID of the current thread within its warp.
+
+    See `lane_id()`.
+
+    Returns:
+        The lane ID (0 to WARP_SIZE-1) of the current thread.
+    """
+    return _lane_id[UInt]()
+
+
+# fmt: off
+@deprecated(
+    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
+    "  Postpone: Use `from std.gpu import lane_id_uint as lane_id` to continue using `UInt` for the time being.\n"
+    "   Migrate: Use `from std.gpu import lane_id_int as lane_id` to migrate to `Int`, which is the end state.\n"
+    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
+)
+# fmt: on
+@always_inline("nodebug")
+def lane_id() -> UInt:
     """Returns the lane ID of the current thread within its warp.
 
     The lane ID is a unique identifier for each thread within a warp, ranging from 0 to
     WARP_SIZE-1. This ID is commonly used for warp-level programming and thread
     synchronization within a warp.
 
-    Parameters:
-        ResultType: Type of index accessors, typically `Int` or `UInt` (default).
-
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
+    return _lane_id[UInt]()
+
+
+@always_inline("nodebug")
+def _lane_id[ResultType: _FromInt]() -> ResultType:
     comptime assert is_gpu(), "This function only applies to GPUs."
 
     comptime if is_nvidia_gpu():
@@ -134,6 +165,50 @@ def lane_id[ResultType: _FromInt = UInt]() -> ResultType:
 # ===-----------------------------------------------------------------------===#
 
 
+# Note: MOCO-3600 prevents this being a comptime alias.
+@always_inline("nodebug")
+def warp_id_int[*, broadcast: Bool = False]() -> Int:
+    """Returns the warp ID of the current thread within its block.
+
+    See `warp_id()`.
+
+    Parameters:
+        broadcast: If true, broadcasts the warp ID to all threads in the warp,
+                   ensuring that all threads in the same warp have the same
+                   value. This can be useful for certain warp-level algorithms.
+
+    Returns:
+        The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
+    """
+    return _warp_id[Int, broadcast=broadcast]()
+
+
+# Note: MOCO-3600 prevents this being a comptime alias.
+@always_inline("nodebug")
+def warp_id_uint[*, broadcast: Bool = False]() -> UInt:
+    """Returns the warp ID of the current thread within its block.
+
+    See `warp_id()`.
+
+    Parameters:
+        broadcast: If true, broadcasts the warp ID to all threads in the warp,
+                   ensuring that all threads in the same warp have the same
+                   value. This can be useful for certain warp-level algorithms.
+
+    Returns:
+        The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
+    """
+    return _warp_id[UInt, broadcast=broadcast]()
+
+
+# fmt: off
+@deprecated(
+    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
+    "  Postpone: Use `from std.gpu import warp_id_uint as warp_id` to continue using `UInt` for the time being.\n"
+    "   Migrate: Use `from std.gpu import warp_id_int as warp_id` to migrate to `Int`, which is the end state.\n"
+    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
+)
+# fmt: on
 @always_inline("nodebug")
 def warp_id[*, broadcast: Bool = False]() -> UInt:
     """Returns the warp ID of the current thread within its block.
@@ -149,14 +224,22 @@ def warp_id[*, broadcast: Bool = False]() -> UInt:
     Returns:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
+    return _warp_id[UInt, broadcast=broadcast]()
 
-    var res = thread_idx_uint.x // UInt(WARP_SIZE)
+
+@always_inline("nodebug")
+def _warp_id[
+    ResultType: _FromInt,
+    *,
+    broadcast: Bool = False,
+]() -> ResultType:
+    var res = ufloordiv(thread_idx_int.x, WARP_SIZE)
     comptime if broadcast:
         comptime if is_amd_gpu():
-            res = UInt(readfirstlane(Int32(res)))
+            res = Int(readfirstlane(Int32(res)))
         else:
             res = warp.broadcast(res)
-    return res
+    return ResultType(from_int=res)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -203,9 +286,7 @@ def sm_id() -> UInt:
 # ===-----------------------------------------------------------------------===#
 
 
-struct _ThreadIdx[ResultType: _FromInt = UInt](
-    Defaultable, TrivialRegisterPassable
-):
+struct _ThreadIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a thread within a block.
 
@@ -245,7 +326,15 @@ struct _ThreadIdx[ResultType: _FromInt = UInt](
         return Self.ResultType(from_int=Int(i))
 
 
-comptime thread_idx = _ThreadIdx()
+# fmt: off
+@deprecated(
+    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
+    "  Postpone: Use `from std.gpu import thread_idx_uint as thread_idx` to continue using `UInt` for the time being.\n"
+    "   Migrate: Use `from std.gpu import thread_idx_int as thread_idx` to migrate to `Int`, which is the end state.\n"
+    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
+)
+# fmt: on
+comptime thread_idx = _ThreadIdx[UInt]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values.
 
 Note: This accessor is in the process of migrating from `UInt` to `Int` values.
@@ -268,10 +357,10 @@ This `thread_idx` accessor will change to yielding `Int` values in a future
 nightly.
 """
 
-comptime thread_idx_uint = _ThreadIdx[UInt]()
+comptime thread_idx_int = _ThreadIdx[Int]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
-comptime thread_idx_int = _ThreadIdx[Int]()
+comptime thread_idx_uint = _ThreadIdx[UInt]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
 
@@ -280,9 +369,7 @@ comptime thread_idx_int = _ThreadIdx[Int]()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockIdx[ResultType: _FromInt = UInt](
-    Defaultable, TrivialRegisterPassable
-):
+struct _BlockIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a block within a grid.
 
@@ -322,21 +409,29 @@ struct _BlockIdx[ResultType: _FromInt = UInt](
         return Self.ResultType(from_int=Int(i))
 
 
-comptime block_idx = _BlockIdx()
+# fmt: off
+@deprecated(
+    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
+    "  Postpone: Use `from std.gpu import block_idx_uint as block_idx` to continue using `UInt` for the time being.\n"
+    "   Migrate: Use `from std.gpu import block_idx_int as block_idx` to migrate to `Int`, which is the end state.\n"
+    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
+)
+# fmt: on
+comptime block_idx = _BlockIdx[UInt]()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 comptime block_idx_int = _BlockIdx[Int]()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
+comptime block_idx_uint = _BlockIdx[UInt]()
+"""Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 # ===-----------------------------------------------------------------------===#
 # block_dim
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockDim[ResultType: _FromInt = UInt](
-    Defaultable, TrivialRegisterPassable
-):
+struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     block."""
 
@@ -388,12 +483,25 @@ struct _BlockDim[ResultType: _FromInt = UInt](
             ]()
 
 
-comptime block_dim = _BlockDim()
+# fmt: off
+@deprecated(
+    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
+    "  Postpone: Use `from std.gpu import block_dim_uint as block_dim` to continue using `UInt` for the time being.\n"
+    "   Migrate: Use `from std.gpu import block_dim_int as block_dim` to migrate to `Int`, which is the end state.\n"
+    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
+)
+# fmt: on
+comptime block_dim = _BlockDim[UInt]()
 """Contains the dimensions of the block as `x`, `y`, and `z` values.
 
 For example: `block_dim.y`."""
 
 comptime block_dim_int = _BlockDim[Int]()
+"""Contains the dimensions of the block as `x`, `y`, and `z` values.
+
+For example: `block_dim.y`."""
+
+comptime block_dim_uint = _BlockDim[UInt]()
 """Contains the dimensions of the block as `x`, `y`, and `z` values.
 
 For example: `block_dim.y`."""
@@ -454,7 +562,7 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             # Metal passes grid dimension as a gridDim.dim * blockDim.dim.
             # To make things compatible with NVidia and AMDGPU, divide result
             # by block_dim.dim
-            var i = gridDim // block_dim.__getattr_param__[dim]()
+            var i = gridDim // block_dim_uint.__getattr_param__[dim]()
             return Self.ResultType(from_int=Int(i))
         else:
             CompilationTarget.unsupported_target_error[
@@ -462,11 +570,23 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             ]()
 
 
+# fmt: off
+@deprecated(
+    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
+    "  Postpone: Use `from std.gpu import grid_dim_uint as grid_dim` to continue using `UInt` for the time being.\n"
+    "   Migrate: Use `from std.gpu import grid_dim_int as grid_dim` to migrate to `Int`, which is the end state.\n"
+    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
+)
+# fmt: on
 comptime grid_dim = _GridDim[UInt]()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
 comptime grid_dim_int = _GridDim[Int]()
+"""Provides accessors for getting the `x`, `y`, and `z`
+dimensions of a grid."""
+
+comptime grid_dim_uint = _GridDim[UInt]()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
@@ -476,7 +596,7 @@ dimensions of a grid."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
+struct _GlobalIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` global offset of
     the kernel launch."""
 
@@ -485,7 +605,7 @@ struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StringLiteral](self) -> UInt:
+    def __getattr_param__[dim: StringLiteral](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` dimension of the program.
 
         Returns:
@@ -493,13 +613,29 @@ struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
         var t_idx = thread_idx_uint.__getattr_param__[dim]()
-        var b_idx = block_idx.__getattr_param__[dim]()
-        var b_dim = block_dim.__getattr_param__[dim]()
+        var b_idx = block_idx_uint.__getattr_param__[dim]()
+        var b_dim = block_dim_uint.__getattr_param__[dim]()
 
-        return std.math.fma(b_idx, b_dim, t_idx)
+        return Self.ResultType(from_int=Int(std.math.fma(b_idx, b_dim, t_idx)))
 
 
-comptime global_idx = _GlobalIdx()
+# fmt: off
+@deprecated(
+    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
+    "  Postpone: Use `from std.gpu import global_idx_uint as global_idx` to continue using `UInt` for the time being.\n"
+    "   Migrate: Use `from std.gpu import global_idx_int as global_idx` to migrate to `Int`, which is the end state.\n"
+    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
+)
+# fmt: on
+comptime global_idx = _GlobalIdx[UInt]()
+"""Contains the global offset of the kernel launch, as `x`, `y`, and `z`
+values."""
+
+comptime global_idx_int = _GlobalIdx[Int]()
+"""Contains the global offset of the kernel launch, as `x`, `y`, and `z`
+values."""
+
+comptime global_idx_uint = _GlobalIdx[UInt]()
 """Contains the global offset of the kernel launch, as `x`, `y`, and `z`
 values."""
 

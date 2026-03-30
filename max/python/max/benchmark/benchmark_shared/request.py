@@ -448,6 +448,10 @@ async def _run_openai_stream_request(
 
                         data = json.loads(chunk)
 
+                        # Skip metadata chunks with no choices (e.g. usage-only chunks)
+                        if not data.get("choices"):
+                            continue
+
                         # Any valid response chunk counts as having received content
                         has_content = True
 
@@ -579,7 +583,6 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             payload["top_k"] = request_func_input.top_k
         if request_func_input.top_p is not None:
             payload["top_p"] = request_func_input.top_p
-
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)

@@ -26,7 +26,8 @@ production deployment, this tutorial will help you set up a robust serving
 infrastructure for Llama 3.
 
 And although we're using Llama 3 in these instructions, you can swap it for one
-of the hundreds of other LLMs from Hugging Face by browsing our [supported models](/max/models/).
+of the hundreds of other LLMs from Hugging Face by browsing our
+[supported models](/max/models/).
 
 The tutorial is organized into the following sections:
 
@@ -166,18 +167,19 @@ the Llama 3 model with MAX on cloud provider infrastructure.
 
 The deployment process is divided into two phases:
 
-* **Phase 1: Cloud stack creation**: In this initial phase, the following
+- **Phase 1: Cloud stack creation**: In this initial phase, the following
 infrastructure is provisioned and configured to prepare for serving requests:
-  * **Public IP assignment**: The cloud provider assigns a public IP to the
+  - **Public IP assignment**: The cloud provider assigns a public IP to the
   virtual machine (VM), allowing it to be accessed externally.
-  * **Firewall/Security group configuration**: Security settings, such as
+  - **Firewall/Security group configuration**: Security settings, such as
   firewall rules or security groups, are applied to allow traffic on port 80.
   This setup ensures that only HTTP requests can access the instance securely.
-  * **GPU compute instance setup**: A GPU-enabled VM is created to handle model
+  - **GPU compute instance setup**: A GPU-enabled VM is created to handle model
   inference efficiently. This instance includes:
-    * **GPU drivers/runtime installation**: Necessary GPU drivers and runtime
-    libraries are installed to enable hardware acceleration for model processing.
-    * **Docker container initialization**: A Docker container is launched on the
+    - **GPU drivers/runtime installation**: Necessary GPU drivers and runtime
+      libraries are installed to enable hardware acceleration for model
+      processing.
+    - **Docker container initialization**: A Docker container is launched on the
     VM, where it pulls the necessary images from the Docker Container Registry.
       This registry serves as a central repository for storing Docker images,
       making it easy to deploy and update the application.
@@ -196,13 +198,13 @@ image with the `docker run` command. For more information, see
 [MAX container](/max/container).
 :::
 
-* **Phase 2: Serving the user endpoint**: Once the cloud stack is configured and
+- **Phase 2: Serving the user endpoint**: Once the cloud stack is configured and
 the VM is set up, the deployment enters the second phase, where it starts
 serving user requests:
-  * **HTTP endpoint exposure**: With the VM and Docker container ready, the
+  - **HTTP endpoint exposure**: With the VM and Docker container ready, the
   system opens an OpenAI compatible HTTP endpoint on port 80, allowing users to
   interact with the deployed Llama 3 model.
-  * **Request handling by MAX**: When a user sends an HTTP request to the
+  - **Request handling by MAX**: When a user sends an HTTP request to the
   public IP, MAX processes the incoming request within the Docker
   container and forwards it to the Llama 3 model for inference. The model
   generates a response, which is then returned to the user via the endpoint.
@@ -226,7 +228,7 @@ with the following specifications:
   - **Supported GPU types**: [See our compatible
     GPUs](/max/packages#gpu-compatibility)
 
-  This tutorial has been tested on the following NVIDIA instances: `g5.4xlarge`
+- This tutorial has been tested on the following NVIDIA instances: `g5.4xlarge`
   (A10G) on AWS, `g2-standard-8` (L4) on GCP, and `Standard_NV36ads_A10_v5`
   (A10G) on Azure. It has also been tested on the AMD
   `Standard_ND96isr_MI300X_v5` (MI300X) Azure instance. You can alter the
@@ -245,7 +247,8 @@ token available in your environment with the following command:
 - **Docker installation**: Install the
 [Docker Engine and CLI](https://docs.docker.com/engine/install/). We use a
 pre-configured GPU-enabled Docker container from our public repository. For more
-information, check out all of our [available containers](/max/container#container-contents).
+information, check out all of our
+[available containers](/max/container#container-contents).
 
 - **Cloud CLI tools**: Before deploying, ensure that you have the respective
 cloud provider CLI tools installed.
@@ -331,7 +334,9 @@ Azure provides AMD GPU virtual machines. If you want to deploy MAX with AMD GPUs
 on Azure, you can use the
 `modular/examples/cloud-configs/azure/amd/max-amd-azure.json` config file. This
 file defines the appropriate image and settings for AMD-based inference
-workloads on an [ND MI300X v5 series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ndmi300xv5-series) vm.
+workloads on an
+[ND MI300X v5 series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ndmi300xv5-series)
+vm.
 :::
 
 ```bash
@@ -440,7 +445,6 @@ The deployment name must be **unique** so please be sure to change the
 
 :::
 
-
 ```bash
 export DEPLOYMENT_NAME="max-serve-deployment"
 export INSTANCE_NAME="max-serve-instance"
@@ -541,6 +545,7 @@ AI enterprise image:
 ```bash
 az vm image terms accept --urn nvidia:nvidia-ai-enterprise:nvaie_gpu_1_gen2:latest
 ```
+
 :::
 
 :::caution Set an admin password
@@ -800,82 +805,87 @@ echo "Public IP: ${PUBLIC_IP}"
 
 1. Wait until the server is ready to test the endpoint
 
-    It will take some time for the stack or deployment to pull the MAX Docker
-    image and set it up for serving. We need to wait for the Docker logs to appear
-    and then make sure that the Docker container is running on port `8000`.
+   It will take some time for the stack or deployment to pull the MAX Docker
+   image and set it up for serving. We need to wait for the Docker logs to
+   appear and then make sure that the Docker container is running on port
+   `8000`.
 
-    The server is ready when you see the following log:
+   The server is ready when you see the following log:
 
     ```output
     Server ready on http://0.0.0.0:8000
     ```
 
-    We provide a simple script to monitor the startup progress and notify you when
-    the server is ready.
+   We provide a simple script to monitor the startup progress and notify you
+   when the server is ready.
 
-    <Tabs groupId="cloud">
-      <TabItem value="aws" label="AWS">
+   <Tabs groupId="cloud">
+   <TabItem value="aws" label="AWS">
 
-    For AWS, you can see the logs in the AWS CloudWatch UI within the log group
-    `/aws/ec2/${STACK_NAME}-logs` and log stream `instance-logs`.
+   For AWS, you can see the logs in the AWS CloudWatch UI within the log group
+   `/aws/ec2/${STACK_NAME}-logs` and log stream `instance-logs`.
 
-    Alternatively, you can use the provided bash script to monitor the logs until
-    the server is ready:
+   Alternatively, you can use the provided bash script to monitor the logs until
+   the server is ready:
 
     ```bash
     bash notify.sh ${REGION} ${STACK_NAME} ${PUBLIC_IP}
     ```
 
-      </TabItem>
-      <TabItem value="gcp" label="GCP">
+   </TabItem>
+   <TabItem value="gcp" label="GCP">
 
-    For GCP, first make sure that the Docker container is running on port `8000`.
+   For GCP, first make sure that the Docker container is running on port `8000`.
 
-    You can view the logs in the Compute Engine VM instances UI. Within the UI,
-    choose **Observability**, then choose **Logs**.
+   You can view the logs in the Compute Engine VM instances UI. Within the UI,
+   choose **Observability**, then choose **Logs**.
 
-    Alternatively, you can use the provided bash script to monitor the logs until
-    the server is ready:
+   Alternatively, you can use the provided bash script to monitor the logs until
+   the server is ready:
 
     ```bash
     bash notify.sh ${PROJECT_ID} ${INSTANCE_NAME} ${ZONE} ${PUBLIC_IP}
     ```
 
-      </TabItem>
-      <TabItem value="azure" label="Azure">
+   </TabItem>
+   <TabItem value="azure" label="Azure">
 
-    For Azure, you can monitor the Docker container status (running on port `8000`)
-    using one of the following methods:
+   For Azure, you can monitor the Docker container status (running on port
+   `8000`) using one of the following methods:
 
-    **Option 1: Use the monitoring script:**
+   **Option 1: Use the monitoring script:**
 
     1. Install the required dependencies for the monitoring script:
-      - Install
+       - Install
       [sshpass](https://www.cyberciti.biz/faq/noninteractive-shell-script-ssh-password-provider/)
       on your local machine to enable automated SSH password authentication
 
     2. Set up and run the monitoring script:
 
-      ```bash
-      bash notify.sh ${RESOURCE_GROUP_NAME} ${VM_PASSWORD} ${PUBLIC_IP}
-      ```
+       ```bash
+       bash notify.sh ${RESOURCE_GROUP_NAME} ${VM_PASSWORD} ${PUBLIC_IP}
+       ```
 
     **Option 2: Manual SSH access:**
 
     1. Connect to the VM:
-      ```bash
-      ssh azureuser@$PUBLIC_IP
-      ```
-      > **Note:** Use the password you set previously when creating the deployment.
+
+       ```bash
+       ssh azureuser@$PUBLIC_IP
+       ```
+
+       > **Note:** Use the password you set previously when creating the deployment.
 
     2. View the startup logs:
-      ```bash
-      sudo cat /var/log/azure/custom-script/handler.log
-      sudo cat /var/lib/waagent/custom-script/download/0/stdout
-      sudo cat /var/lib/waagent/custom-script/download/0/stderr
-      sudo docker logs $(docker ps -q -f ancestor=modular/max-nvidia-full:latest)
-      ```
-      > **Note:** Use the container name `modular/max-amd:latest` if you deployed MAX on an AMD instance.
+
+       ```bash
+       sudo cat /var/log/azure/custom-script/handler.log
+       sudo cat /var/lib/waagent/custom-script/download/0/stdout
+       sudo cat /var/lib/waagent/custom-script/download/0/stderr
+       sudo docker logs $(docker ps -q -f ancestor=modular/max-nvidia-full:latest)
+       ```
+
+       > **Note:** Use the container name `modular/max-amd:latest` if you deployed MAX on an AMD instance.
 
     Both methods will help you confirm that the server is running correctly. The
     logs will show the startup progress and any potential issues that need to be
@@ -889,12 +899,11 @@ the previous step to test the endpoint with the following `curl` request:
 
     :::tip
 
-    After the server starts, there may be a brief delay before the cloud provider
-    exposes the public IP address. If you receive an error, please wait
-    approximately one minute and try again.
+    After the server starts, there may be a brief delay before the cloud
+    provider exposes the public IP address. If you receive an error, please
+    wait approximately one minute and try again.
 
     :::
-
 
     ```bash
     curl -N http://$PUBLIC_IP/v1/chat/completions \
@@ -915,7 +924,7 @@ You can also use the public IP address of your deployed MAX endpoint to
 benchmark the performance of Llama 3.1. MAX includes a benchmarking script that
 allows you to evaluate throughput, latency, and GPU utilization metrics. For
 more detailed instructions on benchmarking, see the
-[`max benchamrk` docs](/max/cli/benchmark).
+[`max benchmark` docs](/max/cli/benchmark).
 
 :::
 

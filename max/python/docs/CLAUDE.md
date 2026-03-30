@@ -75,7 +75,7 @@ Read these when you need to understand or modify the doc build:
   (`class.rst` for classes and type aliases, `function.rst` for functions,
   `data.rst` for module-level data/constants).
 - `docs/internal/PythonDocstringStyleGuide.md` -- Docstring style guide (also
-  enforced by `.cursor/rules/pydoc.mdc` and `.claude/skills/pydoc`).
+  enforced by `.claude/skills/docstrings`).
 
 ## Pydocstyle linting
 

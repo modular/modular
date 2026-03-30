@@ -16,7 +16,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    has_nvidia_gpu_accelerator,
     align_of,
 )
 

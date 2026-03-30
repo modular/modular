@@ -17,9 +17,6 @@ All SMEM storage uses TileTensor natively. TileTensors are passed directly
 to TMA and MMA via TileTensor overloads.
 
 Usage:
-    from structured_kernels.tile_types import (
-        SMemTile, SMemTileArray2D, SMemTileArrayWithLayout
-    )
 
     # Create tile with a layout
     comptime my_layout = row_major[64, 32]()
@@ -39,31 +36,25 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    IntTuple,
     LTToTTLayout,
     LayoutTensor,
     Layout as LegacyLayout,
     RuntimeInt,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
-from layout.coord import _DimsToCoordLike, _Flattened
+from layout.coord import _Flattened
 from layout.tma_async import (
-    SharedMemBarrier,
     TMATensorTile,
     TMATensorTileIm2col,
     create_tensor_tile,
 )
 from std.builtin.variadics import Variadic
 from layout.tile_layout import Layout
-from .smem_types import SMemTileArray as LTSMemTileArray
 from std.utils.index import IndexList
 from std.memory import stack_allocation
 from std.utils.index import IndexList
-from std.utils.static_tuple import StaticTuple
 
 # Core matrix constant from tensor_core_async.mojo
 comptime _CM_NUM_ROWS = 8

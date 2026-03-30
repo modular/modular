@@ -12,43 +12,26 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
 from std.math import ceildiv
-from std.sys import simd_width_of, size_of
+from std.sys import size_of
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from std.gpu.primitives.cluster import (
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
-    IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
 )
-from layout.layout_tensor import LayoutTensorIter
-from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
-from layout.tma_async import (
-    PipelineState,
-    SharedMemBarrier,
-    TMATensorTile,
-    create_tensor_tile,
-)
+from layout.tma_async import create_tensor_tile
 
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from .matmul_kernels import HopperMatmulSM90Kernel
 from .matmul import _get_c_smem_layout
 
 from ....utils import elementwise_epilogue_type
-from ....utils_gpu import MatmulConfig, block_swizzle
+from ....utils_gpu import MatmulConfig
 
 
 @always_inline
@@ -60,8 +43,9 @@ def default_config_sm90[
     wgmma_shape: IndexList[3],
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     comptime BN = wgmma_shape[1]
+    comptime BK = 128 // size_of[a_type]()
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, BN, 64),
+        block_tile_shape=Index(128, BN, BK),
         mma_shape=wgmma_shape,
         cluster_shape=Index(1, 1, 1),
         num_pipeline_stages=4,

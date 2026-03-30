@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from std.math import ceildiv
 from std.sys import (
-    align_of,
     get_defined_bool,
     get_defined_int,
     simd_width_of,
@@ -25,7 +24,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
@@ -48,7 +47,6 @@ from ...tile_scheduler import RasterOrder
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
     blackwell_batched_matmul_tma_umma_warp_specialized,
-    matmul_sm100_fallback,
 )
 from internal_utils import Table
 from .tuning_configs import (
@@ -640,7 +638,7 @@ def matmul_dispatch_sm100_bf16[
     return DISPATCH_MISS
 
 
-# NOTE: vendor blas, naive matmul, and multistage gemm dosen't support compute lambdas so we need to wrap them in a lambda function.
+# NOTE: vendor blas, naive matmul, and multistage gemm doesn't support compute lambdas so we need to wrap them in a lambda function.
 # if there is no compute lambda, then this wrapper will be a simple element wise lambda.
 @always_inline
 def _vendor_blas_matmul_sm100[

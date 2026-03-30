@@ -2565,6 +2565,7 @@ def flare_mla_prefill_plan(
 
 def _validate_mla_prefill_decode_graph_inputs(
     q: TensorValue,
+    kv: TensorValue,
     input_row_offsets: TensorValue,
     kv_params: KVCacheParams,
     layer_idx: TensorValue,
@@ -2578,6 +2579,9 @@ def _validate_mla_prefill_decode_graph_inputs(
         raise ValueError(
             f"expected {tensor_name} of rank {input_rank_expected} but got {q.rank}"
         )
+
+    if kv.rank != 2:
+        raise ValueError(f"expected kv of rank 2 but got {kv.rank}")
 
     if layer_idx.dtype != DType.uint32:
         raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
@@ -2603,6 +2607,7 @@ def _build_mla_prefill_decode_out_type(
 
 def mla_prefill_graph(
     q: TensorValue,
+    kv: TensorValue,
     input_row_offsets: TensorValue,
     freqs_cis: TensorValue,
     kv_norm_gamma: TensorValue,
@@ -2619,7 +2624,6 @@ def mla_prefill_graph(
     epsilon: float,
     v_head_dim: int,
     *,
-    kv: TensorValue | None = None,
     w_k_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
@@ -2635,6 +2639,9 @@ def mla_prefill_graph(
     Args:
         q: Combined query tensor containing both nope and rope parts. Shape:
             [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        kv: KV latent tensor from the first projection. Shape:
+            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
+            qk_rope_head_dim.
         input_row_offsets: Indicates where each request starts and ends in
             `input`. This is a 1D tensor of shape [num_batches + 1].
         freqs_cis: Precomputed RoPE frequency values for rotary position
@@ -2659,9 +2666,6 @@ def mla_prefill_graph(
         scale: Scale for the attention calculation.
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
-        kv: KV latent tensor from the first projection. Shape:
-            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
-            qk_rope_head_dim. Required when quant_config is None.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
@@ -2671,6 +2675,7 @@ def mla_prefill_graph(
     """
     _validate_mla_prefill_decode_graph_inputs(
         q,
+        kv,
         input_row_offsets,
         kv_params,
         layer_idx,
@@ -2680,6 +2685,8 @@ def mla_prefill_graph(
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
+        q,
+        kv,
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -2694,11 +2701,6 @@ def mla_prefill_graph(
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     op_name = "mo.mla.graph.prefill.paged"
-
-    if kv is not None:
-        input_values[0:0] = [q, kv]
-    else:
-        input_values[0:0] = [q]
 
     if quant_config is not None:
         assert w_k_scale is not None and w_uv_scale is not None
@@ -2808,6 +2810,7 @@ def compute_mha_decode_num_partitions(
 
 def mla_decode_graph(
     q: TensorValue,
+    kv: TensorValue,
     input_row_offsets: TensorValue,
     freqs_cis: TensorValue,
     kv_norm_gamma: TensorValue,
@@ -2822,7 +2825,6 @@ def mla_decode_graph(
     v_head_dim: int,
     scalar_args: TensorValue,
     *,
-    kv: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
@@ -2842,6 +2844,9 @@ def mla_decode_graph(
     Args:
         q: Combined query tensor containing both nope and rope parts. Shape:
             [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        kv: KV latent tensor from the first projection. Shape:
+            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
+            qk_rope_head_dim.
         input_row_offsets: Indicates where each request starts and ends in
             `input`. This is a 1D tensor of shape [num_batches + 1].
         freqs_cis: Precomputed RoPE frequency values for rotary position
@@ -2859,9 +2864,6 @@ def mla_decode_graph(
         scale: Scale for the attention calculation.
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
-        kv: KV latent tensor from the first projection. Shape:
-            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
-            qk_rope_head_dim. Required when quant_config is None.
         scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
@@ -2872,6 +2874,7 @@ def mla_decode_graph(
     """
     _validate_mla_prefill_decode_graph_inputs(
         q,
+        kv,
         input_row_offsets,
         kv_params,
         layer_idx,
@@ -2881,6 +2884,8 @@ def mla_decode_graph(
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
+        q,
+        kv,
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -2892,11 +2897,6 @@ def mla_decode_graph(
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     op_name = "mo.mla.graph.decode.paged"
-
-    if kv is not None:
-        input_values[0:0] = [q, kv]
-    else:
-        input_values[0:0] = [q]
 
     if quant_config is not None:
         assert w_uk_scale is not None and w_uv_scale is not None
@@ -2925,6 +2925,7 @@ def mla_decode_graph(
 
 def mla_prefill_decode_graph(
     q: TensorValue,
+    kv: TensorValue,
     input_row_offsets: TensorValue,
     freqs_cis: TensorValue,
     kv_norm_gamma: TensorValue,
@@ -2943,7 +2944,6 @@ def mla_prefill_decode_graph(
     v_head_dim: int,
     scalar_args: TensorValue,
     *,
-    kv: TensorValue | None = None,
     w_k_scale: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
@@ -2957,6 +2957,7 @@ def mla_prefill_decode_graph(
 
     Args:
         q: Combined query tensor with nope+rope parts.
+        kv: KV latent tensor for current sequence.
         input_row_offsets: Row offsets for the batch.
         freqs_cis: RoPE frequencies tensor.
         kv_norm_gamma: RMSNorm gamma for KV cache.
@@ -2973,9 +2974,6 @@ def mla_prefill_decode_graph(
         scale: Attention scale.
         epsilon: RMSNorm epsilon.
         v_head_dim: Value head dimension for output tensor shape.
-        kv: KV latent tensor from the first projection. Shape:
-            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
-            qk_rope_head_dim. Required when quant_config is None.
         scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
@@ -2987,6 +2985,7 @@ def mla_prefill_decode_graph(
     """
     _validate_mla_prefill_decode_graph_inputs(
         q,
+        kv,
         input_row_offsets,
         kv_params,
         layer_idx,
@@ -2996,6 +2995,8 @@ def mla_prefill_decode_graph(
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
+        q,
+        kv,
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -3011,11 +3012,6 @@ def mla_prefill_decode_graph(
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     op_name = "mo.mla.graph.prefill.decode.paged"
-
-    if kv is not None:
-        input_values[0:0] = [q, kv]
-    else:
-        input_values[0:0] = [q]
 
     if quant_config is not None:
         assert (
@@ -3546,6 +3542,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
     expert_scales: TensorValue,
     expert_usage_stats_host: TensorValue,
     out_type: DType = DType.bfloat16,
+    estimated_total_m: TensorValue | None = None,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -3578,8 +3575,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
         expert_usage_stats_host: A tensor containing [max_tokens_per_expert,
             num_active_experts].
         out_type: Output dtype. Defaults to bfloat16.
-        tokens_padded_per_expert: If True, tokens per expert are padded for
-            alignment. Defaults to False.
+        estimated_total_m: The estimated total number of tokens.
 
     Returns:
         The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
@@ -3685,7 +3681,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
         )
 
     output = ops.custom(
-        "mo.grouped.matmul.dynamic.scaled.nvfp4",
+        "mo.grouped.matmul.block.scaled",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -3696,7 +3692,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
             expert_ids,
             a_scale_offsets,
             expert_scales,
-            expert_usage_stats_host[0],
+            estimated_total_m or expert_usage_stats_host[0],
             expert_usage_stats_host[1],
         ],
         out_types=[

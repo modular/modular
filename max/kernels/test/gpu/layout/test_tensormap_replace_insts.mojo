@@ -16,7 +16,7 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from std.gpu import block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -29,7 +29,6 @@ from layout.tma_async import (
     TMATensorTile,
     TMATensorTileArray,
     _idx_product,
-    create_tma_tile,
 )
 from std.memory import stack_allocation
 from std.testing import assert_equal

@@ -10,4 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GPU attention operations."""
+"""GPU multi-head attention (MHA), cross-attention, and multi-head latent
+attention (MLA) kernels. Vendor-specific implementations live under amd/ and
+nvidia/.
+"""

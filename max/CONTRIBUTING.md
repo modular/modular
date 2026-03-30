@@ -21,7 +21,14 @@ For technical details on developing for MAX and models, see the following
 document:
 
 - [Developing the MAX framework](/max/docs/development.md) covers building,
-  testing, and other information you’ll need to work in the MAX framework.
+  testing, and other information you'll need to work in the MAX framework.
+  It also covers local test prerequisites (`HF_TOKEN`, model downloads,
+  GPU-only targets) and a minimal test matrix for local iteration.
+
+When validating a local MAX change, start with the minimal test matrix in the
+[MAX developer guide](/max/docs/development.md#minimal-test-matrix)
+instead of defaulting to `//max/...`, especially if your change does not need
+HF-backed or GPU-backed integration coverage.
 
 ### Changes we *accept*
 
@@ -72,17 +79,20 @@ This guideline is here for the following reasons:
 - **Higher quality reviews**: It is much easier to spot a bug in a few lines
 than in 1000 lines.
 - **Faster overall review**: Reviewers, to approve a pull request, need to
-understand every line and understand how it fits into your overall change.
-They also need to go back and forth between files and functions to understand
-the flow of the code. This is exponentially hard as there are more lines in the code.
+understand every line and understand how it fits into your overall change. They
+also need to go back and forth between files and functions to understand the
+flow of the code. This is exponentially hard as there are more lines in the
+code.
 - **Avoiding blocking changes that are valid**: In a huge pull request, it's
-likely that some changes are valid and some need to be reworked/discussed. If all
-the changes are in the same pull request, then the valid changes will be blocked
-until all discussions have been resolved.
-- **Reducing the number of git conflicts**: Bigger pull request means slower reviews,
-thus means that the pull request will be open longer and will have more git conflicts
-to be resolved before being merged.
-- **Parallel processing**: All programmers like to parallelize. Well, reviewers also
+likely that some changes are valid and some need to be reworked/discussed. If
+all the changes are in the same pull request, then the valid changes will be
+blocked until all discussions have been resolved.
+- **Reducing the number of git conflicts**: Bigger pull request means slower
+  reviews,
+thus means that the pull request will be open longer and will have more git
+conflicts to be resolved before being merged.
+- **Parallel processing**: All programmers like to parallelize. Well, reviewers
+  also
 like to parallelize code reviews to merge your code faster. If you open two pull
 requests that are independent, then two reviewers will be able to work on your
 code.

@@ -11,8 +11,8 @@ _MULTI_VERSION_TEST_SRCS = [
     "test_graph.py",
 ]
 
-# TODO(GEX-3155): Tests that timeout on macOS
-_MACOS_INCOMPATIBLE_TESTS = [
+# Ops tests that are tested separately (with lighter deps than the main target).
+_SEPARATELY_TESTED_OPS = [
     "ops/test_argsort.py",
     "ops/test_constant.py",
     "ops/test_custom.py",
@@ -29,7 +29,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["**/*.py"],
-        exclude = _MULTI_VERSION_TEST_SRCS + _MACOS_INCOMPATIBLE_TESTS,
+        exclude = _MULTI_VERSION_TEST_SRCS + _SEPARATELY_TESTED_OPS,
     ),
     data = [
         "//max/tests/integration/Inputs/test_user_op",
@@ -66,30 +66,20 @@ modular_py_test(
     ],
 )
 
-# Tests that timeout on macOS - run only on non-macOS platforms
+# Ops tests with lighter deps (split from main target for faster builds).
 modular_py_test(
-    name = "macos_incompatible_tests",
-    srcs = _MACOS_INCOMPATIBLE_TESTS + ["conftest.py"],
+    name = "ops_tests",
+    srcs = _SEPARATELY_TESTED_OPS + ["conftest.py"],
     data = ["//max/tests/tests/graph/testdata"],
     env = {
         "MODULAR_PATH": ".",
         "TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata",
     },
-    ignore_extra_deps = [
-        # Needed for KernelLibrary initialization (GEX-1846)
-        "//max/python/max/driver",
-        "//max/python/max/engine",
-    ],
     imports = ["."],
     mojo_deps = [
         "//max:MOGGKernelAPI",
         "@mojo//:std",
     ],
-    # TODO(GEX-3155): Investigate and enable on macOS
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//max/python/max:_mlir_context",
         "//max/python/max/driver",
@@ -111,17 +101,10 @@ modular_multi_py_version_test(
     ],
     data = ["//max/tests/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata"},
-    ignore_extra_deps = [
-        # `engine` directly depends on `graph`, this is a circular import
-        # needed just for initialization of the graph. This can be removed
-        # when GEX-1846 is fixed.
-        "//max/python/max/engine",
-    ],
     imports = ["."],
     deps = [
         "//max/python/max:_mlir_context",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         requirement("hypothesis"),

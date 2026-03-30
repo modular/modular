@@ -26,7 +26,6 @@ from std.random import NormalRandom, Random
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
-from buffer.dimlist import DimList
 from tensor.managed_tensor_slice import (
     ManagedTensorSlice,
 )
@@ -42,7 +41,10 @@ from op_utils import (
     _get_size,
     _get_ctx,
     _get_shape,
+    _make_ptr,
     MAX_RANK,
+    Dispatchable,
+    dispatch_dtype,
 )
 
 
@@ -80,6 +82,51 @@ def PyInit_misc_ops() -> PythonObject:
 # ===----------------------------------------------------------------------=== #
 
 
+@fieldwise_init
+struct _RangeShapeBody(Dispatchable):
+    """Dispatch body for the RangeShape operation over data dtypes."""
+
+    var start_addr: Int
+    var stop_addr: Int
+    var step_addr: Int
+    var result_ptr: UnsafePointer[Int, MutAnyOrigin]
+
+    def call[t: DType](self) raises -> None:
+        comptime if t == DType.bool:
+            raise Error("Unsupported dtype for range shape: bool")
+        else:
+            self.result_ptr[] = range_shape_op[t](
+                _make_ptr[t](self.start_addr),
+                _make_ptr[t](self.stop_addr),
+                _make_ptr[t](self.step_addr),
+            )
+
+
+@fieldwise_init
+struct _RangeBody(Dispatchable):
+    """Dispatch body for the Range operation over data dtypes."""
+
+    var out_addr: Int
+    var start_addr: Int
+    var stop_addr: Int
+    var step_addr: Int
+    var size: Int
+    var ctx: OpaquePointer[MutExternalOrigin]
+
+    def call[t: DType](self) raises -> None:
+        comptime if t == DType.bool:
+            raise Error("Unsupported dtype for range: bool")
+        else:
+            range_op[t](
+                _make_ptr[t](self.out_addr),
+                _make_ptr[t](self.start_addr),
+                _make_ptr[t](self.stop_addr),
+                _make_ptr[t](self.step_addr),
+                self.size,
+                self.ctx,
+            )
+
+
 def range_dispatcher(
     out_buffer: PythonObject,
     start_buffer: PythonObject,
@@ -101,120 +148,17 @@ def range_dispatcher(
     var dtype = _get_dtype(out_buffer)
     var size = _get_size(out_buffer)
     var ctx = _get_ctx(device_context_ptr)
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var start_addr = Int(py=start_buffer._data_ptr())
+    var stop_addr = Int(py=stop_buffer._data_ptr())
+    var step_addr = Int(py=step_buffer._data_ptr())
 
-    # Float types
-    if dtype == DType.float16:
-        range_op[DType.float16](
-            _get_buffer_ptr[DType.float16](out_buffer),
-            _get_buffer_ptr[DType.float16](start_buffer),
-            _get_buffer_ptr[DType.float16](stop_buffer),
-            _get_buffer_ptr[DType.float16](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.float32:
-        range_op[DType.float32](
-            _get_buffer_ptr[DType.float32](out_buffer),
-            _get_buffer_ptr[DType.float32](start_buffer),
-            _get_buffer_ptr[DType.float32](stop_buffer),
-            _get_buffer_ptr[DType.float32](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.float64:
-        range_op[DType.float64](
-            _get_buffer_ptr[DType.float64](out_buffer),
-            _get_buffer_ptr[DType.float64](start_buffer),
-            _get_buffer_ptr[DType.float64](stop_buffer),
-            _get_buffer_ptr[DType.float64](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        range_op[DType.bfloat16](
-            _get_buffer_ptr[DType.bfloat16](out_buffer),
-            _get_buffer_ptr[DType.bfloat16](start_buffer),
-            _get_buffer_ptr[DType.bfloat16](stop_buffer),
-            _get_buffer_ptr[DType.bfloat16](step_buffer),
-            size,
-            ctx,
-        )
-    # Integer types
-    elif dtype == DType.int8:
-        range_op[DType.int8](
-            _get_buffer_ptr[DType.int8](out_buffer),
-            _get_buffer_ptr[DType.int8](start_buffer),
-            _get_buffer_ptr[DType.int8](stop_buffer),
-            _get_buffer_ptr[DType.int8](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        range_op[DType.int16](
-            _get_buffer_ptr[DType.int16](out_buffer),
-            _get_buffer_ptr[DType.int16](start_buffer),
-            _get_buffer_ptr[DType.int16](stop_buffer),
-            _get_buffer_ptr[DType.int16](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        range_op[DType.int32](
-            _get_buffer_ptr[DType.int32](out_buffer),
-            _get_buffer_ptr[DType.int32](start_buffer),
-            _get_buffer_ptr[DType.int32](stop_buffer),
-            _get_buffer_ptr[DType.int32](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        range_op[DType.int64](
-            _get_buffer_ptr[DType.int64](out_buffer),
-            _get_buffer_ptr[DType.int64](start_buffer),
-            _get_buffer_ptr[DType.int64](stop_buffer),
-            _get_buffer_ptr[DType.int64](step_buffer),
-            size,
-            ctx,
-        )
-    # Unsigned integer types
-    elif dtype == DType.uint8:
-        range_op[DType.uint8](
-            _get_buffer_ptr[DType.uint8](out_buffer),
-            _get_buffer_ptr[DType.uint8](start_buffer),
-            _get_buffer_ptr[DType.uint8](stop_buffer),
-            _get_buffer_ptr[DType.uint8](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        range_op[DType.uint16](
-            _get_buffer_ptr[DType.uint16](out_buffer),
-            _get_buffer_ptr[DType.uint16](start_buffer),
-            _get_buffer_ptr[DType.uint16](stop_buffer),
-            _get_buffer_ptr[DType.uint16](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        range_op[DType.uint32](
-            _get_buffer_ptr[DType.uint32](out_buffer),
-            _get_buffer_ptr[DType.uint32](start_buffer),
-            _get_buffer_ptr[DType.uint32](stop_buffer),
-            _get_buffer_ptr[DType.uint32](step_buffer),
-            size,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        range_op[DType.uint64](
-            _get_buffer_ptr[DType.uint64](out_buffer),
-            _get_buffer_ptr[DType.uint64](start_buffer),
-            _get_buffer_ptr[DType.uint64](stop_buffer),
-            _get_buffer_ptr[DType.uint64](step_buffer),
-            size,
-            ctx,
-        )
-    else:
+    if dtype == DType.bool:
         raise Error("Unsupported dtype for range: " + String(dtype))
+    dispatch_dtype(
+        _RangeBody(out_addr, start_addr, stop_addr, step_addr, size, ctx),
+        dtype,
+    )
 
 
 def range_op[
@@ -334,108 +278,20 @@ def range_shape_dispatcher(
         The output size as a Python int.
     """
     var dtype = _get_dtype(start_buffer)
+    var start_addr = Int(py=start_buffer._data_ptr())
+    var stop_addr = Int(py=stop_buffer._data_ptr())
+    var step_addr = Int(py=step_buffer._data_ptr())
 
-    # Float types
-    if dtype == DType.float16:
-        return PythonObject(
-            range_shape_op[DType.float16](
-                _get_buffer_ptr[DType.float16](start_buffer),
-                _get_buffer_ptr[DType.float16](stop_buffer),
-                _get_buffer_ptr[DType.float16](step_buffer),
-            )
-        )
-    elif dtype == DType.float32:
-        return PythonObject(
-            range_shape_op[DType.float32](
-                _get_buffer_ptr[DType.float32](start_buffer),
-                _get_buffer_ptr[DType.float32](stop_buffer),
-                _get_buffer_ptr[DType.float32](step_buffer),
-            )
-        )
-    elif dtype == DType.float64:
-        return PythonObject(
-            range_shape_op[DType.float64](
-                _get_buffer_ptr[DType.float64](start_buffer),
-                _get_buffer_ptr[DType.float64](stop_buffer),
-                _get_buffer_ptr[DType.float64](step_buffer),
-            )
-        )
-    elif dtype == DType.bfloat16:
-        return PythonObject(
-            range_shape_op[DType.bfloat16](
-                _get_buffer_ptr[DType.bfloat16](start_buffer),
-                _get_buffer_ptr[DType.bfloat16](stop_buffer),
-                _get_buffer_ptr[DType.bfloat16](step_buffer),
-            )
-        )
-    # Integer types
-    elif dtype == DType.int8:
-        return PythonObject(
-            range_shape_op[DType.int8](
-                _get_buffer_ptr[DType.int8](start_buffer),
-                _get_buffer_ptr[DType.int8](stop_buffer),
-                _get_buffer_ptr[DType.int8](step_buffer),
-            )
-        )
-    elif dtype == DType.int16:
-        return PythonObject(
-            range_shape_op[DType.int16](
-                _get_buffer_ptr[DType.int16](start_buffer),
-                _get_buffer_ptr[DType.int16](stop_buffer),
-                _get_buffer_ptr[DType.int16](step_buffer),
-            )
-        )
-    elif dtype == DType.int32:
-        return PythonObject(
-            range_shape_op[DType.int32](
-                _get_buffer_ptr[DType.int32](start_buffer),
-                _get_buffer_ptr[DType.int32](stop_buffer),
-                _get_buffer_ptr[DType.int32](step_buffer),
-            )
-        )
-    elif dtype == DType.int64:
-        return PythonObject(
-            range_shape_op[DType.int64](
-                _get_buffer_ptr[DType.int64](start_buffer),
-                _get_buffer_ptr[DType.int64](stop_buffer),
-                _get_buffer_ptr[DType.int64](step_buffer),
-            )
-        )
-    # Unsigned integer types
-    elif dtype == DType.uint8:
-        return PythonObject(
-            range_shape_op[DType.uint8](
-                _get_buffer_ptr[DType.uint8](start_buffer),
-                _get_buffer_ptr[DType.uint8](stop_buffer),
-                _get_buffer_ptr[DType.uint8](step_buffer),
-            )
-        )
-    elif dtype == DType.uint16:
-        return PythonObject(
-            range_shape_op[DType.uint16](
-                _get_buffer_ptr[DType.uint16](start_buffer),
-                _get_buffer_ptr[DType.uint16](stop_buffer),
-                _get_buffer_ptr[DType.uint16](step_buffer),
-            )
-        )
-    elif dtype == DType.uint32:
-        return PythonObject(
-            range_shape_op[DType.uint32](
-                _get_buffer_ptr[DType.uint32](start_buffer),
-                _get_buffer_ptr[DType.uint32](stop_buffer),
-                _get_buffer_ptr[DType.uint32](step_buffer),
-            )
-        )
-    elif dtype == DType.uint64:
-        return PythonObject(
-            range_shape_op[DType.uint64](
-                _get_buffer_ptr[DType.uint64](start_buffer),
-                _get_buffer_ptr[DType.uint64](stop_buffer),
-                _get_buffer_ptr[DType.uint64](step_buffer),
-            )
-        )
-    else:
+    if dtype == DType.bool:
         raise Error("Unsupported dtype for range shape: " + String(dtype))
+    var result: Int = 0
+    dispatch_dtype(
+        _RangeShapeBody(
+            start_addr, stop_addr, step_addr, UnsafePointer(to=result)
+        ),
+        dtype,
+    )
+    return PythonObject(result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -742,6 +598,33 @@ def _cumsum_cpu[
                     out_ptr[idx] = accumulator.cast[dtype]()
 
 
+@fieldwise_init
+struct _CumsumBody(Dispatchable):
+    """Dispatch body for the CumSum operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var dim0: Int
+    var dim1: Int
+    var dim2: Int
+    var exclusive: Int
+    var reverse: Int
+
+    def call[t: DType](self) raises -> None:
+        comptime if t == DType.bool:
+            raise Error("Unsupported dtype for cumsum: bool")
+        else:
+            _cumsum_cpu[t](
+                _make_ptr[t](self.out_addr),
+                _make_ptr[t](self.in_addr),
+                self.dim0,
+                self.dim1,
+                self.dim2,
+                self.exclusive,
+                self.reverse,
+            )
+
+
 def cumsum_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
@@ -783,128 +666,14 @@ def cumsum_dispatcher(
     for i in range(axis_val + 1, rank):
         dim2 *= in_shape[i]
 
-    # Float types
-    if dtype == DType.float16:
-        _cumsum_cpu[DType.float16](
-            _get_buffer_ptr[DType.float16](out_buffer),
-            _get_buffer_ptr[DType.float16](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.float32:
-        _cumsum_cpu[DType.float32](
-            _get_buffer_ptr[DType.float32](out_buffer),
-            _get_buffer_ptr[DType.float32](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.float64:
-        _cumsum_cpu[DType.float64](
-            _get_buffer_ptr[DType.float64](out_buffer),
-            _get_buffer_ptr[DType.float64](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.bfloat16:
-        _cumsum_cpu[DType.bfloat16](
-            _get_buffer_ptr[DType.bfloat16](out_buffer),
-            _get_buffer_ptr[DType.bfloat16](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    # Integer types
-    elif dtype == DType.int8:
-        _cumsum_cpu[DType.int8](
-            _get_buffer_ptr[DType.int8](out_buffer),
-            _get_buffer_ptr[DType.int8](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.int16:
-        _cumsum_cpu[DType.int16](
-            _get_buffer_ptr[DType.int16](out_buffer),
-            _get_buffer_ptr[DType.int16](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.int32:
-        _cumsum_cpu[DType.int32](
-            _get_buffer_ptr[DType.int32](out_buffer),
-            _get_buffer_ptr[DType.int32](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.int64:
-        _cumsum_cpu[DType.int64](
-            _get_buffer_ptr[DType.int64](out_buffer),
-            _get_buffer_ptr[DType.int64](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    # Unsigned integer types
-    elif dtype == DType.uint8:
-        _cumsum_cpu[DType.uint8](
-            _get_buffer_ptr[DType.uint8](out_buffer),
-            _get_buffer_ptr[DType.uint8](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.uint16:
-        _cumsum_cpu[DType.uint16](
-            _get_buffer_ptr[DType.uint16](out_buffer),
-            _get_buffer_ptr[DType.uint16](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.uint32:
-        _cumsum_cpu[DType.uint32](
-            _get_buffer_ptr[DType.uint32](out_buffer),
-            _get_buffer_ptr[DType.uint32](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    elif dtype == DType.uint64:
-        _cumsum_cpu[DType.uint64](
-            _get_buffer_ptr[DType.uint64](out_buffer),
-            _get_buffer_ptr[DType.uint64](in_buffer),
-            dim0,
-            dim1,
-            dim2,
-            exclusive_val,
-            reverse_val,
-        )
-    else:
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var in_addr = Int(py=in_buffer._data_ptr())
+
+    if dtype == DType.bool:
         raise Error("Unsupported dtype for cumsum: " + String(dtype))
+    dispatch_dtype(
+        _CumsumBody(
+            out_addr, in_addr, dim0, dim1, dim2, exclusive_val, reverse_val
+        ),
+        dtype,
+    )

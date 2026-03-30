@@ -262,21 +262,19 @@ class Qwen2_5VLModel(
         self.model: Module = Qwen2_5VL(self.model_config)
         self.model.load_state_dict(model_state_dict, strict=True)
 
-        timer = CompilationTimer("vision model")
-        vision_graph = self._build_vision_graph()
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph = self._build_vision_graph()
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_state_dict
+            )
 
-        timer = CompilationTimer("language model")
-        language_graph = self._build_language_graph()
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=llm_state_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph = self._build_language_graph()
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=llm_state_dict
+            )
 
         return vision_model, language_model
 

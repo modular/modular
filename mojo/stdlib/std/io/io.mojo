@@ -180,7 +180,7 @@ def _flush(file: FileDescriptor = stdout):
 
 def _printf_cpu[
     fmt: StaticString, *types: AnyType
-](args: VariadicPack[_, AnyType, *types], file: FileDescriptor = stdout):
+](*args: *types, file: FileDescriptor = stdout):
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
@@ -209,7 +209,7 @@ def _printf[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
     if __is_run_in_comptime_interpreter:
-        _printf_cpu[fmt](args, file)
+        _printf_cpu[fmt](*args, file=file)
     else:
         comptime if is_nvidia_gpu():
             # The argument pack will contain references for each value in the pack,
@@ -289,7 +289,7 @@ def _printf[
                 )
 
         elif not is_gpu():
-            _printf_cpu[fmt](args, file)
+            _printf_cpu[fmt](*args, file=file)
         else:
             # If we aren't targeting either a known GPU vendor, or CPU, issue
             # a target error.

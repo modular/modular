@@ -69,7 +69,7 @@ in the [comptime expression proposal](comptime-expr.md)) and a statement
 modifier:
 
 - `comptime a, b = foo()` — assignment statement modifier (valid today)
-- `var x = comptime(foo())` — expression modifier (parens requred)
+- `var x = comptime(foo())` — expression modifier (parens required)
 - `comptime if foo()` — statement modifier
 - `comptime assert x != 4` — statement modifier
 - `if comptime(foo()):` — expression modifier; evaluates `foo()` into a bool

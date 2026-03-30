@@ -12,10 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
-from nn.conv import conv_miopen
-from std.testing import assert_almost_equal
+from nn.conv.conv import conv_miopen
 
 from std.utils.index import IndexList
 
@@ -193,16 +200,19 @@ def test_conv_miopen[
         output_dim_flattened
     )
 
-    # Create device LayoutTensors
-    var input_dev_tensor = LayoutTensor[input_type, input_layout](
-        input_dev.unsafe_ptr()
+    # Create device TileTensors
+    comptime input_tt_layout = row_major(
+        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
     )
-    var filter_dev_tensor = LayoutTensor[filter_type, filter_layout](
-        filter_dev.unsafe_ptr()
+    comptime filter_tt_layout = row_major(
+        (Idx[R](), Idx[S](), Idx[C](), Idx[F]())
     )
-    var output_dev_tensor = LayoutTensor[output_type, output_layout](
-        output_dev.unsafe_ptr()
+    comptime output_tt_layout = row_major(
+        (Idx[Nout](), Idx[Hout](), Idx[Wout](), Idx[Cout]())
     )
+    var input_dev_tensor = TileTensor(input_dev, input_tt_layout)
+    var filter_dev_tensor = TileTensor(filter_dev, filter_tt_layout)
+    var output_dev_tensor = TileTensor(output_dev, output_tt_layout)
 
     ctx.enqueue_copy(input_dev, input_host_ptr)
     ctx.enqueue_copy(filter_dev, filter_host_ptr)

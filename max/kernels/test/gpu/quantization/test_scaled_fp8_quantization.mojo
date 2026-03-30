@@ -11,19 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import Dim, DimList, NDBuffer
-from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeInt,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from std.gpu.host import DeviceContext
+from layout import Coord, CoordLike, Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
@@ -33,33 +22,21 @@ from linalg.fp8_quantization import (
 from std.sys import has_nvidia_gpu_accelerator
 from std.testing import assert_equal
 
-from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type, max_finite, min_finite
-
-
-comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
 def test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
 ](ctx: DeviceContext, scale: Float32, m: Int, n: Int) raises:
-    var dynamic_shape = Index(m, n)
+    var shape = row_major(Coord(Idx(Int64(m)), Idx(Int64(n))))
     var total_size = m * n
-
-    comptime layout_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
 
-    var in_host = LayoutTensor[in_dtype, layout_2d](
-        in_host_ptr,
-        RuntimeLayout[layout_2d].row_major(dynamic_shape),
-    )
-    var out_host = LayoutTensor[out_dtype, layout_2d](
-        out_host_ptr,
-        RuntimeLayout[layout_2d].row_major(dynamic_shape),
-    )
+    var in_host = TileTensor(in_host_ptr, shape)
+    var out_host = TileTensor(out_host_ptr, shape)
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
     var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
@@ -70,11 +47,8 @@ def test_static_scaled_fp8_quant[
     ctx.enqueue_copy(in_device, in_host_ptr)
     ctx.enqueue_copy(out_device, out_host_ptr)
 
-    var shape = Coord(
-        RuntimeInt[DType.int64](Int64(m)), RuntimeInt[DType.int64](Int64(n))
-    )
-    var in_tt = TileTensor(in_device.unsafe_ptr(), row_major(shape))
-    var out_tt = TileTensor(out_device.unsafe_ptr(), row_major(shape))
+    var in_tt = TileTensor(in_device.unsafe_ptr(), shape)
+    var out_tt = TileTensor(out_device.unsafe_ptr(), shape)
 
     quantize_static_scaled_fp8[out_dtype, in_dtype](out_tt, in_tt, scale, ctx)
 
@@ -104,8 +78,6 @@ def test_static_scaled_fp8_quant[
 
     in_host_ptr.free()
     out_host_ptr.free()
-    _ = in_device^
-    _ = out_device^
 
 
 def test_dynamic_fp8_quant[
@@ -113,44 +85,26 @@ def test_dynamic_fp8_quant[
     in_dtype: DType,
     scales_dtype: DType,
     group_size_or_per_token: Int,
-    M: Optional[Int],
-    N: Optional[Int],
-](ctx: DeviceContext, m: Int, n: Int) raises:
-    comptime group_size = N.or_else(
-        UNKNOWN_VALUE
-    ) if group_size_or_per_token == -1 else group_size_or_per_token
+    MType: CoordLike,
+    NType: CoordLike,
+](ctx: DeviceContext, m: MType, n: NType) raises:
+    comptime group_size: Int = NType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    comptime static_shape = DimList[to_dim[M], to_dim[N]]()
-    comptime static_scales_shape = DimList[to_dim[N] // group_size, to_dim[M]]()
-    var dynamic_shape = Index(M.or_else(m), N.or_else(n))
-    var dynamic_scales_shape = Index(n // group_size, m)
-    var total_size = m * n
-    var scales_size = (n // group_size) * m
-
-    comptime layout_2d = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
+    var shape = row_major(Coord(m, n))
+    var scales_shape = row_major(
+        Coord(Idx[NType.static_value // group_size](), m)
     )
-    comptime scales_layout = Layout.row_major(
-        N.or_else(UNKNOWN_VALUE) // group_size, M.or_else(UNKNOWN_VALUE)
-    )
+    var total_size = m.value() * n.value()
+    var scales_size = (n.value() // group_size) * m.value()
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
     var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
 
-    var in_host = LayoutTensor[in_dtype, layout_2d](
-        in_host_ptr,
-        RuntimeLayout[layout_2d].row_major(dynamic_shape),
-    )
-    var out_host = LayoutTensor[out_dtype, layout_2d](
-        out_host_ptr,
-        RuntimeLayout[layout_2d].row_major(dynamic_shape),
-    )
-    var scales_host = LayoutTensor[scales_dtype, scales_layout](
-        scales_host_ptr,
-        RuntimeLayout[scales_layout].row_major(dynamic_scales_shape),
-    )
+    var in_host = TileTensor(in_host_ptr, shape)
+    var out_host = TileTensor(out_host_ptr, shape)
+    var scales_host = TileTensor(scales_host_ptr, scales_shape)
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
     var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
@@ -160,50 +114,43 @@ def test_dynamic_fp8_quant[
 
     ctx.enqueue_copy(in_device, in_host_ptr)
 
-    var in_ndbuffer = NDBuffer[rank=2, in_dtype, _, static_shape](
-        in_device.unsafe_ptr(),
-        IndexList[2](m, n),
-    )
-    var out_ndbuffer = NDBuffer[rank=2, out_dtype, _, static_shape](
-        out_device.unsafe_ptr(),
-        IndexList[2](m, n),
-    )
-    var scales_ndbuffer = NDBuffer[
-        rank=2, scales_dtype, _, static_scales_shape
-    ](
-        scales_device.unsafe_ptr(),
-        IndexList[2](n // group_size, m),
-    )
+    var in_tensor = TileTensor(in_device, shape)
+    var out_tensor = TileTensor(out_device, shape)
+    var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_ndbuffer)
+    @__copy_capture(in_tensor)
     @always_inline
     @parameter
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, width]:
-        return in_ndbuffer.load[width=width, alignment=alignment](row, col)
+        return in_tensor.load[width=width, alignment=alignment](
+            (Idx(row), Idx(col))
+        )
 
     quantize_dynamic_scaled_fp8[
-        input_fn, group_size_or_per_token, in_ndbuffer.shape.get[1]()
+        input_fn, group_size_or_per_token, in_tensor.static_shape[1]
     ](
-        TileTensor(out_ndbuffer.make_dims_unknown()),
-        TileTensor(scales_ndbuffer.make_dims_unknown()),
+        out_tensor,
+        scales_tensor,
         1200.0,
         ctx,
-        in_ndbuffer.dim[0](),
+        Int(in_tensor.dim[0]()),
     )
 
     ctx.enqueue_copy(out_host_ptr, out_device)
     ctx.enqueue_copy(scales_host_ptr, scales_device)
     ctx.synchronize()
 
-    for i in range(m):
-        for group_idx in range(n // group_size):
+    comptime assert in_host.flat_rank == 2
+    comptime assert scales_host.flat_rank == 2
+    for i in range(m.value()):
+        for group_idx in range(n.value() // group_size):
             var group_max = Scalar[in_dtype](0)
             for j in range(group_size):
                 group_max = max(
                     group_max,
-                    abs(in_host[i, j + group_idx * group_size][0]),
+                    abs(in_host[i, j + group_idx * group_size]),
                 )
 
             var scale_factor: Scalar[scales_dtype]
@@ -244,9 +191,6 @@ def test_dynamic_fp8_quant[
     in_host_ptr.free()
     out_host_ptr.free()
     scales_host_ptr.free()
-    _ = in_device^
-    _ = out_device^
-    _ = scales_device^
 
 
 def test_batched_dynamic_fp8_quant[
@@ -254,53 +198,27 @@ def test_batched_dynamic_fp8_quant[
     in_dtype: DType,
     scales_dtype: DType,
     group_size_or_per_token: Int,
-    BS: Optional[Int],
-    M: Optional[Int],
-    K: Optional[Int],
-](ctx: DeviceContext, bs: Int, m: Int, k: Int) raises:
-    comptime group_size = K.or_else(
-        UNKNOWN_VALUE
-    ) if group_size_or_per_token == -1 else group_size_or_per_token
+    BSType: CoordLike,
+    MType: CoordLike,
+    KType: CoordLike,
+](ctx: DeviceContext, bs: BSType, m: MType, k: KType) raises:
+    comptime group_size: Int = KType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    comptime static_shape = DimList[to_dim[BS], to_dim[M], to_dim[K]]()
-    comptime static_scales_shape = DimList[
-        to_dim[BS],
-        to_dim[K] // group_size,
-        to_dim[M],
-    ]()
-    var dynamic_shape = Index(BS.or_else(bs), M.or_else(m), K.or_else(k))
-    var dynamic_scales_shape = Index(bs, k // group_size, m)
-    var total_size = bs * m * k
-    var scales_size = bs * (k // group_size) * m
-
-    comptime layout_3d = Layout.row_major(
-        BS.or_else(UNKNOWN_VALUE),
-        M.or_else(UNKNOWN_VALUE),
-        K.or_else(UNKNOWN_VALUE),
+    var shape = row_major(Coord(bs, m, k))
+    var scales_shape = row_major(
+        Coord(bs, Idx[KType.static_value // group_size](), m)
     )
-    comptime scales_layout = Layout.row_major(
-        BS.or_else(UNKNOWN_VALUE),
-        K.or_else(UNKNOWN_VALUE) // group_size,
-        M.or_else(UNKNOWN_VALUE),
-    )
+    var total_size = bs.value() * m.value() * k.value()
+    var scales_size = bs.value() * (k.value() // group_size) * m.value()
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
     var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
 
-    var in_host = LayoutTensor[in_dtype, layout_3d](
-        in_host_ptr,
-        RuntimeLayout[layout_3d].row_major(dynamic_shape),
-    )
-    var out_host = LayoutTensor[out_dtype, layout_3d](
-        out_host_ptr,
-        RuntimeLayout[layout_3d].row_major(dynamic_shape),
-    )
-    var scales_host = LayoutTensor[scales_dtype, scales_layout](
-        scales_host_ptr,
-        RuntimeLayout[scales_layout].row_major(dynamic_scales_shape),
-    )
+    var in_host = TileTensor(in_host_ptr, shape)
+    var out_host = TileTensor(out_host_ptr, shape)
+    var scales_host = TileTensor(scales_host_ptr, scales_shape)
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
     var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
@@ -310,58 +228,47 @@ def test_batched_dynamic_fp8_quant[
 
     ctx.enqueue_copy(in_device, in_host_ptr)
 
-    var in_ndbuffer = NDBuffer[rank=3, in_dtype, _, static_shape](
-        in_device.unsafe_ptr(),
-        IndexList[3](bs, m, k),
-    )
-    var out_ndbuffer = NDBuffer[rank=3, out_dtype, _, static_shape](
-        out_device.unsafe_ptr(),
-        IndexList[3](bs, m, k),
-    )
-    var scales_ndbuffer = NDBuffer[
-        rank=3, scales_dtype, _, static_scales_shape
-    ](
-        scales_device.unsafe_ptr(),
-        IndexList[3](bs, k // group_size, m),
-    )
+    var in_tensor = TileTensor(in_device, shape)
+    var out_tensor = TileTensor(out_device, shape)
+    var scales_tensor = TileTensor(scales_device, scales_shape)
 
     @parameter
-    @__copy_capture(in_ndbuffer)
+    @__copy_capture(in_tensor)
     @always_inline
     def input_fn[
         width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[in_dtype, width]:
-        return in_ndbuffer.load[width=width, alignment=alignment](
-            Index(batch, row, col)
+        return in_tensor.load[width=width, alignment=alignment](
+            (Idx(batch), Idx(row), Idx(col))
         )
 
     batched_quantize_dynamic_scaled_fp8[
         input_fn=input_fn,
         group_size_or_per_token=group_size_or_per_token,
-        num_cols=in_ndbuffer.shape.get[2](),
+        num_cols=in_tensor.static_shape[2],
     ](
-        TileTensor(out_ndbuffer.make_dims_unknown()),
-        TileTensor(scales_ndbuffer.make_dims_unknown()),
+        out_tensor,
+        scales_tensor,
         1200.0,
         ctx,
-        num_rows=m,
-        batch_size=bs,
+        num_rows=m.value(),
+        batch_size=bs.value(),
     )
 
     ctx.enqueue_copy(out_host_ptr, out_device)
     ctx.enqueue_copy(scales_host_ptr, scales_device)
     ctx.synchronize()
 
-    for batch_idx in range(bs):
-        for i in range(m):
-            for group_idx in range(k // group_size):
+    comptime assert in_host.flat_rank == 3
+    comptime assert scales_host.flat_rank == 3
+    for batch_idx in range(bs.value()):
+        for i in range(m.value()):
+            for group_idx in range(k.value() // group_size):
                 var group_max = Scalar[in_dtype](0)
                 for j in range(group_size):
                     group_max = max(
                         group_max,
-                        abs(
-                            in_host[batch_idx, i, j + group_idx * group_size][0]
-                        ),
+                        abs(in_host[batch_idx, i, j + group_idx * group_size]),
                     )
 
                 var scale_factor = (
@@ -398,9 +305,6 @@ def test_batched_dynamic_fp8_quant[
     in_host_ptr.free()
     out_host_ptr.free()
     scales_host_ptr.free()
-    _ = in_device^
-    _ = out_device^
-    _ = scales_device^
 
 
 def main() raises:
@@ -423,41 +327,31 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             -1,
-            M=None,
-            N=Int(256),
-        ](ctx, 1, 256)
+        ](ctx, Idx(Int(1)), Idx[256]())
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-            M=None,
-            N=Int(1024),
-        ](ctx, 1, 1024)
+        ](ctx, Idx(Int(1)), Idx[1024]())
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-            M=None,
-            N=Int(16384),
-        ](ctx, 1, 16384)
+        ](ctx, Idx(Int(1)), Idx[16384]())
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             128,
-            M=None,
-            N=Int(16384),
-        ](ctx, 4, 16384)
+        ](ctx, Idx(Int(4)), Idx[16384]())
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.float32,
             DType.float32,
             128,
-            M=None,
-            N=Int(576),
-        ](ctx, 4, 576)
+        ](ctx, Idx(Int(4)), Idx[576]())
 
         # Test different alignments of the group_size to exercise the computation of simd_width.
         test_dynamic_fp8_quant[
@@ -465,63 +359,44 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             -1,
-            M=None,
-            N=Int(260),
-        ](ctx, 2, 260)
+        ](ctx, Idx(Int(2)), Idx[260]())
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-            M=None,
-            N=Int(264),
-        ](ctx, 2, 264)
+        ](ctx, Idx(Int(2)), Idx[264]())
 
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-            BS=None,
-            M=None,
-            K=Int(256),
-        ](ctx, 2, 1, 256)
+        ](ctx, Idx(Int(2)), Idx(Int(1)), Idx[256]())
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-            BS=None,
-            M=None,
-            K=Int(1024),
-        ](ctx, 3, 1, 1024)
+        ](ctx, Idx(Int(3)), Idx(Int(1)), Idx[1024]())
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-            BS=None,
-            M=None,
-            K=Int(16384),
-        ](ctx, 4, 1, 16384)
+        ](ctx, Idx(Int(4)), Idx(Int(1)), Idx[16384]())
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             128,
-            BS=None,
-            M=None,
-            K=Int(512),
-        ](ctx, 128, 400, 512)
+        ](ctx, Idx(Int(128)), Idx(Int(400)), Idx[512]())
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.float32,
             DType.float32,
             128,
-            BS=None,
-            M=None,
-            K=Int(128),
-        ](ctx, 128, 1024, 128)
+        ](ctx, Idx(Int(128)), Idx(Int(1024)), Idx[128]())
 
         # Test different alignments of the group_size to exercise the computation of simd_width.
         test_batched_dynamic_fp8_quant[
@@ -529,19 +404,13 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             132,
-            BS=None,
-            M=None,
-            K=Int(528),
-        ](ctx, 128, 400, 528)
+        ](ctx, Idx(Int(128)), Idx(Int(400)), Idx[528]())
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.float32,
             DType.float32,
             136,
-            BS=None,
-            M=None,
-            K=Int(544),
-        ](ctx, 128, 1024, 544)
+        ](ctx, Idx(Int(128)), Idx(Int(1024)), Idx[544]())
 
         # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
         comptime if has_nvidia_gpu_accelerator():
@@ -550,22 +419,16 @@ def main() raises:
                 DType.bfloat16,
                 DType.float8_e8m0fnu,
                 128,
-                M=None,
-                N=Int(1024),
-            ](ctx, 43, 1024)
+            ](ctx, Idx(Int(43)), Idx[1024]())
             test_dynamic_fp8_quant[
                 DType.float8_e4m3fn,
                 DType.bfloat16,
                 DType.float8_e8m0fnu,
                 128,
-                M=None,
-                N=Int(16384),
-            ](ctx, 3, 16384)
+            ](ctx, Idx(Int(3)), Idx[16384]())
             test_dynamic_fp8_quant[
                 DType.float8_e4m3fn,
                 DType.float32,
                 DType.float8_e8m0fnu,
                 128,
-                M=None,
-                N=Int(576),
-            ](ctx, 1, 576)
+            ](ctx, Idx(Int(1)), Idx[576]())

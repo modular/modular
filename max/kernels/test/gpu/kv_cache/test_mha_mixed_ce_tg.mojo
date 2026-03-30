@@ -15,12 +15,12 @@ from std.math import rsqrt
 
 from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from std.memory import memcpy
-from nn.mha import flash_attention
-from nn.mha_mask import CausalMask
+from nn.attention.gpu.mha import flash_attention
+from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList

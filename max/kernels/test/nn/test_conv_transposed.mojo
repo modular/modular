@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, isclose
+from std.math import isclose
 from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.algorithm.functional import vectorize
 from layout import Coord, TileTensor, row_major
-from nn.conv_transpose import (
+from nn.conv.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
     conv_transpose_shape,
     pack_filter,
     pack_filter_shape,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvInfoStatic,
     ConvShape,
     append_shape,
@@ -33,7 +33,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from std.testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, TestSuite
 
 from std.utils.index import Index, IndexList
 

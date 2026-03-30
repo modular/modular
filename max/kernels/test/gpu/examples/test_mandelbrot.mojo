@@ -16,11 +16,10 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
 from std.complex import ComplexSIMD
-from std.gpu import *
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 
-from std.utils.index import Index
 from std.sys import has_apple_gpu_accelerator
 from layout import TileTensor, Idx, row_major
 

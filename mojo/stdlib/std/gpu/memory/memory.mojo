@@ -642,7 +642,7 @@ def async_copy[
         comptime if fill:
             for i in range(n_src_scalars):
                 dst.store(i, src.load(i))
-            for i in range(n_src_scalars, n_scalars):
+            for i in range(Int(n_src_scalars), n_scalars):
                 dst.store(i, fill.value())
         else:
             comptime for i in range(n_scalars):
@@ -1182,6 +1182,104 @@ def cp_async_bulk_tensor_shared_cluster_global[
                 Int32(coords[3]),
                 Int32(coords[4]),
             )
+
+
+@always_inline("nodebug")
+def cp_async_bulk_tensor_2d_gather4[
+    dst_type: AnyType,
+    mbr_type: AnyType,
+    /,
+    *,
+    cta_group: Int = 1,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[
+        mut=True, dst_type, _, address_space=AddressSpace.SHARED
+    ],
+    tma_descriptor: OpaquePointer[mut=False, _],
+    mem_bar: UnsafePointer[
+        mut=False, mbr_type, _, address_space=AddressSpace.SHARED
+    ],
+    col_idx: Int32,
+    row0: Int32,
+    row1: Int32,
+    row2: Int32,
+    row3: Int32,
+):
+    """Initiates an asynchronous gather4 copy of 4 non-contiguous rows from a 2D tensor
+    in global memory into shared memory using TMA.
+
+    This is a Blackwell (SM100+) instruction that loads 4 rows at arbitrary row indices
+    from a 2D tensor map, placing them contiguously in shared memory. The tensor map
+    must be created with box dim1=1 (one row per tile). Each row is a full tile along
+    the column dimension.
+
+    PTX: ``cp.async.bulk.tensor.2d.shared::cta.global.tile::gather4
+    .mbarrier::complete_tx::bytes``
+
+    Parameters:
+        dst_type: The data type of the destination memory.
+        mbr_type: The data type of the memory barrier.
+        cta_group: The CTA group for the copy operation. Must be 1 or 2.
+        eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+    Args:
+        dst_mem: Pointer to the destination in shared memory. Must be 128-byte aligned.
+        tma_descriptor: Pointer to the TMA descriptor (created with ``cuTensorMapEncodeTiled``
+            and box dim1=1).
+        mem_bar: Pointer to a shared memory barrier for synchronization.
+        col_idx: Column offset in the source tensor (typically 0 for full-row loads).
+        row0: Row index of the first row to gather.
+        row1: Row index of the second row to gather.
+        row2: Row index of the third row to gather.
+        row3: Row index of the fourth row to gather.
+
+    Constraints:
+        Requires SM100 (Blackwell) or newer GPU architecture.
+    """
+    comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "gather4 requires SM100 (Blackwell) or newer"
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+    comptime tma_asm = String(
+        "cp.async.bulk.tensor.2d",
+        ".cta_group::2" if cta_group == 2 else "",
+        ".shared::cta.global.tile::gather4.mbarrier::complete_tx::bytes",
+        ".L2::cache_hint" if cache_hint else "",
+    )
+
+    comptime if cache_hint:
+        inlined_assembly[
+            tma_asm + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], $8;",
+            NoneType,
+            constraints="r,l,r,r,r,r,r,r,l",
+        ](
+            Int32(Int(dst_mem)),
+            tma_descriptor,
+            Int32(Int(mem_bar)) & 0xFEFFFFFF,
+            col_idx,
+            row0,
+            row1,
+            row2,
+            row3,
+            Int64(eviction_policy._value),
+        )
+    else:
+        inlined_assembly[
+            tma_asm + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2];",
+            NoneType,
+            constraints="r,l,r,r,r,r,r,r",
+        ](
+            Int32(Int(dst_mem)),
+            tma_descriptor,
+            Int32(Int(mem_bar)) & 0xFEFFFFFF,
+            col_idx,
+            row0,
+            row1,
+            row2,
+            row3,
+        )
 
 
 @always_inline("nodebug")

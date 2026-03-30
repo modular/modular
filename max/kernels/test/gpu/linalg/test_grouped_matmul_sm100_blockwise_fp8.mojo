@@ -16,7 +16,6 @@ from std.sys import align_of, size_of
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from internal_utils._measure import relative_difference
 from layout import (
     Layout,
     LayoutTensor,
@@ -30,11 +29,7 @@ from layout import (
 from layout._fillers import random
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
-    grouped_matmul_sm100_blockwise_scaled_fp8,
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
-)
-from linalg.matmul.gpu.sm100.blockwise_fp8 import (
-    matmul_sm100_blockwise_scaled_fp8,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.utils import elementwise_epilogue_type
