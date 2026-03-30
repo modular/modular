@@ -1157,23 +1157,7 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
                                     ASTDecl &declScope) const {
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
-    // This is an unbound function. Just return a reference.
-    if (paramBindings.empty()) {
-      // Check deprecation and stability warnings for the function reference.
-      // For static method references (e.g., Type.method), compute the fixit
-      // location as the method identifier, not the full expression.
-      SMLoc fixitLoc = getAttributeNameLoc(getExpr());
-      checkDeclUsageWarnings(*fnDecls.front(), getExprLoc(), declScope,
-                             getShared(), getExpr()->getRange(),
-                             CallSyntax::kDirectCall, fixitLoc);
-
-      auto fnOp = cast<FnOp>(fnDecls.front()->getIfOperation());
-      if (fnOp.getAsLiteral())
-        return fnOp.getFuncLiteralGenerator(getShared().getEvaluationContext());
-      return fnOp.getBoundReference(getShared().getEvaluationContext());
-    }
-
-    // Bind the parameters.
+    // Bind the parameters if there is any.
     return getBoundConstantAttr();
   }
 
