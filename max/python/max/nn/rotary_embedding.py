@@ -25,8 +25,13 @@ from .layer import Module
 class RotaryEmbedding(Module):
     """Applies Rotary Position Embedding (RoPE) to transformer activations.
 
-    Computes the frequency tensor for complex exponentials and applies it to
-    input tensors. Supports both interleaved and non-interleaved RoPE variants.
+    When called, ``RotaryEmbedding`` computes the frequency tensor for complex
+    exponentials and applies it to input tensors. It accepts a
+    :class:`~max.graph.TensorValueLike` of shape ``(batch, seq_len, n_kv_heads,
+    head_dim)`` along with optional ``start_pos`` and ``seq_len`` arguments
+    and returns a :class:`~max.graph.TensorValue` of the same shape with rotary
+    positional embeddings applied. ``RotaryEmbedding`` supports both interleaved and
+    non-interleaved RoPE variants.
 
     Args:
         dim: The model's hidden dimension.

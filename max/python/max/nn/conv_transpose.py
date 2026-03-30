@@ -24,6 +24,13 @@ from .layer import Module
 class ConvTranspose1d(Module):
     """A 1D transposed convolution operator over an input image composed of several input planes.
 
+    When called, ``ConvTranspose1d`` accepts a :class:`~max.graph.TensorValue`
+    of shape ``(batch, length, in_channels)`` and returns a
+    :class:`~max.graph.TensorValue` of shape ``(batch, new_length,
+    out_channels)``. If ``permute=True``, the input and output follow PyTorch
+    channel-first layout: ``(batch, in_channels, length)`` and ``(batch,
+    out_channels, new_length)``.
+
     .. code-block:: python
 
         conv = nn.ConvTranspose1d(
@@ -227,25 +234,33 @@ class ConvTranspose1d(Module):
 
 class WeightNormConvTranspose1d(Module):
     """A 1D transposed convolution operator over an input image composed of several input planes.
-    This version uses weight normalization as described in https://arxiv.org/abs/1602.07868.
 
-    Weight normalization reparameterizes weights in terms of a direction vector ``v`` and a magnitude scalar ``g``.
-    This can help improve optimization by decoupling the length and direction of weight vectors.
+    MAX implements weight normalization as described in `Weight
+    Normalization <https://arxiv.org/abs/1602.07868>`_. Weight normalization
+    reparameterizes weights in terms of a direction vector ``v`` and a
+    magnitude scalar ``g``. This can help improve optimization by decoupling
+    the length and direction of weight vectors.
 
-    For example:
-        .. code-block:: python
+    When called, ``WeightNormConvTranspose1d`` accepts a
+    :class:`~max.graph.TensorValue` of shape ``(batch, length, in_channels)``
+    and returns a :class:`~max.graph.TensorValue` of shape ``(batch,
+    new_length, out_channels)``. If ``permute=True``, the input and output
+    follow PyTorch channel-first layout: ``(batch, in_channels, length)`` and
+    ``(batch, out_channels, new_length)``.
 
-            conv = WeightNormConvTranspose1d(
-                length=kernel_size,
-                in_channels=in_channels,
-                out_channels=out_channels,
-                dtype=dtype,
-                stride=stride,
-                padding=padding,
-                output_padding=output_padding,
-                has_bias=False,
-                device=DeviceRef.GPU(),
-            )
+    .. code-block:: python
+
+        conv = WeightNormConvTranspose1d(
+            length=kernel_size,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            dtype=dtype,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            has_bias=False,
+            device=DeviceRef.GPU(),
+        )
     """
 
     device: DeviceRef | None

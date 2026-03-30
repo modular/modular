@@ -24,29 +24,29 @@ def split_batch(
 ) -> tuple[list[TensorValue], list[TensorValue]]:
     """Split a ragged input batch into data parallel batches.
 
-    See `split_batch_replicated` for a version of this method that takes
-    replicated inputs and input_row_offsets for each device.
+    .. code-block:: python
 
-    Example:
+        # Input
         devices = [device_1, device_2]
         input = [seq_1, seq_2, seq_3, seq_4]
         input_row_offsets = [0, offset_1, offset_2, offset_3, offset_4]
         data_parallel_splits = [0, 2, 4]
 
-    Outputs:
+        # Outputs
         split_input = [seq_1, seq_2], [seq_3, seq_4]
         split_offsets = [0, offset_1, offset_2], [0, new_offset_3, new_offset_4]
 
-    After being split, the outputs will be placed on the devices specified in
-    `devices`.
+    This method places the outputs on the devices specified in `devices`.
 
-    The size of data_parallel_splits must be equal to the number of devices + 1.
+    See :func:`split_batch_replicated` for a version of this method that takes
+    replicated inputs and ``input_row_offsets`` for each device.
 
     Args:
         input: Input tensor of shape [total_seq_len, ...].
         input_row_offsets: Row offsets tensor indicating batch boundaries.
-        data_parallel_splits: Buffer containing batch splits for each device.
-            Must be located on CPU.
+        data_parallel_splits: Buffer containing batch splits for each device
+            that must be located on CPU. The size of ``data_parallel_splits``
+            must be equal to the number of devices + 1.
 
     Returns:
         Tuple of (split_input, split_offsets)
@@ -116,20 +116,19 @@ def split_batch_replicated(
     each device. Also see `split_input` for a version of this method that takes
     a single ragged token batch.
 
-    Example:
+    .. code-block:: python
+
+        # Input
         devices = [device_1, device_2]
         input = [seq_1, seq_2, seq_3, seq_4] (replicated for each device)
         input_row_offsets = [0, offset_1, offset_2, offset_3, offset_4] (replicated for each device)
         data_parallel_splits = [0, 2, 4]
 
-    Outputs:
+        # Outputs
         split_input = [seq_1, seq_2], [seq_3, seq_4]
         split_offsets = [0, offset_1, offset_2], [0, new_offset_3, new_offset_4]
 
-    After being split, the outputs will be placed on the devices specified in
-    `devices`.
-
-    The size of data_parallel_splits must be equal to the number of devices + 1.
+    This method places the outputs on the devices specified in `devices`.
 
     Args:
         devices: List of devices to split the input on.
@@ -139,12 +138,13 @@ def split_batch_replicated(
             The list must be the same length as the number of devices.
         input_row_offsets_int64: Row offsets tensor indicating batch boundaries.
             Must be located on CPU.
-        data_parallel_splits: Buffer containing batch splits for each device.
-            Must be located on CPU.
+        data_parallel_splits: Buffer containing batch splits for each device
+            that must be located on CPU. The size of ``data_parallel_splits``
+            must be equal to the number of devices + 1.
 
     Returns:
         Tuple of (split_input, split_offsets)
-        where split_input and split_offsets are lists of tensors, one per device
+        where split_input and split_offsets are lists of tensors, one per device.
     """
     cpu = DeviceRef.CPU()
     num_devices = len(devices)

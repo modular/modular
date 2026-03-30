@@ -4829,8 +4829,6 @@ def merge_ragged_tensors(
                 [total_a_rows + total_b_rows, ...].
             - The merged row offsets with the same shape as input row offsets.
 
-    Example:
-
     .. code-block:: python
 
         a = [1, 2, 3, 4, 5, 6]

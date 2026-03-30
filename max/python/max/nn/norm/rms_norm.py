@@ -31,13 +31,16 @@ from ..layer import Module, Shardable
 
 
 class RMSNorm(Module, Shardable):
-    """Computes the Root Mean Square normalization on inputs.
+    """Computes the root mean square normalization on inputs.
 
-    RMSNorm normalizes the input using only the root mean square statistic,
-    without centering by the mean. This makes it more efficient than
-    LayerNorm while maintaining comparable performance in transformer models.
+    When called, ``RMSNorm`` normalizes the input using only the root mean
+    square statistic, without centering by the mean. It accepts a
+    :class:`~max.graph.TensorValue` of shape ``(..., dim)`` and returns a
+    normalized :class:`~max.graph.TensorValue` of the same shape.
 
-    See https://arxiv.org/abs/1910.07467
+    This is more efficient than LayerNorm while maintaining comparable
+    performance in transformer models. For more information, see `Root Mean
+    Square Layer Normalization <https://arxiv.org/abs/1910.07467>`_.
 
     Args:
         dim: Size of last dimension of the expected input.

@@ -47,11 +47,13 @@ class Linear(Module, Shardable):
     """Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
 
     This layer implements a fully connected layer where inputs are multiplied
-    by a weight matrix and optionally added with a bias vector.
-    Both weights and bias initially reside on CPU, and the model init phase
-    moves them to the specified device.
+    by a weight matrix and optionally added with a bias vector. When called,
+    ``Linear`` accepts a :class:`~max.graph.TensorValue` of shape ``(...,
+    in_dim)`` and returns a :class:`~max.graph.TensorValue` of shape ``(...,
+    out_dim)``.
 
-    Example:
+    Both weights and bias initially reside on CPU and are moved to the
+    specified device during model initialization.
 
     .. code-block:: python
 
@@ -750,7 +752,9 @@ class GPTQLinear(Linear):
 class MLP(Module, Shardable):
     """Simple multi-layer perceptron composed of three :class:`~max.nn.Linear` layers.
 
-    Defaults to SiLU activation function.
+    When called, ``MLP`` accepts a :class:`~max.graph.TensorValueLike` of shape
+    ``(..., hidden_dim)`` and returns a :class:`~max.graph.TensorValue` of
+    the same shape ``(..., hidden_dim)``.
     """
 
     def __init__(

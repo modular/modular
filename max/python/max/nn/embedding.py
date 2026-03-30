@@ -34,11 +34,14 @@ from .layer import Module
 class Embedding(Module):
     """A lookup table for embedding integer indices into dense vectors.
 
-    This layer maps each integer index to a dense vector of fixed size.
-    Embedding weights are stored on the CPU but are moved to the specified
-    device during the model init phase.
+    When called, ``Embedding`` maps each integer index to a dense vector of
+    fixed size. It accepts a :class:`~max.graph.TensorValueLike` of integer
+    indices with shape ``(batch, ..., num_indices)`` and returns a
+    :class:`~max.graph.TensorValue` of shape ``(batch, ..., num_indices,
+    hidden_dim)`` containing the corresponding embedding vectors.
 
-    Example:
+    Embedding weights are stored on the CPU but are moved to the specified
+    device during model initialization.
 
     .. code-block:: python
 
@@ -118,10 +121,12 @@ class Embedding(Module):
 class VocabParallelEmbedding(Module):
     """A lookup table for embedding integer indices into dense vectors.
 
-    This layer works like `nn.Embedding` except the embedding table is sharded
-    on the vocabulary dimension across all devices.
-
-    Example:
+    This layer works like :class:`Embedding` except the embedding table is
+    sharded on the vocabulary dimension across all devices. When called,
+    ``VocabParallelEmbedding`` accepts a :class:`~max.graph.TensorValueLike` of
+    integer indices along with signal buffers for cross-device communication
+    and returns a list of :class:`~max.graph.TensorValue` tensors (one per
+    device) containing the corresponding embedding vectors.
 
     .. code-block:: python
 

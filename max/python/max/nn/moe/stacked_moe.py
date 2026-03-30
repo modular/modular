@@ -208,8 +208,6 @@ class StackedMoE(Module, Shardable):
     - Optional FP8 quantization with block scaling.
     - Optional shared experts.
 
-    For example:
-
     .. code-block:: python
 
         # Basic usage (Llama4/Qwen3VL style)
