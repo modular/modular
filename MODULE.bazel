@@ -83,22 +83,6 @@ llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_con
 
 llvm_configure(name = "llvm-project")
 
-npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
-npm.npm_translate_lock(
-    name = "npm",
-    data = ["//bazel/lint:package.json"],
-    lifecycle_hooks_exclude = [
-        "cpu-features",
-    ],
-    npm_package_lock = "//bazel/lint:package-lock.json",
-    pnpm_lock = "//bazel/lint:pnpm-lock.yaml",
-    verify_node_modules_ignored = "//:.bazelignore",
-)
-use_repo(npm, "npm")
-
-pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm", dev_dependency = True)
-use_repo(pnpm, "pnpm")
-
 cfg_workaround = use_repo_rule("//bazel/internal:cfg_workaround.bzl", "cfg_workaround")
 
 cfg_workaround(name = "cfg_workaround.bzl")
