@@ -85,7 +85,6 @@ _NO_DOCSTRING_LIST = [
     "sys/intrinsics.mojo",  # docstring fix needed: missing import of 'gather'/'scatter' in docstring examples
     "tempfile/tempfile.mojo",  # docstring fix needed: typo in import; uses private _rmtree; missing os imports
     "utils/_nicheable.mojo",  # docstring fix needed: missing import of UnsafeNicheable/UnsafeSingleNicheable
-    "memory/span.mojo",  # LSP crash (MOCO-3621): SIGSEGV on unified closures in docstring examples
 ]
 
 # One sharded test target covering the entire stdlib:

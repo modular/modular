@@ -2194,8 +2194,9 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
       nestedSignature.getFnMetadata(), nestedSignature.getMetadata());
 
   OpBuilder builder = moduleDecl->getDeclEndBuilder();
-  auto promotedOp = builder.clone(*nestedFn.getOperation());
-  FnOp promotedFn = cast<FnOp>(promotedOp);
+  nestedFn->moveBefore(builder.getInsertionBlock(),
+                       builder.getInsertionPoint());
+  FnOp promotedFn = nestedFn;
   // We need to mangle the symbol name because we're lifting these into the file
   // scope - if you have two closures with the same name in different functions,
   // that's fine, but when we lift them to the file scope they need to have
@@ -2205,12 +2206,9 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
   promotedFn.setFuncTypeGenerator(promotedSignature);
   auto &decl = shared.declResolver->addFullyResolvedDecl(
       promotedFn, nestedFn.getSourceNameAttr(), loc, moduleDecl);
-  // Take all decls from the original decl so that we don't end up with dangling
-  // pointers.
+  // Transfer child decls from the original to the promoted decl. Since the op
+  // was moved (not cloned), all mlir::Value pointers are still valid.
   decl.takeDecls(nestedFnDecl);
-
-  // Erase the existing decl, since we're about to replace its IR value.
-  nestedFn->erase();
   nestedFnDecl.setIRValue(nullptr);
 
   return &decl;
