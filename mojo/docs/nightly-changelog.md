@@ -136,6 +136,9 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
+- `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
+  or `String.count_codepoints()`.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as

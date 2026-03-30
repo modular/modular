@@ -72,9 +72,9 @@ def _get_lstat_st_mode(var path: String) raises -> Int:
 def _user_home_path(path: String) -> String:
     var user_end = path.find(sep, 1)
     if user_end < 0:
-        user_end = len(path)
+        user_end = path.byte_length()
     # Special POSIX syntax for ~[user-name]/path
-    if len(path) > 1 and user_end > 1:
+    if path.byte_length() > 1 and user_end > 1:
         try:
             return pwd.getpwnam(String(path[byte=1:user_end])).pw_dir
         except:
@@ -222,7 +222,7 @@ def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
     var head = String(fspath[byte=:i])
-    if head and head != os.sep * len(head):
+    if head and head != os.sep * head.byte_length():
         return String(head.rstrip(os.sep))
     return head
 
@@ -440,7 +440,7 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
     var head, tail = fspath[byte=:i], fspath[byte=i:]
-    if head and head != String(os.sep) * len(head):
+    if head and head != String(os.sep) * head.byte_length():
         head = head.rstrip(sep)
     return String(head), String(tail)
 
@@ -466,7 +466,7 @@ def basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
     var head = fspath[byte=i:]
-    if head and head != os.sep * len(head):
+    if head and head != os.sep * head.byte_length():
         return String(head.rstrip(os.sep))
     return String(head)
 
