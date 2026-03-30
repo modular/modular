@@ -14,14 +14,14 @@
 """Downsampling utilities for MAX framework."""
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
-from max.graph.ops import avg_pool2d
-from max.nn.conv import Conv2d
-from max.nn.layer import Module
-from max.nn.norm import LayerNorm, RMSNorm
+from max.experimental import functional as F
+from max.experimental.nn import Conv2d, Module
+from max.experimental.nn.norm import LayerNorm, RMSNorm
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef
 
 
-class Downsample2D(Module):
+class Downsample2D(Module[[Tensor], Tensor]):
     """A 2D downsampling layer with an optional convolution.
 
     Parameters:
@@ -38,14 +38,11 @@ class Downsample2D(Module):
         kernel_size (`int`, default `3`):
             kernel size for the convolution.
         norm_type (`str`, optional):
-            normalization type. Supported: "ln_norm" (LayerNorm), "rms_norm"
-            (RMSNorm), or None.
+            normalization type. Supported: "ln_norm" (LayerNorm), "rms_norm" (RMSNorm), or None.
         eps (`float`, optional):
-            epsilon for normalization. Defaults to 1e-5 for LayerNorm, 1e-6
-            for RMSNorm.
+            epsilon for normalization. Defaults to 1e-5 for LayerNorm, 1e-6 for RMSNorm.
         elementwise_affine (`bool`, optional):
-            elementwise affine for normalization. Only used for LayerNorm.
-            Defaults to True.
+            elementwise affine for normalization. Only used for LayerNorm. Defaults to True.
         bias (`bool`, default `True`):
             whether to use bias in the convolution.
     """
@@ -75,51 +72,41 @@ class Downsample2D(Module):
             name: Name for the convolution layer (unused, kept for compatibility).
             kernel_size: Kernel size for the convolution.
             norm_type: Normalization type ("ln_norm", "rms_norm", or None).
-            eps: Epsilon for normalization. Defaults to 1e-5 for LayerNorm,
-                1e-6 for RMSNorm.
-            elementwise_affine: Elementwise affine for LayerNorm.
+            eps: Epsilon for normalization. Defaults to 1e-5 for LayerNorm, 1e-6 for RMSNorm.
+            elementwise_affine: Elementwise affine for normalization. Only used for LayerNorm.
             bias: Whether to use bias in the convolution.
             device: Device reference for module placement.
             dtype: Data type for module parameters.
         """
         super().__init__()
-        stride = 2
-        if dtype is None:
-            raise ValueError("dtype must be set for Downsample2D")
-        if device is None:
-            raise ValueError("device must be set for Downsample2D")
-
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
         self.padding = padding
+        stride = 2
         self.name = name
 
         self.norm: LayerNorm | RMSNorm | None = None
         if norm_type == "ln_norm":
             self.norm = LayerNorm(
-                dims=channels,
-                devices=[device],
-                dtype=dtype,
+                dim=channels,
                 eps=eps or 1e-5,
-                use_bias=(
-                    True if elementwise_affine is None else elementwise_affine
-                ),
+                elementwise_affine=elementwise_affine
+                if elementwise_affine is not None
+                else True,
             )
         elif norm_type == "rms_norm":
-            self.norm = RMSNorm(
-                dim=channels,
-                dtype=dtype,
-                eps=eps or 1e-6,
-            )
-        elif norm_type is not None:
+            self.norm = RMSNorm(dim=channels, eps=eps or 1e-6)
+        elif norm_type is None:
+            pass
+        else:
             raise ValueError(f"unknown norm_type: {norm_type}")
 
         self.conv: Conv2d | None = None
         if use_conv:
             self.conv = Conv2d(
                 kernel_size=kernel_size,
-                in_channels=channels,
+                in_channels=self.channels,
                 out_channels=self.out_channels,
                 dtype=dtype,
                 stride=stride,
@@ -128,13 +115,14 @@ class Downsample2D(Module):
                 device=device,
                 permute=True,
             )
-        elif channels != self.out_channels:
-            raise ValueError(
-                f"When use_conv=False, channels must equal out_channels. "
-                f"Got channels={channels}, out_channels={self.out_channels}"
-            )
+        else:
+            if self.channels != self.out_channels:
+                raise ValueError(
+                    f"When use_conv=False, channels must equal out_channels. "
+                    f"Got channels={self.channels}, out_channels={self.out_channels}"
+                )
 
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Apply 2D downsampling with optional convolution.
 
         Args:
@@ -144,22 +132,27 @@ class Downsample2D(Module):
             Downsampled tensor of shape [N, C_out, H//2, W//2].
         """
         if self.norm is not None:
-            hidden_states = ops.permute(hidden_states, [0, 2, 3, 1])
+            hidden_states = F.permute(hidden_states, [0, 2, 3, 1])
             hidden_states = self.norm(hidden_states)
-            hidden_states = ops.permute(hidden_states, [0, 3, 1, 2])
+            hidden_states = F.permute(hidden_states, [0, 3, 1, 2])
 
         if self.use_conv and self.padding == 0:
-            hidden_states = ops.pad(hidden_states, [0, 0, 0, 0, 0, 1, 0, 1])
+            paddings = [0, 0, 0, 0, 0, 1, 0, 1]
+            hidden_states = F.pad(
+                hidden_states, paddings=paddings, mode="constant", value=0
+            )
 
         if self.use_conv:
             assert self.conv is not None
-            return self.conv(hidden_states)
+            hidden_states = self.conv(hidden_states)
+        else:
+            hidden_states = F.permute(hidden_states, [0, 2, 3, 1])
+            hidden_states = F.avg_pool2d(
+                hidden_states,
+                kernel_size=(2, 2),
+                stride=2,
+                padding=0,
+            )
+            hidden_states = F.permute(hidden_states, [0, 3, 1, 2])
 
-        hidden_states = ops.permute(hidden_states, [0, 2, 3, 1])
-        hidden_states = avg_pool2d(
-            hidden_states,
-            kernel_size=(2, 2),
-            stride=2,
-            padding=0,
-        )
-        return ops.permute(hidden_states, [0, 3, 1, 2])
+        return hidden_states

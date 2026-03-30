@@ -14,13 +14,13 @@
 import math
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import GroupNorm
+from max.experimental import functional as F
+from max.experimental.nn import GroupNorm, Linear, Module, ModuleList
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef
 
 
-class VAEAttention(Module):
+class VAEAttention(Module[[Tensor], Tensor]):
     """Spatial attention module for VAE models.
 
     This module performs self-attention on 2D spatial features by:
@@ -28,9 +28,9 @@ class VAEAttention(Module):
     2. Applying scaled dot-product attention (optimized for small sequences)
     3. Converting back to [N, C, H, W] format
 
-    Note: Manual attention is used instead of flash-attention style kernels
-    because VAE attention typically has small sequence lengths (H*W) where
-    launch overhead outweighs benefits.
+    Note: Manual attention is used instead of flash_attention_gpu because
+    VAE attention typically has small sequence lengths (H*W) where flash
+    attention overhead outweighs benefits.
     """
 
     def __init__(
@@ -55,58 +55,48 @@ class VAEAttention(Module):
             dtype: Data type.
         """
         super().__init__()
-        if dtype is None:
-            raise ValueError("dtype must be set for VAEAttention")
-        if device is None:
-            raise ValueError("device must be set for VAEAttention")
-
         self.query_dim = query_dim
         self.heads = heads
         self.dim_head = dim_head
         self.inner_dim = heads * dim_head
+
         self.group_norm = GroupNorm(
             num_groups=num_groups,
             num_channels=query_dim,
             eps=eps,
             affine=True,
-            device=device,
         )
+
         self.to_q = Linear(
             in_dim=query_dim,
             out_dim=self.inner_dim,
-            dtype=dtype,
-            device=device,
-            has_bias=True,
+            bias=True,
         )
         self.to_k = Linear(
             in_dim=query_dim,
             out_dim=self.inner_dim,
-            dtype=dtype,
-            device=device,
-            has_bias=True,
+            bias=True,
         )
         self.to_v = Linear(
             in_dim=query_dim,
             out_dim=self.inner_dim,
-            dtype=dtype,
-            device=device,
-            has_bias=True,
+            bias=True,
         )
-        self.to_out = LayerList(
+        # Use ModuleList to match original weights format (to_out.0.*)
+        self.to_out = ModuleList(
             [
                 Linear(
                     in_dim=self.inner_dim,
                     out_dim=query_dim,
-                    dtype=dtype,
-                    device=device,
-                    has_bias=True,
+                    bias=True,
                 )
             ]
         )
+
         self.scale = 1.0 / math.sqrt(dim_head)
 
-    def __call__(self, x: TensorValue) -> TensorValue:
-        """Apply spatial attention to a 2D image tensor.
+    def forward(self, x: Tensor) -> Tensor:
+        """Apply spatial attention to 2D image tensor.
 
         Args:
             x: Input tensor of shape [N, C, H, W].
@@ -115,31 +105,36 @@ class VAEAttention(Module):
             Output tensor of shape [N, C, H, W] with residual connection.
         """
         residual = x
+
         x = self.group_norm(x)
 
         n, c, h, w = x.shape
         seq_len = h * w
-        x = ops.reshape(x, [n, c, seq_len])
-        x = ops.permute(x, [0, 2, 1])
+
+        x = F.reshape(x, [n, c, seq_len])
+        x = F.permute(x, [0, 2, 1])
 
         q = self.to_q(x)
         k = self.to_k(x)
         v = self.to_v(x)
 
-        q = ops.reshape(q, [n, seq_len, self.heads, self.dim_head])
-        q = ops.permute(q, [0, 2, 1, 3])
-        k = ops.reshape(k, [n, seq_len, self.heads, self.dim_head])
-        k = ops.permute(k, [0, 2, 1, 3])
-        v = ops.reshape(v, [n, seq_len, self.heads, self.dim_head])
-        v = ops.permute(v, [0, 2, 1, 3])
+        q = F.reshape(q, [n, seq_len, self.heads, self.dim_head])
+        q = F.permute(q, [0, 2, 1, 3])
+        k = F.reshape(k, [n, seq_len, self.heads, self.dim_head])
+        k = F.permute(k, [0, 2, 1, 3])
+        v = F.reshape(v, [n, seq_len, self.heads, self.dim_head])
+        v = F.permute(v, [0, 2, 1, 3])
 
-        attn = (q @ ops.permute(k, [0, 1, 3, 2])) * self.scale
-        attn = ops.softmax(attn, axis=-1)
+        attn = q @ F.permute(k, [0, 1, 3, 2]) * self.scale
+        attn = F.softmax(attn, axis=-1)
         out = attn @ v
 
-        out = ops.permute(out, [0, 2, 1, 3])
-        out = ops.reshape(out, [n, seq_len, self.inner_dim])
+        out = F.permute(out, [0, 2, 1, 3])
+        out = F.reshape(out, [n, seq_len, self.inner_dim])
+
         out = self.to_out[0](out)
-        out = ops.permute(out, [0, 2, 1])
-        out = ops.reshape(out, [n, c, h, w])
+
+        out = F.permute(out, [0, 2, 1])
+        out = F.reshape(out, [n, c, h, w])
+
         return residual + out

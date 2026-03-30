@@ -14,52 +14,82 @@
 """Upsampling utilities for MAX framework."""
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
-from max.nn.conv import Conv2d
-from max.nn.layer import Module
+from max.experimental import functional as F
+from max.experimental.nn import Conv2d, Module
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, TensorValue, TensorValueLike
 
 
 def interpolate_2d_nearest(
-    x: TensorValue,
+    x: TensorValueLike,
     scale_factor: int = 2,
 ) -> TensorValue:
     """Upsamples a 2D tensor using nearest-neighbor interpolation.
 
-    This is a workaround implementation because MAX framework resize does not
-    currently support NEAREST mode in this path. The workaround uses reshape
-    and broadcast operations to achieve nearest-neighbor upsampling by a factor
-    of 2.
+    This is a workaround implementation because MAX framework's ops.resize
+    does not support NEAREST mode (only BICUBIC is currently supported).
+    The workaround uses reshape and broadcast operations to achieve
+    nearest-neighbor upsampling by a factor of 2.
+
+    This function works in both Graph context and eager execution contexts,
+    compatible with Module API style.
 
     Note:
-        This workaround can be removed once native nearest-neighbor resize is
-        available in this path.
+        This workaround can be removed once ops.resize supports NEAREST mode.
+
+    Args:
+        x: Input tensor of shape [N, C, H, W] in NCHW format.
+            Can be Tensor or TensorValue.
+        scale_factor: Upsampling factor. Currently only 2 is supported.
+            Default: 2
+
+    Returns:
+        Upsampled tensor of shape [N, C, H*scale_factor, W*scale_factor].
+
+    Raises:
+        ValueError: If input tensor doesn't have rank 4.
+        NotImplementedError: If scale_factor is not 2.
     """
+    x = TensorValue(x)
 
     if x.rank != 4:
         raise ValueError(f"Input tensor must have rank 4, got {x.rank}")
+
     if scale_factor != 2:
         raise NotImplementedError(
             f"Only scale_factor=2 is currently supported, got {scale_factor}"
         )
 
-    batch, channels, height, width = x.shape
-    x = ops.reshape(x, [batch, channels, height, 1, width, 1])
-    ones = ops.broadcast_to(
-        ops.constant(1.0, dtype=x.dtype, device=x.device),
+    n, c, h, w = x.shape
+    target_shape = [n, c, h * scale_factor, w * scale_factor]
+
+    # Reshape: [N, C, H, W] -> [N, C, H, 1, W, 1]
+    x_reshaped = F.reshape(x, [n, c, h, 1, w, 1])
+
+    ones_scalar = F.constant(1.0, dtype=x.dtype, device=x.device)
+    ones = F.broadcast_to(
+        ones_scalar,
         [1, 1, 1, scale_factor, 1, scale_factor],
     )
-    return ops.reshape(
-        x * ones,
-        [batch, channels, height * scale_factor, width * scale_factor],
-    )
+
+    # Broadcast: [N, C, H, 1, W, 1] * [1, 1, 1, 2, 1, 2] -> [N, C, H, 2, W, 2]
+    x_expanded = F.mul(x_reshaped, ones)
+
+    # Reshape: [N, C, H, 2, W, 2] -> [N, C, H*2, W*2]
+    return F.reshape(x_expanded, target_shape)
 
 
-class Upsample2D(Module):
+class Upsample2D(Module[[Tensor], Tensor]):
     """2D upsampling module with optional convolution.
 
     This module performs 2D upsampling using nearest-neighbor interpolation
-    followed by an optional convolution layer.
+    (via interpolate_2d_nearest function) followed by an optional convolution layer.
+
+    This version uses Tensor instead of TensorValue
     """
+
+    conv: Conv2d | None
+    """Optional Conv2d layer applied after upsampling."""
 
     def __init__(
         self,
@@ -87,31 +117,26 @@ class Upsample2D(Module):
             padding: Padding for the convolution.
             bias: Whether to use bias in the convolution.
             interpolate: Whether to perform interpolation upsampling.
-            device: Device reference.
-            dtype: Data type.
+            device: Device reference (optional).
+            dtype: Data type (optional).
         """
-        super().__init__()
-        if dtype is None:
-            raise ValueError("dtype must be set for Upsample2D")
-        if device is None:
-            raise ValueError("device must be set for Upsample2D")
+        self.channels = channels
+        self.out_channels = out_channels or channels
+        self.use_conv = use_conv
+        self.use_conv_transpose = use_conv_transpose
+        self.interpolate = interpolate
+        self.device = device
+        self.dtype = dtype
+
         if use_conv_transpose:
             raise NotImplementedError(
                 "Upsample2D does not support use_conv_transpose=True yet."
             )
-
-        self.channels = channels
-        self.out_channels = out_channels or channels
-        self.interpolate = interpolate
-        self.use_conv = use_conv
-        self.use_conv_transpose = use_conv_transpose
-        self.device = device
-        self.dtype = dtype
-        self.name = name
-        self.conv: Conv2d | None = None
-        if self.use_conv:
+        elif use_conv:
+            if kernel_size is None:
+                kernel_size = 3
             self.conv = Conv2d(
-                kernel_size=3 if kernel_size is None else kernel_size,
+                kernel_size=kernel_size,
                 in_channels=self.channels,
                 out_channels=self.out_channels,
                 dtype=dtype,
@@ -121,8 +146,10 @@ class Upsample2D(Module):
                 device=device,
                 permute=True,
             )
+        else:
+            self.conv = None
 
-    def __call__(self, x: TensorValue) -> TensorValue:
+    def forward(self, x: Tensor) -> Tensor:
         """Apply 2D upsampling with optional convolution.
 
         Args:
@@ -132,7 +159,9 @@ class Upsample2D(Module):
             Upsampled tensor, optionally convolved.
         """
         if self.interpolate:
-            x = interpolate_2d_nearest(x, scale_factor=2)
+            x = interpolate_2d_nearest(x, scale_factor=2)  # type: ignore[assignment]
+
         if self.use_conv and self.conv is not None:
             x = self.conv(x)
+
         return x

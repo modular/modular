@@ -34,7 +34,7 @@ from max.pipelines.lib.interfaces.diffusion_pipeline import (
 from max.pipelines.lib.utils import BoundedCache
 from max.profiler import Tracer, traced
 
-from ..autoencoders import AutoencoderKLFlux2Model
+from ..autoencoders_modulev3 import AutoencoderKLFlux2Model
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
 

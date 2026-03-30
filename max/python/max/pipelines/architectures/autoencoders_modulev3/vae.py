@@ -12,18 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
+from typing import Optional
 
+import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue
-from max.nn.activation import activation_function_from_name
-from max.nn.conv import Conv2d
-from max.nn.layer import LayerList, Module
-from max.nn.norm import GroupNorm
+from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.nn import Conv2d, GroupNorm, Module, ModuleList
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, TensorType
 
 from .layers import Downsample2D, ResnetBlock2D, Upsample2D, VAEAttention
 
 
-class DownEncoderBlock2D(Module):
+class DownEncoderBlock2D(Module[[Tensor], Tensor]):
     """Downsampling encoder block for 2D VAE.
 
     This module consists of multiple ResNet blocks followed by an optional
@@ -56,20 +58,17 @@ class DownEncoderBlock2D(Module):
             dropout: Dropout rate (currently unused).
             num_layers: Number of ResNet blocks in this encoder block.
             resnet_eps: Epsilon value for ResNet GroupNorm layers.
-            resnet_time_scale_shift: Time embedding scale/shift mode (not used
-                in encoder, temb=None).
+            resnet_time_scale_shift: Time embedding scale/shift mode (not used in encoder, temb=None).
             resnet_act_fn: Activation function for ResNet blocks.
             resnet_groups: Number of groups for ResNet GroupNorm.
             resnet_pre_norm: Whether to apply normalization before ResNet.
             output_scale_factor: Scaling factor for output (currently unused).
-            add_downsample: Whether to add downsampling layer after ResNet
-                blocks.
+            add_downsample: Whether to add downsampling layer after ResNet blocks.
             downsample_padding: Padding for the downsampling layer.
             device: Device reference for module placement.
             dtype: Data type for module parameters.
         """
         super().__init__()
-        del dropout, resnet_pre_norm, output_scale_factor
         resnets_list = []
 
         for i in range(num_layers):
@@ -96,8 +95,9 @@ class DownEncoderBlock2D(Module):
             )
             resnets_list.append(resnet)
 
-        self.resnets = LayerList(resnets_list)
-        self.downsamplers: LayerList | None = None
+        self.resnets = ModuleList(resnets_list)
+
+        self.downsamplers: ModuleList[Downsample2D] | None = None
         if add_downsample:
             downsampler = Downsample2D(
                 channels=out_channels,
@@ -111,9 +111,9 @@ class DownEncoderBlock2D(Module):
                 device=device,
                 dtype=dtype,
             )
-            self.downsamplers = LayerList([downsampler])
+            self.downsamplers = ModuleList([downsampler])
 
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Apply DownEncoderBlock2D forward pass.
 
         Args:
@@ -125,12 +125,14 @@ class DownEncoderBlock2D(Module):
         """
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, None)
+
         if self.downsamplers is not None:
             hidden_states = self.downsamplers[0](hidden_states)
+
         return hidden_states
 
 
-class UpDecoderBlock2D(Module):
+class UpDecoderBlock2D(Module[[Tensor, Tensor | None], Tensor]):
     """Upsampling decoder block for 2D VAE.
 
     This module consists of multiple ResNet blocks followed by an optional
@@ -194,7 +196,7 @@ class UpDecoderBlock2D(Module):
                 dtype=dtype,
             )
             resnets_list.append(resnet)
-        self.resnets = LayerList(resnets_list)
+        self.resnets = ModuleList(resnets_list)
 
         if add_upsample:
             upsampler = Upsample2D(
@@ -209,13 +211,15 @@ class UpDecoderBlock2D(Module):
                 device=device,
                 dtype=dtype,
             )
-            self.upsamplers: LayerList | None = LayerList([upsampler])
+            self.upsamplers: ModuleList[Upsample2D] | None = ModuleList(
+                [upsampler]
+            )
         else:
             self.upsamplers = None
 
-    def __call__(
-        self, hidden_states: TensorValue, temb: TensorValue | None = None
-    ) -> TensorValue:
+    def forward(
+        self, hidden_states: Tensor, temb: Tensor | None = None
+    ) -> Tensor:
         """Apply UpDecoderBlock2D forward pass.
 
         Args:
@@ -226,14 +230,18 @@ class UpDecoderBlock2D(Module):
             Output tensor of shape [N, C_out, H*2, W*2] (if upsampling) or
             [N, C_out, H, W] (if no upsampling).
         """
+        # Process through all resnet blocks
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, temb)
+
+        # Apply upsampling if configured (compile-time decision)
         if self.upsamplers is not None:
             hidden_states = self.upsamplers[0](hidden_states)
+
         return hidden_states
 
 
-class MidBlock2D(Module):
+class MidBlock2D(Module[[Tensor, Tensor | None], Tensor]):
     """Middle block for 2D VAE.
 
     This module processes features at the middle of the VAE architecture,
@@ -271,15 +279,13 @@ class MidBlock2D(Module):
             resnet_act_fn: Activation function for ResNet blocks.
             resnet_groups: Number of groups for ResNet GroupNorm.
             resnet_pre_norm: Whether to apply normalization before ResNet.
-            add_attention: Whether to add attention layers between ResNet
-                blocks.
+            add_attention: Whether to add attention layers between ResNet blocks.
             attention_head_dim: Dimension of each attention head.
             output_scale_factor: Scaling factor for output (currently unused).
             device: Device reference for module placement.
             dtype: Data type for module parameters.
         """
         super().__init__()
-
         resnets_list = []
         attentions_list: list[VAEAttention | None] = []
 
@@ -328,14 +334,14 @@ class MidBlock2D(Module):
             )
             resnets_list.append(resnet)
 
-        self.resnets = LayerList(resnets_list)
+        self.resnets = ModuleList(resnets_list)
 
         if attentions_list:
             non_none_attentions = [
                 attn for attn in attentions_list if attn is not None
             ]
             if non_none_attentions:
-                self.attentions: LayerList | None = LayerList(
+                self.attentions: ModuleList[VAEAttention] | None = ModuleList(
                     non_none_attentions
                 )
                 self.attention_indices = {
@@ -350,9 +356,9 @@ class MidBlock2D(Module):
             self.attentions = None
             self.attention_indices = set()
 
-    def __call__(
-        self, hidden_states: TensorValue, temb: TensorValue | None = None
-    ) -> TensorValue:
+    def forward(
+        self, hidden_states: Tensor, temb: Tensor | None = None
+    ) -> Tensor:
         """Apply MidBlock2D forward pass.
 
         Args:
@@ -363,12 +369,14 @@ class MidBlock2D(Module):
             Output tensor of shape [N, C, H, W] with same spatial dimensions.
         """
         hidden_states = self.resnets[0](hidden_states, temb)
+
         attention_idx = 0
         for i in range(len(self.resnets) - 1):
             if self.attentions is not None and i in self.attention_indices:
                 hidden_states = self.attentions[attention_idx](hidden_states)
                 attention_idx += 1
             hidden_states = self.resnets[i + 1](hidden_states, temb)
+
         return hidden_states
 
 
@@ -377,15 +385,15 @@ class DecoderOutput:
     r"""Output of decoding method.
 
     Args:
-        sample (`TensorValue` of shape `(batch_size, num_channels, height, width)`):
+        sample (`Tensor` of shape `(batch_size, num_channels, height, width)`):
             The decoded output sample from the last layer of the model.
     """
 
-    sample: TensorValue
-    commit_loss: TensorValue | None = None
+    sample: Tensor
+    commit_loss: Tensor | None = None
 
 
-class Encoder(Module):
+class Encoder(Module[[Tensor], Tensor]):
     r"""The `Encoder` layer of a variational autoencoder that encodes its input into a latent representation.
 
     This module progressively downsamples the input through multiple encoder blocks,
@@ -437,15 +445,11 @@ class Encoder(Module):
             dtype: Data type for module parameters.
         """
         super().__init__()
-        if dtype is None:
-            raise ValueError("dtype must be set for Encoder")
-        if device is None:
-            raise ValueError("device must be set for Encoder")
         self.layers_per_block = layers_per_block
         self.in_channels = in_channels
         self.device = device
         self.dtype = dtype
-        self.activation = activation_function_from_name(act_fn)
+
         self.conv_in = Conv2d(
             kernel_size=3,
             in_channels=in_channels,
@@ -453,13 +457,16 @@ class Encoder(Module):
             dtype=dtype,
             stride=1,
             padding=1,
+            dilation=1,
+            num_groups=1,
             has_bias=True,
             device=device,
             permute=True,
         )
 
+        self.down_blocks = ModuleList([])
+
         output_channel = block_out_channels[0]
-        down_blocks_list = []
         for i, down_block_type in enumerate(down_block_types):
             input_channel = output_channel
             output_channel = block_out_channels[i]
@@ -487,9 +494,7 @@ class Encoder(Module):
                 device=device,
                 dtype=dtype,
             )
-            down_blocks_list.append(down_block)
-
-        self.down_blocks = LayerList(down_blocks_list)
+            self.down_blocks.append(down_block)
 
         self.mid_block = MidBlock2D(
             in_channels=block_out_channels[-1],
@@ -507,13 +512,14 @@ class Encoder(Module):
             device=device,
             dtype=dtype,
         )
+
         self.conv_norm_out = GroupNorm(
             num_groups=norm_num_groups,
             num_channels=block_out_channels[-1],
             eps=1e-6,
             affine=True,
-            device=device,
         )
+
         conv_out_channels = 2 * out_channels if double_z else out_channels
         self.conv_out = Conv2d(
             kernel_size=3,
@@ -522,10 +528,13 @@ class Encoder(Module):
             dtype=dtype,
             stride=1,
             padding=1,
+            dilation=1,
+            num_groups=1,
             has_bias=True,
             device=device,
             permute=True,
         )
+
         self.quant_conv: Conv2d | None = None
         if use_quant_conv:
             self.quant_conv = Conv2d(
@@ -535,12 +544,14 @@ class Encoder(Module):
                 dtype=dtype,
                 stride=1,
                 padding=0,
+                dilation=1,
+                num_groups=1,
                 has_bias=True,
                 device=device,
                 permute=True,
             )
 
-    def __call__(self, sample: TensorValue) -> TensorValue:
+    def forward(self, sample: Tensor) -> Tensor:
         r"""The forward method of the `Encoder` class.
 
         Args:
@@ -550,14 +561,19 @@ class Encoder(Module):
             Output tensor of shape [N, C_out, H_latent, W_latent] (downsampled).
         """
         sample = self.conv_in(sample)
+
         for down_block in self.down_blocks:
             sample = down_block(sample)
+
         sample = self.mid_block(sample, None)
+
         sample = self.conv_norm_out(sample)
-        sample = self.activation(sample)
+        sample = F.silu(sample)
         sample = self.conv_out(sample)
+
         if self.quant_conv is not None:
             sample = self.quant_conv(sample)
+
         return sample
 
     def input_types(self) -> tuple[TensorType, ...]:
@@ -566,21 +582,25 @@ class Encoder(Module):
         Returns:
             Tuple of TensorType specifications for encoder input.
         """
-        return (
-            TensorType(
-                self.dtype,
-                shape=[
-                    "batch_size",
-                    self.in_channels,
-                    "image_height",
-                    "image_width",
-                ],
-                device=self.device,
-            ),
+        if self.dtype is None:
+            raise ValueError("dtype must be set for input_types")
+        if self.device is None:
+            raise ValueError("device must be set for input_types")
+        image_type = TensorType(
+            self.dtype,
+            shape=[
+                "batch_size",
+                self.in_channels,
+                "image_height",
+                "image_width",
+            ],
+            device=self.device,
         )
 
+        return (image_type,)
 
-class Decoder(Module):
+
+class Decoder(Module[[Tensor, Tensor | None], Tensor]):
     """VAE decoder for generating images from latent representations.
 
     This decoder progressively upsamples latent features through multiple
@@ -620,16 +640,11 @@ class Decoder(Module):
             dtype: Data type for module parameters.
         """
         super().__init__()
-        if dtype is None:
-            raise ValueError("dtype must be set for Decoder")
-        if device is None:
-            raise ValueError("device must be set for Decoder")
-
         self.layers_per_block = layers_per_block
+        self.session = None
         self.in_channels = in_channels
         self.device = device
         self.dtype = dtype
-        self.activation = activation_function_from_name(act_fn)
 
         self.post_quant_conv: Conv2d | None = None
         if use_post_quant_conv:
@@ -640,6 +655,8 @@ class Decoder(Module):
                 dtype=dtype,
                 stride=1,
                 padding=0,
+                dilation=1,
+                num_groups=1,
                 has_bias=True,
                 device=device,
                 permute=True,
@@ -652,14 +669,18 @@ class Decoder(Module):
             dtype=dtype,
             stride=1,
             padding=1,
+            dilation=1,
+            num_groups=1,
             has_bias=True,
             device=device,
             permute=True,
         )
+
         temb_channels = in_channels if norm_type == "spatial" else None
         self.mid_block = MidBlock2D(
             in_channels=block_out_channels[-1],
             temb_channels=temb_channels,
+            dropout=0.0,
             num_layers=1,
             resnet_eps=1e-6,
             resnet_time_scale_shift=(
@@ -707,7 +728,7 @@ class Decoder(Module):
 
             prev_output_channel = output_channel
 
-        self.up_blocks = LayerList(up_blocks_list)
+        self.up_blocks = ModuleList(up_blocks_list)
 
         if norm_type == "spatial":
             raise NotImplementedError("SpatialNorm not implemented in MAX VAE")
@@ -717,8 +738,8 @@ class Decoder(Module):
                 num_channels=block_out_channels[0],
                 eps=1e-6,
                 affine=True,
-                device=device,
             )
+
         self.conv_out = Conv2d(
             kernel_size=3,
             in_channels=block_out_channels[0],
@@ -726,14 +747,14 @@ class Decoder(Module):
             dtype=dtype,
             stride=1,
             padding=1,
+            dilation=1,
+            num_groups=1,
             has_bias=True,
             device=device,
             permute=True,
         )
 
-    def __call__(
-        self, z: TensorValue, temb: TensorValue | None = None
-    ) -> TensorValue:
+    def forward(self, z: Tensor, temb: Tensor | None = None) -> Tensor:
         """Apply Decoder forward pass.
 
         Args:
@@ -744,16 +765,18 @@ class Decoder(Module):
             Decoded image tensor of shape [N, C_out, H, W] where H and W are
             upsampled from H_latent and W_latent.
         """
-        sample = (
-            self.post_quant_conv(z) if self.post_quant_conv is not None else z
-        )
-        sample = self.conv_in(sample)
+        if self.post_quant_conv is not None:
+            z = self.post_quant_conv(z)
+        sample = self.conv_in(z)
         sample = self.mid_block(sample, temb)
+
         for up_block in self.up_blocks:
             sample = up_block(sample, temb)
+
         sample = self.conv_norm_out(sample)
-        sample = self.activation(sample)
+        sample = F.silu(sample)
         sample = self.conv_out(sample)
+
         return sample
 
     def input_types(self) -> tuple[TensorType, ...]:
@@ -762,42 +785,65 @@ class Decoder(Module):
         Returns:
             Tuple of TensorType specifications for decoder input.
         """
-        return (
-            TensorType(
-                self.dtype,
-                shape=[
-                    "batch_size",
-                    self.in_channels,
-                    "latent_height",
-                    "latent_width",
-                ],
-                device=self.device,
-            ),
+        if self.dtype is None:
+            raise ValueError("dtype must be set for input_types")
+        if self.device is None:
+            raise ValueError("device must be set for input_types")
+        latent_type = TensorType(
+            self.dtype,
+            shape=[
+                "batch_size",
+                self.in_channels,
+                "latent_height",
+                "latent_width",
+            ],
+            device=self.device,
         )
+
+        return (latent_type,)
 
 
 class DiagonalGaussianDistribution:
     r"""Represents a diagonal Gaussian distribution for VAE latent space.
 
-    This wrapper intentionally stays lightweight for the Buffer-based VAE path.
+    This class represents a multivariate Gaussian distribution with diagonal
+    covariance matrix, commonly used in Variational Autoencoders (VAEs) to
+    model the latent space. It provides methods for sampling, computing KL
+    divergence, and extracting the mode (mean) of the distribution.
+
+    Args:
+        parameters: Tensor of shape [N, 2*C, H, W] containing mean and logvar
+            concatenated along the channel dimension. The first C channels are
+            the mean, and the last C channels are the log variance.
+        deterministic: If True, the distribution is deterministic (std=0).
+            Defaults to False.
     """
 
-    def __init__(
-        self,
-        mean: object,
-        moments: object | None = None,
-    ) -> None:
+    def __init__(self, parameters: Tensor, deterministic: bool = False) -> None:
         """Initialize DiagonalGaussianDistribution.
 
         Args:
-            mean: Mean tensor or mode tensor.
-            moments: Optional raw moments tensor containing additional VAE
-                distribution parameters.
+            parameters: Tensor of shape [N, 2*C, H, W] containing mean and logvar.
+            deterministic: Whether the distribution is deterministic.
         """
-        self.mean = mean
-        self.parameters = moments
+        self.parameters = parameters
 
-    def sample(self, generator: object | None = None) -> object:
+        chunks = F.chunk(parameters, 2, axis=1)
+        self.mean = chunks[0]
+        self.logvar = chunks[1]
+
+        self.logvar = F.clip(self.logvar, -30.0, 20.0)
+
+        self.deterministic = deterministic
+
+        self.std = F.exp(0.5 * self.logvar)
+        self.var = F.exp(self.logvar)
+
+        if self.deterministic:
+            self.var = Tensor.zeros_like(self.mean)
+            self.std = Tensor.zeros_like(self.mean)
+
+    def sample(self, generator: object | None = None) -> Tensor:
         """Sample from the distribution using reparameterization trick.
 
         Generates a random sample from the distribution by sampling from a
@@ -811,9 +857,87 @@ class DiagonalGaussianDistribution:
         Returns:
             Sampled tensor of shape [N, C, H, W] with same shape as mean.
         """
-        del generator
-        return self.mean
+        sample = random.normal(
+            shape=self.mean.shape,
+            device=self.parameters.device,
+            dtype=self.parameters.dtype,
+        )
 
-    def mode(self) -> object:
-        """Return the mode (mean) of the distribution."""
+        x = self.mean + F.mul(self.std, sample)
+        return x
+
+    def kl(
+        self, other: Optional["DiagonalGaussianDistribution"] = None
+    ) -> Tensor:
+        """Compute KL divergence with another distribution or standard normal.
+
+        Computes the Kullback-Leibler divergence between this distribution and
+        either a standard normal distribution (if other is None) or another
+        DiagonalGaussianDistribution.
+
+        Args:
+            other: Optional other DiagonalGaussianDistribution to compute KL
+                divergence with. If None, computes KL divergence with standard
+                normal distribution.
+
+        Returns:
+            Tensor containing KL divergence values.
+        """
+        if self.deterministic:
+            return Tensor([0.0], dtype=DType.float32)
+
+        if other is None:
+            kl_term = F.pow(self.mean, 2) + self.var - 1.0 - self.logvar
+            kl_term = F.sum(kl_term, axis=3)
+            kl_term = F.sum(kl_term, axis=2)
+            kl_term = F.sum(kl_term, axis=1)
+            return 0.5 * kl_term
+        else:
+            kl_term = (
+                F.pow(self.mean - other.mean, 2) / other.var
+                + self.var / other.var
+                - 1.0
+                - self.logvar
+                + other.logvar
+            )
+            kl_term = F.sum(kl_term, axis=3)
+            kl_term = F.sum(kl_term, axis=2)
+            kl_term = F.sum(kl_term, axis=1)
+            return 0.5 * kl_term
+
+    def nll(self, sample: Tensor, dims: tuple[int, ...] = (1, 2, 3)) -> Tensor:
+        """Compute negative log-likelihood of a sample.
+
+        Computes the negative log-likelihood of a given sample under this
+        distribution.
+
+        Args:
+            sample: Sample tensor to compute NLL for.
+            dims: Dimensions to sum over. Defaults to (1, 2, 3) for spatial dims.
+
+        Returns:
+            Tensor containing negative log-likelihood values.
+        """
+        if self.deterministic:
+            return Tensor([0.0], dtype=DType.float32)
+
+        logtwopi = np.log(2.0 * np.pi)
+        nll_term = (
+            logtwopi + self.logvar + F.pow(sample - self.mean, 2) / self.var
+        )
+
+        sorted_dims = sorted(dims, reverse=True)
+        for dim in sorted_dims:
+            nll_term = F.sum(nll_term, axis=dim)
+
+        return 0.5 * nll_term
+
+    def mode(self) -> Tensor:
+        """Return the mode (mean) of the distribution.
+
+        For a Gaussian distribution, the mode is equal to the mean.
+
+        Returns:
+            Mean tensor of shape [N, C, H, W].
+        """
         return self.mean

@@ -19,16 +19,15 @@ previously existed between _postprocess_latents and vae.decode().
 """
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.layer import Module
+from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, TensorType
 
 from .vae import Decoder
 
-Tensor = TensorValue
-F = ops
 
-
-class Flux2DecodeStep(Module):
+class Flux2DecodeStep(Module[..., Tensor]):
     """Fused postprocess-and-decode: packed latents -> decoded image.
 
     Combines Flux2-specific BN denorm + unpatchify with the VAE decoder
@@ -101,7 +100,7 @@ class Flux2DecodeStep(Module):
             bn_var: BatchNorm running variance of shape (C,).
 
         Returns:
-            Decoded image tensor of shape (B, H, W, C) after post-processing.
+            Decoded image tensor of shape (B, 3, H*4, W*4).
         """
         batch = latents_bsc.shape[0]
         c = latents_bsc.shape[2]
@@ -115,7 +114,7 @@ class Flux2DecodeStep(Module):
         latents_bhwc = F.reshape(latents_bsc, (batch, h, w, c))
 
         # Permute: (B, H, W, C) -> (B, C, H, W)
-        latents = F.permute(latents_bhwc, [0, 3, 1, 2])
+        latents = F.permute(latents_bhwc, (0, 3, 1, 2))
 
         # BN denormalization
         bn_mean_r = F.reshape(bn_mean, (1, c, 1, 1))
@@ -125,23 +124,7 @@ class Flux2DecodeStep(Module):
 
         # Unpatchify: (B, C, H, W) -> (B, C//4, H*2, W*2)
         latents = F.reshape(latents, (batch, c // 4, 2, 2, h, w))
-        latents = F.permute(latents, [0, 1, 4, 2, 5, 3])
+        latents = F.permute(latents, (0, 1, 4, 2, 5, 3))
         latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
 
-        decoded = self.decoder(latents, None)
-        decoded = F.permute(decoded, [0, 2, 3, 1])
-        decoded = decoded * 0.5 + 0.5
-        decoded = F.max(decoded, 0.0)
-        decoded = F.min(decoded, 1.0)
-        decoded = decoded * 255.0
-        return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
-
-    def __call__(
-        self,
-        latents_bsc: Tensor,
-        h_carrier: Tensor,
-        w_carrier: Tensor,
-        bn_mean: Tensor,
-        bn_var: Tensor,
-    ) -> Tensor:
-        return self.forward(latents_bsc, h_carrier, w_carrier, bn_mean, bn_var)
+        return self.decoder(latents, None)
