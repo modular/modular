@@ -694,7 +694,7 @@ class PixelContext:
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
-        input_image: Optional input image for image-to-image generation (PIL.Image.Image).
+        input_image: Optional HWC uint8 numpy array for image-to-image generation.
         model_name: Name of the model being used.
     """
 
@@ -722,6 +722,9 @@ class PixelContext:
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
 
+    explicit_negative_prompt: bool = field(default=False)
+    """Whether the request explicitly supplied a negative prompt."""
+
     # Precomputed tensors
     timesteps: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
@@ -748,6 +751,9 @@ class PixelContext:
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
     true_cfg_scale: float = field(default=1.0)
+    strength: float = field(default=0.6)
+    cfg_normalization: bool = field(default=False)
+    cfg_truncation: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)

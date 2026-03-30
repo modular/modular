@@ -82,6 +82,7 @@ def register_all_models() -> None:
     from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
+    from .z_image_modulev3 import z_image_arch
 
     architectures = [
         exaone_arch,
@@ -136,6 +137,7 @@ def register_all_models() -> None:
         qwen3vl_moe_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,
+        z_image_arch,
     ]
 
     for arch in architectures:

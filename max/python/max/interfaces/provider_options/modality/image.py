@@ -43,9 +43,10 @@ class ImageProviderOptions(BaseModel):
         description=(
             "Guidance scale for classifier-free guidance. "
             "Higher values make the generation follow the prompt more closely. "
-            "Set to 1.0 to disable CFG. Defaults to 3.5."
+            "Set to 1.0 to disable CFG. Some distilled or guidance-light models "
+            "may prefer lower values. Defaults to 3.5."
         ),
-        gt=0.0,
+        ge=0.0,
     )
 
     true_cfg_scale: float = Field(
@@ -116,6 +117,35 @@ class ImageProviderOptions(BaseModel):
             "Relative difference threshold for first-block cache (FBCache) "
             "reuse during denoising. Lower values skip fewer steps (higher "
             "quality, slower). None uses the model-specific default."
+        ),
+        gt=0.0,
+    )
+
+    strength: float = Field(
+        0.6,
+        description=(
+            "Image-to-image strength. Must be in (0, 1]. "
+            "Higher values add more noise and preserve less from input image. "
+            "Ignored for text-to-image requests."
+        ),
+        gt=0.0,
+        le=1.0,
+    )
+
+    cfg_normalization: bool = Field(
+        False,
+        description=(
+            "Enable CFG output renormalization when supported by the selected model. "
+            "When enabled, the guided prediction norm is clipped to the positive "
+            "prediction norm."
+        ),
+    )
+
+    cfg_truncation: float = Field(
+        1.0,
+        description=(
+            "CFG truncation threshold in normalized time when supported by the selected model. "
+            "CFG is disabled for steps where t_norm > cfg_truncation."
         ),
         gt=0.0,
     )
