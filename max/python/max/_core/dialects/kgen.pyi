@@ -1581,30 +1581,34 @@ class ToStringDeferredAttr(max._core.Attribute):
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
     This represents a flag to indicate the type, specified by `typeValue`,
-    conforms to specific traits, specified by a list of trait names.
+    conforms to specific traits, specified by a list of trait symbol references.
 
-    FIXME: The only reason that we uses a list of string to represent trait in
-    this attr is because trait types are not preserved after lower-lit, meaning
-    that the only way to refer to a specific trait during elaboration time is
-    through symbol names.
+    Example:
+
+    ```mlir
+    #kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type,
+                                 [@Movable, @Copyable]>
+    ```
     """
 
     @overload
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_names: VariadicAttr,
+        trait_symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
     ) -> None: ...
     @overload
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_names: VariadicAttr,
+        trait_symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def trait_names(self) -> VariadicAttr: ...
+    def trait_symbols(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
 
 class TypeGeneratorRefAttr(max._core.Attribute):
     """
