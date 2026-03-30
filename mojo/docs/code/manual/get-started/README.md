@@ -3,7 +3,7 @@ This directory contains code examples for the
 Mojo Manual. These are only "checkpoints" for various steps of the tutorial, to
 ensure that the code for these intermediate steps is correct. The complete
 reference solution for the tutorial is in
-[examples/mojo/life](../../../../../examples/mojo/life/) directory, which is
+[examples/mojo/life](../../../../examples/life/) directory, which is
 deployed to the public GitHub repo. Checkpoints aren't needed for steps that
 simply "accrete" functionality or for the final result, so there isn't a
 checkpoint for each step of the tutorial.

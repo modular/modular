@@ -169,6 +169,6 @@ Here are some docs to help start developing in the MAX framework:
 - [Benchmarking a MAX endpoint](/max/docs/max-benchmarking.md)
 - [Benchmarking Mojo kernels with `kbench`](/max/docs/kernel-benchmarking.md)
 - [Kernel profiling with Nsight Compute](/max/docs/kernel-profiling.md)
-- [Contributing changes to the repo](../../CONTRIBUTING.md#contributing-changes)
+- [Contributing changes to the repo](../CONTRIBUTING.md)
 
 For more documentation, see [docs.modular.com](https://docs.modular.com).

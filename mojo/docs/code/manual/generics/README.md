@@ -1,5 +1,5 @@
 This directory contains code examples for the
-[Generics](../../../../docs/manual/generics.mdx) section of the Mojo
+[Generics](../../../manual/generics/generics.mdx) section of the Mojo
 Manual.
 
 Contents:

@@ -27,7 +27,7 @@ for kv_start in range(BN, num_keys, BN):
 #       do not alias `S` or `P` elsewhere;
 ```
 
-See [Multi-Head Flash Attention](../multi-head-flash-attention) for details.
+See [Multi-Head Flash Attention](multi-head-flash-attention.md) for details.
 
 When doing context decoding, `Q` and `P` have `group = num_q_heads //
 num_kv_heads` rows. In our models so far, common values are `4` or `8`, with

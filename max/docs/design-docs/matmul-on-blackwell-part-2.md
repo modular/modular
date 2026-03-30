@@ -39,7 +39,7 @@ hierarchy](https://en.wikipedia.org/wiki/Memory_hierarchy) available on the
 GPU. The following figure visually explains the latencies of different
 operations we will be using over the course of this series.
 
-![Latency comparison, based on the visualization in [Intro to GPUs](https://www.vrushankdes.ai/diffusion-policy-inference-optimization/part-i---intro-to-gpus)](./img/matmul-on-blackwell-part-2/image02-LatencyComp2.gif)
+![Latency comparison, based on the visualization in [Intro to GPUs](https://www.vrushankdes.ai/diffusion-policy-inference-optimization/part-i---intro-to-gpus)](./img/matmul-on-blackwell-part-2/image02-LatencyComp2.jpeg)
 ///caption 🔥 How can you get your kernel to be as far to the right of this
 graph as possible?
 [Source: Intro to GPUs](https://www.vrushankdes.ai/diffusion-policy-inference-optimization/part-i---intro-to-gpus)

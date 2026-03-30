@@ -72,7 +72,8 @@ benchmark_config:
 ```
 
 To help you reproduce our own benchmarks, we've made some of our config files
-available in the [`configs`](configs/) directory. For example, copy our
+available in the [`configs`](../python/max/benchmark/configs/) directory. For
+example, copy our
 [`gemma-3-27b-sonnet-decode-heavy-prefix200.yaml`](https://github.com/modular/modular/tree/main/benchmark/configs)
 file from GitHub, and you can benchmark Gemma3-27B with this command:
 

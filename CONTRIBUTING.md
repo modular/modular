@@ -58,8 +58,8 @@ For example, we accept contributions to the following sections where you can
 find specific contribution guidelines:
 
 - [Mojo standard library](mojo/CONTRIBUTING.md)
-- [MAX API and models](max/CONTRIBUTING.md)
-- [MAX AI kernels](max/kernels/CONTRIBUTING.md)
+- [MAX API and models](/max/CONTRIBUTING.md)
+- [MAX AI kernels](/max/kernels/CONTRIBUTING.md)
 - [Code examples](examples#contributing)
 - [Mojo documentation](mojo/docs#contributing)
 
