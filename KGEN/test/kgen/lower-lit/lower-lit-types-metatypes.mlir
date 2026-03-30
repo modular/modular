@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-lit -verify-parameters --kgen-print-inline-type-values %s --split-input-file | FileCheck %s
 
-// CHECK: kgen.struct.generator @[[STRUCT_CONTAINER:.+]]<T: type> = struct_inst<"Container"[T]<:type T>(x: [typevalue<T>, !kgen.param<T>]) memoryOnly>
+// CHECK: kgen.struct.generator @[[STRUCT_CONTAINER:.+]]<T: type> = struct_inst<"Container"[T]<:type T>(x: T) memoryOnly>
 lit.struct.decl @Container<T: trait<@Trait>> {
   lit.struct.field x: !kgen.param<:trait<@Trait> T>
 }

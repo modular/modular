@@ -569,12 +569,20 @@ TypedAttr TypeParamAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
       return ParamOperatorAttr::getRebind(result, metaType);
   }
 
-  // Unwrap immediately-nested TypeParamAttr as the typeValue. This is
-  // casting the metatype of the inner type constant.
-  if (auto typeValueType = dyn_cast<TypeValueType>(typeValue))
+  if (auto typeValueType = dyn_cast<TypeValueType>(typeValue)) {
+    // Unwrap immediately-nested TypeParamAttr as the typeValue. This is
+    // casting the metatype of the inner type constant.
     if (auto innerTypeConstant =
             sugarDynCast<TypeParamAttr>(typeValueType.getTypeValue()))
       typeValue = innerTypeConstant.getTypeValue();
+
+    // Unwrap identity type parameter wrapper.
+    if (auto paramType = dyn_cast<ParamType>(mlirType)) {
+      if (paramType.getParam() == typeValueType.getTypeValue() &&
+          paramType.getParam().getType() == metaType)
+        return paramType.getParam();
+    }
+  }
 
   return Base::get(ctx, typeValue, mlirType, metaType);
 }
