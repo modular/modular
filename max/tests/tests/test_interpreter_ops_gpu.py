@@ -2983,3 +2983,85 @@ class TestBandPartGPU:
         torch.testing.assert_close(
             torch.from_dlpack(y), expected, rtol=0, atol=0
         )
+
+
+class TestAvgPool2dGPU:
+    """GPU tests for mo.avg_pool interpreter handler."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_basic_2x2(self, dtype: DType) -> None:
+        """Test 2x2 avg pool on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_nchw = torch.arange(16, dtype=torch_dtype, device="cuda").reshape(
+            1, 1, 4, 4
+        )
+        x_nhwc = x_nchw.permute(0, 2, 3, 1).contiguous()
+
+        x = Tensor.from_dlpack(x_nhwc)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(x, kernel_size=(2, 2))
+
+        expected_nchw = torch.nn.functional.avg_pool2d(
+            x_nchw, kernel_size=2, stride=1
+        )
+        expected_nhwc = expected_nchw.permute(0, 2, 3, 1).contiguous()
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected_nhwc, rtol=1e-3, atol=1e-3
+        )
+
+    def test_stride_and_padding(self) -> None:
+        """Test stride 2, padding 1 on GPU."""
+        x_nchw = torch.arange(25, dtype=torch.float32, device="cuda").reshape(
+            1, 1, 5, 5
+        )
+        x_nhwc = x_nchw.permute(0, 2, 3, 1).contiguous()
+
+        x = Tensor.from_dlpack(x_nhwc)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(
+                x,
+                kernel_size=(3, 3),
+                stride=2,
+                padding=1,
+                count_boundary=True,
+            )
+
+        expected_nchw = torch.nn.functional.avg_pool2d(
+            x_nchw,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            count_include_pad=True,
+        )
+        expected_nhwc = expected_nchw.permute(0, 2, 3, 1).contiguous()
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected_nhwc, rtol=1e-5, atol=1e-5
+        )
+
+    def test_ceil_mode(self) -> None:
+        """Test ceil mode on GPU."""
+        x_nchw = torch.arange(25, dtype=torch.float32, device="cuda").reshape(
+            1, 1, 5, 5
+        )
+        x_nhwc = x_nchw.permute(0, 2, 3, 1).contiguous()
+
+        x = Tensor.from_dlpack(x_nhwc)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(x, kernel_size=(3, 3), stride=2, ceil_mode=True)
+
+        expected_nchw = torch.nn.functional.avg_pool2d(
+            x_nchw, kernel_size=3, stride=2, ceil_mode=True
+        )
+        expected_nhwc = expected_nchw.permute(0, 2, 3, 1).contiguous()
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected_nhwc, rtol=1e-5, atol=1e-5
+        )

@@ -65,6 +65,8 @@ This version is still a work in progress.
   repeating the input tensor along each dimension.
 - Added `band_part` op handler to the experimental eager interpreter with
   CPU and GPU support, masking tensor matrices based on a diagonal band.
+- Added `avg_pool2d` op handlers (floor and ceil mode) to the experimental
+  eager interpreter with CPU and GPU support.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

@@ -21,7 +21,7 @@ Handlers are registered using the @register_op_handler decorator.
 """
 
 from collections.abc import Callable, Sequence
-from math import prod
+from math import ceil, prod
 from typing import Any
 
 import max._interpreter_ops as ops
@@ -2251,3 +2251,114 @@ def _handle_band_part(
     )
 
     return [output]
+
+
+# Average pooling
+
+
+def _avg_pool_common(
+    op: mo.AvgPoolOp | mo.AvgPoolCeilModeTrueOp,
+    inputs: Sequence[Buffer | None],
+    ceil_mode: bool,
+) -> Sequence[Buffer]:
+    """Shared logic for avg_pool (floor) and avg_pool_ceil_mode_true.
+
+    Args:
+        op: The avg_pool operation.
+        inputs: Input buffers [input, filter_shape, strides, dilations, paddings].
+        ceil_mode: Whether to use ceiling mode for output shape.
+
+    Returns:
+        List containing the pooled output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # filter_shape
+    assert isinstance(inputs[2], Buffer)  # strides
+    assert isinstance(inputs[3], Buffer)  # dilations
+    assert isinstance(inputs[4], Buffer)  # paddings
+
+    input_buffer = inputs[0]
+    filter_np = inputs[1].to_numpy().flatten()
+    strides_np = inputs[2].to_numpy().flatten()
+    dilations_np = inputs[3].to_numpy().flatten()
+    paddings_np = inputs[4].to_numpy().flatten()
+
+    in_shape = list(input_buffer.shape)
+    if len(in_shape) != 4:
+        raise ValueError(
+            f"avg_pool2d expects rank-4 NHWC input, got rank {len(in_shape)}"
+        )
+
+    batch, in_h, in_w, channels = in_shape
+    kH, kW = int(filter_np[0]), int(filter_np[1])
+    stride_h, stride_w = int(strides_np[0]), int(strides_np[1])
+    dil_h, dil_w = int(dilations_np[0]), int(dilations_np[1])
+    pad_h_before = int(paddings_np[0])
+    pad_h_after = int(paddings_np[1])
+    pad_w_before = int(paddings_np[2])
+    pad_w_after = int(paddings_np[3])
+
+    count_boundary = bool(op.count_boundary)
+
+    eff_kH = dil_h * (kH - 1) + 1
+    eff_kW = dil_w * (kW - 1) + 1
+    if ceil_mode:
+        out_h = ceil(
+            (in_h + pad_h_before + pad_h_after - eff_kH + 1) / stride_h
+        )
+        out_w = ceil(
+            (in_w + pad_w_before + pad_w_after - eff_kW + 1) / stride_w
+        )
+    else:
+        out_h = (in_h + pad_h_before + pad_h_after - eff_kH) // stride_h + 1
+        out_w = (in_w + pad_w_before + pad_w_after - eff_kW) // stride_w + 1
+
+    output = Buffer(
+        shape=[batch, out_h, out_w, channels],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.avg_pool_ops.AvgPool2d(
+        output,
+        input_buffer,
+        (
+            batch,
+            in_h,
+            in_w,
+            channels,
+            out_h,
+            out_w,
+            kH,
+            kW,
+            stride_h,
+            stride_w,
+            dil_h,
+            dil_w,
+            pad_h_before,
+            pad_w_before,
+            int(count_boundary),
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.AvgPoolOp)
+def _handle_avg_pool(
+    op: mo.AvgPoolOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.avg_pool (floor-mode 2D average pooling)."""
+    return _avg_pool_common(op, inputs, ceil_mode=False)
+
+
+@register_op_handler(mo.AvgPoolCeilModeTrueOp)
+def _handle_avg_pool_ceil(
+    op: mo.AvgPoolCeilModeTrueOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.avg_pool_ceil_mode_true (ceil-mode 2D average pooling)."""
+    return _avg_pool_common(op, inputs, ceil_mode=True)

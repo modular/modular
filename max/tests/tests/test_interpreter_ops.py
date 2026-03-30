@@ -4534,3 +4534,153 @@ class TestBandPartOp:
             y = F.band_part(x, num_lower=None, num_upper=None)
 
         np.testing.assert_array_equal(np.from_dlpack(y), x_np)
+
+
+class TestAvgPool2dOp:
+    """Tests for the mo.avg_pool / mo.avg_pool_ceil_mode_true interpreter
+    handler."""
+
+    @staticmethod
+    def _avg_pool2d_ref(
+        x: np.ndarray,
+        kernel_size: tuple[int, int],
+        stride: tuple[int, int] = (1, 1),
+        dilation: tuple[int, int] = (1, 1),
+        padding: tuple[int, int] = (0, 0),
+        ceil_mode: bool = False,
+        count_boundary: bool = True,
+    ) -> np.ndarray:
+        """Pure-numpy avg_pool2d reference (NHWC layout)."""
+        N, H, W, C = x.shape
+        kH, kW = kernel_size
+        sH, sW = stride
+        dH, dW = dilation
+        pH, pW = padding
+
+        eff_kH = dH * (kH - 1) + 1
+        eff_kW = dW * (kW - 1) + 1
+        if ceil_mode:
+            oH = int(np.ceil((H + 2 * pH - eff_kH + 1) / sH))
+            oW = int(np.ceil((W + 2 * pW - eff_kW + 1) / sW))
+        else:
+            oH = (H + 2 * pH - eff_kH) // sH + 1
+            oW = (W + 2 * pW - eff_kW) // sW + 1
+
+        out = np.zeros((N, oH, oW, C), dtype=x.dtype)
+        for n in range(N):
+            for oh in range(oH):
+                for ow in range(oW):
+                    for c in range(C):
+                        s = 0.0
+                        cnt = 0
+                        for fh in range(kH):
+                            ih = oh * sH - pH + fh * dH
+                            if ih < 0 or ih >= H:
+                                if count_boundary:
+                                    cnt += kW
+                                continue
+                            for fw in range(kW):
+                                iw = ow * sW - pW + fw * dW
+                                if iw < 0 or iw >= W:
+                                    if count_boundary:
+                                        cnt += 1
+                                    continue
+                                s += float(x[n, ih, iw, c])
+                                cnt += 1
+                        out[n, oh, ow, c] = s / cnt if cnt > 0 else 0.0
+        return out
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_basic_2x2(self, dtype: DType) -> None:
+        """Test 2x2 kernel, stride 1, no padding."""
+        np_dt = dtype.to_numpy()
+        x_np = np.arange(16, dtype=np_dt).reshape(1, 4, 4, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(x, kernel_size=(2, 2))
+
+        expected = self._avg_pool2d_ref(x_np, (2, 2))
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_stride_and_padding(self) -> None:
+        """Test stride 2 with padding 1."""
+        x_np = np.arange(25, dtype=np.float32).reshape(1, 5, 5, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(
+                x, kernel_size=(3, 3), stride=2, padding=1, count_boundary=True
+            )
+
+        expected = self._avg_pool2d_ref(
+            x_np, (3, 3), stride=(2, 2), padding=(1, 1), count_boundary=True
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_dilation(self) -> None:
+        """Test dilated average pooling."""
+        x_np = np.arange(36, dtype=np.float32).reshape(1, 6, 6, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(x, kernel_size=(2, 2), dilation=2)
+
+        expected = self._avg_pool2d_ref(x_np, (2, 2), dilation=(2, 2))
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_ceil_mode(self) -> None:
+        """Test ceil mode output shape."""
+        x_np = np.arange(25, dtype=np.float32).reshape(1, 5, 5, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(x, kernel_size=(3, 3), stride=2, ceil_mode=True)
+
+        expected = self._avg_pool2d_ref(
+            x_np, (3, 3), stride=(2, 2), ceil_mode=True
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_count_boundary_false(self) -> None:
+        """Test excluding padding from divisor."""
+        x_np = np.ones((1, 3, 3, 1), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(
+                x,
+                kernel_size=(3, 3),
+                padding=1,
+                count_boundary=False,
+            )
+
+        expected = self._avg_pool2d_ref(
+            x_np, (3, 3), padding=(1, 1), count_boundary=False
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
