@@ -75,8 +75,7 @@ def bench_rms_norm_fused_residual_add_gpu[
     def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
-        return data_buf.ptr.load[width=width](idx)
+        return data_buf.load[width=width](Coord(coords))
 
     @__copy_capture(residual_buf)
     @always_inline
@@ -84,8 +83,7 @@ def bench_rms_norm_fused_residual_add_gpu[
     def residual_input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = residual_buf.layout(Coord(coords))
-        return residual_buf.ptr.load[width=width](idx)
+        return residual_buf.load[width=width](Coord(coords))
 
     @always_inline
     @__copy_capture(output_buf)
@@ -93,8 +91,7 @@ def bench_rms_norm_fused_residual_add_gpu[
     def output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = output_buf.layout(Coord(coords))
-        output_buf.ptr.store[width=width, alignment=alignment](idx, val)
+        output_buf.store[alignment=alignment](Coord(coords), val)
 
     @always_inline
     @__copy_capture(residual_output_buf)
@@ -102,10 +99,7 @@ def bench_rms_norm_fused_residual_add_gpu[
     def residual_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = residual_output_buf.layout(Coord(coords))
-        residual_output_buf.ptr.store[width=width, alignment=alignment](
-            idx, val
-        )
+        residual_output_buf.store[alignment=alignment](Coord(coords), val)
 
     @always_inline
     @__copy_capture(
@@ -164,34 +158,13 @@ def bench_rms_norm_fused_residual_add_gpu[
 
 
 def main() raises:
-    comptime dtype = DType.bfloat16
-    comptime label = "rms_norm_fused_residual_add_gpu"
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime shape = int_list_to_tuple[get_defined_shape["shape", "1x5376"]()]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
-        # Warp tiling path (cols <= WARP_SIZE * simd_width * max_warps_per_block)
-        bench_rms_norm_fused_residual_add_gpu[dtype, Index(1, 512, 4096)](
-            ctx, m, label
+        bench_rms_norm_fused_residual_add_gpu[dtype, shape](
+            ctx, m, "rms_norm_fused_residual_add_gpu"
         )
-        bench_rms_norm_fused_residual_add_gpu[dtype, Index(1, 1024, 4096)](
-            ctx, m, label
-        )
-        bench_rms_norm_fused_residual_add_gpu[dtype, Index(1, 512, 8192)](
-            ctx, m, label
-        )
-        bench_rms_norm_fused_residual_add_gpu[dtype, Index(1, 1024, 8192)](
-            ctx, m, label
-        )
-        # Block path (cols > WARP_SIZE * simd_width * max_warps_per_block)
-        bench_rms_norm_fused_residual_add_gpu[dtype, Index(1, 512, 16384)](
-            ctx, m, label
-        )
-        bench_rms_norm_fused_residual_add_gpu[dtype, Index(1, 1024, 16384)](
-            ctx, m, label
-        )
-        # Float32 uses block path at lower dims (simd_width=4)
-        bench_rms_norm_fused_residual_add_gpu[
-            DType.float32, Index(1, 512, 8192)
-        ](ctx, m, label)
 
     m.dump_report()
