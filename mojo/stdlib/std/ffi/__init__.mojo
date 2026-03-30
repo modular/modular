@@ -386,7 +386,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     def call[
         name: StaticString,
-        return_type: TrivialRegisterPassable = NoneType,
+        return_type: RegisterPassable = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
         """Call a function with any amount of arguments.
@@ -655,7 +655,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
     @always_inline
     def call[
         name: StaticString,
-        return_type: TrivialRegisterPassable = NoneType,
+        return_type: RegisterPassable = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
         """Call a function with any amount of arguments.

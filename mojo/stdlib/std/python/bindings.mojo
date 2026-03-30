@@ -181,7 +181,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
     """
     ref cpython = Python().cpython()
 
-    ref self = py_self.bitcast[PyMojoObject[T]]()[]
+    ref self = py_self.bitcast[PyMojoObject[T]]().value()[]
 
     # TODO(MSTDL-633):
     #   Is this always safe? Wrap in GIL, because this could
@@ -214,7 +214,7 @@ def _tp_repr_wrapper[
     """
     ref cpython = Python().cpython()
 
-    ref self = py_self.bitcast[PyMojoObject[T]]()[]
+    ref self = py_self.bitcast[PyMojoObject[T]]().value()[]
 
     var repr_str = String()
     if self.is_initialized:

@@ -40,6 +40,7 @@ from std.builtin.device_passable import DevicePassable
 from std.compile import get_type_name
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
+from std.memory._nonnull import NonNullUnsafePointer, unsafe_origin_cast
 
 
 @fieldwise_init
@@ -221,6 +222,49 @@ struct Optional[T: Movable](
         ```
         """
         self = Self()
+
+    @implicit
+    @doc_hidden
+    @always_inline
+    def __init__[
+        U: AnyType, origin: Origin, address_space: AddressSpace, //
+    ](
+        out self: Optional[
+            NonNullUnsafePointer[U, origin, address_space=address_space]
+        ],
+        nullable: UnsafePointer[U, origin, address_space=address_space],
+    ):
+        self = nullable.as_nonnull()
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__(
+        nullable: UnsafePointer[...],
+        out self: Optional[
+            NonNullUnsafePointer[
+                nullable.type,
+                AnyOrigin[mut=False],
+                address_space=nullable.address_space,
+            ]
+        ],
+    ):
+        self = unsafe_origin_cast[AnyOrigin[mut=False]](nullable.as_nonnull())
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__(
+        nullable: UnsafePointer[mut=True, ...],
+        out self: Optional[
+            NonNullUnsafePointer[
+                nullable.type,
+                AnyOrigin[mut=True],
+                address_space=nullable.address_space,
+            ]
+        ],
+    ):
+        self = unsafe_origin_cast[AnyOrigin[mut=True]](nullable.as_nonnull())
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
