@@ -70,12 +70,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    ep_size: int = Field(
-        default=0,
+    ep_size: int | None = Field(
+        default=None,
         description=(
-            "The expert parallelism size. A value of 0 means this was not "
-            "overridden explicitly and should be resolved during pipeline "
-            "configuration."
+            "The expert parallelism size. Default is model-dependent and is "
+            "resolved to 1 unless the selected architecture opts into a "
+            "multi-GPU default."
         ),
     )
 
