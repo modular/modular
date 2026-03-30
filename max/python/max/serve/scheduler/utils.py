@@ -77,6 +77,7 @@ class BatchMetrics:
 
     draft_tokens_generated: int
     draft_tokens_accepted: int
+    bonus_tokens_used: int
 
     @classmethod
     def create(
@@ -164,6 +165,7 @@ class BatchMetrics:
 
         draft_tokens_generated = 0
         draft_tokens_accepted = 0
+        bonus_tokens_used = 0
         if speculative_decoding_metrics is not None:
             draft_tokens_generated = (
                 speculative_decoding_metrics.draft_tokens_generated
@@ -171,6 +173,8 @@ class BatchMetrics:
             draft_tokens_accepted = (
                 speculative_decoding_metrics.draft_tokens_accepted
             )
+            bonus_tokens_used = speculative_decoding_metrics.bonus_tokens_used
+            speculative_decoding_metrics.reset()
 
         return cls(
             batch_type=inputs.batch_type,
@@ -201,6 +205,7 @@ class BatchMetrics:
             disk_blocks_read=disk_blocks_read,
             draft_tokens_generated=draft_tokens_generated,
             draft_tokens_accepted=draft_tokens_accepted,
+            bonus_tokens_used=bonus_tokens_used,
         )
 
     def pretty_format(self) -> str:
@@ -266,6 +271,15 @@ class BatchMetrics:
         METRICS.cache_hit_rate(self.cache_hit_rate)
         METRICS.cache_hits(self.cache_hit_tokens)
         METRICS.cache_misses(self.cache_miss_tokens)
+
+        if self.draft_tokens_generated > 0:
+            METRICS.speculative_draft_tokens_accepted(
+                self.draft_tokens_accepted
+            )
+            METRICS.speculative_draft_tokens_generated(
+                self.draft_tokens_generated
+            )
+            METRICS.speculative_bonus_tokens_used(self.bonus_tokens_used)
 
 
 class SchedulerLogger:

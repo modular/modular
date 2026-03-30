@@ -170,6 +170,21 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="Audio output length in milliseconds",
     ),  # type: ignore
+    "maxserve.speculative.draft_tokens_accepted": _meter.create_counter(
+        "maxserve.speculative.draft_tokens_accepted",
+        unit="tokens",
+        description="Count of accepted draft tokens",
+    ),  # type: ignore
+    "maxserve.speculative.draft_tokens_generated": _meter.create_counter(
+        "maxserve.speculative.draft_tokens_generated",
+        unit="tokens",
+        description="Count of generated draft tokens",
+    ),  # type: ignore
+    "maxserve.speculative.bonus_tokens_used": _meter.create_counter(
+        "maxserve.speculative.bonus_tokens_used",
+        unit="tokens",
+        description="Count of bonus tokens used when all draft tokens accepted",
+    ),  # type: ignore
     "maxserve.input_tokens_per_request": _meter.create_histogram(
         "maxserve.input_tokens_per_request",
         unit="tokens",
@@ -501,6 +516,36 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.tts.audio_output_length",
                 length_ms,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def speculative_draft_tokens_accepted(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.speculative.draft_tokens_accepted",
+                value,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def speculative_draft_tokens_generated(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.speculative.draft_tokens_generated",
+                value,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def speculative_bonus_tokens_used(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.speculative.bonus_tokens_used",
+                value,
                 self.extra_attributes,
             ),
             MetricLevel.DETAILED,
