@@ -96,7 +96,12 @@ def LIT_FnOp : LITOp<"fn", [
     // each odd corresponds to its value (zero index based)
     DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
     DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
-    OptionalAttr<AnyAttr>:$thunkKey
+    OptionalAttr<AnyAttr>:$thunkKey,
+
+    // A temporary attribute to indicate that this function should be emitted
+    // with a function literal type, will be true and removed for all FnOp after
+    // fully migration.
+    UnitAttr:$asLiteral
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -122,6 +127,10 @@ def LIT_FnOp : LITOp<"fn", [
     SymbolConstantAttr
     getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                       ParameterExprArrayAttr bindings = {});
+
+    /// Return a GeneratorAttr that generates a FuncLiteralAttr for this
+    /// function.
+    GeneratorAttr getFuncLiteralGenerator();
 
     /// Return the SpecialFunctionKind ID that indicates if this is a special
     /// function like __init__ or __radd__.

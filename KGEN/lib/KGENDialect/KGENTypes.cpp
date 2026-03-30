@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -614,6 +615,30 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// FuncLiteralType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult FuncLiteralType::parseValue(AsmParser &p,
+                                                TypedAttr &value) const {
+  // TODO: We can pretty print/parse a constant function literal.
+  return {};
+}
+
+LogicalResult FuncLiteralType::printValue(AsmPrinter &p,
+                                          TypedAttr value) const {
+  return failure();
+}
+
+LogicalResult
+FuncLiteralType::verify(function_ref<InFlightDiagnostic()> emitError,
+                        TypedAttr value) {
+  if (!isa_and_nonnull<FuncType>(value.getType()))
+    return emitError() << "expected a FuncType attribute for FuncLiteralType";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
@@ -691,6 +716,66 @@ bool FuncTypeGeneratorType::classof(GeneratorType type) {
 }
 
 bool FuncTypeGeneratorType::classof(Type type) {
+  if (auto gen = dyn_cast<GeneratorType>(type))
+    return classof(gen);
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// FuncLiteralTypeGeneratorType
+//===----------------------------------------------------------------------===//
+
+FuncLiteralTypeGeneratorType::FuncLiteralTypeGeneratorType(GeneratorType gen)
+    : GeneratorType(gen) {
+  assert((!gen || ::isa_and_nonnull<FuncLiteralType>(gen.getBody())) &&
+         "expected FuncLiteralType as body");
+}
+
+FuncLiteralTypeGeneratorType
+FuncLiteralTypeGeneratorType::get(ArrayRef<Type> inputParamTypes,
+                                  TypedAttr funcLiteral,
+                                  Attribute genMetadata) {
+
+  assert(isa_and_nonnull<FuncType>(funcLiteral.getType()) &&
+         "expected a func literal with FuncType");
+  auto funcLiteralType = FuncLiteralType::get(funcLiteral);
+  return FuncLiteralTypeGeneratorType(GeneratorType::get(
+      inputParamTypes, funcLiteralType,
+      ::cast_or_null<GeneratorMetadataAttrInterface>(genMetadata)));
+}
+
+FuncLiteralTypeGeneratorType
+FuncLiteralTypeGeneratorType::getSpecializedGenerator(
+    ArrayRef<TypedAttr> paramBindings,
+    ParameterEvaluationContext *evaluationContext,
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
+  return ::cast_or_null<FuncLiteralTypeGeneratorType>(
+      GeneratorType::getSpecializedGenerator(paramBindings, evaluationContext,
+                                             emitErrorFn));
+}
+
+FuncLiteralTypeGeneratorType
+FuncLiteralTypeGeneratorType::getSpecializedGenerator(
+    ArrayRef<TypedAttr> paramBindings,
+    ParameterEvaluationContext *evaluationContext, Location location) {
+  return ::cast_or_null<FuncLiteralTypeGeneratorType>(
+      GeneratorType::getSpecializedGenerator(paramBindings, evaluationContext,
+                                             location));
+}
+
+FuncLiteralType FuncLiteralTypeGeneratorType::getBody() {
+  return ::cast<FuncLiteralType>(GeneratorType::getBody());
+}
+
+FuncLiteralType FuncLiteralTypeGeneratorType::getInstantiatedBody() {
+  return ::cast<FuncLiteralType>(GeneratorType::getInstantiatedBody());
+}
+
+bool FuncLiteralTypeGeneratorType::classof(GeneratorType type) {
+  return ::isa_and_nonnull<FuncLiteralType>(type.getBody());
+}
+
+bool FuncLiteralTypeGeneratorType::classof(Type type) {
   if (auto gen = dyn_cast<GeneratorType>(type))
     return classof(gen);
   return false;

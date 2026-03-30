@@ -116,6 +116,7 @@ TOK_KEYWORD(comptime)
 TOK_KEYWORD(__comptime_assert) // Mojo extension.
 TOK_KEYWORD(continue)
 TOK_KEYWORD(def)
+TOK_KEYWORD(__def)
 TOK_KEYWORD(del)
 TOK_KEYWORD(elif)
 TOK_KEYWORD(else)

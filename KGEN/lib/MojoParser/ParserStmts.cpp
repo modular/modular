@@ -101,6 +101,7 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_with:
   case Token::kw_async:
   case Token::kw_def:
+  case Token::kw___def:
   case Token::kw_fn:
   case Token::kw_struct:
   case Token::kw_class:
@@ -714,6 +715,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return parseWithStmt(stmtIndent);
   case Token::kw_async:
   case Token::kw_def:
+  case Token::kw___def:
   case Token::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseDefFnStmt(startCursor, stmtIndent);
@@ -3289,7 +3291,7 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   consumeIf(Token::kw_async);
-  consumeToken(); // Consume either 'def' or 'fn'.
+  Token defToken = consumeToken(); // Consume either 'def' or 'fn'.
 
   SMLoc loc;
   StringAttr baseName;
@@ -3316,6 +3318,9 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   auto emptyStr = StringAttr::get(ctx, "");
   auto fnOp = FnOp::create(builder, translateLocation(loc), emptyStr, emptyStr,
                            signatureType);
+
+  if (defToken.is(Token::kw___def))
+    fnOp.setAsLiteral(true);
 
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
   // 'sym_name' because we don't /know/ the symbol name on construction and need

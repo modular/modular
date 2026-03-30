@@ -259,3 +259,23 @@ def foldable_param_requires_2[
     y: Int where y > 10 = 11
 ]():
     pass
+
+
+
+struct FN_LITERAL_RET[x: Int, y: Int](TrivialRegisterPassable):
+    pass
+
+
+__def test_fn_literal_type[x: Int, y: Int]() -> FN_LITERAL_RET[x, y]:
+    pass
+
+# This is a generator that generates a function literal type.
+
+# CHECK:      lit.alias.decl *"test_fn_literal_type_type{{.*}}": non_struct_type =
+# CHECK-SAME: <<!Int, !Int>!kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int *(0,0), :!Int *(0,1)>>>
+# CHECK-SAME: #kgen.func.symbol<@fn_def_decls::@"test_fn_literal_type[::Int,::Int]()"<:!Int ?, :!Int ?>>>>
+comptime test_fn_literal_type_type = type_of(test_fn_literal_type)
+
+# TODO: handle non-empty parameter list too.
+#comptime test_fn_literal_type_type_1 = type_of(test_fn_literal_type[1, _])
+#comptime test_fn_literal_type_type_2 = type_of(test_fn_literal_type[1, 2])

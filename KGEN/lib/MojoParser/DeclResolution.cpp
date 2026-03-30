@@ -1519,7 +1519,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
+  assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw___def,
+                            Token::kw_fn) &&
          "not a function definition?");
   bool isAsync = p.consumeIf(Token::kw_async);
   // FIXME(26.4): Upgrade to an error.

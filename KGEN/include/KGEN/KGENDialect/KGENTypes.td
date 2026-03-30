@@ -343,6 +343,41 @@ def CalleeResultTypes : TypesMatchWith<"results match callee result types",
     "callee", "results",
     "cast<FuncTypeGeneratorType>($_self).getBody().getResults()">;
 
+
+//===----------------------------------------------------------------------===//
+// FuncLiteralTypeGeneratorType
+//===----------------------------------------------------------------------===//
+
+def KGEN_FuncLiteralTypeGeneratorType : DialectType<KGENDialect,
+    CPred<"llvm::isa<FuncLiteralTypeGeneratorType>($_self)">,
+    "KGEN GeneratorType wrapping a FuncLiteralType", "FuncLiteralTypeGeneratorType">;
+
+//===----------------------------------------------------------------------===//
+// FuncLiteralType
+//===----------------------------------------------------------------------===//
+
+def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
+  DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  let summary = "The type of a KGEN literal function";
+  let description = [{
+    This type describes the type of a literal function in KGEN, in additional to
+    the FuncType, it uniquely identifies the function by storing its name.
+  }];
+
+  // Encodes parameter expression that evaluates to a function literal.
+  let parameters = (ins "TypedAttr":$funcLiteral);
+  let assemblyFormat = [{
+    `<`custom<TypeParamValue>($funcLiteral) `>`
+  }];
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$funcLiteral), [{
+      return $_get(funcLiteral.getContext(), funcLiteral);
+    }]>,
+  ];
+}
+
 //===----------------------------------------------------------------------===//
 // PointerType
 //===----------------------------------------------------------------------===//

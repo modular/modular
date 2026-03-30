@@ -2092,6 +2092,78 @@ def KGEN_ClosureSymbolAttr : KGENAttr<"ClosureSymbol", "closure.symbol",
 }
 
 //===----------------------------------------------------------------------===//
+// FuncSymbolAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FuncSymbolAttr : KGEN_ExprAttr<"FuncSymbol", "func.symbol",
+    [DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
+  let summary = "a kgen.func reference";
+  let description = [{
+    This is a value of FuncType, which refers to a func, the `type` must
+    match with the FuncType of the given `symbol` after instantiated with the
+    `paramValues`.
+
+    TODO: Delete SymbolConstantAttr after fully migrate to FnLiteralType.
+  }];
+
+  let parameters = (ins
+    "SymbolRefAttr":$symbol,
+    ArrayRefParameter<"TypedAttr">:$paramValues,
+    AttributeSelfTypeParameter<"", "FuncType">:$type
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<
+      (ins "SymbolRefAttr":$symbol, "FuncType":$type,
+           CArg<"ArrayRef<TypedAttr>">:$paramValues), [{
+      return get(type.getContext(), symbol, paramValues, type);
+    }]>,
+
+    AttrBuilderWithInferredContext<
+      (ins "StringAttr":$name, "FuncType":$type,
+           CArg<"ArrayRef<TypedAttr>">:$paramValues), [{
+      return get(FlatSymbolRefAttr::get(name), type, paramValues);
+    }]>,
+
+  ];
+
+  let assemblyFormat = [{
+    `<` $symbol `` custom<ParameterValues>($paramValues) `` `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// FuncLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FuncLiteralAttr : KGENAttr<"FuncLiteral", "func.literal", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "A instance of a function literal";
+  let description = [{
+    The `#kgen.func.literal` attribute represent a instance of a function
+    literal: It is conceptually an empty struct and its type contains all the
+    static information about the function it refers to.
+
+    Example:
+
+    ```mlir
+    #kgen.func.literal : !kgen.func.literal<@foo() -> ()>
+    ```
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"", "FuncLiteralType">:$type);
+
+  let assemblyFormat = "";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "FuncLiteralType":$type), [{
+      return get(type.getContext(), type);
+    }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ClosureAttr
 //===----------------------------------------------------------------------===//
 

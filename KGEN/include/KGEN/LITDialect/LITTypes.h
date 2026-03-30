@@ -278,6 +278,40 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// FnLiteralType
+//===----------------------------------------------------------------------===//
+
+class FnLiteralType : public FuncLiteralType {
+public:
+  using FuncLiteralType::FuncLiteralType;
+  FnLiteralType(FuncLiteralType fnLiteral);
+
+  FnType getFnType() const { return cast<FnType>(getFuncLiteral().getType()); }
+
+  /// True if this literal's signature is an LIT `FnType`.
+  static bool classof(FuncLiteralType type);
+  static bool classof(Type type);
+
+  static FnLiteralType get(TypedAttr funcLiteral);
+};
+
+//===----------------------------------------------------------------------===//
+// FnLiteralTypeGeneratorType
+//===----------------------------------------------------------------------===//
+
+class FnLiteralTypeGeneratorType : public FuncLiteralTypeGeneratorType {
+public:
+  using FuncLiteralTypeGeneratorType::FuncLiteralTypeGeneratorType;
+  FnLiteralTypeGeneratorType(LITGeneratorType gen);
+  FnLiteralTypeGeneratorType(FuncLiteralTypeGeneratorType gen);
+
+  FnLiteralType getBody();
+
+  static bool classof(FuncLiteralTypeGeneratorType type);
+  static bool classof(Type type);
+};
+
+//===----------------------------------------------------------------------===//
 // MetaTypeOf
 //===----------------------------------------------------------------------===//
 
