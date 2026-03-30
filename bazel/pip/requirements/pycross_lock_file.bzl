@@ -45,7 +45,6 @@ PINS = {
     "cachetools": "cachetools@5.4.0",
     "click": "click@8.1.7",
     "clickhouse-connect": "clickhouse-connect@0.14.1",
-    "clickhouse-driver": "clickhouse-driver@0.2.10",
     "codeowners": "codeowners@0.8.0",
     "compressed-tensors": "compressed-tensors@0.13.0",
     "cyclopts": "cyclopts@4.2.5",
@@ -1457,61 +1456,6 @@ def targets():
         deps = _clickhouse_connect_0_14_1_deps,
         wheel = ":_wheel_clickhouse-connect@0.14.1",
         testonly = "clickhouse-connect" in _TESTONLY_DEPS,
-    )
-
-    _clickhouse_driver_0_2_10_deps = [
-        ":pytz@2024.1",
-        ":tzlocal@5.3.1",
-    ]
-
-    _clickhouse_driver_0_2_10_build_deps = [
-        ":setuptools",
-        ":wheel",
-    ]
-
-    native.alias(
-        name = "_sdist_clickhouse-driver@0.2.10",
-        actual = "@pycross_lock_file_sdist_clickhouse_driver_0.2.10//file",
-    )
-
-    pycross_wheel_build(
-        name = "_build_clickhouse-driver@0.2.10",
-        sdist = ":_sdist_clickhouse-driver@0.2.10",
-        target_environment = _target,
-        deps = _clickhouse_driver_0_2_10_deps + _clickhouse_driver_0_2_10_build_deps,
-        testonly = "clickhouse-driver" in _TESTONLY_DEPS,
-        **extra_build_args
-    )
-
-    native.alias(
-        name = "_wheel_clickhouse-driver@0.2.10",
-        actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_clickhouse-driver@0.2.10",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": ":_build_clickhouse-driver@0.2.10",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": ":_build_clickhouse-driver@0.2.10",
-        }),
-    )
-
-    pycross_wheel_library(
-        name = "clickhouse-driver@0.2.10",
-        deps = _clickhouse_driver_0_2_10_deps,
-        wheel = ":_wheel_clickhouse-driver@0.2.10",
-        testonly = "clickhouse-driver" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -12086,17 +12030,6 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_tzlocal@5.3.1",
-        actual = "@pycross_lock_file_wheel_tzlocal_5.3.1_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "tzlocal@5.3.1",
-        wheel = ":_wheel_tzlocal@5.3.1",
-        testonly = "tzlocal" in _TESTONLY_DEPS,
-    )
-
-    native.alias(
         name = "_wheel_uri-template@1.3.0",
         actual = "@pycross_lock_file_wheel_uri_template_1.3.0_py3_none_any//file",
     )
@@ -13117,16 +13050,6 @@ def repositories():
         ],
         sha256 = "e310f77e41941c13340a95976fe66a8a95b01e783d430eeaf7a2f87e0a57dd0a",
         downloaded_file_path = "brotli-1.2.0.tar.gz",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_sdist_clickhouse_driver_0.2.10",
-        urls = [
-            "https://files.pythonhosted.org/packages/46/9e/d8e40b29b6269a84552441a553fc64dff28f2d7e2d92e81c6be84fe12b4c/clickhouse_driver-0.2.10.tar.gz",
-        ],
-        sha256 = "925fc6ecda1e5314e3f03bcb493955c068b070cdba221fb8ce27329ee8a7f71b",
-        downloaded_file_path = "clickhouse_driver-0.2.10.tar.gz",
     )
 
     maybe(
@@ -15527,156 +15450,6 @@ def repositories():
         ],
         sha256 = "0ad7f648a555e2e19bbf16fb4b05d3094f9b10dbdbe1e54ca1b7b3e2639ec8bd",
         downloaded_file_path = "clickhouse_connect-0.14.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/f4/8f/67d3a1b81f8eb4ace6b18d0cb930a4a1cf1537c281fc9ee083adf16d0c77/clickhouse_driver-0.2.10-cp310-cp310-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "5be143e33e330e856e65d40cdfdd38c0f215ba5140807aee5e923fd0c8cf04c8",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp310-cp310-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/b9/eb/c5aed06221c229108f4e6774eda4425e1db9fc6b4cc3a16dbb328f7017f8/clickhouse_driver-0.2.10-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "27397d41661b8aa29b304c70e06ba820c8158e8c6708beac4edb360aa56e7755",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/86/df/cf6e9059f289c4a779ace15e7988fb63ca09560c5128dcc8881e3fd151f1/clickhouse_driver-0.2.10-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "ea94c2f6d42263395d0d86ce21788c167009451044046b825ecffb6746803b67",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/ec/e0/1ae285f4d5bb61bb62016deb38dc175a2b8cbe578dffdad5e1a5a02a176c/clickhouse_driver-0.2.10-cp311-cp311-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "3572e74cd65828f72284bf607de259c059178b44b19a93cb67766b7e7458cf8e",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp311-cp311-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/28/04/e2fb47a4aaf9653c9ed872e1505e997d42f834b0891351ef54169e100c5c/clickhouse_driver-0.2.10-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "767af2b2d2e02fb7abd8fc9619f8aa2de65be010d3024029d68bc9b1be564466",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/f5/08/4419ce43b27b6349fd14af0d8f5d8594d270b9bb24cbaca575bacfec630e/clickhouse_driver-0.2.10-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "a9f65e71c99f0c8a64afa348977793967f897c4f731984ed54fed4eca8d375a0",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/32/7b/8e526f6ffb9983c0c6d082e358df4b20fe1a9e95f453e704bc7a25ef4aab/clickhouse_driver-0.2.10-cp312-cp312-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "188775d38ff7cb36e7045441aabf3a6a8751127d8b37b6eb1b1518494eaac5bd",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp312-cp312-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/65/96/40f274896abf287c378575f025c602fa4e834278930dd63574ff548815c4/clickhouse_driver-0.2.10-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "0ff5cba860df61845d6ae12f31d4a70ff4ae3be4e6a8a876e68af8aa4b0e45bc",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/55/f7/57a80ff9cc44a333021e2caf8d35fc23da6ec7b602bbc3bf8dfac0253a6e/clickhouse_driver-0.2.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "c5744daafdd0ff7520c6ae95a78211a0ff5c2cfb3513a20f5602d2bc7eed580d",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/34/92/ee5a2d7a812b65d9690e46222218f33064c4bd44f3535b1ba564fb4b528b/clickhouse_driver-0.2.10-cp313-cp313-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "8be64c77d58d4a33b3c957cdb7c5a4deeac56bf93f4188dbfb5c5454eb04c985",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp313-cp313-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/03/00/6c532a0aea89e3d09dd4150b1df0b92e787a306b8711d54d003d18fd1ddd/clickhouse_driver-0.2.10-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "23abafd0c883ccc1baea527c1d05a6bc0c59aae6c29ae65e1b84d498b265f8c0",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/41/e5/0686ad3ef1b594c16e8b13394c73ee4860fd025d70211a360f797dd7a28a/clickhouse_driver-0.2.10-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "85e46e31e4b14626571819e669341a3017376ce935d25b2cc0bfea9343b1b562",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/1c/6e/842610028ca39c826865402d46b7d7f499a9a249de219edfce889c0e025d/clickhouse_driver-0.2.10-cp314-cp314-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "b6f35a9ee7f7a8ce3483764c3bc2d23c8be1c5ce3aef537b1a3cebe59fdb0c4d",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp314-cp314-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/c6/94/ddbcda962f7ca36cbcf7ded105f68f99b261dc29b9c28ca2eaec70382f66/clickhouse_driver-0.2.10-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "888ab59b2cccda24680cfbaeb723fd8922c6148b9a43ad4cf067fef55959f19f",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_clickhouse_driver_0.2.10_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/ef/e3/e60fbcd5ec1458da9fe313984527e9ce5f95636c178bd2d08d6257c42c30/clickhouse_driver-0.2.10-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "74b36dfb79311bcf1ba6edde926908a46778a5e9db6302f126a799550f1fb807",
-        downloaded_file_path = "clickhouse_driver-0.2.10-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
@@ -29633,7 +29406,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp310_cp310_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
         sha256 = "a2d0b7b9b4f29ade31cf7bd7c237b50d270a2487cf943d034b307a9b3f73d9c7",
         downloaded_file_path = "triton-3.6.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
@@ -29643,7 +29416,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
         sha256 = "72d6b3eeaa13444ca29ba65d55fc57b6411373a2b8e619f63ae5962d3d9ea249",
         downloaded_file_path = "triton-3.6.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
@@ -29653,7 +29426,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp311_cp311_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
         sha256 = "290687f4f310ce794a07d6a43fa94dea9bda86615bf04578533378503bed715a",
         downloaded_file_path = "triton-3.6.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
@@ -29663,7 +29436,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
         sha256 = "e021e87e8f266c6f87bf379b669c43c2800aac6247bdf5d518cb553e3c403c00",
         downloaded_file_path = "triton-3.6.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
@@ -29673,7 +29446,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp312_cp312_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
         sha256 = "6e42d084864d12b8784736fe51a0cd05f6cc56775b25c8102c9d80c421f4e298",
         downloaded_file_path = "triton-3.6.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
@@ -29683,7 +29456,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
         sha256 = "6f5928e6d44c34a97bbe164cceddc0ef2007121c89ebcfba5415cf452de7ee9f",
         downloaded_file_path = "triton-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
@@ -29693,7 +29466,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp313_cp313_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
         sha256 = "58d57d6796b0004076315433526fe9d4af42044d430afdee1e6cd42a76bd6d09",
         downloaded_file_path = "triton-3.6.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
@@ -29703,7 +29476,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
         sha256 = "0075039ff27765480083b1a109999bf27110f3542f1f9fad95f0f9065a36da79",
         downloaded_file_path = "triton-3.6.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
@@ -29713,7 +29486,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp314_cp314_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
         sha256 = "20ed2f770f7217b8a994cba99e7cac37e7be735a3991344990b80ab4fea964c4",
         downloaded_file_path = "triton-3.6.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
@@ -29723,7 +29496,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
         sha256 = "b6d800bda666ebbe7ec2146e3f5eb271ee87f8fac724011dc7f25dee9bfb5f7f",
         downloaded_file_path = "triton-3.6.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
@@ -29733,7 +29506,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp314_cp314t_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
         sha256 = "89b87d2837849a9bcd3d960ad2e3dac0345c6e1359b9859e29f68083cbda9b1d",
         downloaded_file_path = "triton-3.6.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
@@ -29743,7 +29516,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_triton_3.6.0_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/triton-3.6.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/triton-3.6.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
         sha256 = "621c0e5973d834507ec69dcf909f35f0b02c5df490fde100433cef83359b7eeb",
         downloaded_file_path = "triton-3.6.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
@@ -30057,16 +29830,6 @@ def repositories():
         ],
         sha256 = "9068bc196136463f5245e51efda838afa15aaeca9903f49050dfa2679db4d252",
         downloaded_file_path = "tzdata-2024.1-py2.py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_tzlocal_5.3.1_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl",
-        ],
-        sha256 = "eb1a66c3ef5847adf7a834f1be0800581b683b5608e74f86ecbcef8ab91bb85d",
-        downloaded_file_path = "tzlocal-5.3.1-py3-none-any.whl",
     )
 
     maybe(

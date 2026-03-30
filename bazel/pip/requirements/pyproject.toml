@@ -15,7 +15,6 @@ dependencies = [
   "click>=8.1",
   "cachetools",
   "clickhouse-connect",
-  "clickhouse-driver",
   "codeowners",
   "cyclopts",
   "datasets",
