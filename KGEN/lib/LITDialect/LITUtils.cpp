@@ -1153,15 +1153,12 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
   SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
   canonicalizeTraitCompositionSymbols(symbols, traitDeclResolver);
 
-  llvm::StringSet<> traitSymbolNames;
-  for (auto sym : symbols)
-    traitSymbolNames.insert(getFlattenedSymbolName(sym));
-
   // We can not prove falseness at parsing time for a looser-bound
   // type value, but we can prove correctness if the type variable has
   // a tighter trait bound.
-  for (auto toCheck : conformsTo.getTraitNames().getValues()) {
-    if (!traitSymbolNames.contains(cast<StringAttr>(toCheck).getValue()))
+  DenseSet<SymbolRefAttr> symbolSet(symbols.begin(), symbols.end());
+  for (SymbolRefAttr toCheck : conformsTo.getTraitSymbols()) {
+    if (!symbolSet.contains(toCheck))
       return failure();
   }
 

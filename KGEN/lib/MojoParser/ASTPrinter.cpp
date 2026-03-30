@@ -941,17 +941,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     printParam(os, conformsTo.getTypeValue(), diagShared);
     os << ", ";
     llvm::interleave(
-        conformsTo.getTraitNames().getValues(), os,
-        [&](TypedAttr traitName) {
-          StringRef fullName = cast<StringAttr>(traitName).getValue();
-          // Strip module path prefix (e.g. std::builtin::bool::Boolable ->
-          // Boolable). This is similar to trimBuiltinNamespace() but handles
-          // arbitrary module depths by keeping only the final component.
-          size_t lastColon = fullName.rfind("::");
-          os << (lastColon != StringRef::npos
-                     ? fullName.drop_front(lastColon + 2)
-                     : fullName);
-        },
+        conformsTo.getTraitSymbols(), os,
+        [&](SymbolRefAttr sym) { os << sym.getLeafReference().getValue(); },
         " & ");
     os << ")";
     return;

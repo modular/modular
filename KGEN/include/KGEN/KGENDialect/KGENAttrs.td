@@ -559,25 +559,27 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
   let summary = "check whether the type conforms to specific traits";
   let description = [{
     This represents a flag to indicate the type, specified by `typeValue`,
-    conforms to specific traits, specified by a list of trait names.
+    conforms to specific traits, specified by a list of trait symbol references.
 
-    FIXME: The only reason that we uses a list of string to represent trait in
-    this attr is because trait types are not preserved after lower-lit, meaning
-    that the only way to refer to a specific trait during elaboration time is
-    through symbol names.
+    Example:
+
+    ```mlir
+    #kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type,
+                                 [@Movable, @Copyable]>
+    ```
   }];
 
-  let assemblyFormat = "`<` $typeValue `,` qualified($traitNames) `>`";
+  let assemblyFormat = "`<` $typeValue `,` `[` $traitSymbols `]` `>`";
 
   let parameters = (ins
     "TypedAttr":$typeValue,
-    "::M::KGEN::VariadicAttr":$traitNames
+    ArrayRefParameter<"SymbolRefAttr">:$traitSymbols
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
-                                        "KGEN::VariadicAttr":$traitNames), [{
-      return $_get(typeValue.getContext(), typeValue, traitNames);
+                                        "ArrayRef<SymbolRefAttr>":$traitSymbols), [{
+      return $_get(typeValue.getContext(), typeValue, traitSymbols);
     }]>
   ];
 

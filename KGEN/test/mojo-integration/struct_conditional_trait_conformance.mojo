@@ -1198,6 +1198,43 @@ def test_comptime_alias_conditional_conformance():
     print("alias_move:", moved.field.value.x)
 
 
+# ===========================================================================
+# Default Equatable on conditionally-conforming struct (sub-element walking)
+# ===========================================================================
+# Regression test for SymbolRefAttr sub-element walking in
+# TypeConformsToTraitAttr. The default Equatable.__eq__ uses reflection to
+# iterate fields and calls conforms_to(FieldType, Equatable) for each one.
+# This path exercises constraintImplies → getCanonicalAttr on decomposed
+# multi-trait conforms_to attrs. Without proper sub-element walking,
+# getCanonicalAttr cannot descend into the SymbolRefAttr list, producing
+# non-canonical forms that cause constraintImplies to reject valid
+# subsumption (e.g. conforms_to(T, Equatable) should imply
+# conforms_to(T, ImplicitlyDestructible) via ancestor expansion).
+
+
+@fieldwise_init
+struct DefaultEqWrapper[T: ImplicitlyDestructible & Movable](
+    Equatable where conforms_to(T, Equatable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    var value: Self.T
+
+
+def test_default_equatable_conditional():
+    var a = DefaultEqWrapper[Int](42)
+    var b = DefaultEqWrapper[Int](42)
+    var c = DefaultEqWrapper[Int](99)
+    # CHECK: default_eq_same: True
+    print("default_eq_same:", a == b)
+    # CHECK: default_eq_diff: False
+    print("default_eq_diff:", a == c)
+    # CHECK: default_ne_same: False
+    print("default_ne_same:", a != b)
+    # CHECK: default_ne_diff: True
+    print("default_ne_diff:", a != c)
+
+
 def main():
     test_simple_conditional()
     test_nested_wrappers()
@@ -1236,5 +1273,6 @@ def main():
     test_move_in_generic()
     test_explicit_copy_in_generic()
     test_comptime_alias_conditional_conformance()
+    test_default_equatable_conditional()
     # CHECK: RegisterPassable!
     test_conditional_rp()

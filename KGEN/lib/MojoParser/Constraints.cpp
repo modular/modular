@@ -58,19 +58,15 @@ static TypedAttr decomposeConformsTo(TypedAttr prop) {
   if (!conformsTo)
     return {};
 
-  ArrayRef<TypedAttr> traitNames = conformsTo.getTraitNames().getValues();
-  if (traitNames.size() <= 1)
+  ArrayRef<SymbolRefAttr> traitSymbols = conformsTo.getTraitSymbols();
+  if (traitSymbols.size() <= 1)
     return {};
 
-  auto variadicType = conformsTo.getTraitNames().getType();
   SmallVector<TypedAttr> operands;
-  operands.reserve(traitNames.size());
-  for (TypedAttr nameAttr : traitNames) {
-    SmallVector<TypedAttr, 1> single = {nameAttr};
-    auto singleNames =
-        VariadicAttr::get(prop.getContext(), single, variadicType);
+  operands.reserve(traitSymbols.size());
+  for (SymbolRefAttr sym : traitSymbols) {
     operands.push_back(
-        TypeConformsToTraitAttr::get(conformsTo.getTypeValue(), singleNames));
+        TypeConformsToTraitAttr::get(conformsTo.getTypeValue(), {sym}));
   }
   return ParamOperatorAttr::get(POC::And, operands);
 }

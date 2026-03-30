@@ -1075,26 +1075,17 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
         if (parseParamValue(p, operand, operandType))
           return failure();
 
-        SmallVector<TypedAttr> traitNames;
-        auto parseSingleName = [&]() -> ParseResult {
-          std::string name;
-          if (p.parseString(&name))
-            return failure();
-          traitNames.emplace_back(
-              StringAttr::get(name, KGEN::StringType::get(p.getContext())));
-          return success();
+        SmallVector<SymbolRefAttr> traitSymbols;
+        auto parseSymbol = [&]() -> ParseResult {
+          return p.parseAttribute(traitSymbols.emplace_back());
         };
-
         if (p.parseComma() ||
             p.parseCommaSeparatedList(AsmParser::Delimiter::Square,
-                                      parseSingleName) ||
+                                      parseSymbol) ||
             p.parseRParen())
           return failure();
 
-        auto nameVariadic = VariadicAttr::get(
-            traitNames,
-            VariadicType::get(KGEN::StringType::get(p.getContext())));
-        value = TypeConformsToTraitAttr::get(operand, nameVariadic);
+        value = TypeConformsToTraitAttr::get(operand, traitSymbols);
         return success();
       }
 
@@ -1430,10 +1421,8 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     p << ' ';
     printParamValue(p, conformsTo.getTypeValue());
     p << ", [";
-    llvm::interleaveComma(
-        conformsTo.getTraitNames().getValues(), p, [&](TypedAttr traitName) {
-          p.printString(cast<StringAttr>(traitName).getValue());
-        });
+    llvm::interleaveComma(conformsTo.getTraitSymbols(), p,
+                          [&](SymbolRefAttr sym) { p.printAttribute(sym); });
     p << "])";
     return;
   }

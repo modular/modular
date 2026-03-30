@@ -11,8 +11,8 @@
 
 # Type aliases with constraints are generated for constrained trait compositions.
 # Check for constrained trait type aliases containing the expected constraints:
-# CHECK-DAG: @std::@builtin::@stubs::@Copyable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
-# CHECK-DAG: @std::@builtin::@stubs::@Intable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::ImplicitlyDestructible", "std::builtin::stubs::Intable"])
+# CHECK-DAG: @std::@builtin::@stubs::@Copyable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
+# CHECK-DAG: @std::@builtin::@stubs::@Intable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@ImplicitlyDestructible, @std::@builtin::@stubs::@Intable])
 
 
 # ===========================================================================
@@ -35,7 +35,7 @@ struct UnconditionalMovable[T: Movable](Movable):
 # Verify the ConformanceOp has the constraint attached:
 # CHECK: lit.struct.decl @ConditionalCopyable<T: !Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
 struct ConditionalCopyable[T: Movable](
     Copyable where conforms_to(T, Copyable), Movable
 ):
@@ -57,9 +57,9 @@ struct ConditionalCopyable[T: Movable](
 # Verify ConformanceOps have constraints for both Copyable and Intable:
 # CHECK: lit.struct.decl @MultipleConditionalConformances<T: !Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
 # CHECK: kgen.conformance @"std::builtin::stubs::Intable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::ImplicitlyDestructible", "std::builtin::stubs::Intable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@ImplicitlyDestructible, @std::@builtin::@stubs::@Intable])
 struct MultipleConditionalConformances[T: Movable](
     Copyable where conforms_to(T, Copyable),
     Intable where conforms_to(T, Intable),
@@ -239,9 +239,9 @@ struct CompoundMethodConstraint[T: Movable](
 #
 # CHECK: lit.struct.decl @CompositionConditional<T: !Movable>
 # CHECK: kgen.conformance @"{{.*}}CompTraitA"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
 # CHECK: kgen.conformance @"{{.*}}CompTraitB"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
 
 trait CompTraitA:
     def comp_a_method(self): ...
@@ -272,7 +272,7 @@ struct CompositionConditional[T: Movable](
 #
 # CHECK: lit.struct.decl @DuplicateSameConstraint<T: !Movable>
 # CHECK: kgen.conformance @"{{.*}}DupSameTrait"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
 
 trait DupSameTrait:
     def dup_method(self): ...
@@ -299,9 +299,9 @@ struct DuplicateSameConstraint[T: Movable](
 #
 # CHECK: lit.struct.decl @CompositionStandaloneSameConstraint<T: !Movable>
 # CHECK: kgen.conformance @"{{.*}}CSTraitA"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
 # CHECK: kgen.conformance @"{{.*}}CSTraitB"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
 
 trait CSTraitA:
     def cs_a_method(self): ...
