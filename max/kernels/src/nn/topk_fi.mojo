@@ -227,7 +227,7 @@ def TopKMaskLogitsKernel[
             k = Int(top_k_arr[bx])
 
         # Initialize pivot to negative infinity.
-        var pivot = Float64(Float32.MIN)
+        var pivot = Float32.MIN
 
         var logits_vec = SIMD[DType.float32, vec_size]()
 
@@ -238,10 +238,10 @@ def TopKMaskLogitsKernel[
             var min_val, max_val = min_max[0], min_max[1]
 
             # Initialize ternary search bounds.
-            var low = Float64(
+            var low = Float32(
                 min_val - 1 if min_val != Float32.MIN else Float32.MIN
             )
-            var high = Float64(max_val)
+            var high = max_val
 
             while True:
                 var pivot_0 = (high + 2 * low) / 3
@@ -250,8 +250,8 @@ def TopKMaskLogitsKernel[
                 # Accumulate thread-local counts across all chunks.
                 var thread_count_0_total: Int32 = 0
                 var thread_count_1_total: Int32 = 0
-                var min_gt_low = Float32(high)
-                var max_le_high = Float32(low)
+                var min_gt_low = high
+                var max_le_high = low
 
                 for i in range(ceildiv(d, block_size * vec_size)):
                     if (i * block_size + tx) * vec_size < d:
@@ -272,20 +272,20 @@ def TopKMaskLogitsKernel[
 
                         # Count elements greater than pivot_0 (higher ternary search bound).
                         probs_gt_pivot_0_count[j] = Int32(1) if (
-                            Float64(logits_vec[j]) > pivot_0 and idx < d
+                            logits_vec[j] > pivot_0 and idx < d
                         ) else Int32(0)
                         # Count elements greater than pivot_1 (lower ternary search bound).
                         probs_gt_pivot_1_count[j] = Int32(1) if (
-                            Float64(logits_vec[j]) > pivot_1 and idx < d
+                            logits_vec[j] > pivot_1 and idx < d
                         ) else Int32(0)
 
                         # Track the minimum value that's greater than 'low'.
                         # Used to narrow the search range from below.
-                        if Float64(logits_vec[j]) > low and idx < d:
+                        if logits_vec[j] > low and idx < d:
                             min_gt_low = min(min_gt_low, logits_vec[j])
                         # Track the maximum value that's less than or equal to 'high'.
                         # Used to narrow the search range from above.
-                        if Float64(logits_vec[j]) <= high and idx < d:
+                        if logits_vec[j] <= high and idx < d:
                             max_le_high = max(max_le_high, logits_vec[j])
 
                     # Accumulate thread-local counts (no block reduction per chunk).
@@ -309,9 +309,9 @@ def TopKMaskLogitsKernel[
                     low = pivot_1
                 elif aggregate_gt_pivot_0 >= Int32(k):
                     low = pivot_0
-                    high = min(pivot_1, Float64(max_le_high))
+                    high = min(pivot_1, max_le_high)
                 else:
-                    high = min(pivot_0, Float64(max_le_high))
+                    high = min(pivot_0, max_le_high)
 
                 if min_gt_low == max_le_high:
                     break
@@ -328,9 +328,7 @@ def TopKMaskLogitsKernel[
                     )
                 ).cast[DType.float32]()
 
-            logits_vec = (logits_vec.cast[DType.float64]().gt(pivot)).select(
-                logits_vec, Float32.MIN
-            )
+            logits_vec = (logits_vec.gt(pivot)).select(logits_vec, Float32.MIN)
 
             if (i * block_size + tx) * vec_size < d:
                 masked_logits_row.store[width=vec_size](
@@ -422,7 +420,7 @@ def device_sampling_from_prob[
 ](
     i: Int,
     d: Int,
-    low: Float64,
+    low: Float32,
     u: Float32,
     prob_vec: SIMD[DType.float32, vec_size],
     aggregate: Float32,
@@ -446,7 +444,7 @@ def device_sampling_from_prob[
 
     comptime for j in range(vec_size):
         var idx = (i * block_size + tx) * vec_size + j
-        var passes_pred = prob_vec[j] > Float32(low)
+        var passes_pred = prob_vec[j] > low
         prob_gt_threshold[j] = prob_vec[j] if passes_pred else 0.0
         valid[j] = passes_pred and (idx < d)
 
@@ -716,8 +714,8 @@ def TopKSamplingFromProbKernel[
         var aggregate: Float32
         var sampled_id = 0
         var q: Float32 = 1.0
-        var low = 0.0
-        var high = 1.0
+        var low: Float32 = 0.0
+        var high: Float32 = 1.0
 
         while low < high:
             if tx == 0:
@@ -769,7 +767,7 @@ def TopKSamplingFromProbKernel[
                 # we use the last valid index as the sampled id.
                 sampled_id = last_valid_id_sram[0]
 
-            var pivot_0 = Float64(
+            var pivot_0 = Float32(
                 probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
             )
             var pivot_1 = (pivot_0 + high) / 2.0
@@ -795,7 +793,7 @@ def TopKSamplingFromProbKernel[
                     var is_valid = idx < d
 
                     # For pivot_0.
-                    var gt_pivot_0 = probs_vec[j] > Float32(pivot_0)
+                    var gt_pivot_0 = probs_vec[j] > pivot_0
                     probs_gt_pivot_0_values[j] = probs_vec[
                         j
                     ] if gt_pivot_0 else 0.0
@@ -804,7 +802,7 @@ def TopKSamplingFromProbKernel[
                     ) else Int32(0)
 
                     # For pivot_1.
-                    var gt_pivot_1 = probs_vec[j] > Float32(pivot_1)
+                    var gt_pivot_1 = probs_vec[j] > pivot_1
                     probs_gt_pivot_1_values[j] = probs_vec[
                         j
                     ] if gt_pivot_1 else 0.0
@@ -1054,8 +1052,8 @@ def TopKTopPSamplingFromProbKernel[
         var aggregate: Float32
         var sampled_id = 0
         var q: Float32 = 1.0
-        var low = 0.0
-        var high = 1.0
+        var low: Float32 = 0.0
+        var high: Float32 = 1.0
 
         while low < high:
             if tx == 0:
@@ -1104,7 +1102,7 @@ def TopKTopPSamplingFromProbKernel[
             if sampled_id == d:
                 sampled_id = last_valid_id_sram[0]
 
-            var pivot_0 = Float64(
+            var pivot_0 = Float32(
                 probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
             )
             var pivot_1 = (pivot_0 + high) / 2.0
@@ -1129,7 +1127,7 @@ def TopKTopPSamplingFromProbKernel[
                     var idx = (i * block_size + tx) * vec_size + j
                     var is_valid = idx < d
 
-                    var gt_pivot_0 = probs_vec[j] > Float32(pivot_0)
+                    var gt_pivot_0 = probs_vec[j] > pivot_0
                     probs_gt_pivot_0_values[j] = probs_vec[
                         j
                     ] if gt_pivot_0 else 0.0
@@ -1137,7 +1135,7 @@ def TopKTopPSamplingFromProbKernel[
                         gt_pivot_0 and is_valid
                     ) else Int32(0)
 
-                    var gt_pivot_1 = probs_vec[j] > Float32(pivot_1)
+                    var gt_pivot_1 = probs_vec[j] > pivot_1
                     probs_gt_pivot_1_values[j] = probs_vec[
                         j
                     ] if gt_pivot_1 else 0.0
@@ -1399,7 +1397,7 @@ def topk_softmax_sample_kernel[
             s_count[0] = 0
 
         # PHASE 1: Find pivot (k-th largest) via ternary search.
-        var pivot = Float64(Float32.MIN)
+        var pivot = Float32.MIN
         var max_logit: Float32
         var logits_vec = SIMD[DType.float32, vec_size]()
 
@@ -1412,10 +1410,10 @@ def topk_softmax_sample_kernel[
             max_logit = max_val
 
             # Initialize ternary search bounds.
-            var low = Float64(
+            var low = Float32(
                 min_val - 1 if min_val != Float32.MIN else Float32.MIN
             )
-            var high = Float64(max_val)
+            var high = max_val
 
             while True:
                 var pivot_0 = (high + 2 * low) / 3
@@ -1424,8 +1422,8 @@ def topk_softmax_sample_kernel[
                 # Accumulate thread-local counts across all chunks.
                 var thread_count_0_total: Int32 = 0
                 var thread_count_1_total: Int32 = 0
-                var min_gt_low = Float32(high)
-                var max_le_high = Float32(low)
+                var min_gt_low = high
+                var max_le_high = low
 
                 for i in range(ceildiv(d, block_size * vec_size)):
                     if (i * block_size + tx) * vec_size < d:
@@ -1443,15 +1441,15 @@ def topk_softmax_sample_kernel[
                         var idx = (i * block_size + tx) * vec_size + j
 
                         probs_gt_pivot_0_count[j] = Int32(1) if (
-                            Float64(logits_vec[j]) > pivot_0 and idx < d
+                            logits_vec[j] > pivot_0 and idx < d
                         ) else Int32(0)
                         probs_gt_pivot_1_count[j] = Int32(1) if (
-                            Float64(logits_vec[j]) > pivot_1 and idx < d
+                            logits_vec[j] > pivot_1 and idx < d
                         ) else Int32(0)
 
-                        if Float64(logits_vec[j]) > low and idx < d:
+                        if logits_vec[j] > low and idx < d:
                             min_gt_low = min(min_gt_low, logits_vec[j])
-                        if Float64(logits_vec[j]) <= high and idx < d:
+                        if logits_vec[j] <= high and idx < d:
                             max_le_high = max(max_le_high, logits_vec[j])
 
                     # Accumulate thread-local counts (no block reduction per chunk).
@@ -1474,9 +1472,9 @@ def topk_softmax_sample_kernel[
                     low = pivot_1
                 elif aggregate_gt_pivot_0 >= Int32(k):
                     low = pivot_0
-                    high = min(pivot_1, Float64(max_le_high))
+                    high = min(pivot_1, max_le_high)
                 else:
-                    high = min(pivot_0, Float64(max_le_high))
+                    high = min(pivot_0, max_le_high)
 
                 if min_gt_low == max_le_high:
                     break
@@ -1510,7 +1508,7 @@ def topk_softmax_sample_kernel[
             var logit = logits_row.load[width=1]((Idx[0](), Idx(i))).cast[
                 DType.float32
             ]()
-            if Float64(logit) > pivot:
+            if logit > pivot:
                 var exp_val = exp((logit - max_logit) / temp_val)
 
                 # Atomically get write position and store.
