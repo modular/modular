@@ -33,12 +33,38 @@ from .kv_cache import KVCacheParams, PagedCacheValues
 from .quant_config import QuantConfig, QuantFormat
 
 
+def _reshape_pre_interleaved_scales(
+    weight_scale: TensorValue,
+) -> TensorValue:
+    """Reshape pre-interleaved FP4 scales from 2D to 5D TCGEN layout.
+
+    Checkpoints with pre-interleaved scales store them in 5D TCGEN order
+    but flattened to `[M, K//16]`.  The matmul kernel requires rank-5
+    input: `(M//128, K//64, 32, 4, 4)`.
+    """
+    M = weight_scale.shape[0]
+    n_blocks = weight_scale.shape[1]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = 128
+    SF_ATOM_M0 = 32
+    return weight_scale.reshape(
+        [
+            M // SF_MN_GROUP_SIZE,
+            n_blocks // SF_ATOM_K,
+            SF_ATOM_M0,
+            SF_MN_GROUP_SIZE // SF_ATOM_M0,
+            SF_ATOM_K,
+        ]
+    )
+
+
 def _matmul_float4(
     x: TensorValue,
     weight: TensorValue,
     weight_scale: TensorValue,
     input_scale: TensorValue,
     weight_scale_2: TensorValue,
+    scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Computes x @ weight.T with modelopt NVFP4 quantization.
 
@@ -48,6 +74,9 @@ def _matmul_float4(
         weight_scale: The weight scale tensor in f8e4m3fn.
         input_scale: The input scale factor in f32 (used with vLLM convention by kernel).
         weight_scale_2: Additional weight scale factor in f32.
+        scales_pre_interleaved: If True, weight_scale is already in 5D
+            TCGEN interleaved layout and `block_scales_interleave` is
+            skipped.
 
     Returns:
         The output tensor in bf16.
@@ -60,9 +89,10 @@ def _matmul_float4(
     )
 
     weight_scale = weight_scale.to(x.device)
-    weight_scale = block_scales_interleave(
-        weight_scale,
-    )
+    if scales_pre_interleaved:
+        weight_scale = _reshape_pre_interleaved_scales(weight_scale)
+    else:
+        weight_scale = block_scales_interleave(weight_scale)
 
     res = dynamic_block_scaled_matmul_fp4(
         x,
@@ -131,6 +161,7 @@ def quantized_matmul(
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
+    scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Single entry point for all quantized dense matmuls.
 
@@ -145,6 +176,8 @@ def quantized_matmul(
             static FP8).
         quant_config: The quantization configuration.
         weight_scale_2: Additional weight scale factor (NVFP4 only).
+        scales_pre_interleaved: If True, weight_scale is already in 5D
+            TCGEN interleaved layout (NVFP4 only).
 
     Returns:
         The output tensor.
@@ -159,6 +192,7 @@ def quantized_matmul(
                 weight_scale,
                 input_scale,
                 weight_scale_2,
+                scales_pre_interleaved=scales_pre_interleaved,
             )
         case (
             QuantFormat.COMPRESSED_TENSORS_FP8
@@ -192,6 +226,7 @@ def quantized_fused_qkv_matmul(
     weight_scale_2: TensorValue | None = None,
     bias: TensorValue | None = None,
     _output_dim: int | None = None,
+    scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Single entry point for quantized fused QKV matmuls.
 
@@ -214,6 +249,8 @@ def quantized_fused_qkv_matmul(
         _output_dim: Optional output dimension override for the FP8
             kernel. If not provided, defaults to
             ``n_heads * head_dim``.
+        scales_pre_interleaved: If True, weight_scale is already in 5D
+            TCGEN interleaved layout (NVFP4 only).
 
     Returns:
         The query projection output tensor.
@@ -231,7 +268,10 @@ def quantized_fused_qkv_matmul(
             )
 
             weight_scale = weight_scale.to(x.device)
-            weight_scale = block_scales_interleave(weight_scale)
+            if scales_pre_interleaved:
+                weight_scale = _reshape_pre_interleaved_scales(weight_scale)
+            else:
+                weight_scale = block_scales_interleave(weight_scale)
 
             return _fused_qkv_ragged_matmul_scaled_float4(
                 kv_params,

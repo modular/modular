@@ -79,6 +79,7 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
             TensorValue(self.input_scale),
             self._quant_config,
             weight_scale_2=TensorValue(self.weight_scale_2),
+            scales_pre_interleaved=True,
         )
 
         if len(leading_dims) > 1:
