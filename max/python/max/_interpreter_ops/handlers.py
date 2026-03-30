@@ -2140,3 +2140,59 @@ def _handle_max_pool_ceil(
 ) -> Sequence[Buffer]:
     """Handle mo.max_pool_ceil_mode_true via Mojo max pooling kernel."""
     return _handle_max_pool_impl(op, inputs, ceil_mode=True)
+
+
+@register_op_handler(mo.TileOp)
+def _handle_tile(
+    op: mo.TileOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.tile by repeating the input along each dimension.
+
+    Operands: input (device tensor), repeats (host int64 rank-1).
+    Output shape[i] = input shape[i] * repeats[i].
+    CPU-only (mo.tile is MO_HostOnly).
+
+    Args:
+        op: The tile operation.
+        inputs: Input buffers - [input_tensor, repeats_tensor].
+
+    Returns:
+        List containing the tiled output tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # repeats (host int64)
+
+    input_buffer = inputs[0]
+    repeats = [int(r) for r in inputs[1].to_numpy().flatten()]
+
+    in_shape = list(input_buffer.shape)
+    rank = len(in_shape)
+    out_shape = [in_shape[i] * repeats[i] for i in range(rank)]
+
+    def _row_major_strides(shape: list[int]) -> tuple[int, ...]:
+        strides = [1] * len(shape)
+        for i in range(len(shape) - 2, -1, -1):
+            strides[i] = strides[i + 1] * shape[i + 1]
+        return tuple(strides)
+
+    in_strides = _row_major_strides(in_shape)
+    out_strides = _row_major_strides(out_shape)
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.tile_ops.Tile(
+        output,
+        input_buffer,
+        (tuple(in_shape), out_strides, in_strides, rank),
+        ctx_ptr,
+    )
+
+    return [output]

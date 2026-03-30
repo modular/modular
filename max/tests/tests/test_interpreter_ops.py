@@ -4312,3 +4312,100 @@ class TestMaxPoolOp:
             x_np, (2, 2), (2, 2), (1, 1), (0, 0, 0, 0)
         )
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestTileOp:
+    """Tests for the mo.tile interpreter handler."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_1d(self, dtype: DType) -> None:
+        """Test tiling a 1-D tensor."""
+        x_np = np.array([1, 2, 3], dtype=dtype.to_numpy())
+        reps = (3,)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    @pytest.mark.parametrize(
+        "reps", [(2, 3), (1, 4), (3, 1)], ids=["2x3", "1x4", "3x1"]
+    )
+    def test_2d(self, dtype: DType, reps: tuple[int, ...]) -> None:
+        """Test tiling a 2-D tensor with various repeat patterns."""
+        x_np = np.arange(6, dtype=dtype.to_numpy()).reshape(2, 3)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+    def test_3d(self) -> None:
+        """Test tiling a 3-D tensor along all axes."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        reps = (2, 3, 2)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+    def test_repeat_one(self) -> None:
+        """Test tile with all repeats = 1 (identity)."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        reps = (1, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), x_np)
+
+    def test_large_repeat(self) -> None:
+        """Test tile with a large repeat factor on one axis."""
+        x_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        reps = (1, 10)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.int32, DType.int64],
+        ids=["int32", "int64"],
+    )
+    def test_integer_dtypes(self, dtype: DType) -> None:
+        """Test tile with integer dtypes."""
+        x_np = np.arange(6, dtype=dtype.to_numpy()).reshape(2, 3)
+        reps = (2, 2)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))

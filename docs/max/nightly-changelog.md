@@ -61,6 +61,8 @@ This version is still a work in progress.
   interpreter with CPU and GPU support.
 - Added `max_pool2d` op handlers (floor and ceil mode) to the experimental
   eager interpreter with CPU and GPU support.
+- Added `tile` op handler to the experimental eager interpreter (CPU),
+  repeating the input tensor along each dimension.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

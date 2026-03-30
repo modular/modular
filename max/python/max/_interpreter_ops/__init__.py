@@ -41,6 +41,7 @@ from . import (  # type: ignore[attr-defined]
     reduce_ops,
     softmax_ops,
     split_ops,
+    tile_ops,
 )
 
 # Arithmetic binary ops: output dtype matches input dtype

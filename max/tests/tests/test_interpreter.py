@@ -128,8 +128,8 @@ class TestCanExecute:
             a = ops.constant(
                 [[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32, device=CPU()
             )
-            # tile has no interpreter handler
-            result = ops.tile(a, [2, 3])
+            # pad has no interpreter handler
+            result = ops.pad(a, [0, 1, 0, 1])
             graph.output(result)
 
         interp = MOInterpreter()
