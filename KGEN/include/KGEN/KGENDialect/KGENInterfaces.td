@@ -413,8 +413,22 @@ def ExportInterface : OpInterface<"ExportInterface"> {
 
   let methods = [
     InterfaceMethod<[{
-      Return the exported symbol name.
-    }], "StringAttr", "getLinkageNameAttr", (ins), [{}], [{
+      Return the op's (current) symbol name.
+    }], "StringAttr", "getSymNameAttr", (ins), [{}], [{
+      return $_op.getSymNameAttr();
+    }]>,
+    InterfaceMethod<[{
+      Return the op's linkage name as an attribute. It may not yet be resolved
+      if it is an expression.
+    }], "TypedAttr", "getLinkageNameAttr", (ins), [{}], [{
+      return $_op.getSymNameAttr();
+    }]>,
+    InterfaceMethod<[{
+      Return the op's linkage name as a StringAttr. If the linkage name is
+      unresolved, return a null attribute.
+    }], "StringAttr", "getLinkageName", (ins), [{
+      if (auto linkageName = $_op.getLinkageNameAttr())
+        return dyn_cast<StringAttr>(linkageName);
       return $_op.getSymNameAttr();
     }]>,
     InterfaceMethod<[{

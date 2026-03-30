@@ -17,7 +17,7 @@ DenseSet<StringAttr> KGEN::getUsedSymbols(mlir::SymbolTableAnalysis &analysis,
   DenseSet<StringAttr> usedSymbols;
   for (auto symbol : theModule.getOps<ExportInterface>())
     if (symbol.isExported())
-      usedSymbols.insert(symbol.getLinkageNameAttr());
+      usedSymbols.insert(symbol.getSymNameAttr());
 
   // Now walk the used symbols and find symbols that they use.
   llvm::SetVector<StringAttr> worklist = {usedSymbols.begin(),

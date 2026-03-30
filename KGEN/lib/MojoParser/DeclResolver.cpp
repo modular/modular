@@ -1568,7 +1568,8 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   StringAttr mainAttr = StringAttr::get(getContext(), "main");
   auto shimMainFn = cast<FnOp>(builder.clone(*mainShimProtoFn));
   shimMainFn.setSymNameAttr(mainAttr);
-  shimMainFn.setLinkageNameAttr(mainAttr);
+  shimMainFn.setLinkageNameAttr(
+      StringAttr::get("main", StringType::get(shimMainFn->getContext())));
   shimMainFn.setCExported();
   shimMainFn.getBody()->clear();
 

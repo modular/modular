@@ -23,7 +23,7 @@
 
 // CHECK: lit.package @inner2
 // CHECK:   lit.file_module @myfile2
-// CHECK:     lit.fn export @"bar()"{{.*}}linkageName = "bar", sourceName = {{.*}}
+// CHECK:     lit.fn export @"bar()"{{.*}}linkageName = "bar" : !kgen.string, sourceName = {{.*}}
 // CHECK: lit.end_fn
 
 // CHECK-DAG: !subroutine{{[0-9]+}} =

@@ -46,7 +46,9 @@ LogicalResult impl::verifyGeneratorUser(GeneratorUserOpInterface op) {
 LogicalResult impl::verifyExportInterface(Operation *op) {
   auto itf = cast<ExportInterface>(op);
   if (itf.isCExported()) {
-    StringAttr exportName = itf.getLinkageNameAttr();
+    // Grab the op's eventual linkage name. A C-exported function must have a
+    // simple resolvable linkage name.
+    StringAttr exportName = itf.getLinkageName();
     if (!exportName)
       return op->emitOpError("is C exported but lacks an export symbol alias");
     if (!isCIdentifier(exportName)) {
