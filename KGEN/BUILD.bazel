@@ -1034,10 +1034,13 @@ modular_cc_library(
 
 modular_cc_library(
     name = "KGENToLLVM",
-    srcs = glob([
-        "lib/KGENToLLVM/*.cpp",
-        "lib/KGENToLLVM/*.h",
-    ]),
+    srcs = glob(["lib/KGENToLLVM/*.cpp"]),
+    hdrs = glob(["lib/KGENToLLVM/*.h"]),
+    strip_include_prefix = "lib",
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN:plugin_consumers",
+    ],
     deps = [
         ":HLCFDialectAnalysis",
         ":KGENDialect",

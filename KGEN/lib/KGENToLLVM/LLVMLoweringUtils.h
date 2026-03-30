@@ -8,12 +8,14 @@
 #define KGEN_LLVM_LOWERING_UTILS_H
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Value.h"
 
@@ -426,6 +428,17 @@ bool isFP8(Type fpType);
 /// For example, cast<A→B>(cast<B→A>(v)) reduces to v.
 /// Used to clean up residual casts before generating calls.
 mlir::Value squashPointlessCasts(mlir::Value v);
+
+/// Return the byte alignment for a KGEN pointer type. Uses the explicit
+/// alignment attribute when present, otherwise falls back to the ABI alignment
+/// of the pointee type derived from the type converter.
+inline unsigned getAlignment(const POPToLLVMTypeConverter *tc,
+                             PointerType ptrType,
+                             mlir::TypedAttr alignmentAttr = {}) {
+  if (alignmentAttr)
+    return mlir::cast<mlir::IntegerAttr>(alignmentAttr).getInt();
+  return tc->getTypeABIAlign(tc->convertType(ptrType.getElementType()));
+}
 
 } // namespace M::KGEN
 
