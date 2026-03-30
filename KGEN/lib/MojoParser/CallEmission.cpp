@@ -1169,7 +1169,7 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
 
       auto fnOp = cast<FnOp>(fnDecls.front()->getIfOperation());
       if (fnOp.getAsLiteral())
-        return fnOp.getFuncLiteralGenerator();
+        return fnOp.getFuncLiteralGenerator(getShared().getEvaluationContext());
       return fnOp.getBoundReference(getShared().getEvaluationContext());
     }
 

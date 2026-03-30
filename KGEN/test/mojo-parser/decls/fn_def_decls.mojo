@@ -269,13 +269,25 @@ struct FN_LITERAL_RET[x: Int, y: Int](TrivialRegisterPassable):
 __def test_fn_literal_type[x: Int, y: Int]() -> FN_LITERAL_RET[x, y]:
     pass
 
-# This is a generator that generates a function literal type.
-
 # CHECK:      lit.alias.decl *"test_fn_literal_type_type{{.*}}": non_struct_type =
-# CHECK-SAME: <<!Int, !Int>!kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int *(0,0), :!Int *(0,1)>>>
-# CHECK-SAME: #kgen.func.symbol<@fn_def_decls::@"test_fn_literal_type[::Int,::Int]()"<:!Int ?, :!Int ?>>>>
+# CHECK-SAME: !kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int *(0,0), :!Int *(0,1)>>>
+# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::Int,::Int]()"<:!Int *(0,0), :!Int *(0,1)>>
 comptime test_fn_literal_type_type = type_of(test_fn_literal_type)
 
-# TODO: handle non-empty parameter list too.
-#comptime test_fn_literal_type_type_1 = type_of(test_fn_literal_type[1, _])
-#comptime test_fn_literal_type_type_2 = type_of(test_fn_literal_type[1, 2])
+# CHECK:      lit.alias.decl *"test_fn_literal_type_type_1{{.*}}": non_struct_type =
+# CHECK-SAME: !kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int {1}, :!Int *(0,0)>>>
+# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::Int,::Int]()"<:!Int {1}, :!Int *(0,0)>>
+comptime test_fn_literal_type_type_1 = type_of(test_fn_literal_type[1, _])
+
+# CHECK:      lit.alias.decl *"test_fn_literal_type_type_2{{.*}}": non_struct_type =
+# CHECK-SAME: !kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int {1}, :!Int {2}>>>
+# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::Int,::Int]()"<:!Int {1}, :!Int {2}>>
+comptime test_fn_literal_type_type_2 = type_of(test_fn_literal_type[1, 2])
+
+# CHECK-LABEL:      lit.fn @"test_fn_literal_parameter{{.*}}"
+def test_fn_literal_parameter[x : test_fn_literal_type_type_1]():
+    # CHECK:      lit.alias.decl *"t{{.*}}":
+    # CHECK-SAME: !kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int {1}, :!Int {3}>>>
+    # CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::Int,::Int]()"<:!Int {1}, :!Int {3}>>
+    # CHECK-SAME: = <bind_params({{.*}}, :!Int {3})>
+    comptime t = x[3]

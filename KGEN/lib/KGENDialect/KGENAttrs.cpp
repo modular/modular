@@ -1411,9 +1411,13 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
     }
   }
 
+  // We are pulling out the index ref and evaluated it under a different scope,
+  // -1 depth to compensate the extra depth pushed by getSpecializedGenerator.
+  IndexDepthAdjuster adjuster(-1);
+  SmallVector<TypedAttr> adjustedParam = adjuster.replace(getParamValues());
   FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
   declSignature = declSignature.getSpecializedGenerator(
-      getParamValues(), &evaluationContext, [&] { return emitError(loc); });
+      adjustedParam, &evaluationContext, [&] { return emitError(loc); });
 
   if (!declSignature)
     return failure();
