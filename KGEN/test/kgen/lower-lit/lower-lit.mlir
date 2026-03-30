@@ -454,7 +454,7 @@ lit.fn @metadata(%a: i32, %b: i32) attributes {
 // CHECK: kgen.generator export @main
 lit.package @main {
   lit.file_module @main {
-    lit.fn export @main() attributes {linkageName = "main"} {
+    lit.fn export @main() attributes {linkageName = "main" : !kgen.string} {
       kgen.return
     }
   }

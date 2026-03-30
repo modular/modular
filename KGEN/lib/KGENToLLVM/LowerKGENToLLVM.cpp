@@ -1245,8 +1245,10 @@ void LowerKGENToLLVMPass::runOnOperation() {
   // rewritten after the lowering.
   SmallVector<StringAttr> exportCFuncs;
   for (auto symbol : theModule.getOps<ExportInterface>())
-    if (symbol.isCExported())
-      exportCFuncs.push_back(symbol.getLinkageNameAttr());
+    if (symbol.isCExported()) {
+      assert(symbol.getLinkageName() && "Unresolved linkage name");
+      exportCFuncs.push_back(symbol.getLinkageName());
+    }
 
   // Configure the type converter.
   TargetInfoAttr targetInfo = lookupTargetInfo(theModule);

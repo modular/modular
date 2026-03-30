@@ -297,9 +297,15 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
   }
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
-  // If the function has an alias name, rename it.
-  if (StringAttr newName = func.getLinkageNameAttr()) {
-    renamedSymbols[func.getSymNameAttr()] = newName;
+  // If the function has a linkage name, rename it.
+  if (TypedAttr newNameAttr = func.getLinkageNameAttr()) {
+    auto newName = dyn_cast<StringAttr>(newNameAttr);
+    // Linkage names must be simple string literals
+    assert(newName && "Unresolvable linkage name");
+    // The linkage name is a !kgen.string-typed StringAttr - convert it to an
+    // *untyped* StringAttr as that's what is required for symbols.
+    renamedSymbols[func.getSymNameAttr()] =
+        StringAttr::get(newName.getContext(), newName.getValue());
     func.setSymName(newName);
   }
 

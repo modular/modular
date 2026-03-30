@@ -552,7 +552,11 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
   }
 
   llvm::TypeSwitch<Operation *, void>(decl.getIfOperation())
-      .Case([linkageName](FnOp op) { op.setLinkageName(linkageName); });
+      .Case([linkageName](FnOp op) {
+        auto linkageNameAttr = StringAttr::get(
+            linkageName, KGEN::StringType::get(op.getContext()));
+        op.setLinkageNameAttr(linkageNameAttr);
+      });
   if (!isCExport)
     itf.setExported();
   else {
@@ -899,8 +903,10 @@ void FnSigDecorators::applyExtern(SMLoc decoratorLoc,
     emitError(operand.getLoc(), "'@extern' requires a string literal argument");
     return;
   }
-  std::string libName = strNode->getValue();
-  funcOp.setLinkageName(libName);
+
+  auto linkageName = StringAttr::get(strNode->getValue(),
+                                     KGEN::StringType::get(decl.getContext()));
+  funcOp.setLinkageNameAttr(linkageName);
 
   if (!funcOp.getInputParams().empty()) {
     // TODO: Can this even happen?

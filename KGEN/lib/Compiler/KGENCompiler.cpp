@@ -141,7 +141,7 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
   // First, go find the elaborated instance of the function.
   FuncOp sliced;
   for (auto func : module.getOps<FuncOp>()) {
-    if (func.getSymNameAttr() == name) {
+    if (func.getSymNameAttr() == name.getValue()) {
       sliced = func;
       break;
     }

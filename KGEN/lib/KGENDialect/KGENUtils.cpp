@@ -2285,7 +2285,7 @@ ExportMap KGEN::getExportedSymbols(ModuleOp module) {
   ExportMap exportedSymbols;
   for (auto op : module.getOps<ExportInterface>()) {
     if (op.isExported())
-      exportedSymbols.insert({op.getLinkageNameAttr(), op.getExportKind()});
+      exportedSymbols.insert({op.getSymNameAttr(), op.getExportKind()});
   }
   return exportedSymbols;
 }
