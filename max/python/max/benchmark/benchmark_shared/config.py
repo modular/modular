@@ -391,31 +391,35 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Top-k for sampling."""
 
     # Image generation options (serving-specific)
-    image_width: int = field(default=1024, metadata={"group": "Output Control"})
-    """Output image width in output pixels."""
-
-    image_height: int = field(
-        default=1024, metadata={"group": "Output Control"}
+    image_width: int | None = field(
+        default=None, metadata={"group": "Output Control"}
     )
-    """Output image height in output pixels."""
+    """Output image width in pixels for pixel generation."""
 
-    image_steps: int = field(default=24, metadata={"group": "Output Control"})
+    image_height: int | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
+    """Output image height in pixels for pixel generation."""
+
+    image_steps: int | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
     """Number of denoising steps for pixel generation."""
 
-    image_guidance_scale: float = field(
-        default=3.5, metadata={"group": "Output Control"}
+    image_guidance_scale: float | None = field(
+        default=None, metadata={"group": "Output Control"}
     )
     """Guidance scale for pixel generation."""
 
     image_negative_prompt: str | None = field(
         default=None, metadata={"group": "Output Control"}
     )
-    """Optional negative prompt for pixel generation."""
+    """Negative prompt for pixel generation."""
 
     image_seed: int | None = field(
         default=None, metadata={"group": "Output Control"}
     )
-    """Optional deterministic seed for pixel generation."""
+    """Deterministic seed for pixel generation."""
 
     # Traffic control (serving-specific)
     request_rate: str = field(
