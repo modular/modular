@@ -113,11 +113,9 @@ def simulate_decode(
             ].copy()
 
     return SpeculativeDecodingMetrics(
-        bonus_tokens_used=0,
+        num_speculative_tokens=num_draft_tokens_generated,
         draft_tokens_accepted=int(num_accepted_draft_tokens.sum()),
         draft_tokens_generated=num_draft_tokens_generated * len(context_batch),
-        total_acceptance_lengths=int(num_accepted_draft_tokens.sum()),
-        num_generations=1,
     )
 
 
@@ -336,7 +334,6 @@ class TestUnifiedMetrics:
         )
         assert metrics.draft_tokens_accepted == 1
         assert metrics.draft_tokens_generated == 1
-        assert metrics.bonus_tokens_used == 0
         assert metrics.acceptance_rate == 1.0
 
     def test_metrics_all_rejected(self) -> None:
@@ -351,5 +348,4 @@ class TestUnifiedMetrics:
         )
         assert metrics.draft_tokens_accepted == 0
         assert metrics.draft_tokens_generated == 1
-        assert metrics.bonus_tokens_used == 0
         assert metrics.acceptance_rate == 0.0

@@ -220,11 +220,13 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
         else:
             self._draft_signal_buffers = []
 
-        self.metrics = SpeculativeDecodingMetrics.empty()
-
         assert pipeline_config.speculative is not None
         self._num_speculative_tokens: int = (
             pipeline_config.speculative.num_speculative_tokens
+        )
+
+        self.metrics = SpeculativeDecodingMetrics.empty(
+            num_speculative_tokens=self._num_speculative_tokens
         )
 
         logger.info(
@@ -365,14 +367,9 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
                 )
 
         self.metrics.update(
-            SpeculativeDecodingMetrics(
-                bonus_tokens_used=0,
-                draft_tokens_accepted=num_accepted_draft_tokens_np.sum(),
-                draft_tokens_generated=num_draft_tokens_to_verify
-                * len(context_batch),
-                total_acceptance_lengths=num_accepted_draft_tokens_np.sum(),
-                num_generations=1,
-            )
+            draft_tokens_accepted=num_accepted_draft_tokens_np.sum(),
+            draft_tokens_generated=num_draft_tokens_to_verify
+            * len(context_batch),
         )
 
         res = build_response(

@@ -77,6 +77,8 @@ class BatchMetrics:
 
     draft_tokens_generated: int
     draft_tokens_accepted: int
+    avg_acceptance_length: float
+    max_acceptance_length: int
 
     @classmethod
     def create(
@@ -164,12 +166,20 @@ class BatchMetrics:
 
         draft_tokens_generated = 0
         draft_tokens_accepted = 0
+        avg_acceptance_length = 0.0
+        max_acceptance_length = 0
         if speculative_decoding_metrics is not None:
             draft_tokens_generated = (
                 speculative_decoding_metrics.draft_tokens_generated
             )
             draft_tokens_accepted = (
                 speculative_decoding_metrics.draft_tokens_accepted
+            )
+            avg_acceptance_length = (
+                speculative_decoding_metrics.avg_acceptance_length
+            )
+            max_acceptance_length = (
+                speculative_decoding_metrics.num_speculative_tokens
             )
 
         return cls(
@@ -201,6 +211,8 @@ class BatchMetrics:
             disk_blocks_read=disk_blocks_read,
             draft_tokens_generated=draft_tokens_generated,
             draft_tokens_accepted=draft_tokens_accepted,
+            avg_acceptance_length=avg_acceptance_length,
+            max_acceptance_length=max_acceptance_length,
         )
 
     def pretty_format(self) -> str:
@@ -232,7 +244,7 @@ class BatchMetrics:
             acceptance_rate = (
                 self.draft_tokens_accepted / self.draft_tokens_generated
             )
-            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted | "
+            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks | "
         else:
             spec_decode_str = ""
 

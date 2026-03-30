@@ -302,17 +302,24 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             )
         )
 
-        metrics = update_contexts_and_compute_metrics_standalone(
-            context_batch=context_batch,
-            first_rejected_tokens=first_rejected_tokens.to_numpy(),
-            recovered_tokens=recovered_tokens.to_numpy(),
-            bonus_tokens=(
-                bonus_tokens.to_numpy() if bonus_tokens is not None else None
-            ),
-            draft_tokens=draft_tokens.to_numpy(),
-            num_draft_tokens_generated=num_draft_tokens_generated,
+        draft_tokens_accepted, draft_tokens_generated = (
+            update_contexts_and_compute_metrics_standalone(
+                context_batch=context_batch,
+                first_rejected_tokens=first_rejected_tokens.to_numpy(),
+                recovered_tokens=recovered_tokens.to_numpy(),
+                bonus_tokens=(
+                    bonus_tokens.to_numpy()
+                    if bonus_tokens is not None
+                    else None
+                ),
+                draft_tokens=draft_tokens.to_numpy(),
+                num_draft_tokens_generated=num_draft_tokens_generated,
+            )
         )
-        self.metrics.update(metrics)
+        self.metrics.update(
+            draft_tokens_accepted=draft_tokens_accepted,
+            draft_tokens_generated=draft_tokens_generated,
+        )
 
         res = build_response(
             context_batch=context_batch, max_seq_len=self._max_seq_len
