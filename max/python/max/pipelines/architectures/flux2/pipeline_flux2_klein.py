@@ -22,11 +22,14 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
 from max.pipelines.core import PixelContext
-from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.lib.interfaces.diffusion_pipeline import (
+    DiffusionPipelineOutput,
+    max_compile,
+)
 from max.profiler import Tracer, traced
 
 from ..qwen3.text_encoder import Qwen3TextEncoderKleinModel
-from .pipeline_flux2 import Flux2ModelInputs, Flux2Pipeline, Flux2PipelineOutput
+from .pipeline_flux2 import Flux2ModelInputs, Flux2Pipeline
 
 logger = logging.getLogger("max.pipelines")
 
@@ -202,7 +205,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2KleinModelInputs,
-    ) -> Flux2PipelineOutput:
+    ) -> DiffusionPipelineOutput:
         """Run the Flux2 Klein denoising loop with optional CFG."""
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
@@ -331,4 +334,4 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 model_inputs.w_carrier,
             )
 
-        return Flux2PipelineOutput(images=images)
+        return DiffusionPipelineOutput(images=images)
