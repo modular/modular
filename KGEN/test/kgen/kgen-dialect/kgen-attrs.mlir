@@ -90,12 +90,14 @@ kgen.generator @entry2() -> index {
 // CHECK: c = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type
 // CHECK: d = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type
 // CHECK: e = #kgen.type<array<1, i1>> : !kgen.type
+// CHECK: f = #kgen.param.decl.ref<"a"> : !kgen.type
 "some.op"() {
   a = #kgen.type<array<1, i1>> : !kgen.type,
   b = #kgen.type<array<apply(:() -> index @return_one), i1>> : !kgen.type,
   c = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type,
   d = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type,
-  e = #kgen.type<array<1, i1>, array<1, i1>> : !kgen.type
+  e = #kgen.type<array<1, i1>, array<1, i1>> : !kgen.type,
+  f = #kgen.type<typevalue<a>, !kgen.param<a>> : !kgen.type
 } : () -> ()
 
 // CHECK: #kgen<tailkind none>
@@ -111,7 +113,7 @@ kgen.generator @entry2() -> index {
 // CHECK-SAME:   "LinkedList"
 // CHECK-SAME:   [T, x]
 // CHECK-SAME:   <:type T, :!kgen.param<T> x>
-// CHECK-SAME:   (data: [typevalue<T>, !kgen.param<T>],
+// CHECK-SAME:   (data: T,
 // CHECK-SAME:    next: [typevalue<#kgen.genref<@LinkedList<:type T, :!kgen.param<T> x>>>, pointer<none>])
 kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> =
   struct_inst<"LinkedList"[T, x]<:type T, :!kgen.param<T> x>(
