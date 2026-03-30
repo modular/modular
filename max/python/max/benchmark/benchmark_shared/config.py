@@ -63,6 +63,11 @@ CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
 class BenchmarkTask(str, enum.Enum):
     text_generation = "text-generation"
     text_to_image = "text-to-image"
+    image_to_image = "image-to-image"
+
+    @classmethod
+    def pixel_generation_tasks(cls) -> tuple["BenchmarkTask", ...]:
+        return (cls.text_to_image, cls.image_to_image)
 
 
 def _add_config_file_arg_to_parser(
@@ -313,7 +318,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=BenchmarkTask.text_generation.value,
         metadata={"group": "Backend and API Configuration"},
     )
-    """Benchmark task type. Choices: text-generation, text-to-image"""
+    """Benchmark task type. Choices: text-generation, text-to-image, image-to-image"""
 
     # Request configuration (serving-specific)
     max_concurrency: str | None = field(
@@ -386,31 +391,35 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Top-k for sampling."""
 
     # Image generation options (serving-specific)
-    image_width: int = field(default=1024, metadata={"group": "Output Control"})
-    """Output image width in output pixels."""
-
-    image_height: int = field(
-        default=1024, metadata={"group": "Output Control"}
+    image_width: int | None = field(
+        default=None, metadata={"group": "Output Control"}
     )
-    """Output image height in output pixels."""
+    """Output image width in pixels for pixel generation."""
 
-    image_steps: int = field(default=24, metadata={"group": "Output Control"})
+    image_height: int | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
+    """Output image height in pixels for pixel generation."""
+
+    image_steps: int | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
     """Number of denoising steps for pixel generation."""
 
-    image_guidance_scale: float = field(
-        default=3.5, metadata={"group": "Output Control"}
+    image_guidance_scale: float | None = field(
+        default=None, metadata={"group": "Output Control"}
     )
     """Guidance scale for pixel generation."""
 
     image_negative_prompt: str | None = field(
         default=None, metadata={"group": "Output Control"}
     )
-    """Optional negative prompt for pixel generation."""
+    """Negative prompt for pixel generation."""
 
     image_seed: int | None = field(
         default=None, metadata={"group": "Output Control"}
     )
-    """Optional deterministic seed for pixel generation."""
+    """Deterministic seed for pixel generation."""
 
     # Traffic control (serving-specific)
     request_rate: str = field(
@@ -604,7 +613,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "host": "Server host.",
             "port": "Server port.",
             "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream",
-            "benchmark_task": "Benchmark task type. Choices: text-generation, text-to-image",
+            "benchmark_task": "Benchmark task type. Choices: text-generation, text-to-image, image-to-image",
             "max_concurrency": "Maximum concurrent requests (optimized for serving benchmarks).",
             "lora": "Optional LoRA name.",
             "max_benchmark_duration_s": "Maximum benchmark duration in seconds.",

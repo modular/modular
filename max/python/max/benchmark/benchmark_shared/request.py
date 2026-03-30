@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import math
@@ -33,13 +34,45 @@ from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .config import BenchmarkTask
-from .datasets.types import OpenAIImage, PixelGenerationImageOptions
+from .datasets.types import (
+    OpenAIImage,
+    PixelGenerationImageOptions,
+)
 from .tts_workloads_utils import SampleTTSRequest
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
 logger = logging.getLogger(__name__)
+
+
+def _encode_openresponses_image_from_file_path(
+    file_path: str,
+) -> dict[str, str]:
+    extension_to_mime = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }
+
+    _, ext = os.path.splitext(file_path.lower())
+    if ext not in extension_to_mime:
+        supported_exts = ", ".join(extension_to_mime.keys())
+        raise ValueError(
+            f"Unsupported image file extension '{ext}'. "
+            f"Supported extensions: {supported_exts}"
+        )
+
+    with open(file_path, "rb") as f:
+        image_bytes = f.read()
+
+    img_base64 = base64.b64encode(image_bytes).decode("utf-8")
+    return {
+        "type": "input_image",
+        "image_url": f"data:{extension_to_mime[ext]};base64,{img_base64}",
+    }
 
 
 @dataclass
@@ -76,9 +109,10 @@ class RequestFuncInput(BaseRequestFuncInput):
 
 @dataclass
 class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
-    """Request function input for text-to-image benchmarks."""
+    """Request function input for pixel-generation benchmarks."""
 
     prompt: str
+    input_image_paths: list[str] | None
     api_url: str
     image_options: PixelGenerationImageOptions | None = None
 
@@ -654,9 +688,23 @@ def _count_output_images(data: dict[str, Any]) -> int:
 def _build_pixel_generation_payload(
     request_func_input: PixelGenerationRequestFuncInput,
 ) -> dict[str, Any]:
+    input_payload: str | list[dict[str, Any]]
+    if request_func_input.input_image_paths:
+        content: list[dict[str, Any]] = []
+        for image_path in request_func_input.input_image_paths:
+            content.append(
+                _encode_openresponses_image_from_file_path(image_path)
+            )
+        content.append(
+            {"type": "input_text", "text": request_func_input.prompt}
+        )
+        input_payload = [{"role": "user", "content": content}]
+    else:
+        input_payload = request_func_input.prompt
+
     payload: dict[str, Any] = {
         "model": request_func_input.model,
-        "input": request_func_input.prompt,
+        "input": input_payload,
     }
 
     if request_func_input.image_options is None:
@@ -880,11 +928,11 @@ def get_request_driver_class(
     task: BenchmarkTask = BenchmarkTask.text_generation,
 ) -> type[RequestDriver]:
     """Return the request driver based on endpoint and optional task."""
-    if task == BenchmarkTask.text_to_image:
+    if task in BenchmarkTask.pixel_generation_tasks():
         if api_url.endswith("responses"):
             return OpenResponsesRequestDriver
         raise ValueError(
-            "Unsupported API URL for text-to-image driver selection: "
+            "Unsupported API URL for pixel-generation driver selection: "
             f"'{api_url}'. Expected an OpenResponses endpoint."
         )
 

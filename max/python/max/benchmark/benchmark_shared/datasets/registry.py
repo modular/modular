@@ -88,6 +88,10 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="ObfuscatedConversationsBenchmarkDataset",
         has_multiturn_chat_support=False,
     ),
+    "local-image": DatasetRegistryEntry(
+        class_name="LocalImageBenchmarkDataset",
+        has_multiturn_chat_support=False,
+    ),
     "random": DatasetRegistryEntry(
         class_name="RandomBenchmarkDataset",
         has_multiturn_chat_support=True,

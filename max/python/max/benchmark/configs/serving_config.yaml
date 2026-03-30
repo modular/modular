@@ -31,7 +31,7 @@ benchmark_config:
   host: "localhost"
   port: 8000
   endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream
-  benchmark_task: "text-generation"  # choices: text-generation, text-to-image
+  benchmark_task: "text-generation"  # choices: text-generation, text-to-image, image-to-image
 
   num_prompts: 1000  # Number of prompts to process (serving-specific)
 
@@ -53,6 +53,12 @@ benchmark_config:
   temperature: null  # Temperature for sampling
   top_p: null  # Top-p for sampling
   top_k: null  # Top-k for sampling
+  image_width: null  # Output image width in pixels
+  image_height: null  # Output image height in pixels
+  image_steps: null  # Denoising steps for pixel generation
+  image_guidance_scale: null  # Guidance scale for pixel generation
+  image_negative_prompt: null  # Optional negative prompt for pixel generation
+  image_seed: null  # Optional deterministic seed for pixel generation
 
   # Traffic control (serving-specific)
   request_rate: "inf"  # Requests per second (finite rate for realistic benchmarking)

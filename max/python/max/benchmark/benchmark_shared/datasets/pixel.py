@@ -14,21 +14,16 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
-
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-from typing_extensions import override
 
 from .local import LocalBenchmarkDataset
 from .types import (
     PixelGenerationImageOptions,
     PixelGenerationSampledRequest,
-    RequestSamples,
 )
 
 
 class PixelBenchmarkDataset(LocalBenchmarkDataset):
-    """Base class for text-to-image benchmark datasets."""
+    """Base class for pixel generation benchmark datasets."""
 
     def _build_image_options(
         self,
@@ -56,6 +51,7 @@ class PixelBenchmarkDataset(LocalBenchmarkDataset):
         self,
         prompt: str,
         image_options: PixelGenerationImageOptions | None,
+        input_image_paths: list[str] | None = None,
     ) -> PixelGenerationSampledRequest:
         return PixelGenerationSampledRequest(
             prompt_formatted=prompt,
@@ -63,43 +59,6 @@ class PixelBenchmarkDataset(LocalBenchmarkDataset):
             output_len=None,
             encoded_images=[],
             ignore_eos=True,
+            input_image_paths=input_image_paths or [],
             image_options=image_options,
         )
-
-
-class SyntheticPixelBenchmarkDataset(PixelBenchmarkDataset):
-    @override
-    def fetch(self) -> None:
-        """Fetch Synthetic Pixel dataset.
-
-        Synthetic pixel prompts are generated in-memory and do not require a
-        local file.
-        """
-        pass
-
-    @override
-    def sample_requests(
-        self,
-        num_requests: int,
-        tokenizer: PreTrainedTokenizerBase | None,
-        output_lengths: Sequence[int] | None = None,
-        shuffle: bool = True,
-        **kwargs,
-    ) -> RequestSamples:
-        image_options = self._build_image_options(
-            image_width=kwargs.get("image_width"),
-            image_height=kwargs.get("image_height"),
-            image_steps=kwargs.get("image_steps"),
-            image_guidance_scale=kwargs.get("image_guidance_scale"),
-            image_negative_prompt=kwargs.get("image_negative_prompt"),
-            image_seed=kwargs.get("image_seed"),
-        )
-
-        requests = [
-            self._build_request(
-                prompt=f"Random prompt {idx} for benchmarking pixel generation pipelines",
-                image_options=image_options,
-            )
-            for idx in range(num_requests)
-        ]
-        return RequestSamples(requests=requests)
