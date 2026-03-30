@@ -142,6 +142,10 @@ This version is still a work in progress.
 - `mojo format` no longer supports the deprecated `fn` keyword, nor the
   removed `owned` argument convention.
 
+- Comptime function calls now print more nicely in error messages and generated
+  documentation, not including `VariadicList`/`VariadicPack` and including
+  keyword argument labels when required.
+
 ## GPU programming
 
 - Added support for AMD MI250X accelerators.
