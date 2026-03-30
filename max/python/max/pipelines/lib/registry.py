@@ -154,6 +154,8 @@ def get_pipeline_for_task(
         return SpeechTokenGenerationPipeline
     elif task == PipelineTask.PIXEL_GENERATION:
         return PixelGenerationPipeline
+    else:
+        raise ValueError(f"Unsupported pipeline task: {task}")
 
 
 @dataclass(frozen=False)
@@ -983,28 +985,36 @@ class PipelineRegistry:
             f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
         )
 
-    def retrieve_pipeline_task(
-        self, pipeline_config: PipelineConfig
-    ) -> PipelineTask:
-        """Retrieves the pipeline task for the given pipeline configuration.
+    def retrieve_pipeline_task(self, architecture_name: str) -> PipelineTask:
+        """Retrieves the pipeline task for the given architecture name.
 
         Args:
-            pipeline_config: The configuration for the pipeline.
+            architecture_name: The name of the architecture to look up.
 
         Returns:
             The task associated with the architecture.
 
         Raises:
-            ValueError: If no supported architecture is found for the given model repository.
+            ValueError: If the architecture supports multiple pipeline tasks
+                and the user must specify --task explicitly.
+            ValueError: If the architecture is not found in the registry.
         """
-        if arch := self.retrieve_architecture(
-            huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-        ):
+        matching_tasks = [
+            arch_task
+            for (arch_name, arch_task) in self._architectures_by_task
+            if arch_name == architecture_name
+        ]
+        if len(matching_tasks) > 1:
+            task_list = ", ".join(t.value for t in matching_tasks)
+            raise ValueError(
+                f"Architecture '{architecture_name}' supports multiple "
+                f"pipeline tasks: {task_list}. "
+                f"Please specify --task explicitly."
+            )
+        if arch := self.architectures.get(architecture_name):
             return arch.task
-
         raise ValueError(
-            f"MAX Optimized architecture not supported for {pipeline_config.model.huggingface_model_repo.repo_id}"
+            f"Architecture '{architecture_name}' not found in registry"
         )
 
     def retrieve(

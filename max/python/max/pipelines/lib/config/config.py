@@ -1123,8 +1123,7 @@ class PipelineConfig(ConfigFileModel):
             )
 
         # Get pipeline task and class information
-        task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
-        pipeline_class = get_pipeline_for_task(task, self)
+        pipeline_class = get_pipeline_for_task(arch.task, self)
 
         # Log architecture and pipeline class information
         arch_entries: list[tuple[str, Any]] = [
@@ -1185,7 +1184,7 @@ class PipelineConfig(ConfigFileModel):
                 "This should not happen after config resolution."
             )
 
-        task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
+        task = arch.task
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config (only for tasks that use KV cache)

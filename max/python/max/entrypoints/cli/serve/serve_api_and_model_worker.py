@@ -43,27 +43,23 @@ logger = logging.getLogger("max.entrypoints")
 def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_config: PipelineConfig,
-    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
+    pipeline_task: PipelineTask = PipelineTask.UNDEFINED,
 ) -> None:
-    # Auto-detect pipeline task from the model architecture if using default task.
-    # This ensures models like embeddings automatically use the correct pipeline.
-    if pipeline_task == PipelineTask.TEXT_GENERATION:
-        try:
-            detected_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
-                pipeline_config
+    # Auto-detect pipeline task from the model architecture if not explicitly set.
+    if pipeline_task == PipelineTask.UNDEFINED:
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            huggingface_repo=pipeline_config.model.huggingface_model_repo,
+            prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+        )
+        if arch is None:
+            raise ValueError(
+                f"No architecture found for {pipeline_config.model.model_path}"
             )
-            if detected_task != PipelineTask.TEXT_GENERATION:
-                logger.info(
-                    f"Auto-detected pipeline task: {detected_task.value} "
-                    f"(model architecture: {pipeline_config.model.model_path})"
-                )
-                pipeline_task = detected_task
-        except (ValueError, KeyError):
-            # If we can't determine the task, use the provided default
-            logger.debug(
-                "Could not auto-detect pipeline task from model architecture, "
-                f"using default: {pipeline_task.value}"
-            )
+        pipeline_task = arch.task
+        logger.info(
+            f"Auto-detected pipeline task: {pipeline_task.value} "
+            f"(model architecture: {pipeline_config.model.model_path})"
+        )
 
     override_architecture: str | None = None
 
