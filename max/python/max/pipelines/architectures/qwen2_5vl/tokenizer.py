@@ -95,7 +95,6 @@ def qwen2_5vl_image_preprocessing(
     grid_h = height // patch_size
     grid_w = width // patch_size
 
-    # Check if spatial merging is possible early
     if grid_h % merge_size != 0 or grid_w % merge_size != 0:
         raise ValueError(
             f"Spatial merging is not possible because grid_h {grid_h} % merge_size {merge_size} != 0 or grid_w {grid_w} % merge_size {merge_size} != 0"
