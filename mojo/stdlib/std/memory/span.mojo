@@ -382,6 +382,27 @@ struct Span[
                 return True
         return False
 
+    def __contains__(
+        self, value: Self.T
+    ) -> Bool where conforms_to(Self.T, Equatable):
+        """Verify if a given value is present in the span.
+
+        Performs a linear scan over all elements comparing with `==`.
+
+        Args:
+            value: The value to find.
+
+        Returns:
+            True if the value is contained in the span, False
+            otherwise.
+        """
+        for i in range(len(self)):
+            if trait_downcast[Equatable](self[i]) == trait_downcast[Equatable](
+                value
+            ):
+                return True
+        return False
+
     def _write_self_to[
         f: def(Self.T, mut Some[Writer])
     ](self, mut writer: Some[Writer]):

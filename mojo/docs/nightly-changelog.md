@@ -125,6 +125,9 @@ This version is still a work in progress.
 
 - `NDBuffer` has been fully removed. Please migrate to `TileTensor`.
 
+- Added a generic `__contains__` method to `Span` for any element type
+  conforming to `Equatable`, not just `Scalar` types.
+
 - Fixed `blocked_product` in `tile_layout` to zip block and tiler dimensions
   per mode, matching the legacy `blocked_product` behavior.
 

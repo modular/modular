@@ -165,6 +165,15 @@ def test_contains() raises:
         assert_true(item in span)
 
 
+def test_contains_non_scalar() raises:
+    var items = ["a", "b", "c", "d"]
+    var span = Span(items)
+    assert_true("a" in span)
+    assert_true("d" in span)
+    assert_true("e" not in span)
+    assert_true("" not in span)
+
+
 def test_equality() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
