@@ -211,41 +211,25 @@ class ModelWorker:
             with Tracer("graph_capture_warmup"):
                 if pipeline_config.runtime.device_graph_capture:
                     if not isinstance(pipeline, SupportsGraphCaptureWarmup):
-                        logger.info(
-                            "Disabling device graph capture: pipeline %s "
-                            "does not support graph-capture warmup.",
-                            pipeline.__class__.__name__,
+                        raise ValueError(
+                            "device_graph_capture is enabled but the pipeline "
+                            "does not support graph-capture warmup."
                         )
-                        pipeline_config.runtime.device_graph_capture = False
-                    elif pipeline_config.runtime.max_batch_size is None:
-                        logger.info(
-                            "Disabling device graph capture: "
-                            "max_batch_size is not set."
+                    max_batch_size = pipeline_config.runtime.max_batch_size
+                    if max_batch_size is None:
+                        raise ValueError(
+                            "device_graph_capture requires max_batch_size to be set."
                         )
-                        pipeline_config.runtime.device_graph_capture = False
-                    else:
-                        max_batch_size = pipeline_config.runtime.max_batch_size
-                        try:
-                            warmup_start_s = time.monotonic()
-                            pipeline.warmup_graph_capture()
-                            warmup_duration_s = (
-                                time.monotonic() - warmup_start_s
-                            )
-                            logger.info(
-                                "Device graph capture warmup completed in"
-                                " %.2fs (model=%s, max_batch_size=%d).",
-                                warmup_duration_s,
-                                pipeline_config.model.model_path,
-                                max_batch_size,
-                            )
-                        except:
-                            logger.warning(
-                                "Device graph capture warmup failed "
-                                "(likely OOM). Falling back to eager "
-                                "execution.",
-                                exc_info=True,
-                            )
-                            pipeline_config.runtime.device_graph_capture = False
+                    warmup_start_s = time.monotonic()
+                    pipeline.warmup_graph_capture()
+                    warmup_duration_s = time.monotonic() - warmup_start_s
+                    logger.info(
+                        "Device graph capture warmup completed in %.2fs "
+                        "(model=%s, max_batch_size=%d).",
+                        warmup_duration_s,
+                        pipeline_config.model.model_path,
+                        max_batch_size,
+                    )
 
             # Boot up the api worker comms
             worker_queues = await exit_stack.enter_async_context(

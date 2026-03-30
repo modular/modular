@@ -66,6 +66,15 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "KimiK25ForConditionalGeneration",
 )
 
+_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
+    "LlamaForCausalLM",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV3ForCausalLM",
+    "DeepseekV32ForCausalLM",
+    "DeepseekV3ForCausalLMNextN",
+    "KimiK25ForConditionalGeneration",
+)
+
 
 class PipelineConfig(ConfigFileModel):
     """Configuration for a pipeline.
@@ -632,6 +641,22 @@ class PipelineConfig(ConfigFileModel):
                 huggingface_repo=self.model.huggingface_model_repo,
                 prefer_module_v3=self.runtime.prefer_module_v3,
             )
+            max_batch_size = self.runtime.max_batch_size
+            if (
+                not self.runtime.device_graph_capture
+                and arch is not None
+                and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
+                and max_batch_size is not None
+                and accelerator_api() == "cuda"
+                and self._is_eligible_for_overlap_serve_optimizations()
+            ):
+                self.runtime.device_graph_capture = True
+                logger.info(
+                    "Automatically enabling device graph capture for %s with max_batch_size=%d. "
+                    "You can manually disable this by setting --no-device-graph-capture --force.",
+                    arch.name,
+                    max_batch_size,
+                )
 
         self._validate_and_resolve_device_graph_capture()
 
@@ -701,38 +726,14 @@ class PipelineConfig(ConfigFileModel):
             and self.model.device_specs[0].device_type != "cpu"
         )
 
-    def _device_graph_capture_disable_reason(self) -> str | None:
-        if self.runtime.max_batch_size is None:
-            return "max_batch_size is not set"
-
-        if self.runtime.force:
-            return None
-
-        accelerator = accelerator_api()
-        if accelerator != "cuda":
-            return f"accelerator API is '{accelerator}', not 'cuda'"
-        if not self._is_eligible_for_overlap_serve_optimizations():
-            return "pipeline is not eligible for overlap serve optimizations"
-
-        return None
-
     def _validate_and_resolve_device_graph_capture(self) -> None:
         if not self.runtime.device_graph_capture:
             return
 
-        if reason := self._device_graph_capture_disable_reason():
-            self.runtime.device_graph_capture = False
-            if self.runtime.force:
-                logger.info("Disabling device graph capture: %s.", reason)
-            else:
-                logger.info(
-                    "Automatically disabling device graph capture:"
-                    " %s. You can force-enable this by setting"
-                    " --device-graph-capture --force.",
-                    reason,
-                )
-            return
-
+        if self.runtime.max_batch_size is None:
+            raise ValueError(
+                "device_graph_capture requires max_batch_size to be set."
+            )
         if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
@@ -1572,13 +1573,6 @@ class AudioGenerationConfig(PipelineConfig):
 
     @override
     def _validate_and_resolve_overlap_scheduler(self) -> None:
-        if self.runtime.device_graph_capture:
-            logger.info(
-                "Disabling device graph capture: AudioGenerationConfig "
-                "does not support graph-capture warmup."
-            )
-            self.runtime.device_graph_capture = False
-
         if self.runtime.force:
             return
 
