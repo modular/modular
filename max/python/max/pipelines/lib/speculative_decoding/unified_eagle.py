@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, load_devices
+from max.driver import Buffer, DevicePinnedBuffer, load_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -43,7 +43,7 @@ from max.nn import ReturnLogits
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
 from max.pipelines.core import TextContext
-from max.profiler import traced
+from max.profiler import Tracer, traced
 
 from ..interfaces import (
     ModelInputs,
@@ -337,12 +337,42 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
         outputs = self._model.execute(model_inputs)
         assert isinstance(outputs, UnifiedEagleOutputs)
 
-        # Get and validate outputs.
-        num_accepted_draft_tokens_np = (
-            outputs.num_accepted_draft_tokens.to_numpy()
-        )
-        next_tokens_np = outputs.next_tokens.to_numpy()
-        next_draft_tokens_np = outputs.next_draft_tokens.to_numpy()
+        # Do the copy to host for each model output using pinned memory.
+        with Tracer("D2H generated_tokens"):
+            device0 = self.devices[0]
+            device0.synchronize()
+            num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
+            generated_tokens_host = DevicePinnedBuffer(
+                shape=num_accepted_draft_tokens_device.shape,
+                dtype=num_accepted_draft_tokens_device.dtype,
+                device=device0,
+            )
+            generated_tokens_host.inplace_copy_from(
+                num_accepted_draft_tokens_device
+            )
+
+            next_tokens_device = outputs.next_tokens
+            next_tokens_host = DevicePinnedBuffer(
+                shape=next_tokens_device.shape,
+                dtype=next_tokens_device.dtype,
+                device=device0,
+            )
+            next_tokens_host.inplace_copy_from(next_tokens_device)
+
+            next_draft_tokens_device = outputs.next_draft_tokens
+            next_draft_tokens_host = DevicePinnedBuffer(
+                shape=next_draft_tokens_device.shape,
+                dtype=next_draft_tokens_device.dtype,
+                device=device0,
+            )
+            next_draft_tokens_host.inplace_copy_from(next_draft_tokens_device)
+
+            # Sync to ensure all prior pinned d2h transfers are complete.
+            device0.synchronize()
+
+            num_accepted_draft_tokens_np = generated_tokens_host.to_numpy()
+            next_tokens_np = next_tokens_host.to_numpy()
+            next_draft_tokens_np = next_draft_tokens_host.to_numpy()
 
         assert num_accepted_draft_tokens_np.shape == (len(context_batch),)
         assert next_tokens_np.shape == (len(context_batch),)
