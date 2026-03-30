@@ -37,6 +37,7 @@ from . import (  # type: ignore[attr-defined]
     layer_norm_ops,
     matmul_ops,
     misc_ops,
+    pooling_ops,
     reduce_ops,
     softmax_ops,
     split_ops,

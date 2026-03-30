@@ -2835,3 +2835,69 @@ class TestConvTranspose2dGPU:
         torch.testing.assert_close(
             torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
         )
+
+
+class TestMaxPool2dGPU:
+    """Tests for GPU max_pool2d operations with interpreter."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_basic_2x2(self, dtype: DType) -> None:
+        """Test basic 2x2 max pool on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(
+            1 * 4 * 4 * 1, dtype=torch_dtype, device="cuda"
+        ).reshape(1, 4, 4, 1)
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(2, 2))
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        expected_nchw = torch.nn.functional.max_pool2d(
+            x_nchw, kernel_size=2, stride=1
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_stride_and_padding(self) -> None:
+        """Test max pool with stride 2 and padding on GPU."""
+        x_torch = torch.arange(
+            1 * 6 * 6 * 2, dtype=torch.float32, device="cuda"
+        ).reshape(1, 6, 6, 2)
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(3, 3), stride=2, padding=1)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        expected_nchw = torch.nn.functional.max_pool2d(
+            x_nchw, kernel_size=3, stride=2, padding=1
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_ceil_mode(self) -> None:
+        """Test max pool with ceil_mode on GPU."""
+        x_torch = torch.arange(
+            1 * 5 * 5 * 1, dtype=torch.float32, device="cuda"
+        ).reshape(1, 5, 5, 1)
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(2, 2), stride=2, ceil_mode=True)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        expected_nchw = torch.nn.functional.max_pool2d(
+            x_nchw, kernel_size=2, stride=2, ceil_mode=True
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)

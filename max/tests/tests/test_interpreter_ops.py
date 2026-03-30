@@ -4125,3 +4125,190 @@ class TestConvTranspose2dOp:
         np.testing.assert_allclose(
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
+
+
+class TestMaxPoolOp:
+    """Tests for max_pool2d op via MO interpreter (CPU+GPU)."""
+
+    @staticmethod
+    def _max_pool_ref(
+        x_nhwc: np.ndarray,
+        kernel: tuple[int, int],
+        stride: tuple[int, int],
+        dilation: tuple[int, int],
+        padding: tuple[int, int, int, int],
+        ceil_mode: bool = False,
+    ) -> np.ndarray:
+        """Pure-numpy NHWC max_pool2d reference implementation."""
+        n, h, w, c = x_nhwc.shape
+        kh, kw = kernel
+        sh, sw = stride
+        dh, dw = dilation
+        ph_b, ph_a, pw_b, pw_a = padding
+
+        def _out_dim(in_dim: int, k: int, s: int, d: int, pad: int) -> int:
+            num = in_dim + pad - (d * (k - 1) + 1)
+            if ceil_mode:
+                return 1 + -(-num // s)
+            return 1 + num // s
+
+        oh = _out_dim(h, kh, sh, dh, ph_b + ph_a)
+        ow = _out_dim(w, kw, sw, dw, pw_b + pw_a)
+
+        out = np.full((n, oh, ow, c), -np.inf, dtype=x_nhwc.dtype)
+        for bi in range(n):
+            for ohi in range(oh):
+                for owi in range(ow):
+                    for ki in range(kh):
+                        ih = ohi * sh - ph_b + ki * dh
+                        if ih < 0 or ih >= h:
+                            continue
+                        for kj in range(kw):
+                            iw = owi * sw - pw_b + kj * dw
+                            if iw < 0 or iw >= w:
+                                continue
+                            out[bi, ohi, owi, :] = np.maximum(
+                                out[bi, ohi, owi, :],
+                                x_nhwc[bi, ih, iw, :],
+                            )
+        return out
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_basic_2x2(self, dtype: DType) -> None:
+        """Test 2x2 max pool, stride 1, no padding."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(16, dtype=np_dtype).reshape(1, 4, 4, 1)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(2, 2))
+
+        expected = self._max_pool_ref(
+            x_np, (2, 2), (1, 1), (1, 1), (0, 0, 0, 0)
+        )
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_stride_2(self) -> None:
+        """Test 2x2 max pool with stride 2."""
+        x_np = np.arange(36, dtype=np.float32).reshape(1, 6, 6, 1)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
+
+        expected = self._max_pool_ref(
+            x_np, (2, 2), (2, 2), (1, 1), (0, 0, 0, 0)
+        )
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_padding(self) -> None:
+        """Test 3x3 max pool with padding=1."""
+        x_np = np.arange(16, dtype=np.float32).reshape(1, 4, 4, 1)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(3, 3), padding=1)
+
+        expected = self._max_pool_ref(
+            x_np, (3, 3), (1, 1), (1, 1), (1, 1, 1, 1)
+        )
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_dilation(self) -> None:
+        """Test 3x3 max pool with dilation=2."""
+        x_np = np.arange(49, dtype=np.float32).reshape(1, 7, 7, 1)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(3, 3), dilation=2)
+
+        expected = self._max_pool_ref(
+            x_np, (3, 3), (1, 1), (2, 2), (0, 0, 0, 0)
+        )
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_ceil_mode(self) -> None:
+        """Test ceil_mode produces larger output than floor mode."""
+        x_np = np.arange(25, dtype=np.float32).reshape(1, 5, 5, 1)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y_floor = F.max_pool2d(
+                x, kernel_size=(2, 2), stride=3, ceil_mode=False
+            )
+            y_ceil = F.max_pool2d(
+                x, kernel_size=(2, 2), stride=3, ceil_mode=True
+            )
+
+        floor_shape = np.from_dlpack(y_floor).shape
+        ceil_shape = np.from_dlpack(y_ceil).shape
+        assert ceil_shape[1] >= floor_shape[1]
+        assert ceil_shape[2] >= floor_shape[2]
+
+        expected_floor = self._max_pool_ref(
+            x_np, (2, 2), (3, 3), (1, 1), (0, 0, 0, 0), ceil_mode=False
+        )
+        expected_ceil = self._max_pool_ref(
+            x_np, (2, 2), (3, 3), (1, 1), (0, 0, 0, 0), ceil_mode=True
+        )
+        np.testing.assert_array_equal(np.from_dlpack(y_floor), expected_floor)
+        np.testing.assert_array_equal(np.from_dlpack(y_ceil), expected_ceil)
+
+    def test_non_square_kernel(self) -> None:
+        """Test max pool with non-square kernel (2, 3)."""
+        x_np = np.arange(24, dtype=np.float32).reshape(1, 4, 6, 1)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(2, 3), stride=(1, 2))
+
+        expected = self._max_pool_ref(
+            x_np, (2, 3), (1, 2), (1, 1), (0, 0, 0, 0)
+        )
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_multi_channel_batch(self) -> None:
+        """Test max pool with multiple channels and batch size > 1."""
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 8, 8, 3)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(3, 3), stride=2, padding=1)
+
+        expected = self._max_pool_ref(
+            x_np, (3, 3), (2, 2), (1, 1), (1, 1, 1, 1)
+        )
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", [DType.int32, DType.int64])
+    def test_integer_dtypes(self, dtype: DType) -> None:
+        """Test max pool with integer data dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(16, dtype=np_dtype).reshape(1, 4, 4, 1)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
+
+        expected = self._max_pool_ref(
+            x_np, (2, 2), (2, 2), (1, 1), (0, 0, 0, 0)
+        )
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)

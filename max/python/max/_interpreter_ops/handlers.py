@@ -2022,3 +2022,121 @@ def _handle_conv_transpose(
     )
 
     return [output]
+
+
+# Pooling operations
+
+
+def _compute_pool_out_dim(
+    in_dim: int,
+    filter_dim: int,
+    stride: int,
+    dilation: int,
+    pad: int,
+    ceil_mode: bool,
+) -> int:
+    """Compute output spatial dim for a sliding window operation."""
+    numerator = in_dim + pad - (dilation * (filter_dim - 1) + 1)
+    if ceil_mode:
+        return 1 + -(-numerator // stride)  # ceildiv
+    return 1 + numerator // stride
+
+
+def _handle_max_pool_impl(
+    op: mo.MaxPoolOp | mo.MaxPoolCeilModeTrueOp,
+    inputs: Sequence[Buffer | None],
+    ceil_mode: bool,
+) -> Sequence[Buffer]:
+    """Shared implementation for MaxPoolOp and MaxPoolCeilModeTrueOp."""
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input (NHWC)
+    assert isinstance(inputs[1], Buffer)  # filter_shape
+    assert isinstance(inputs[2], Buffer)  # strides
+    assert isinstance(inputs[3], Buffer)  # dilations
+    assert isinstance(inputs[4], Buffer)  # paddings
+
+    input_buffer = inputs[0]
+    filter_shape = [int(x) for x in inputs[1].to_numpy().flatten()]
+    strides = [int(x) for x in inputs[2].to_numpy().flatten()]
+    dilations = [int(x) for x in inputs[3].to_numpy().flatten()]
+    paddings = [int(x) for x in inputs[4].to_numpy().flatten()]
+
+    in_shape = list(input_buffer.shape)
+    batch = in_shape[0]
+    in_h = in_shape[1]
+    in_w = in_shape[2]
+    channels = in_shape[3]
+
+    filter_h, filter_w = filter_shape[0], filter_shape[1]
+    stride_h, stride_w = strides[0], strides[1]
+    dilation_h, dilation_w = dilations[0], dilations[1]
+    pad_h_before, pad_h_after = paddings[0], paddings[1]
+    pad_w_before, pad_w_after = paddings[2], paddings[3]
+
+    out_h = _compute_pool_out_dim(
+        in_h,
+        filter_h,
+        stride_h,
+        dilation_h,
+        pad_h_before + pad_h_after,
+        ceil_mode,
+    )
+    out_w = _compute_pool_out_dim(
+        in_w,
+        filter_w,
+        stride_w,
+        dilation_w,
+        pad_w_before + pad_w_after,
+        ceil_mode,
+    )
+
+    output = Buffer(
+        shape=[batch, out_h, out_w, channels],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ctx_ptr = target_device._device_context_ptr()
+    kernel_fn = (
+        ops.pooling_ops.MaxPoolCeil if ceil_mode else ops.pooling_ops.MaxPool
+    )
+    kernel_fn(
+        output,
+        input_buffer,
+        (
+            batch,
+            in_h,
+            in_w,
+            channels,
+            out_h,
+            out_w,
+            filter_h,
+            filter_w,
+            stride_h,
+            stride_w,
+            dilation_h,
+            dilation_w,
+            pad_h_before,
+            pad_w_before,
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.MaxPoolOp)
+def _handle_max_pool(
+    op: mo.MaxPoolOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.max_pool via Mojo max pooling kernel (floor mode)."""
+    return _handle_max_pool_impl(op, inputs, ceil_mode=False)
+
+
+@register_op_handler(mo.MaxPoolCeilModeTrueOp)
+def _handle_max_pool_ceil(
+    op: mo.MaxPoolCeilModeTrueOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.max_pool_ceil_mode_true via Mojo max pooling kernel."""
+    return _handle_max_pool_impl(op, inputs, ceil_mode=True)
