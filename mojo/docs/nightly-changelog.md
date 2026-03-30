@@ -38,6 +38,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
+  targets at compile time. `is_apple_silicon()` now includes M5 in its check.
+
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `Span`: `Writable`, `Hashable`
