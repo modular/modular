@@ -13,78 +13,55 @@
 
 """Mistral3 text encoder transformer without KV cache dependency.
 
-This is the Module V2 graph implementation used by the default FLUX.2
-pipeline.
+This is a standalone transformer implementation for text encoding that does not
+require KV cache. Suitable for single-pass encoding in diffusion pipelines.
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.embedding import Embedding
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.experimental import functional as F
+from max.experimental.nn import Embedding, Linear, Module
+from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.experimental.nn.norm import RMSNorm
+from max.experimental.nn.sequential import ModuleList
+from max.experimental.tensor import Tensor
+from max.graph import TensorType
 
 from .attention import EncoderAttention
-from .model_config import Mistral3TextEncoderConfig
+
+if TYPE_CHECKING:
+    from .model_config import Mistral3TextEncoderConfig
 
 
-class Mistral3MLP(Module):
-    """Mistral3 MLP with SiLU gating."""
+class Mistral3MLP(Module[[Tensor], Tensor]):
+    """Mistral3 MLP with SiLU gate activation."""
 
-    def __init__(
-        self,
-        *,
-        hidden_size: int,
-        intermediate_size: int,
-        dtype: DType,
-        device: DeviceRef,
-    ) -> None:
+    def __init__(self, hidden_size: int, intermediate_size: int) -> None:
         super().__init__()
-        self.gate_proj = Linear(
-            hidden_size,
-            intermediate_size,
-            dtype=dtype,
-            device=device,
-            has_bias=False,
-        )
-        self.up_proj = Linear(
-            hidden_size,
-            intermediate_size,
-            dtype=dtype,
-            device=device,
-            has_bias=False,
-        )
-        self.down_proj = Linear(
-            intermediate_size,
-            hidden_size,
-            dtype=dtype,
-            device=device,
-            has_bias=False,
-        )
+        self.gate_proj = Linear(hidden_size, intermediate_size, bias=False)
+        self.up_proj = Linear(hidden_size, intermediate_size, bias=False)
+        self.down_proj = Linear(intermediate_size, hidden_size, bias=False)
 
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
-        gate = ops.silu(self.gate_proj(hidden_states))
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        gate = F.silu(self.gate_proj(hidden_states))
         up = self.up_proj(hidden_states)
         return self.down_proj(gate * up)
 
 
-class EncoderTransformerBlock(Module):
+class EncoderTransformerBlock(Module[..., Tensor]):
     """Transformer block for encoder-only models without KV cache."""
 
     def __init__(
         self,
-        *,
         hidden_size: int,
         num_heads: int,
         num_kv_heads: int,
         head_dim: int,
         intermediate_size: int,
         rms_norm_eps: float,
-        dtype: DType,
-        device: DeviceRef,
         scale: float,
     ) -> None:
         super().__init__()
@@ -93,38 +70,21 @@ class EncoderTransformerBlock(Module):
             num_key_value_heads=num_kv_heads,
             hidden_size=hidden_size,
             head_dim=head_dim,
-            dtype=dtype,
-            device=device,
             scale=scale,
         )
-        self.mlp = Mistral3MLP(
-            hidden_size=hidden_size,
-            intermediate_size=intermediate_size,
-            dtype=dtype,
-            device=device,
-        )
-        self.input_layernorm = RMSNorm(
-            hidden_size,
-            dtype=dtype,
-            eps=rms_norm_eps,
-            multiply_before_cast=False,
-        )
-        self.post_attention_layernorm = RMSNorm(
-            hidden_size,
-            dtype=dtype,
-            eps=rms_norm_eps,
-            multiply_before_cast=False,
-        )
+        self.mlp = Mistral3MLP(hidden_size, intermediate_size)
+        self.input_layernorm = RMSNorm(hidden_size, eps=rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(hidden_size, eps=rms_norm_eps)
 
-    def __call__(self, x: TensorValue, rope: RotaryEmbedding) -> TensorValue:
+    def forward(self, x: Tensor, rope: RotaryEmbedding) -> Tensor:
         """Forward pass without KV cache.
 
         Args:
-            x: Input hidden states [seq_len, hidden_size]
+            x: Input hidden states [seq_len, hidden_dim]
             rope: RoPE embedding module
 
         Returns:
-            Output hidden states [seq_len, hidden_size]
+            Output hidden states [seq_len, hidden_dim]
         """
         residual = x
         x = self.input_layernorm(x)
@@ -139,7 +99,7 @@ class EncoderTransformerBlock(Module):
         return x
 
 
-class Mistral3TextEncoderTransformer(Module):
+class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
     """Mistral3 text encoder transformer without KV cache dependency.
 
     Encodes tokens and returns fused prompt embeddings by stacking hidden
@@ -148,6 +108,7 @@ class Mistral3TextEncoderTransformer(Module):
 
     def __init__(self, config: Mistral3TextEncoderConfig) -> None:
         super().__init__()
+
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.device = config.device
@@ -155,15 +116,16 @@ class Mistral3TextEncoderTransformer(Module):
         self._sorted_hidden_state_layers = sorted(config.hidden_state_layers)
 
         self.rope = RotaryEmbedding(
-            dim=self.dim,
-            n_heads=self.n_heads,
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
+            device=config.device.to_device(),
             head_dim=config.head_dim,
             interleaved=False,
         )
 
-        self.layers = LayerList(
+        self.layers = ModuleList(
             [
                 EncoderTransformerBlock(
                     hidden_size=config.hidden_size,
@@ -172,20 +134,13 @@ class Mistral3TextEncoderTransformer(Module):
                     head_dim=config.head_dim,
                     intermediate_size=config.intermediate_size,
                     rms_norm_eps=config.rms_norm_eps,
-                    dtype=config.dtype,
-                    device=config.device,
                     scale=config.attention_multiplier,
                 )
                 for _ in range(config.num_hidden_layers)
             ]
         )
 
-        self.embed_tokens = Embedding(
-            config.vocab_size,
-            config.hidden_size,
-            config.dtype,
-            config.device,
-        )
+        self.embed_tokens = Embedding(config.vocab_size, dim=config.hidden_size)
 
     def input_types(self) -> tuple[TensorType, ...]:
         """Define input tensor types for compilation."""
@@ -197,20 +152,24 @@ class Mistral3TextEncoderTransformer(Module):
             ),
         )
 
-    def __call__(self, tokens: TensorValue) -> TensorValue:
+    def forward(self, tokens: Tensor) -> tuple[Tensor, ...]:
         """Forward pass returning fused prompt embeddings.
 
+        Runs the transformer up to the last configured layer, collects hidden
+        states from the configured layers, then stacks and reshapes them into
+        a single prompt-embedding tensor.
+
         Args:
-            tokens: Input token IDs ``[total_seq_len]``.
+            tokens: Input token IDs [total_seq_len]
 
         Returns:
-            Tensor of shape ``[1, seq_len, num_layers * hidden_dim]`` with the
+            Tensor of shape [1, seq_len, num_layers * hidden_dim] with the
             selected hidden states stacked and the layer/hidden dimensions
             merged, ready for the diffusion transformer.
         """
         h = self.embed_tokens(tokens)
 
-        selected: dict[int, TensorValue] = {}
+        selected: dict[int, Tensor] = {}
         max_layer = self._sorted_hidden_state_layers[-1]
         for i, layer in enumerate(self.layers):
             h = layer(h, self.rope)
@@ -221,13 +180,16 @@ class Mistral3TextEncoderTransformer(Module):
 
         hidden_states = [selected[i] for i in self._sorted_hidden_state_layers]
 
-        # Stack ``[L tensors of (S, D)]`` -> ``[L, S, D]``
-        # then fuse into ``[1, S, L*D]`` for the diffusion transformer.
-        stacked = ops.stack(hidden_states, axis=0)
-        stacked = ops.unsqueeze(stacked, axis=0)
-        stacked = ops.permute(stacked, [0, 2, 1, 3])
+        # Stack [L tensors of (S, D)] -> [L, S, D]
+        # then fuse into [1, S, L*D] for the diffusion transformer.
+        stacked = F.stack(hidden_states, axis=0)  # [L, S, D]
+        stacked = F.unsqueeze(stacked, axis=0)  # [1, L, S, D]
+        stacked = F.permute(stacked, [0, 2, 1, 3])  # [1, S, L, D]
+        # Read L and D directly from the tensor dims to avoid any Python-side
+        # constant that could force a device sync at eager execution time.
         seq_len = stacked.shape[1]
-        return ops.reshape(
-            stacked,
-            [1, seq_len, stacked.shape[2] * stacked.shape[3]],
+        return (
+            F.reshape(
+                stacked, [1, seq_len, stacked.shape[2] * stacked.shape[3]]
+            ),
         )

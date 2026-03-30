@@ -635,7 +635,7 @@ class Flux2Pipeline(DiffusionPipeline):
         with Tracer("text_encoder"):
             prompt_embeds = cast(
                 Buffer,
-                self.text_encoder(tokens),  # type: ignore[arg-type]
+                self.text_encoder(tokens),
             )
 
         with Tracer("post_process"):
