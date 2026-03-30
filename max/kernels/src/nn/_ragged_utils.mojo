@@ -42,7 +42,7 @@ def get_batch_from_row_offsets(
 
         if tok_idx >= Int(row_offsets[mid]):
             low = mid
-        elif tok_idx < Int(row_offsets[mid]):
+        else:
             high = mid
 
     return Int(low)
@@ -69,7 +69,7 @@ def get_batch_from_row_offsets(
 
         if tok_idx >= Int(row_offsets[mid]):
             low = mid
-        elif tok_idx < Int(row_offsets[mid]):
+        else:
             high = mid
 
     return Int(low)
@@ -83,23 +83,8 @@ def get_batch_and_token_idx_from_row_offsets(
     """
     comptime assert row_offsets.flat_rank == 1
 
-    var row_offsets_size = row_offsets.num_elements()
-
-    assert tok_idx >= 0 and tok_idx < Int(
-        row_offsets[row_offsets_size - 1]
-    ), "tok_idx is out of range of row_offsets"
-
-    var low: UInt = 0
-    var high = UInt(row_offsets_size - 1)
-    while low + 1 != high:
-        var mid = (low + high) // 2
-
-        if tok_idx >= Int(row_offsets[mid]):
-            low = mid
-        elif tok_idx < Int(row_offsets[mid]):
-            high = mid
-
-    return Int(low), Int(tok_idx - Int(row_offsets[low]))
+    var batch_idx = get_batch_from_row_offsets(row_offsets, tok_idx)
+    return batch_idx, Int(tok_idx - Int(row_offsets[UInt(batch_idx)]))
 
 
 def merge_ragged_tensors[
