@@ -2275,7 +2275,7 @@ kgen.struct.generator @S1 = struct_inst<"S1" memoryOnly>{}
 // CHECK-NEXT: "sink-does-not-conform-to"() : () -> ()
 // CHECK-NEXT: kgen.return
 kgen.generator @conformance_check<T: type>() always_inline {
-  kgen.param.if <#kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type, #kgen.variadic<"A", "B"> : !kgen.variadic<string>>> {
+  kgen.param.if <#kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type, [@"A", @"B"]>> {
     "sink-conforms-to"() : () -> ()
     kgen.param.yield
   } else {

@@ -783,15 +783,8 @@ fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
     return {};
 
   TypedAttr fieldParam = getCanonicalAttr(paramType.getParam());
-  auto *ctx = fieldParam.getContext();
-  auto stringType = KGEN::StringType::get(ctx);
-  std::string flatName =
-      getFlattenedSymbolName(requiredTraitDecl->getSymbolRef());
-  SmallVector<TypedAttr> traitNameAttrs = {
-      StringAttr::get(flatName, stringType)};
-  auto traitNames =
-      VariadicAttr::get(ctx, traitNameAttrs, VariadicType::get(stringType));
-  auto conformsTo = TypeConformsToTraitAttr::get(fieldParam, traitNames);
+  SmallVector<SymbolRefAttr> traitSymbols = {requiredTraitDecl->getSymbolRef()};
+  auto conformsTo = TypeConformsToTraitAttr::get(fieldParam, traitSymbols);
 
   for (ConstraintAttr constraint : fnConstraints)
     if (constraintImplies(constraint.getProposition(), conformsTo))

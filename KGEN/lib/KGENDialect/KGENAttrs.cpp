@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "Support/Compiler/MLIRDType.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Support/STLExtras.h"
 #include "mlir/Dialect/PDL/IR/PDLOps.h"
@@ -721,11 +722,10 @@ TypedAttr TypeConformsToTraitAttr::getTypeRefIfResolved() {
 FailureOr<TypedAttr>
 TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
                                   ParameterEvaluator &evaluator) const {
-  // All the collected propositions.
   SmallVector<TypedAttr> props;
-  for (auto toCheck : getTraitNames().getValues()) {
+  for (SymbolRefAttr traitSym : getTraitSymbols()) {
     auto conformOp = cast_or_null<ConformanceOp>(
-        traitTableOp.lookup(cast<StringAttr>(toCheck).getValue()));
+        traitTableOp.lookup(getFlattenedSymbolName(traitSym)));
 
     if (!conformOp)
       return {BoolAttr::get(getContext(), false)};
@@ -734,7 +734,6 @@ TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
         getCanonicalAttr(conformOp.getConstraint().getProposition())));
   }
 
-  // No trait conformance to check?
   if (props.empty())
     return {BoolAttr::get(getContext(), true)};
 
@@ -743,12 +742,8 @@ TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
 
 LogicalResult
 TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                TypedAttr typeValue, VariadicAttr traitNames) {
-  if (!isa<StringType>(traitNames.getType().getElementType()))
-    return emitError()
-           << "expected a variadic of strings for trait names, but got "
-           << traitNames.getType();
-
+                                TypedAttr typeValue,
+                                ArrayRef<SymbolRefAttr> traitSymbols) {
   return success();
 }
 

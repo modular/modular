@@ -4469,19 +4469,7 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
   // constraintImplies can use simple set containment for subsumption.
   canonicalizeTraitCompositionSymbols(emitter.shared, symbols);
 
-  // Fold trait symbol into a list of string, as trait type will be discarded
-  // after lowering lit.
-  auto stringType = KGEN::StringType::get(traitType.getContext());
-  SmallVector<TypedAttr> traitNames;
-  for (SymbolRefAttr traitSymbol : symbols) {
-    std::string traitName = getFlattenedSymbolName(traitSymbol);
-    traitNames.push_back(StringAttr::get(traitName, stringType));
-  }
-  VariadicAttr foldedTraitNames = VariadicAttr::get(
-      traitType.getContext(), traitNames, VariadicType::get(stringType));
-
-  auto conformToI1 =
-      TypeConformsToTraitAttr::get(typeToCheck, foldedTraitNames);
+  auto conformToI1 = TypeConformsToTraitAttr::get(typeToCheck, symbols);
 
   return emitter.emitBool({conformToI1, this}, dest);
 }
