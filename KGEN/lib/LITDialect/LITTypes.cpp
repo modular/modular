@@ -1357,6 +1357,7 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
   StringRef mnemonic;
   Type genType;
   OptionalParseResult parseResult = generatedTypeParser(p, &mnemonic, genType);
+
   if (parseResult.has_value())
     return genType;
 
@@ -1565,6 +1566,63 @@ FnType FnType::get(MLIRContext *ctx, TypeRange inputs, TypeRange results,
                                       numImplicitOriginDecls);
   return FuncType::get(funcType,
                        /*convs=*/{}, /*effects=*/{}, metadata);
+}
+
+//===----------------------------------------------------------------------===//
+// FnLiteralType
+//===----------------------------------------------------------------------===//
+
+FnLiteralType::FnLiteralType(FuncLiteralType funcLiteralType)
+    : FuncLiteralType(funcLiteralType) {
+  assert(
+      (!funcLiteralType ||
+       ::isa_and_nonnull<FnType>(funcLiteralType.getFuncLiteral().getType())) &&
+      "expected LIT function literal type");
+}
+
+FnLiteralType FnLiteralType::get(TypedAttr funcLiteral) {
+  return cast<FnLiteralType>(FuncLiteralType::get(funcLiteral));
+}
+
+bool FnLiteralType::classof(FuncLiteralType type) {
+  return isa_and_nonnull<FnType>(type.getFuncLiteral().getType());
+}
+
+bool FnLiteralType::classof(Type type) {
+  auto literal = dyn_cast<FuncLiteralType>(type);
+  return literal && classof(literal);
+}
+
+//===----------------------------------------------------------------------===//
+// FnLiteralTypeGeneratorType
+//===----------------------------------------------------------------------===//
+
+FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(LITGeneratorType gen)
+    : FuncLiteralTypeGeneratorType(gen) {
+  assert((!gen || ::isa<FnLiteralType>(gen.getBody())) &&
+         "expected LIT generator wrapping FnLiteralType");
+}
+
+FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(
+    FuncLiteralTypeGeneratorType gen)
+    : FuncLiteralTypeGeneratorType(gen) {
+  assert((!gen || (::isa<LITGeneratorType>(gen) &&
+                   ::isa<FnLiteralType>(gen.getBody()))) &&
+         "expected LIT generator wrapping FnLiteralType");
+}
+
+FnLiteralType FnLiteralTypeGeneratorType::getBody() {
+  return ::cast<FnLiteralType>(GeneratorType::getBody());
+}
+
+bool FnLiteralTypeGeneratorType::classof(FuncLiteralTypeGeneratorType type) {
+  return ::isa<LITGeneratorType>(type) && ::isa<FnLiteralType>(type.getBody());
+}
+
+bool FnLiteralTypeGeneratorType::classof(Type type) {
+  if (auto gen = ::dyn_cast<FuncLiteralTypeGeneratorType>(type))
+    return classof(gen);
+  return false;
 }
 
 //===----------------------------------------------------------------------===//

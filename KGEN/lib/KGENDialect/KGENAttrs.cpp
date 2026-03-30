@@ -1261,6 +1261,43 @@ bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
+static FuncTypeGeneratorType
+getSymbolSignature(FuncInterface func, ArrayRef<Operation *> symbolOps) {
+  if (symbolOps.size() == 1)
+    return func.getFuncTypeGenerator();
+
+  // Collect the contextual parameter values.
+  SmallVector<ParamDeclAttr> paramDecls;
+  for (Operation *op : llvm::drop_end(symbolOps))
+    llvm::append_range(paramDecls, ::cast<DeclInterface>(op).getInputParams());
+
+  IndexRefRemapper remapper(paramDecls, paramDecls.size());
+  FuncTypeGeneratorType baseSigGen = func.getFuncTypeGenerator();
+  FuncType baseSig = baseSigGen.getBody();
+  SmallVector<Type> inputParamTypes;
+  for (ParamDeclAttr param : paramDecls)
+    inputParamTypes.push_back(remapper.replace(param.getType()));
+  for (Type type : baseSigGen.getInputParamTypes())
+    inputParamTypes.push_back(remapper.replace(type));
+
+  GeneratorMetadataAttrInterface genMetadata = baseSigGen.getMetadata();
+  if (genMetadata) {
+    SmallVector<StringAttr> paramNames = llvm::map_to_vector(
+        paramDecls, [](const ParamDeclAttr &param) { return param.getName(); });
+    genMetadata = remapper.replace(genMetadata.prependContextualParamsFromOps(
+        paramNames, symbolOps.drop_back()));
+  }
+
+  FnMetadataAttrInterface fnMetadata = baseSig.getMetadata();
+  if (fnMetadata)
+    fnMetadata = remapper.replace(fnMetadata);
+
+  return FuncTypeGeneratorType::get(
+      inputParamTypes, remapper.replace(baseSig.getValues()),
+      baseSig.getArgConventions(), baseSig.getFnEffects(), fnMetadata,
+      genMetadata);
+}
+
 /// This symbol is a constant its bindings are constants.
 bool SymbolConstantAttr::isConstant() const {
   return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
@@ -1300,47 +1337,9 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
     }
   }
 
-  FuncTypeGeneratorType declSignature;
-  if (symbolOps.size() == 1) {
-    declSignature = func.getFuncTypeGenerator().getSpecializedGenerator(
-        getParamValues(), &evaluationContext, [&] { return emitError(loc); });
-  } else {
-    // Collect the contextual parameter values.
-    SmallVector<ParamDeclAttr> paramDecls;
-    for (Operation *op : llvm::drop_end(symbolOps))
-      llvm::append_range(paramDecls,
-                         ::cast<DeclInterface>(op).getInputParams());
-
-    IndexRefRemapper remapper(paramDecls, paramDecls.size());
-    FuncTypeGeneratorType baseSigGen = func.getFuncTypeGenerator();
-    FuncType baseSig = baseSigGen.getBody();
-    SmallVector<Type> inputParamTypes;
-    for (ParamDeclAttr param : paramDecls)
-      inputParamTypes.push_back(remapper.replace(param.getType()));
-    for (Type type : baseSigGen.getInputParamTypes())
-      inputParamTypes.push_back(remapper.replace(type));
-
-    GeneratorMetadataAttrInterface genMetadata = baseSigGen.getMetadata();
-    if (genMetadata) {
-      SmallVector<StringAttr> paramNames =
-          llvm::map_to_vector(paramDecls, [](const ParamDeclAttr &param) {
-            return param.getName();
-          });
-      genMetadata = remapper.replace(genMetadata.prependContextualParamsFromOps(
-          paramNames, llvm::drop_end(symbolOps)));
-    }
-
-    FnMetadataAttrInterface fnMetadata = baseSig.getMetadata();
-    if (fnMetadata)
-      fnMetadata = remapper.replace(fnMetadata);
-
-    auto remappedGenerator = FuncTypeGeneratorType::get(
-        inputParamTypes, remapper.replace(baseSig.getValues()),
-        baseSig.getArgConventions(), baseSig.getFnEffects(), fnMetadata,
-        genMetadata);
-    declSignature = remappedGenerator.getSpecializedGenerator(
-        getParamValues(), &evaluationContext, [&] { return emitError(loc); });
-  }
+  FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
+  declSignature = declSignature.getSpecializedGenerator(
+      getParamValues(), &evaluationContext, [&] { return emitError(loc); });
   if (!declSignature)
     return failure();
 
@@ -1369,6 +1368,70 @@ ParseResult parseColonTypeSymbolConstant(AsmParser &p,
 
 void printColonTypeSymbolConstant(AsmPrinter &p, SymbolConstantAttr value) {
   printColonTypeParamValue(p, value);
+}
+
+//===----------------------------------------------------------------------===//
+// FuncSymbolAttr
+//===----------------------------------------------------------------------===//
+
+/// This symbol is a constant its bindings are constants.
+bool FuncSymbolAttr::isConstant() const {
+  return !isParameterizedType(getType());
+}
+
+LogicalResult
+FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
+                                 Location loc) const {
+  VerboseCompilerTimeTraceScope traceScope("FuncSymbolAttr::verifySymbolUses");
+
+  Operation *module = evaluationContext.module;
+  mlir::LockedSymbolTableCollection &symtab = evaluationContext.symtab;
+
+  // Build the signature of the referenced symbol.
+  SymbolRefAttr symbol = getSymbol();
+  SmallVector<Operation *> symbolOps;
+  {
+    VerboseCompilerTimeTraceScope traceScope("lookupSymbolIn");
+    if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps)))
+      return emitError(loc)
+             << symbol << " does not reference a KGEN declaration";
+  }
+
+  // The leaf symbol must refer to a function.
+  auto func = ::dyn_cast<FuncInterface>(symbolOps.back());
+  if (!func)
+    return emitError(loc) << symbol << " does not reference a KGEN function";
+
+  // Everything else must be a declaration.
+  for (Operation *op : llvm::drop_end(symbolOps)) {
+    if (!::isa<DeclInterface>(op)) {
+      return emitError(loc)
+             << "symbol @" << ::cast<mlir::SymbolOpInterface>(op).getName()
+             << " does not reference a KGEN declaration";
+    }
+  }
+
+  FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
+  declSignature = declSignature.getSpecializedGenerator(
+      getParamValues(), &evaluationContext, [&] { return emitError(loc); });
+
+  if (!declSignature)
+    return failure();
+
+  // Parameter types match exactly.  We could support higher order rebinding
+  // if there is a need.
+  return verifyFuncTypesMatch("symbol use", getType(), loc,
+                              symbol.getLeafReference(),
+                              declSignature.getBody(), func->getLoc());
+}
+
+//===----------------------------------------------------------------------===//
+// FuncLiteralAttr
+//===----------------------------------------------------------------------===//
+
+bool FuncLiteralAttr::isConstant() const {
+  // This is a constant literal if it type refers to a constant symbol.
+  return ParameterAttr::isSimpleConstant(getType().getFuncLiteral());
 }
 
 //===----------------------------------------------------------------------===//

@@ -431,6 +431,12 @@ LogicalResult verifyDeclSignaturesMatch(
     Location originatorLoc, StringRef interfaceName,
     FuncTypeGeneratorType targetSignatureGen, Location targetLoc);
 
+/// Check that the specified function types match, checking the parameter and
+/// value type information.
+LogicalResult verifyFuncTypesMatch(StringRef lhsName, FuncType lhsSigGen,
+                                   Location lhsLoc, StringRef rhsName,
+                                   FuncType rhsSigGen, Location rhsLoc);
+
 /// Check that the parameter bindings match the declarations.
 LogicalResult
 verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,

@@ -402,6 +402,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::l_brace:
   case Token::kw_async:
   case Token::kw_def:
+  case Token::kw___def:
   case Token::kw_lambda:
   case Token::kw_fn:
   case Token::kw___get_mvalue_as_litref:
@@ -606,6 +607,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 
   case Token::kw_async:
   case Token::kw_def:
+  case Token::kw___def:
   case Token::kw_fn:
     if (failed(parseFunctionType(result)))
       return failure();

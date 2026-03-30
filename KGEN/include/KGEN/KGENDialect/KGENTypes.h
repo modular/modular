@@ -27,6 +27,7 @@ class ParamDeclAttr;
 class ParamDeclArrayAttr;
 struct PartiallySpecializedInputParams;
 class FuncTypeGeneratorType;
+class FuncLiteralTypeGeneratorType;
 class StructDefFieldAttr;
 class VariadicType;
 class VariadicAttr;
@@ -76,6 +77,38 @@ public:
   FuncType getInstantiatedBody();
 
   /// A FuncTypeGeneratorType is a GeneratorType containing a FuncType.
+  static bool classof(GeneratorType type);
+  static bool classof(Type type);
+};
+
+//===----------------------------------------------------------------------===//
+// FuncLiteralTypeGeneratorType
+//===----------------------------------------------------------------------===//
+
+class FuncLiteralTypeGeneratorType : public GeneratorType {
+public:
+  using GeneratorType::GeneratorType;
+  FuncLiteralTypeGeneratorType(GeneratorType gen);
+
+  static FuncLiteralTypeGeneratorType get(ArrayRef<Type> inputParamTypes,
+                                          TypedAttr funcLiteral,
+                                          Attribute genMetadata = {});
+
+  /// Get this GeneratorType with some parameters bound.
+  FuncLiteralTypeGeneratorType
+  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+                          ParameterEvaluationContext *evaluationContext,
+                          function_ref<InFlightDiagnostic()> emitErrorFn = {});
+  FuncLiteralTypeGeneratorType
+  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+                          ParameterEvaluationContext *evaluationContext,
+                          Location location);
+
+  FuncLiteralType getBody();
+  FuncLiteralType getInstantiatedBody();
+
+  /// A FuncLiteralTypeGeneratorType is a GeneratorType containing a
+  /// FuncLiteralType.
   static bool classof(GeneratorType type);
   static bool classof(Type type);
 };

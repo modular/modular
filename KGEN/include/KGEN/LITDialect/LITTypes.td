@@ -31,7 +31,7 @@ def LIT_GeneratorType : DialectType<LITDialect,
     "LITGeneratorType">;
 
 //===----------------------------------------------------------------------===//
-// FuncType
+// FnType
 //===----------------------------------------------------------------------===//
 
 def LIT_FnType : DialectType<LITDialect,
@@ -44,6 +44,22 @@ def LIT_FnType : DialectType<LITDialect,
 def LIT_FnTypeGeneratorType : DialectType<LITDialect,
     CPred<"llvm::isa<FnTypeGeneratorType>($_self)">,
     "LIT function type generator type", "FnTypeGeneratorType">;
+
+//===----------------------------------------------------------------------===//
+// FnLiteralType
+//===----------------------------------------------------------------------===//
+
+def LIT_FnLiteralType : DialectType<LITDialect,
+    CPred<"llvm::isa<FnLiteralType>($_self)">, "LIT function literal type", "FnLiteralType">;
+
+
+//===----------------------------------------------------------------------===//
+// FnLiteralTypeGeneratorType
+//===----------------------------------------------------------------------===//
+
+def LIT_FnLiteralTypeGeneratorType : DialectType<LITDialect,
+    CPred<"llvm::isa<FnLiteralTypeGeneratorType>($_self)">,
+    "LIT function literal type generator type", "FnLiteralTypeGeneratorType">;
 
 //===----------------------------------------------------------------------===//
 // TypeCheckErrorType

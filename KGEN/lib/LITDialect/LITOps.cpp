@@ -490,6 +490,21 @@ FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
   return cast<SymbolConstantAttr>(getBoundReference(evalContext, bindings));
 }
 
+GeneratorAttr FnOp::getFuncLiteralGenerator() {
+  SmallVector<TypedAttr> paramValues;
+  FnTypeGeneratorType fullSig = getFullSignature();
+  SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
+
+  // Moving FnType out of the FnTypeGeneratorType, attaching the symbol and form
+  // a FnLiteralTypeGeneratorType.
+  for (auto type : fullSig.getInputParamTypes())
+    paramValues.push_back(UnboundAttr::get(type));
+  auto fnLiteral = FuncLiteralAttr::get(FuncLiteralType::get(
+      FuncSymbolAttr::get(symbol, fullSig.getBody(), paramValues)));
+
+  return GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral);
+}
+
 bool FnOp::isSynthetic() { return getSynthetic(); }
 
 /// Parse a fixed mutability specifier that occurs for implicit Origins.
@@ -934,7 +949,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         StringAttr(), sourceName, /*inheritedFrom=*/{}, StringAttr(),
         DocStringAttr(), /*deprecationInfo=*/{},
         /*hasStableDecorator=*/none, /*stableSinceVersion=*/{},
-        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
+        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute(),
+        /*asLiteral=*/none);
   result.regions[0]->push_back(new Block());
 }
 

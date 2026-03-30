@@ -1166,8 +1166,11 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
       checkDeclUsageWarnings(*fnDecls.front(), getExprLoc(), declScope,
                              getShared(), getExpr()->getRange(),
                              CallSyntax::kDirectCall, fixitLoc);
-      return cast<FnOp>(fnDecls.front()->getIfOperation())
-          .getBoundReference(getShared().getEvaluationContext());
+
+      auto fnOp = cast<FnOp>(fnDecls.front()->getIfOperation());
+      if (fnOp.getAsLiteral())
+        return fnOp.getFuncLiteralGenerator();
+      return fnOp.getBoundReference(getShared().getEvaluationContext());
     }
 
     // Bind the parameters.

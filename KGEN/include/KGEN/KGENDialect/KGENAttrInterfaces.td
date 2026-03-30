@@ -231,8 +231,11 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       "FnEffects":$effects)>,
     InterfaceMethod<[{
       Request the custom metadata attribute print the provided FuncType.
-    }], "void", "printFuncType", (ins "AsmPrinter &":$p,
-                                          "FuncType":$sig)>,
+    }], "void", "printFuncTypeBody", (ins "AsmPrinter &":$p,
+                                           "FuncType":$sig)>,
+    InterfaceMethod<[{
+      Request the custom metadata attribute print the provided FuncType.
+    }], "void", "printFuncType", (ins "AsmPrinter &":$p, "FuncType":$sig)>,
     InterfaceMethod<[{
       Get a new metadata attribute for a FuncType where the first `numBound`
       positional arguments have been removed from the FuncType by being

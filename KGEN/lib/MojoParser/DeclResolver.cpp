@@ -1176,9 +1176,9 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       // parse, report an error about unrecognized tokens at end of
       // declaration.
       if (!decl.isMatchingEndCursor(lexer.getCursor()) && !decl.isErroneous()) {
-        if (lexer.getToken().isAny(Token::kw_def, Token::kw_struct,
-                                   Token::kw_trait, Token::kw_class,
-                                   Token::kw_var)) {
+        if (lexer.getToken().isAny(Token::kw_def, Token::kw___def,
+                                   Token::kw_struct, Token::kw_trait,
+                                   Token::kw_class, Token::kw_var)) {
           lexer.emitTokenError(
               "definition isn't on its own line at the correct "
               "indentation");

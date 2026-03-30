@@ -2169,8 +2169,21 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(
     StringRef rhsName, FuncTypeGeneratorType rhsSigGen, Location rhsLoc) {
   VerboseCompilerTimeTraceScope traceScope("verifyDeclSignaturesMatch");
 
-  FuncType lhsSig = lhsSigGen.getBody();
-  FuncType rhsSig = rhsSigGen.getBody();
+  if (failed(verifyMatchingLists(
+          lhsSigGen.getInputParamTypes(), rhsSigGen.getInputParamTypes(),
+          lhsName, lhsLoc, rhsName, rhsLoc, "input parameter", "type"))) {
+    return failure();
+  }
+  return verifyFuncTypesMatch(lhsName, lhsSigGen.getBody(), lhsLoc, rhsName,
+                              rhsSigGen.getBody(), rhsLoc);
+}
+
+/// Check that the specified declaration signatures match, checking the
+/// parameter and value type information.
+LogicalResult KGEN::verifyFuncTypesMatch(StringRef lhsName, FuncType lhsSig,
+                                         Location lhsLoc, StringRef rhsName,
+                                         FuncType rhsSig, Location rhsLoc) {
+  VerboseCompilerTimeTraceScope traceScope("verifyFuncTypesMatch");
 
   FunctionType lhsType = lhsSig.getValues();
   FunctionType rhsType = rhsSig.getValues();
@@ -2179,10 +2192,7 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(
   /// matches those of an interface.  This produces an error diagnostic and
   /// returns failure when a problem is detected, or returns true if
   /// everything is ok.
-  if (failed(verifyMatchingLists(
-          lhsSigGen.getInputParamTypes(), rhsSigGen.getInputParamTypes(),
-          lhsName, lhsLoc, rhsName, rhsLoc, "input parameter", "type")) ||
-      verifyMatchingLists(lhsType.getInputs(), rhsType.getInputs(), lhsName,
+  if (verifyMatchingLists(lhsType.getInputs(), rhsType.getInputs(), lhsName,
                           lhsLoc, rhsName, rhsLoc, "argument", "type") ||
       verifyMatchingLists(lhsType.getResults(), rhsType.getResults(), lhsName,
                           lhsLoc, rhsName, rhsLoc, "result", "type") ||

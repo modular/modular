@@ -461,11 +461,17 @@ bool FnMetadataAttr::isPack(size_t idx) const {
   return getArgListAttrs().isPack(idx);
 }
 
-void FnMetadataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
-  p << "!lit.fn<";
+void FnMetadataAttr::printFuncTypeBody(AsmPrinter &p, FuncType sig) const {
+
+  p << '<';
   auto signature = ::cast<FnType>(sig);
   printFnType(p, signature);
   p << '>';
+}
+
+void FnMetadataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
+  p << "!lit.fn";
+  printFuncTypeBody(p, sig);
 }
 
 bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
