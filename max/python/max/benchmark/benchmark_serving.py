@@ -870,7 +870,6 @@ def calculate_metrics(
     actual_output_lens: list[int] = []
     nonempty_response_chunks = 0
     total_input = 0
-    completed = 0
     max_input = 0
     max_output = 0
     max_total = 0
@@ -882,57 +881,45 @@ def calculate_metrics(
     latencies: list[float] = []
     input_throughputs: list[float] = []
     output_throughputs: list[float] = []
-    for i in range(len(outputs)):
-        # If the request was cancelled due to max_benchmark_duration_s, we skip it
-        # and don't count it towards the metrics
-        if outputs[i].cancelled:
+
+    successful: list[tuple[RequestFuncOutput, int]] = []
+    for o in outputs:
+        if o.cancelled:
             continue
-        if outputs[i].success:
-            completed += 1
-            # We use the tokenizer to count the number of output tokens for all
-            # serving backends instead of looking at len(outputs[i].itl) since
-            # multiple output tokens may be bundled together
-            # Note : this may inflate the output token count slightly
-            total_input += outputs[i].prompt_len
-            output_len = compute_output_len(tokenizer, outputs[i])
-            actual_output_lens.append(output_len)
-            nonempty_response_chunks += 1 if outputs[i].ttft != 0 else 0
-            nonempty_response_chunks += len(outputs[i].itl)
-
-            max_input = max(max_input, outputs[i].prompt_len)
-            max_output = max(max_output, output_len)
-            max_total = max(max_total, outputs[i].prompt_len + output_len)
-
-            # We only skip these requests for client experience metrics like
-            # TTFT, ITL, TPOT, E2E. They are still considered for overall token
-            # counts and throughputs.
-            if i < skip_first_n_requests:
-                continue
-            if (
-                skip_last_n_requests > 0
-                and i >= len(outputs) - skip_last_n_requests
-            ):
-                continue
-
-            tpots += outputs[i].tpot
-            itls += outputs[i].itl
-            ttfts.append(outputs[i].ttft)
-            # Input throughput is fully calculated once we reach the first output token.
-            if outputs[i].ttft > 0:
-                input_throughputs.append(
-                    outputs[i].prompt_len / outputs[i].ttft
-                )
-            # output throughput ignores the first token.
-            # It is just timing for the chain of output tokens.
-            if (outputs[i].latency - outputs[i].ttft) > 0:
-                output_throughputs.append(
-                    (output_len - 1) / (outputs[i].latency - outputs[i].ttft)
-                )
-            latencies.append(outputs[i].latency)
+        if o.success:
+            successful.append((o, compute_output_len(tokenizer, o)))
         else:
             actual_output_lens.append(0)
-            failures = failures + 1
-            failed_responses.append(outputs[i])
+            failures += 1
+            failed_responses.append(o)
+
+    completed = len(successful)
+
+    for o, output_len in successful:
+        total_input += o.prompt_len
+        actual_output_lens.append(output_len)
+        nonempty_response_chunks += 1 if o.ttft != 0 else 0
+        nonempty_response_chunks += len(o.itl)
+        max_input = max(max_input, o.prompt_len)
+        max_output = max(max_output, output_len)
+        max_total = max(max_total, o.prompt_len + output_len)
+
+    end = (
+        completed - skip_last_n_requests
+        if skip_last_n_requests > 0
+        else completed
+    )
+    measured = successful[skip_first_n_requests:end]
+
+    for o, output_len in measured:
+        tpots += o.tpot
+        itls += o.itl
+        ttfts.append(o.ttft)
+        if o.ttft > 0:
+            input_throughputs.append(o.prompt_len / o.ttft)
+        if (o.latency - o.ttft) > 0:
+            output_throughputs.append((output_len - 1) / (o.latency - o.ttft))
+        latencies.append(o.latency)
 
     _warn_on_request_failures(
         outputs=outputs,
