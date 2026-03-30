@@ -24,7 +24,6 @@ from .config import (
     PipelineConfig,
     PrependPromptSpeechTokens,
     PrometheusMetricsMode,
-    _format_config_entries,
 )
 from .config_enums import (
     PipelineRole,
@@ -40,7 +39,11 @@ from .config_enums import (
 )
 from .kv_cache_config import KVCacheConfig, KVConnectorConfig
 from .lora_config import LoRAConfig
-from .model_config import MAXModelConfig, MAXModelConfigBase
+from .model_config import (
+    MAXModelConfig,
+    MAXModelConfigBase,
+    _format_config_entries,
+)
 from .profiling_config import ProfilingConfig
 from .speculative_config import SpeculativeConfig, SpeculativeMethod
 

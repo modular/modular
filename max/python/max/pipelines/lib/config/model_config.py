@@ -28,12 +28,14 @@ from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
+from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.device_specs import coerce_device_specs_input
 from max.pipelines.lib.hf_utils import (
     HuggingFaceRepo,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
+from max.pipelines.lib.memory_estimation import to_human_readable_bytes
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.lib.weight_path_parser import WeightPathParser
 from pydantic import (
@@ -1386,3 +1388,129 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"Unrecognized kv_cache_format override: '{self.kv_cache.kv_cache_format}'. "
                 "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
             )
+
+    def log_model_info(self, role: str) -> None:
+        """Logs model configuration information for this config.
+
+        Args:
+            role: The semantic role of this model (e.g. ``"main"``,
+                ``"draft"``, ``"vae"``).
+        """
+        logger.info("")
+        logger.info("  Model: %s", role)
+        logger.info("  " + "-" * 40)
+
+        devices_str = ", ".join(
+            f"{d.device_type}[{d.id}]" for d in self.device_specs
+        )
+
+        quantization_encoding_str = str(self.quantization_encoding)
+        if self._applied_dtype_cast_from:
+            quantization_encoding_str = (
+                f"{quantization_encoding_str}"
+                f" (cast from {self._applied_dtype_cast_from})"
+            )
+
+        entries: list[tuple[str, Any]] = [
+            ("model_path", self.model_path),
+        ]
+
+        # Only show subfolder when it is set.
+        if self.subfolder:
+            entries.append(("subfolder", self.subfolder))
+
+        # Only show weights_repo_id when it differs from model_path.
+        weight_repo_id = self.huggingface_weight_repo_id
+        if weight_repo_id != self.model_path:
+            entries.append(("weights_repo_id", weight_repo_id))
+
+        entries.extend(
+            [
+                ("huggingface_revision", self.huggingface_model_revision),
+                ("quantization_encoding", quantization_encoding_str),
+            ]
+        )
+
+        # Format weight_path depending on the number of paths.
+        weight_paths = self.weight_path
+        if len(weight_paths) == 0:
+            entries.append(("weight_path", "(none)"))
+        elif len(weight_paths) == 1:
+            entries.append(("weight_path", weight_paths[0]))
+        elif len(weight_paths) > 1:
+            display_paths = (
+                weight_paths[:3] + ["..."] + [weight_paths[-1]]
+                if len(weight_paths) > 5
+                else list(weight_paths)
+            )
+            formatted = (
+                "[\n"
+                + "\n".join(f"            {p}" for p in display_paths)
+                + "\n        ]"
+            )
+            entries.append(("weight_path", formatted))
+
+        entries.extend(
+            [
+                ("devices", devices_str),
+                ("max_seq_len", self.max_length),
+            ]
+        )
+
+        for line in _format_config_entries(entries, indent="    "):
+            logger.info(line)
+
+        # KVCache configuration
+        self._log_kvcache_info()
+
+    def _log_kvcache_info(self) -> None:
+        """Logs KV cache configuration details for this model config."""
+        kv_config = self.kv_cache
+        entries: list[tuple[str, Any]] = [
+            ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
+            ("prefix_caching", kv_config.enable_prefix_caching),
+            ("kv_connector", kv_config.kv_connector or "null"),
+        ]
+        cfg = kv_config.kv_connector_config
+        if (
+            kv_config.kv_connector
+            in (KVConnectorType.local, KVConnectorType.tiered)
+            and cfg
+        ):
+            entries.append(
+                ("host_swap_space", f"{cfg.host_kvcache_swap_space_gb} GB")
+            )
+        entries.append(
+            (
+                "memory_utilization",
+                f"{kv_config.device_memory_utilization:.1%}",
+            )
+        )
+
+        if kv_config._available_cache_memory is not None:
+            entries.append(
+                (
+                    "available_cache_memory",
+                    to_human_readable_bytes(kv_config._available_cache_memory),
+                )
+            )
+
+        for line in _format_config_entries(entries, indent="    "):
+            logger.info(line)
+
+
+def _format_config_entries(
+    entries: list[tuple[str, Any]], indent: str = "    "
+) -> list[str]:
+    """Format key-value config entries with aligned colons.
+
+    Args:
+        entries: List of (key, value) tuples to format.
+        indent: Prefix string for each line.
+
+    Returns:
+        A list of formatted strings with keys left-aligned and colons
+        vertically aligned based on the longest key.
+    """
+    max_key_len = max(len(key) for key, _ in entries)
+    return [f"{indent}{key:<{max_key_len}} : {value}" for key, value in entries]
