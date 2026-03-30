@@ -1764,8 +1764,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         "black-forest-labs/FLUX.2-dev",
         requests=test_data.FLUX2_PIXEL_GENERATION_I2I,
     ),
-    "black-forest-labs/FLUX.2-klein-4B": ImageGenerationOracle(
+    "black-forest-labs/FLUX.2-klein-4B-t2i": ImageGenerationOracle(
         "black-forest-labs/FLUX.2-klein-4B",
         num_steps=4,
+    ),
+    "black-forest-labs/FLUX.2-klein-4B-i2i": ImageGenerationOracle(
+        "black-forest-labs/FLUX.2-klein-4B",
+        num_steps=4,
+        requests=test_data.FLUX2_PIXEL_GENERATION_I2I,
     ),
 }
