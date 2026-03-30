@@ -12,10 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -1387,37 +1384,21 @@ class TestSamplingConfig:
 @prepare_registry
 @mock_pipeline_config_resolve
 @pytest.mark.parametrize(
-    "arch_name,max_batch_size,force,is_cuda,expected_device_graph_capture",
+    "max_batch_size,force,is_cuda,expected_device_graph_capture",
     [
-        ("LlamaForCausalLM", 16, False, True, True),
-        ("DeepseekV2ForCausalLM", 16, False, True, True),
-        ("DeepseekV3ForCausalLM", 16, False, True, True),
-        ("DeepseekV32ForCausalLM", 16, False, True, True),
-        ("DeepseekV3ForCausalLMNextN", 16, False, True, True),
-        ("KimiK25ForConditionalGeneration", 16, False, True, True),
-        ("LlamaForCausalLM", 16, False, False, False),
-        ("LlamaForCausalLM", None, False, True, False),
-        ("LlamaForCausalLM", 16, True, True, False),
-        ("SomeOtherArchitecture", 16, False, True, False),
+        (16, False, True, True),
+        (16, False, False, False),
+        (None, False, True, False),
+        (16, True, True, True),
     ],
 )
-def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_capture(
-    arch_name: str,
+def test_validate_and_resolve_overlap_scheduler__resolve_device_graph_capture(
     max_batch_size: int | None,
     force: bool,
     is_cuda: bool,
     expected_device_graph_capture: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Mock .huggingface_model_repo so that we don't reach out to HF.
-    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
-    # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch.
-    arch = SimpleNamespace(name=arch_name)
-    monkeypatch.setattr(
-        PIPELINE_REGISTRY,
-        "retrieve_architecture",
-        Mock(return_value=arch),
-    )
     monkeypatch.setattr(
         "max.pipelines.lib.config.config.accelerator_api",
         Mock(return_value="cuda" if is_cuda else "hip"),
@@ -1440,94 +1421,40 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
     if expected_device_graph_capture:
         assert config.runtime.enable_overlap_scheduler is True
         assert config.runtime.max_num_steps == 1
+    else:
+        assert config.runtime.enable_overlap_scheduler is False
+        assert config.runtime.max_num_steps == 42
 
 
 @prepare_registry
 @mock_pipeline_config_resolve
-def test_validate_and_resolve_overlap_scheduler__auto_override(
+def test_validate_and_resolve_overlap_scheduler__does_not_auto_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    @contextmanager
-    def patch_retrieve_architecture(
-        arch_name: str,
-    ) -> Generator[None, None, None]:
-        with monkeypatch.context() as m:
-            # Mock .huggingface_model_repo so that we don't reach out to HF
-            m.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
-            # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch
-            arch = SimpleNamespace(name=arch_name)
-            m.setattr(
-                PIPELINE_REGISTRY,
-                "retrieve_architecture",
-                Mock(return_value=arch),
-            )
-            yield
-
-    # Override enable_overlap_scheduler to True for Llama or Deepseek models
-    for arch_name in (
-        "LlamaForCausalLM",
-        "DeepseekV2ForCausalLM",
-        "DeepseekV3ForCausalLM",
-        "DeepseekV32ForCausalLM",
-        "DeepseekV3ForCausalLMNextN",
-    ):
-        with patch_retrieve_architecture(arch_name):
-            config = PipelineConfig(
-                model=MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
-                ),
-                runtime=PipelineRuntimeConfig(max_num_steps=42),
-            )
-            config._validate_and_resolve_overlap_scheduler()
-            assert config.runtime.enable_overlap_scheduler is True
-            assert config.runtime.max_num_steps == 1
-
-    # Don't override if the device is CPU
-    with patch_retrieve_architecture("LlamaForCausalLM"):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.cpu()],
-            ),
+    retrieve_architecture = Mock(
+        side_effect=AssertionError(
+            "overlap scheduler defaults should not depend on architecture"
         )
-        config._validate_and_resolve_overlap_scheduler()
-        assert config.runtime.enable_overlap_scheduler is False
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        retrieve_architecture,
+    )
 
-    # Don't override if structured output is enabled
-    with patch_retrieve_architecture("LlamaForCausalLM"):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
-            ),
-            sampling=SamplingConfig(enable_structured_output=True),
-        )
-        config._validate_and_resolve_overlap_scheduler()
-        assert config.runtime.enable_overlap_scheduler is False
+    config = PipelineConfig(
+        model=MAXModelConfig(
+            model_path="test/model",
+            device_specs=[DeviceSpec.accelerator()],
+        ),
+        runtime=PipelineRuntimeConfig(max_num_steps=42),
+    )
+    config._validate_and_resolve_overlap_scheduler()
 
-    # Don't override if the pipeline role is not PrefillAndDecode
-    with patch_retrieve_architecture("LlamaForCausalLM"):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
-            ),
-            runtime=PipelineRuntimeConfig(pipeline_role="prefill_only"),
-        )
-        config._validate_and_resolve_overlap_scheduler()
-        assert config.runtime.enable_overlap_scheduler is False
-
-    # Don't override for other architectures
-    with patch_retrieve_architecture("SomeOtherArchitecture"):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
-            ),
-        )
-        config._validate_and_resolve_overlap_scheduler()
-        assert config.runtime.enable_overlap_scheduler is False
+    assert config.runtime.device_graph_capture is False
+    assert config.runtime.enable_overlap_scheduler is False
+    assert config.runtime.max_num_steps == 42
+    retrieve_architecture.assert_not_called()
 
 
 @prepare_registry

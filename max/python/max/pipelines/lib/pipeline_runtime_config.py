@@ -194,11 +194,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     device_graph_capture: bool = Field(
-        default=False,
+        default=True,
         description=(
             "Enable device graph capture/replay for graph execution. "
-            "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting --no-device-graph-capture --force."
+            "This is enabled by default on CUDA when overlap-serve "
+            "requirements are met. "
+            "You can disable this by setting --no-device-graph-capture."
         ),
     )
 

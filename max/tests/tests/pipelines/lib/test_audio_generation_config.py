@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for AudioGenerationConfig."""
 
-from max.pipelines.lib import AudioGenerationConfig
+from max.pipelines.lib import AudioGenerationConfig, PipelineRuntimeConfig
 
 
 def test_audio_generation_config_field_descriptions() -> None:
@@ -21,3 +21,16 @@ def test_audio_generation_config_field_descriptions() -> None:
         AudioGenerationConfig.model_fields["audio_decoder"].description
         == "The name of the audio decoder model architecture."
     )
+
+
+def test_audio_generation_config_disables_device_graph_capture() -> None:
+    """Audio pipelines should not carry device graph capture into serve startup."""
+    config = AudioGenerationConfig.model_construct(
+        runtime=PipelineRuntimeConfig.model_construct(
+            device_graph_capture=True
+        ),
+    )
+
+    config._validate_and_resolve_overlap_scheduler()
+
+    assert config.runtime.device_graph_capture is False
