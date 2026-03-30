@@ -12,3 +12,4 @@
 # ===----------------------------------------------------------------------=== #
 
 from .attention import EncoderAttention
+from .rotary_embedding import RotaryEmbedding

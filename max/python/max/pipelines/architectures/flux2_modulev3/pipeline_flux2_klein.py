@@ -28,7 +28,7 @@ from max.pipelines.lib.interfaces.diffusion_pipeline import (
 )
 from max.profiler import Tracer, traced
 
-from ..qwen3.text_encoder import Qwen3TextEncoderKleinModel
+from ..qwen3_modulev3.text_encoder import Qwen3TextEncoderKleinModel
 from .pipeline_flux2 import Flux2ModelInputs, Flux2Pipeline
 
 logger = logging.getLogger("max.pipelines")
