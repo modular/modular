@@ -181,6 +181,32 @@ def test_binary_add(op_library: CustomOpLibrary, backend: str) -> None:
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
+def test_binary_add_inline_getattr(
+    op_library: CustomOpLibrary, backend: str
+) -> None:
+    """Test that accessing a custom op via __getattr__ inside a
+    torch.compile(fullgraph=True) function works correctly (GEX-3359)."""
+
+    @torch.compile(backend=backend, fullgraph=True)
+    def myadd(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        C = torch.zeros_like(A)
+        op_library.myadd(C, A, B)
+        return C
+
+    A = torch.rand(64, 64, dtype=torch.float32, device=device)
+    B = torch.rand(64, 64, dtype=torch.float32, device=device)
+    C = myadd(A, B)
+
+    np.testing.assert_allclose(
+        C.cpu(),
+        (A + B).cpu(),
+        equal_nan=True,
+        rtol=1e-4,
+        atol=1e-4,
+    )
+
+
+@pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_binary_add_multiple_sizes(
     op_library: CustomOpLibrary, backend: str
 ) -> None:

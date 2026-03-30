@@ -62,6 +62,9 @@ This version is still a work in progress.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.
+- Fixed `torch.compile(fullgraph=True)` failing with an "Unsupported context
+  manager" error when accessing `CustomOpLibrary` ops inside the compiled
+  function. Ops are now eagerly compiled during library initialization.
 
 ## Breaking changes {#26-3-breaking}
 
