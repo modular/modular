@@ -68,7 +68,7 @@ PINS = {
     "grpcio": "grpcio@1.76.0",
     "hf-transfer": "hf-transfer@0.1.9",
     "httpx": "httpx@0.27.2",
-    "huggingface-hub": "huggingface-hub@0.34.3",
+    "huggingface-hub": "huggingface-hub@1.8.0",
     "hypothesis": "hypothesis@6.108.4",
     "ipython": "ipython@8.18.1",
     "jinja2": "jinja2@3.1.6",
@@ -165,7 +165,7 @@ PINS = {
     "torchmetrics": "torchmetrics@1.7.2",
     "torchvision": "torchvision@multiple",
     "tqdm": "tqdm@4.66.5",
-    "transformers": "transformers@4.57.1",
+    "transformers": "transformers@5.2.0",
     "triton": "triton@multiple",
     "types-aioboto3": "types-aioboto3@15.5.0",
     "types-boto3": "types-boto3@1.42.44",
@@ -326,7 +326,7 @@ def targets():
     )
 
     _accelerate_1_0_1_deps = [
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
         ":numpy@multiple",
         ":packaging@25.0",
         ":psutil@7.0.0",
@@ -1534,32 +1534,32 @@ def targets():
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
         ],
         "//conditions:default": [],
     })
@@ -1931,7 +1931,7 @@ def targets():
         ":dill@0.3.8",
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
         ":multiprocess@0.70.16",
         ":numpy@multiple",
         ":packaging@25.0",
@@ -2077,7 +2077,7 @@ def targets():
     _diffusers_0_37_0_deps = [
         ":filelock@3.16.1",
         ":httpx@0.27.2",
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
         ":importlib-metadata@7.1.0",
         ":numpy@multiple",
         ":pillow@12.0.0",
@@ -2225,7 +2225,7 @@ def targets():
         ":datasets@2.21.0",
         ":dill@0.3.8",
         ":fsspec@2024.6.1",
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
         ":multiprocess@0.70.16",
         ":numpy@multiple",
         ":packaging@25.0",
@@ -3373,32 +3373,32 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_hf-xet@1.1.5",
+        name = "_wheel_hf-xet@1.4.2",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "hf-xet@1.1.5",
-        wheel = ":_wheel_hf-xet@1.1.5",
+        name = "hf-xet@1.4.2",
+        wheel = ":_wheel_hf-xet@1.4.2",
         testonly = "hf-xet" in _TESTONLY_DEPS,
     )
 
@@ -3499,26 +3499,27 @@ def targets():
         testonly = "httpx-sse" in _TESTONLY_DEPS,
     )
 
-    _huggingface_hub_0_34_3_deps = [
+    _huggingface_hub_1_8_0_deps = [
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
-        ":hf-xet@1.1.5",
+        ":hf-xet@1.4.2",
+        ":httpx@0.27.2",
         ":packaging@25.0",
         ":pyyaml@6.0.3",
-        ":requests@2.32.3",
         ":tqdm@4.66.5",
+        ":typer@0.20.0",
         ":typing-extensions@4.15.0",
     ]
 
     native.alias(
-        name = "_wheel_huggingface-hub@0.34.3",
-        actual = "@pycross_lock_file_wheel_huggingface_hub_0.34.3_py3_none_any//file",
+        name = "_wheel_huggingface-hub@1.8.0",
+        actual = "@pycross_lock_file_wheel_huggingface_hub_1.8.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "huggingface-hub@0.34.3",
-        deps = _huggingface_hub_0_34_3_deps,
-        wheel = ":_wheel_huggingface-hub@0.34.3",
+        name = "huggingface-hub@1.8.0",
+        deps = _huggingface_hub_1_8_0_deps,
+        wheel = ":_wheel_huggingface-hub@1.8.0",
         testonly = "huggingface-hub" in _TESTONLY_DEPS,
     )
 
@@ -4721,7 +4722,7 @@ def targets():
             ":setuptools-scm@9.2.2",
             ":setuptools@80.9.0",
             ":sortedcontainers@2.4.0",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":uvicorn@0.30.6",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
@@ -4749,7 +4750,7 @@ def targets():
             ":setuptools-scm@9.2.2",
             ":setuptools@80.9.0",
             ":sortedcontainers@2.4.0",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":uvicorn@0.30.6",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
@@ -4777,7 +4778,7 @@ def targets():
             ":setuptools-scm@9.2.2",
             ":setuptools@80.9.0",
             ":sortedcontainers@2.4.0",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":uvicorn@0.30.6",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
@@ -4804,7 +4805,7 @@ def targets():
             ":setuptools-scm@9.2.2",
             ":setuptools@80.9.0",
             ":sortedcontainers@2.4.0",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":uvicorn@0.30.6",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
@@ -4831,7 +4832,7 @@ def targets():
             ":setuptools-scm@9.2.2",
             ":setuptools@80.9.0",
             ":sortedcontainers@2.4.0",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":uvicorn@0.30.6",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
@@ -4858,7 +4859,7 @@ def targets():
             ":setuptools-scm@9.2.2",
             ":setuptools@80.9.0",
             ":sortedcontainers@2.4.0",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":uvicorn@0.30.6",
         ],
         "//conditions:default": [],
@@ -7196,11 +7197,11 @@ def targets():
     )
 
     _optimum_1_24_0_deps = [
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
         ":numpy@multiple",
         ":packaging@25.0",
         ":torch@multiple",
-        ":transformers@4.57.1",
+        ":transformers@5.2.0",
     ]
 
     native.alias(
@@ -7381,7 +7382,7 @@ def targets():
 
     _peft_0_18_1_deps = [
         ":accelerate@1.0.1",
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
         ":numpy@multiple",
         ":packaging@25.0",
         ":psutil@7.0.0",
@@ -7389,7 +7390,7 @@ def targets():
         ":safetensors@0.6.2",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.57.1",
+        ":transformers@5.2.0",
     ]
 
     native.alias(
@@ -9380,13 +9381,13 @@ def targets():
     )
 
     _sentence_transformers_3_3_1_deps = [
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
         ":pillow@12.0.0",
         ":scikit-learn@1.7.2",
         ":scipy@multiple",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.57.1",
+        ":transformers@5.2.0",
     ]
 
     native.alias(
@@ -10161,7 +10162,7 @@ def targets():
     )
 
     _timm_1_0_15_deps = [
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
         ":pyyaml@6.0.3",
         ":safetensors@0.6.2",
         ":torch@multiple",
@@ -10197,7 +10198,7 @@ def targets():
     )
 
     _tokenicer_0_0_4_deps = [
-        ":transformers@4.57.1",
+        ":transformers@5.2.0",
     ]
 
     _tokenicer_0_0_4_build_deps = [
@@ -10232,7 +10233,7 @@ def targets():
     )
 
     _tokenizers_0_22_1_deps = [
-        ":huggingface-hub@0.34.3",
+        ":huggingface-hub@1.8.0",
     ]
 
     native.alias(
@@ -11165,28 +11166,27 @@ def targets():
         testonly = "traitlets" in _TESTONLY_DEPS,
     )
 
-    _transformers_4_57_1_deps = [
-        ":filelock@3.16.1",
-        ":huggingface-hub@0.34.3",
+    _transformers_5_2_0_deps = [
+        ":huggingface-hub@1.8.0",
         ":numpy@multiple",
         ":packaging@25.0",
         ":pyyaml@6.0.3",
         ":regex@2025.11.3",
-        ":requests@2.32.3",
         ":safetensors@0.6.2",
         ":tokenizers@0.22.1",
         ":tqdm@4.66.5",
+        ":typer-slim@0.21.2",
     ]
 
     native.alias(
-        name = "_wheel_transformers@4.57.1",
-        actual = "@pycross_lock_file_wheel_transformers_4.57.1_py3_none_any//file",
+        name = "_wheel_transformers@5.2.0",
+        actual = "@pycross_lock_file_wheel_transformers_5.2.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "transformers@4.57.1",
-        deps = _transformers_4_57_1_deps,
-        wheel = ":_wheel_transformers@4.57.1",
+        name = "transformers@5.2.0",
+        deps = _transformers_5_2_0_deps,
+        wheel = ":_wheel_transformers@5.2.0",
         testonly = "transformers" in _TESTONLY_DEPS,
     )
 
@@ -11261,6 +11261,23 @@ def targets():
         deps = _typer_0_20_0_deps,
         wheel = ":_wheel_typer@0.20.0",
         testonly = "typer" in _TESTONLY_DEPS,
+    )
+
+    _typer_slim_0_21_2_deps = [
+        ":annotated-doc@0.0.4",
+        ":click@8.1.7",
+    ]
+
+    native.alias(
+        name = "_wheel_typer-slim@0.21.2",
+        actual = "@pycross_lock_file_wheel_typer_slim_0.21.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "typer-slim@0.21.2",
+        deps = _typer_slim_0_21_2_deps,
+        wheel = ":_wheel_typer-slim@0.21.2",
+        testonly = "typer-slim" in _TESTONLY_DEPS,
     )
 
     _types_aioboto3_15_5_0_deps = [
@@ -12176,7 +12193,7 @@ def targets():
             ":tiktoken@0.12.0",
             ":tokenizers@0.22.1",
             ":tqdm@4.66.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
             ":watchfiles@1.1.1",
             ":xgrammar@0.1.29",
@@ -12238,7 +12255,7 @@ def targets():
             ":tiktoken@0.12.0",
             ":tokenizers@0.22.1",
             ":tqdm@4.66.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
             ":watchfiles@1.1.1",
             ":xgrammar@0.1.29",
@@ -12300,7 +12317,7 @@ def targets():
             ":tiktoken@0.12.0",
             ":tokenizers@0.22.1",
             ":tqdm@4.66.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
             ":watchfiles@1.1.1",
             ":xgrammar@0.1.29",
@@ -12362,7 +12379,7 @@ def targets():
             ":tiktoken@0.12.0",
             ":tokenizers@0.22.1",
             ":tqdm@4.66.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
             ":watchfiles@1.1.1",
             ":xgrammar@0.1.29",
@@ -12424,7 +12441,7 @@ def targets():
             ":tiktoken@0.12.0",
             ":tokenizers@0.22.1",
             ":tqdm@4.66.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
             ":watchfiles@1.1.1",
             ":xgrammar@0.1.29",
@@ -12711,27 +12728,27 @@ def targets():
     ] + select({
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":pydantic@2.12.5",
-            ":transformers@4.57.1",
+            ":transformers@5.2.0",
             ":typing-extensions@4.15.0",
         ],
         "//conditions:default": [],
@@ -17804,32 +17821,62 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/de/5f/2c78e28f309396e71ec8e4e9304a6483dcbc36172b5cea8f291994163425/hf_xet-1.1.5-cp37-abi3-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/82/56/19c25105ff81731ca6d55a188b5de2aa99d7a2644c7aa9de1810d5d3b726/hf_xet-1.4.2-cp314-cp314t-macosx_11_0_arm64.whl",
         ],
-        sha256 = "9fa6e3ee5d61912c4a113e0708eaaef987047616465ac7aa30f7121a48fc1af8",
-        downloaded_file_path = "hf_xet-1.1.5-cp37-abi3-macosx_11_0_arm64.whl",
+        sha256 = "41659966020d59eb9559c57de2cde8128b706a26a64c60f0531fa2318f409418",
+        downloaded_file_path = "hf_xet-1.4.2-cp314-cp314t-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/6d/2f/6cad7b5fe86b7652579346cb7f85156c11761df26435651cbba89376cd2c/hf_xet-1.1.5-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/bf/e3/8933c073186849b5e06762aa89847991d913d10a95d1603eb7f2c3834086/hf_xet-1.4.2-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "fc874b5c843e642f45fd85cda1ce599e123308ad2901ead23d3510a47ff506d1",
-        downloaded_file_path = "hf_xet-1.1.5-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "5c588e21d80010119458dd5d02a69093f0d115d84e3467efe71ffb2c67c19146",
+        downloaded_file_path = "hf_xet-1.4.2-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp314_cp314t_manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/d0/54/0fcf2b619720a26fbb6cc941e89f2472a522cd963a776c089b189559447f/hf_xet-1.1.5-cp37-abi3-manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/eb/01/f89ebba4e369b4ed699dcb60d3152753870996f41c6d22d3d7cac01310e1/hf_xet-1.4.2-cp314-cp314t-manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "dbba1660e5d810bd0ea77c511a99e9242d920790d0e63c0e4673ed36c4022d18",
-        downloaded_file_path = "hf_xet-1.1.5-cp37-abi3-manylinux_2_28_aarch64.whl",
+        sha256 = "a296744d771a8621ad1d50c098d7ab975d599800dae6d48528ba3944e5001ba0",
+        downloaded_file_path = "hf_xet-1.4.2-cp314-cp314t-manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/64/2e/af4475c32b4378b0e92a587adb1aa3ec53e3450fd3e5fe0372a874531c00/hf_xet-1.4.2-cp37-abi3-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "e9b38d876e94d4bdcf650778d6ebbaa791dd28de08db9736c43faff06ede1b5a",
+        downloaded_file_path = "hf_xet-1.4.2-cp37-abi3-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/3c/4c/781267da3188db679e601de18112021a5cb16506fe86b246e22c5401a9c4/hf_xet-1.4.2-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        ],
+        sha256 = "77e8c180b7ef12d8a96739a4e1e558847002afe9ea63b6f6358b2271a8bdda1c",
+        downloaded_file_path = "hf_xet-1.4.2-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_hf_xet_1.4.2_cp37_abi3_manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/68/47/d6cf4a39ecf6c7705f887a46f6ef5c8455b44ad9eb0d391aa7e8a2ff7fea/hf_xet-1.4.2-cp37-abi3-manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "c3b3c6a882016b94b6c210957502ff7877802d0dbda8ad142c8595db8b944271",
+        downloaded_file_path = "hf_xet-1.4.2-cp37-abi3-manylinux_2_28_aarch64.whl",
     )
 
     maybe(
@@ -18014,12 +18061,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_huggingface_hub_0.34.3_py3_none_any",
+        name = "pycross_lock_file_wheel_huggingface_hub_1.8.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/59/a8/4677014e771ed1591a87b63a2392ce6923baf807193deef302dcfde17542/huggingface_hub-0.34.3-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/a9/ae/8a3a16ea4d202cb641b51d2681bdd3d482c1c592d7570b3fa264730829ce/huggingface_hub-1.8.0-py3-none-any.whl",
         ],
-        sha256 = "5444550099e2d86e68b2898b09e85878fbd788fc2957b506c6a79ce060e39492",
-        downloaded_file_path = "huggingface_hub-0.34.3-py3-none-any.whl",
+        sha256 = "d3eb5047bd4e33c987429de6020d4810d38a5bef95b3b40df9b17346b7f353f2",
+        downloaded_file_path = "huggingface_hub-1.8.0-py3-none-any.whl",
     )
 
     maybe(
@@ -29394,12 +29441,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_transformers_4.57.1_py3_none_any",
+        name = "pycross_lock_file_wheel_transformers_5.2.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/71/d3/c16c3b3cf7655a67db1144da94b021c200ac1303f82428f2beef6c2e72bb/transformers-4.57.1-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/4e/93/79754b0ca486e556c2b95d4f5afc66aaf4b260694f3d6e1b51da2d036691/transformers-5.2.0-py3-none-any.whl",
         ],
-        sha256 = "b10d05da8fa67dc41644dbbf9bc45a44cb86ae33da6f9295f5fbf5b7890bd267",
-        downloaded_file_path = "transformers-4.57.1-py3-none-any.whl",
+        sha256 = "9ecaf243dc45bee11a7d93f8caf03746accc0cb069181bbf4ad8566c53e854b4",
+        downloaded_file_path = "transformers-5.2.0-py3-none-any.whl",
     )
 
     maybe(
@@ -29550,6 +29597,16 @@ def repositories():
         ],
         sha256 = "5b463df6793ec1dca6213a3cf4c0f03bc6e322ac5e16e13ddd622a889489784a",
         downloaded_file_path = "typer-0.20.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_typer_slim_0.21.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/54/03/e09325cfc40a33a82b31ba1a3f1d97e85246736856a45a43b19fcb48b1c2/typer_slim-0.21.2-py3-none-any.whl",
+        ],
+        sha256 = "4705082bb6c66c090f60e47c8be09a93158c139ce0aa98df7c6c47e723395e5f",
+        downloaded_file_path = "typer_slim-0.21.2-py3-none-any.whl",
     )
 
     maybe(
