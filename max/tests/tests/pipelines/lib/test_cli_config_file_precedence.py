@@ -94,11 +94,11 @@ def test_cli_args_override_config_file(tmp_path: Path) -> None:
     assert result.output.strip() == "from-cli|True"
 
 
-def test_pipeline_config_options_preserves_none_defaults() -> None:
-    """Absent EP/DP flags remain unset until config resolution."""
+def test_pipeline_config_options_preserves_zero_sentinels() -> None:
+    """Absent EP/DP flags keep the unresolved integer sentinel."""
     result = CliRunner().invoke(_make_pipeline_parallelism_cli(), [])
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == "None|None"
+    assert result.output.strip() == "0|0"
 
 
 def test_pipeline_config_options_preserves_explicit_parallelism_flags() -> None:

@@ -92,11 +92,12 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Whether to use subgraphs for the model."""
 
-    data_parallel_degree: int | None = Field(
-        default=None,
+    data_parallel_degree: int = Field(
+        default=0,
         description=(
-            "Data-parallelism parameter. Default is model-dependent and is "
-            "resolved during pipeline configuration."
+            "Data-parallelism parameter. A value of 0 means this was not "
+            "overridden explicitly and should be resolved during pipeline "
+            "configuration."
         ),
     )
     """The degree of data parallelism for replicating the model."""

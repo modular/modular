@@ -557,7 +557,7 @@ class PipelineConfig(ConfigFileModel):
         old_ep = self.runtime.ep_size
         old_dp = model_config.data_parallel_degree
 
-        if self.runtime.ep_size is None:
+        if self.runtime.ep_size == 0:
             if (
                 architecture is not None
                 and num_devices > 1
@@ -567,7 +567,7 @@ class PipelineConfig(ConfigFileModel):
             else:
                 self.runtime.ep_size = 1
 
-        if model_config.data_parallel_degree is None:
+        if model_config.data_parallel_degree == 0:
             if (
                 architecture is not None
                 and num_devices > 1
@@ -597,14 +597,14 @@ class PipelineConfig(ConfigFileModel):
             return
 
         primary_dp = self.model.data_parallel_degree
-        if primary_dp is None:
+        if primary_dp == 0:
             raise AssertionError(
                 "Primary model data_parallel_degree must be resolved before "
                 "draft model defaults are applied."
             )
 
         old_draft_dp = self.draft_model.data_parallel_degree
-        if old_draft_dp is None:
+        if old_draft_dp == 0:
             self.draft_model.data_parallel_degree = primary_dp
             logger.info(
                 "Resolved draft model data_parallel_degree %s -> %s "

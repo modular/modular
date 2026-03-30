@@ -490,13 +490,13 @@ class TestPipelineConfigUtilityMethods:
         assert config.model.data_parallel_degree == num_devices
 
     @mock_pipeline_config_resolve
-    def test_parallelism_defaults_start_unresolved_as_none(self) -> None:
+    def test_parallelism_defaults_start_unresolved_as_zero(self) -> None:
         config = PipelineConfig(
             model=MAXModelConfig(model_path="test/model"),
         )
 
-        assert config.runtime.ep_size is None
-        assert config.model.data_parallel_degree is None
+        assert config.runtime.ep_size == 0
+        assert config.model.data_parallel_degree == 0
 
     @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
     @mock_pipeline_config_resolve
