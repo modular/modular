@@ -24,7 +24,8 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities, RequestID
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -32,7 +33,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
@@ -76,7 +77,7 @@ class MambaModelInputs(ModelInputs):
         self.request_ids = request_ids or []
 
 
-class MambaModel(PipelineModel[TextContext]):
+class MambaModel(PipelineModelWithKVCache[TextContext]):
     """Mamba pipeline model with incremental SSM state caching.
 
     Uses separate compiled prefill and step models. The prefill model
@@ -134,6 +135,30 @@ class MambaModel(PipelineModel[TextContext]):
     ) -> int:
         return MambaConfig.calculate_max_seq_len(
             pipeline_config, huggingface_config
+        )
+
+    @classmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParamInterface:
+        """Return minimal dummy KV cache params.
+
+        Mamba uses SSM state caching internally, not attention KV cache.
+        These dummy params satisfy the PipelineModelWithKVCache interface
+        with negligible memory overhead.
+        """
+        return KVCacheParams(
+            dtype=cache_dtype or DType.float32,
+            n_kv_heads=1,
+            head_dim=1,
+            num_layers=1,
+            devices=devices,
+            page_size=128,
         )
 
     def _load_logprobs_model(self, session: InferenceSession) -> Model:
@@ -314,7 +339,7 @@ class MambaModel(PipelineModel[TextContext]):
 
         if has_existing_states:
             layer_states = self._ssm_cache.get_states(request_ids)
-            return MambaModelInputs(
+            inputs = MambaModelInputs(
                 tokens_buf,
                 offsets_buf,
                 n_logits_buf,
@@ -322,14 +347,18 @@ class MambaModel(PipelineModel[TextContext]):
                 layer_states=layer_states,
                 request_ids=request_ids,
             )
+            inputs.kv_cache_inputs = kv_cache_inputs
+            return inputs
 
-        return MambaModelInputs(
+        inputs = MambaModelInputs(
             tokens_buf,
             offsets_buf,
             n_logits_buf,
             is_prefill=True,
             request_ids=request_ids,
         )
+        inputs.kv_cache_inputs = kv_cache_inputs
+        return inputs
 
     def prepare_next_token_inputs(
         self,
@@ -339,7 +368,7 @@ class MambaModel(PipelineModel[TextContext]):
         prev = cast(MambaModelInputs, prev_model_inputs)
         layer_states = self._ssm_cache.get_states(prev.request_ids)
 
-        return MambaModelInputs(
+        inputs = MambaModelInputs(
             tokens=next_tokens,
             input_row_offsets=prev.input_row_offsets,
             return_n_logits=prev.return_n_logits,
@@ -347,6 +376,8 @@ class MambaModel(PipelineModel[TextContext]):
             layer_states=layer_states,
             request_ids=prev.request_ids,
         )
+        inputs.kv_cache_inputs = prev.kv_cache_inputs
+        return inputs
 
     def release(self, request_id: RequestID) -> None:
         """Release SSM cache slot when a request completes."""
