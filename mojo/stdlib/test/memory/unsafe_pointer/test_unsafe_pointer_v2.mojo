@@ -403,6 +403,9 @@ def test_offset() raises:
     var y = Int(4)
     assert_equal((ptr + x)[], 3)
     assert_equal((ptr + y)[], 4)
+    assert_equal(ptr - ptr, 0)
+    assert_equal((ptr + 4) - ptr, 4)
+    assert_equal(ptr - (ptr + 4), -4)
 
     var ptr2 = alloc[Int](5)
     var ptr3 = ptr2

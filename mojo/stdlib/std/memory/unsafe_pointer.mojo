@@ -565,6 +565,22 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.offset`(self.address, index(offset)._mlir_value)
 
+    @__unsafe_disable_nested_origin_exclusivity
+    @always_inline
+    def __sub__(
+        self,
+        rhs: UnsafePointer[Self.type, address_space=Self.address_space, ...],
+    ) -> Int:
+        """Return the distance between two pointers in elements.
+
+        Args:
+            rhs: The other pointer.
+
+        Returns:
+            The signed distance between `self` and `rhs` in elements.
+        """
+        return (Int(self) - Int(rhs)) // size_of[Self.type]()
+
     @always_inline
     def __sub__[I: Indexer, //](self, offset: I) -> Self:
         """Return a pointer at an offset from the current one.
