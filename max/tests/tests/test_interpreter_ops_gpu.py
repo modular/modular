@@ -2901,3 +2901,85 @@ class TestMaxPool2dGPU:
         )
         expected = expected_nchw.permute(0, 2, 3, 1)
         torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+
+class TestBandPartGPU:
+    """GPU tests for mo.linalg.band_part interpreter handler."""
+
+    @staticmethod
+    def _band_part_ref_torch(
+        x: torch.Tensor,
+        num_lower: int,
+        num_upper: int,
+        exclude: bool = False,
+    ) -> torch.Tensor:
+        """PyTorch band_part reference."""
+        M, N = x.shape[-2], x.shape[-1]
+        m = torch.arange(M, device=x.device).unsqueeze(1)
+        n = torch.arange(N, device=x.device).unsqueeze(0)
+        lower_ok = (num_lower < 0) | ((m - n) <= num_lower)
+        upper_ok = (num_upper < 0) | ((n - m) <= num_upper)
+        in_band = lower_ok & upper_ok
+        if exclude:
+            in_band = ~in_band
+        return torch.where(in_band, x, torch.zeros_like(x))
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_lower_triangle(self, dtype: DType) -> None:
+        """Test causal mask (lower triangle) on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = (
+            torch.arange(12, dtype=torch_dtype, device="cuda").reshape(3, 4) + 1
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=None, num_upper=0)
+
+        expected = self._band_part_ref_torch(x_torch, -1, 0)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_band(self, dtype: DType) -> None:
+        """Test tridiagonal band on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = (
+            torch.arange(20, dtype=torch_dtype, device="cuda").reshape(4, 5) + 1
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=1, num_upper=1)
+
+        expected = self._band_part_ref_torch(x_torch, 1, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_exclude(self, dtype: DType) -> None:
+        """Test inverted mask on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = (
+            torch.arange(9, dtype=torch_dtype, device="cuda").reshape(3, 3) + 1
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=None, num_upper=0, exclude=True)
+
+        expected = self._band_part_ref_torch(x_torch, -1, 0, exclude=True)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )

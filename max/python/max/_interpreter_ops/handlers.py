@@ -2196,3 +2196,58 @@ def _handle_tile(
     )
 
     return [output]
+
+
+@register_op_handler(mo.LinalgBandPartOp)
+def _handle_band_part(
+    op: mo.LinalgBandPartOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.linalg.band_part (matrix band part masking).
+
+    Operands: input (device), num_lower (host int64 scalar),
+    num_upper (host int64 scalar), exclude (host bool scalar).
+
+    Args:
+        op: The band_part operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the masked output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # num_lower
+    assert isinstance(inputs[2], Buffer)  # num_upper
+    assert isinstance(inputs[3], Buffer)  # exclude
+
+    input_buffer = inputs[0]
+    num_lower = int(inputs[1].to_numpy().item())
+    num_upper = int(inputs[2].to_numpy().item())
+    exclude = int(inputs[3].to_numpy().item())
+
+    in_shape = list(input_buffer.shape)
+    if len(in_shape) < 2:
+        raise ValueError(
+            f"band_part expects rank >= 2 input, got rank {len(in_shape)}"
+        )
+
+    M = in_shape[-2]
+    N = in_shape[-1]
+    total = prod(in_shape)
+
+    output = Buffer(
+        shape=in_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.band_part_ops.BandPart(
+        output,
+        input_buffer,
+        (total, M, N, num_lower, num_upper, exclude),
+        ctx_ptr,
+    )
+
+    return [output]

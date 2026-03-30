@@ -4409,3 +4409,128 @@ class TestTileOp:
             y = F.tile(x, reps)
 
         np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+
+class TestBandPartOp:
+    """Tests for the mo.linalg.band_part interpreter handler."""
+
+    @staticmethod
+    def _band_part_ref(
+        x: np.ndarray,
+        num_lower: int,
+        num_upper: int,
+        exclude: bool = False,
+    ) -> np.ndarray:
+        """Pure-numpy band_part reference."""
+        shape = x.shape
+        M, N = shape[-2], shape[-1]
+        m = np.arange(M)[:, None]
+        n = np.arange(N)[None, :]
+        lower_ok = (num_lower < 0) | ((m - n) <= num_lower)
+        upper_ok = (num_upper < 0) | ((n - m) <= num_upper)
+        in_band = lower_ok & upper_ok
+        if exclude:
+            in_band = ~in_band
+        mask = np.broadcast_to(in_band, shape)
+        return np.where(mask, x, np.zeros_like(x))
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_lower_triangle(self, dtype: DType) -> None:
+        """Test lower triangle: num_lower=None (-1), num_upper=0."""
+        np_dt = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dt).reshape(3, 4) + 1
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=None, num_upper=0)
+
+        expected = self._band_part_ref(x_np, -1, 0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_upper_triangle(self) -> None:
+        """Test upper triangle: num_lower=0, num_upper=None (-1)."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4) + 1
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=0, num_upper=None)
+
+        expected = self._band_part_ref(x_np, 0, -1)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_diagonal(self) -> None:
+        """Test diagonal only: num_lower=0, num_upper=0."""
+        x_np = np.arange(9, dtype=np.float32).reshape(3, 3) + 1
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=0, num_upper=0)
+
+        expected = self._band_part_ref(x_np, 0, 0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_band(self) -> None:
+        """Test tridiagonal band: num_lower=1, num_upper=1."""
+        x_np = np.arange(20, dtype=np.float32).reshape(4, 5) + 1
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=1, num_upper=1)
+
+        expected = self._band_part_ref(x_np, 1, 1)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_exclude(self) -> None:
+        """Test inverted mask: exclude=True zeroes the band."""
+        x_np = np.arange(9, dtype=np.float32).reshape(3, 3) + 1
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=None, num_upper=0, exclude=True)
+
+        expected = self._band_part_ref(x_np, -1, 0, exclude=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_batched(self) -> None:
+        """Test batched input [B, M, N]."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4) + 1
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=1, num_upper=0)
+
+        expected = self._band_part_ref(x_np, 1, 0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_full_matrix(self, dtype: DType) -> None:
+        """Test keeping entire matrix: num_lower=None, num_upper=None."""
+        np_dt = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dt).reshape(3, 4) + 1
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=None, num_upper=None)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), x_np)
