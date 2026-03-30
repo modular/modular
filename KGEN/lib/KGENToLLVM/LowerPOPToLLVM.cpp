@@ -1881,18 +1881,8 @@ struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// getAlignment, getAtomicOrdering
+// getAtomicOrdering
 //===----------------------------------------------------------------------===//
-
-static unsigned getAlignment(const POPToLLVMTypeConverter *tc,
-                             PointerType ptrType,
-                             TypedAttr alignmentAttr = {}) {
-  // If we have the alignment attribute, use it.
-  if (alignmentAttr)
-    return cast<IntegerAttr>(alignmentAttr).getInt();
-
-  return tc->getTypeABIAlign(tc->convertType(ptrType.getElementType()));
-}
 
 static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
   switch (ordering) {
