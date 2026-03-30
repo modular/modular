@@ -9,15 +9,15 @@
 from std.utils import Index
 
 # CHECK-LABEL: "name": "x1"
-# CHECK: "value": "Index[Int, Int, Int](VariadicPack(16, 16, 16))"
+# CHECK: "value": "Index[Int, Int, Int](16, 16, 16)"
 comptime x1 = Index(16, 16, 16)
 
 # CHECK-LABEL: "name": "x2"
-# CHECK: "value": "Tuple(VariadicPack(Index[Int, Int, Int](VariadicPack(64, 8, 8))))"
+# CHECK: "value": "Tuple(Index[Int, Int, Int](64, 8, 8))"
 comptime x2 = (Index(64, 8, 8),)
 
 # CHECK-LABEL: "name": "x3"
-# CHECK: "value": "Tuple(VariadicPack(1, 1))"
+# CHECK: "value": "Tuple(1, 1)"
 comptime x3: Tuple[Int, Int] = (1, 1)
 
 # Do not truncate non-functions.

@@ -491,3 +491,30 @@ def my_func4499(arg0: Owner4499, arg1: Owner4499):
 def test_4499_exclusivity():
     # Should be ok.
     my_func4499(Owner4499[MyStruct4499](), Owner4499[MyStruct4499]())
+
+# Test printing of apply expressions.
+def vararg_example(*args: Int, other: Int): pass
+def pack_example[*Ts: AnyType](*args: *Ts, other: Int): pass
+def generic_example[T: AnyType, //](a: T): pass
+
+@fieldwise_init
+struct StructWithFlexParam[T: AnyType, //, x: T]:
+    pass
+
+# expected-note @+1 {{function declared here}}
+def takeWith4(a: StructWithFlexParam[4]):
+    pass
+
+def test_print_apply_expressions():
+    # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
+    # expected-error @below {{from 'StructWithFlexParam[vararg_example(0, 1, 2, 3, 4, other=5)]' to}}
+    takeWith4(StructWithFlexParam[vararg_example(0, 1, 2, 3, 4, other=5)]())
+    # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
+    # expected-error @below {{from 'StructWithFlexParam[pack_example[Int, String](0, String("foo"), other=5)]' to}}
+    takeWith4(StructWithFlexParam[pack_example(0, "foo", other=5)]())
+    # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
+    # expected-error @below {{from 'StructWithFlexParam[generic_example(0)]' to}}
+    takeWith4(StructWithFlexParam[generic_example(0)]())
+    # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
+    # expected-error @below {{from 'StructWithFlexParam[vararg_example(other=5)]' to}}
+    takeWith4(StructWithFlexParam[vararg_example(other=5)]())

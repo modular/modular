@@ -599,6 +599,90 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  // Given the operand passed to a VariadicList/VariadicPack argument, return
+  // the operands that are passed through it.
+  auto getVariadicOperands = [&](TypedAttr operand) -> SmallVector<TypedAttr> {
+    // The call to the ctor is passed by ref to the callee.
+    operand = cast<StoreToMemAttr>(operand).getValue();
+
+    // The call to the ctor is a #kgen.param.expr<apply.
+    auto apply = cast<ParamOperatorAttr>(operand);
+    assert(apply.getOpcode() == POC::Apply && "expected apply of init");
+    ArrayRef<TypedAttr> elts;
+    if (auto elements = dyn_cast<VariadicAttr>(apply.getOperands().back()))
+      elts = elements.getValues();
+    else
+      elts = cast<RefPackAttr>(apply.getOperands().back()).getValues();
+    SmallVector<TypedAttr> result;
+    // Each argument value is passed by reference.
+    for (auto element : elts)
+      result.push_back(cast<StoreToMemAttr>(element).getValue());
+    return result;
+  };
+
+  // Print the arguments to an Apply/ApplyResultSlot operator, taking into
+  // consideration keyword arguments, variadics etc.
+  auto printApplyOperands = [&](ArrayRef<TypedAttr> operands,
+                                FnTypeGeneratorType fullSig,
+                                bool calleeIsMethod) {
+    if (!fullSig)
+      return printOperands(operands);
+
+    // Drop the pogs for any result or error slot.
+    auto pogs = fullSig.getArgListAttrs().getPogs();
+    if (fullSig.hasMemoryOnlyResult())
+      pogs = pogs.drop_back();
+    if (fullSig.isThrows())
+      pogs = pogs.drop_back();
+
+    size_t argOffset = 0;
+    if (calleeIsMethod) { // 'self' will already be printed by now.
+      argOffset = 1;
+      pogs = pogs.drop_front();
+    }
+    assert(operands.size() == pogs.size() && "Unexpected # of operands");
+
+    os << '(';
+    bool needComma = false;
+    for (auto [idx, pog, operand] : llvm::enumerate(pogs, operands)) {
+      assert(pog.getPassingKind() != PassingKind::Implicit &&
+             pog.getPassingKind() != PassingKind::Inferred &&
+             "argument lists don't have these passingkinds");
+      if (needComma)
+        os << ", ";
+
+      // Handle Variadics gracefully.
+      switch (pog.getVariadic()) {
+      case VariadicKind::None:
+      case VariadicKind::KwVarArg: // TODO: KwVarArg is generally underserved.
+        break;
+      case VariadicKind::PosVarArg:
+      case VariadicKind::PackVarArg:
+        // These are both StoreToMemAttr of a call to the ctor. Pull out the
+        // arguments and print them.
+        auto operands = getVariadicOperands(operand);
+        printOperands(operands, ", ", "", "");
+        needComma |= !operands.empty();
+        continue;
+      }
+
+      // Include the keyword for keyword-only arguments.
+      if (pog.getPassingKind() == PassingKind::KwOnly)
+        os << pog.getName().str() << "=";
+
+      // If the arg convention is a memory convention then we'll have a
+      // StoreToMem to plop it into memory.
+      TypedAttr operandToPrint = operand;
+      if (hasAddress(fullSig.getArgConvention(idx + argOffset)))
+        operandToPrint = sugarCast<StoreToMemAttr>(operand).getValue();
+
+      printParam(os, operandToPrint, diagShared);
+      needComma = true;
+    }
+
+    os << ')';
+  };
+
   if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
     ArrayRef<TypedAttr> operands = op.getOperands();
 
@@ -694,6 +778,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         printParam(os, operandsToPrint.front(), diagShared);
         os << '.';
         operandsToPrint = operandsToPrint.drop_front();
+      } else {
+        calleeIsMethod = false;
       }
 
       // Special case: struct __init__ constructor calls for literal types.
@@ -746,17 +832,19 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
       // If there are parameters, print them, eliding infer-only and defaulted
       // parameter values.
-      PogListAttr paramInfo;
+      FnTypeGeneratorType fullSig;
       if (calleeFn)
-        paramInfo = calleeFn.getFullSignature().getParamListAttrs();
+        fullSig = calleeFn.getFullSignature();
+
       // typesImplied=false because we don't want to elide implicit conversions
       // constructor calls, because the function could be overloaded.  We could
       // check to see if the function is not overloaded and elide it.
-      printParamList(os, paramInfo, calleeParams, diagShared,
+      printParamList(os, fullSig ? fullSig.getParamListAttrs() : PogListAttr(),
+                     calleeParams, diagShared,
                      /*typesImplied*/ false);
 
       // Finally, also print any operands.
-      return printOperands(operandsToPrint);
+      return printApplyOperands(operandsToPrint, fullSig, calleeIsMethod);
     }
     case POC::And:
       llvm::interleave(
@@ -936,9 +1024,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto memAttr = dyn_cast<StoreToMemAttr>(param))
-    return printParam(os, memAttr.getValue(), diagShared);
-
   if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(param)) {
     os << dtypeAttr.getDType().getAsString(/*libForm=*/true);
     return;
@@ -961,6 +1046,12 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     os << '"';
     return;
   }
+
+  // Store to mem shows up when comptime values need a reference type. They
+  // generally shouldn't be printed (the apply should suck them in) but we
+  // handle it in case the printer isn't perfect.
+  if (auto storeAttr = dyn_cast<StoreToMemAttr>(param))
+    return printParam(os, storeAttr.getValue(), diagShared);
 
   /// A StructAttr is due to an inline @always_inline("builtin") initializer.
   /// Elide it if we have the default type with a literal so we don't print
