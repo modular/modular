@@ -850,7 +850,7 @@ forests, etc.
 ### Implementation Plan
 
 **Note:** these were early thoughts that have since been subsumed into the more
-detailed [Generative Kernel Compiler Task List](TaskList.md).
+detailed [Generative Kernel Compiler Task List](attic/TaskList.md).
 
 There is a lot to build here, it will likely take awhile to build out the
 majority of the functionality we need. That said, simple things will be useful

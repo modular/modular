@@ -19,7 +19,7 @@ completed by an error value (which tracks location information as well). All
 clients are expected to cope with (and propagate) errors in a correct way.
 
 `AsyncValue`s are heap allocated and reference counted. You should use them with
-the [`RCRef`](../include/Support/RCRef.h) and
+the [`RCRef`](/Support/include/Support/RCRef.h) and
 [`AsyncValueRef<T>`](../../include/MLRT/AsyncRT/Runtime/AsyncValueRef.h) classes
 whenever possible to maintain their lifetime.
 

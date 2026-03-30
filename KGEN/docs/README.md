@@ -62,7 +62,3 @@ Mojo compiler.
 
 - [Mojo Design](./manual/MojoNotes.md)
 - [Rationale](./manual/Rationale.md)
-
-## Detailed Documentation
-
-- [Mojo🔥 Notes](MojoNotes.md)

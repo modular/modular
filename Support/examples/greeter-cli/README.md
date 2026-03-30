@@ -11,10 +11,9 @@ Notable features include:
 
 You can implement your own CLI at Modular by copy-pasting this directory as a
 starting point, and then reading through the code comments in
-[`CMakeLists.txt`].
+[`BUILD.bazel`].
 
 For a more fundamental understanding of what's going on here, read the
 [CLI Guide].
 
-[`CMakeLists.txt`]: https://github.com/modularml/modular/blob/main/Support/examples/greeter-cli/CMakeLists.txt
-[CLI Guide]: docs/internal/CLIGuide.md
+[CLI Guide]: ../../../docs/internal/CLIGuide.md
