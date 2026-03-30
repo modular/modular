@@ -108,6 +108,8 @@ def _get_start_indices_of_nth_subvolume[
     ), "subvolume rank cannot be greater than indices rank"
     comptime assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
+    comptime IntType = type_of(shape)._int_type
+
     # fast impls for common cases
     comptime if rank == 2 and subvolume_rank == 1:
         return {n, 0}
@@ -121,11 +123,12 @@ def _get_start_indices_of_nth_subvolume[
         return {0}
 
     res = {}
-    var curr_index = n
+    var curr_index = IntType(n)
 
-    comptime for i in reversed(range(rank - subvolume_rank)):
-        res[i] = curr_index._positive_rem(shape[i])
-        curr_index = curr_index / shape[i]
+    comptime for i in reversed(range(1, rank - subvolume_rank)):
+        curr_index, res.data[i] = divmod(curr_index, IntType(shape.get[i]()))
+
+    res.data[0] = curr_index
 
 
 @always_inline
@@ -169,6 +172,8 @@ def _get_start_indices_of_nth_subvolume_uint[
         Int(subvolume_rank) <= rank
     ), "subvolume rank cannot be greater than indices rank"
 
+    comptime IntType = type_of(shape)._int_type
+
     # fast impls for common cases
     comptime if rank == 2 and subvolume_rank == 1:
         return {Int(n), 0}
@@ -182,13 +187,12 @@ def _get_start_indices_of_nth_subvolume_uint[
         return {0}
 
     res = {}
-    var curr_index = n
+    var curr_index = IntType(n)
 
-    comptime for i in reversed(range(rank - Int(subvolume_rank))):
-        var dim = UInt(shape[i])
-        var q_r = divmod(curr_index, dim)
-        curr_index = q_r[0]
-        res[i] = Int(q_r[1])
+    comptime for i in reversed(range(1, rank - Int(subvolume_rank))):
+        curr_index, res.data[i] = divmod(curr_index, IntType(shape.get[i]()))
+
+    res.data[0] = curr_index
 
 
 # ===-----------------------------------------------------------------------===#

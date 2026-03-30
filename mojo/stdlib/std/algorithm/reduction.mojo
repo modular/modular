@@ -81,8 +81,10 @@ def _get_nd_indices_from_flat_index(
         else:
             return {0, flat_index}
 
+    comptime IntType = type_of(shape)._int_type
+
     res = {}
-    var curr_index = flat_index
+    var curr_index = IntType(flat_index)
 
     comptime for i in reversed(range(shape.size)):
         # There is one dimension we skip, this represents the inner loop that
@@ -90,8 +92,9 @@ def _get_nd_indices_from_flat_index(
         if i == skip_dim:
             res[i] = 0
         else:
-            res[i] = curr_index._positive_rem(shape[i])
-            curr_index = curr_index / shape[i]
+            curr_index, res.data[i] = divmod(
+                curr_index, IntType(shape.get[i]())
+            )
 
 
 # ===-----------------------------------------------------------------------===#
