@@ -1091,6 +1091,10 @@ def _topk_stage1[
 
     _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
 
+    # Hoist per-block output base pointers out of the k loop.
+    var out_vals = local_topk_vals + bid * UInt(max_k)
+    var out_idxs = local_topk_idxs + bid * UInt(max_k)
+
     var k_batch = max_k
     if K:
         var k_raw = Int(K[batch_id])
@@ -1100,43 +1104,41 @@ def _topk_stage1[
     if k_batch > num_elements:
         k_batch = num_elements
 
+    # Shared memory to broadcast the winner index so the owning thread
+    # can write the dead value (better L1 locality than thread 0).
+    var winner_sram = stack_allocation[
+        1, Int, address_space=AddressSpace.SHARED
+    ]()
+
     with PDL():
-        # Prepare for K iterations to find the local top-K elements
         for k in range(k_batch):
-            # Initialize each thread with its own TopK_2 value and index
             var partial = TopK_2[T, largest]()
 
-            # Find this thread's topk_vals and topk_idxs in registers
             for i in range(Int(tid + block_offset), num_elements, Int(stride)):
                 var val = _in_buffer_tmp[i]
                 partial.insert(val, i)
 
-            # Perform block-level reduction to find the maximum TopK_2
             var total = _block_reduce_topk[ascending=largest](partial)
 
             if tid == 0:
-                # Store the local top-K values and indices in global memory
-                var vector_idx = total.p
-                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
-                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
-                    DType.int
-                ](vector_idx).cast[out_idx_type]()
-
-                if total.p >= 0:
-                    # Remove the found maximum from consideration in the next iteration
-                    _in_buffer_tmp[total.p] = _topk_dead_val[T, largest]()
-
+                out_vals[k] = total.u
+                out_idxs[k] = Scalar[DType.int](total.p).cast[out_idx_type]()
+                winner_sram[0] = total.p
             barrier()
 
-        # Fill remaining positions with sentinel values for unused elements
-        if tid == 0:
-            for remaining_k in range(k_batch, max_k):
-                local_topk_vals[
-                    bid * UInt(max_k) + UInt(remaining_k)
-                ] = _topk_dead_val[T, largest]()
-                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
-                    out_idx_type
-                ](-1)
+            # Distributed dead-value write: the owning thread writes
+            # the dead value to its own global memory element.  Each
+            # thread's stride is disjoint, so no further barrier is
+            # required — the owning thread sees its own write on the
+            # next iteration.
+            var winner_p = winner_sram[0]
+            if partial.p == winner_p and winner_p >= 0:
+                _in_buffer_tmp[winner_p] = _topk_dead_val[T, largest]()
+
+        # Parallel sentinel fill using all threads.
+        for remaining_k in range(k_batch + Int(tid), max_k, Int(block_size)):
+            out_vals[remaining_k] = _topk_dead_val[T, largest]()
+            out_idxs[remaining_k] = Scalar[out_idx_type](-1)
 
 
 @always_inline("nodebug")
