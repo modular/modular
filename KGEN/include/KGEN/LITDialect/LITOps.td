@@ -130,7 +130,9 @@ def LIT_FnOp : LITOp<"fn", [
 
     /// Return a GeneratorAttr that generates a FuncLiteralAttr for this
     /// function.
-    GeneratorAttr getFuncLiteralGenerator();
+    TypedAttr
+    getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
+                            ParameterExprArrayAttr bindings = {});
 
     /// Return the SpecialFunctionKind ID that indicates if this is a special
     /// function like __init__ or __radd__.

@@ -490,19 +490,24 @@ FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
   return cast<SymbolConstantAttr>(getBoundReference(evalContext, bindings));
 }
 
-GeneratorAttr FnOp::getFuncLiteralGenerator() {
+TypedAttr FnOp::getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
+                                        ParameterExprArrayAttr bindings) {
   SmallVector<TypedAttr> paramValues;
   FnTypeGeneratorType fullSig = getFullSignature();
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
 
   // Moving FnType out of the FnTypeGeneratorType, attaching the symbol and form
   // a FnLiteralTypeGeneratorType.
-  for (auto type : fullSig.getInputParamTypes())
-    paramValues.push_back(UnboundAttr::get(type));
+  for (auto [idx, type] : enumerate(fullSig.getInputParamTypes()))
+    paramValues.push_back(ParamIndexRefAttr::get(idx, type));
   auto fnLiteral = FuncLiteralAttr::get(FuncLiteralType::get(
       FuncSymbolAttr::get(symbol, fullSig.getBody(), paramValues)));
 
-  return GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral);
+  auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
+                                       fullSig.getMetadata());
+  if (!bindings)
+    return unboundGen;
+  return BindParamsAttr::get(unboundGen, bindings, &evalContext);
 }
 
 bool FnOp::isSynthetic() { return getSynthetic(); }

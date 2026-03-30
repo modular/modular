@@ -228,8 +228,12 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
   // If this is a global function or struct reference, bind it directly.
   auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
-  if (!parentTrait)
+  if (!parentTrait) {
+    if (funcOp.getAsLiteral())
+      return funcOp.getFuncLiteralGenerator(shared.getEvaluationContext(),
+                                            verified);
     return funcOp.getBoundReference(shared.getEvaluationContext(), verified);
+  }
 
   // Must at least have one `_Self` parameter.
   assert(!verified.getValue().empty());
@@ -266,8 +270,12 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,
                                       const ParamBindings &unverified) {
   auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
-  if (unverified.empty())
+  if (unverified.empty()) {
+    if (funcOp.getAsLiteral())
+      return funcOp.getFuncLiteralGenerator(
+          unverified.shared.getEvaluationContext());
     return funcOp.getBoundReference(unverified.shared.getEvaluationContext());
+  }
 
   FnTypeGeneratorType signature = funcOp.getFullSignature();
   // Check that the signature can be rebound with our set of bindings.
