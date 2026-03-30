@@ -1252,9 +1252,12 @@ def complement(layout: Layout, size: Int = 1) -> Layout:
         i += 1
         current_idx = shape * stride
 
-    result_shape.replace_entry(
-        i, int_value=(size + current_idx - 1) // current_idx
-    )  # ceil_div
+    if size == UNKNOWN_VALUE:
+        result_shape.replace_entry(i, int_value=UNKNOWN_VALUE)
+    else:
+        result_shape.replace_entry(
+            i, int_value=(size + current_idx - 1) // current_idx
+        )  # ceil_div
     result_stride.replace_entry(i, int_value=current_idx)
     i += 1
 

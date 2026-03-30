@@ -477,6 +477,11 @@ def test_complement() raises:
 
     validate_complement[Layout(IntTuple(4, 10), IntTuple(1, 10))]()
 
+    # When size is UNKNOWN_VALUE, the remainder dimension should also be
+    # UNKNOWN_VALUE so that downstream code correctly treats it as dynamic.
+    comptime c_unknown = complement(Layout(4, 1), UNKNOWN_VALUE)
+    assert_equal(String(materialize[c_unknown]()), "(-1:4)")
+
 
 # CHECK-LABEL: test_logcial_divide
 def test_logcial_divide() raises:
