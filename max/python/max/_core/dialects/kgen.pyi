@@ -517,6 +517,65 @@ class ExportKindAttr(max._core.Attribute):
     @property
     def value(self) -> ExportKind: ...
 
+class FuncLiteralAttr(max._core.Attribute):
+    """
+    The `#kgen.func.literal` attribute represent a instance of a function
+    literal: It is conceptually an empty struct and its type contains all the
+    static information about the function it refers to.
+
+    Example:
+
+    ```mlir
+    #kgen.func.literal : !kgen.func.literal<@foo() -> ()>
+    ```
+    """
+
+    @overload
+    def __init__(self, type: FuncLiteralType) -> None: ...
+    @overload
+    def __init__(self, type: FuncLiteralType) -> None: ...
+    @property
+    def type(self) -> FuncLiteralType: ...
+
+class FuncSymbolAttr(max._core.Attribute):
+    """
+    This is a value of FuncType, which refers to a func, the `type` must
+    match with the FuncType of the given `symbol` after instantiated with the
+    `paramValues`.
+
+    TODO: Delete SymbolConstantAttr after fully migrate to FnLiteralType.
+    """
+
+    @overload
+    def __init__(
+        self,
+        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        type: FuncType,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr] = [],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        type: FuncType,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr] = [],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
+        type: FuncType,
+    ) -> None: ...
+    @property
+    def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
+    @property
+    def param_values(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+    @property
+    def type(self) -> FuncType: ...
+
 class GeneratorAttr(max._core.Attribute):
     """
     This is a generator constant attribute that represents a generator whose
@@ -4424,6 +4483,23 @@ class DeferredType(max._core.Type):
     """
 
     def __init__(self) -> None: ...
+
+class FuncLiteralType(max._core.Type):
+    """
+    This type describes the type of a literal function in KGEN, in additional to
+    the FuncType, it uniquely identifies the function by storing its name.
+    """
+
+    @overload
+    def __init__(
+        self, func_literal: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, func_literal: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @property
+    def func_literal(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class FuncType(max._core.Type):
     """
