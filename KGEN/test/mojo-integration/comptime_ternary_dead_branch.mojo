@@ -35,12 +35,10 @@ def simd_bit_width_direct() -> Int:
 
 def failure() -> String:
     comptime assert False, "This code should not be compiled or executed"
-    return "failed"
 
 
 def failure2(s: String) -> String:
     comptime assert False, "This code should not be compiled or executed"
-    return s
 
 
 def main():

@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-build %s 2>&1 | FileCheck %s --check-prefix=WITH-WARNINGS
-# RUN: %mojo-build %s --disable-warnings 2>&1 | FileCheck %s --allow-empty --check-prefix=WITHOUT-WARNINGS
+# RUN: %mojo-build-no-werror %s 2>&1 | FileCheck %s --check-prefix=WITH-WARNINGS
+# RUN: %mojo-build-no-werror %s --disable-warnings 2>&1 | FileCheck %s --allow-empty --check-prefix=WITHOUT-WARNINGS
 
 
 # This warning is issued via the Diags class.
