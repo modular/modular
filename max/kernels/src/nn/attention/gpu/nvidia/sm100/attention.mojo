@@ -67,7 +67,7 @@ struct FA4Config[
     comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
     comptime scale_dtype_size: Int = size_of[Self.scale_dtype]()
 
-    comptime MMA_K = 16
+    comptime MMA_K: Int = 16 if Self.qkv_dtype.is_half_float() else 32
     comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
     comptime sm100_tmem_cols = 512
     comptime mbar_size = size_of[DType.int64]()

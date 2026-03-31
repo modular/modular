@@ -669,13 +669,24 @@ struct SM100TensorAccumulatorSS[
     comptime num_k_blocks = Self.padded_BK // Self.MMA_K
     comptime num_k_blocks_per_stage = Self.num_k_blocks // Self.num_stages
 
+    # With cta_group > 1, each CTA's SMEM holds MMA_M/cta_group rows (A)
+    # and MMA_N/cta_group columns (B).  The K-offset arithmetic in
+    # build_mma_ss uses these layouts, so BMN must match per-CTA dimensions
+    # to keep addresses within each CTA's SMEM tile.
+    #
+    # For k_major A the outer-K stride is BMN * swizzle_width; halving BMN
+    # halves that stride so K offsets stay in the per-CTA buffer.
+    # For k_major B (transpose_b) the K stride doesn't depend on BMN,
+    # but using per-CTA BMN is harmless and keeps the rule uniform.
+    comptime a_bmn: Int = align_up(Self.MMA_M // Self.cta_group, 8)
     comptime a_layout = tile_layout_k_major[
-        Self.operand_t, align_up(Self.MMA_M, 8), Self.padded_BK, Self.swizzle_a
+        Self.operand_t, Self.a_bmn, Self.padded_BK, Self.swizzle_a
     ]()
+    comptime b_bmn: Int = Self.MMA_N // Self.cta_group
     comptime b_layout = tile_layout_k_major[
-        Self.operand_t, Self.MMA_N, Self.padded_BK, Self.swizzle_b
+        Self.operand_t, Self.b_bmn, Self.padded_BK, Self.swizzle_b
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.operand_t, Self.MMA_N, Self.padded_BK, Self.swizzle_b
+        Self.operand_t, Self.b_bmn, Self.padded_BK, Self.swizzle_b
     ]()
 
     comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
@@ -1093,6 +1104,8 @@ def bulk_mma[
 
 @always_inline
 def elect() -> Int32:
+    # CAUTION: This function cannot be used to guard a `print`, else it will
+    # introduce a deadlock!
     return inlined_assembly[
         """{
             .reg .b32 %re;
@@ -1794,6 +1807,7 @@ struct RolePipeline[
     is_producer: Bool = True,
     producer_sub_stages: Int = 1,
     consumer_sub_stages: Int = 1,
+    cta_group: Int = 1,
 ](TrivialRegisterPassable):
     """
     Unified producer/consumer pipeline for barrier synchronization.
@@ -1887,13 +1901,13 @@ struct RolePipeline[
     def commit_mma(self):
         """Commit via MMA arrive using elected thread. Producer-only."""
         mbar = self.producer_mbar()
-        elect_mma_arrive(mbar, elect())
+        elect_mma_arrive[cta_group=Self.cta_group](mbar, elect())
 
     @always_inline("nodebug")
     def commit_mma(self, elect: Int32):
         """Commit via MMA arrive with explicit elect value. Producer-only."""
         mbar = self.producer_mbar()
-        elect_mma_arrive(mbar, elect)
+        elect_mma_arrive[cta_group=Self.cta_group](mbar, elect)
 
     # Consumer methods
     @always_inline("nodebug")
@@ -1919,8 +1933,8 @@ struct RolePipeline[
 
 
 # Backward-compatible type aliases
-comptime ProducerPipeline = RolePipeline[_, True, _, _]
-comptime ConsumerPipeline = RolePipeline[_, False, _, _]
+comptime ProducerPipeline = RolePipeline[_, True, _, _, _]
+comptime ConsumerPipeline = RolePipeline[_, False, _, _, _]
 
 
 struct MBarPipeline[number_of_stages: Int](TrivialRegisterPassable):
