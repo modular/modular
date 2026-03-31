@@ -33,7 +33,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.quant_config import (
     QuantConfig,
     ScaleGranularity,
-    nvfp4_packed_k,
+    fp4_packed_k,
 )
 from max.nn.quant_ops import quantized_matmul
 from max.support.math import ceildiv
@@ -133,7 +133,7 @@ class Linear(Module, Shardable):
             self.weight = Weight(
                 name=f"{name}.weight" if name else "weight",
                 dtype=dtype,
-                shape=(out_dim, nvfp4_packed_k(in_dim, quant_config)),
+                shape=(out_dim, fp4_packed_k(in_dim, quant_config)),
                 device=device,
                 quantization_encoding=quantization_encoding,
             )

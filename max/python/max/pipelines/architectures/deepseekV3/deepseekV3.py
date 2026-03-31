@@ -317,8 +317,7 @@ class DeepseekV3DecoderLayer(Module):
         use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
 
         if (
-            config.quant_config is not None
-            and nvfp4_enabled
+            nvfp4_enabled
             and config.n_routed_experts
             != 384  # nvidia/KimiK2.5-NVFP4 out projections are not quantized
         ):
