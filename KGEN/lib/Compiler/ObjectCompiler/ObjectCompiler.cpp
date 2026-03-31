@@ -1441,21 +1441,17 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
   //           -dylib tmp.o -o tmp.so -undefined dynamic_lookup
   SmallVector<StringRef> lldArgs = [&]() -> SmallVector<StringRef> {
     if (triple.getObjectFormat() == llvm::Triple::MachO) {
-      return {linker,
-              "-flavor",
-              linkerFlavor,
-              "-platform_version",
-              "macos",
-              version.c_str(),
-              version.c_str(),
-              "-arch",
-              arch.c_str(),
-              "-undefined",
-              "dynamic_lookup",
-              "-dylib",
-              objFilePath.c_str(),
-              "-o",
-              sharedObjPath.c_str()};
+      SmallVector<StringRef> args{
+          linker,       "-flavor",       linkerFlavor,     "-platform_version",
+          "macos",      version.c_str(), version.c_str(),  "-arch",
+          arch.c_str(), "-undefined",    "dynamic_lookup", "-dylib"};
+
+      if (!options.emissionLinkOptions.empty())
+        args.push_back(options.emissionLinkOptions.c_str());
+      args.push_back(objFilePath.c_str());
+      args.push_back("-o");
+      args.push_back(sharedObjPath.c_str());
+      return args;
     }
     // Build ELF linker args. For AMDGPU add --no-undefined to catch undefined
     // symbols at link time instead of getting a generic hipErrorNoBinaryForGpu
@@ -1464,6 +1460,8 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
     if (isAMDGPUBackend(options))
       args.push_back("--no-undefined");
     args.push_back("-shared");
+    if (!options.emissionLinkOptions.empty())
+      args.push_back(options.emissionLinkOptions.c_str());
     args.push_back(objFilePath.c_str());
     args.push_back("-o");
     args.push_back(sharedObjPath.c_str());
@@ -1771,6 +1769,8 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
   *keyBuf << " isJIT = " << isJIT;
   if (!options.emissionOptions.empty())
     *keyBuf << " emissionOptions = " << options.emissionOptions;
+  if (!options.emissionLinkOptions.empty())
+    *keyBuf << " emissionLinkOptions = " << options.emissionLinkOptions;
 
   size_t nonBitcodeKeySize = keyBuf->getBufferSize();
 

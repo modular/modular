@@ -21,6 +21,7 @@
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
 #include "Pipeline/Pipeline.h"
+#include "Support/ADT/DenseStringMap.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/Config.h"
@@ -378,8 +379,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     const SymbolTable &symtab, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elabOptions) {
 
-  DenseMap<TargetInfoAttr,
-           DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
+  DenseMap<
+      TargetInfoAttr,
+      llvm::DenseMap<std::string, DenseMap<uint64_t, OffloadCompilationResult>>>
       result;
 
   // Extract the initial bitcode library data from the original module.
@@ -402,13 +404,13 @@ static ElaboratorCompileOffloadRetType compileOffloads(
   // This loop cannot be parallelized since different targets may need
   // different llvm options that are global states.
   for (auto [target, info] : targetOffloadInfos) {
-    DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>
+    llvm::DenseMap<std::string, DenseMap<uint64_t, OffloadCompilationResult>>
         &targetEmissionResult = result[target];
 
-    for (auto [emissionOptionsStr, offloadInfo] : info.groups) {
+    for (auto [groupKey, offloadInfo] : info.groups) {
 
       DenseMap<uint64_t, OffloadCompilationResult> &targetResult =
-          targetEmissionResult[emissionOptionsStr];
+          targetEmissionResult[groupKey];
 
       IRMapping mapping;
 
@@ -424,7 +426,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       StringRef targetDataLayout = target.getDataLayout().toString();
       if (!targetDataLayout.empty())
         compilationOptions.targetDataLayout = targetDataLayout;
-      compilationOptions.emissionOptions = emissionOptionsStr;
+      compilationOptions.emissionOptions = offloadInfo.emissionOptions;
+      compilationOptions.emissionLinkOptions = offloadInfo.emissionLinkOptions;
 
       OwningOpRef<ModuleOp> module = produceStandaloneModule(
           symtab, offloadInfo.exportedSymbols, mapping,
@@ -599,12 +602,13 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       // offloads for different targets won't have to share since we compile
       // them in order and we can reset these options for each targets.
       SmallVector<StringRef> emissionOptions;
-      emissionOptionsStr.split(emissionOptions, /*Separator=*/",",
-                               /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+      StringRef(offloadInfo.emissionOptions)
+          .split(emissionOptions, /*Separator=*/",",
+                 /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
       KGEN_DEBUG(0, {
-        llvm::dbgs() << "Emit offloads with options: " << emissionOptionsStr
-                     << "\n";
+        llvm::dbgs() << "Emit offloads with options: "
+                     << offloadInfo.emissionOptions << "\n";
       });
       ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
       if (parseResult.isError()) {

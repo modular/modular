@@ -1959,6 +1959,9 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   StringRef emissionOptionsStr =
       cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
 
+  StringRef emissionLinkOptionsStr =
+      cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
+
   SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(op.getFuncAttr());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(op.getLoc(), "compile_offload", symbol,
@@ -1993,7 +1996,11 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   // primary generator, and the functor will return an error.
 
   targetOffloadInfos.modify([&](auto &info) {
-    OffloadInfo::Group &offloadInfo = info[target].groups[emissionOptionsStr];
+    std::string groupKey =
+        emissionOptionsStr.str() + emissionLinkOptionsStr.str();
+    OffloadInfo::Group &offloadInfo = info[target].groups[groupKey];
+    offloadInfo.emissionOptions = emissionOptionsStr;
+    offloadInfo.emissionLinkOptions = emissionLinkOptionsStr;
 
     // Slice out a pre-elaboration module for the new target to compile for.
     ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
@@ -2472,7 +2479,8 @@ bool ParametricElaborator::diagnoseAndBreakRecursion(
 static WalkResult rewriteCompileOffloadOp(
     CompileOffloadOp op, Location loc,
     DenseMap<TargetInfoAttr,
-             DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
+             llvm::DenseMap<std::string,
+                            DenseMap<uint64_t, OffloadCompilationResult>>>
         &compiledOffload,
     bool &failed, ErrorLimit &errorLimit, bool errorIncludePrelude) {
   // Plug offload compilation results as strings back to the elaborated IR.
@@ -2482,6 +2490,10 @@ static WalkResult rewriteCompileOffloadOp(
       cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
   StringRef emissionOptionsStr =
       cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
+  StringRef emissionLinkOptionsStr =
+      cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
+  std::string groupKey =
+      emissionOptionsStr.str() + emissionLinkOptionsStr.str();
 
   auto targetIter = compiledOffload.find(target);
   if (targetIter == compiledOffload.end()) {
@@ -2498,11 +2510,11 @@ static WalkResult rewriteCompileOffloadOp(
     return WalkResult::interrupt();
   }
 
-  auto iter0 = targetIter->second.find(emissionOptionsStr);
+  auto iter0 = targetIter->second.find(groupKey);
   if (iter0 == targetIter->second.end()) {
     ErrorTree compileOffloadError(
-        loc, "compile offload result missing emissionOptions \"" +
-                 emissionOptionsStr + "\"");
+        loc,
+        "compile offload result missing emissionOptions \"" + groupKey + "\"");
     emitLimitedError(
         [&] {
           return std::move(compileOffloadError)
@@ -2737,8 +2749,9 @@ LogicalResult ParametricElaborator::run(
     return failure();
   }
 
-  DenseMap<TargetInfoAttr,
-           DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
+  DenseMap<
+      TargetInfoAttr,
+      llvm::DenseMap<std::string, DenseMap<uint64_t, OffloadCompilationResult>>>
       compiledOffload = compiledOffloadOr.takeValue();
 
   for (auto &[target, result] : compiledOffload) {

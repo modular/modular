@@ -157,6 +157,12 @@ public:
 
   std::string emissionOptions;
 
+  /// Extra options forwarded from `kgen.compile_offload`'s
+  /// `emission_link_option` attribute.
+  /// A string directly passed to linker if compile offload
+  /// runs one in the pipeline.
+  std::string emissionLinkOptions;
+
   // Maximum number of threads to be used by AsyncRT. 0 means use all available.
   size_t numThreads = 0;
 
