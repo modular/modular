@@ -347,6 +347,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle._get_function[result_type](cstr_name=cstr_name)
 
+    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
@@ -364,6 +365,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle.get_symbol[result_type](name)
 
+    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
@@ -406,7 +408,7 @@ struct OwnedDLHandle(Movable):
 
 
 @fieldwise_init
-struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
+struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     """Represents a non-owning reference to a dynamically linked library.
 
     `_DLHandle` is a lightweight, trivially copyable reference to a dynamic
@@ -422,7 +424,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: OpaquePointer[MutExternalOrigin]
+    var handle: _CPointer[NoneType, MutExternalOrigin]
     """The handle to the dynamic library."""
 
     @always_inline
@@ -510,7 +512,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         Returns:
           True if the DLHandle is not null and False otherwise.
         """
-        return self.handle.__bool__()
+        return Bool(self.handle)
 
     def get_function[
         result_type: TrivialRegisterPassable
@@ -572,6 +574,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
         return UnsafePointer(to=opaque_function_ptr).bitcast[result_type]()[]
 
+    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
@@ -592,6 +595,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
         )
 
+    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
@@ -636,6 +640,12 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             # Redo the `dlsym` call
             res = dlsym[result_type](self.handle, cstr_name)
 
+            if not res:
+                var name = StringSlice(unsafe_from_utf8_ptr=cstr_name)
+                abort(
+                    t"dlsym unexpectedly returned non-NULL result when loading"
+                    t" symbol: {name}"
+                )
             debug_assert(
                 not res,
                 (

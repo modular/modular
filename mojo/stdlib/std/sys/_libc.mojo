@@ -73,7 +73,7 @@ def exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-comptime FILE_ptr = OpaquePointer[MutExternalOrigin]
+comptime FILE_ptr = _CPointer[NoneType, ExternalOrigin[mut=True]]
 
 
 @always_inline
@@ -179,7 +179,7 @@ def execvp[
     //,
 ](
     file: UnsafePointer[mut=False, c_char, _],
-    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
+    argv: UnsafePointer[mut=False, _CPointer[mut=False, c_char, origin], _],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -292,15 +292,15 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
 
 
 @always_inline
-def dlerror(out result: UnsafePointer[c_char, MutExternalOrigin]):
+def dlerror(out result: _CPointer[c_char, MutExternalOrigin]):
     result = external_call["dlerror", type_of(result)]()
 
 
 @always_inline
 def dlopen(
     filename: UnsafePointer[mut=False, c_char, _], flags: c_int
-) -> OpaquePointer[MutExternalOrigin]:
-    return external_call["dlopen", OpaquePointer[MutExternalOrigin]](
+) -> _CPointer[NoneType, MutExternalOrigin]:
+    return external_call["dlopen", _CPointer[NoneType, MutExternalOrigin]](
         filename, flags
     )
 
@@ -317,17 +317,17 @@ def dlsym[
 ](
     handle: OpaquePointer,
     name: UnsafePointer[mut=False, c_char, _],
-    out result: UnsafePointer[result_type, MutExternalOrigin],
+    out result: _CPointer[result_type, MutExternalOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
 
 def realpath(
     path: UnsafePointer[mut=False, c_char, _],
-    resolved_path: UnsafePointer[mut=True, c_char, _] = UnsafePointer[
+    resolved_path: _CPointer[mut=True, c_char, _] = _CPointer[
         c_char, MutExternalOrigin
     ](),
-    out result: UnsafePointer[c_char, MutExternalOrigin],
+    out result: _CPointer[c_char, MutExternalOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

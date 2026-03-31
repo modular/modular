@@ -24,7 +24,7 @@ from std.collections import InlineArray, List
 from std.collections.string.string_slice import _unsafe_strlen
 from std.format.tstring import TString
 from std.io import FileDescriptor
-from std.ffi import c_char, c_int, external_call, get_errno
+from std.ffi import c_char, c_int, external_call, get_errno, _CPointer
 from std.sys import CompilationTarget, is_gpu
 
 from .path import isdir, split
@@ -97,11 +97,11 @@ struct _DirHandle:
         if not isdir(path):
             raise Error("the directory '", path, "' does not exist")
 
-        self._handle = external_call["opendir", type_of(self._handle)](
-            path.as_c_string_slice().unsafe_ptr()
-        )
+        var handle = external_call[
+            "opendir", _CPointer[NoneType, ExternalOrigin[mut=True]]
+        ](path.as_c_string_slice().unsafe_ptr())
 
-        if not self._handle:
+        if not handle:
             var err = get_errno()
             raise Error(
                 "unable to open the directory '",
@@ -110,6 +110,8 @@ struct _DirHandle:
                 " Err: ",
                 String(err),
             )
+
+        self._handle = handle
 
     def __del__(deinit self):
         """Closes the handle opened via popen."""
@@ -137,11 +139,11 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", UnsafePointer[_dirent_linux, MutExternalOrigin]
+                "readdir", _CPointer[_dirent_linux, MutExternalOrigin]
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.take_pointee().name
+            ref name = ep.unsafe_value().take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
@@ -165,11 +167,11 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", UnsafePointer[_dirent_macos, MutExternalOrigin]
+                "readdir", _CPointer[_dirent_macos, MutExternalOrigin]
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.take_pointee().name
+            ref name = ep.unsafe_value().take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,

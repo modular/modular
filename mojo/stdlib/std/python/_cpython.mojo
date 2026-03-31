@@ -2573,7 +2573,7 @@ struct CPython(Defaultable, Movable):
     # TODO: fix signature to take unicode and size as args
     def PyUnicode_AsUTF8AndSize(
         self, obj: PyObjectPtr
-    ) -> StringSlice[ImmutAnyOrigin]:
+    ) -> Optional[StringSlice[ImmutAnyOrigin]]:
         """Return a pointer to the UTF-8 encoding of the Unicode object, and
         store the size of the encoded representation (in bytes) in `size`.
 
@@ -2582,8 +2582,10 @@ struct CPython(Defaultable, Movable):
         """
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
+        if length == Py_ssize_t(-1):
+            return None
         return StringSlice[ImmutAnyOrigin](
-            ptr=ptr.value().bitcast[Byte](), length=length
+            ptr=ptr.value().bitcast[Byte](), length=Int(length)
         )
 
     # ===-------------------------------------------------------------------===#

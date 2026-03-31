@@ -253,7 +253,7 @@ def _test_unicode_object_api(cpy: CPython) raises:
     assert_true(py_str)
 
     var res = cpy.PyUnicode_AsUTF8AndSize(py_str)
-    assert_equal(res, str)
+    assert_equal(res[], str)
 
 
 def _test_tuple_object_api(cpy: CPython) raises:
