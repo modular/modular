@@ -46,7 +46,7 @@ from std.sys.info import _is_sm_100x_or_newer, has_nvidia_gpu_accelerator
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
+from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 
 
 # ===-----------------------------------------------------------------------===#
@@ -233,8 +233,8 @@ def _elementwise_impl_gpu_clc[
                 var global_packed_idx = base + UInt(e * block_size)
                 if global_packed_idx < num_packed_elems:
                     _process_elem(
-                        _get_start_indices_of_nth_subvolume_uint[0](
-                            global_packed_idx * simd_width, shape
+                        _get_start_indices_of_nth_subvolume[0](
+                            Int(global_packed_idx * simd_width), shape
                         )
                     )
 
@@ -279,8 +279,8 @@ def _elementwise_impl_gpu_clc[
             unpacked_tail_length
         ):
             func[1, rank](
-                _get_start_indices_of_nth_subvolume_uint[0](
-                    packed_region_length + UInt(thread_idx.x), shape
+                _get_start_indices_of_nth_subvolume[0](
+                    Int(packed_region_length + UInt(thread_idx.x)), shape
                 ).canonicalize()
             )
 
@@ -417,16 +417,16 @@ def _elementwise_impl_gpu_grid_stride[
                 var idx = base_idx + UInt(e) * stride
                 if idx < num_packed_elems:
                     _process_elem(
-                        _get_start_indices_of_nth_subvolume_uint[0](
-                            idx * simd_width, shape
+                        _get_start_indices_of_nth_subvolume[0](
+                            Int(idx * simd_width), shape
                         )
                     )
 
         # process the tail region
         if tid < unpacked_tail_length:
             func[1, rank](
-                _get_start_indices_of_nth_subvolume_uint[0](
-                    packed_region_length + tid, shape
+                _get_start_indices_of_nth_subvolume[0](
+                    Int(packed_region_length + tid), shape
                 ).canonicalize()
             )
 
