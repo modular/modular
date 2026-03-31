@@ -126,6 +126,7 @@ def _declare_tools(platform):
             "//:modular_config_ci_build": ":{}-single-platform-clang".format(platform),
             "//conditions:default": ":multi-platform-clang",
         }),
+        tags = ["manual"],
     )
 
     cc_tool(
@@ -141,6 +142,7 @@ def _declare_tools(platform):
             "//:modular_config_ci_build": ":{}-single-platform-clang++".format(platform),
             "//conditions:default": ":multi-platform-clang++",
         }),
+        tags = ["manual"],
     )
 
     cc_tool(
