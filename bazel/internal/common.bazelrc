@@ -119,15 +119,13 @@ build --slim_profile=false
 build --test_output=errors
 build --test_summary=terse
 
-# Disable crash reporting for all tests and runs, test rules can override this
+# Disable crash reporting for builds and tests, test rules can override this
 build --action_env=MODULAR_CRASH_REPORTING_ENABLED=false --host_action_env=MODULAR_CRASH_REPORTING_ENABLED=false
 build --test_env=MODULAR_CRASH_REPORTING_ENABLED=false
-run --run_env=MODULAR_CRASH_REPORTING_ENABLED=false
 
-# Disable telemetry for all tests and runs, test rules can override this
+# Disable telemetry for builds and tests, test rules can override this
 build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TELEMETRY_ENABLED=false
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
-run --run_env=MODULAR_TELEMETRY_ENABLED=false
 
 # Fix parallel tests competing for a single CPU on graviton
 build --test_env=KMP_AFFINITY=none
