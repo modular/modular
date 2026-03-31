@@ -9,6 +9,7 @@
 
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "Support/ADT/DenseStringMap.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -129,9 +130,20 @@ struct OffloadInfo {
     uint64_t numKernels = 0;
     ExportMap exportedSymbols;
     llvm::MapVector<Operation *, SymbolInfo> symbols;
+    /// The compile-only emission options string (from `emission_option` on the
+    /// `kgen.compile_offload` op). Used to drive `parseEmissionOptions` and
+    /// `resetEmissionOptions`.
+    std::string emissionOptions;
+    /// Extra options forwarded to `CompilationOptions::emissionLinkOptions`
+    /// during kernel compilation. Corresponds to `emission_link_option` on the
+    /// `kgen.compile_offload` op.
+    std::string emissionLinkOptions;
   };
 
-  using EmissionOptionsGroup = llvm::MapVector<StringRef, Group>;
+  /// Groups are keyed by the concatenation of `emission_option` and
+  /// `emission_link_option` so that kernels with different link options are
+  /// compiled separately.
+  using EmissionOptionsGroup = llvm::MapVector<std::string, Group>;
   EmissionOptionsGroup groups;
 };
 
@@ -164,7 +176,7 @@ using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
 
 using ElaboratorCompileOffloadRetType = ErrorOr<DenseMap<
     TargetInfoAttr,
-    DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>>;
+    llvm::DenseMap<std::string, DenseMap<uint64_t, OffloadCompilationResult>>>>;
 
 using ElaboratorCompileOffloadFn = ElaboratorCompileOffloadRetType (*)(
     ModuleOp module,
