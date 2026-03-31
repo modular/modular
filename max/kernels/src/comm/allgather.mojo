@@ -30,7 +30,7 @@ hardware capabilities:
 
 from std.collections import InlineArray
 from std.math import ceildiv
-from std.sys import simd_width_of, align_of
+from std.sys import simd_width_of, align_of, size_of
 
 from layout import TileTensor
 from layout.tile_layout import TensorLayout
@@ -45,6 +45,9 @@ from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from std.utils import StaticTuple
 
+from .device_query import dispatch_max_num_blocks, CommTuningConfig
+from internal_utils import Table
+
 from .reducescatter import _target_address_space
 from .sync import (
     MAX_GPUS,
@@ -52,6 +55,25 @@ from .sync import (
     _multi_gpu_barrier,
     is_p2p_enabled,
     circular_add,
+)
+
+# Tuning table to get num_blocks for allgather
+comptime allgather_tuning_table = Table(
+    [
+        # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
+        ),
+        # default for sm100 (encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="sm_100a", num_blocks=512
+        ),
+        # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=216
+        ),
+    ],
+    "allgather_table",
 )
 
 
@@ -204,7 +226,7 @@ def _allgather_p2p[
         TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    max_num_blocks: Int,
+    _max_num_blocks: Optional[Int],
     ctx: DeviceContext,
     my_rank: Int,
 ) raises:
@@ -238,6 +260,13 @@ def _allgather_p2p[
     var max_length = 0
     for i in range(ngpus):
         max_length = max(max_length, lengths[i])
+
+    comptime sm_version = ctx.default_device_info.version
+    var max_num_blocks = _max_num_blocks.or_else(
+        dispatch_max_num_blocks[ngpus, sm_version, allgather_tuning_table](
+            max_length * size_of[dtype]()
+        )
+    )
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     # Use ceildiv for max_length to ensure we have enough threads.
@@ -321,8 +350,6 @@ def allgather[
     if all_empty:
         return
 
-    var max_num_blocks = _max_num_blocks.or_else(216)
-
     # Check P2P availability.
     if not is_p2p_enabled():
         return _allgather_naive(input_buffers, output_buffers, ctx)
@@ -331,7 +358,7 @@ def allgather[
             input_buffers,
             output_buffers,
             rank_sigs,
-            max_num_blocks,
+            _max_num_blocks,
             ctx,
             my_rank,
         )
