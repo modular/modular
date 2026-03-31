@@ -91,8 +91,10 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PixelGenerationBenchmarkMetrics,
+    SpecDecodeMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
+    calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
@@ -108,6 +110,7 @@ from max.benchmark.benchmark_shared.request import (
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     collect_server_metrics,
+    fetch_spec_decode_metrics,
     print_server_metrics,
 )
 from max.benchmark.benchmark_shared.steady_state import detect_steady_state
@@ -316,6 +319,31 @@ def print_section(title: str, char: str = "-") -> None:
     print("{s:{c}^{n}}".format(s=title, n=50, c=char))
 
 
+def _is_vllm_backend(backend: Backend) -> bool:
+    return backend in (Backend.vllm, Backend.vllm_chat)
+
+
+def _add_spec_decode_result(
+    result: dict[str, Any],
+    spec_decode_stats: dict[str, Any] | None,
+) -> None:
+    """Add speculative decoding stats to the JSON result."""
+    if spec_decode_stats is None:
+        return
+    result["spec_decode_acceptance_rate"] = spec_decode_stats["acceptance_rate"]
+    result["spec_decode_acceptance_length"] = spec_decode_stats[
+        "acceptance_length"
+    ]
+    result["spec_decode_num_drafts"] = int(spec_decode_stats["num_drafts"])
+    result["spec_decode_draft_tokens"] = int(spec_decode_stats["draft_tokens"])
+    result["spec_decode_accepted_tokens"] = int(
+        spec_decode_stats["accepted_tokens"]
+    )
+    result["spec_decode_per_position_acceptance_rates"] = spec_decode_stats.get(
+        "per_position_acceptance_rates", []
+    )
+
+
 def print_lora_benchmark_results(
     lora_manager: LoRABenchmarkManager,
 ) -> None:
@@ -408,6 +436,7 @@ def print_benchmark_summary(
     achieved_request_rate: float,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
+    spec_decode_stats: dict[str, Any] | None = None,
     lora_manager: LoRABenchmarkManager | None = None,
 ) -> None:
     """Print benchmark summary for text-generation and pixel-generation."""
@@ -527,6 +556,42 @@ def print_benchmark_summary(
                 metrics.cpu_utilization_system or 0.0,
             )
         )
+    if spec_decode_stats is not None:
+        print_section(title="Speculative Decoding")
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Acceptance rate (%):", spec_decode_stats["acceptance_rate"]
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Acceptance length:", spec_decode_stats["acceptance_length"]
+            )
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Drafts:", int(spec_decode_stats["num_drafts"])
+            )
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Draft tokens:", int(spec_decode_stats["draft_tokens"])
+            )
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Accepted tokens:", int(spec_decode_stats["accepted_tokens"])
+            )
+        )
+        per_pos_rates = spec_decode_stats.get(
+            "per_position_acceptance_rates", []
+        )
+        if per_pos_rates:
+            print("Per-position acceptance (%):")
+            for pos, rate in enumerate(per_pos_rates):
+                print(
+                    "{:<40} {:<10.2f}".format(f"  Position {pos}:", rate * 100)
+                )
     print("=" * 50)
     if lora_manager:
         print_lora_benchmark_results(lora_manager)
@@ -1513,6 +1578,8 @@ async def benchmark(
 
     with contextlib.ExitStack() as benchmark_stack:
         gpu_recorder: GPUBackgroundRecorder | None = None
+        spec_decode_metrics_before: SpecDecodeMetrics | None = None
+        spec_decode_metrics_after: SpecDecodeMetrics | None = None
         if collect_gpu_stats:
             try:
                 from max.diagnostics.gpu import BackgroundRecorder
@@ -1581,6 +1648,13 @@ async def benchmark(
             else base_driver
         )
 
+        if benchmark_task == BenchmarkTask.text_generation and _is_vllm_backend(
+            backend
+        ):
+            spec_decode_metrics_before = fetch_spec_decode_metrics(
+                backend, base_url
+            )
+
         try:
             outputs: Sequence[BaseRequestFuncOutput]
             if isinstance(samples, RequestSamples):
@@ -1634,6 +1708,20 @@ async def benchmark(
             # Stop nsys trace if enabled (after timing to exclude trace overhead)
             if trace_path:
                 stop_trace(trace_session)
+
+    if benchmark_task == BenchmarkTask.text_generation and _is_vllm_backend(
+        backend
+    ):
+        spec_decode_metrics_after = fetch_spec_decode_metrics(backend, base_url)
+    spec_decode_stats = None
+    if (
+        spec_decode_metrics_before is not None
+        and spec_decode_metrics_after is not None
+    ):
+        spec_decode_stats = calculate_spec_decode_stats(
+            spec_decode_metrics_before,
+            spec_decode_metrics_after,
+        )
 
     if print_inputs_and_outputs:
         if benchmark_task == BenchmarkTask.text_generation:
@@ -1735,6 +1823,7 @@ async def benchmark(
             max_concurrency=max_concurrency,
             collect_gpu_stats=collect_gpu_stats,
             collect_cpu_stats=collect_cpu_stats,
+            spec_decode_stats=None,
             lora_manager=lora_manager,
         )
 
@@ -1801,6 +1890,7 @@ async def benchmark(
         achieved_request_rate=achieved_request_rate,
         collect_gpu_stats=collect_gpu_stats,
         collect_cpu_stats=collect_cpu_stats,
+        spec_decode_stats=spec_decode_stats,
         lora_manager=lora_manager,
     )
 
@@ -1866,6 +1956,8 @@ async def benchmark(
         "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
         "gpu_utilization": text_metrics.gpu_utilization,
     }
+
+    _add_spec_decode_result(result, spec_decode_stats)
 
     _add_optional_result(
         result=result,
