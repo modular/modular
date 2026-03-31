@@ -644,6 +644,53 @@ static void attachInstrumentationAttributes(llvm::Module &module,
     if (options.sanitizers.has(Sanitizers::kThread))
       f.addFnAttr(llvm::Attribute::SanitizeThread);
   }
+
+  // WORKAROUND(MOTO-1511): On macOS, ASAN defaults to `atos` for
+  // symbolization, which does not report inlined frames. The ASAN runtime
+  // gained `-i` support for atos in llvm/llvm-project#170815 (Dec 2025), but
+  // our external LLVM 20 toolchain (see update-toolchains.sh) predates it.
+  // We work around this by emitting __asan_default_options() to redirect ASAN
+  // to llvm-symbolizer, which resolves inlined frames natively.
+  // FIXME(MOTO-1516): Remove this workaround when update-toolchains.sh pulls
+  // an LLVM release >= 21 that includes atos -i support.
+  // See: https://github.com/modularml/modular/pull/81478
+  if (options.sanitizers.has(Sanitizers::kAddress) &&
+      llvm::Triple(module.getTargetTriple()).isOSBinFormatMachO() &&
+      !isGPUBackend(options)) {
+    // Resolve llvm-symbolizer via PATH at compile time and embed its absolute
+    // path so it works in sandboxed environments (e.g. bazel) where
+    // llvm-symbolizer may not be on PATH at runtime.
+    std::string optStr;
+    llvm::ErrorOr<std::string> symbolizer =
+        llvm::sys::findProgramByName("llvm-symbolizer");
+    if (symbolizer) {
+      optStr = "external_symbolizer_path=" + symbolizer.get();
+    } else {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "note: llvm-symbolizer not found in PATH; ASAN stack "
+                    "traces on macOS will use atos and may not show inlined "
+                    "frames.\n");
+    }
+
+    auto &ctx = module.getContext();
+    auto *optionsConst =
+        llvm::ConstantDataArray::getString(ctx, optStr, /*AddNull=*/true);
+    auto *gv = new llvm::GlobalVariable(
+        module, optionsConst->getType(), /*isConstant=*/true,
+        llvm::GlobalValue::PrivateLinkage, optionsConst,
+        "__asan_default_options_str");
+
+    auto *fnType = llvm::FunctionType::get(llvm::PointerType::getUnqual(ctx),
+                                           /*isVarArg=*/false);
+    // Use weak linkage so user code can override with a strong definition
+    // (e.g. to add detect_leaks=0). dlsym still finds weak symbols, unlike
+    // LinkOnceODR which gets discarded.
+    auto *fn = llvm::Function::Create(fnType, llvm::Function::WeakAnyLinkage,
+                                      "__asan_default_options", &module);
+    fn->setDoesNotThrow();
+    auto *bb = llvm::BasicBlock::Create(ctx, "", fn);
+    llvm::ReturnInst::Create(ctx, gv, bb);
+  }
 }
 
 /// HACK HACK HACK https://github.com/modularml/modular/issues/27478
