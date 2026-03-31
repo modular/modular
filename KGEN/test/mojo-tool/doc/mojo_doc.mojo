@@ -20,7 +20,6 @@ spills over to the next line."""
 
 from layout.int_tuple import *
 from std.sys.info import is_nvidia_gpu
-from buffer.dimlist import Dim
 from std.memory import UnsafePointer
 from std.builtin.simd import Float4_e2m1fn, Float8_e4m3fn
 
@@ -369,7 +368,7 @@ def fn_with_fn_param_and_arg[
 
 def logsoftmax[
     simd_width: Int,
-    buffer_size: Dim,
+    buffer_size: Int,
     dtype: DType,
     origins: OriginSet,
     input_fn_1d: def[_simd_width: Int](Int) capturing[origins] -> SIMD[
