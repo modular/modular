@@ -18,7 +18,6 @@ from std.os import abort
 from std.sys import size_of
 from std.sys.info import align_of, simd_width_of
 
-from buffer.dimlist import Dim
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -417,7 +416,7 @@ def b2b_gemm[
             next_op_b_iter_masked=False,
             b_next_smem_layout=b_smem_layout,
             prefetch_init=False,
-            static_num_iters=Dim(BN // BK),
+            static_num_iters=BN // BK,
         ](
             d_reg_tile,
             ab_iter,

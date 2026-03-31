@@ -88,6 +88,10 @@ This version is still a work in progress.
 - `max/python/max/benchmark/benchmark_throughput.py` has been deprecated and
   will be removed in a future MAX release.
 
+- Removed `Dim` and `DimList` types from `buffer.dimlist`. Custom kernel code
+  using these types should migrate to `IntTuple` and `TileLayout` from the
+  `layout` package.
+
 ### Mojo API {#26-3-max-mojo}
 
 ### Custom ops {#26-3-custom-ops}
