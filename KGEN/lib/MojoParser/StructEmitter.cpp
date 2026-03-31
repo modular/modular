@@ -1135,6 +1135,8 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
 
   CValue ret = emitBoolAttr(BoolAttr::get(emitter.getContext(), true));
+  if (!ret.getIfPValue())
+    return nullptr;
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     // TODO: Add a nicer accessor.
     auto fieldEntries = structDecl.lookupInCurrentScope(fieldOp.getNameAttr());
@@ -1156,6 +1158,5 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     ret = emitAnd(ret, fieldIsTrivial);
   }
 
-  assert(ret.getIfPValue() && "expected a Bool constant");
   return ret.getIfPValue();
 }
