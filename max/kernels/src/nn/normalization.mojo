@@ -58,7 +58,7 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from comm.rms_norm_fp8 import rms_norm_fused_fp8
-
+from std.gpu.primitives.grid_controls import PDLLevel
 from .reshape import reshape
 
 comptime _APPLE_STATIC_SHMEM_MAX_BYTES = 32 * 1024
@@ -1185,6 +1185,7 @@ def rms_norm_gpu[
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[dtype, ...],
@@ -1263,7 +1264,7 @@ def rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
         elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = rms_norm_gpu_warp_tiling[
@@ -1283,7 +1284,7 @@ def rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
         elif (
             cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
@@ -1306,7 +1307,7 @@ def rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
         else:
             comptime kernel = rms_norm_gpu_block[
@@ -1326,7 +1327,7 @@ def rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
     else:
         comptime kernel = rms_norm_gpu_block[
@@ -1346,7 +1347,7 @@ def rms_norm_gpu[
             cols,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
