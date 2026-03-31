@@ -19,7 +19,7 @@ from std.sys import (
     has_nvidia_gpu_accelerator,
     size_of,
 )
-from std.ffi import external_call
+from std.ffi import external_call, _get_global_or_null
 
 from std.gpu import WARP_SIZE
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -568,12 +568,10 @@ def get_hilbert_lut_with_cache(
     var key_str = String("hilbert_lut_", grid_x, "_", grid_y)
 
     # use runtime lookup since key is computed at runtime
-    var cached_ptr = external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
-    ](StringSlice(key_str).unsafe_ptr(), key_str.byte_length())
+    var cached_ptr = _get_global_or_null(key_str)
 
     if cached_ptr:
-        var device_ptr = cached_ptr.bitcast[UInt32]()
+        var device_ptr = cached_ptr.unsafe_value().bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
         return DeviceBuffer[DType.uint32](

@@ -25,7 +25,7 @@ from layout.tile_tensor import row_major
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of
-from std.ffi import external_call
+from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
@@ -41,16 +41,6 @@ from shmem.ep_comm import (
     router_weights_wrapper_type,
     input_scales_wrapper_type,
 )
-
-
-# This should eventually be moved to ffi.mojo with a more general global cache method
-# cache key is a string and cache value is a pointer.
-@always_inline
-def global_cache_lookup(key: String) -> OpaquePointer[ExternalOrigin[mut=True]]:
-    return external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull",
-        OpaquePointer[ExternalOrigin[mut=True]],
-    ](key.unsafe_ptr(), key.byte_length())
 
 
 @always_inline
@@ -201,7 +191,7 @@ def ep_dispatch_async_kernel_api[
             var cached_module_key = String(t"EP_DISPATCH_INITED_DEV_{gpu_id}")
 
             # Don't initialize the module repeatedly
-            if not Int(global_cache_lookup(cached_module_key)):
+            if not _get_global_or_null(cached_module_key):
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
@@ -515,7 +505,7 @@ def ep_fused_dispatch_kernel_api[
             )
 
             # Don't initialize the module repeatedly
-            if not Int(global_cache_lookup(cached_module_key)):
+            if not _get_global_or_null(cached_module_key):
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
@@ -686,7 +676,7 @@ def ep_combine_async_kernel_api[
             var cached_module_key = String(t"EP_COMBINE_INITED_DEV_{gpu_id}")
 
             # Don't initialize the module repeatedly
-            if not Int(global_cache_lookup(cached_module_key)):
+            if not _get_global_or_null(cached_module_key):
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
@@ -996,7 +986,7 @@ def ep_fused_combine_kernel_api[
             )
 
             # Don't initialize the module repeatedly
-            if not Int(global_cache_lookup(cached_module_key)):
+            if not _get_global_or_null(cached_module_key):
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,

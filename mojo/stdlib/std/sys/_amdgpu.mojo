@@ -23,6 +23,7 @@ from std.sys.intrinsics import (
 
 from std.gpu.primitives.id import lane_id_uint as lane_id
 from std.memory import Span
+from std.memory._nonnull import NonNullUnsafePointer, _Null
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -55,14 +56,13 @@ struct amd_signal_t(Copyable):
 
 @always_inline
 def update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
-    var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
-        UnsafePointer[
-            UInt64, MutExternalOrigin, address_space=AddressSpace.GLOBAL
-        ]
-    ]()[]
-    if mb:
+    var mb = sig[].event_mailbox_ptr
+    if Int(mb) != Int(_Null[address_space=AddressSpace.GLOBAL]()):
+        var mb_ptr = UnsafePointer[
+            UInt64, ExternalOrigin[mut=True], address_space=AddressSpace.GLOBAL
+        ](unsafe_from_address=Int(mb))
         var id = sig[].event_id.cast[DType.uint64]()
-        Atomic.store(mb, id)
+        Atomic.store(mb_ptr, id)
         sendmsg(1 | (0 << 4), readfirstlane(id.cast[DType.int32]()) & 0xFF)
 
 

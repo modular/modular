@@ -3318,21 +3318,20 @@ def _get_cudnn_meta(
     var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
 
     # Get or create the per-device cache dictionary.
-    if ptr_meta := _get_global_or_null(cache_key).bitcast[CuDNNConvMeta]():
-        check_cudnn_error(
-            cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
-        )
-        return ptr_meta
+    if ptr_meta := _get_global_or_null(cache_key):
+        var ptr = ptr_meta.unsafe_value().bitcast[CuDNNConvMeta]()
+        check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
+        return ptr
 
-    ptr_meta = alloc[CuDNNConvMeta](1)
-    ptr_meta.init_pointee_move(CuDNNConvMeta())
+    var new_ptr_meta = alloc[CuDNNConvMeta](1)
+    new_ptr_meta.init_pointee_move(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
-        ptr_meta.bitcast[NoneType](),
+        new_ptr_meta.bitcast[NoneType](),
     )
 
-    return ptr_meta
+    return new_ptr_meta
 
 
 def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
@@ -3434,13 +3433,10 @@ def _get_cached_cudnn_meta_nhwc_full(
 ) raises -> UnsafePointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
     var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
 
-    if ptr_meta := _get_global_or_null(cache_key).bitcast[
-        CachedCuDNNMetaNHWCFull
-    ]():
-        check_cudnn_error(
-            cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
-        )
-        return ptr_meta
+    if ptr_meta := _get_global_or_null(cache_key):
+        var ptr = ptr_meta.unsafe_value().bitcast[CachedCuDNNMetaNHWCFull]()
+        check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
+        return ptr
 
     var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull](1)
     new_ptr_meta.init_pointee_move(CachedCuDNNMetaNHWCFull())
@@ -3779,11 +3775,10 @@ def _get_cached_miopen_meta(
 ) raises -> UnsafePointer[CachedMIOpenMeta, AnyOrigin[mut=True]]:
     var cache_key = "MIOPEN_CACHED_META_" + String(ctx.id())
 
-    if ptr_meta := _get_global_or_null(cache_key).bitcast[CachedMIOpenMeta]():
-        check_miopen_error(
-            miopenSetStream(ptr_meta[].handle, HIP(ctx.stream()))
-        )
-        return ptr_meta
+    if ptr_meta := _get_global_or_null(cache_key):
+        var ptr = ptr_meta.unsafe_value().bitcast[CachedMIOpenMeta]()
+        check_miopen_error(miopenSetStream(ptr[].handle, HIP(ctx.stream())))
+        return ptr
 
     var new_ptr_meta = alloc[CachedMIOpenMeta](1)
     new_ptr_meta.init_pointee_move(CachedMIOpenMeta())

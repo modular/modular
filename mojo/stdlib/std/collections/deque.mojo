@@ -901,7 +901,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             offset = self._physical_index(self._head + i)
             (new_data + i).init_pointee_move_from(self._data + offset)
 
-        if self._data:
+        if self._capacity > 0:
             self._data.free()
 
         self._data = new_data
@@ -942,7 +942,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._head = 0
         self._tail = deque_len
 
-        if self._data:
+        if self._capacity > 0:
             self._data.free()
         self._data = new_data
         self._capacity = new_capacity
