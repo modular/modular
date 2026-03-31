@@ -19,6 +19,7 @@ They don't otherwise make any attempt at coverage, edge cases, or correctness.
 import os
 from pathlib import Path
 
+import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
@@ -30,6 +31,39 @@ DEVICE = Accelerator() if accelerator_count() else CPU()
 
 moe_create_indices = F.functional(kernels.moe_create_indices)
 scatter_set_constant = F.functional(kernels.scatter_set_constant)
+
+
+def _reference_flash_attention(
+    q: np.ndarray,
+    k: np.ndarray,
+    v: np.ndarray,
+    *,
+    mask_variant: kernels.MHAMaskVariant,
+    scale: float,
+) -> np.ndarray:
+    q_heads = np.transpose(q.astype(np.float32), (0, 2, 1, 3))
+    k_heads = np.transpose(k.astype(np.float32), (0, 2, 1, 3))
+    v_heads = np.transpose(v.astype(np.float32), (0, 2, 1, 3))
+
+    scores = np.matmul(q_heads, np.swapaxes(k_heads, -1, -2)) * scale
+
+    if mask_variant == kernels.MHAMaskVariant.CAUSAL_MASK:
+        causal_mask = np.triu(
+            np.ones((q.shape[1], k.shape[1]), dtype=bool),
+            k=1,
+        )
+        scores = np.where(causal_mask[None, None, :, :], -10000.0, scores)
+    elif mask_variant != kernels.MHAMaskVariant.NULL_MASK:
+        raise AssertionError(
+            f"unsupported mask variant in test: {mask_variant}"
+        )
+
+    scores -= np.max(scores, axis=-1, keepdims=True)
+    probs = np.exp(scores)
+    probs /= np.sum(probs, axis=-1, keepdims=True)
+
+    output = np.matmul(probs, v_heads)
+    return np.transpose(output, (0, 2, 1, 3)).astype(q.dtype, copy=False)
 
 
 @pytest.fixture
@@ -170,3 +204,89 @@ def test_custom_helper_function_pattern(
 
     assert result.real
     assert result.shape == x.shape
+
+
+@pytest.mark.parametrize(
+    "mask_variant",
+    [
+        kernels.MHAMaskVariant.NULL_MASK,
+        kernels.MHAMaskVariant.CAUSAL_MASK,
+    ],
+)
+def test_flash_attention_gpu_cpu_fallback(
+    mask_variant: kernels.MHAMaskVariant,
+) -> None:
+    batch, seq_len, num_heads, head_dim = 1, 8, 2, 16
+    scale = 0.25
+
+    rng = np.random.default_rng(42)
+    q_np = rng.standard_normal((batch, seq_len, num_heads, head_dim)).astype(
+        np.float32
+    )
+    k_np = rng.standard_normal((batch, seq_len, num_heads, head_dim)).astype(
+        np.float32
+    )
+    v_np = rng.standard_normal((batch, seq_len, num_heads, head_dim)).astype(
+        np.float32
+    )
+
+    q = Tensor(q_np, device=CPU())
+    k = Tensor(k_np, device=CPU())
+    v = Tensor(v_np, device=CPU())
+
+    @F.functional
+    def run_attention(q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+        return kernels.flash_attention_gpu(
+            q,
+            k,
+            v,
+            mask_variant=mask_variant,
+            scale=scale,
+        )
+
+    output = run_attention(q, k, v)
+
+    assert output.real
+    assert output.shape == q.shape
+    assert output.dtype == q.dtype
+    np.testing.assert_allclose(
+        np.from_dlpack(output),
+        _reference_flash_attention(
+            q_np,
+            k_np,
+            v_np,
+            mask_variant=mask_variant,
+            scale=scale,
+        ),
+        rtol=1e-4,
+        atol=1e-4,
+    )
+
+
+def test_flash_attention_gpu_rejects_valid_length_on_cpu() -> None:
+    q = Tensor.ones([1, 8, 2, 16], dtype=DType.float32, device=CPU())
+    k = Tensor.ones([1, 8, 2, 16], dtype=DType.float32, device=CPU())
+    v = Tensor.ones([1, 8, 2, 16], dtype=DType.float32, device=CPU())
+    valid_length = Tensor([8], dtype=DType.uint32, device=CPU())
+
+    @F.functional
+    def run_attention(
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        valid_length: Tensor,
+    ) -> Tensor:
+        return kernels.flash_attention_gpu(
+            q,
+            k,
+            v,
+            mask_variant=kernels.MHAMaskVariant.NULL_MASK,
+            scale=0.25,
+            valid_length=valid_length,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="padded CPU fallback is not implemented",
+    ):
+        run_attention(q, k, v, valid_length)

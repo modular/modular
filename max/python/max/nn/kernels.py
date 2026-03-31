@@ -1851,7 +1851,7 @@ def flash_attention_gpu(
     local_window_size: int = -1,
     valid_length: TensorValue | None = None,
 ) -> TensorValue:
-    """Computes flash attention using GPU-optimized kernel.
+    """Computes flash attention using the accelerator kernel or CPU fallback.
 
     Args:
         q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
@@ -1888,8 +1888,12 @@ def flash_attention_gpu(
             f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
         )
 
+    assert_same_device(q=q, k=k, v=v)
+
     # Validate valid_length if provided
     if valid_length is not None:
+        assert_same_device(q=q, valid_length=valid_length)
+
         if valid_length.dtype != DType.uint32:
             raise ValueError(
                 f"valid_length must have dtype uint32, got {valid_length.dtype}"
@@ -1904,6 +1908,18 @@ def flash_attention_gpu(
             raise ValueError(
                 f"valid_length batch size ({valid_length.shape[0]}) must match "
                 f"q batch size ({q.shape[0]})"
+            )
+
+        device_type = getattr(q.device, "device_type", None)
+        if device_type is not None:
+            is_host_device = device_type.value == "cpu"
+        else:
+            is_host_device = getattr(q.device, "is_host", False)
+
+        if is_host_device:
+            raise ValueError(
+                "flash_attention_gpu does not support valid_length on CPU; "
+                "padded CPU fallback is not implemented"
             )
 
     parameters = _mha_parameters(

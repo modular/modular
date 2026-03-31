@@ -5353,16 +5353,17 @@ struct MaskedFlashAttentionGPU:
 struct FlashAttentionGPU:
     @staticmethod
     def execute[
+        dtype: DType,
         rank: Int,
         //,
         target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
-        output: OutputTensor[rank=rank, ...],
-        q: InputTensor[rank=rank, ...],
-        k: InputTensor[rank=rank, ...],
-        v: InputTensor[rank=rank, ...],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        q: InputTensor[dtype=dtype, rank=rank, ...],
+        k: InputTensor[dtype=dtype, rank=rank, ...],
+        v: InputTensor[dtype=dtype, rank=rank, ...],
         scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -5406,8 +5407,6 @@ struct FlashAttentionGPU:
         The underlying fusion follows ideas taken from the 2022 FlashAttention paper
         by Tri Dao et al.
         """
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
         var output_buffer = output.to_layout_tensor()
         var q_buffer = q.to_layout_tensor()
         var k_buffer = k.to_layout_tensor()
@@ -5416,15 +5415,58 @@ struct FlashAttentionGPU:
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
         def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
-            flash_attention[](
-                output_buffer,
-                q_buffer,
-                k_buffer,
-                v_buffer,
-                mask,
-                scale,
-                ctx[],
-            )
+            comptime if is_cpu[target]():
+
+                @parameter
+                @always_inline
+                def k_input_fn[
+                    width: Int, _rank: Int
+                ](coords: IndexList[_rank]) -> SIMD[q_buffer.dtype, width]:
+                    return rebind[SIMD[q_buffer.dtype, width]](
+                        k_buffer.get_immutable().load[width=width](
+                            rebind[IndexList[rank]](coords)
+                        )
+                    )
+
+                @parameter
+                @always_inline
+                def v_input_fn[
+                    width: Int, _rank: Int
+                ](coords: IndexList[_rank]) -> SIMD[q_buffer.dtype, width]:
+                    return rebind[SIMD[q_buffer.dtype, width]](
+                        v_buffer.get_immutable().load[width=width](
+                            rebind[IndexList[rank]](coords)
+                        )
+                    )
+
+                @parameter
+                @always_inline
+                def mask_input_fn[
+                    width: Int, _rank: Int
+                ](coords: IndexList[_rank]) -> SIMD[q_buffer.dtype, width]:
+                    return mask.mask(
+                        rebind[IndexList[4]](coords),
+                        SIMD[q_buffer.dtype, width](0),
+                    )
+
+                nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
+                    q_buffer.get_immutable(),
+                    k.shape(),
+                    v.shape(),
+                    IndexList[4](),
+                    output.to_layout_tensor(),
+                    scale,
+                )
+            else:
+                flash_attention[](
+                    output_buffer,
+                    q_buffer,
+                    k_buffer,
+                    v_buffer,
+                    mask,
+                    scale,
+                    ctx[],
+                )
 
         dispatch_mask[
             mask_str,
