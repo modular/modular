@@ -60,6 +60,8 @@ class Flux2KleinModelInputs(Flux2ModelInputs):
 class Flux2KleinPipeline(Flux2Pipeline):
     """Flux2 Klein diffusion pipeline with a bridged Qwen3 text encoder."""
 
+    text_encoder: Qwen3TextEncoderKleinModel  # type: ignore[assignment]
+
     components = {
         "vae": Flux2Pipeline.components["vae"],
         "text_encoder": Qwen3TextEncoderKleinModel,
@@ -77,40 +79,37 @@ class Flux2KleinPipeline(Flux2Pipeline):
         """Compile the CFG combine formula with symbolic shapes."""
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
-        self.cfg_combine = cast(
-            Any,
-            max_compile(
-                self.cfg_combine,
-                input_types=[
-                    TensorType(
-                        dtype,
-                        shape=["batch", "seq", "channels"],
-                        device=device,
-                    ),
-                    TensorType(
-                        dtype,
-                        shape=["batch", "seq", "channels"],
-                        device=device,
-                    ),
-                    TensorType(DType.float32, shape=[], device=device),
-                ],
-            ),
-        )
 
-    def cfg_combine(
-        self,
-        noise_pred: TensorValue,
-        neg_noise_pred: TensorValue,
-        guidance_scale: TensorValue,
-    ) -> TensorValue:
-        """Apply CFG formula in f32 before casting back to the model dtype."""
-        input_dtype = noise_pred.dtype
-        noise_pred_f32 = ops.cast(noise_pred, DType.float32)
-        neg_noise_pred_f32 = ops.cast(neg_noise_pred, DType.float32)
-        diff = noise_pred_f32 - neg_noise_pred_f32
-        scaled = guidance_scale * diff
-        result = neg_noise_pred_f32 + scaled
-        return ops.cast(result, input_dtype)
+        def _cfg_combine(
+            noise_pred: TensorValue,
+            neg_noise_pred: TensorValue,
+            guidance_scale: TensorValue,
+        ) -> TensorValue:
+            """Apply CFG formula in f32 before casting back to the model dtype."""
+            input_dtype = noise_pred.dtype
+            noise_pred_f32 = ops.cast(noise_pred, DType.float32)
+            neg_noise_pred_f32 = ops.cast(neg_noise_pred, DType.float32)
+            diff = noise_pred_f32 - neg_noise_pred_f32
+            scaled = guidance_scale * diff
+            result = neg_noise_pred_f32 + scaled
+            return ops.cast(result, input_dtype)
+
+        self.cfg_combine = max_compile(
+            _cfg_combine,
+            input_types=[
+                TensorType(
+                    dtype,
+                    shape=["batch", "seq", "channels"],
+                    device=device,
+                ),
+                TensorType(
+                    dtype,
+                    shape=["batch", "seq", "channels"],
+                    device=device,
+                ),
+                TensorType(DType.float32, shape=[], device=device),
+            ],
+        )
 
     @traced(message="Flux2KleinPipeline.prepare_inputs")
     def prepare_inputs(self, context: PixelContext) -> Flux2KleinModelInputs:  # type: ignore[override]
