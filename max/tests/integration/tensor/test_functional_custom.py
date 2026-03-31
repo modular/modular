@@ -18,11 +18,13 @@ They don't otherwise make any attempt at coverage, edge cases, or correctness.
 
 import os
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental import realization_context as rc
 from max.experimental.tensor import Tensor
 from max.nn import kernels
 
@@ -123,29 +125,44 @@ def test_custom_with_string_path(kernel_verification_ops_path: Path) -> None:
 def test_custom_extensions_cached_across_calls(
     kernel_verification_ops_path: Path,
 ) -> None:
-    """Test that custom_extensions are cached and not reloaded on every call."""
-    x = Tensor.ones([64], dtype=DType.float32, device=CPU())
-    y = Tensor.ones([64], dtype=DType.float32, device=CPU())
+    """Test that identical eager custom op calls reuse compiled models."""
+    x = Tensor.ones([65], dtype=DType.float32, device=CPU())
+    y = Tensor.ones([65], dtype=DType.float32, device=CPU())
 
-    # First call
-    result1 = F.custom(
-        "my_add",
-        device=CPU(),
-        values=[x, y],
-        out_types=[x.type],
-        custom_extensions=kernel_verification_ops_path,
-    )
-    assert result1[0].real
+    session = rc._session()
+    real_load = session.load
+    load_count = 0
+    with rc._EAGER_MODEL_CACHE_LOCK:
+        rc._EAGER_MODEL_CACHE.clear()
 
-    # Second call - should use cached extension
-    result2 = F.custom(
-        "my_add",
-        device=CPU(),
-        values=[x, y],
-        out_types=[x.type],
-        custom_extensions=kernel_verification_ops_path,
-    )
-    assert result2[0].real
+    def counted_load(*args, **kwargs):  # noqa: ANN202
+        nonlocal load_count
+        load_count += 1
+        return real_load(*args, **kwargs)
+
+    with (
+        mock.patch.dict(os.environ, {"MAX_USE_EAGER_INTERPRETER": "0"}),
+        mock.patch.object(session, "load", side_effect=counted_load),
+    ):
+        result1 = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x, y],
+            out_types=[x.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result1[0].real
+
+        result2 = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x, y],
+            out_types=[x.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result2[0].real
+
+    assert load_count == 1
 
 
 def test_custom_helper_function_pattern(

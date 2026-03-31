@@ -47,8 +47,11 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import weakref
+from collections import OrderedDict
 from contextvars import ContextVar
+from pathlib import Path
 from types import TracebackType
 from typing import Any, TypeVar
 
@@ -71,6 +74,12 @@ Ex = TypeVar("Ex", bound=BaseException)
 
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
 _SEED: Tensor | None = None
+_EAGER_MODEL_CACHE_MAX_SIZE = 128
+_EAGER_MODEL_CACHE_LOCK = threading.Lock()
+_EAGER_MODEL_CACHE: OrderedDict[
+    tuple[int, str, tuple[str, ...]],
+    engine.Model,
+] = OrderedDict()
 
 # Environment variable to control interpreter usage.
 # Set to "0" or "false" to disable the interpreter (always compile).
@@ -158,6 +167,43 @@ def _session() -> engine.api.InferenceSession:
     if not (session := _SESSION.get(None)):
         _SESSION.set(session := engine.api.InferenceSession(devices=devices))
     return session
+
+
+def _eager_model_cache_key(
+    session: engine.api.InferenceSession, graph: Graph
+) -> tuple[int, str, tuple[str, ...]]:
+    module_asm = graph._module.operation.get_asm(
+        assume_verified=True,
+        enable_debug_info=False,
+        pretty_debug_info=False,
+        use_local_scope=True,
+    )
+    return (
+        id(session),
+        module_asm,
+        tuple(
+            str(Path(path).resolve()) for path in graph.kernel_libraries_paths
+        ),
+    )
+
+
+def _load_eager_model(graph: Graph) -> engine.Model:
+    """Reuses compiled eager models for identical custom-extension graphs."""
+    session = _session()
+    if not graph.kernel_libraries_paths:
+        return session.load(graph)
+
+    key = _eager_model_cache_key(session, graph)
+    with _EAGER_MODEL_CACHE_LOCK:
+        if model := _EAGER_MODEL_CACHE.get(key):
+            _EAGER_MODEL_CACHE.move_to_end(key)
+            return model
+
+        model = session.load(graph)
+        _EAGER_MODEL_CACHE[key] = model
+        if len(_EAGER_MODEL_CACHE) > _EAGER_MODEL_CACHE_MAX_SIZE:
+            _EAGER_MODEL_CACHE.popitem(last=False)
+        return model
 
 
 class EagerRealizationContext(RealizationContext):
@@ -299,7 +345,7 @@ class EagerRealizationContext(RealizationContext):
                 )
         if not use_interpreter:
             # Compile and execute graph
-            model = _session().load(graph)
+            model = _load_eager_model(graph)
             # Inputs may have been removed by optimization
             inputs = [self.sources[input._mlir_value] for input in graph.inputs]
             # This will become an await when `model` supports it
