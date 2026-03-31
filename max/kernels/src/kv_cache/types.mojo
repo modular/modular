@@ -43,6 +43,7 @@ from layout import (
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
     TMATensorTile,
+    _gather4_box_width,
     create_split_tma,
     create_tma_tile_gather4,
     RaggedTMA3DTile,
@@ -405,14 +406,22 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.dtype,
         2,
-        tile_shape=IndexList[2](4, row_width),
-        desc_shape=IndexList[2](1, row_width),
+        tile_shape=IndexList[2](
+            4,
+            _gather4_box_width[Self.dtype, row_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[Self.dtype, row_width, swizzle_mode](),
+        ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
         The descriptor views the KV cache as a flat 2D matrix of
         ``[num_kv_rows, row_width]`` and is configured for gather4 operations
-        that load 4 non-contiguous rows per TMA instruction.
+        that load 4 non-contiguous rows per TMA instruction. The box width
+        is derived from the swizzle mode; for SWIZZLE_NONE it equals
+        ``row_width``.
 
         Parameters:
             row_width: Number of elements per row (innermost dimension).
@@ -423,8 +432,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
             ctx: The CUDA device context used to create the TMA descriptor.
 
         Returns:
-            A TMATensorTile with tile_shape=(4, row_width) and
-            desc_shape=(1, row_width).
+            A TMATensorTile with box width derived from the swizzle mode.
         """
         ...
 
@@ -728,14 +736,22 @@ struct ContinuousBatchingKVCache[
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.dtype,
         2,
-        tile_shape=IndexList[2](4, row_width),
-        desc_shape=IndexList[2](1, row_width),
+        tile_shape=IndexList[2](
+            4,
+            _gather4_box_width[Self.dtype, row_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[Self.dtype, row_width, swizzle_mode](),
+        ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
         The descriptor views the KV cache as a flat 2D matrix of
         ``[num_kv_rows, row_width]`` and is configured for gather4 operations
-        that load 4 non-contiguous rows per TMA instruction.
+        that load 4 non-contiguous rows per TMA instruction. The box width
+        is derived from the swizzle mode; for SWIZZLE_NONE it equals
+        ``row_width``.
 
         Parameters:
             row_width: Number of elements per row (innermost dimension).
@@ -746,8 +762,7 @@ struct ContinuousBatchingKVCache[
             ctx: The CUDA device context used to create the TMA descriptor.
 
         Returns:
-            A TMATensorTile with tile_shape=(4, row_width) and
-            desc_shape=(1, row_width).
+            A TMATensorTile with box width derived from the swizzle mode.
         """
         return create_tma_tile_gather4[Self.dtype, row_width, swizzle_mode](
             ctx, self.blocks.ptr, self.num_kv_rows()
@@ -1083,14 +1098,22 @@ struct PagedKVCache[
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.dtype,
         2,
-        tile_shape=IndexList[2](4, row_width),
-        desc_shape=IndexList[2](1, row_width),
+        tile_shape=IndexList[2](
+            4,
+            _gather4_box_width[Self.dtype, row_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[Self.dtype, row_width, swizzle_mode](),
+        ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
         The descriptor views the KV cache as a flat 2D matrix of
         ``[num_kv_rows, row_width]`` and is configured for gather4 operations
-        that load 4 non-contiguous rows per TMA instruction.
+        that load 4 non-contiguous rows per TMA instruction. The box width
+        is derived from the swizzle mode; for SWIZZLE_NONE it equals
+        ``row_width``.
 
         Parameters:
             row_width: Number of elements per row (innermost dimension).
@@ -1101,8 +1124,7 @@ struct PagedKVCache[
             ctx: The CUDA device context used to create the TMA descriptor.
 
         Returns:
-            A TMATensorTile with tile_shape=(4, row_width) and
-            desc_shape=(1, row_width).
+            A TMATensorTile with box width derived from the swizzle mode.
         """
         return create_tma_tile_gather4[Self.dtype, row_width, swizzle_mode](
             ctx, self.blocks.ptr, self.num_kv_rows()
