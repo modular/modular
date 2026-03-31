@@ -30,12 +30,13 @@ hardware capabilities:
 
 from std.collections import InlineArray
 from std.math import ceildiv
-from std.sys import simd_width_of
+from std.sys import simd_width_of, align_of
 
 from layout import TileTensor
 from layout.tile_layout import TensorLayout
 from std.memory import UnsafePointer
 from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     global_idx_uint as global_idx,
     grid_dim_uint as grid_dim,
@@ -44,7 +45,14 @@ from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from std.utils import StaticTuple
 
-from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
+from .reducescatter import _target_address_space
+from .sync import (
+    MAX_GPUS,
+    Signal,
+    _multi_gpu_barrier,
+    is_p2p_enabled,
+    circular_add,
+)
 
 
 @always_inline
@@ -98,6 +106,9 @@ def _allgather_naive[
         )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
+)
 def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
@@ -118,27 +129,50 @@ def _allgather_p2p_kernel[
     Uses round-robin access pattern to balance NVLink traffic.
     """
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * UInt(BLOCK_SIZE)
     var my_sig = rank_sigs[my_rank]
+
+    var src_ptrs_rr = InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
+    ](uninitialized=True)
+    var out_ptrs_rr = InlineArray[
+        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
+    ](uninitialized=True)
+    var lengths_rr = InlineArray[Int, ngpus](uninitialized=True)
+    for i in range(ngpus):
+        var target = circular_add[ngpus](my_rank, i)
+        src_ptrs_rr[i] = src_ptrs[target]
+        out_ptrs_rr[i] = outputs[target]
+        lengths_rr[i] = lengths[target]
 
     # Synchronize before reading.
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
     # Copy data from each source GPU to corresponding output buffer.
     # outputs[i] should contain data from GPU i.
-    comptime for src_gpu in range(ngpus):
-        var length = lengths[src_gpu]
+    comptime for gpu_idx in range(ngpus):
+        var length = lengths_rr[gpu_idx]
         var num_simd_vectors, remainder = divmod(length, simd_width)
 
         # Grid-strided loop for this source (vectorized).
         for idx in range(Int(global_tid), num_simd_vectors, Int(stride)):
             var elem_idx = idx * simd_width
             # Read directly from source GPU.
-            var data = src_ptrs[src_gpu].load[width=simd_width](elem_idx)
+            var data = (
+                src_ptrs_rr[gpu_idx]
+                .address_space_cast[_target_address_space]()
+                .load[
+                    width=simd_width,
+                    alignment=alignment,
+                ](elem_idx)
+            )
             # Write to output buffer for this source GPU.
-            outputs[src_gpu].store(elem_idx, data)
+            out_ptrs_rr[gpu_idx].address_space_cast[
+                _target_address_space
+            ]().store[width=simd_width, alignment=alignment](elem_idx, data)
 
         # Handle remainder elements with scalar operations.
         if remainder > 0:
@@ -147,7 +181,9 @@ def _allgather_p2p_kernel[
             if global_tid < UInt(WARP_SIZE):
                 for i in range(Int(global_tid), remainder, WARP_SIZE):
                     var elem_idx = tail_start + i
-                    outputs[src_gpu][elem_idx] = src_ptrs[src_gpu][elem_idx]
+                    out_ptrs_rr[gpu_idx][elem_idx] = src_ptrs_rr[gpu_idx][
+                        elem_idx
+                    ]
 
     # Synchronize after writing.
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
