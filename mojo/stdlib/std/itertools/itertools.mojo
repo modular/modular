@@ -104,9 +104,6 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.IteratorTypeA, Copyable):
-        # TODO(MOCO-3535): Remove once `where` clauses support multiple
-        # `conforms_to` constraints, allowing us to require
-        # `conforms_to(Self.IteratorTypeA.Element, Copyable)` directly.
         comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
 
         self._inner_a = rebind_var[Self.IteratorTypeA](
@@ -255,6 +252,10 @@ struct _Product3[
         return self.copy()
 
     def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
+        comptime assert conforms_to(Self.IteratorTypeB.Element, Copyable)
+        comptime assert conforms_to(Self.IteratorTypeC.Element, Copyable)
+
         var nested = next(self._inner)  # Returns (a, (b, c))
         var a = rebind_var[Self.IteratorTypeA.Element](
             trait_downcast[Copyable](nested[0]).copy()
@@ -373,6 +374,11 @@ struct _Product4[
         return self.copy()
 
     def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
+        comptime assert conforms_to(Self.IteratorTypeB.Element, Copyable)
+        comptime assert conforms_to(Self.IteratorTypeC.Element, Copyable)
+        comptime assert conforms_to(Self.IteratorTypeD.Element, Copyable)
+
         var nested = next(self._inner)  # Returns (a, (b, c, d))
         # Flatten to (a, b, c, d)
 
