@@ -134,21 +134,29 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   ReturnOp::create(b, call.getResults());
 }
 
+/// Find a FuncOp in the module by its kgen.offload.kernelid LLVM metadata.
+/// Returns nullptr if no function with the given kernel ID is found.
+static FuncOp findFuncByKernelId(ModuleOp module, uint64_t kernelId) {
+  for (auto func : module.getOps<FuncOp>()) {
+    if (auto meta = func.getLLVMMetadataAttr()) {
+      if (auto idAttr = meta.get("kgen.offload.kernelid")) {
+        if (cast<IntegerAttr>(idAttr).getInt() ==
+            static_cast<int64_t>(kernelId))
+          return func;
+      }
+    }
+  }
+  return {};
+}
+
 /// HACK HACK HACK https://github.com/modularml/modular/issues/22959
 /// HACK: Read out the magic attribute used to propagate captures across device
 /// boundaries, generate the capture function, and write them into the buffer.
 static std::tuple<OwningOpRef<FuncOp>, unsigned, mlir::DenseI64ArrayAttr>
-writeCaptureArgs(ModuleOp module, StringAttr name) {
-  // First, go find the elaborated instance of the function.
-  FuncOp sliced;
-  for (auto func : module.getOps<FuncOp>()) {
-    if (func.getSymNameAttr() == name.getValue()) {
-      sliced = func;
-      break;
-    }
-  }
+writeCaptureArgs(ModuleOp module, FuncOp sliced) {
   // This is held together with duct tape, so check the invariant.
   assert(sliced && sliced.isExported() && "expected a sliced function");
+  StringAttr name = sliced.getSymNameAttr();
   ArrayRef<StringAttr> captures = sliced.getCrossDeviceCaptures();
 
   // The location to use for generated code. Remove all debuginfo from it.
@@ -289,10 +297,23 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
 
-  // If there are input parameters, we have to go generate a stub to root
-  // instantiation of the generator. Go find the cloned generator.
-  if (!symbol.getParamValues().empty())
-    generateInstantiateStub(func, symbol, name, mapping);
+  // Tag the entry generator with a kernel ID so we can find the resulting
+  // FuncOp after elaboration (which may rename symbols for GPU targets).
+  static constexpr uint64_t kAsmEntryKernelId = 0;
+  if (!symbol.getParamValues().empty()) {
+    generateInstantiateStub(func, symbol, name, mapping, /*symtab=*/nullptr,
+                            kAsmEntryKernelId);
+  } else {
+    GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
+    ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
+    SmallVector<Attribute> metadataArray =
+        llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
+    metadataArray.push_back(
+        StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"));
+    metadataArray.push_back(b.getIndexAttr(kAsmEntryKernelId));
+    sliced.setLLVMMetadataArrayAttr(
+        ArrayAttr::get(sliced.getContext(), metadataArray));
+  }
 
   // Run elaboration through to the end of the optimization pipeline.
   mlir::PassManager pm(target.getContext());
@@ -307,8 +328,13 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
+  // Find the entry function by kernel ID (robust against GPU name
+  // sanitization).
+  FuncOp entryFunc = findFuncByKernelId(*module, kAsmEntryKernelId);
+  if (!entryFunc)
+    return Error("internal error: cannot find kernel by its ID");
   auto [capturesFunc, numCaptures, captureSizes] =
-      writeCaptureArgs(*module, name);
+      writeCaptureArgs(*module, entryFunc);
 
   // Handle the emission options.
   ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
@@ -556,9 +582,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       for (auto [op, symbols] : offloadInfo.symbols) {
         for (auto [symbol, kernel] : symbols) {
-
+          FuncOp kernelFunc = findFuncByKernelId(*module, kernel.kernelId);
+          if (!kernelFunc)
+            return Error("internal error: cannot find kernel by its ID");
           auto [capturesFunc, numCaptures, captureSizes] =
-              writeCaptureArgs(*module, kernel.name);
+              writeCaptureArgs(*module, kernelFunc);
 
           // Use the user-visible source name for the offload output filename
           // when available; fall back to the mangled symbol name otherwise.

@@ -15,7 +15,6 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -1256,38 +1255,6 @@ void LowerKGENToLLVMPass::runOnOperation() {
     mlir::emitError(theModule.getLoc(),
                     "could not find an enclosing target specification");
     return signalPassFailure();
-  }
-
-  // HACK HACK HACK: Our current name mangling scheme is not compatible with the
-  // GPU backends. Change the symbol names to be compatible.
-  if (targetInfo.isGPU()) {
-    DenseMap<StringAttr, StringAttr> renamed;
-    for (auto symbol : getOperation().getOps<mlir::SymbolOpInterface>()) {
-      StringAttr name = symbol.getNameAttr();
-      StringAttr sanitized = sanitizeSymbolToAlnum(symbol.getNameAttr());
-      if (name != sanitized) {
-        renamed.try_emplace(name, sanitized);
-        symbol.setName(sanitized);
-        if (auto funcOp =
-                dyn_cast<mlir::FunctionOpInterface>(symbol.getOperation()))
-          DebugInfo::updateSubprogram(funcOp, sanitized);
-      }
-    }
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&renamed](FlatSymbolRefAttr symbol) {
-      if (auto it = renamed.find(symbol.getAttr()); it != renamed.end())
-        return FlatSymbolRefAttr::get(it->second);
-      return symbol;
-    });
-    auto workFn = [](mlir::AttrTypeReplacer &replacer, Operation *op) {
-      replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
-                                            /*replaceLocs=*/false,
-                                            /*replaceTypes=*/false);
-    };
-    std::vector<Operation *> work;
-    for (Operation &op : getOperation().getOps())
-      work.push_back(&op);
-    parallelForEach(&getContext(), work, workFn, replacer);
   }
 
   POPToLLVMTypeConverter typeConverter(targetInfo);

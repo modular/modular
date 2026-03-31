@@ -2862,6 +2862,28 @@ LogicalResult Elaborator::run(
 
   // Update the symbol table with the new one.
   theModule.getBodyRegion().push_back(newBlock);
+
+  // For GPU targets, sanitize function symbol names to be compatible with GPU
+  // backends that only accept alphanumeric characters (and valid identifier
+  // starts). sanitizeSymbolToAlnum handles both non-alnum characters and
+  // leading digits. We collect renames into a map so replaceSymNames can
+  // update all references.
+  // Only function symbols are sanitized — struct instance symbols are purely
+  // type-level metadata that get erased after elaboration. Sanitizing them
+  // would cause instref type mismatches when GPU-compiled function types are
+  // plugged back into the host module via rewriteCompileOffloadOp.
+  if (target.isGPU()) {
+    for (auto func : theModule.getOps<FuncOp>()) {
+      StringAttr name = func.getNameAttr();
+      StringAttr sanitized = sanitizeSymbolToAlnum(name);
+      if (name != sanitized) {
+        symToRename[FlatSymbolRefAttr::get(name)] = sanitized;
+        func.setName(sanitized);
+        DebugInfo::updateSubprogram(func, sanitized);
+      }
+    }
+  }
+
   replaceSymNames(theModule, symToRename);
 
   theModule.walk([&](Operation *op) {
