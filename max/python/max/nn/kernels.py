@@ -36,7 +36,12 @@ from max.graph import (
 from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    WeightScaleSpec,
+)
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import (
@@ -3529,6 +3534,84 @@ def grouped_matmul_ragged(
     )[0].tensor
 
     return output
+
+
+def grouped_matmul_ragged_quantized(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    usage_stats: TensorValue,
+    quant_config: QuantConfig,
+) -> TensorValue:
+    """Single entry point for quantized grouped matmuls used by MoE layers.
+
+    Dispatches to the appropriate grouped matmul implementation based on
+    ``quant_config.format``.
+
+    Args:
+        x: Input activations in BF16.
+        weight: Expert weight tensor in storage layout.
+        weight_scale: Weight scale tensor in storage layout.
+        expert_start_indices: Starting index of each expert's token group.
+        expert_ids: Expert identifier for each active expert group.
+        usage_stats: Per-expert usage statistics.
+        quant_config: Quantization configuration for the expert weights.
+
+    Returns:
+        The grouped matmul output tensor in BF16.
+    """
+    cpu_usage_stats = usage_stats.to(DeviceRef.CPU())
+
+    match quant_config.format:
+        case QuantFormat.MXFP4:
+            dequantized = mxfp4_dequant(
+                weight, weight_scale, out_type=DType.bfloat16
+            )
+            return grouped_matmul_ragged(
+                x,
+                dequantized,
+                expert_start_indices,
+                expert_ids,
+                cpu_usage_stats,
+            )
+        case (
+            QuantFormat.COMPRESSED_TENSORS_FP8
+            | QuantFormat.FBGEMM_FP8
+            | QuantFormat.BLOCKSCALED_FP8
+        ):
+            assert quant_config.input_scale.block_size is not None
+            input_block_size = quant_config.input_scale.block_size[1]
+
+            weight_t = weight.transpose(1, 2)
+            scale_t = weight_scale.transpose(1, 2)
+
+            x_fp8, x_scales = quantize_dynamic_scaled_float8(
+                x,
+                quant_config.input_scale,
+                quant_config.weight_scale,
+                group_size_or_per_token=input_block_size,
+                out_type=weight.dtype,
+                scales_type=quant_config.weight_scale.dtype,
+            )
+
+            return grouped_dynamic_scaled_fp8_matmul(
+                x_fp8,
+                weight_t,
+                x_scales,
+                scale_t,
+                expert_start_indices,
+                expert_ids,
+                cpu_usage_stats,
+                quant_config.input_scale,
+                quant_config.weight_scale,
+            )
+        case _:
+            raise ValueError(
+                "Unsupported quantization format for grouped matmul: "
+                f"{quant_config.format}"
+            )
 
 
 def grouped_dynamic_scaled_nvfp4_matmul(

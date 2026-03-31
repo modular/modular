@@ -32,12 +32,12 @@ from typing_extensions import Self
 
 from ..kernels import (
     grouped_matmul_ragged,
+    grouped_matmul_ragged_quantized,
     moe_create_indices,
 )
 from ..layer import Module, Shardable
 from ..linear import MLP
 from ..quant_config import QuantConfig, QuantFormat
-from ..quant_ops import quantized_grouped_matmul
 from .moe import MoEGate
 
 
@@ -674,8 +674,8 @@ class StackedMoE(Module, Shardable):
     ) -> TensorValue:
         """Runs the quantized forward pass (MXFP4 or FP8).
 
-        Delegates to ``quantized_grouped_matmul`` which dispatches to the
-        appropriate kernel based on ``quant_config.format``.
+        Delegates to ``grouped_matmul_ragged_quantized`` which dispatches to
+        the appropriate kernel based on ``quant_config.format``.
 
         Args:
             permuted_states: The input states reordered by expert assignment.
@@ -686,7 +686,7 @@ class StackedMoE(Module, Shardable):
         """
         assert self.quant_config is not None
 
-        gate_up_output = quantized_grouped_matmul(
+        gate_up_output = grouped_matmul_ragged_quantized(
             x=permuted_states,
             weight=self._gate_up_weight,
             weight_scale=self._gate_up_scale,
@@ -698,7 +698,7 @@ class StackedMoE(Module, Shardable):
 
         gated_output = self._apply_gated_activation(gate_up_output, routing)
 
-        down_output = quantized_grouped_matmul(
+        down_output = grouped_matmul_ragged_quantized(
             x=gated_output,
             weight=self._down_weight,
             weight_scale=self._down_scale,
