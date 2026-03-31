@@ -2362,3 +2362,71 @@ def _handle_avg_pool_ceil(
 ) -> Sequence[Buffer]:
     """Handle mo.avg_pool_ceil_mode_true (ceil-mode 2D average pooling)."""
     return _avg_pool_common(op, inputs, ceil_mode=True)
+
+
+# Top-K operation
+
+
+@register_op_handler(mo.TopKOp)
+def _handle_top_k(
+    op: mo.TopKOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.top_k by dispatching to Mojo top-k kernel.
+
+    Operands (per MO_SingleDeviceWithHostOperands<["k", "axis", "sorted"]>):
+      inputs[0]: input tensor (device)
+      inputs[1]: k scalar (host, int64)
+      inputs[2]: axis scalar (host, int64)
+      inputs[3]: sorted scalar (host, bool)
+
+    Returns two buffers: values (same dtype as input) and indices (int64),
+    both of shape input_shape with shape[axis] replaced by k.
+
+    Note: values are always returned in descending order; the ``sorted``
+    flag is accepted but currently ignored since the implementation always
+    sorts.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+    assert isinstance(inputs[2], Buffer)
+    assert isinstance(inputs[3], Buffer)
+
+    input_buffer = inputs[0]
+    k = int(inputs[1].to_numpy().item())
+    axis = int(inputs[2].to_numpy().item())
+
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+    if axis < 0:
+        axis += ndim
+
+    out_shape = list(in_shape)
+    out_shape[axis] = k
+
+    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
+    dim1 = in_shape[axis]
+    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+
+    out_vals = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    out_idxs = Buffer(
+        shape=out_shape,
+        dtype=DType.int64,
+        device=target_device,
+    )
+
+    ctx_ptr = target_device._device_context_ptr()
+    ops.topk_ops.TopK(
+        out_vals,
+        out_idxs,
+        input_buffer,
+        (dim0, dim1, dim2, k),
+        ctx_ptr,
+    )
+
+    return [out_vals, out_idxs]

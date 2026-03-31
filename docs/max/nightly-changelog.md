@@ -71,6 +71,9 @@ This version is still a work in progress.
   CPU and GPU support, masking tensor matrices based on a diagonal band.
 - Added `avg_pool2d` op handlers (floor and ceil mode) to the experimental
   eager interpreter with CPU and GPU support.
+- Added `top_k` op handler to the experimental eager interpreter with CPU
+  and GPU support, returning the top-k values and their original indices
+  along a specified axis.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

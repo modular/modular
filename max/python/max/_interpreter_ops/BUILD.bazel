@@ -40,6 +40,7 @@ mojo_library(
         "conv_ops",
         "split_ops",
         "tile_ops",
+        "topk_ops",
     ]
 ]
 
@@ -62,6 +63,7 @@ _SHARED_LIBS = [
     ":softmax_ops",
     ":split_ops",
     ":tile_ops",
+    ":topk_ops",
 ]
 
 # Wrap .mojo sources in a filegroup for macOS runtime compilation.
