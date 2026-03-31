@@ -49,6 +49,12 @@ class TokenGenerationSchedulerConfig:
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
 
+    num_speculative_tokens: int = 0
+    """The number of speculative tokens to generate per step.
+
+    If speculative decoding is disabled, this should be 0.
+    """
+
     kvcache_ce_watermark: float = 0.95
     """The maximum percentage of total KVCache memory that can be used after allocating a CE request. This parameter was found empirically."""
 
@@ -105,4 +111,7 @@ class TokenGenerationSchedulerConfig:
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
+            num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            if pipeline_config.speculative is not None
+            else 0,
         )

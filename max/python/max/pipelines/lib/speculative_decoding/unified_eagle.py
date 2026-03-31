@@ -272,17 +272,6 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
         """
         assert isinstance(self._model, UnifiedEagleModel)
 
-        # Allocate KV pages (target + draft share page table).
-        # Need space for: verify K drafts + generate K new drafts
-        for replica_idx, replica_batch in enumerate(inputs.batches):
-            for ctx in replica_batch:
-                self._target_kv_manager.alloc(
-                    ctx,
-                    replica_idx=replica_idx,
-                    num_steps=1,
-                    num_speculative_steps=self._num_speculative_tokens,
-                )
-
         context_batch = inputs.flat_batch
         verify_draft_tokens = all(
             ctx.spec_decoding_state.num_draft_tokens

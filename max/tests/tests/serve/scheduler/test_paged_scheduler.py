@@ -921,6 +921,53 @@ def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
     )
 
 
+def test_paged_scheduler_speculative_tokens_allocates_extra_pages() -> None:
+    """Verifies that num_speculative_tokens causes extra KV page allocation.
+
+    With num_speculative_tokens=7, each alloc reserves extra pages to
+    accommodate draft tokens. Under tight memory (6 pages of size 10 = 60
+    token capacity), this causes a preemption that would not happen without
+    speculative decoding.
+    """
+    prompt_len = 10
+    output_tokens = 10
+    page_size = 10
+    num_blocks = 6
+    num_speculative_tokens = 7
+    max_seq_len = prompt_len + output_tokens
+
+    scheduler, request_queue = create_paged_scheduler(
+        max_seq_len=max_seq_len,
+        num_blocks=num_blocks,
+        page_size=page_size,
+        num_speculative_tokens=num_speculative_tokens,
+    )
+
+    for _ in range(3):
+        enqueue_request(
+            request_queue,
+            prompt_len=prompt_len,
+            max_seq_len=max_seq_len,
+        )
+
+    # fmt: off
+    expected = [
+        # CE encodes all 3 requests (2 pages each due to speculative headroom).
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=30, cached_toks=0),
+        # For TG each req needs 4 pages (seqlen = 11 + 2*7 + 10 - 1 = 34). Need to preempt 1 req to fit.
+        # The reason we have 2*7 is because we have 7 draft tokens to verify and will generate 7 more.
+        BatchInfo(TG, batch_size=1, terminated=1, steps=10, preempted=1, input_toks=1, cached_toks=10),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=11, cached_toks=0),
+        BatchInfo(TG, batch_size=1, terminated=1, steps=9, preempted=0, input_toks=1, cached_toks=10),
+        BatchInfo(TG, batch_size=1, terminated=1, steps=9, preempted=0, input_toks=1, cached_toks=11),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+    ]
+    # fmt: on
+
+    actual = run_until_completion(scheduler)
+    assert_batch_info_equal(actual, expected)
+
+
 @pytest.mark.parametrize(
     "num_prompts, input_tokens, output_tokens, max_forward_steps_tg, target_tokens_per_batch_ce, enable_chunked_prefill, enable_prefix_caching",
     [
