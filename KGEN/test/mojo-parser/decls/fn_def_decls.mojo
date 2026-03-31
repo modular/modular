@@ -296,3 +296,15 @@ def test_fn_literal_parameter[x : test_fn_literal_type_type_1]():
 fn test_fn_literal_call():
     # CHECK: lit.call @{{.*}}::@"test_fn_literal_type[::Int,::Int]()"{{.*}}<:!Int {1}, :!Int {2}>
     var _ = test_fn_literal_type[1, 2]()
+
+
+trait FooTrait:
+    def foo[x: Int, y: Int](self) -> Int:
+        ...
+
+
+@fieldwise_init
+struct Foo[x: Int, y: Int](FooTrait):
+    # CHECK: kgen.witness "foo[::Int,::Int]($0)"
+    __def foo[q: Int, z: Int](self) -> Int:
+        return Self.x + Self.y

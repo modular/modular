@@ -769,6 +769,25 @@ FuncLiteralTypeGeneratorType::getSpecializedGenerator(
                                              location));
 }
 
+SymbolConstantAttr FuncLiteralTypeGeneratorType::getConstantTargetLiteral() {
+  auto directSymbol = getBody().getTargetLiteral();
+  auto sig = GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
+                                getMetadata());
+
+  SmallVector<TypedAttr> paramValues;
+  for (auto paramValue : directSymbol.getParamValues()) {
+    if (auto idxRef = dyn_cast<ParamIndexRefAttr>(paramValue);
+        idxRef && idxRef.getDepth() == 0) {
+      paramValues.push_back(UnboundAttr::get(paramValue.getType()));
+    } else {
+      paramValues.push_back(paramValue);
+    }
+  }
+
+  return SymbolConstantAttr::get(directSymbol.getSymbol(),
+                                 cast<FuncTypeGeneratorType>(sig), paramValues);
+}
+
 FuncLiteralType FuncLiteralTypeGeneratorType::getBody() {
   return ::cast<FuncLiteralType>(GeneratorType::getBody());
 }
