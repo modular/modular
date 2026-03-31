@@ -638,7 +638,7 @@ class PipelineConfig(ConfigFileModel):
         arch: SupportedArchitecture | None = None
         if not self.runtime.force:
             arch = PIPELINE_REGISTRY.retrieve_architecture(
-                huggingface_repo=self.model.huggingface_model_repo,
+                architecture_name=self.model.architecture_name,
                 prefer_module_v3=self.runtime.prefer_module_v3,
             )
             max_batch_size = self.runtime.max_batch_size
@@ -767,8 +767,15 @@ class PipelineConfig(ConfigFileModel):
 
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
+        draft_arch_name = self.draft_model.architecture_name
+        if draft_arch_name is None:
+            raise ValueError(
+                f"Cannot determine architecture for draft model "
+                f"'{self.draft_model.model_path}': "
+                "no 'architectures' field in HuggingFace config."
+            )
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model.huggingface_model_repo,
+            architecture_name=draft_arch_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
@@ -776,7 +783,7 @@ class PipelineConfig(ConfigFileModel):
             # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
-                    huggingface_repo=self.draft_model.huggingface_model_repo,
+                    architecture_name=draft_arch_name,
                     prefer_module_v3=True,
                 )
                 if v3_arch:
@@ -790,14 +797,14 @@ class PipelineConfig(ConfigFileModel):
             )
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
+            architecture_name=self.model.architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
         if not target_arch:
             # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
-                    huggingface_repo=self.model.huggingface_model_repo,
+                    architecture_name=self.model.architecture_name,
                     prefer_module_v3=True,
                 )
                 if v3_arch:
@@ -875,8 +882,14 @@ class PipelineConfig(ConfigFileModel):
         estimation. Returns the resolved SupportedArchitecture.
         """
         # Retrieve the architecture
+        arch_name = model_config.architecture_name
+        if arch_name is None:
+            raise ValueError(
+                f"Cannot determine architecture for '{model_config.model_path}': "
+                "no 'architectures' field in HuggingFace config."
+            )
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=model_config.huggingface_model_repo,
+            architecture_name=arch_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
@@ -885,7 +898,7 @@ class PipelineConfig(ConfigFileModel):
             # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
-                    huggingface_repo=model_config.huggingface_model_repo,
+                    architecture_name=arch_name,
                     prefer_module_v3=True,
                 )
                 if v3_arch:
@@ -1112,13 +1125,13 @@ class PipelineConfig(ConfigFileModel):
 
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
+            architecture_name=self.model.architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
             raise ValueError(
-                f"No architecture found for {self.model.huggingface_model_repo.repo_id}. "
+                f"No architecture found for {self.model.model_path}. "
                 "This should not happen after config resolution."
             )
 
@@ -1174,13 +1187,13 @@ class PipelineConfig(ConfigFileModel):
 
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
+            architecture_name=self.model.architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
             raise ValueError(
-                f"No architecture found for {self.model.huggingface_model_repo.repo_id}. "
+                f"No architecture found for {self.model.model_path}. "
                 "This should not happen after config resolution."
             )
 

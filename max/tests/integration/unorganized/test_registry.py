@@ -73,9 +73,10 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
 ):
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
-    # Should now raise an error since HuggingFace fallback is removed
+    # Should now raise an error since this model has no 'architectures' field
     with pytest.raises(
-        ValueError, match="MAX-optimized architecture not available"
+        Exception,
+        match=r"Cannot determine architecture|no 'architectures' field",
     ):
         config = PipelineConfig(
             model=MAXModelConfig(

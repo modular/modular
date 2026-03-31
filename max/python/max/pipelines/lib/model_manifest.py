@@ -120,28 +120,24 @@ class ModelManifest(dict[str, MAXModelConfig]):
     def main_architecture_name(self) -> str:
         """Returns the main architecture class name.
 
-        For diffusion pipelines, returns ``metadata["_class_name"]``
-        (e.g. ``"FluxPipeline"``).  For non-diffusion models, returns
-        the ``_class_name`` from the main model's HuggingFace config
-        (falling back to ``architectures[0]`` if ``_class_name`` is
-        absent).
+        For non-diffusion models (those with a ``"main"`` key),
+        delegates to ``MAXModelConfig.architecture_name`` which returns
+        ``architectures[0]`` from the HuggingFace config.
+
+        For diffusion pipelines (no ``"main"`` key), returns
+        ``metadata["_class_name"]`` (e.g. ``"FluxPipeline"``).
 
         Raises:
             ValueError: If the architecture name cannot be determined.
         """
         if "main" in self:
-            hf_config = self["main"].huggingface_config
-            if hf_config is not None:
-                class_name = getattr(hf_config, "_class_name", None)
-                if class_name:
-                    return class_name
-                architectures = getattr(hf_config, "architectures", None)
-                if architectures:
-                    return architectures[0]
+            arch_name = self["main"].architecture_name
+            if arch_name:
+                return arch_name
             raise ValueError(
                 f"Cannot determine architecture name for main model "
                 f"{self['main'].model_path!r}: HuggingFace config has "
-                f"no '_class_name' or 'architectures' field."
+                f"no 'architectures' field."
             )
 
         # Diffusion pipeline — use stored metadata from model_index.json.

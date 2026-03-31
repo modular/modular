@@ -856,21 +856,23 @@ class TestPrimaryArchitectureName:
         ):
             assert manifest.main_architecture_name == "LlamaForCausalLM"
 
-    def test_non_diffusion_with_class_name(self) -> None:
-        """Uses _class_name when present on the HF config."""
+    def test_non_diffusion_prefers_architectures_over_class_name(
+        self,
+    ) -> None:
+        """Prefers architectures[0] over _class_name for registry lookup."""
         cfg = _make_config("org/llm-model")
         manifest = ModelManifest({"main": cfg})
 
         class FakeHFConfig:
             _class_name = "CustomModelForCausalLM"
-            architectures = ["ShouldNotBeUsed"]
+            architectures = ["LlamaForCausalLM"]
 
         with patch.object(
             type(cfg),
             "huggingface_config",
             new_callable=lambda: property(lambda self: FakeHFConfig()),
         ):
-            assert manifest.main_architecture_name == "CustomModelForCausalLM"
+            assert manifest.main_architecture_name == "LlamaForCausalLM"
 
     def test_non_diffusion_no_hf_config_raises(self) -> None:
         """Raises ValueError when huggingface_config is unavailable."""

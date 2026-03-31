@@ -807,7 +807,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.model.huggingface_weight_repo,
+        config.model.architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )

@@ -396,7 +396,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.model.huggingface_model_repo,
+        config.model.architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )

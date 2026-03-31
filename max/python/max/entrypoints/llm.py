@@ -196,15 +196,9 @@ async def _async_worker(
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues
     # to feed the model worker process.
-    arch = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=pipeline_config.model.huggingface_model_repo,
-        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+    pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+        pipeline_config.model.architecture_name,
     )
-    if arch is None:
-        raise ValueError(
-            f"No architecture found for {pipeline_config.model.model_path}"
-        )
-    pipeline_task = arch.task
     lora_queue: LoRAQueue | None = (
         LoRAQueue(
             pipeline_config.runtime.zmq_endpoint_base,

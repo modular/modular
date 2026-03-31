@@ -624,6 +624,16 @@ class MAXModelConfig(MAXModelConfigBase):
             subfolder=self.subfolder,
         )
 
+    @property
+    def architecture_name(self) -> str | None:
+        """Returns the architecture class name from the HuggingFace config."""
+        hf_config = self.huggingface_config
+        if hf_config is not None:
+            architectures = getattr(hf_config, "architectures", None)
+            if architectures:
+                return architectures[0]
+        return None
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_config(self) -> AutoConfig | None:

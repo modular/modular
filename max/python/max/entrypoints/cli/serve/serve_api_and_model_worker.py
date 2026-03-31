@@ -47,15 +47,9 @@ def serve_api_server_and_model_worker(
 ) -> None:
     # Auto-detect pipeline task from the model architecture if not explicitly set.
     if pipeline_task == PipelineTask.UNDEFINED:
-        arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+        pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+            pipeline_config.model.architecture_name,
         )
-        if arch is None:
-            raise ValueError(
-                f"No architecture found for {pipeline_config.model.model_path}"
-            )
-        pipeline_task = arch.task
         logger.info(
             f"Auto-detected pipeline task: {pipeline_task.value} "
             f"(model architecture: {pipeline_config.model.model_path})"
