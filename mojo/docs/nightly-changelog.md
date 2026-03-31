@@ -46,7 +46,7 @@ This version is still a work in progress.
   - `Span`: `Writable`, `Hashable`
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
 
-- GPU primitive id accessors (e.g. `thread_idx`) are migrating from `UInt` to
+- GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
   `Int`.
 
   This is part of a broader migration to standardize on the `Int` type for all
@@ -65,9 +65,8 @@ This version is still a work in progress.
   | `lane_id`    | `lane_id_uint`    | `lane_id_int`     |
   | `warp_id`    | `warp_id_uint`    | `warp_id_int`     |
 
-  To fix the temporary warning about the deprecation of the `UInt` form of
-  e.g. `thread_idx`, code can preserve its prior behavior by using a renaming
-  import of the `thread_idx_uint` alias instead:
+  Code can preserve its prior behavior by using a renaming import of the
+  `thread_idx_uint` alias:
 
   ```diff
   - from std.gpu import thread_idx
@@ -77,11 +76,11 @@ This version is still a work in progress.
   Note that `thread_idx_uint` and the other `_*uint` aliases will eventually
   be deprecated and removed as well.
 
-  After the temporary deprecation acting as a "speed bump", `thread_idx` will
-  change from `UInt` to `Int`.
+  After a temporary deprecation acting as a "speed bump" in the 2026-03-29
+  nightly release, `thread_idx` etc. have changed from `UInt` to `Int`.
 
-  While `thread_idx` is still a `UInt`, code can proactively migrate to the
-  eventual `Int` behavior using the `thread_idx_int` alias:
+  Code built with a version where `thread_idx` is still `UInt`, can proactively
+  migrate to the eventual `Int` behavior using the `thread_idx_int` alias:
 
   ```diff
   - from std.gpu import thread_idx
