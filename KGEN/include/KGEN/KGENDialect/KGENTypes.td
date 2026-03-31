@@ -376,6 +376,10 @@ def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
       return $_get(funcLiteral.getContext(), funcLiteral);
     }]>,
   ];
+
+  let extraClassDeclaration = [{
+    FuncSymbolAttr getTargetLiteral() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//

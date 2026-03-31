@@ -957,6 +957,13 @@ mergeParamBindings(ArrayRef<TypedAttr> prevBindings,
   return mergedBindings;
 }
 
+static bool isEagerlyInstantiatable(GeneratorType generator) {
+  // We can not eagerly instantiate a generator that contains a FuncType, since
+  // it might contain implicit origins that must be used within a generator.
+  return !sugarIsa<FuncType>(generator.getBody()) &&
+         !sugarIsa<FuncLiteralType>(generator.getBody());
+}
+
 static Type inferBindParamsType(TypedAttr generator,
                                 ArrayRef<TypedAttr> paramValues,
                                 ParameterEvaluationContext *evaluationContext) {
@@ -968,7 +975,7 @@ static Type inferBindParamsType(TypedAttr generator,
   // By back-compat, we never eliminate the empty generator type wrapper on
   // func types. This should eventually be made consistent with other types.
   bool canEagerInstantiate = specializedType.isFullyBound() &&
-                             !isa<FuncType>(specializedType.getBody());
+                             isEagerlyInstantiatable(specializedType);
   return canEagerInstantiate ? specializedType.getBody() : specializedType;
 }
 
@@ -1003,9 +1010,13 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
           genAttr.getSpecializedGenerator(paramValues, evalContext);
       if (!specializedGenerator)
         return TypedAttr();
-      return specializedGenerator.isFullyBound()
-                 ? specializedGenerator.getInstantiatedValue()
-                 : cast<TypedAttr>(specializedGenerator);
+
+      return [&]() -> TypedAttr {
+        if (isEagerlyInstantiatable(cast<GeneratorType>(genAttr.getType())) &&
+            specializedGenerator.isFullyBound())
+          return specializedGenerator.getInstantiatedValue();
+        return specializedGenerator;
+      }();
     }
 
     // Otherwise, fill in with unbound params to perform partial specialization.
