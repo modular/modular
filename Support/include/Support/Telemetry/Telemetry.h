@@ -14,10 +14,13 @@
 #include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
@@ -27,6 +30,7 @@
 #include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
+#include "opentelemetry/sdk/common/global_log_handler.h"
 
 namespace M::Telemetry {
 
@@ -43,6 +47,53 @@ constexpr auto kExportInterval = std::chrono::seconds(600);
 /// (OTel-managed thread). NOTE: this value must be smaller than the export
 /// interval.
 constexpr auto kExportTimeout = std::chrono::milliseconds(1000);
+/// Timeout for individual OTLP HTTP export requests, including TCP connect,
+/// TLS handshake, and request/response. Caps how long a single export attempt
+/// can block when the telemetry endpoint is unreachable (e.g. firewall
+/// silently dropping packets). Without this, TCP SYN retries can stall for
+/// ~20s per attempt.
+constexpr auto kOtlpRequestTimeout = std::chrono::milliseconds(3000);
+
+/// Custom OTel internal log handler that watches for export errors and emits
+/// a one-time user-visible warning. When telemetry endpoints are unreachable
+/// (e.g. firewalled), the OTLP HTTP exporter logs errors internally. This
+/// handler intercepts those and surfaces an actionable message to the user.
+class TelemetryExportWarningHandler
+    : public opentelemetry::sdk::common::internal_log::LogHandler {
+public:
+  TelemetryExportWarningHandler(
+      std::shared_ptr<opentelemetry::sdk::common::internal_log::LogHandler>
+          delegate,
+      std::string endpoint = {})
+      : delegate_(std::move(delegate)), endpoint_(std::move(endpoint)) {}
+
+  void Handle(opentelemetry::sdk::common::internal_log::LogLevel level,
+              const char *file, int line, const char *msg,
+              const opentelemetry::sdk::common::AttributeMap
+                  &attributes) noexcept override {
+    // Forward to delegate (noop or default handler).
+    if (delegate_)
+      delegate_->Handle(level, file, line, msg, attributes);
+
+    // On first error/warning, emit a one-time user-visible warning.
+    // Suppress in test environments (Bazel sets TEST_TMPDIR) where telemetry
+    // endpoints are expected to be unreachable.
+    if (level <= opentelemetry::sdk::common::internal_log::LogLevel::Warning &&
+        !warned_.exchange(true) && !std::getenv("TEST_TMPDIR")) {
+      llvm::errs() << "Warning: telemetry export to "
+                   << (endpoint_.empty() ? "<unknown>" : endpoint_)
+                   << " failed (endpoint may be unreachable). "
+                      "Set MODULAR_TELEMETRY_ENABLED=0 to disable telemetry "
+                      "if you are in a restricted network environment.\n";
+    }
+  }
+
+private:
+  std::shared_ptr<opentelemetry::sdk::common::internal_log::LogHandler>
+      delegate_;
+  std::string endpoint_;
+  std::atomic<bool> warned_{false};
+};
 
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.
