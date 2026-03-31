@@ -179,13 +179,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K),
                 SF_VECTOR_SIZE,
             ):
-                set_batched_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    a_scales_host,
-                    batch_idx,
-                    row_idx,
-                    col_idx,
-                    Scalar[scales_dtype](0.0),
-                )
+                if row_idx >= m.value() or col_idx >= k.value():
+                    set_batched_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        a_scales_host,
+                        batch_idx,
+                        row_idx,
+                        col_idx,
+                        Scalar[scales_dtype](0.0),
+                    )
 
     for batch_idx in range(batch.value()):
         for row_idx in range(align_up(n.value(), SF_MN_GROUP_SIZE)):
