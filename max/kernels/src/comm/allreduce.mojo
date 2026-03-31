@@ -130,11 +130,75 @@ from .sync import (
     circular_add,
     is_p2p_enabled,
 )
-from .device_query import _dispatch_max_num_blocks
+from .device_query import dispatch_max_num_blocks, CommTuningConfig
+from internal_utils import Table
 
 comptime elementwise_epilogue_type = def[
     dtype: DType, width: Int, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
+
+# Tuning table to get num_blocks for allreduce
+comptime allreduce_tuning_table = Table(
+    [
+        # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
+        ),
+        CommTuningConfig(
+            ngpus=4, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=232
+        ),
+        # default for sm100 (encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="sm_100a", num_blocks=512
+        ),
+        # Tuning results for sm100 (2xB200, 4xB200)
+        CommTuningConfig(
+            ngpus=2, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=2, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=2, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=2, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=2, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=4, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=4, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=4, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=4, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
+        ),
+        CommTuningConfig(
+            ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
+        ),
+        # default for CDNA3 (MI300X, encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="CDNA3", num_blocks=32
+        ),
+        # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=64
+        ),
+        CommTuningConfig(
+            ngpus=8, num_bytes=(1 << 20), sm_version="CDNA4", num_blocks=64
+        ),
+        CommTuningConfig(
+            ngpus=8, num_bytes=(1 << 31), sm_version="CDNA4", num_blocks=44
+        ),
+    ],
+    "allreduce_table",
+)
 
 
 def _naive_reduce_kernel[
@@ -822,7 +886,9 @@ def allreduce[
     comptime sm_version = ctx.default_device_info.version
     var num_bytes = num_elements * size_of[dtype]()
     var max_num_blocks = _max_num_blocks.or_else(
-        _dispatch_max_num_blocks[ngpus, sm_version](num_bytes)
+        dispatch_max_num_blocks[ngpus, sm_version, allreduce_tuning_table](
+            num_bytes
+        )
     )
     if max_num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
         raise Error(

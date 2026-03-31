@@ -18,7 +18,7 @@ from std.gpu.host.info import GPUInfo
 
 
 @fieldwise_init
-struct TuningConfigAllreduce(TrivialRegisterPassable, TuningConfig):
+struct CommTuningConfig(TrivialRegisterPassable, TuningConfig):
     """
     Parameters:
         ngpus: Number of GPUs for running allreduce.
@@ -43,72 +43,11 @@ struct TuningConfigAllreduce(TrivialRegisterPassable, TuningConfig):
         )
 
 
-comptime allreduce_table = Table(
-    [
-        # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
-        TuningConfigAllreduce(
-            ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
-        ),
-        TuningConfigAllreduce(
-            ngpus=4, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=232
-        ),
-        # default for sm100 (encoded with ngpus=-1, num_bytes=-1)
-        TuningConfigAllreduce(
-            ngpus=-1, num_bytes=-1, sm_version="sm_100a", num_blocks=512
-        ),
-        # Tuning results for sm100 (2xB200, 4xB200)
-        TuningConfigAllreduce(
-            ngpus=2, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=2, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=2, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=2, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=2, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=4, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=4, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=4, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=4, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
-        ),
-        TuningConfigAllreduce(
-            ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
-        ),
-        # default for CDNA3 (MI300X, encoded with ngpus=-1, num_bytes=-1)
-        TuningConfigAllreduce(
-            ngpus=-1, num_bytes=-1, sm_version="CDNA3", num_blocks=32
-        ),
-        # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
-        TuningConfigAllreduce(
-            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=64
-        ),
-        TuningConfigAllreduce(
-            ngpus=8, num_bytes=(1 << 20), sm_version="CDNA4", num_blocks=64
-        ),
-        TuningConfigAllreduce(
-            ngpus=8, num_bytes=(1 << 31), sm_version="CDNA4", num_blocks=44
-        ),
-    ],
-    "allreduce_table",
-)
-
-
 @always_inline
-def _dispatch_max_num_blocks[
-    ngpus: Int, sm_version: StaticString
+def dispatch_max_num_blocks[
+    ngpus: Int,
+    sm_version: StaticString,
+    tuning_table: Table[CommTuningConfig],
 ](num_bytes: Int) -> Int:
     """
     This function searches for tuning configs with matching sm_version
@@ -125,64 +64,63 @@ def _dispatch_max_num_blocks[
     # to MAX_NUM_BLOCKS_UPPER_BOUND, so an entry exceeding 512 would silently
     # corrupt barrier state.
     @parameter
-    def _entry_exceeds_block_bound(x: TuningConfigAllreduce) -> Bool:
+    def _entry_exceeds_block_bound(x: tuning_table.type) -> Bool:
         return x.num_blocks > 512
 
-    comptime _over_limit = allreduce_table.query_index[
+    comptime _over_limit = tuning_table.query_index[
         _entry_exceeds_block_bound
     ]()
     comptime assert (
         len(_over_limit) == 0
-    ), "allreduce_table entry has num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND (512)"
+    ), "tuning_table entry has num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND (512)"
 
     # get default entry
     @parameter
-    def rule_eq_arch_default(x: TuningConfigAllreduce) -> Bool:
+    def rule_eq_arch_default(x: tuning_table.type) -> Bool:
         return (
             x.ngpus == -1 and x.num_bytes == -1 and x.sm_version == sm_version
         )
 
-    comptime default_idx = allreduce_table.query_index[rule_eq_arch_default]()
+    comptime default_idx = tuning_table.query_index[rule_eq_arch_default]()
     comptime assert len(default_idx) > 0, (
-        "allreduce_table must have a default entry for sm_version: "
-        + sm_version
+        "tuning_table must have a default entry for sm_version: " + sm_version
     )
-    comptime default_entry = allreduce_table.configs[default_idx[0]]
+    comptime default_entry = tuning_table.configs[default_idx[0]]
     var default_num_blocks = default_entry.num_blocks
 
     # narrowing the search space to matching sm_version and ngpus
     @parameter
-    def rule_eq_arch_ngpus(x: TuningConfigAllreduce) -> Bool:
+    def rule_eq_arch_ngpus(x: tuning_table.type) -> Bool:
         return x.sm_version == sm_version and x.ngpus == ngpus
 
-    comptime search_domain = allreduce_table.query_index[rule_eq_arch_ngpus]()
+    comptime search_domain = tuning_table.query_index[rule_eq_arch_ngpus]()
 
     comptime if not search_domain:
         return default_num_blocks
 
     # get all static num_bytes values in table within the search space
     @parameter
-    def rule_get_num_bytes(x: TuningConfigAllreduce) -> Int:
+    def rule_get_num_bytes(x: tuning_table.type) -> Int:
         return x.num_bytes
 
-    comptime all_num_bytes_values = allreduce_table.query_values[
+    comptime all_num_bytes_values = tuning_table.query_values[
         Int, rule_get_num_bytes, search_domain
     ]()
 
     comptime for nb in all_num_bytes_values:
 
         @parameter
-        def rule_eq_nb(x: TuningConfigAllreduce) -> Bool:
+        def rule_eq_nb(x: tuning_table.type) -> Bool:
             return x.num_bytes == nb
 
         # Find the fist config x with input 'num_bytes <= x.num_bytes'
         if num_bytes <= nb:
-            comptime idx_list = allreduce_table.query_index[
+            comptime idx_list = tuning_table.query_index[
                 rule_eq_nb, domain=search_domain
             ]()
 
             comptime if idx_list:
-                comptime entry = allreduce_table.configs[idx_list[0]]
+                comptime entry = tuning_table.configs[idx_list[0]]
                 return entry.num_blocks
             else:
                 break
