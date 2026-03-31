@@ -468,7 +468,7 @@ struct Struct_ep_dispatch_wait:
 
         # Ensure the shape for the input tensors are correct
         comptime assert (
-            output_tokens.static_spec.shape.get[1]() == hidden_size
+            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var format_handler = BF16TokenFormat[hidden_size, top_k](
@@ -524,7 +524,7 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
 
         # Ensure the shape for the input tensors are correct
         comptime assert (
-            output_tokens.static_spec.shape.get[1]() == hidden_size
+            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var format_handler = BF16TokenFormat[hidden_size, top_k](

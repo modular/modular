@@ -16,7 +16,6 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of, is_gpu
 from std.os import abort
 
-from buffer import Dim, DimList
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable
 from std.builtin.variadics import (
@@ -53,7 +52,7 @@ from .coord import (
     coord,
     coord_to_int_tuple,
     coord_to_index_list,
-    _DimsToCoordLike,
+    _IntTupleToCoordLike,
     _CoordToDynamic,
     _Multiply,
     _Divide,
@@ -2869,47 +2868,24 @@ def flatten_leading[
 # lt_to_tt -- Convert a LayoutTensor to a TileTensor
 # ============================================================================
 
-# Note: _IntTupleToCoordLike causes a compiler crash (as of 2026-02), so we
-# use _DimsToCoordLike with rank-specialized DimList helpers instead.
-
-from .int_tuple import UNKNOWN_VALUE as _UNKNOWN_VALUE, IntTuple as _IntTuple
+from .int_tuple import IntTuple as _IntTuple, product_each as _product_each
 from .layout import Layout as _LegacyLayout
 from .layout_tensor import LayoutTensor as _LayoutTensor
 
 
-@parameter
-def _int_to_dim(value: Int) -> Dim:
-    """Convert an IntTuple value to a Dim.
-
-    UNKNOWN_VALUE becomes Dim() (dynamic), anything else becomes Dim(N)
-    (static).  Used at comptime to derive DimLists from legacy Layout
-    shapes and strides.
-    """
-    if value != _UNKNOWN_VALUE:
-        return Dim(value)
-    return Dim()
-
-
-comptime _int_to_dim_tabulator[it: _IntTuple, idx: Int]: Dim = _int_to_dim(
-    it[idx].value()
-)
-comptime _LTDims[it: _IntTuple] = DimList[
-    *Variadic.tabulate[len(it), _int_to_dim_tabulator[it, _]]
-]()
-"""Convert a flat IntTuple to a DimList.
-
-UNKNOWN_VALUE entries become dynamic Dims; known values become static Dims.
-"""
-
-
 comptime LTToTTLayout[lt_layout: _LegacyLayout] = Layout[
-    shape_types=_DimsToCoordLike[DType.int64, _LTDims[lt_layout.shape]],
-    stride_types=_DimsToCoordLike[DType.int64, _LTDims[lt_layout.stride]],
+    shape_types=_IntTupleToCoordLike[
+        DType.int64, _product_each(lt_layout.shape)
+    ],
+    stride_types=_IntTupleToCoordLike[
+        DType.int64, _product_each(lt_layout.stride)
+    ],
 ]
 """Derive a TileTensor Layout from a legacy Layout.
 
 Known dimensions become ComptimeInt, UNKNOWN_VALUE dimensions become
-RuntimeInt.  Works for flat layouts of rank 1 through 6.
+RuntimeInt.  Hierarchical layouts (e.g. from ``tile_to_shape``) are
+collapsed via ``product_each`` so each mode becomes a single value.
 
 Parameters:
     lt_layout: The legacy Layout to convert.

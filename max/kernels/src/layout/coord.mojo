@@ -23,7 +23,6 @@ from std.builtin.variadics import (
     _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
 )
-from buffer.dimlist import Dim, DimList
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 
@@ -1623,64 +1622,6 @@ comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
     Reducer=_IntToComptimeIntMapper,
 ]
 
-# ===-----------------------------------------------------------------------===#
-# Dim to CoordLike conversion
-# ===-----------------------------------------------------------------------===#
-
-
-comptime _DimToCoordLikeMapper[
-    dtype: DType,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.ValuesOfType[Dim],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike, ComptimeInt[From[idx]._value_or_missing]
-    ] if From[idx]._value_or_missing
-    != Dim._sentinel else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
-]
-"""Maps a single Dim value to a CoordLike type.
-
-If the Dim has a static value, produces ComptimeInt[value].
-If the Dim is dynamic, produces RuntimeInt.
-
-Uses direct field access rather than methods for compile-time evaluation.
-"""
-
-
-comptime _DimsToCoordLike[
-    dtype: DType, dims: DimList
-] = _ReduceValueAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=dims.values,
-    Reducer=_DimToCoordLikeMapper[dtype, ...],
-]
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
-
-Note:
-    This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
-
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
-
-Example:
-    ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _DimsToCoordLike, Coord
-
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
-    comptime coord_types = _DimsToCoordLike[DType.int32, dims]
-    # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
-
-    # Can be used to create a Coord type
-    comptime my_coords = Coord[*coord_types]
-    ```
-"""
-
 comptime _IntTupleToCoordLikeMapper[
     dtype: DType,
     tuple: IntTuple,
@@ -1692,12 +1633,10 @@ comptime _IntTupleToCoordLikeMapper[
     Variadic.types[T=CoordLike, ComptimeInt[Int(tuple[idx])]] if Int(tuple[idx])
     != layout.UNKNOWN_VALUE else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
 ]
-"""Maps a single Dim value to a CoordLike type.
+"""Maps a single IntTuple element to a CoordLike type.
 
-If the Dim has a static value, produces ComptimeInt[value].
-If the Dim is dynamic, produces RuntimeInt.
-
-Uses direct field access rather than methods for compile-time evaluation.
+If the value is known, produces ComptimeInt[value].
+If UNKNOWN_VALUE, produces RuntimeInt.
 """
 
 comptime _IntTupleToCoordLike[
@@ -1710,76 +1649,31 @@ comptime _IntTupleToCoordLike[
     ],
     Reducer=_IntTupleToCoordLikeMapper[dtype, tuple, ...],
 ]
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
+"""Converts an IntTuple to a variadic of CoordLike types.
 
 Note:
     This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
+    used in the parameter domain.
 
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
+For each element in the IntTuple:
+- If the value is known (not UNKNOWN_VALUE), produces `ComptimeInt[value]`
+- If the value is UNKNOWN_VALUE, produces `RuntimeInt`
 
 Example:
     ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _DimsToCoordLike, Coord
+    from layout import IntTuple
+    from layout.coord import _IntTupleToCoordLike, Coord
 
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
-    comptime coord_types = _DimsToCoordLike[DType.int32, dims]
-    # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
+    # Known values become ComptimeInt, UNKNOWN_VALUE becomes RuntimeInt
+    comptime shape = IntTuple(3, -1, 5)
+    comptime coord_types = _IntTupleToCoordLike[DType.int32, shape]
+    # coord_types is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
 
     # Can be used to create a Coord type
     comptime my_coords = Coord[*coord_types]
     ```
 """
 
-
-comptime _CoordToDimMapper[
-    Prev: Variadic.ValuesOfType[Dim],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_values[
-    Prev,
-    Variadic.values[
-        Dim(From[idx].static_value) if From[idx].is_static_value else Dim(),
-    ],
-]
-"""Maps a Coord to a DimList.
-
-Uses direct field access rather than methods for compile-time evaluation.
-"""
-
-
-comptime _CoordToDimList[*dims: CoordLike] = DimList[
-    *_ReduceVariadicAndIdxToValue[
-        BaseVal=Variadic.empty_of_type[Dim],
-        VariadicType=dims,
-        Reducer=_CoordToDimMapper,
-    ]
-]()
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
-
-Note:
-    This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
-
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
-
-Example:
-    ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _CoordToDimList, Coord, Idx
-
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    var coords = Coord(Idx(3), Idx[5]())
-    comptime dimlist = _CoordToDimList[*coords.element_types]
-    # dims is equivalent to DimList[Dim(), 5]()
-    ```
-"""
 
 # ===-----------------------------------------------------------------------===#
 # CoordLike to Dynamic conversion

@@ -140,8 +140,6 @@ def test_micro_kernel[
 ](m: Int, n: Int, k: Int) raises:
     print("== test_micro_kernel")
     comptime a_layout = Layout.row_major[2]()
-    # TODO(jtodd): Make `get_kernel_config` return an IndexList instead
-    # config.packed_shape is always rank 3 unknown
     comptime b_packed_layout = Layout.row_major[3]()
     comptime c_layout = Layout.row_major[2]()
 
