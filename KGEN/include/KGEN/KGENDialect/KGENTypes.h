@@ -30,6 +30,7 @@ class FuncSymbolAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
 class StructDefFieldAttr;
+class SymbolConstantAttr;
 class VariadicType;
 class VariadicAttr;
 
@@ -104,6 +105,9 @@ public:
   getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           Location location);
+
+  // Unwrap the target literal from the literal type.
+  SymbolConstantAttr getConstantTargetLiteral();
 
   FuncLiteralType getBody();
   FuncLiteralType getInstantiatedBody();

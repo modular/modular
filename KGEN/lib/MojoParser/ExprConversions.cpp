@@ -118,6 +118,15 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
                                      valueExpr.expr, declScope);
     }
 
+  if (auto actualType = sugarDynCast<FnLiteralTypeGeneratorType>(actual)) {
+    if (auto expectedType = sugarDynCast<FnTypeGeneratorType>(expected)) {
+      // See if the literal itself has a compatible type.
+      return canConvertFunctionTypes(
+          actualType.getConstantTargetLiteral().getType(), expectedType,
+          valueExpr.expr, declScope);
+    }
+  }
+
   // Generators with different parameterization cannot be converted between each
   // other. If the types are equal but the passing conventions are different,
   // then the conversion is allowed.
@@ -480,6 +489,16 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
         << expr->getRange();
     dest.resetForError(emitter);
     return {};
+  }
+
+  if (auto fnLiteralType =
+          sugarDynCast<FuncLiteralTypeGeneratorType>(callee.getType())) {
+    // Simply convert the literal itself, call the top-most conversion API,
+    // because this could be a zero cost conversion without needing to generate
+    // a thunk.
+    return emitter.emitImplicitConversionToType(
+        {PValue(fnLiteralType.getConstantTargetLiteral()), expr}, expected,
+        dest);
   }
 
   // Strip all sugar so we don't bind parameters wrong.
