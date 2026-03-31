@@ -1041,8 +1041,8 @@ generator](https://en.wikipedia.org/wiki/Pseudorandom_number_generator) used by
 the Mojo standard library currently uses a fixed seed. This means it generates
 the same sequence of numbers unless you provide a different seed, which is
 useful for testing purposes. However, for this application, we want to call
-`std.random.seed()` to set a seed value based on the current time, which gives us a
-unique value every time.
+`std.random.seed()` to set a seed value based on the current time, which gives
+us a unique value every time.
 
 Then we create `data` as an empty `List[List[Int]]`, which we'll populate with a
 random initial state. For each cell, we call
