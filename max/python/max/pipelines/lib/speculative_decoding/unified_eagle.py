@@ -23,7 +23,6 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, DevicePinnedBuffer, load_devices
 from max.engine import InferenceSession
-from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
     WeightsFormat,
@@ -40,7 +39,6 @@ from max.interfaces import (
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.registry import load_multi_kv_managers
 from max.nn import ReturnLogits
-from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
@@ -214,12 +212,6 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
         n_devices = len(self.devices)
         assert len(self._draft_kv_blocks) == n_devices
 
-        device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
-        if len(self.devices) > 1:
-            self._draft_signal_buffers = Signals(device_refs).buffers()
-        else:
-            self._draft_signal_buffers = []
-
         assert pipeline_config.speculative is not None
         self._num_speculative_tokens: int = (
             pipeline_config.speculative.num_speculative_tokens
@@ -305,10 +297,6 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             num_speculative_steps=self._num_speculative_tokens,
         )
 
-        extra_kwargs: dict[str, Any] = {}
-        if self._draft_signal_buffers:
-            extra_kwargs["draft_signal_buffers"] = self._draft_signal_buffers
-
         return_n_logits = (
             self._num_speculative_tokens + 1 if verify_draft_tokens else 1
         )
@@ -319,7 +307,6 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             return_n_logits=return_n_logits,
             draft_tokens=Buffer.from_numpy(draft_tokens).to(self.devices[0]),
             draft_kv_cache_buffers=self._draft_kv_blocks,
-            **extra_kwargs,
         )
 
         # Single graph call.
