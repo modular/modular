@@ -38,7 +38,6 @@ pipeline_config = PipelineConfig(
         model_path=MODEL_NAME,
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding="float32",
-        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         kv_cache=KVCacheConfig(),
         max_length=512,
     ),

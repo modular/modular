@@ -160,16 +160,6 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """The weight encoding type."""
 
-    allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = Field(
-        default=False,
-        description=(
-            "Whether to allow automatic float32 to/from bfloat16 safetensors "
-            "weight type casting, if needed. Currently only supported in "
-            "Llama3 models."
-        ),
-    )
-    """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting."""
-
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
     huggingface_model_revision: str = Field(
@@ -461,15 +451,6 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         # Resolve chat_template if it's a Path
         self._resolve_chat_template()
-
-        # Validate that --quantization-encoding is given when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is True
-        if (
-            self.allow_safetensors_weights_fp32_bf6_bidirectional_cast
-            and self.quantization_encoding is None
-        ):
-            raise ValueError(
-                "--quantization-encoding must be provided when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is enabled"
-            )
 
         # Validate that the device_specs provided are available
         if not devices_exist(self.device_specs):
@@ -935,10 +916,6 @@ class MAXModelConfig(MAXModelConfigBase):
         Raises:
             ValueError: If the dtype casting is not allowed.
         """
-        assert self.allow_safetensors_weights_fp32_bf6_bidirectional_cast, (
-            "allow_safetensors_weights_fp32_bf6_bidirectional_cast must be set to True"
-        )
-
         if from_encoding == to_encoding:
             return
         elif not (
@@ -989,51 +966,34 @@ class MAXModelConfig(MAXModelConfigBase):
                     )
 
             if file_encoding:
-                if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:
-                    self._validate_and_resolve_dtype_casting(
-                        from_encoding=self.quantization_encoding,
-                        to_encoding=file_encoding,
-                    )
-                # For cases where they do not match but with allow_safetensors_weights_fp32_bf6_bidirectional_cast set to False, we raise an error.
-                elif file_encoding != self.quantization_encoding:
-                    raise ValueError(
-                        f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
-                    )
+                self._validate_and_resolve_dtype_casting(
+                    from_encoding=self.quantization_encoding,
+                    to_encoding=file_encoding,
+                )
         else:
-            if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:
-                # Check if the repo only has one quantization_encoding.
-                supported_encodings = (
-                    self.huggingface_weight_repo.supported_encodings
-                )
-                to_encoding = self.quantization_encoding
-                for supported_encoding in supported_encodings:
-                    from_encoding = supported_encoding
+            # Check if the repo only has one quantization_encoding.
+            supported_encodings = (
+                self.huggingface_weight_repo.supported_encodings
+            )
+            to_encoding = self.quantization_encoding
+            for supported_encoding in supported_encodings:
+                from_encoding = supported_encoding
 
-                    if not (
-                        from_encoding in _ALLOWED_CAST_ENCODINGS
-                        and to_encoding in _ALLOWED_CAST_ENCODINGS
-                    ):
-                        continue
+                if not (
+                    from_encoding in _ALLOWED_CAST_ENCODINGS
+                    and to_encoding in _ALLOWED_CAST_ENCODINGS
+                ):
+                    continue
 
-                    weight_files = (
-                        self.huggingface_weight_repo.files_for_encoding(
-                            encoding=supported_encoding
-                        )
-                    )
-                    if weight_files:
-                        self._validate_and_resolve_dtype_casting(
-                            from_encoding=from_encoding,
-                            to_encoding=to_encoding,
-                        )
-                        return
-            else:
                 weight_files = self.huggingface_weight_repo.files_for_encoding(
-                    encoding=self.quantization_encoding
+                    encoding=supported_encoding
                 )
-                if not weight_files:
-                    raise ValueError(
-                        f"quantization_encoding '{self.quantization_encoding}' is not supported by the repo '{self.huggingface_weight_repo.repo_id}'"
+                if weight_files:
+                    self._validate_and_resolve_dtype_casting(
+                        from_encoding=from_encoding,
+                        to_encoding=to_encoding,
                     )
+                    return
 
     def _validate_and_resolve_without_given_quantization_encoding(
         self,

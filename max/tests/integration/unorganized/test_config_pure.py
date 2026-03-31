@@ -674,7 +674,6 @@ def test_config__test_incompatible_quantization_encoding(
                     "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
                 )
             ],
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
         runtime=PipelineRuntimeConfig(
@@ -694,21 +693,20 @@ def test_config__test_quantization_encoding_with_dtype_casting(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    with pytest.raises(ValueError):
-        # This should raise, as allow_safetensors_weights_fp32_bf6_bidirectional_cast defaults to False, which
-        # means it will not cast the (bfloat16) quantization encoding to
-        # float32.
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding="float32",
-                max_length=1,
-            ),
-            runtime=PipelineRuntimeConfig(
-                max_batch_size=1,
-                prefer_module_v3=True,
-            ),
-        )
+    # Float32 <-> bfloat16 casting is always enabled,
+    # so this should succeed by casting bfloat16 weights to float32.
+    config = PipelineConfig(
+        model=MAXModelConfig(
+            model_path=llama_3_1_8b_instruct_local_path,
+            quantization_encoding="float32",
+            max_length=1,
+        ),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            prefer_module_v3=True,
+        ),
+    )
+    assert config.model.kv_cache.cache_dtype == DType.float32
 
 
 @pytest.mark.skip(
@@ -727,7 +725,6 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             quantization_encoding="float32",
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
         runtime=PipelineRuntimeConfig(
@@ -748,13 +745,12 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    # This should not raise, as allow_safetensors_weights_fp32_bf6_bidirectional_cast is set to True,
+    # This should not raise, as float32 <-> bfloat16 casting is always enabled
     # and the quantization encoding is set to bfloat16.
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             quantization_encoding="bfloat16",
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
         runtime=PipelineRuntimeConfig(
@@ -763,30 +759,6 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
         ),
     )
     assert config.model.kv_cache.cache_dtype == DType.bfloat16
-
-
-@prepare_registry
-@mock_estimate_memory_footprint
-def test_config__test_quantization_encoding_with_dtype_casting4(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    # Test that quantization_encoding is required when allow_safetensors_weights_fp32_bf6_bidirectional_cast is True.
-    with pytest.raises(
-        ValueError,
-        match="--quantization-encoding must be provided when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is enabled",
-    ):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-                # Note: quantization_encoding is not provided, which should cause the error
-            ),
-            runtime=PipelineRuntimeConfig(
-                prefer_module_v3=True,
-            ),
-        )
 
 
 @pytest.mark.skip(
@@ -1019,7 +991,6 @@ def test_config__validates_lora_works_for_llama(
             model_path=llama_3_1_8b_instruct_local_path,
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding="bfloat16",
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             kv_cache=KVCacheConfig(enable_prefix_caching=False),
             max_length=1,
         ),
@@ -1078,7 +1049,6 @@ def test_config__validates_lora_single_device_only(
             model_path=llama_3_1_8b_instruct_local_path,
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding="bfloat16",
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             kv_cache=KVCacheConfig(enable_prefix_caching=False),
             max_length=1,
         ),
@@ -1115,7 +1085,6 @@ def test_config__validates_lora_fails_with_multiple_devices(
                     DeviceSpec.accelerator(),
                 ],
                 quantization_encoding="bfloat16",
-                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
                 kv_cache=KVCacheConfig(enable_prefix_caching=False),
                 max_length=1,
             ),
@@ -1130,7 +1099,6 @@ def test_config__validates_lora_fails_with_multiple_devices(
             model_path=llama_3_1_8b_instruct_local_path,
             device_specs=[DeviceSpec.accelerator(), DeviceSpec.accelerator()],
             quantization_encoding="bfloat16",
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
         runtime=PipelineRuntimeConfig(

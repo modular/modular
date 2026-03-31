@@ -25,6 +25,9 @@ This version is still a work in progress.
 - Consolidated KV connector CLI flags (`--host-kvcache-swap-space-gb`,
   `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
   `--lmcache-config-file`) into the `--kv-connector-config` JSON dict.
+- Removed the `--allow-safetensors-weights-fp32-bf16-bidirectional-cast` CLI
+  flag. Float32 <-> bfloat16 safetensors weight casting is now unconditionally
+  enabled.
 
 ### `max` CLI {#26-3-max-cli}
 
