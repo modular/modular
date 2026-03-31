@@ -17,7 +17,7 @@ cc_tool(
 )
 
 cc_tool(
-    name = "multi-platform-clang++".format(platform),
+    name = "multi-platform-clang++",
     src = ":multi-platform-clang++.sh",
     data = [
         "@clang-linux-aarch64//:bin/clang++",
@@ -28,7 +28,7 @@ cc_tool(
 )
 
 cc_tool(
-    name = "multi-platform-linker_driver".format(platform),
+    name = "multi-platform-linker_driver",
     src = ":linker-driver.sh",
     data = [
         "@clang-linux-aarch64//:bin/clang",

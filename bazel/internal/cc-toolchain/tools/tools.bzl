@@ -145,7 +145,7 @@ def _declare_tools(platform):
 
     cc_tool(
         name = "{}-single-platform-linker_driver".format(platform),
-        src = ":multi-platform-linker_driver.sh",
+        src = ":linker-driver.sh",
         data = [
             "@clang-{}//:bin/clang".format(platform),
             "@clang-{}//:bin/clang++".format(platform),  # symlink to clang
@@ -166,4 +166,5 @@ def _declare_tools(platform):
             "//:modular_config_ci_build": ":{}-single-platform-linker_driver".format(platform),
             "//conditions:default": ":multi-platform-linker_driver",
         }),
+        tags = ["manual"],
     )
