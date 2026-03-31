@@ -122,8 +122,14 @@ FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
-  if (failed(resolvedOr))
+  if (failed(resolvedOr)) {
+    // In materialization contexts, failure to resolve means the type is not a
+    // struct (e.g. MLIR primitive types like `index`). Non-struct types don't
+    // conform to any traits, so return false.
+    if (context.isMaterializationContext())
+      return {BoolAttr::get(getContext(), false)};
     return failure();
+  }
 
   ResolvedStructHandle resolved = *resolvedOr;
   FailureOr<TypedAttr> result = failure();
