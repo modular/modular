@@ -25,6 +25,7 @@ from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
+from max.graph import TensorValue
 from max.nn import kernels
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
@@ -235,7 +236,9 @@ def test_flash_attention_gpu_cpu_fallback(
     v = Tensor(v_np, device=CPU())
 
     @F.functional
-    def run_attention(q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+    def run_attention(
+        q: TensorValue, k: TensorValue, v: TensorValue
+    ) -> TensorValue:
         return kernels.flash_attention_gpu(
             q,
             k,
@@ -271,11 +274,11 @@ def test_flash_attention_gpu_rejects_valid_length_on_cpu() -> None:
 
     @F.functional
     def run_attention(
-        q: Tensor,
-        k: Tensor,
-        v: Tensor,
-        valid_length: Tensor,
-    ) -> Tensor:
+        q: TensorValue,
+        k: TensorValue,
+        v: TensorValue,
+        valid_length: TensorValue,
+    ) -> TensorValue:
         return kernels.flash_attention_gpu(
             q,
             k,
