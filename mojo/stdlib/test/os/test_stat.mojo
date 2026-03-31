@@ -19,7 +19,7 @@ from std.testing import TestSuite, assert_not_equal, assert_true
 
 
 def test_stat() raises:
-    var st = stat(source_location().file_name)
+    var st = stat(source_location().file_name())
     assert_not_equal(String(st), "")
     assert_true(S_ISREG(st.st_mode))
 

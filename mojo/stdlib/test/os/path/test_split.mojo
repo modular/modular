@@ -61,7 +61,7 @@ def test_split() raises:
     assert_equal(tail, "c.txt")
 
     # Test with source_location()
-    source_location = String(source_location().file_name)
+    source_location = String(source_location().file_name())
     head, tail = split(source_location)
     assert_equal(head + std.os.sep + tail, source_location)
 

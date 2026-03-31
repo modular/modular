@@ -38,6 +38,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `SourceLocation` fields (`line`, `col`, `file_name`) are now private.
+  Use the new accessor methods `line()`, `column()`, and `file_name()` instead.
+
 - Fixed default alignment in `TileTensor.load()` and `TileTensor.store()` to
   use the caller-specified `width` parameter instead of `Self.element_size`.
 

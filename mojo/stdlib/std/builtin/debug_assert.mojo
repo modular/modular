@@ -436,9 +436,9 @@ def _debug_assert_msg(
         )
 
         _printf[fmt](
-            loc.file_name.unsafe_ptr(),
-            loc.line,
-            loc.col,
+            loc.file_name().unsafe_ptr(),
+            loc.line(),
+            loc.column(),
             block_idx.x,
             block_idx.y,
             block_idx.z,
@@ -457,13 +457,13 @@ def _debug_assert_msg(
         var fd = printf_begin()
         _ = printf_append_string_n(fd, fmt.as_bytes(), False)
         # Runtime %s types must be passed as separate append_string calls
-        _ = printf_append_string_n(fd, loc.file_name.as_bytes(), False)
+        _ = printf_append_string_n(fd, loc.file_name().as_bytes(), False)
         # Can only pass 7 args at a time
         _ = printf_append_args(
             fd,
             7,
-            UInt64(loc.line),
-            UInt64(loc.col),
+            UInt64(loc.line()),
+            UInt64(loc.column()),
             UInt64(block_idx.x),
             UInt64(block_idx.y),
             UInt64(block_idx.z),
@@ -477,9 +477,9 @@ def _debug_assert_msg(
         _ = printf_append_string_n(fd, Span(ptr=message, length=length), True)
     else:
         _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-            loc.file_name.unsafe_ptr(),
-            loc.line,
-            loc.col,
+            loc.file_name().unsafe_ptr(),
+            loc.line(),
+            loc.column(),
             message,
         )
 

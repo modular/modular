@@ -81,7 +81,7 @@ def _dir_of_current_file() raises -> Path:
     Returns:
       The directory the file calling is at.
     """
-    return _dir_of_current_file_impl(call_location().file_name)
+    return _dir_of_current_file_impl(call_location().file_name())
 
 
 @no_inline

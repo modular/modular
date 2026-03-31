@@ -22,7 +22,7 @@ def test_isdir() raises:
     assert_true(isdir(Path()))
     assert_true(isdir(String(cwd())))
     assert_false(isdir(String(cwd() / "nonexistent")))
-    assert_false(isdir(source_location().file_name))
+    assert_false(isdir(source_location().file_name()))
 
 
 def main() raises:

@@ -314,7 +314,7 @@ struct TestSuiteReport(Copyable, Writable):
             Text[Color.GREEN]("Running"),
             Text[Color.BOLD_WHITE](len(self.reports)),
             "tests for",
-            Text[Color.CYAN](self.location.file_name),
+            Text[Color.CYAN](self.location.file_name()),
             sep=" ",
         )
         for ref report in self.reports:
@@ -345,7 +345,7 @@ struct TestSuiteReport(Copyable, Writable):
             _writeln(
                 writer,
                 "Test suite'",
-                Text[Color.CYAN](self.location.file_name),
+                Text[Color.CYAN](self.location.file_name()),
                 "'failed!",
                 sep=" ",
             )

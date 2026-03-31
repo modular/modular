@@ -19,8 +19,8 @@ from std.testing import TestSuite, assert_false, assert_true
 
 
 def test_exists() raises:
-    assert_true(exists(source_location().file_name))
-    assert_true(lexists(source_location().file_name))
+    assert_true(exists(source_location().file_name()))
+    assert_true(lexists(source_location().file_name()))
 
     assert_false(exists("this/file/does/not/exist"))
     assert_false(lexists("this/file/does/not/exist"))

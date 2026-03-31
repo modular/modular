@@ -78,7 +78,7 @@ def test_basename() raises:
     assert_equal(".hiddenfile", basename("/path/to/.hiddenfile"))
     assert_equal(".hiddenfile", basename("/path/to/dir/.hiddenfile"))
 
-    assert_equal("test_basename.mojo", basename(source_location().file_name))
+    assert_equal("test_basename.mojo", basename(source_location().file_name()))
     assert_equal(
         "some_file.txt", basename(Path.home() / "dir" / "some_file.txt")
     )
