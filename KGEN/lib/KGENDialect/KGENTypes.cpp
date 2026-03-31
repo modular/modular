@@ -629,11 +629,17 @@ LogicalResult FuncLiteralType::printValue(AsmPrinter &p,
   return failure();
 }
 
+FuncSymbolAttr FuncLiteralType::getTargetLiteral() const {
+  return sugarCast<FuncSymbolAttr>(getFuncLiteral());
+}
+
 LogicalResult
 FuncLiteralType::verify(function_ref<InFlightDiagnostic()> emitError,
                         TypedAttr value) {
-  if (!isa_and_nonnull<FuncType>(value.getType()))
-    return emitError() << "expected a FuncType attribute for FuncLiteralType";
+  // TODO: we can potentially allow non-constant expressions here too.
+  if (!sugarIsaAndNonNull<FuncSymbolAttr>(value))
+    return emitError() << "expected a FuncSymbolAttr attribute to construct a "
+                          "FuncLiteralType";
 
   return success();
 }

@@ -53,11 +53,7 @@ static CValue emitVariadicCtor(ASTType variadicType, CValue variadicList,
 class CallEmitter {
 public:
   CallEmitter(RValue callee, const ExprNode *callExpr, IREmitter &emitter,
-              ValueDest &dest)
-      : emitter(emitter), callee(callee), callExpr(callExpr),
-        loc(emitter.translateLocation(callExpr->getLoc())), dest(dest),
-        calleeSig(sugarCast<FnTypeGeneratorType>(callee.getRValueType())),
-        afterCallActions(*this) {}
+              ValueDest &dest);
 
   /// Emit IR for a single argument, according to its convention.
   AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,
@@ -154,6 +150,41 @@ private:
       ArgConvention convention, Type expectedType,
       SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues);
 };
+
+CallEmitter::CallEmitter(RValue calleeVal, const ExprNode *callExpr,
+                         IREmitter &emitter, ValueDest &dest)
+    : emitter(emitter), callee(calleeVal), callExpr(callExpr),
+      loc(emitter.translateLocation(callExpr->getLoc())), dest(dest),
+      calleeSig(sugarDynCast<FnTypeGeneratorType>(calleeVal.getRValueType())),
+      afterCallActions(*this) {
+  // Turn function literals into symbol constants.
+  //
+  // TODO: we don't really need the conversion here, we should instead handle
+  // calls to function literals directly.
+  if (!calleeSig) {
+    // This must be a function literal type that is fully bound.
+    auto fnLiteralGenType =
+        sugarCast<FnLiteralTypeGeneratorType>(callee.getRValueType());
+    assert(fnLiteralGenType.getInputParamTypes().empty());
+
+    auto directSymbol = fnLiteralGenType.getBody().getTargetLiteral();
+    auto sig = GeneratorType::get({}, directSymbol.getType(),
+                                  fnLiteralGenType.getMetadata());
+    callee = SymbolConstantAttr::get(directSymbol.getSymbol(),
+                                     cast<FnTypeGeneratorType>(sig),
+                                     directSymbol.getParamValues());
+    calleeSig = cast<FnTypeGeneratorType>(callee.getType());
+  }
+  assert(calleeSig);
+  // Make sure the sugar on the callee agrees with calleeSig.  This strips off
+  // top level sugar on the function type itself.
+  if (callee.getRValueType().mlirType != calleeSig) {
+    callee = emitter.emitRValue({callee, callExpr},
+                                ExprContext::EC_CallCalleeValue, calleeSig);
+    assert(callee && callee.getRValueType().mlirType == calleeSig &&
+           "rebinding sugar should work!");
+  }
+}
 
 void CallEmitter::AfterCallActions::emit() {
   IREmitter &emitter = callEmitter.emitter;
@@ -1705,15 +1736,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   const ExprNode *callExpr = callOperands.callExpr;
   CallEmitter callEmitter(callee, callExpr, *this, dest);
   auto calleeSig = callEmitter.calleeSig;
-
-  // Make sure the sugar on the callee agrees with calleeSig.  This strips off
-  // top level sugar on the function type itself.
-  if (callee.getRValueType().mlirType != calleeSig) {
-    callEmitter.callee = callee = emitRValue(
-        {callee, callExpr}, ExprContext::EC_CallCalleeValue, calleeSig);
-    assert(callee && callee.getRValueType().mlirType == calleeSig &&
-           "rebinding sugar should work!");
-  }
+  // Function literals might have been converted.
+  callee = callEmitter.callee;
 
   // Check to see if the callee is a throwing function whose thrown type
   // mismatches any fixed contextual error type, but which is implicitly

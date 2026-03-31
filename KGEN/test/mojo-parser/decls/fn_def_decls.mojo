@@ -262,7 +262,7 @@ def foldable_param_requires_2[
 
 
 
-struct FN_LITERAL_RET[x: Int, y: Int](TrivialRegisterPassable):
+struct FN_LITERAL_RET[x: Int, y: Int]():
     pass
 
 
@@ -270,24 +270,29 @@ __def test_fn_literal_type[x: Int, y: Int]() -> FN_LITERAL_RET[x, y]:
     pass
 
 # CHECK:      lit.alias.decl *"test_fn_literal_type_type{{.*}}": non_struct_type =
-# CHECK-SAME: !kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int *(0,0), :!Int *(0,1)>>>
+# CHECK-SAME: !kgen.func.literal<:!lit.fn<[1]({{.*}}!lit.struct<#RET <:!Int *(0,0), :!Int *(0,1)>>{{.*}}) -> !kgen.none>
 # CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::Int,::Int]()"<:!Int *(0,0), :!Int *(0,1)>>
 comptime test_fn_literal_type_type = type_of(test_fn_literal_type)
 
 # CHECK:      lit.alias.decl *"test_fn_literal_type_type_1{{.*}}": non_struct_type =
-# CHECK-SAME: !kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int {1}, :!Int *(0,0)>>>
+# CHECK-SAME: !kgen.func.literal<:!lit.fn<[1]({{.*}}!lit.struct<#RET <:!Int {1}, :!Int *(0,0)>>{{.*}}) -> !kgen.none>
 # CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::Int,::Int]()"<:!Int {1}, :!Int *(0,0)>>
 comptime test_fn_literal_type_type_1 = type_of(test_fn_literal_type[1, _])
 
 # CHECK:      lit.alias.decl *"test_fn_literal_type_type_2{{.*}}": non_struct_type =
-# CHECK-SAME: !kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int {1}, :!Int {2}>>>
+# CHECK-SAME: !kgen.func.literal<:!lit.fn<[1]({{.*}}!lit.struct<#RET <:!Int {1}, :!Int {2}>>{{.*}}) -> !kgen.none>
 # CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::Int,::Int]()"<:!Int {1}, :!Int {2}>>
 comptime test_fn_literal_type_type_2 = type_of(test_fn_literal_type[1, 2])
 
 # CHECK-LABEL:      lit.fn @"test_fn_literal_parameter{{.*}}"
 def test_fn_literal_parameter[x : test_fn_literal_type_type_1]():
-    # CHECK:      lit.alias.decl *"t{{.*}}":
-    # CHECK-SAME: !kgen.func.literal<:!lit.fn<() -> !lit.struct<{{.*}} <:!Int {1}, :!Int {3}>>>
+    # CHECK:      lit.alias.decl *"t{{[^"]*}}":
+    # CHECK-SAME: !kgen.func.literal<:!lit.fn<[1]({{.*}}!lit.struct<#RET <:!Int {1}, :!Int {3}>>{{.*}}) -> !kgen.none>
     # CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::Int,::Int]()"<:!Int {1}, :!Int {3}>>
     # CHECK-SAME: = <bind_params({{.*}}, :!Int {3})>
     comptime t = x[3]
+
+
+fn test_fn_literal_call():
+    # CHECK: lit.call @{{.*}}::@"test_fn_literal_type[::Int,::Int]()"{{.*}}<:!Int {1}, :!Int {2}>
+    var _ = test_fn_literal_type[1, 2]()

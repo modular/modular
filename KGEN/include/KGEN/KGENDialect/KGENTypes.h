@@ -26,6 +26,7 @@ class GeneratorMetadataAttrInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
 struct PartiallySpecializedInputParams;
+class FuncSymbolAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
 class StructDefFieldAttr;
