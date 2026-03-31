@@ -311,7 +311,9 @@ IREvaluator::resolveStructOp(TypedAttr typeValue, bool acceptAsync) {
   if (!typeRef)
     return failure();
 
-  auto instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+  auto instanceRef = dyn_cast<TypeInstanceRefAttr>(typeRef);
+  if (!instanceRef)
+    return failure();
   ParamNode *genNode =
       elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
   StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
