@@ -350,9 +350,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues) {
   assert((calleeSig.isPosVarArg(argIdx) || calleeSig.isPack(argIdx)) &&
          "Must be a variadic we're emitting for");
+  assert(!remainingOperands.empty() && "not called for empty lists");
 
-  if (!remainingOperands.empty() &&
-      remainingOperands.front().isUnpackedPositional()) {
+  if (remainingOperands.front().isUnpackedPositional()) {
     assert(remainingOperands.size() == 1 &&
            "parser should reject additional positional operands after *pack");
     assert(calleeSig.isPack(argIdx) && "only variadic packs support unpacking");
@@ -439,29 +439,20 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   }
 
   // Create a uniform representation of origins.
-  if (!args.empty()) {
-    assert(isa<RefType>(args.back().getType()) &&
-           "variadics always passed in memory");
-    // If one arg is a reference, then they all are.
-    SmallVector<TypedAttr> refOrigins;
-    for (auto arg : args)
-      refOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
+  TypedAttr eltOrigin;
+  if (calleeSig.isPosVarArg(argIdx))
+    eltOrigin = listOrPackType.getVariadicListInfo().origin;
+  else
+    eltOrigin = listOrPackType.getVariadicPackInfo(emitter.shared).getOrigin();
 
-    // All the origins will have the same OriginType, indicating the
-    // reference mutability that the callee expected.
-    auto commonOriginType = sugarCast<OriginType>(refOrigins.back().getType());
-
-    // If there is more than one element, they probably have different
-    // origins, and thus need to be rebound into a common union of them.
-    auto commonOrigin = OriginUnionAttr::get(refOrigins, commonOriginType);
-    for (auto &arg : args) {
-      auto argType = cast<RefType>(arg.getType());
-      if (argType.getOrigin() == commonOrigin)
-        continue; // Already the right origin.
-      // Cast to common origin with a rebind.
-      arg = emitter.emitRebindOpIfNeeded(
-          arg, argType.getWithOrigin(commonOrigin), callExpr->getLoc());
-    }
+  // Rebind all the elements to the common origin ParamInf determined for us.
+  for (auto &arg : args) {
+    auto argType = cast<RefType>(arg.getType());
+    if (argType.getOrigin() == eltOrigin)
+      continue; // Already the right origin.
+    // Cast to common origin with a rebind.
+    arg = emitter.emitRebindOpIfNeeded(arg, argType.getWithOrigin(eltOrigin),
+                                       callExpr->getLoc());
   }
 
   CValue argVal;
