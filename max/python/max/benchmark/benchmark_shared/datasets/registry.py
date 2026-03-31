@@ -120,4 +120,8 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="AgenticCodeBenchmarkDataset",
         has_multiturn_chat_support=True,
     ),
+    "instruct-coder": DatasetRegistryEntry(
+        class_name="InstructCoderBenchmarkDataset",
+        has_multiturn_chat_support=True,
+    ),
 }

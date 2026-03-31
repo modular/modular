@@ -61,6 +61,7 @@ def test_dataset_registry_contents() -> None:
     expected_datasets = {
         "agentic-code",
         "arxiv-summarization",
+        "instruct-coder",
         "sharegpt",
         "code_debug",
         "random",
@@ -82,6 +83,7 @@ def test_dataset_registry_multiturn_support_mapping() -> None:
         "agentic-code": True,
         "arxiv-summarization": False,
         "code_debug": True,
+        "instruct-coder": True,
         "random": True,
         "synthetic": True,
         "sharegpt": False,

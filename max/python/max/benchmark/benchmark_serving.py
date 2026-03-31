@@ -70,6 +70,7 @@ from max.benchmark.benchmark_shared.datasets import (
     BenchmarkDataset,
     ChatSession,
     CodeDebugBenchmarkDataset,
+    InstructCoderBenchmarkDataset,
     LocalImageBenchmarkDataset,
     ObfuscatedConversationsBenchmarkDataset,
     RandomBenchmarkDataset,
@@ -2246,6 +2247,24 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     output_lengths is None and not args.record_output_lengths
                 ),
             )
+        elif isinstance(benchmark_dataset, InstructCoderBenchmarkDataset):
+            if args.num_chat_sessions:
+                samples = benchmark_dataset.gen_multiturn_sessions(
+                    num_sessions=args.num_chat_sessions,
+                    tokenizer=tokenizer,
+                    shuffle=(not args.record_output_lengths),
+                )
+            else:
+                assert args.num_prompts is not None
+                samples = benchmark_dataset.sample_requests(
+                    num_requests=args.num_prompts,
+                    tokenizer=tokenizer,
+                    output_lengths=output_lengths,
+                    shuffle=(
+                        output_lengths is None
+                        and not args.record_output_lengths
+                    ),
+                )
         elif isinstance(
             benchmark_dataset, ObfuscatedConversationsBenchmarkDataset
         ):

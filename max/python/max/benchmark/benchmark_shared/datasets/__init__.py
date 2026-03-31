@@ -23,6 +23,7 @@ from .distribution import (
     DistributionParameter,
 )
 from .huggingface import HuggingFaceBenchmarkDataset
+from .instruct_coder import InstructCoderBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
@@ -61,6 +62,7 @@ __all__ = [
     "DiscreteDistribution",
     "DistributionParameter",
     "HuggingFaceBenchmarkDataset",
+    "InstructCoderBenchmarkDataset",
     "LocalBenchmarkDataset",
     "LocalImageBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
