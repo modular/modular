@@ -586,9 +586,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def load[
         width: Int = Self.element_size,
-        alignment: Int = align_of[
-            SIMD[Self.dtype, Self.element_size]
-        ]() if is_gpu() else 1,
+        alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
         invariant: Bool = False,
         non_temporal: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width]:
@@ -621,9 +619,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def store[
         width: Int = Self.element_size,
-        alignment: Int = align_of[
-            SIMD[Self.dtype, Self.element_size]
-        ]() if is_gpu() else 1,
+        alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
         non_temporal: Bool = False,
     ](self, coord: Coord, value: SIMD[Self.dtype, width]) where Self.mut:
         """Store elements to the tensor at the specified coordinates.

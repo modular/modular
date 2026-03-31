@@ -38,6 +38,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Fixed default alignment in `TileTensor.load()` and `TileTensor.store()` to
+  use the caller-specified `width` parameter instead of `Self.element_size`.
+
 - Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
   targets at compile time. `is_apple_silicon()` now includes M5 in its check.
 
