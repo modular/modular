@@ -18,12 +18,7 @@ If the vertex was visited in the previous level, it pushes updates to all
 its unvisited neighbors.
 """
 
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-    grid_dim,
-)
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim
 from std.gpu.host import DeviceContext
 from std.os import Atomic
 from std.collections import List
@@ -60,7 +55,7 @@ def bfs_kernel(
         new_vertex_visited: Flag indicating if any new vertex was visited.
         curr_level: Current BFS level being processed.
     """
-    var vertex = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var vertex = block_idx.x * block_dim.x + thread_idx.x
 
     if vertex < num_vertices:
         if level[vertex] == curr_level - 1:

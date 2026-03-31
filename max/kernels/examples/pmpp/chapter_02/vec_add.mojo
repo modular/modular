@@ -15,7 +15,7 @@
 # This is the complete implementation combining all the concepts from Chapter 2
 
 from std.math import ceildiv
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 
 # ========================== KERNEL CODE ==========================
@@ -35,7 +35,7 @@ def vec_add_kernel(
         c_d: Output vector C (device).
         n: Number of elements in the vectors.
     """
-    var i = Int(global_idx.x)
+    var i = global_idx.x
     if i < n:
         c_d[i] = a_d[i] + b_d[i]
 

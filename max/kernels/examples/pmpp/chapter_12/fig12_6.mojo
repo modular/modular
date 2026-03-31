@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -73,7 +69,7 @@ def filter_kernel(
     barrier()
 
     # Filter in the private lists (shared memory)
-    var i = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
+    var i = block_idx.x * BLOCK_DIM + thread_idx.x
     if UInt32(i) < N:
         var val = input[i]
         if cond(val):
@@ -98,9 +94,9 @@ def filter_kernel(
 
     # Write to the public list
     var local_output_size = Int(output_size_s[0])
-    if Int(thread_idx.x) < local_output_size:
+    if thread_idx.x < local_output_size:
         var j_val = j_shared[0]
-        output[Int(j_val) + Int(thread_idx.x)] = output_s[Int(thread_idx.x)]
+        output[Int(j_val) + thread_idx.x] = output_s[thread_idx.x]
 
 
 def main() raises:

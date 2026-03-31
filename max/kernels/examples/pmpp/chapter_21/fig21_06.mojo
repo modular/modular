@@ -21,11 +21,7 @@ and avoids atomic operations since each grid point is written by only one thread
 """
 
 from std.math import sqrt
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-)
+from std.gpu import block_idx, thread_idx, block_dim
 from std.gpu.host import DeviceContext
 from std.itertools import product
 
@@ -55,8 +51,8 @@ def cenergy_gather_kernel(
         z: Z-coordinate of the grid slice.
         numatoms: Number of atoms.
     """
-    var i = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
-    var j = Int(block_idx.y) * Int(block_dim.y) + Int(thread_idx.y)
+    var i = block_idx.x * block_dim.x + thread_idx.x
+    var j = block_idx.y * block_dim.y + thread_idx.y
 
     if i < grid_x and j < grid_y:
         var atomarrdim = numatoms * 4

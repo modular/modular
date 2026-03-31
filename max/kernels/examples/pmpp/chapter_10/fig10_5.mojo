@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx_uint as thread_idx
+from std.gpu import barrier, thread_idx
 from std.gpu.host import DeviceContext
 from std.random import random_float64
 from std.math import abs

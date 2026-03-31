@@ -14,13 +14,7 @@
 from std.math import exp, sqrt
 from std.random import rand
 from std.collections import InlineArray
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-    grid_dim_uint as grid_dim,
-    barrier,
-)
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext
 from std.memory import stack_allocation
@@ -30,8 +24,8 @@ from std.gpu.primitives.warp import (
     lane_group_sum,
 )
 from std.gpu.primitives.id import (
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
+    lane_id,
+    warp_id,
 )
 
 # Match CUDA exactly
@@ -89,7 +83,7 @@ def flashattention_forward_kernel(
 
     var neg_inf = Float32(-3.40282e38)
 
-    var i = Int(block_idx.x)
+    var i = block_idx.x
     while i < T_r:
         # Initialize O, D, m
         for ii in range(B_r_warp):
@@ -101,11 +95,11 @@ def flashattention_forward_kernel(
         # Load Q into registers (Figure 20.10 from CUDA)
         # Each thread in warp loads d_size elements (4 elements for d=128, warp=32)
         for ii in range(B_r_warp):
-            var dd = Int(lane_id())
+            var dd = lane_id()
             var ddd = 0
             while dd < D_MODEL:
                 var row_idx = (
-                    B_r * i + B_r_warp * Int(warp_id()) + ii
+                    B_r * i + B_r_warp * warp_id() + ii
                 ) * D_MODEL + dd
                 Q_i[ii * d_size + ddd] = Q[row_idx]
                 dd += WARP_SIZE
@@ -114,24 +108,24 @@ def flashattention_forward_kernel(
         for j in range(T_c):
             # Load KT and V into shared memory
             for jj in range(B_c):
-                var dd = Int(thread_idx.x)
+                var dd = thread_idx.x
                 while dd < D_MODEL:
                     var g_row = B_c * j + jj
                     KT_j[dd * B_c + jj] = K[g_row * D_MODEL + dd]
                     V_j[jj * D_MODEL + dd] = V[g_row * D_MODEL + dd]
-                    dd += Int(block_dim.x)
+                    dd += block_dim.x
 
             barrier()
 
             # Each warp processes B_r_warp rows
             for ii in range(B_r_warp):
-                var row_in_block = Int(warp_id()) * B_r_warp + ii
+                var row_in_block = warp_id() * B_r_warp + ii
                 var row_global = B_r * i + row_in_block
 
                 # Compute S row and find max (Figure 20.12)
                 var curr_max = neg_inf
 
-                var jj = Int(lane_id())
+                var jj = lane_id()
                 while jj < B_c:
                     var S_ij = Float32(0.0)
 
@@ -174,7 +168,7 @@ def flashattention_forward_kernel(
 
                 # Compute P and update D (Figure 20.15)
                 var curr_sum = Float32(0.0)
-                jj = Int(lane_id())
+                jj = lane_id()
                 while jj < B_c:
                     var col_global = B_c * j + jj
                     var s_val = S_i[row_in_block * B_c + jj]
@@ -195,7 +189,7 @@ def flashattention_forward_kernel(
                 D_i[ii] += curr_sum_warp
 
                 # Compute O (Figure 20.13)
-                var dd = Int(lane_id())
+                var dd = lane_id()
                 var ddd = 0
                 while dd < D_MODEL:
                     # Scale previous O by exp(last_m - m_i[ii])
@@ -215,19 +209,19 @@ def flashattention_forward_kernel(
 
         # Store O and D (Figure 20.16)
         for ii in range(B_r_warp):
-            var row_in_block = Int(warp_id()) * B_r_warp + ii
+            var row_in_block = warp_id() * B_r_warp + ii
             var row = B_r * i + row_in_block
 
             for k in range(d_size):
-                var col = k * WARP_SIZE + Int(lane_id())
+                var col = k * WARP_SIZE + lane_id()
                 if row < N and col < D_MODEL:
                     out_O[row * D_MODEL + col] = O_i[ii * d_size + k] / D_i[ii]
 
-            if Int(lane_id()) == 0:
+            if lane_id() == 0:
                 if row < N:
                     out_D[row] = D_i[ii]
 
-        i += Int(grid_dim.x)
+        i += grid_dim.x
 
 
 def cpu_attention(

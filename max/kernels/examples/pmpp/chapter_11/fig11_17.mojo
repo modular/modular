@@ -11,19 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    WARP_SIZE,
-)
+from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.gpu.primitives.id import (
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
-)
+from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
 from std.math import abs
@@ -74,7 +66,7 @@ def test_interblock_scan(
         flags: Array of flags for block synchronization.
         N: Number of elements.
     """
-    var i = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
+    var i = block_idx.x * BLOCK_DIM + thread_idx.x
     var val = Float32(0.0) if i >= Int(N) else input[i]
 
     # Allocate shared memory
@@ -94,27 +86,27 @@ def test_interblock_scan(
 
     # Collect warp sums
     if UInt32(lane_id()) == UInt32(WARP_SIZE - 1):
-        warp_sums[Int(warp_id())] = result
+        warp_sums[warp_id()] = result
 
     barrier()
 
     # Scan warp sums (only first warp participates)
     if warp_id() == 0:
         var warp_sum = Float32(0.0)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sum = warp_sums[Int(thread_idx.x)]
+        if thread_idx.x < NUM_WARPS:
+            warp_sum = warp_sums[thread_idx.x]
         warp_sum = warp_scan(warp_sum)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sums[Int(thread_idx.x)] = warp_sum
+        if thread_idx.x < NUM_WARPS:
+            warp_sums[thread_idx.x] = warp_sum
 
     barrier()
 
     # Add previous warp's scanned sum
     if warp_id() > 0:
-        result += warp_sums[Int(warp_id()) - 1]
+        result += warp_sums[warp_id() - 1]
 
     # Inter-block scan - all threads call but only last thread does the work
-    if thread_idx.x == UInt(BLOCK_DIM - 1):
+    if thread_idx.x == BLOCK_DIM - 1:
         var bid = UInt32(block_idx.x)
         if bid > 0:
             # Wait for previous block to pass partial sum

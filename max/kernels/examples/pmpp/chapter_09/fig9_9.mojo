@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.os import Atomic
@@ -43,7 +39,7 @@ def histogram_kernel(
         height: Image height.
     """
     # Each block gets its own private copy of bins in global memory
-    var bins_priv = bins_pool + Int(block_idx.x) * NUM_BINS
+    var bins_priv = bins_pool + block_idx.x * NUM_BINS
 
     var i = UInt32(block_idx.x) * UInt32(256) + UInt32(thread_idx.x)
     if i < width * height:

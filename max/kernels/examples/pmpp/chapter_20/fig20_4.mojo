@@ -13,13 +13,7 @@
 
 from std.math import exp, abs
 from std.random import rand
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-    grid_dim,
-    barrier,
-)
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext
 from std.memory import stack_allocation
@@ -52,7 +46,7 @@ def block_reduce[
         address_space=AddressSpace.SHARED,
     ],
 ) -> Float32:
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var smem = shared_mem
 
     # Write to shared memory
@@ -92,8 +86,8 @@ def softmax_kernel(
         address_space=AddressSpace.SHARED,
     ]()
 
-    var row = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var row = block_idx.x
+    var tid = thread_idx.x
 
     var S_row = S + (row * N)
     var P_row = P_ptr + (row * N)
@@ -107,7 +101,7 @@ def softmax_kernel(
             var val = S_row[col]
             if val > max_val_thread:
                 max_val_thread = val
-        col += Int(block_dim.x)
+        col += block_dim.x
 
     barrier()
 
@@ -123,7 +117,7 @@ def softmax_kernel(
     while col < N:
         if col <= row:
             sum_thread += exp(S_row[col] - max_val_row)
-        col += Int(block_dim.x)
+        col += block_dim.x
 
     barrier()
 
@@ -140,7 +134,7 @@ def softmax_kernel(
         if col <= row:
             val = exp(S_row[col] - max_val_row) / sum_row
         P_row[col] = val
-        col += Int(block_dim.x)
+        col += block_dim.x
 
     if tid == 0:
         D_ptr[row] = sum_row

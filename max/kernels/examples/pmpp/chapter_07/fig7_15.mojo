@@ -17,11 +17,7 @@
 
 from std.random import random_float64
 from std.math import ceildiv
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.itertools import product
@@ -50,8 +46,8 @@ def convolution_cached_tiled_2D_const_mem_kernel(
     comptime FILTER_RADIUS = 2
     comptime FILTER_WIDTH = 2 * FILTER_RADIUS + 1
 
-    var col = Int(block_idx.x) * TILE_DIM + Int(thread_idx.x)
-    var row = Int(block_idx.y) * TILE_DIM + Int(thread_idx.y)
+    var col = block_idx.x * TILE_DIM + thread_idx.x
+    var row = block_idx.y * TILE_DIM + thread_idx.y
 
     # Allocate shared memory for input tile (core only, no halo)
     var N_s = stack_allocation[
@@ -61,8 +57,8 @@ def convolution_cached_tiled_2D_const_mem_kernel(
     ]()
 
     # Load input tile into shared memory
-    var tx = Int(thread_idx.x)
-    var ty = Int(thread_idx.y)
+    var tx = thread_idx.x
+    var ty = thread_idx.y
 
     if row < height and col < width:
         N_s[ty * TILE_DIM + tx] = N[row * width + col]

@@ -22,12 +22,7 @@ as Mojo's atomic API differs. The level array stores if visited; races
 on unvisited vertices are harmless as they all write the same level.
 """
 
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-    grid_dim,
-)
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim
 from std.gpu.host import DeviceContext
 from std.os import Atomic
 from std.collections import List
@@ -53,7 +48,7 @@ def bfs_kernel(
     curr_level: UInt32,
 ):
     """BFS kernel: frontier-based traversal with atomic operations."""
-    var i = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var i = block_idx.x * block_dim.x + thread_idx.x
 
     if i < num_prev_frontier:
         var vertex = Int(prev_frontier[i])

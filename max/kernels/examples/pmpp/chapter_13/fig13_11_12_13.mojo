@@ -13,11 +13,7 @@
 
 """Figures 13.11, 13.12, 13.13: Tiled merge kernel implementation in Mojo."""
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -222,12 +218,12 @@ def merge_tiled_kernel(
     ]()
 
     # Figure 13.11: Part 1 - Block-level co-rank
-    var C_curr = Int(block_idx.x) * ceildiv(
+    var C_curr = block_idx.x * ceildiv(
         m + n, Int(16)
     )  # 16 blocks hardcoded for now
-    var C_next = min((Int(block_idx.x) + 1) * ceildiv(m + n, Int(16)), m + n)
+    var C_next = min((block_idx.x + 1) * ceildiv(m + n, Int(16)), m + n)
 
-    if Int(thread_idx.x) == 0:
+    if thread_idx.x == 0:
         # Store co-rank values in first two elements of A_S
         A_S[0] = Scalar[DType.int32](co_rank(C_curr, A, m, B, n))
         A_S[1] = Scalar[DType.int32](co_rank(C_next, A, m, B, n))
@@ -258,24 +254,22 @@ def merge_tiled_kernel(
         var leftover_A = A_length - A_consumed
 
         for i in range(0, tile_size, Int(128)):  # blockDim.x = 128
-            if i + Int(thread_idx.x) < leftover_A:
-                A_S[i + Int(thread_idx.x)] = Scalar[DType.int32](
-                    A[Int(A_curr) + A_consumed + i + Int(thread_idx.x)]
+            if i + thread_idx.x < leftover_A:
+                A_S[i + thread_idx.x] = Scalar[DType.int32](
+                    A[Int(A_curr) + A_consumed + i + thread_idx.x]
                 )
 
         for i in range(0, tile_size, Int(128)):  # blockDim.x = 128
-            if i + Int(thread_idx.x) < leftover_B:
-                B_S[i + Int(thread_idx.x)] = Scalar[DType.int32](
-                    B[B_curr + B_consumed + i + Int(thread_idx.x)]
+            if i + thread_idx.x < leftover_B:
+                B_S[i + thread_idx.x] = Scalar[DType.int32](
+                    B[B_curr + B_consumed + i + thread_idx.x]
                 )
 
         barrier()
 
         # Figure 13.13: Part 3 - All threads merge their individual subarrays
-        var c_curr = Int(thread_idx.x) * (
-            tile_size // Int(128)
-        )  # blockDim.x = 128
-        var c_next = (Int(thread_idx.x) + 1) * (tile_size // Int(128))
+        var c_curr = thread_idx.x * (tile_size // Int(128))  # blockDim.x = 128
+        var c_next = (thread_idx.x + 1) * (tile_size // Int(128))
         var leftover_c = C_length - C_completed
 
         c_curr = min(c_curr, leftover_c)

@@ -11,13 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import (
-    barrier,
-    thread_idx_uint as thread_idx,
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
-    WARP_SIZE,
-)
+from std.gpu import barrier, thread_idx, lane_id, warp_id, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -77,7 +71,7 @@ def two_stage_warp_level_sum_reduction_kernel(
 
     # Store warp results to shared memory
     if lane_id() == 0:
-        partial_sums_s[Int(warp_id())] = partial_sum
+        partial_sums_s[warp_id()] = partial_sum
 
     barrier()
 

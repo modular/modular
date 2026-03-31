@@ -37,7 +37,7 @@ def vec_add(
         n: Number of elements in the vectors.
     """
     # Calculate global thread index
-    var i = Int(global_idx.x)
+    var i = global_idx.x
 
     # Boundary check
     if i < n:

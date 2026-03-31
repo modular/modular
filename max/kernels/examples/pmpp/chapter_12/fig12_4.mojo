@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.primitives.warp import vote, shuffle_idx
-from std.gpu.primitives.id import lane_id_uint as lane_id
+from std.gpu.primitives.id import lane_id
 from std.bit import pop_count, count_trailing_zeros
 from std.os import Atomic
 
@@ -55,7 +55,7 @@ def filter_kernel(
         output_size: Pointer to output size counter.
         N: Number of elements.
     """
-    var i = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
+    var i = block_idx.x * BLOCK_DIM + thread_idx.x
     var val: UInt32 = 0
     var passes = False
     if UInt32(i) < N:
@@ -69,7 +69,7 @@ def filter_kernel(
         # Get group properties
         var group_size = pop_count(Int(active_threads_mask))
         # Calculate thread rank
-        var lane = Int(lane_id())
+        var lane = lane_id()
         var previous_threads = (1 << lane) - 1
         var previous_active = Int(active_threads_mask) & previous_threads
         var thread_rank = pop_count(previous_active)

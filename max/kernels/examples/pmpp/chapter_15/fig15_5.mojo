@@ -13,7 +13,7 @@
 
 """Figure 15.5 - Load tile from global memory to shared memory."""
 
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.memory import AddressSpace
 
 comptime NUM_THREADS_PER_BLOCK = 128
@@ -49,7 +49,7 @@ def loadTile(
     var num_rows_per_tile = NUM_THREADS_PER_BLOCK // width
     var num_subtiles = height // num_rows_per_tile
 
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     for subtile in range(num_subtiles):
         var row, col = divmod(tx, width)
