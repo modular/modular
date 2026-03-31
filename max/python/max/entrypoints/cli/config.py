@@ -189,8 +189,16 @@ def is_multiple(field_type: Any) -> bool:
     return get_origin(field_type) is list
 
 
+def get_public_field_name(field_name: str, field_info: Any) -> str:
+    alias = getattr(field_info, "alias", None)
+    if isinstance(alias, str):
+        return alias
+    return field_name
+
+
 def get_normalized_flag_name(dataclass_field: Any, field_type: Any) -> str:
-    normalized_name = dataclass_field.name.lower().replace("_", "-")
+    public_name = getattr(dataclass_field, "public_name", dataclass_field.name)
+    normalized_name = public_name.lower().replace("_", "-")
 
     if is_flag(field_type):
         return f"--{normalized_name}/--no-{normalized_name}"
@@ -204,7 +212,8 @@ def create_click_option(
     field_type: Any,
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     # Get Help text.
-    help_text = help_for_fields.get(dataclass_field.name, None)
+    public_name = getattr(dataclass_field, "public_name", dataclass_field.name)
+    help_text = help_for_fields.get(public_name)
 
     # Get help field.
     return click.option(
@@ -243,6 +252,7 @@ def get_fields_from_pydantic_model(
         # Create a simple object that mimics dataclass Field.
         field_obj = SimpleNamespace()
         field_obj.name = field_name
+        field_obj.public_name = get_public_field_name(field_name, field_info)
 
         # Extract default value from Pydantic FieldInfo
         # In Pydantic v2, field_info.default is PydanticUndefined if not set,
@@ -314,7 +324,7 @@ def config_to_flag(
     options: list[tuple[str, Callable[..., Any]]] = []
     param_names: set[str] = set()
     help_text = {
-        field_name: field_info.description
+        get_public_field_name(field_name, field_info): field_info.description
         for field_name, field_info in cls.model_fields.items()
         if field_info.description
     }
@@ -327,28 +337,29 @@ def config_to_flag(
             continue
 
         original_name = _field.name
+        public_name = _field.public_name
         field_type = field_types[original_name]
 
         if prefix:
             # Create a copy of the help text with the prefixed name
-            new_name = f"{prefix}_{original_name}"
+            new_name = f"{prefix}_{public_name}"
 
-            if original_name in help_text:
-                help_text[new_name] = help_text[original_name]
+            if public_name in help_text:
+                help_text[new_name] = help_text[public_name]
 
             # Create a new Field with the modified name by copying all attributes
             from copy import copy
 
             modified_field = copy(_field)
-            modified_field.name = new_name
+            modified_field.public_name = new_name
             new_option = create_click_option(
                 help_text, modified_field, field_type
             )
             param_names.add(new_name)
         else:
-            new_name = original_name
+            new_name = public_name
             new_option = create_click_option(help_text, _field, field_type)
-            param_names.add(original_name)
+            param_names.add(public_name)
         options.append((new_name, new_option))
 
     def apply_flags(func: Callable[_P, _R]) -> Callable[_P, _R]:

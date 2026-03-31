@@ -21,6 +21,7 @@ import click
 from click.testing import CliRunner
 from max.config import ConfigFileModel
 from max.entrypoints.cli.config import config_to_flag, pipeline_config_options
+from max.pipelines.lib import MAXModelConfig, PipelineRuntimeConfig
 from pydantic import Field
 
 
@@ -109,3 +110,27 @@ def test_pipeline_config_options_preserves_explicit_parallelism_flags() -> None:
     )
     assert result.exit_code == 0, result.output
     assert result.output.strip() == "1|1"
+
+
+def test_parallelism_backing_fields_preserve_public_api() -> None:
+    runtime = PipelineRuntimeConfig(ep_size=8)
+    model = MAXModelConfig(data_parallel_degree=4)
+
+    assert runtime.ep_size_raw == 8
+    assert runtime.ep_size == 8
+    assert runtime.model_dump()["ep_size"] == 8
+    assert "ep_size_raw" not in runtime.model_dump()
+
+    runtime.ep_size = None
+    assert runtime.ep_size_raw is None
+    assert runtime.ep_size == 1
+
+    assert model.data_parallel_degree_raw == 4
+    assert model.data_parallel_degree == 4
+    model_dump = model.model_dump(include={"data_parallel_degree"})
+    assert model_dump["data_parallel_degree"] == 4
+    assert "data_parallel_degree_raw" not in model_dump
+
+    model.data_parallel_degree = None
+    assert model.data_parallel_degree_raw is None
+    assert model.data_parallel_degree == 1
