@@ -169,3 +169,9 @@ This version is still a work in progress.
   normal/subnormal boundary (e.g., `Float64("4.4501363245856945e-308")`
   returned half the correct value).
   ([#6196](https://github.com/modular/modular/issues/6196))
+
+- [Issue #5872](https://github.com/modular/modular/issues/5872): Fixed a
+  compiler crash ("'get_type_name' requires a concrete type") when using
+  default `Writable`, `Equatable`, or `Hashable` implementations on structs
+  with MLIR-type fields (e.g. `__mlir_type.index`). The compiler now correctly
+  reports that the field does not implement the required trait.

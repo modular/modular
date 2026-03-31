@@ -17,6 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 from std.collections.string.string_slice import _get_kgen_string
 from std.reflection import (
     get_type_name,
+    is_struct_type,
     struct_field_names,
     struct_field_types,
 )
@@ -142,26 +143,42 @@ def _constrained_field_conforms_to[
             (defaults to ParentConformsTo).
     """
     comptime names = struct_field_names[Parent]()
-    comptime types = struct_field_types[Parent]()
     comptime field_name = names[FieldIndex]
-    comptime FieldType = types[FieldIndex]
     comptime parent_type_name = _unqualified_type_name[Parent]()
-    comptime field_type_name = _unqualified_type_name[FieldType]()
+    comptime types = struct_field_types[Parent]()
+    comptime FieldType = types[FieldIndex]
 
     # Construct a message like:
-    #     Could not derive Equatable for Point - member field `x: Int` does not
-    #     implement Equatable
-    comptime assert cond, StaticString(
-        _get_kgen_string[
-            "Could not derive ",
-            ParentConformsTo,
-            " for ",
-            parent_type_name,
-            " - member field `",
-            field_name,
-            ": ",
-            field_type_name,
-            "` does not implement ",
-            FieldConformsTo,
-        ]()
-    )
+    #     Could not derive Equatable for Point - member field `x: Int`
+    #     does not implement Equatable
+    # For MLIR types, omit the type name since `_unqualified_type_name`
+    # can't handle non-struct types.
+    comptime if is_struct_type[FieldType]():
+        comptime field_type_name = _unqualified_type_name[FieldType]()
+        comptime assert cond, StaticString(
+            _get_kgen_string[
+                "Could not derive ",
+                ParentConformsTo,
+                " for ",
+                parent_type_name,
+                " - member field `",
+                field_name,
+                ": ",
+                field_type_name,
+                "` does not implement ",
+                FieldConformsTo,
+            ]()
+        )
+    else:
+        comptime assert cond, StaticString(
+            _get_kgen_string[
+                "Could not derive ",
+                ParentConformsTo,
+                " for ",
+                parent_type_name,
+                " - member field `",
+                field_name,
+                "` does not implement ",
+                FieldConformsTo,
+            ]()
+        )

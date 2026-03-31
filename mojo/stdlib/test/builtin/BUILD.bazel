@@ -33,6 +33,7 @@ _LIT_TESTS = [
     "test_bool_indexer_compile_fail.mojo",
     "test_default_equatable_compile_fail.mojo",
     "test_default_hashable_compile_fail.mojo",
+    "test_default_writable_compile_fail.mojo",
     "test_format_compile_fail.mojo",
     "test_format_float_lut_optimization.mojo",
     "test_global_constant_compile_fail.mojo",
