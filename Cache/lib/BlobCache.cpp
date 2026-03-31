@@ -579,6 +579,17 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
                           << " readOnly=" << (readOnly ? "true" : "false")
                           << "\n";
 
+  // Always warn when a cache directory is not writable, regardless of
+  // MODULAR_ENABLE_CACHE_LOGGING. Silent read-only degradation makes
+  // performance problems very hard to diagnose.
+  if (readOnly) {
+    llvm::errs()
+        << "Warning: cache directory '" << base.string()
+        << "' is not writable; compilation caching will be disabled for "
+           "this path. Set MODULAR_CACHE_DIR to a writable directory, or "
+           "set MODULAR_ENABLE_CACHE_LOGGING=1 for full diagnostics.\n";
+  }
+
   // If we have write access, do a little cache pruning on the host system in
   // order to keep disk usage down: iterate the base path and remove
   // directories that match the current suffix (after '-').
