@@ -507,6 +507,141 @@ class MAXModelConfig(MAXModelConfigBase):
             # weight_path should not be used directly anymore.
             self.model_path = self._weights_repo_id
 
+        # Best-effort encoding and weight_path resolution.
+        # For diffuser sub-components this is the only resolution step;
+        # for LLM models the architecture-level validation in
+        # PipelineConfig runs afterward and is idempotent.
+        self._resolve_encoding_and_weights()
+
+    # ------------------------------------------------------------------
+    # Best-effort encoding / weight resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_encoding_and_weights(self) -> None:
+        """Best-effort resolution of quantization_encoding and weight_path.
+
+        Infers encoding and discovers weight files without requiring
+        architecture-level information.  This enables diffuser
+        sub-components to get resolved fields even though they skip
+        architecture validation.
+
+        For LLM models that later go through
+        ``_validate_and_resolve_architecture()``, the fields resolved
+        here are consumed as-is (the downstream methods are idempotent
+        when these fields are already set).
+
+        Best-effort: if encoding or weights cannot be unambiguously
+        determined, the fields are left as-is rather than raising.
+        """
+        # Stage 1: infer encoding if not already set.
+        if not self.quantization_encoding:
+            try:
+                self._try_infer_encoding()
+            except Exception:
+                logger.debug(
+                    "Could not infer quantization_encoding for %s; "
+                    "architecture validation will handle it.",
+                    self.model_path,
+                )
+
+        # Stage 2: discover weight files if encoding is set but paths are not.
+        if self.quantization_encoding and not self.weight_path:
+            try:
+                self._try_resolve_weight_path()
+            except Exception:
+                logger.debug(
+                    "Could not resolve weight_path for %s; "
+                    "architecture validation will handle it.",
+                    self.model_path,
+                )
+
+        # Stage 3: finalize encoding config and validate paths.
+        if self.quantization_encoding and self.weight_path:
+            try:
+                self._finalize_encoding_config()
+            except Exception:
+                logger.debug(
+                    "Could not finalize encoding config for %s.",
+                    self.model_path,
+                )
+            try:
+                self._validate_final_architecture_model_path_weight_path()
+            except Exception:
+                logger.debug(
+                    "Weight path validation deferred for %s.",
+                    self.model_path,
+                )
+
+    def _try_infer_encoding(self) -> None:
+        """Try to infer quantization_encoding without architecture info.
+
+        Sets ``self.quantization_encoding`` when unambiguous, otherwise
+        leaves it as ``None``.  Does **not** raise on ambiguity.
+        """
+        if self.weight_path:
+            # Try filename-based detection first.
+            encoding = parse_supported_encoding_from_file_name(
+                str(self.weight_path[0])
+            )
+            if encoding is None and not os.path.exists(self.weight_path[0]):
+                # Remote file — ask the HF repo.
+                encoding = self.huggingface_weight_repo.encoding_for_file(
+                    self.weight_path[0]
+                )
+            if encoding:
+                self.quantization_encoding = encoding
+        else:
+            # No weight_path — check the repo's supported encodings.
+            supported = self.huggingface_weight_repo.supported_encodings
+            if len(supported) == 1:
+                self.quantization_encoding = supported[0]
+            elif (
+                len(supported) > 1
+                and self.default_device_spec.device_type != "cpu"
+            ):
+                # GPU preference: bfloat16 first (natural GPU dtype for
+                # diffuser components), then higher-compression formats.
+                if "bfloat16" in supported:
+                    self.quantization_encoding = "bfloat16"
+                elif "float8_e4m3fn" in supported:
+                    self.quantization_encoding = "float8_e4m3fn"
+                elif "float4_e2m1fnx2" in supported:
+                    self.quantization_encoding = "float4_e2m1fnx2"
+            # else: ambiguous — leave as None for architecture to resolve.
+
+        # On GPU, cast float32 → bfloat16 (the natural GPU dtype).
+        if (
+            self.quantization_encoding == "float32"
+            and self.default_device_spec.device_type != "cpu"
+        ):
+            self._validate_and_resolve_dtype_casting(
+                from_encoding="float32", to_encoding="bfloat16"
+            )
+
+    def _try_resolve_weight_path(self) -> None:
+        """Try to discover weight files without architecture info.
+
+        Requires ``quantization_encoding`` to be set.  Prefers safetensors
+        format as default.  Does **not** raise if no files are found.
+        """
+        assert self.quantization_encoding
+
+        weight_files = self.huggingface_weight_repo.files_for_encoding(
+            encoding=self.quantization_encoding
+        )
+
+        if not weight_files and self._applied_dtype_cast_from:
+            weight_files = self.huggingface_weight_repo.files_for_encoding(
+                encoding=self._applied_dtype_cast_from
+            )
+
+        # Prefer safetensors (reasonable default for diffuser components).
+        if safetensors_files := weight_files.get(WeightsFormat.safetensors, []):
+            self.weight_path = safetensors_files
+        elif weight_files:
+            # Fall back to any available format.
+            self.weight_path = next(iter(weight_files.values()))
+
     @property
     def model_name(self) -> str:
         """Returns the served model name or model path."""

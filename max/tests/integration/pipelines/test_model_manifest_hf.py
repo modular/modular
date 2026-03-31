@@ -346,3 +346,58 @@ class TestFlux2NvfP4WeightOverrideHF:
         cfg = registry["text_encoder"]
         assert cfg.model_path == self.BASE_REPO
         assert cfg.quantization_encoding is None
+
+
+# ---------------------------------------------------------------------------
+# FLUX.2-dev component encoding/weight resolution
+# ---------------------------------------------------------------------------
+
+
+@requires_flux2_access
+class TestFlux2ComponentResolution:
+    """Verify that encoding and weight_path are resolved for diffuser sub-components.
+
+    After ``ModelManifest.resolve()``, components like transformer and vae
+    should have ``quantization_encoding`` and ``weight_path`` populated via
+    best-effort resolution in ``MAXModelConfig.resolve()``, without needing
+    architecture-level validation.
+    """
+
+    REPO = "black-forest-labs/FLUX.2-dev"
+
+    @pytest.fixture()
+    def resolved_manifest(self) -> ModelManifest:
+        manifest = ModelManifest.from_model_path(self.REPO)
+        manifest.resolve()
+        return manifest
+
+    def test_transformer_encoding_resolved(
+        self, resolved_manifest: ModelManifest
+    ) -> None:
+        cfg = resolved_manifest["transformer"]
+        assert cfg.quantization_encoding is not None
+        assert cfg.quantization_encoding == "bfloat16"
+
+    def test_transformer_weight_path_resolved(
+        self, resolved_manifest: ModelManifest
+    ) -> None:
+        cfg = resolved_manifest["transformer"]
+        assert len(cfg.weight_path) > 0
+        assert all(str(p).endswith(".safetensors") for p in cfg.weight_path)
+        # Weight paths should be scoped to the transformer subfolder.
+        assert all(str(p).startswith("transformer/") for p in cfg.weight_path)
+
+    def test_vae_encoding_resolved(
+        self, resolved_manifest: ModelManifest
+    ) -> None:
+        cfg = resolved_manifest["vae"]
+        assert cfg.quantization_encoding is not None
+        assert cfg.quantization_encoding == "bfloat16"
+
+    def test_vae_weight_path_resolved(
+        self, resolved_manifest: ModelManifest
+    ) -> None:
+        cfg = resolved_manifest["vae"]
+        assert len(cfg.weight_path) > 0
+        assert all(str(p).endswith(".safetensors") for p in cfg.weight_path)
+        assert all(str(p).startswith("vae/") for p in cfg.weight_path)
