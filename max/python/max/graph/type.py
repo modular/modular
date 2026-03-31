@@ -94,7 +94,7 @@ class ConvInputLayout(enum.Enum):
             attr: The MLIR Attribute object to parse into a layout.
 
         Returns:
-            The FilterLayout represented by the Attribute value.
+            The ConvInputLayout represented by the Attribute value.
         """
         return ConvInputLayout(attr.value)
 
@@ -296,14 +296,14 @@ class _TensorTypeBase(Type[MlirType]):
         return len(self.shape)
 
     def __eq__(self, other: Any) -> bool:
-        """Checks whether the two tensors have the same rank, type, and shape.
+        """Checks whether the two tensors have the same type, shape, and device.
 
         Args:
             other: The other tensor to check equality against.
 
         Returns:
-            ``True`` if the tensors have identical element type and shape,
-            ``False`` otherwise.
+            ``True`` if the tensors have identical element type, shape, and
+            device, ``False`` otherwise.
         """
         return (
             isinstance(other, type(self))
@@ -326,8 +326,7 @@ class _TensorTypeBase(Type[MlirType]):
         This is the number of elements the tensor will hold **during execution**,
         :class:`TensorType` doesn't actually hold any element values at all.
 
-        For any non-static tensor, in other words a tensor having any symbolic
-        dimensions, the return value will be meaningless.
+        Raises :obj:`RuntimeError` if the tensor has any symbolic dimensions.
 
         Returns:
             The number of elements the tensor contains.
@@ -608,12 +607,12 @@ class _ChainType(Type[mo.ChainType]):
 
     @staticmethod
     def from_mlir(t: mo.ChainType) -> _ChainType:
-        """Constructs an opaque type from an MLIR type.
+        """Constructs a chain type from an MLIR type.
 
         Args:
-            t: The MLIR Type object to parse into an opaque type.
+            t: The MLIR Type object to parse into a chain type.
 
         Returns:
-            The opaque type represented by the MLIR Type value.
+            The chain type represented by the MLIR Type value.
         """
         return _ChainType()
