@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # UNSUPPORTED: system-darwin
-# XFAIL: asan && !system-darwin
 # RUN: %mojo-build %s -o %t
 # RUN: %t | FileCheck %s
 
