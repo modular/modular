@@ -97,13 +97,14 @@ asan_args = ["--sanitize", "address"] if "--sanitize" not in set(sanitize_args) 
 debug_full_args = ["--debug-level", "full"]
 
 llvm_config.add_tool_substitutions([
-    mojo_subst("%mojo-no-debug-no-assert",                   sanitize_args                                            ),
-    mojo_subst("%mojo-build-no-debug-no-assert", ["build"] + sanitize_args                                            ),
-    mojo_subst("%mojo-no-debug",                             sanitize_args + assert_args                              ),
-    mojo_subst("%mojo-build-no-debug",           ["build"] + sanitize_args + assert_args                              ),
-    mojo_subst("%mojo",                                      sanitize_args + assert_args + debug_full_args            ),
-    mojo_subst("%mojo-build",                    ["build"] + sanitize_args + assert_args + debug_full_args            ),
-    mojo_subst("%mojo-build-asan",               ["build"] + sanitize_args + assert_args + debug_full_args + asan_args),
+    mojo_subst("%mojo-no-debug-no-assert",       [         "-Werror"] + sanitize_args                                            ),
+    mojo_subst("%mojo-build-no-debug-no-assert", ["build", "-Werror"] + sanitize_args                                            ),
+    mojo_subst("%mojo-no-debug",                 [         "-Werror"] + sanitize_args + assert_args                              ),
+    mojo_subst("%mojo-build-no-debug",           ["build", "-Werror"] + sanitize_args + assert_args                              ),
+    mojo_subst("%mojo",                          [         "-Werror"] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build",                    ["build", "-Werror"] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build-no-werror",          ["build"           ] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build-asan",               ["build", "-Werror"] + sanitize_args + assert_args + debug_full_args + asan_args),
 ])
 
 #---------------------------------------

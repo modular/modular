@@ -54,7 +54,7 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
     var psync = shmem_calloc[DType.uint64](1)
 
     for i in range(data_len):
-        data_h[i] = shmem_my_pe() + i
+        data_h[i] = shmem_my_pe() + Int32(i)
 
     data.enqueue_copy_from(data_h)
 
