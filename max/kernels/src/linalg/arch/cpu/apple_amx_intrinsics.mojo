@@ -19,7 +19,8 @@
 
 from std.sys._assembly import inlined_assembly
 
-from layout import Layout, LayoutTensor
+from layout import TileTensor
+from layout.tile_layout import row_major
 from std.memory import (
     memcpy,
     memset_zero,
@@ -387,118 +388,79 @@ def fma[
 
 
 @always_inline
-def dot_at_b_impl(
-    c: LayoutTensor[DType.float32, Layout.row_major(16, 16), MutAnyOrigin],
-    a: LayoutTensor[DType.float32, Layout.row_major(16, 16), ImmutAnyOrigin],
-    b: LayoutTensor[DType.float32, Layout.row_major(16, 16), ImmutAnyOrigin],
+def dot_at_b(
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: type_of(c),
+    b: type_of(c),
 ):
-    # Performs a 16x16x16 matrix multiply on the given matrices storing the
-    # result into the C matrix. The matrix multiplication is performed as:
-    #
-    #     C = A^T * B
-    #
-    # Where the dimensions of the matrices are all 16x16. The A matrix is
-    # assumed to be transposed and all matrices are stored in row-major
-    # order.
+    """Performs a matrix multiply C = A^T * B using Apple AMX instructions.
 
-    var a_pointer = a.ptr
-    var b_pointer = b.ptr
-    var c_pointer = c.ptr
-
-    comptime num_elements = c.layout.size()
-
-    # TODO: We can elide the copy if the data is already is already aligned.
-    var a_buffer = stack_allocation[num_elements, Float32, alignment=128]()
-    var b_buffer = stack_allocation[num_elements, Float32, alignment=128]()
-    var c_buffer = stack_allocation[num_elements, Float32, alignment=128]()
-
-    memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
-    memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
-    memset_zero(c_buffer, num_elements)
-
-    # _set() has the side effect of clearing the z tile
-    _set()
-
-    comptime for j in range(2):
-        comptime for i in range(8):
-            ldx((i << 56) | Int(b_buffer + (j * 8 + i) * b.dim[0]()))
-            ldy((i << 56) | Int(a_buffer + (j * 8 + i) * a.dim[0]()))
-
-        comptime for i in range(8):
-            fma32((i << 6 << 10) | (i << 6))
-
-    comptime for i in range(0, 64, 4):
-        stz((i << 56) | Int(c_buffer + (i >> 2) * c.dim[0]()))
-
-    _clr()
-
-    memcpy(dest=c_pointer, src=c_buffer, count=num_elements)
-
-
-@always_inline
-def dot_at_b_impl(
-    c: LayoutTensor[DType.float16, Layout.row_major(32, 32), MutAnyOrigin],
-    a: LayoutTensor[DType.float16, Layout.row_major(32, 32), ImmutAnyOrigin],
-    b: LayoutTensor[DType.float16, Layout.row_major(32, 32), ImmutAnyOrigin],
-):
-    var a_pointer = a.ptr
-    var b_pointer = b.ptr
-    var c_pointer = c.ptr
-
-    comptime num_elements = c.layout.size()
-
-    var a_buffer = stack_allocation[num_elements, Float16, alignment=128]()
-    var b_buffer = stack_allocation[num_elements, Float16, alignment=128]()
-    var c_buffer = stack_allocation[num_elements, Float16, alignment=128]()
-
-    memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
-    memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
-    memset_zero(c_buffer, num_elements)
-
-    # _set() has the side effect of clearing the z tile
-    _set()
-
-    comptime for j in range(4):
-        comptime for i in range(8):
-            ldx((i << 56) | Int(b_buffer + (j * 8 + i) * b.dim[0]()))
-            ldy((i << 56) | Int(a_buffer + (j * 8 + i) * a.dim[0]()))
-
-        comptime for i in range(8):
-            fma16((i << 6 << 10) | (i << 6))
-
-    comptime for i in range(0, 64, 2):
-        stz((i << 56) | Int(c_buffer + (i >> 1) * c.dim[0]()))
-
-    _clr()
-
-    memcpy(dest=c_pointer, src=c_buffer, count=num_elements)
-
-
-@always_inline
-def dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
+    Supports f32 (16x16) and f16 (32x32) tiles. All matrices are stored in
+    row-major order.
+    """
     comptime assert (
         c.dtype == DType.float32 or c.dtype == DType.float16
     ), "the buffer dtype must be float32 or float16"
 
+    var a_pointer = a.ptr
+    var b_pointer = b.ptr
+    var c_pointer = c.ptr
+
+    comptime assert c.flat_rank == 2, "expected rank 2 tile"
+    comptime assert (
+        c.static_shape[0] != -1 and c.static_shape[1] != -1
+    ), "dot_at_b requires fully static tile dimensions"
+    comptime num_elements = c.static_shape[0] * c.static_shape[1]
+
+    # TODO: We can elide the copy if the data is already aligned.
+    var a_buffer = stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
+    var b_buffer = stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
+    var c_buffer = stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
+
+    memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
+    memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
+    memset_zero(c_buffer, num_elements)
+
+    # _set() has the side effect of clearing the z tile
+    _set()
+
+    comptime dim0 = c.static_shape[0]
+
     comptime if c.dtype == DType.float32:
-        comptime f32_tensor = LayoutTensor[
-            DType.float32,
-            Layout.row_major(16, 16),
-            _,
-        ]
-        dot_at_b_impl(
-            rebind[f32_tensor[MutAnyOrigin]](c),
-            rebind[f32_tensor[ImmutAnyOrigin]](a),
-            rebind[f32_tensor[ImmutAnyOrigin]](b),
-        )
+        comptime assert (
+            c.static_shape[0] == 16 and c.static_shape[1] == 16
+        ), "f32 AMX matmul requires 16x16 tiles"
+        comptime for j in range(2):
+            comptime for i in range(8):
+                ldx((i << 56) | Int(b_buffer + (j * 8 + i) * dim0))
+                ldy((i << 56) | Int(a_buffer + (j * 8 + i) * dim0))
+
+            comptime for i in range(8):
+                fma32((i << 6 << 10) | (i << 6))
+
+        comptime for i in range(0, 64, 4):
+            stz((i << 56) | Int(c_buffer + (i >> 2) * dim0))
     elif c.dtype == DType.float16:
-        comptime f16_tensor = LayoutTensor[
-            DType.float16,
-            Layout.row_major(32, 32),
-            _,
-        ]
-        dot_at_b_impl(
-            rebind[f16_tensor[MutAnyOrigin]](c),
-            rebind[f16_tensor[ImmutAnyOrigin]](a),
-            rebind[f16_tensor[ImmutAnyOrigin]](b),
-        )
+        comptime assert (
+            c.static_shape[0] == 32 and c.static_shape[1] == 32
+        ), "f16 AMX matmul requires 32x32 tiles"
+        comptime for j in range(4):
+            comptime for i in range(8):
+                ldx((i << 56) | Int(b_buffer + (j * 8 + i) * dim0))
+                ldy((i << 56) | Int(a_buffer + (j * 8 + i) * dim0))
+
+            comptime for i in range(8):
+                fma16((i << 6 << 10) | (i << 6))
+
+        comptime for i in range(0, 64, 2):
+            stz((i << 56) | Int(c_buffer + (i >> 1) * dim0))
+
+    _clr()
+
+    memcpy(dest=c_pointer, src=c_buffer, count=num_elements)

@@ -16,40 +16,38 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
+from layout import TileTensor
+from layout.tile_layout import row_major
+from layout.tile_tensor import stack_allocation
 from linalg.arch.cpu.apple_amx_intrinsics import *
 from std.testing import *
 
 
-def fill_a(buf: LayoutTensor[mut=True, ...]):
+def fill_a(buf: TileTensor[mut=True, ...]):
+    comptime assert buf.flat_rank == 2
     # Fills the A matrix with the following values row + 2*col
-    for i in range(buf.dim[0]()):
-        for j in range(buf.dim[1]()):
+    for i in range(Int(buf.dim[0]())):
+        for j in range(Int(buf.dim[1]())):
             buf[i, j] = Scalar[buf.dtype](i // (j + 1) + j)
 
 
-def fill_b(buf: LayoutTensor[mut=True, ...]):
+def fill_b(buf: TileTensor[mut=True, ...]):
+    comptime assert buf.flat_rank == 2
     # Fills the A matrix with the following values row/(col + 1) + col
-    for i in range(buf.dim[0]()):
-        for j in range(buf.dim[1]()):
+    for i in range(Int(buf.dim[0]())):
+        for j in range(Int(buf.dim[1]())):
             buf[i, j] = Scalar[buf.dtype](i // (j + 1) + j)
 
 
-def clear_c(buf: LayoutTensor[mut=True, ...]):
+def clear_c(buf: TileTensor[mut=True, ...]):
     _ = buf.fill(0)
 
 
 def test_dot_at_b[dtype: DType, M: Int, N: Int]() raises:
-    # Create LayoutTensors with static shapes
-    var a_matrix = LayoutTensor[
-        dtype, Layout.row_major(M, N), MutAnyOrigin
-    ].stack_allocation()
-    var b_matrix = LayoutTensor[
-        dtype, Layout.row_major(M, N), MutAnyOrigin
-    ].stack_allocation()
-    var c_matrix = LayoutTensor[
-        dtype, Layout.row_major(M, N), MutAnyOrigin
-    ].stack_allocation()
+    # Create TileTensors with static shapes
+    var a_matrix = stack_allocation[dtype=dtype](row_major[M, N]())
+    var b_matrix = stack_allocation[dtype=dtype](row_major[M, N]())
+    var c_matrix = stack_allocation[dtype=dtype](row_major[M, N]())
 
     fill_a(a_matrix)
     fill_b(b_matrix)
@@ -57,10 +55,10 @@ def test_dot_at_b[dtype: DType, M: Int, N: Int]() raises:
 
     dot_at_b(c_matrix, a_matrix, b_matrix)
 
-    for m in range(c_matrix.dim[0]()):
-        for n in range(c_matrix.dim[1]()):
+    for m in range(Int(c_matrix.dim[0]())):
+        for n in range(Int(c_matrix.dim[1]())):
             var golden = Scalar[dtype](0)
-            for k in range(a_matrix.dim[1]()):
+            for k in range(Int(a_matrix.dim[1]())):
                 golden += a_matrix[k, m][0] * b_matrix[k, n][0]
             assert_almost_equal(
                 c_matrix[m, n],

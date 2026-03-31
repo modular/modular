@@ -17,7 +17,7 @@ from std.sys.info import CompilationTarget, align_of
 from std.sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import partial_simd_load
-from layout import Layout, LayoutTensor, RuntimeTuple
+from layout import Layout, LayoutTensor, RuntimeTuple, TileTensor
 from std.memory.unsafe import bitcast
 
 from std.utils.index import Index, IndexList
@@ -173,9 +173,9 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, ...],
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        c: TileTensor[mut=True, ...],
+        a: TileTensor,
+        b_packed: TileTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
@@ -184,9 +184,13 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
         """
-        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
-        var c_stride = c.dim[1]()
+        # Convert to LayoutTensor for _accumulate which uses runtime_layout.
+        var a_lt = a.to_layout_tensor()
+        var b_lt = b_packed.to_layout_tensor()
+
+        var c_stride = Int(c.dim[1]())
 
         var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
@@ -217,8 +221,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
             for idx_k in range(0, kl, 4):
                 # accumulate data for this (n, k) index
                 self._accumulate[False, simd_size, kernel_rows, kernel_cols](
-                    a,
-                    b_packed,
+                    a_lt,
+                    b_lt,
                     acc,
                     global_offset,
                     Index(idx_n, idx_k),
@@ -226,8 +230,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 )
             if kl != tile_n_k[1]:
                 self._accumulate[True, simd_size, kernel_rows, kernel_cols](
-                    a,
-                    b_packed,
+                    a_lt,
+                    b_lt,
                     acc,
                     global_offset,
                     Index(idx_n, kl),

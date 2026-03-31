@@ -18,7 +18,6 @@ from std.algorithm import sync_parallelize, tile, vectorize
 from layout import (
     Coord,
     Idx,
-    LayoutTensor,
     TileTensor,
 )
 from layout.tile_layout import TensorLayout, row_major
@@ -63,15 +62,15 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, ...],
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        c: TileTensor[mut=True, ...],
+        a: TileTensor,
+        b_packed: TileTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
-        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
         ...
 
 
@@ -265,18 +264,14 @@ struct TiledMatmul[
         @always_inline
         def row_iteration[tile_kernel_rows: Int](row_offset: Int):
             var skip_boundary_check = knm_bounds[1] > sub_tile_n
-            # Convert TileTensors to LayoutTensors for the inner matmul call
-            var c_tensor = self.c.to_layout_tensor()
-            var a_tensor = self.a.to_layout_tensor()
-            var b_tensor = b_packed_tile.to_layout_tensor()
             self.alg.__inner_matmul__[
                 tile_kernel_rows,
                 tile_kernel_cols,
                 Self.config.simd_size,
             ](
-                c_tensor,
-                a_tensor,
-                b_tensor,
+                self.c,
+                self.a,
+                b_packed_tile,
                 global_offset + GemmShape(row_offset, 0, 0),
                 self.global_tile_offset + self.global_tile_shape,
                 sub_tile_n_k,
