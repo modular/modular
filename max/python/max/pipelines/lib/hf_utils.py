@@ -501,7 +501,14 @@ class HuggingFaceRepo:
                     supported_encodings.add("float4_e2m1fnx2")
 
             elif self.repo_type == "online":
-                safetensors_info = self.info.safetensors
+                # When subfolder is set, repo-level safetensors metadata
+                # (self.info.safetensors) aggregates ALL files in the repo
+                # and is not scoped to the subfolder.  In that case, read
+                # the actual weight files within the subfolder to detect
+                # encodings accurately.
+                safetensors_info = (
+                    self.info.safetensors if self.subfolder is None else None
+                )
 
                 # Workaround for FP8 models that don't have safetensors metadata populated
                 # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"

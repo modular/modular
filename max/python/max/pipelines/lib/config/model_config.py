@@ -470,6 +470,24 @@ class MAXModelConfig(MAXModelConfigBase):
         if parsed_repo_id is not None:
             self._weights_repo_id = parsed_repo_id
 
+        # When subfolder is set, user-provided weight paths are relative to
+        # the subfolder.  Prepend the subfolder so that all downstream code
+        # (encoding detection, validation, downloading) sees repo-relative
+        # paths that include the subfolder prefix.
+        if self.subfolder and self.weight_path:
+            prefix = self.subfolder + "/"
+            adjusted: list[Path] = []
+            for p in self.weight_path:
+                if (
+                    not p.is_absolute()
+                    and not p.exists()
+                    and not str(p).startswith(prefix)
+                ):
+                    adjusted.append(Path(self.subfolder) / p)
+                else:
+                    adjusted.append(p)
+            self.weight_path = adjusted
+
         # If we cannot infer the weight path, we lean on the model_path
         # to provide it.
         if len(self.weight_path) == 0:

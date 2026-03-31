@@ -14,7 +14,9 @@
 """Tests for MAXModelConfig subfolder support."""
 
 import os
+import struct
 import tempfile
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from max.graph.weights import WeightsFormat
@@ -162,3 +164,136 @@ class TestHuggingFaceRepoSubfolderWeightDiscovery:
                     "vae/diffusion_pytorch_model.safetensors",
                 ]
             )
+
+    def test_supported_encodings_scoped_to_subfolder_local(self) -> None:
+        """Test that supported_encodings reads from subfolder-scoped files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a BF16 safetensors file at root.
+            root_weight = os.path.join(tmpdir, "model.safetensors")
+            _write_fake_safetensors(root_weight, dtype="BF16")
+
+            # Create an F32 safetensors file inside subfolder.
+            vae_dir = os.path.join(tmpdir, "vae")
+            os.makedirs(vae_dir)
+            subfolder_weight = os.path.join(vae_dir, "model.safetensors")
+            _write_fake_safetensors(subfolder_weight, dtype="F32")
+
+            # Without subfolder: reads first file found (local repos assume
+            # one encoding per repo).
+            repo_all = HuggingFaceRepo(repo_id=tmpdir)
+            assert len(repo_all.supported_encodings) >= 1
+
+            # With subfolder="vae": should only see F32 from the subfolder.
+            repo_vae = HuggingFaceRepo(repo_id=tmpdir, subfolder="vae")
+            assert repo_vae.supported_encodings == ["float32"]
+
+
+class TestMAXModelConfigSubfolderWeightPathPrefixing:
+    """Test that resolve() prepends subfolder to user-provided weight paths."""
+
+    @mock_pipeline_config_resolve
+    def test_subfolder_prepended_to_weight_path(self) -> None:
+        """Test that user-provided weight_path gets subfolder prefix."""
+        config = MAXModelConfig(
+            model_path="org/model",
+            subfolder="vae",
+            weight_path=[Path("model.safetensors")],
+        )
+        # Call resolve with mocked dependencies.
+        with (
+            patch(
+                "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+                return_value=([Path("model.safetensors")], None),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.devices_exist",
+                return_value=True,
+            ),
+            patch(
+                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+            ),
+        ):
+            config.resolve()
+            assert config.weight_path == [Path("vae/model.safetensors")]
+
+    @mock_pipeline_config_resolve
+    def test_subfolder_not_double_prepended(self) -> None:
+        """Test that paths already containing subfolder are not double-prefixed."""
+        config = MAXModelConfig(
+            model_path="org/model",
+            subfolder="vae",
+            weight_path=[Path("vae/model.safetensors")],
+        )
+        with (
+            patch(
+                "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+                return_value=([Path("vae/model.safetensors")], None),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.devices_exist",
+                return_value=True,
+            ),
+            patch(
+                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+            ),
+        ):
+            config.resolve()
+            assert config.weight_path == [Path("vae/model.safetensors")]
+
+    @mock_pipeline_config_resolve
+    def test_subfolder_skips_absolute_paths(self) -> None:
+        """Test that absolute paths are not prefixed with subfolder."""
+        with tempfile.NamedTemporaryFile(suffix=".safetensors") as tmp:
+            abs_path = Path(tmp.name)
+            config = MAXModelConfig(
+                model_path="org/model",
+                subfolder="vae",
+                weight_path=[abs_path],
+            )
+            with (
+                patch(
+                    "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+                    return_value=([abs_path], None),
+                ),
+                patch(
+                    "max.pipelines.lib.config.model_config.devices_exist",
+                    return_value=True,
+                ),
+            ):
+                config.resolve()
+                assert config.weight_path == [abs_path]
+
+    @mock_pipeline_config_resolve
+    def test_no_subfolder_leaves_weight_path_unchanged(self) -> None:
+        """Test that without subfolder, weight_path is not modified."""
+        config = MAXModelConfig(
+            model_path="org/model",
+            weight_path=[Path("model.safetensors")],
+        )
+        with (
+            patch(
+                "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+                return_value=([Path("model.safetensors")], None),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.devices_exist",
+                return_value=True,
+            ),
+            patch(
+                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+            ),
+        ):
+            config.resolve()
+            assert config.weight_path == [Path("model.safetensors")]
+
+
+def _write_fake_safetensors(path: str, dtype: str = "BF16") -> None:
+    """Write a minimal safetensors file with a single tensor of the given dtype."""
+    import json
+
+    header = {"weight": {"dtype": dtype, "shape": [1], "data_offsets": [0, 2]}}
+    header_bytes = json.dumps(header).encode("utf-8")
+    with open(path, "wb") as f:
+        f.write(struct.pack("<Q", len(header_bytes)))
+        f.write(header_bytes)
+        f.write(b"\x00\x00")  # 2 bytes of fake tensor data
