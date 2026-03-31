@@ -21,9 +21,8 @@ def test_oom(memory_manager_config: None, mem_type: MemType) -> None:
     if mem_type == MemType.PINNED:
         pytest.skip("PINNED memory is not supported in the memory manager")
 
-    # Once the memory manager is enabled, this must fail rather than falling
-    # back to a raw device allocation, because the request exceeds the 100MiB
-    # manager.
+    # In memory-manager-only mode this must fail rather than falling back to a
+    # raw device allocation, because the request exceeds the 100MiB manager.
     with pytest.raises(
         ValueError,
         match=r"^Memory manager cannot satisfy allocation \([^)]*\): .* on \[.*\]@.* \(request: 101MB ; free: 0B ; free_blocks: \d+ ; available: .* ; chunk_size: .* ; chunk_count: \d+ ; cache_size: 0B ; max_cache_size: 100MB\)",
