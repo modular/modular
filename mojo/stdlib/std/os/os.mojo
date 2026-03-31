@@ -25,6 +25,7 @@ from std.collections.string.string_slice import _unsafe_strlen
 from std.format.tstring import TString
 from std.io import FileDescriptor
 from std.ffi import c_char, c_int, external_call, get_errno, _CPointer
+from std.reflection import SourceLocation, call_location
 from std.sys import CompilationTarget, is_gpu
 
 from .path import isdir, split
@@ -244,7 +245,20 @@ def abort() -> Never:
 
 
 @always_inline
-def abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
+def _abort_impl[
+    *, prefix: StaticString
+](message: Some[Writable], *, location: Optional[SourceLocation] = {}) -> Never:
+    comptime if not is_gpu():
+        var loc = location.or_else(call_location[inline_count=2]())
+        print(prefix, " ", loc, ": ", message, sep="", flush=True)
+
+    abort()
+
+
+@always_inline
+def abort[
+    *, prefix: StaticString = "ABORT:"
+](message: String, *, location: Optional[SourceLocation] = {}) -> Never:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
@@ -252,16 +266,15 @@ def abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
 
     Args:
         message: The message to include when aborting.
+        location: The optional source location to include.
     """
-
-    comptime if not is_gpu():
-        print(prefix, message, flush=True)
-
-    abort()
+    _abort_impl[prefix=prefix](message, location=location)
 
 
 @always_inline
-def abort[*, prefix: StaticString = "ABORT:"](message: TString) -> Never:
+def abort[
+    *, prefix: StaticString = "ABORT:"
+](message: TString, *, location: Optional[SourceLocation] = {}) -> Never:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
@@ -269,12 +282,9 @@ def abort[*, prefix: StaticString = "ABORT:"](message: TString) -> Never:
 
     Args:
         message: The t-string message to include when aborting.
+        location: The optional source location to include.
     """
-
-    comptime if not is_gpu():
-        print(prefix, message, flush=True)
-
-    abort()
+    _abort_impl[prefix=prefix](message, location=location)
 
 
 # ===----------------------------------------------------------------------=== #

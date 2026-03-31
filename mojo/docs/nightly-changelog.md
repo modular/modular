@@ -38,6 +38,18 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `abort(message)` now includes the call site location in its output. The
+  location is automatically captured and printed alongside the message. You can
+  also pass an explicit `SourceLocation` to override it:
+
+  ```mojo
+  abort("something went wrong")
+  # prints: ABORT: path/to/file.mojo:42:5: something went wrong
+
+  var loc = current_location()
+  abort("something went wrong", location=loc)
+  ```
+
 - `SourceLocation` fields (`line`, `col`, `file_name`) are now private.
   Use the new accessor methods `line()`, `column()`, and `file_name()` instead.
 

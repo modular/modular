@@ -21,6 +21,7 @@ from std.format._utils import (
 )
 from std.memory import UnsafeMaybeUninit
 from std.hashlib.hasher import Hasher
+from std.reflection import call_location
 from std.reflection.traits import (
     AllEquatable,
     AllHashable,
@@ -503,6 +504,7 @@ struct Variant[*Ts: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @always_inline
     def __getitem_param__[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
@@ -520,7 +522,7 @@ struct Variant[*Ts: Movable](
             A reference to the internal data.
         """
         if not self.isa[T]():
-            abort("get: wrong variant type")
+            abort("get: wrong variant type", location=call_location())
 
         return self.unsafe_get[T]()
 

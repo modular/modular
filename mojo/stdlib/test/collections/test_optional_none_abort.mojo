@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os import abort
-
 
 def main():
-    # CHECK: ABORT: {{.*}}/test_trap.mojo:19:10: hello world
-    abort("hello world")
+    var o: Optional[Int] = None
+    # CHECK: ABORT: {{.*}}/test_optional_none_abort.mojo:18:18: `Optional.value()`
+    print(o.value())

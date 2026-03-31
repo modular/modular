@@ -41,6 +41,7 @@ from std.compile import get_type_name
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory._nonnull import NonNullUnsafePointer, unsafe_origin_cast
+from std.reflection import call_location
 
 
 @fieldwise_init
@@ -565,10 +566,13 @@ struct Optional[T: Movable](
         """
         if not self.__bool__():
             abort(
-                "`Optional.value()` called on empty `Optional`. Consider using"
-                " `if optional:` to check whether the `Optional` is empty"
-                " before calling `.value()`, or use `.or_else()` to provide a"
-                " default value."
+                (
+                    "`Optional.value()` called on empty `Optional`. Consider"
+                    " using `if optional:` to check whether the `Optional` is"
+                    " empty before calling `.value()`, or use `.or_else()` to"
+                    " provide a default value."
+                ),
+                location=call_location(),
             )
 
         return self.unsafe_value()
