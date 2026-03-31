@@ -52,10 +52,10 @@ def main() raises:
     # CHECK: 1
     print(size_1.array.size)
 
-    var list_int = ConditionalValueType[IsImplicitlyCopyable]()
+    var _list_int = ConditionalValueType[IsImplicitlyCopyable]()
     # CHECK: True
-    print(_type_is_eq[List[Int], type_of(list_int.value)]())
+    print(_type_is_eq[List[Int], type_of(_list_int.value)]())
 
-    var string = ConditionalValueType[IsNotImplicitlyCopyable]()
+    var _string = ConditionalValueType[IsNotImplicitlyCopyable]()
     # CHECK: True
-    print(_type_is_eq[String, type_of(string.value)]())
+    print(_type_is_eq[String, type_of(_string.value)]())

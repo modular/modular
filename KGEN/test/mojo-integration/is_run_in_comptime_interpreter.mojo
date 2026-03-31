@@ -8,7 +8,7 @@
 
 
 def diverge_comptime(i: Int) -> Int:
-    var t = 0
+    var t: Int
     # Intentionally have then and else branches mismatch logic for testing.
     if __is_run_in_comptime_interpreter:
         t = i + 40
