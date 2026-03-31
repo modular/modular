@@ -64,11 +64,9 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
   // need to resolve the symbol name after elaboration.
   TargetInfoAttr target =
       cast<TargetParamAttr>(getLinkageNameAttr.getTarget()).getTarget();
-  // HACK HACK HACK: Our current name mangling scheme is not compatible with the
-  // GPU backends.
-
-  // Add "_" prefix to GPU kernel name if it starts with a number, otherwise ptx
-  // compiler will fail.
+  // For GPU targets, predict the sanitized name that the elaborator will
+  // produce during finalization. Add "_" prefix to GPU kernel names that
+  // start with a digit, otherwise the ptx compiler will fail.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(
           *errorLoc, "get_linkage_name", getLinkageNameAttr.getFunc(),
@@ -326,7 +324,8 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(*errorLoc, "compile_offload_closure",
                              compileOffloadClosureAttr.getFunc(),
-                             /*allowParametric=*/false, /*sanitize=*/false,
+                             /*allowParametric=*/false,
+                             /*sanitize=*/target.isGPU(),
                              [isGPU = target.isGPU()](StringRef name) {
                                return (isGPU && llvm::isDigit(name.front()))
                                           ? "_"
