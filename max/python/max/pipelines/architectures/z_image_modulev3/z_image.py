@@ -60,6 +60,7 @@ class ZImageTransformerBlock(Module[..., Tensor]):
 
         self.layer_id = layer_id
         self.modulation = modulation
+        self.dim = dim
 
         self.attention = ZImageAttention(
             dim=dim,
@@ -93,14 +94,12 @@ class ZImageTransformerBlock(Module[..., Tensor]):
             if self.adaLN_modulation is None:
                 raise ValueError("adaLN_modulation is not initialized")
 
-            mod = self.adaLN_modulation(adaln_input)
-            mod = F.unsqueeze(mod, 1)
-            scale_msa, gate_msa, scale_mlp, gate_mlp = F.chunk(mod, 4, axis=2)
-
-            gate_msa = F.tanh(gate_msa)
-            gate_mlp = F.tanh(gate_mlp)
-            scale_msa = 1.0 + scale_msa
-            scale_mlp = 1.0 + scale_mlp
+            mod = F.unsqueeze(self.adaLN_modulation(adaln_input), 1)
+            d = self.dim
+            scale_msa = 1.0 + mod[:, :, :d]
+            gate_msa = F.tanh(mod[:, :, d : 2 * d])
+            scale_mlp = 1.0 + mod[:, :, 2 * d : 3 * d]
+            gate_mlp = F.tanh(mod[:, :, 3 * d :])
 
             attn_out = self.attention(
                 self.attention_norm1(x) * scale_msa,
