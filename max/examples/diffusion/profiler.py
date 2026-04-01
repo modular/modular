@@ -250,6 +250,7 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                 ("scheduler_step", "scheduler_step"),
                 ("preprocess_latents", "preprocess_latents"),
                 ("prepare_image_latents", "prepare_image_latents"),
+                ("_prepare_i2v_condition", "prepare_i2v_condition"),
             ]
         else:
             specs = [

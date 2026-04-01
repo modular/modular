@@ -45,3 +45,31 @@ modular_py_binary(
         requirement("torch"),  # for test
     ],
 )
+
+modular_py_binary(
+    name = "all_wan_model_speed_metric",
+    srcs = ["all_wan_model_speed_metric.py"],
+    tags = ["no-pydeps"],
+    deps = [
+        requirement("numpy"),
+    ],
+)
+
+modular_py_binary(
+    name = "simple_offline_video_generation",
+    srcs = ["simple_offline_video_generation.py"],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    tags = ["no-pydeps"],
+    deps = [
+        ":profiler",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("av"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("sentencepiece"),
+        requirement("torch"),
+    ],
+)
