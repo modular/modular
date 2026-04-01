@@ -1598,17 +1598,21 @@ bool FnLiteralType::classof(Type type) {
 //===----------------------------------------------------------------------===//
 
 FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(LITGeneratorType gen)
-    : FuncLiteralTypeGeneratorType(gen) {
+    : FnTypeWrapperGeneratorType(gen) {
   assert((!gen || ::isa<FnLiteralType>(gen.getBody())) &&
          "expected LIT generator wrapping FnLiteralType");
 }
 
 FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(
     FuncLiteralTypeGeneratorType gen)
-    : FuncLiteralTypeGeneratorType(gen) {
+    : FnTypeWrapperGeneratorType(gen) {
   assert((!gen || (::isa<LITGeneratorType>(gen) &&
                    ::isa<FnLiteralType>(gen.getBody()))) &&
          "expected LIT generator wrapping FnLiteralType");
+}
+
+PogListAttr FnLiteralTypeGeneratorType::getMetadata() {
+  return ::cast<PogListAttr>(GeneratorType::getMetadata());
 }
 
 FnLiteralType FnLiteralTypeGeneratorType::getBody() {
@@ -1630,13 +1634,13 @@ bool FnLiteralTypeGeneratorType::classof(Type type) {
 //===----------------------------------------------------------------------===//
 
 FnTypeGeneratorType::FnTypeGeneratorType(LITGeneratorType gen)
-    : FuncTypeGeneratorType(gen) {
+    : FnTypeWrapperGeneratorType(gen) {
   assert((!gen || (::isa<FnType>(gen.getBody()))) &&
          "expected LIT generator wrapping LIT FnType");
 }
 
 FnTypeGeneratorType::FnTypeGeneratorType(FuncTypeGeneratorType gen)
-    : FuncTypeGeneratorType(gen) {
+    : FnTypeWrapperGeneratorType(gen) {
   assert((!gen ||
           (::isa<LITGeneratorType>(gen) && ::isa<FnType>(gen.getBody()))) &&
          "expected LIT generator wrapping LIT FnType");
@@ -1648,46 +1652,6 @@ FnType FnTypeGeneratorType::getBody() {
 
 PogListAttr FnTypeGeneratorType::getMetadata() {
   return ::cast<PogListAttr>(GeneratorType::getMetadata());
-}
-
-PogListAttr FnTypeGeneratorType::getParamListAttrs() { return getMetadata(); }
-
-StringAttr FnTypeGeneratorType::getParamName(size_t idx) {
-  return getMetadata().getName(idx);
-}
-
-FnMetadataAttr FnTypeGeneratorType::getFnMetadata() {
-  return getBody().getMetadata();
-}
-
-PogListAttr FnTypeGeneratorType::getArgListAttrs() {
-  return getBody().getArgListAttrs();
-}
-
-StringAttr FnTypeGeneratorType::getArgName(size_t idx) {
-  return getArgListAttrs().getName(idx);
-}
-
-TypedAttr FnTypeGeneratorType::getCaptureOrigins() {
-  return getBody().getCaptureOrigins();
-}
-
-bool FnTypeGeneratorType::getIsNestedOriginExclusivityCheckingDisabled() {
-  return getBody().getIsNestedOriginExclusivityCheckingDisabled();
-}
-
-/// Get the number of implicit origin decls this function type carries.
-size_t FnTypeGeneratorType::getNumImplicitOriginDecls() {
-  return getBody().getNumImplicitOriginDecls();
-}
-
-Type FnTypeGeneratorType::getUserResultType() {
-  return getBody().getUserResultType();
-}
-
-/// Get the user thrown type for a raising function.
-Type FnTypeGeneratorType::getUserThrownType() {
-  return getBody().getUserThrownType();
 }
 
 /// Substitute the specified implicit origin references into the specified
@@ -1703,39 +1667,6 @@ FnTypeGeneratorType
 FnTypeGeneratorType::getWithCaptureOrigins(TypedAttr origins) {
   return getWithBody(getBody().getWithCaptureOrigins(origins));
 }
-
-bool FnTypeGeneratorType::isAnyVarArg(size_t index) {
-  return getBody().isAnyVarArg(index);
-}
-
-bool FnTypeGeneratorType::isPosVarArg(size_t index) {
-  return getBody().isPosVarArg(index);
-}
-
-/// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
-/// elements. For example: def x(mut *args: Int) is declared 'mut'.
-ArgConvention FnTypeGeneratorType::getVariadicConvention(size_t index) {
-  return getBody().getVariadicConvention(index);
-}
-
-bool FnTypeGeneratorType::isKwVarArg(size_t index) {
-  return getBody().isKwVarArg(index);
-}
-
-bool FnTypeGeneratorType::isPack(size_t index) {
-  return getBody().isPack(index);
-}
-
-/// If the specified argument is a variadic pack, return the VariadicPack.
-Type FnTypeGeneratorType::getIfVariadicListOrPack(size_t index) {
-  return getBody().getIfVariadicListOrPack(index);
-}
-
-std::optional<size_t> FnTypeGeneratorType::findPackVarArgIndex() {
-  return getBody().findPackVarArgIndex();
-}
-
-bool FnTypeGeneratorType::hasKwVarArgs() { return getBody().hasKwVarArgs(); }
 
 /// This method replaces direct uses of NAMED implicit origin declarations
 /// with index-based references.  originDecls specifies the names of the
