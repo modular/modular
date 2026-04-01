@@ -48,8 +48,7 @@ StringAttr ParamNodeBase::getMangledName() {
       gen.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
-  std::string baseName = mangleParameterValues(gen, inputParamValues,
-                                               [](StringRef) { return ""; });
+  std::string baseName = mangleParameterValues(gen, inputParamValues);
   StringAttr name = StringAttr::get(gen->getContext(), baseName);
 
   const void *existing = nullptr;
@@ -65,15 +64,13 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
   TargetInfoAttr target =
       cast<TargetParamAttr>(getLinkageNameAttr.getTarget()).getTarget();
   // For GPU targets, predict the sanitized name that the elaborator will
-  // produce during finalization. Add "_" prefix to GPU kernel names that
-  // start with a digit, otherwise the ptx compiler will fail.
+  // produce during finalization. sanitizeSymbolToAlnum handles both
+  // non-alphanumeric characters and leading digits.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      getExpectedMangledName(
-          *errorLoc, "get_linkage_name", getLinkageNameAttr.getFunc(),
-          /*allowParametric=*/true, /*sanitize=*/target.isGPU(),
-          [isGPU = target.isGPU()](StringRef name) {
-            return (isGPU && llvm::isDigit(name.front())) ? "_" : "";
-          });
+      getExpectedMangledName(*errorLoc, "get_linkage_name",
+                             getLinkageNameAttr.getFunc(),
+                             /*allowParametric=*/true,
+                             /*sanitize=*/target.isGPU());
   if (pairOrError.isError()) {
     emitError(pairOrError.takeError());
     return failure();
@@ -237,8 +234,7 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
   SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(attr.getFunc());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(*errorLoc, "compile_assembly", symbol,
-                             /*allowParametric=*/false,
-                             /*sanitize=*/false, [](StringRef) { return ""; });
+                             /*allowParametric=*/false);
   if (pairOrError.isError()) {
     getParentNode()->setToError(pairOrError.takeError());
     return failure();
@@ -319,18 +315,11 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
 
   TargetInfoAttr target =
       cast<TargetParamAttr>(compileOffloadClosureAttr.getTarget()).getTarget();
-  // Add "_" prefix to GPU kernel name if it starts with a number, otherwise ptx
-  // compiler will fail.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(*errorLoc, "compile_offload_closure",
                              compileOffloadClosureAttr.getFunc(),
                              /*allowParametric=*/false,
-                             /*sanitize=*/target.isGPU(),
-                             [isGPU = target.isGPU()](StringRef name) {
-                               return (isGPU && llvm::isDigit(name.front()))
-                                          ? "_"
-                                          : "";
-                             });
+                             /*sanitize=*/target.isGPU());
 
   if (pairOrError.isError()) {
     emitError(pairOrError.takeError());

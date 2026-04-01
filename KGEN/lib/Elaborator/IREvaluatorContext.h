@@ -230,8 +230,8 @@ private:
   /// its symbol name returned. Otherwise, not fully bound symbols are errors.
   virtual ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
   getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                         TypedAttr symCst, bool allowParametric, bool sanitize,
-                         function_ref<std::string(StringRef)> getPrefix) = 0;
+                         TypedAttr symCst, bool allowParametric,
+                         bool sanitize = false) = 0;
 
   virtual GeneratorOp getGenerator(SymbolRefAttr symbol) = 0;
 

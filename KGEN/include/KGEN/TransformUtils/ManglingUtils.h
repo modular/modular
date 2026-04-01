@@ -20,10 +20,8 @@ void prettyPrintParameter(TypedAttr value, raw_ostream &os);
 
 /// This returns a name to use when the specified generator is specialized
 /// with the specified input parameters.
-std::string
-mangleParameterValues(GeneratorOpInterface generator,
-                      ArrayRef<TypedAttr> inputParamValues,
-                      function_ref<std::string(StringRef)> getPrefix);
+std::string mangleParameterValues(GeneratorOpInterface generator,
+                                  ArrayRef<TypedAttr> inputParamValues);
 } // namespace M::KGEN
 
 #endif // KGEN_TRANSFORMUTILS_MANGLINGUTILS_H
