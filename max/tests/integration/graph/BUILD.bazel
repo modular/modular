@@ -18,6 +18,7 @@ _AMD_ONLY_TESTS = [
 
 # CPU-only tests that don't require GPU
 _CPU_ONLY_TESTS = [
+    "test_bf16_cpu_error.py",
     "test_is_inf.py",
     "test_is_nan.py",
     "test_matmul_packed.py",
@@ -190,6 +191,7 @@ modular_py_test(
     size = "medium",
     srcs = [
         "conftest.py",
+        "test_bf16_cpu_error.py",
         "test_is_inf.py",
         "test_is_nan.py",
     ],

@@ -33,6 +33,9 @@ This version is still a work in progress.
 
 ### Python API {#26-3-max-python}
 
+- Added support for the `bfloat16` data type on ARM CPU devices in MAX graphs.
+  Previously, `session.load()` raised a `ValueError` when a graph contained
+  bf16 tensors targeting an ARM CPU.
 - Fixed slow `axis=None` reductions (`mean`, `sum`, `prod`, `max`, `min`) in
   `max.experimental.functional`. The previous implementation flattened the
   tensor before reducing, serializing the work onto a single GPU block.
