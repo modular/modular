@@ -167,6 +167,26 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         return len(self) != 0
 
     # --------------------------------------------------------------------- #
+    # Utilities
+    # --------------------------------------------------------------------- #
+
+    @always_inline
+    def _zero_upper(mut self):
+        """Clears any bits in the last word that lie beyond the logical `size`.
+
+        When `size` is not a multiple of 64, the last storage word has unused
+        high bits. Operations like `set_all` and `toggle_all` write to the full
+        word, leaving those bits set. This method masks them back to zero so
+        that `__len__` (population count) and other word-level operations
+        remain correct. When `size` is an exact multiple of 64, this method
+        compiles away entirely.
+        """
+        comptime bits_in_last_word = Self.size % _WORD_BITS
+        comptime if bits_in_last_word != 0:
+            comptime mask = Int64((1 << bits_in_last_word) - 1)
+            self._words.unsafe_get(Self._words_size - 1) &= mask
+
+    # --------------------------------------------------------------------- #
     # Bit manipulation
     # --------------------------------------------------------------------- #
 
@@ -245,12 +265,14 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         comptime for i in range(self._words_size):
             self._words.unsafe_get(i) ^= ~0
+        self._zero_upper()
 
     def set_all(mut self):
         """Sets all bits in the set up to the compile-time `size`."""
 
         comptime for i in range(self._words_size):
             self._words.unsafe_get(i) = ~0
+        self._zero_upper()
 
     # --------------------------------------------------------------------- #
     # Set operations
