@@ -599,14 +599,14 @@ class MAXModelConfig(MAXModelConfigBase):
                 len(supported) > 1
                 and self.default_device_spec.device_type != "cpu"
             ):
-                # GPU preference: bfloat16 first (natural GPU dtype for
-                # diffuser components), then higher-compression formats.
-                if "bfloat16" in supported:
-                    self.quantization_encoding = "bfloat16"
+                # GPU preference: most-specific quantized format first,
+                # matching _validate_and_resolve_without_given_quantization_encoding.
+                if "float4_e2m1fnx2" in supported:
+                    self.quantization_encoding = "float4_e2m1fnx2"
                 elif "float8_e4m3fn" in supported:
                     self.quantization_encoding = "float8_e4m3fn"
-                elif "float4_e2m1fnx2" in supported:
-                    self.quantization_encoding = "float4_e2m1fnx2"
+                elif "bfloat16" in supported:
+                    self.quantization_encoding = "bfloat16"
             # else: ambiguous — leave as None for architecture to resolve.
 
         # On GPU, cast float32 → bfloat16 (the natural GPU dtype).
