@@ -100,6 +100,7 @@ class Qwen3TransformerBlock(Module):
         self.post_attention_layernorm_shards: Sequence[
             Callable[[TensorValue], TensorValue]
         ]
+        self.allreduce: Allreduce | None = None
 
         # Create attention layer
         if use_gptq:
@@ -175,7 +176,8 @@ class Qwen3TransformerBlock(Module):
             )
 
         # Allreduce for combining sharded outputs
-        self.allreduce = Allreduce(num_accelerators=num_devices)
+        if num_devices > 1:
+            self.allreduce = Allreduce(num_accelerators=num_devices)
         self.residual_multiplier = config.residual_multiplier
 
     def _get_mlp(
@@ -264,6 +266,7 @@ class Qwen3TransformerBlock(Module):
 
         # Allreduce attention outputs (passthrough for single GPU)
         if len(self.devices) > 1:
+            assert self.allreduce is not None
             attn_outs = self.allreduce(attn_outs, signal_buffers)
 
         # Residual connection
@@ -281,6 +284,7 @@ class Qwen3TransformerBlock(Module):
 
         # Allreduce MLP outputs (passthrough for single GPU)
         if len(self.devices) > 1:
+            assert self.allreduce is not None
             mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         # Residual connection
