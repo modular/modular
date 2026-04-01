@@ -17,6 +17,7 @@ by comparing against numpy reference implementations.
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pytest
@@ -3809,6 +3810,169 @@ class TestScatterOp:
             y = F.scatter(x, updates, indices, axis=1)
 
         expected = self._scatter_ref(x_np, updates_np, indices_np, axis=1)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterAddOp:
+    """Tests for scatter_add op via MO interpreter (CPU-only, MO_HostOnly).
+
+    Uses ``F.scatter_add`` which routes through ``ops.scatter_add`` ->
+    ``rmo.MoScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
+    The reference is ``numpy.add.at``, which accumulates duplicate indices.
+    """
+
+    @staticmethod
+    def _scatter_add_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+        axis: int,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then accumulate updates at indices.
+
+        Mirrors the kernel's exact semantics:
+        ``out[upd_idx[:axis], indices_np[upd_idx], upd_idx[axis+1:]] += updates``
+        Duplicate indices are summed.
+        """
+        out = x_np.copy()
+        ndim = x_np.ndim
+        if axis < 0:
+            axis += ndim
+        for upd_idx in np.ndindex(updates_np.shape):
+            out_idx: list[Any] = list(upd_idx)
+            out_idx[axis] = int(indices_np[upd_idx])
+            out[tuple(out_idx)] += updates_np[upd_idx]
+        return out
+
+    @pytest.mark.parametrize("axis", [0, 1])
+    def test_basic_2d(self, axis: int) -> None:
+        """Test scatter_add on a 2D float32 tensor along axis 0 and 1."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        if axis == 0:
+            updates_np = np.ones((2, 4), dtype=np.float32) * 10.0
+            indices_np = np.array([[0, 1, 2, 0], [2, 0, 1, 2]], dtype=np.int64)
+        else:
+            updates_np = np.ones((3, 2), dtype=np.float32) * 5.0
+            indices_np = np.array([[0, 3], [1, 2], [0, 1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_add(x, updates, indices, axis=axis)
+
+        expected = self._scatter_add_ref(x_np, updates_np, indices_np, axis)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_negative_axis(self) -> None:
+        """Test scatter_add with a negative axis (-1 == last axis)."""
+        x_np = np.zeros((3, 4), dtype=np.float32)
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            dtype=np.float32,
+        )
+        indices_np = np.array([[0, 1, 0], [2, 3, 2], [1, 0, 1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_add(x, updates, indices, axis=-1)
+
+        expected = self._scatter_add_ref(x_np, updates_np, indices_np, axis=-1)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_3d(self) -> None:
+        """Test scatter_add on a 3D tensor along axis 1."""
+        x_np = np.zeros((2, 4, 3), dtype=np.float32)
+        updates_np = np.ones((2, 2, 3), dtype=np.float32) * 2.0
+        indices_np = np.array(
+            [[[0, 1, 2], [2, 3, 0]], [[1, 2, 3], [3, 0, 1]]], dtype=np.int64
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_add(x, updates, indices, axis=1)
+
+        expected = self._scatter_add_ref(x_np, updates_np, indices_np, axis=1)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate indices must sum, not overwrite."""
+        x_np = np.zeros((4,), dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+        # indices[0] and indices[1] both point to slot 1 → slot 1 = 10+20=30
+        indices_np = np.array([1, 1, 2, 3], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_add(x, updates, indices, axis=0)
+
+        expected = self._scatter_add_ref(x_np, updates_np, indices_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        # Explicit check: slot 1 must be 30.0, not 20.0.
+        assert float(np.from_dlpack(y)[1]) == 30.0
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.int32]
+    )
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_add with numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+        updates_np = np.ones((2, 4), dtype=np_dtype)
+        indices_np = np.array([[0, 1, 2, 0], [2, 1, 0, 2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_add(x, updates, indices, axis=0)
+
+        expected = self._scatter_add_ref(x_np, updates_np, indices_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_int32_indices(self) -> None:
+        """Test scatter_add with int32 index dtype."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        updates_np = np.array([[100.0, 200.0, 300.0, 400.0]], dtype=np.float32)
+        indices_np = np.array([[2, 0, 1, 2]], dtype=np.int32)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_add(x, updates, indices, axis=0)
+
+        expected = self._scatter_add_ref(x_np, updates_np, indices_np, axis=0)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
 

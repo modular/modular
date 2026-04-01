@@ -125,6 +125,78 @@ def scatter_nd(
     )[0].tensor
 
 
+def scatter_add(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+    axis: int = -1,
+) -> TensorValue:
+    """Creates a new symbolic tensor by accumulating updates into input at indices.
+
+    Produces an output tensor by scattering elements from updates into input
+    according to indices, summing values at duplicate indices.  For a 2-D
+    input with ``axis=0`` the update rule is:
+
+    .. code-block:: text
+
+        output[indices[i][j]][j] += updates[i][j]
+
+    and with ``axis=1``:
+
+    .. code-block:: text
+
+        output[i][indices[i][j]] += updates[i][j]
+
+    Args:
+        input: The input symbolic tensor to accumulate into.
+        updates: A symbolic tensor of values to add.
+        indices: The positions in input to update.
+        axis: The axis along which indices indexes into.
+
+    Returns:
+        A new symbolic tensor with the same shape and dtype as input.
+    """
+    input = TensorValue(input)
+
+    if not (-input.rank <= axis < input.rank):
+        raise ValueError(
+            f"Invalid axis value {axis}. Axis must be in range"
+            f" [-{input.rank}, {input.rank - 1}]"
+        )
+
+    updates = TensorValue(updates)
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype '{input.dtype}' and updates dtype"
+            f" '{updates.dtype}' must match."
+        )
+
+    indices = TensorValue(indices)
+    if indices.dtype not in [DType.int32, DType.int64]:
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'."
+            " Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+    axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
+
+    old_device = input.device
+    input = input.to(DeviceRef.CPU())
+    updates = updates.to(DeviceRef.CPU())
+    indices = indices.to(DeviceRef.CPU())
+
+    return Graph.current._add_op_generated(
+        rmo.MoScatterAddOp,
+        input.type,
+        input,
+        updates,
+        indices,
+        axis_constant,
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor.to(old_device)
+
+
 def masked_scatter(
     input: TensorValueLike,
     mask: TensorValueLike,

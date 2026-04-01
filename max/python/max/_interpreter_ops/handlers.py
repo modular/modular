@@ -1844,6 +1844,71 @@ def _handle_scatter(
     return [output]
 
 
+@register_op_handler(mo.ScatterAddOp)
+def _handle_scatter_add(
+    op: mo.ScatterAddOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter.add by copying input then accumulating updates via Mojo.
+
+    Operands: input, updates, indices, axis (scalar int64 on CPU),
+    outputParamDecls.
+    Output: same shape/dtype as input; ``output[...][indices[...]] += updates[...]``
+    with duplicate indices summed.
+
+    Args:
+        op: The scatter-add operation.
+        inputs: Input buffers - input, updates, indices, axis.
+
+    Returns:
+        List containing the scatter-accumulated tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # updates
+    assert isinstance(inputs[2], Buffer)  # indices
+    assert isinstance(inputs[3], Buffer)  # axis (scalar int64, always CPU)
+
+    input_buffer = inputs[0]
+    updates_buffer = inputs[1]
+    indices_buffer = inputs[2]
+
+    axis = int(inputs[3].to_numpy().item())
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+    if axis < 0:
+        axis += ndim
+
+    inner_size = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
+    axis_size = in_shape[axis]
+    upd_shape = list(updates_buffer.shape)
+    num_updates_axis = upd_shape[axis]
+
+    output = Buffer(
+        shape=in_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    total_elements = prod(in_shape)
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.data_movement_ops.Memcpy(
+        output, input_buffer, 0, 0, total_elements, ctx_ptr
+    )
+
+    ops.gather_scatter_ops.ScatterAdd(
+        output,
+        updates_buffer,
+        indices_buffer,
+        (outer_size, axis_size, inner_size, num_updates_axis),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
 def _conv_out_dim(
     in_dim: int, k: int, dilation: int, stride: int, pad_total: int
 ) -> int:

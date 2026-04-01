@@ -48,6 +48,9 @@ def PyInit_gather_scatter_ops() -> PythonObject:
         b.def_function[scatter_dispatcher](
             "Scatter", docstring="Scatter along axis"
         )
+        b.def_function[scatter_add_dispatcher](
+            "ScatterAdd", docstring="Scatter-add (accumulate) along axis"
+        )
         return b.finalize()
     except e:
         abort(t"failed to create gather scatter op bindings module: {e}")
@@ -653,6 +656,185 @@ def _scatter_dispatch_integer[
 ) raises:
     dispatch_dtype(
         _ScatterBody[d](
+            out_addr,
+            upd_addr,
+            _make_ptr[d](idx_addr),
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        ),
+        dtype,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Scatter-add operation
+# ===----------------------------------------------------------------------=== #
+#
+# Identical layout to scatter_op above, but accumulates into the output
+# (output[o, indices[o, u, k], k] += updates[o, u, k]) instead of
+# overwriting.  Duplicate indices are summed.
+
+
+@always_inline
+def scatter_add_op[
+    dtype: DType, idx_dtype: DType, //
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    """Accumulate scattered updates into the output buffer along the axis.
+
+    The output must already contain a copy of the input tensor.
+    Duplicate indices are summed: ``output[...][idx] += update``.
+    CPU-only (mo.scatter.add is MO_HostOnly).
+
+    Parameters:
+        dtype: Data type of the data tensors (inferred from pointers).
+        idx_dtype: Data type of the index tensor (inferred from pointer).
+
+    Args:
+        out_ptr: Output buffer (pre-filled with input copy).
+        updates_ptr: Values to accumulate, flat length outer*num_updates_axis*inner.
+        indices_ptr: Axis indices, same shape as updates.
+        outer_size: Product of dims before the scatter axis.
+        axis_size: Size of the scatter axis in the output.
+        inner_size: Product of dims after the scatter axis.
+        num_updates_axis: Size of the scatter axis in updates/indices.
+    """
+    var total = outer_size * num_updates_axis * inner_size
+    var out_axis_stride = axis_size * inner_size
+    var upd_axis_stride = num_updates_axis * inner_size
+
+    for i in range(total):
+        var outer_idx, rem = divmod(i, upd_axis_stride)
+        var _, inner_idx = divmod(rem, inner_size)
+        var scatter_idx = Int(indices_ptr[i])
+        var out_flat = (
+            outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
+        )
+        out_ptr[out_flat] += updates_ptr[i]
+
+
+def scatter_add_dispatcher(
+    out_buffer: PythonObject,
+    updates_buffer: PythonObject,
+    indices_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Scatter-add dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-filled with input copy).
+        updates_buffer: Updates data buffer.
+        indices_buffer: Indices buffer (int32 or int64).
+        params: Python tuple (outer_size, axis_size, inner_size,
+            num_updates_axis).
+        device_context_ptr: Device context pointer (unused, CPU-only).
+    """
+    var dtype = _get_dtype(updates_buffer)
+    var idx_dtype = _get_dtype(indices_buffer)
+    var outer_size = Int(py=params[0])
+    var axis_size = Int(py=params[1])
+    var inner_size = Int(py=params[2])
+    var num_updates_axis = Int(py=params[3])
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var upd_addr = Int(py=updates_buffer._data_ptr())
+    var idx_addr = Int(py=indices_buffer._data_ptr())
+
+    if idx_dtype == DType.int32:
+        _scatter_add_dispatch_integer[DType.int32](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif idx_dtype == DType.int64:
+        _scatter_add_dispatch_integer[DType.int64](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    else:
+        raise Error(
+            "Unsupported index dtype for scatter_add: " + String(idx_dtype)
+        )
+
+
+struct _ScatterAddBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the ScatterAdd operation over data dtypes."""
+
+    var out_addr: Int
+    var upd_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var outer_size: Int
+    var axis_size: Int
+    var inner_size: Int
+    var num_updates_axis: Int
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        upd_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        outer_size: Int,
+        axis_size: Int,
+        inner_size: Int,
+        num_updates_axis: Int,
+    ):
+        self.out_addr = out_addr
+        self.upd_addr = upd_addr
+        self.idx_ptr = idx_ptr
+        self.outer_size = outer_size
+        self.axis_size = axis_size
+        self.inner_size = inner_size
+        self.num_updates_axis = num_updates_axis
+
+    def call[t: DType](self) raises -> None:
+        comptime if t.is_numeric():
+            scatter_add_op(
+                _make_ptr[t](self.out_addr),
+                _make_ptr[t](self.upd_addr),
+                self.idx_ptr,
+                self.outer_size,
+                self.axis_size,
+                self.inner_size,
+                self.num_updates_axis,
+            )
+        else:
+            raise Error("scatter_add: dtype must be numeric, got " + String(t))
+
+
+def _scatter_add_dispatch_integer[
+    d: DType
+](
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    dispatch_dtype(
+        _ScatterAddBody[d](
             out_addr,
             upd_addr,
             _make_ptr[d](idx_addr),

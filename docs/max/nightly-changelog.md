@@ -83,6 +83,9 @@ This version is still a work in progress.
 - Added `nonzero` op handler to the experimental eager interpreter (CPU),
   returning the row-major coordinates of all nonzero elements as a
   `[nnz, rank]` int64 tensor via `max.experimental.functional.nonzero`.
+- Added `scatter_add` op handler to the experimental eager interpreter (CPU),
+  accumulating `updates` into a copy of `input` at `indices` along `axis`
+  and summing duplicate indices via `max.experimental.functional.scatter_add`.
 - `max.graph.ops.pad` (and `max.graph.experimental.functional.pad`) now
   accepts `mode='reflect'` and `mode='edge'` in addition to
   `mode='constant'`.

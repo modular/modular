@@ -785,6 +785,9 @@ rsqrt = functional(ops.rsqrt)
 #: Scatters values along an axis.
 #: See :func:`max.graph.ops.scatter` for details.
 scatter = functional(ops.scatter)
+#: Scatters values and accumulates duplicates along an axis.
+#: See :func:`max.graph.ops.scatter_add` for details.
+scatter_add = functional(ops.scatter_add)
 #: Scatters values using multi-dimensional indices.
 #: See :func:`max.graph.ops.scatter_nd` for details.
 scatter_nd = functional(ops.scatter_nd)
