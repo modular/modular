@@ -675,7 +675,7 @@ struct PythonTypeBuilder(Copyable):
         def default_init_func(
             out self: T, args: PythonObject, kwargs: PythonObject
         ) raises:
-            if len(args) > 0 or kwargs._obj_ptr:
+            if len(args) > 0 or Bool(kwargs):
                 raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
             self = T()
 
@@ -1312,7 +1312,7 @@ def check_and_get_or_convert_arg[
 def _get_type_name(obj: PythonObject) raises -> String:
     ref cpython = Python().cpython()
 
-    var actual_type = cpython.Py_TYPE(obj._obj_ptr)
+    var actual_type = cpython.Py_TYPE(obj._as_py_object_ptr())
     var actual_type_name = PythonObject(
         from_owned=cpython.PyType_GetName(actual_type)
     )

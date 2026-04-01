@@ -349,7 +349,7 @@ def test_dict() raises:
     var key: PyObjectPtr = {}
     var val: PyObjectPtr = {}
     _ = cpy.PyDict_Next(
-        d._obj_ptr,
+        d._as_py_object_ptr(),
         UnsafePointer(to=_pos),
         UnsafePointer(to=key),
         UnsafePointer(to=val),
@@ -832,6 +832,88 @@ def test_python_object_write_repr_to() raises:
     s = String()
     str_obj.write_repr_to(s)
     assert_equal(s, "PythonObject('hello')")
+
+
+def test_nonnull_obj_ptr() raises:
+    """Test that PythonObject always holds a non-null pointer."""
+
+    # Construction from various types produces valid (non-null) objects.
+    var none_obj = PythonObject(None)
+    assert_true(none_obj is None)
+
+    var int_obj = PythonObject(42)
+    assert_equal_pyobj(int_obj, 42)
+
+    var bool_obj = PythonObject(True)
+    assert_true(bool_obj.__bool__())
+
+    var str_obj = PythonObject("hello")
+    assert_equal_pyobj(str_obj, "hello")
+
+    var float_obj = PythonObject(3.14)
+    assert_true(float_obj.__bool__())
+
+
+def test_steal_data_leaves_valid_object() raises:
+    """Test that steal_data() leaves the PythonObject in a valid state.
+
+    After stealing, the object should hold Py_None so that its destructor
+    can safely call Py_DecRef.
+    """
+    ref cpy = Python().cpython()
+
+    # Create a Python object and steal its data.
+    var obj = PythonObject(42)
+    var stolen_ptr = obj.steal_data()
+
+    # The stolen pointer should be non-null.
+    assert_true(Bool(stolen_ptr), "steal_data() returned a NULL pointer")
+
+    # The object should now hold Py_None (safe to destroy).
+    # We verify by checking that the object is None after stealing.
+    assert_true(obj is None)
+
+    # Clean up the stolen pointer — we own it now.
+    cpy.Py_DecRef(stolen_ptr)
+
+
+def test_steal_data_roundtrip() raises:
+    """Test that steal_data can be used to transfer ownership."""
+    ref cpy = Python().cpython()
+
+    var original = PythonObject(99)
+    var ptr = original.steal_data()
+
+    # Reconstruct a new PythonObject from the stolen pointer.
+    var reconstructed = PythonObject(from_owned=ptr)
+    assert_equal_pyobj(reconstructed, 99)
+
+
+def test_owned_or_raise_valid_ptr() raises:
+    """Test _owned_or_raise with a valid pointer."""
+    from std.python.python_object import _owned_or_raise
+
+    ref cpy = Python().cpython()
+    var ptr = cpy.PyLong_FromSsize_t(123)
+    var obj = _owned_or_raise(ptr)
+    assert_equal_pyobj(obj, 123)
+
+
+def test_owned_or_raise_null_ptr() raises:
+    """Test _owned_or_raise with a NULL pointer raises."""
+    from std.python.python_object import _owned_or_raise
+
+    ref cpy = Python().cpython()
+
+    # Set a Python exception so unsafe_get_error() has something to fetch.
+    var exc_type = cpy.get_error_global("PyExc_RuntimeError")
+    cpy.PyErr_SetString(
+        exc_type,
+        "test error".as_c_string_slice().unsafe_ptr(),
+    )
+
+    with assert_raises():
+        _ = _owned_or_raise(PyObjectPtr())
 
 
 def main() raises:

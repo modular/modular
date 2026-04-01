@@ -140,7 +140,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
 
         var mod = PythonObject(from_borrowed=cpy.PyImport_AddModule(name))
-        var dict_ptr = cpy.PyModule_GetDict(mod._obj_ptr)
+        var dict_ptr = cpy.PyModule_GetDict(mod._as_py_object_ptr())
         if file:
             # We compile the code as provided and execute in the module
             # context. Note that this may be an existing module if the provided
@@ -312,7 +312,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         var errno = cpy.PyModule_AddFunctions(
             # Safety: `module` pointer lives long enough because its reference
             #   argument.
-            module._obj_ptr,
+            module._as_py_object_ptr(),
             functions,
         )
         if errno == -1:
@@ -342,9 +342,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
         ref cpy = Self().cpython()
         var errno = cpy.PyModule_AddObjectRef(
-            module._obj_ptr,
+            module._as_py_object_ptr(),
             name.as_c_string_slice().unsafe_ptr(),
-            value._obj_ptr,
+            value._as_py_object_ptr(),
         )
         if errno == -1:
             raise cpy.unsafe_get_error()
@@ -369,7 +369,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             if not key_ptr:
                 raise cpy.unsafe_get_error()
             var val = entry.value.copy().to_python_object()
-            var errno = cpy.PyDict_SetItem(dict_ptr, key_ptr, val._obj_ptr)
+            var errno = cpy.PyDict_SetItem(dict_ptr, key_ptr, val._as_py_object_ptr())
             cpy.Py_DecRef(key_ptr)
             _ = val
             if errno == -1:
@@ -427,7 +427,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         for i in range(len(tuples)):
             var key = tuples[i][0].copy().to_python_object()
             var val = tuples[i][1].copy().to_python_object()
-            var errno = cpy.PyDict_SetItem(dict_ptr, key._obj_ptr, val._obj_ptr)
+            var errno = cpy.PyDict_SetItem(dict_ptr, key._as_py_object_ptr(), val._as_py_object_ptr())
             _ = key
             _ = val
             if errno == -1:
@@ -562,7 +562,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             Mojo string representing the given Python object.
         """
         ref cpy = self.cpython()
-        return cpy.PyUnicode_AsUTF8AndSize(obj._obj_ptr).or_else("")
+        return cpy.PyUnicode_AsUTF8AndSize(obj._as_py_object_ptr()).or_else("")
 
     @staticmethod
     def type(obj: PythonObject) -> PythonObject:
@@ -575,7 +575,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             A PythonObject that holds the type object.
         """
         ref cpy = Self().cpython()
-        return PythonObject(from_owned=cpy.PyObject_Type(obj._obj_ptr))
+        return PythonObject(from_owned=cpy.PyObject_Type(obj._as_py_object_ptr()))
 
     @staticmethod
     def none() -> PythonObject:
@@ -600,7 +600,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             An error if the conversion failed.
         """
         ref cpy = Self().cpython()
-        var str_ptr = cpy.PyObject_Str(obj._obj_ptr)
+        var str_ptr = cpy.PyObject_Str(obj._as_py_object_ptr())
         if not str_ptr:
             raise cpy.unsafe_get_error()
         return PythonObject(from_owned=str_ptr)
@@ -620,7 +620,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             If the conversion to `int` fails.
         """
         ref cpy = Self().cpython()
-        var int_ptr = cpy.PyNumber_Long(obj._obj_ptr)
+        var int_ptr = cpy.PyNumber_Long(obj._as_py_object_ptr())
         if not int_ptr:
             raise cpy.unsafe_get_error()
         return PythonObject(from_owned=int_ptr)
@@ -639,7 +639,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             If the conversion fails.
         """
         ref cpy = Self().cpython()
-        var float_ptr = cpy.PyNumber_Float(obj._obj_ptr)
+        var float_ptr = cpy.PyNumber_Float(obj._as_py_object_ptr())
         if not float_ptr:
             raise cpy.unsafe_get_error()
         return PythonObject(from_owned=float_ptr)
@@ -663,7 +663,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             value overflows `Py_ssize_t`.
         """
         ref cpy = Self().cpython()
-        var num = cpy.PyLong_AsSsize_t(obj._obj_ptr)
+        var num = cpy.PyLong_AsSsize_t(obj._as_py_object_ptr())
         if num == -1 and cpy.PyErr_Occurred():
             # Note that -1 does not guarantee an error, it just means we need to
             # check if there was an exception.
@@ -686,7 +686,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         # TODO: decide if this method should be actually exposed as public,
         # and add tests if so.
         ref cpy = Self().cpython()
-        var res = cpy.PyObject_IsTrue(obj._obj_ptr)
+        var res = cpy.PyObject_IsTrue(obj._as_py_object_ptr())
         if res == -1:
             raise cpy.unsafe_get_error()
         return res == 1

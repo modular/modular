@@ -921,7 +921,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ref cpython = Python().cpython()
         try:
             self = cpython.PyUnicode_AsUTF8AndSize(
-                unsafe_borrowed_obj._obj_ptr
+                unsafe_borrowed_obj._as_py_object_ptr()
             )[]
         except:
             raise cpython.get_error()

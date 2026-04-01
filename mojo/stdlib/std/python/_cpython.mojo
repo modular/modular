@@ -123,6 +123,16 @@ struct PyThreadState:
     pass
 
 
+comptime NonNullPyObjectPtr = NonNullUnsafePointer[PyObject, MutAnyOrigin]
+"""A non-nullable pointer to a Python object.
+
+Used as the storage type for `PythonObject._obj_ptr` to enforce at the type
+level that a `PythonObject` always holds a valid Python object reference.
+CPython FFI functions continue to return nullable `PyObjectPtr`; the
+NULL check happens at the boundary when constructing a `PythonObject`.
+"""
+
+
 @fieldwise_init
 struct PyObjectPtr(
     Boolable,
