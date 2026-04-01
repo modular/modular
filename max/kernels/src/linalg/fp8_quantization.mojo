@@ -107,9 +107,7 @@ def quantize_static_scaled_fp8[
         in_dtype, target=get_gpu_target()
     ]()
 
-    _elementwise_impl_gpu[
-        func=scaled_fp8_quant, simd_width=UInt(target_simd_width)
-    ](
+    _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
         shape=IndexList[2](Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
     )
@@ -1365,9 +1363,7 @@ def convert_e4m3fn_to_e4m3fnuz(
         DType.float8_e4m3fn, target=get_gpu_target()
     ]()
 
-    _elementwise_impl_gpu[
-        func=convert_kernel, simd_width=UInt(target_simd_width)
-    ](
+    _elementwise_impl_gpu[func=convert_kernel, simd_width=target_simd_width](
         shape=IndexList[2](
             Int(input_buffer.dim[0]()), Int(input_buffer.dim[1]())
         ),

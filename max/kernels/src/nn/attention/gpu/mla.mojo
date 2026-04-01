@@ -3355,6 +3355,6 @@ def _k_cache_to_buffer[
     )
     comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    _elementwise_impl_gpu[func=copy_fn, simd_width=UInt(target_simd_width)](
+    _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
         shape=launch_shape, ctx=context
     )

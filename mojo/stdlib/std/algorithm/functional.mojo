@@ -356,7 +356,7 @@ def elementwise[
     ):
         comptime if is_gpu[target]():
             _elementwise_impl_gpu[
-                func=func, simd_width=UInt(simd_width), pdl_level=pdl_level
+                func=func, simd_width=simd_width, pdl_level=pdl_level
             ](shape=shape, ctx=context[])
         else:
             _elementwise_impl_cpu[
@@ -389,7 +389,7 @@ def _elementwise_impl[
     else:
         _elementwise_impl_gpu[
             func=func,
-            simd_width=UInt(simd_width),
+            simd_width=simd_width,
             pdl_level=pdl_level,
         ](shape=shape, ctx=context)
 
