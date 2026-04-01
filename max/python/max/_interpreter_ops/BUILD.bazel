@@ -23,6 +23,7 @@ mojo_library(
     )
     for name in [
         "argmax_ops",
+        "argnonzero_ops",
         "avg_pool_ops",
         "band_part_ops",
         "bottomk_ops",
@@ -47,6 +48,7 @@ mojo_library(
 
 _SHARED_LIBS = [
     ":argmax_ops",
+    ":argnonzero_ops",
     ":avg_pool_ops",
     ":band_part_ops",
     ":bottomk_ops",

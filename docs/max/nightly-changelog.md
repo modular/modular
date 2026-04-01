@@ -80,6 +80,9 @@ This version is still a work in progress.
 - Added `bottom_k` op handler to the experimental eager interpreter with CPU
   and GPU support, returning the k smallest values and their original indices
   along a specified axis via `max.experimental.functional.bottom_k`.
+- Added `nonzero` op handler to the experimental eager interpreter (CPU),
+  returning the row-major coordinates of all nonzero elements as a
+  `[nnz, rank]` int64 tensor via `max.experimental.functional.nonzero`.
 - `max.graph.ops.pad` (and `max.graph.experimental.functional.pad`) now
   accepts `mode='reflect'` and `mode='edge'` in addition to
   `mode='constant'`.

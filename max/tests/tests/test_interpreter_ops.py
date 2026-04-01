@@ -4901,3 +4901,123 @@ class TestBottomKOp:
         ref_vals, ref_idxs = self._bottom_k_ref(x_np, k=2, axis=1)
         np.testing.assert_array_equal(np.from_dlpack(vals), ref_vals)
         np.testing.assert_array_equal(np.from_dlpack(idxs), ref_idxs)
+
+
+class TestArgNonzeroOp:
+    """Tests for ArgNonzero interpreter op (mo.arg_nonzero).
+
+    Uses F.nonzero which routes through ops.nonzero -> rmo.MoArgNonzeroOp ->
+    mo.ArgNonzeroOp -> interpreter handler. The reference is
+    ``np.argwhere(x != 0).astype(np.int64)``, which returns row-major
+    coordinates in the same order as the kernel.
+
+    ``mo.arg_nonzero`` is MO_HostOnly so no GPU path exists; no GPU tests
+    are needed.
+    """
+
+    @staticmethod
+    def _nonzero_ref(x_np: np.ndarray) -> np.ndarray:
+        """NumPy reference: row-major coordinates of nonzero elements."""
+        return np.argwhere(x_np != 0).astype(np.int64)
+
+    def test_1d_basic(self) -> None:
+        """Test nonzero on a 1-D tensor with a mix of zeros and nonzeros."""
+        x_np = np.array([0, 1, 0, 3, 0, 5], dtype=np.int32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        ref = self._nonzero_ref(x_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+    def test_2d_basic(self) -> None:
+        """Test nonzero on a 2-D tensor."""
+        x_np = np.array([[0, 1, 2], [0, 0, 3]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        ref = self._nonzero_ref(x_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+    def test_3d_basic(self) -> None:
+        """Test nonzero on a 3-D tensor."""
+        x_np = np.zeros((2, 3, 4), dtype=np.float32)
+        x_np[0, 1, 2] = 1.0
+        x_np[1, 0, 3] = -2.0
+        x_np[1, 2, 0] = 5.0
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        ref = self._nonzero_ref(x_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+    def test_all_zeros(self) -> None:
+        """All-zero input must return an empty [0, rank] tensor."""
+        x_np = np.zeros((3, 4), dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        ref = self._nonzero_ref(x_np)
+        assert ref.shape == (0, 2)
+        np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+    def test_all_nonzero(self) -> None:
+        """All-nonzero input must return coordinates for every element."""
+        x_np = np.ones((2, 3), dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        ref = self._nonzero_ref(x_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float64,
+            DType.int8,
+            DType.int16,
+            DType.int32,
+            DType.int64,
+            DType.uint8,
+            DType.uint32,
+        ],
+    )
+    def test_dtype_parametrize(self, dtype: DType) -> None:
+        """Nonzero must work for all common numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([0, 1, 0, 2, 3, 0], dtype=np_dtype)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        ref = self._nonzero_ref(x_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), ref)

@@ -2498,3 +2498,55 @@ def _handle_bottom_k(
     )
 
     return [out_vals, out_idxs]
+
+
+# Arg-NonZero operation
+
+
+@register_op_handler(mo.ArgNonzeroOp)
+def _handle_arg_nonzero(
+    op: mo.ArgNonzeroOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.arg_nonzero with a two-pass count-then-fill strategy.
+
+    Operand: input (host tensor, CPU-only via MO_HostOnly trait).
+
+    The output shape ``[nnz, rank]`` is data-dependent, so we:
+
+    1. Run ``ArgNonZeroCount`` to determine ``nnz``.
+    2. Allocate a ``[nnz, rank]`` int64 output buffer on CPU.
+    3. If ``nnz > 0``, run ``ArgNonZeroFill`` to write row-major coordinates.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    input_buffer = inputs[0]
+
+    in_shape = list(input_buffer.shape)
+    rank = len(in_shape)
+    numel = prod(in_shape)
+
+    ctx_ptr = target_device._device_context_ptr()
+
+    # Pass 1: count nonzero elements.
+    count_buf = Buffer(shape=[1], dtype=DType.int64, device=CPU())
+    ops.argnonzero_ops.ArgNonZeroCount(
+        count_buf,
+        input_buffer,
+        numel,
+        ctx_ptr,
+    )
+    nnz = int(count_buf.to_numpy().item())
+
+    # Pass 2: fill coordinates.
+    out_buf = Buffer(shape=[nnz, rank], dtype=DType.int64, device=CPU())
+    if nnz > 0:
+        ops.argnonzero_ops.ArgNonZeroFill(
+            out_buf,
+            input_buffer,
+            in_shape,
+            rank,
+            ctx_ptr,
+        )
+
+    return [out_buf]
