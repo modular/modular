@@ -83,3 +83,33 @@ class EOSTracker(BaseModel):
                 return True
 
         return False
+
+    # --- EOS Stop Sequence (string-based) ---
+    def is_eos_from_string(self, next_token_decoded: str) -> str | None:
+        """Register an incremental decoded str into the continuation buffer.
+
+        If a stop sequence is detected, return the matched sequence. Else,
+        return None.
+        """
+        if len(self.eos_stop_strings) == 0:
+            return None
+
+        self._continuation_tail += next_token_decoded
+
+        # Magic number; just don't proc this constantly
+        if len(self._continuation_tail) > 8 * self._max_stop_length:
+            self._continuation_tail = self._continuation_tail[
+                -self._max_stop_length :
+            ]
+
+        # Find the best match for the stop string
+        best_pos = len(self._continuation_tail)
+        best_match = None
+
+        for s in self.eos_stop_strings:
+            pos = self._continuation_tail.find(s)
+            if 0 <= pos < best_pos:
+                best_pos = pos
+                best_match = s
+
+        return best_match

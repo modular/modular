@@ -88,3 +88,52 @@ def test_is_eos_from_tokens_empty_array_raises() -> None:
     t = EOSTracker(eos_token_ids={1})
     with pytest.raises(ValueError, match="non-empty"):
         t.is_eos_from_tokens(np.array([], dtype=np.int64))
+
+
+# --- EOS Stop StringSequence (s) ---
+
+
+def test_is_eos_from_string_none() -> None:
+    t = EOSTracker()
+    assert t.is_eos_from_string("abc") is None
+
+
+def test_is_eos_from_string_list() -> None:
+    stop = ["abc", "abcdef"]
+    t = EOSTracker(eos_stop_strings=stop)
+    assert t.is_eos_from_string("a") is None
+    assert t.is_eos_from_string("b") is None
+    assert t.is_eos_from_string("c") == "abc"
+
+
+def test_is_eos_from_string_str() -> None:
+    stop = ["abc"]
+    t = EOSTracker(eos_stop_strings=stop)
+    assert t.is_eos_from_string("all good here") is None
+    assert t.is_eos_from_string("ab") is None
+    assert t.is_eos_from_string("c") == "abc"
+
+
+def test_is_eos_from_string_long_continuation() -> None:
+    stop = ["abc"]
+    t = EOSTracker(eos_stop_strings=stop)
+    for c in "long continuation" * 1024:
+        assert t.is_eos_from_string(c) is None
+    assert t.is_eos_from_string("abc") == "abc"
+
+
+def test_earliest_position_wins() -> None:
+    t = EOSTracker(eos_stop_strings=["cd", "ab"])
+    assert t.is_eos_from_string("abcd") == "ab"  # pos 0 beats pos 2
+
+
+def test_single_call_match() -> None:
+    t = EOSTracker(eos_stop_strings=["stop"])
+    assert t.is_eos_from_string("Please") is None
+    assert t.is_eos_from_string("stop") == "stop"
+
+
+def test_empty_token() -> None:
+    t = EOSTracker(eos_stop_strings=["ab"])
+    assert t.is_eos_from_string("") is None
+    assert t.is_eos_from_string("ab") == "ab"
