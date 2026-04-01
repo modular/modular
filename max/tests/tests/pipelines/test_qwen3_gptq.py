@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import functools
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -24,9 +25,15 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData
 from max.graph.weights.weights import Weights
 from max.nn.kv_cache import KVCacheParams
+from max.nn.linear import GPTQLinear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3 import qwen3_arch, qwen3_moe_arch
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
-from max.pipelines.architectures.qwen3.qwen3 import Qwen3
+from max.pipelines.architectures.qwen3.qwen3 import (
+    Qwen3,
+    Qwen3TransformerBlock,
+)
 from max.pipelines.architectures.qwen3.weight_adapters import (
     convert_qwen3_moe_state_dict,
 )
@@ -94,6 +101,40 @@ def _make_qwen3_gptq_config(devices: list[DeviceRef]) -> Qwen3Config:
         norm_topk_prob=False,
         decoder_sparse_step=1,
         use_subgraphs=True,
+    )
+
+
+def _make_qwen3_gptq_block(
+    devices: list[DeviceRef],
+) -> Qwen3TransformerBlock:
+    config = _make_qwen3_gptq_config(devices)
+    rope = Llama3RotaryEmbedding(
+        dim=config.hidden_size,
+        n_heads=config.num_attention_heads,
+        theta=config.rope_theta,
+        max_seq_len=config.max_seq_len,
+        head_dim=config.kv_params.head_dim,
+        interleaved=config.interleaved_rope_weights,
+        scaling_params=config.rope_scaling_params,
+    )
+    create_norm = functools.partial(
+        RMSNorm,
+        config.hidden_size,
+        dtype=config.norm_dtype or DType.float32,
+        eps=config.rms_norm_eps,
+        multiply_before_cast=False,
+    )
+    linear_cls = functools.partial(
+        GPTQLinear,
+        quantization_encoding=QuantizationEncoding.GPTQ,
+        quantization_config=config.quantization_config,
+    )
+    return Qwen3TransformerBlock(
+        config=config,
+        layer_idx=0,
+        rope=rope,
+        create_norm=create_norm,
+        linear_cls=linear_cls,
     )
 
 
@@ -227,8 +268,7 @@ def test_qwen3_gptq_requires_single_device() -> None:
 def test_qwen3_gptq_moe_constructs_dense_attention_and_quantized_experts() -> (
     None
 ):
-    model = Qwen3(_make_qwen3_gptq_config([DeviceRef.CPU()]))
-    first_layer = cast(Any, model.layers[0])
+    first_layer = cast(Any, _make_qwen3_gptq_block([DeviceRef.CPU()]))
     first_expert = cast(Any, first_layer.mlp.experts[0])
 
     assert type(first_layer.self_attn).__name__ == "Qwen3GPTQAttention"
