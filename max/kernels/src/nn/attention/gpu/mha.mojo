@@ -4990,7 +4990,7 @@ def _bmm0_bs[
     _is_cache_length_accurate: Bool = False,
 ](
     p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     valid_length: LayoutTensor[
         DType.uint32,
@@ -5063,34 +5063,31 @@ def _bmm0_bs[
             UInt32(batch), UInt32(x), UInt32(kv_head), 0
         )
 
-        # TODO: The AMD-specific path is to handle Llama shapes, similar
-        #       to how things were before #53433. Once flash attention is
-        #       supported on AMD, this stopgap AMD path should be eliminated to
-        #       function as a generic fall-back (i.e., without vectorization).
-        #       REL: KERN-1343.
-        comptime if is_amd_gpu():
-            var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
+        comptime accum_width = min(
+            simd_width_of[q_type](), simd_width_of[k_type]()
+        )
+        var accum_vec = SIMD[p_type, accum_width](0)
 
-            def accum_fn[width: Int](offset: Int) unified {mut}:
-                comptime alignment = align_of[SIMD[p_type, width]]()
-                var q_val = q.load[width=width, alignment=alignment](
-                    y * UInt(num_heads) * UInt(depth) + UInt(offset)
-                ).cast[k_type]()
-                var k_val = k_ptr.load[width=width, alignment=alignment](offset)
-                var qk_val = (q_val * k_val).cast[p_type]()
+        def accum_fn[width: Int](offset: Int) unified {mut}:
+            comptime alignment = align_of[SIMD[k_type, width]]()
+            var q_val = q.load[
+                width=width, alignment=align_of[SIMD[q_type, width]]()
+            ](y * UInt(num_heads) * UInt(depth) + UInt(offset))
+            var k_val = k_ptr.load[
+                width=width, alignment=align_of[SIMD[k_type, width]]()
+            ](offset)
+            var qk_val = q_val.cast[p_type]() * k_val.cast[p_type]()
 
-                comptime if width == 1:
-                    accum += rebind[type_of(accum)](qk_val)
-                else:
-                    accum_vec += rebind[type_of(accum_vec)](qk_val)
+            comptime if width == 1:
+                accum += rebind[type_of(accum)](qk_val)
+            else:
+                accum_vec += rebind[type_of(accum_vec)](qk_val)
 
-            vectorize[simd_width_of[p_type]()](depth, accum_fn)
+        if depth % accum_width == 0:
+            vectorize[accum_width](depth, accum_fn)
             accum += accum_vec.reduce_add()
         else:
-            for d in range(depth):
-                var q_val = q[y * UInt(num_heads) * UInt(depth) + UInt(d)]
-                var k_val = k_ptr[d]
-                accum += q_val.cast[p_type]() * k_val.cast[p_type]()
+            vectorize[1](depth, accum_fn)
 
     var score_row = y + UInt(cur_cache_len) - UInt(cur_query_len)
     var score_col = x
@@ -5120,7 +5117,7 @@ def _bmm1_bs[
     _is_cache_length_accurate: Bool = False,
 ](
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
+    p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
     v: v_t,
     valid_length: LayoutTensor[
         DType.uint32,
