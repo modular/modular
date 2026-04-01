@@ -748,25 +748,25 @@ module attributes {M.target_info = #M.target<triple = "air64-unknown-unknown", a
                         %ptr2: !kgen.pointer<scalar<ui32>>,
                         %val2: !pop.scalar<ui32>) {
     // CHECK: llvm.call @air.atomic.global.add.s.i64
-    %0 = pop.atomic.rmw add(%ptr0, %val0) release : !kgen.pointer<scalar<index>>
+    %0 = pop.atomic.rmw add(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
 
     // CHECK: llvm.call @air.atomic.global.sub.s.i64
-    %1 = pop.atomic.rmw sub(%ptr0, %val0) release : !kgen.pointer<scalar<index>>
+    %1 = pop.atomic.rmw sub(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
 
     // CHECK: llvm.call @air.atomic.global.xor.s.i64
-    %2 = pop.atomic.rmw xor(%ptr0, %val0) release : !kgen.pointer<scalar<index>>
+    %2 = pop.atomic.rmw xor(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
 
     // CHECK: llvm.call @air.atomic.global.min.s.i64
-    %3 = pop.atomic.rmw min(%ptr0, %val0) release : !kgen.pointer<scalar<index>>
+    %3 = pop.atomic.rmw min(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
 
     // CHECK: llvm.call @air.atomic.global.max.s.i64
-    %4 = pop.atomic.rmw max(%ptr0, %val0) release : !kgen.pointer<scalar<index>>
+    %4 = pop.atomic.rmw max(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
 
     // CHECK: llvm.call @air.atomic.global.add.f32
-    %5 = pop.atomic.rmw add(%ptr1, %val1) release : !kgen.pointer<scalar<f32>>
+    %5 = pop.atomic.rmw add(%ptr1, %val1) monotonic : !kgen.pointer<scalar<f32>>
 
     // CHECK: llvm.call @air.atomic.global.max.u.i32
-    %6 = pop.atomic.rmw max(%ptr2, %val2) release : !kgen.pointer<scalar<ui32>>
+    %6 = pop.atomic.rmw max(%ptr2, %val2) monotonic : !kgen.pointer<scalar<ui32>>
 
     // CHECK: llvm.call @air.atomic.global.add.s.i64
     %7 = pop.atomic.rmw add(%ptr0, %val0) unordered : !kgen.pointer<scalar<index>>
