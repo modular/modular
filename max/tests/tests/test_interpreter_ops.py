@@ -4793,3 +4793,111 @@ class TestTopKOp:
         ref_vals, ref_idxs = self._top_k_ref(x_np, k=2, axis=1)
         np.testing.assert_array_equal(np.from_dlpack(vals), ref_vals)
         np.testing.assert_array_equal(np.from_dlpack(idxs), ref_idxs)
+
+
+class TestBottomKOp:
+    """Tests for BottomK interpreter op (mo.bottom_k).
+
+    Uses F.bottom_k which routes through ops.bottom_k -> rmo.MoBottomKOp ->
+    mo.bottom_k -> interpreter handler.  The reference implementation uses
+    numpy stable argsort (ascending) to match the kernel's selection-sort
+    ordering.
+    """
+
+    @staticmethod
+    def _bottom_k_ref(
+        x_np: np.ndarray, k: int, axis: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """NumPy reference: bottom-k values and original indices, ascending."""
+        sorted_idx = np.argsort(x_np.astype(np.float64), axis=axis, stable=True)
+        idx = np.take(sorted_idx, np.arange(k), axis=axis)
+        vals = np.take_along_axis(x_np, idx, axis=axis)
+        return vals, idx
+
+    @pytest.mark.parametrize("axis", [-1, 0])
+    def test_basic_2d(self, axis: int) -> None:
+        """Test bottom-2 on a 2D tensor along axis 0 and -1."""
+        x_np = np.array([[3.0, 1.0, 4.0], [1.0, 5.0, 9.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.bottom_k(x, k=2, axis=axis)
+
+        ref_vals, ref_idxs = self._bottom_k_ref(x_np, k=2, axis=axis)
+        np.testing.assert_array_equal(np.from_dlpack(vals), ref_vals)
+        np.testing.assert_array_equal(np.from_dlpack(idxs), ref_idxs)
+
+    def test_3d_middle_axis(self) -> None:
+        """Test bottom-3 on a 3D tensor along axis 1."""
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 6, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.bottom_k(x, k=3, axis=1)
+
+        ref_vals, ref_idxs = self._bottom_k_ref(x_np, k=3, axis=1)
+        np.testing.assert_allclose(
+            np.from_dlpack(vals), ref_vals, rtol=1e-6, atol=0
+        )
+        np.testing.assert_array_equal(np.from_dlpack(idxs), ref_idxs)
+
+    def test_k_equals_1(self) -> None:
+        """k=1 must return the same element as argmin."""
+        x_np = np.array([3.0, 7.0, 1.0, 5.0], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.bottom_k(x, k=1, axis=0)
+            argmin_result = F.argmin(x, axis=0)
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(idxs), np.from_dlpack(argmin_result)
+        )
+        np.testing.assert_allclose(np.from_dlpack(vals), np.array([1.0]))
+
+    def test_k_equals_dim(self) -> None:
+        """k equal to the axis size returns a full sorted permutation."""
+        x_np = np.array([[4.0, 2.0, 1.0, 3.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.bottom_k(x, k=4, axis=1)
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(vals), np.array([[1.0, 2.0, 3.0, 4.0]])
+        )
+        np.testing.assert_array_equal(
+            np.from_dlpack(idxs), np.array([[2, 1, 3, 0]])
+        )
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.int32]
+    )
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test bottom-2 with numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([[5, 1, 8, 3], [9, 2, 7, 4]], dtype=np_dtype)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.bottom_k(x, k=2, axis=1)
+
+        ref_vals, ref_idxs = self._bottom_k_ref(x_np, k=2, axis=1)
+        np.testing.assert_array_equal(np.from_dlpack(vals), ref_vals)
+        np.testing.assert_array_equal(np.from_dlpack(idxs), ref_idxs)

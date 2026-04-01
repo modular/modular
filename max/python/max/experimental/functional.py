@@ -321,6 +321,9 @@ avg_pool2d = functional(ops.avg_pool2d)
 #: Copies a tensor setting everything outside a central band to zero.
 #: See :func:`max.graph.ops.band_part` for details.
 band_part = functional(ops.band_part)
+#: Returns the k smallest elements along an axis.
+#: See :func:`max.graph.ops.bottom_k` for details.
+bottom_k = functional(ops.bottom_k)
 #: Broadcasts a tensor to a new shape.
 #: See :func:`max.graph.ops.broadcast_to` for details.
 broadcast_to = functional(ops.broadcast_to)

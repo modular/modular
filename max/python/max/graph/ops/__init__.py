@@ -42,6 +42,7 @@ from . import allreduce, bundled_allreduce, random, reducescatter
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
+from .bottom_k import bottom_k
 from .broadcast import distributed_broadcast
 from .broadcast_to import broadcast_to
 from .buffer import buffer_create, buffer_load, buffer_store, buffer_store_slice

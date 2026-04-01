@@ -29,6 +29,7 @@ from . import (  # type: ignore[attr-defined]
     argmax_ops,
     avg_pool_ops,
     band_part_ops,
+    bottomk_ops,
     conv_ops,
     data_movement_ops,
     elementwise_binary_ops,

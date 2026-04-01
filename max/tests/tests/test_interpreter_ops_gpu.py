@@ -3124,3 +3124,64 @@ class TestTopKGPU:
             rtol=0,
             atol=0,
         )
+
+
+class TestBottomKGPU:
+    """GPU tests for mo.bottom_k interpreter handler."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    @pytest.mark.parametrize("axis", [-1, 0])
+    def test_basic_2d(self, dtype: DType, axis: int) -> None:
+        """Test bottom-2 on a 2D GPU tensor along axis 0 and -1."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        # Use strictly distinct values to avoid tie-breaking ambiguity:
+        # the kernel and torch may return tied indices in different orders.
+        x_torch = torch.tensor(
+            [[3.0, 1.0, 4.0, 2.0, 5.0], [9.0, 2.0, 6.0, 5.0, 3.0]],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.bottom_k(x, k=2, axis=axis)
+
+        ref_vals, ref_idxs = torch.topk(
+            x_torch, k=2, dim=axis, largest=False, sorted=True
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(vals), ref_vals, rtol=0, atol=0
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(idxs),
+            ref_idxs.to(torch.int64),
+            rtol=0,
+            atol=0,
+        )
+
+    def test_3d(self) -> None:
+        """Test bottom-3 on a 3D float32 GPU tensor along axis 1."""
+        x_torch = torch.randn(2, 8, 4, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.bottom_k(x, k=3, axis=1)
+
+        ref_vals, ref_idxs = torch.topk(
+            x_torch, k=3, dim=1, largest=False, sorted=True
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(vals), ref_vals, rtol=1e-5, atol=1e-5
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(idxs),
+            ref_idxs.to(torch.int64),
+            rtol=0,
+            atol=0,
+        )
