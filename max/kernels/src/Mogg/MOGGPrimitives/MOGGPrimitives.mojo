@@ -42,6 +42,8 @@ from tensor.managed_tensor_slice import DynamicTensor, get_kernel_simd_width
 
 from std.utils import Index, IndexList, StaticTuple
 
+from .buffer_plan import BufferPlanState
+
 comptime MutByteBuffer = DynamicTensor[DType.int8, 1]
 comptime ImmutByteBuffer = DynamicTensor[DType.int8, 1]
 
@@ -423,6 +425,79 @@ def mgp_buffer_slice(
     buffer: MutByteBuffer, offset: Int, size: Int
 ) -> MutByteBuffer:
     return MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
+
+
+@register_internal("mgp.buffer.plan")
+@no_inline
+def mgp_buffer_plan[
+    num_static_sizes: Int,
+    num_runtime_sizes: Int,
+    //,
+    alignments: InlineArray[Int, num_static_sizes + num_runtime_sizes],
+    min_pre: InlineArray[Int, num_static_sizes + num_runtime_sizes],
+    min_post: InlineArray[Int, num_static_sizes + num_runtime_sizes],
+    max_pre: InlineArray[Int, num_static_sizes + num_runtime_sizes],
+    max_post: InlineArray[Int, num_static_sizes + num_runtime_sizes],
+    static_sizes: InlineArray[Int, num_static_sizes],
+](runtime_sizes: InlineArray[Int, num_runtime_sizes]) -> Tuple[
+    Int, InlineArray[Int, num_static_sizes + num_runtime_sizes]
+]:
+    """Runtime memory planning for buffers.
+
+    Given static and runtime size information along with lifetime information
+    for allocations, returns the high watermark size and offsets for each
+    allocation.
+
+    The allocations are ordered as: [static_sizes..., runtime_sizes...]
+    where the first num_static_sizes allocations have compile-time known sizes,
+    and the remaining num_runtime_sizes allocations have runtime sizes.
+
+    Alloc lifetimes are represented as the min/max pre/postorder indices of the
+    uses of every allocation in the "dependency tree". An allocation A can reuse
+    an allocation B if A.max_pre < B.min_pre && A.min_post > B.max_post.
+
+    Parameters:
+        num_static_sizes: Number of allocations with static sizes.
+        num_runtime_sizes: Number of allocations with runtime sizes.
+        alignments: Alignment requirements for each allocation.
+        min_pre: Minimum preorder indices for each allocation.
+        min_post: Minimum postorder indices for each allocation.
+        max_pre: Maximum preorder indices for each allocation.
+        max_post: Maximum postorder indices for each allocation.
+        static_sizes: Compile-time known sizes for first num_static_sizes allocations.
+
+    Args:
+        runtime_sizes: Runtime sizes for last num_runtime_sizes allocations.
+
+    Returns:
+        A tuple containing:
+        - highWatermark: Total memory required.
+        - offsets: Offsets for each allocation (static_sizes first, then runtime_sizes).
+    """
+
+    def compute_static_allocations(
+        out result: BufferPlanState[
+            alignments,
+            min_pre,
+            min_post,
+            max_pre,
+            max_post,
+        ],
+    ):
+        result = {}
+        result.allocate_greedy(static_sizes)
+
+    comptime state = compute_static_allocations()
+
+    # If all sizes are static, then we can avoid materializing the allocator
+    # state.
+    comptime if num_runtime_sizes == 0:
+        comptime results = state.take_results()
+        return results
+    else:
+        var runtime_state = materialize[state]()
+        runtime_state.allocate_greedy[start=num_static_sizes](runtime_sizes)
+        return runtime_state^.take_results()
 
 
 @register_internal("mgp.buffer.concat")
