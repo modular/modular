@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
@@ -25,7 +25,7 @@ def vec_func[
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = op(in0[tid], in1[tid])
 

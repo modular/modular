@@ -21,7 +21,7 @@ from std.sys.intrinsics import (
     sendmsg,
 )
 
-from std.gpu.primitives.id import lane_id_uint as lane_id
+from std.gpu.primitives.id import lane_id
 from std.memory import Span
 from std.memory._nonnull import NonNullUnsafePointer, _Null
 

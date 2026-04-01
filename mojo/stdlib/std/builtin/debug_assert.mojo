@@ -430,29 +430,23 @@ def _debug_assert_msg(
     )
 
     comptime if is_nvidia_gpu():
-        from std.gpu.primitives.id import (
-            block_idx_uint as block_idx,
-            thread_idx_uint as thread_idx,
-        )
+        from std.gpu.primitives.id import block_idx, thread_idx
 
         _printf[fmt](
             loc.file_name().unsafe_ptr(),
             loc.line(),
             loc.column(),
-            block_idx.x,
-            block_idx.y,
-            block_idx.z,
-            thread_idx.x,
-            thread_idx.y,
-            thread_idx.z,
+            UInt(block_idx.x),
+            UInt(block_idx.y),
+            UInt(block_idx.z),
+            UInt(thread_idx.x),
+            UInt(thread_idx.y),
+            UInt(thread_idx.z),
             message,
         )
     # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
     elif is_amd_gpu():
-        from std.gpu.primitives.id import (
-            block_idx_uint as block_idx,
-            thread_idx_uint as thread_idx,
-        )
+        from std.gpu.primitives.id import block_idx, thread_idx
 
         var fd = printf_begin()
         _ = printf_append_string_n(fd, fmt.as_bytes(), False)

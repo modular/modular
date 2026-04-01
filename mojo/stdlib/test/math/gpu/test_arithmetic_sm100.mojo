@@ -14,11 +14,7 @@
 
 from std.random import random_float64
 
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext, HostBuffer
 from std.testing import assert_equal, TestSuite
 
@@ -31,7 +27,7 @@ def simd_add_kernel[
     c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -47,7 +43,7 @@ def simd_mult_kernel[
     c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -63,7 +59,7 @@ def simd_fma_kernel[
     c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
