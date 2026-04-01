@@ -1922,25 +1922,6 @@ def _unsafe_alloc_init[
 # ===-----------------------------------------------------------------------===#
 
 
-def _owned_or_raise(ptr: PyObjectPtr) raises -> PythonObject:
-    """Check a CPython return value for NULL and construct a `PythonObject`.
-
-    If the pointer is NULL, fetches and raises the current Python exception.
-
-    Args:
-        ptr: A `PyObjectPtr` returned by a CPython API call.
-
-    Returns:
-        A `PythonObject` owning the pointer.
-
-    Raises:
-        If the pointer is NULL (indicating a CPython error occurred).
-    """
-    if not ptr:
-        raise Python().cpython().unsafe_get_error()
-    return PythonObject(from_owned=ptr)
-
-
 def _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:
     """Convert Mojo Slice to Python slice parameters.
 

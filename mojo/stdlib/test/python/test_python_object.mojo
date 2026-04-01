@@ -889,32 +889,5 @@ def test_steal_data_roundtrip() raises:
     assert_equal_pyobj(reconstructed, 99)
 
 
-def test_owned_or_raise_valid_ptr() raises:
-    """Test _owned_or_raise with a valid pointer."""
-    from std.python.python_object import _owned_or_raise
-
-    ref cpy = Python().cpython()
-    var ptr = cpy.PyLong_FromSsize_t(123)
-    var obj = _owned_or_raise(ptr)
-    assert_equal_pyobj(obj, 123)
-
-
-def test_owned_or_raise_null_ptr() raises:
-    """Test _owned_or_raise with a NULL pointer raises."""
-    from std.python.python_object import _owned_or_raise
-
-    ref cpy = Python().cpython()
-
-    # Set a Python exception so unsafe_get_error() has something to fetch.
-    var exc_type = cpy.get_error_global("PyExc_RuntimeError")
-    cpy.PyErr_SetString(
-        exc_type,
-        "test error".as_c_string_slice().unsafe_ptr(),
-    )
-
-    with assert_raises():
-        _ = _owned_or_raise(PyObjectPtr())
-
-
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
