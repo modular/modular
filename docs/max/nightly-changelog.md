@@ -77,6 +77,9 @@ This version is still a work in progress.
 - Added `top_k` op handler to the experimental eager interpreter with CPU
   and GPU support, returning the top-k values and their original indices
   along a specified axis.
+- `max.graph.ops.pad` (and `max.graph.experimental.functional.pad`) now
+  accepts `mode='reflect'` and `mode='edge'` in addition to
+  `mode='constant'`.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.
