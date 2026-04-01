@@ -11,8 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .scheduler_factory import SchedulerFactory
-from .scheduling_flow_match_euler_discrete import (
-    FlowMatchEulerDiscreteScheduler,
-)
-from .scheduling_unipc_multistep import UniPCMultistepScheduler
+from .arch import wan_arch, wan_i2v_arch
+from .model import WanTransformerModel
+from .pipeline_wan import WanPipeline
+from .pipeline_wan_i2v import WanI2VPipeline
+
+__all__ = [
+    "WanI2VPipeline",
+    "WanPipeline",
+    "WanTransformerModel",
+    "wan_arch",
+    "wan_i2v_arch",
+]

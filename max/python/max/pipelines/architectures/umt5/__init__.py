@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .attention import VAEAttention
-from .downsampling import Downsample2D
-from .resnet import ResnetBlock2D
-from .upsampling import Upsample2D
+from .model import UMT5Model
+
+__all__ = ["UMT5Model"]
