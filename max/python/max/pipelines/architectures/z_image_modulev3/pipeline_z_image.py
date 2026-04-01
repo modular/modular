@@ -40,7 +40,7 @@ from max.pipelines.lib.interfaces import (
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
-from ..autoencoders import AutoencoderKLModel
+from ..autoencoders_modulev3 import AutoencoderKLModel
 from ..qwen3_modulev3.text_encoder import Qwen3TextEncoderZImageModel
 from .model import ZImageTransformerModel
 
@@ -790,7 +790,12 @@ class ZImagePipeline(DiffusionPipeline):
     @staticmethod
     def _to_numpy(image: Tensor) -> np.ndarray:
         cpu_image: Tensor = image.cast(DType.float32).to(CPU())
-        return np.from_dlpack(cpu_image)
+        arr: np.ndarray = np.array(np.from_dlpack(cpu_image))
+        # Denormalize from [-1, 1] to [0, 1], permute BCHW -> BHWC,
+        # and convert to uint8 as expected by OutputImageContent.
+        arr = np.clip(arr * 0.5 + 0.5, 0, 1)
+        arr = np.transpose(arr, (0, 2, 3, 1))
+        return (arr * 255).round().astype(np.uint8)
 
     @staticmethod
     def _vector_norm_per_sample(x: Tensor) -> Tensor:
