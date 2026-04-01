@@ -670,11 +670,13 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (pog.getPassingKind() == PassingKind::KwOnly)
         os << pog.getName().str() << "=";
 
-      // If the arg convention is a memory convention then we'll have a
-      // StoreToMem to plop it into memory.
+      // If the arg convention is a memory convention then we'll typically have
+      // a StoreToMem to plop it into memory. However, in comptime/type-param
+      // contexts the operand may not be wrapped yet — fall back gracefully.
       TypedAttr operandToPrint = operand;
       if (hasAddress(fullSig.getArgConvention(idx + argOffset)))
-        operandToPrint = sugarCast<StoreToMemAttr>(operand).getValue();
+        if (auto store = sugarDynCast<StoreToMemAttr>(operand))
+          operandToPrint = store.getValue();
 
       printParam(os, operandToPrint, diagShared);
       needComma = true;
