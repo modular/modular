@@ -2166,20 +2166,86 @@ struct SIMD[dtype: DType, size: Int](
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the SIMD value.
 
+        For scalar values (size=1), this prints the alias name (e.g., "UInt(42)")
+        instead of the verbose SIMD format (e.g., "SIMD[DType.uindex, 1](42)").
+
         Args:
             writer: The value to write to.
         """
-        writer.write_string("SIMD[")
-        Self.dtype.write_repr_to(writer)
-        writer.write(", ", Self.size, "](")
-        # Write each element.
-        for i in range(Self.size):
-            var element = self[i]
-            # Write separators between each element.
-            if i != 0:
-                writer.write_string(", ")
-            _write_scalar(writer, element)
-        writer.write_string(")")
+        # For scalars (size=1), use the alias name for prettier output
+        comptime if Self.size == 1:
+            # Map dtype to scalar alias name
+            comptime if Self.dtype == DType.int8:
+                writer.write_string("Int8(")
+            elif Self.dtype == DType.uint8:
+                writer.write_string("UInt8(")
+            elif Self.dtype == DType.int16:
+                writer.write_string("Int16(")
+            elif Self.dtype == DType.uint16:
+                writer.write_string("UInt16(")
+            elif Self.dtype == DType.int32:
+                writer.write_string("Int32(")
+            elif Self.dtype == DType.uint32:
+                writer.write_string("UInt32(")
+            elif Self.dtype == DType.int64:
+                writer.write_string("Int64(")
+            elif Self.dtype == DType.uint64:
+                writer.write_string("UInt64(")
+            elif Self.dtype == DType.int128:
+                writer.write_string("Int128(")
+            elif Self.dtype == DType.uint128:
+                writer.write_string("UInt128(")
+            elif Self.dtype == DType.int256:
+                writer.write_string("Int256(")
+            elif Self.dtype == DType.uint256:
+                writer.write_string("UInt256(")
+            elif Self.dtype == DType.int:
+                writer.write_string("Int(")
+            elif Self.dtype == DType.uint:
+                writer.write_string("UInt(")
+            elif Self.dtype == DType.float16:
+                writer.write_string("Float16(")
+            elif Self.dtype == DType.bfloat16:
+                writer.write_string("BFloat16(")
+            elif Self.dtype == DType.float32:
+                writer.write_string("Float32(")
+            elif Self.dtype == DType.float64:
+                writer.write_string("Float64(")
+            elif Self.dtype == DType.float8_e5m2:
+                writer.write_string("Float8_e5m2(")
+            elif Self.dtype == DType.float8_e4m3fn:
+                writer.write_string("Float8_e4m3fn(")
+            elif Self.dtype == DType.float8_e5m2fnuz:
+                writer.write_string("Float8_e5m2fnuz(")
+            elif Self.dtype == DType.float8_e4m3fnuz:
+                writer.write_string("Float8_e4m3fnuz(")
+            elif Self.dtype == DType.float8_e8m0fnu:
+                writer.write_string("Float8_e8m0fnu(")
+            elif Self.dtype == DType.float4_e2m1fn:
+                writer.write_string("Float4_e2m1fn(")
+            elif Self.dtype == DType.bool:
+                writer.write_string("Bool(")
+            else:
+                # Fallback to verbose format for unknown dtypes
+                writer.write_string("SIMD[")
+                Self.dtype.write_repr_to(writer)
+                writer.write(", 1](")
+            # Write the single element
+            _write_scalar(writer, self[0])
+            writer.write_string(")")
+        else:
+            # For vectors (size > 1), use the verbose SIMD format
+            writer.write_string("SIMD[")
+            Self.dtype.write_repr_to(writer)
+            writer.write(", ", Self.size, "](")
+            # Write each element.
+            for i in range(Self.size):
+                var element = self[i]
+                # Write separators between each element.
+                if i != 0:
+                    writer.write_string(", ")
+                _write_scalar(writer, element)
+            writer.write_string(")")
 
     def write_padded[
         W: Writer
