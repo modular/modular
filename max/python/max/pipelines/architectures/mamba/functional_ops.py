@@ -40,10 +40,19 @@ _MODULAR_MOJO_MAX_IMPORT_PATH = "MODULAR_MOJO_MAX_IMPORT_PATH"
 def _get_state_space_paths() -> tuple[Path, ...]:
     """Get paths to state_space.mojopkg kernel libraries.
 
-    Reads MODULAR_MOJO_MAX_IMPORT_PATH and finds state_space.mojopkg files.
+    Reads the Mojo package locations and finds state_space.mojopkg files.
     Results are cached since paths don't change during a session.
     """
     import_path_env = os.environ.get(_MODULAR_MOJO_MAX_IMPORT_PATH, "")
+    if not import_path_env:
+        site_packages = Path(__file__).resolve().parents[4]
+        wheel_layout = site_packages / "modular"
+        conda_layout = site_packages.parent.parent.parent
+        for root in (wheel_layout, conda_layout):
+            mojo_lib = root / "lib" / "mojo"
+            if mojo_lib.is_dir():
+                import_path_env = str(mojo_lib)
+                break
     if not import_path_env:
         logger.warning(
             "MODULAR_MOJO_MAX_IMPORT_PATH not set for functional_ops"
