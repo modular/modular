@@ -12,7 +12,6 @@
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "MLRT/Core/MojoValue.h"
-#include "Support/Context.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
@@ -154,24 +153,14 @@ KGEN_CompilerRT_AsyncRT_ReleaseRuntime(AsyncRTRuntimeRef rt) {
 /// runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
-
-  // Invariant: If an M::Context exists, this will own the Runtime, and the
-  // thread-local Runtime pointer must be set for any thread that runs Mojo
-  // code.
-  if (M::getCurrentMaxContextOrNull()) {
-    assert(CompactRuntimePtr::getCurrentRuntime() &&
-           "If an M::Context exists, the thread-local Runtime pointer must be "
-           "set for this thread.");
-  }
-
   return wrap(Runtime::getCurrentRuntimeOrNull());
 }
 
 /// Get or create the AsyncRT runtime and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime() {
-  // Get or create the Runtime from mojo.
-  auto runtime = Init::getOrCreateRuntime(RuntimeSource::MojoStdlib);
+  auto runtime = Init::getOrCreateRuntime(
+      RuntimeSource::MojoStdlib, RuntimeOptions().withMainWillNotDonate());
   return wrap(runtime.release());
 }
 
