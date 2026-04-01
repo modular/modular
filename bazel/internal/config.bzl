@@ -139,6 +139,14 @@ def get_default_test_env(exec_properties):
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
         },
         "//conditions:default": {},
+    }) | select({
+        # On macOS, the Metal memory manager is disabled on BuildBuddy remote
+        # workers (max_cache_size=0), so MEMORY_MANAGER_ONLY must be false to
+        # allow fallthrough to direct device allocation.
+        "@platforms//os:macos": {
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+        },
+        "//conditions:default": {},
     })
 
 _TOOLS = {}
