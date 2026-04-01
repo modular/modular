@@ -20,7 +20,7 @@ from typing import Any
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..type import DeviceRef, Type, _ChainType
+from ..type import Type, _ChainType
 from ..value import TensorValue, TensorValueLike, Value, _ChainValue
 
 
@@ -126,7 +126,12 @@ def cond(
             types don't match ``out_types``.
     """
     pred = TensorValue(pred)
-    pred = pred.to(DeviceRef.CPU())
+    if not pred.device.is_cpu():
+        raise ValueError(
+            "The predicate for `ops.cond` must reside on CPU, but got a"
+            f" tensor on {pred.device}. Transfer it explicitly with"
+            " `ops.transfer_to(pred, CPU())`."
+        )
     out_types_actual = [
         *(t.to_mlir() for t in out_types or []),
         _ChainType().to_mlir(),

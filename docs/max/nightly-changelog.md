@@ -36,6 +36,11 @@ This version is still a work in progress.
 - Added support for the `bfloat16` data type on ARM CPU devices in MAX graphs.
   Previously, `session.load()` raised a `ValueError` when a graph contained
   bf16 tensors targeting an ARM CPU.
+- Added `DevicePlacementPolicy` (`Ignore`, `Warn`, `Error`) to `Graph` to
+  control behavior when CPU-only ops (`ops.scatter`, `ops.cumsum`,
+  `ops.nonzero`, `ops.tile`) receive GPU tensors. The default (`Warn`) emits a
+  `UserWarning` and falls back to CPU; `Error` raises `ValueError` instead.
+  `ops.cond` and `ops.while_loop` always raise `ValueError` for GPU predicates.
 - Fixed slow `axis=None` reductions (`mean`, `sum`, `prod`, `max`, `min`) in
   `max.experimental.functional`. The previous implementation flattened the
   tensor before reducing, serializing the work onto a single GPU block.

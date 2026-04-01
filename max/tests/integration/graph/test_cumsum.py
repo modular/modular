@@ -16,10 +16,10 @@ import platform
 import numpy as np
 import pytest
 import torch
-from max.driver import Buffer
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
 
 
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
@@ -55,3 +55,19 @@ def test_cumsum(session: InferenceSession, dtype: DType) -> None:
         atol=1e-6,
         verbose=True,
     )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="requires a GPU to test device check"
+)
+def test_cumsum_raises_on_gpu() -> None:
+    """ops.cumsum raises ValueError at graph construction time on GPU input."""
+    with pytest.raises(ValueError, match=r"ops\.cumsum"):
+        with Graph(
+            "cumsum_gpu",
+            input_types=[
+                TensorType(DType.float32, [1024], device=DeviceRef.GPU())
+            ],
+            strict_device_placement=DevicePlacementPolicy.Error,
+        ):
+            ops.cumsum(Graph.current.inputs[0].tensor, axis=0)

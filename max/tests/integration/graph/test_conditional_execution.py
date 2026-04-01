@@ -55,7 +55,8 @@ def test_conditional_execution_no_results(
         def else_fn() -> None:
             ops.print("else")
 
-        ops.cond(graph.inputs[0].tensor, None, then_fn, else_fn)
+        cond = ops.transfer_to(graph.inputs[0].tensor, DeviceRef.CPU())
+        ops.cond(cond, None, then_fn, else_fn)
         graph.output()
 
     compiled = session.load(graph)
@@ -86,7 +87,7 @@ def test_conditional_execution_with_results(session: InferenceSession) -> None:
             return ops.constant(0, DType.int32, device=device_ref)
 
         result = ops.cond(
-            cond.tensor,
+            ops.transfer_to(cond.tensor, DeviceRef.CPU()),
             [TensorType(DType.int32, [], device=device_ref)],
             then_fn,
             else_fn,
@@ -119,7 +120,7 @@ def test_conditional_shape_to_tensor_solo_dim(
             return ops.constant(0, DType.int32, device=device_ref)
 
         result = ops.cond(
-            TensorValue(shape[1]) == 3,
+            ops.transfer_to(TensorValue(shape[1]) == 3, DeviceRef.CPU()),
             [TensorType(DType.int32, [], device=device_ref)],
             then_fn,
             else_fn,
@@ -164,7 +165,7 @@ def test_conditional_inplace_user_supplied(
         custom_extensions=[custom_ops_path],
     ) as graph:
         buffer: BufferValue = graph.inputs[0].buffer
-        cond = graph.inputs[1].tensor
+        cond = ops.transfer_to(graph.inputs[1].tensor, DeviceRef.CPU())
 
         def then_fn() -> None:
             # this custom op is equivalent to buffer[0,0] += 1
@@ -219,8 +220,8 @@ def test_conditional_nested_conditionals(
             TensorType(DType.bool, [], device=device_ref),
         ),
     ) as graph:
-        cond_1 = graph.inputs[0].tensor
-        cond_2 = graph.inputs[1].tensor
+        cond_1 = ops.transfer_to(graph.inputs[0].tensor, DeviceRef.CPU())
+        cond_2 = ops.transfer_to(graph.inputs[1].tensor, DeviceRef.CPU())
 
         def true_fn_1() -> None:
             ops.print("true_1")
@@ -313,7 +314,7 @@ def test_conditional_with_same_name_weight(session: InferenceSession) -> None:
 
         graph.output(
             *ops.cond(
-                graph.inputs[0].tensor,
+                ops.transfer_to(graph.inputs[0].tensor, DeviceRef.CPU()),
                 [TensorType(DType.int64, [5, 10], device=device_ref)],
                 true_fn,
                 false_fn,
@@ -363,7 +364,7 @@ def test_conditional_with_diff_names_weights(session: InferenceSession) -> None:
 
         graph.output(
             *ops.cond(
-                graph.inputs[0].tensor,
+                ops.transfer_to(graph.inputs[0].tensor, DeviceRef.CPU()),
                 [TensorType(DType.int64, [5, 10], device=device_ref)],
                 true_fn,
                 false_fn,
@@ -403,7 +404,7 @@ def test_conditional_with_returned_weights(session: InferenceSession) -> None:
 
         graph.output(
             *ops.cond(
-                graph.inputs[0].tensor,
+                ops.transfer_to(graph.inputs[0].tensor, DeviceRef.CPU()),
                 [TensorType(DType.int64, [5, 10], device=device_ref)],
                 lambda: w.to(device_ref),
                 lambda: w.to(device_ref),
@@ -419,6 +420,20 @@ def test_conditional_with_returned_weights(session: InferenceSession) -> None:
         output = compiled.execute(False)
         assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(weight, output[0].to_numpy())
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="requires a GPU to test device check"
+)
+def test_cond_raises_on_gpu_pred() -> None:
+    """ops.cond raises ValueError at graph construction time on GPU predicate."""
+    with pytest.raises(ValueError, match=r"ops\.cond"):
+        with Graph(
+            "cond_gpu_pred",
+            input_types=[TensorType(DType.bool, [], device=DeviceRef.GPU())],
+        ):
+            pred = Graph.current.inputs[0].tensor
+            ops.cond(pred, None, lambda: None, lambda: None)
 
 
 def test_cond_returned_diff_weights(session: InferenceSession) -> None:
@@ -451,7 +466,7 @@ def test_cond_returned_diff_weights(session: InferenceSession) -> None:
             return w.to(device_ref)
 
         results = ops.cond(
-            graph.inputs[0].tensor,
+            ops.transfer_to(graph.inputs[0].tensor, DeviceRef.CPU()),
             [TensorType(DType.int64, [5, 10], device=device_ref)],
             true_fn,
             false_fn,

@@ -19,7 +19,7 @@ import pytest
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
@@ -54,9 +54,11 @@ def test_scatter(
     input_np = np.array(input, dtype=np.float32)
     input_type = TensorType(DType.float32, input_np.shape, device_ref)
     with Graph("scatter", input_types=[input_type]) as graph:
-        input_val = graph.inputs[0].tensor
-        updates_val = ops.constant(updates, DType.float32, device=device_ref)
-        indices_val = ops.constant(indices, DType.int32, device=device_ref)
+        input_val = ops.transfer_to(graph.inputs[0].tensor, DeviceRef.CPU())
+        updates_val = ops.constant(
+            updates, DType.float32, device=DeviceRef.CPU()
+        )
+        indices_val = ops.constant(indices, DType.int32, device=DeviceRef.CPU())
         out = ops.scatter(input_val, updates_val, indices_val, axis)
         graph.output(out)
 
@@ -138,3 +140,26 @@ def test_scatter_nd(
     np.testing.assert_equal(
         result.to_numpy(), np.array(expected, dtype=np.float32)
     )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="requires a GPU to test device check"
+)
+def test_scatter_raises_on_gpu() -> None:
+    """ops.scatter raises ValueError at graph construction time on GPU input."""
+    with pytest.raises(ValueError, match=r"ops\.scatter"):
+        with Graph(
+            "scatter_gpu",
+            input_types=[
+                TensorType(DType.float32, [4, 2], device=DeviceRef.GPU())
+            ],
+            strict_device_placement=DevicePlacementPolicy.Error,
+        ):
+            input_val = Graph.current.inputs[0].tensor
+            updates = ops.constant(
+                [[1.1, 2.2], [3.3, 4.4]], DType.float32, device=DeviceRef.GPU()
+            )
+            indices = ops.constant(
+                [[0, 1], [3, 2]], DType.int32, device=DeviceRef.GPU()
+            )
+            ops.scatter(input_val, updates, indices, axis=0)

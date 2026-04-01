@@ -25,6 +25,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Generator, Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, TypeGuard, TypeVar, cast
 
@@ -219,6 +220,26 @@ class KernelLibrary:
         self._analysis.verify_custom_op(custom_op)
 
 
+class DevicePlacementPolicy(Enum):
+    """Controls behavior when an op implicitly transfers a tensor to CPU.
+
+    Ops that only have CPU kernels must transfer non-CPU tensors before
+    executing. This policy controls how that situation is reported:
+
+    - ``Ignore``: transfer silently, no message.
+    - ``Warn`` (default): emit a ``UserWarning`` naming the op and the
+      tracking ticket for GPU support.
+    - ``Error``: raise ``ValueError``, making the implicit transfer a hard
+      build-time failure.
+
+    Pass via ``Graph(..., strict_device_placement=DevicePlacementPolicy.Error)``.
+    """
+
+    Ignore = "ignore"
+    Warn = "warn"
+    Error = "error"
+
+
 # From https://stackoverflow.com/a/76301341
 class _classproperty:
     def __init__(self, func) -> None:  # noqa: ANN001
@@ -399,9 +420,11 @@ class Graph:
         custom_extensions: Iterable[Path] = [],
         kernel_library: KernelLibrary | None = None,
         module: mlir.Module | None = None,
+        strict_device_placement: DevicePlacementPolicy = DevicePlacementPolicy.Warn,
         **kwargs,
     ) -> None:
         self.name = name
+        self.strict_device_placement = strict_device_placement
         if path is not None:
             self._load_mlir(path)
             return

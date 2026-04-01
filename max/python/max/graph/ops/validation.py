@@ -12,9 +12,48 @@
 # ===----------------------------------------------------------------------=== #
 """Helper functions for asserting in ops."""
 
+import warnings
 from collections.abc import Iterable
 
+from ..graph import DevicePlacementPolicy, Graph
 from ..value import BufferValue, TensorValue
+
+
+def _check_device_placement(op_name: str, todo: str = "") -> None:
+    """Enforce the active graph's device placement policy for CPU-only ops.
+
+    Call this before implicitly transferring a non-CPU tensor to CPU inside an
+    op implementation. Follow it immediately with ``transfer_to(x, CPU())``.
+
+    Behavior is driven by ``Graph.strict_device_placement``:
+
+    - ``Ignore``: no action.
+    - ``Warn`` (default): emit a ``UserWarning``.
+    - ``Error``: raise ``ValueError``.
+
+    Args:
+        op_name: The public op name, e.g. ``"ops.cumsum"``.
+        todo: Tracking ticket for GPU kernel work, e.g. ``"TODO(KERN-1095)."``.
+    """
+    policy = Graph.current.strict_device_placement
+    if policy is DevicePlacementPolicy.Ignore:
+        return
+
+    msg = (
+        f"`{op_name}` does not support GPU execution and will implicitly"
+        " transfer the tensor to CPU."
+    )
+    if todo:
+        msg += f" {todo}"
+    msg += (
+        " Call `ops.transfer_to(x, CPU())` explicitly, or construct the"
+        " Graph with `strict_device_placement=DevicePlacementPolicy.Error`"
+        " to make this an error."
+    )
+
+    if policy is DevicePlacementPolicy.Error:
+        raise ValueError(msg)
+    warnings.warn(msg, stacklevel=3)
 
 
 def indent(
