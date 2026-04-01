@@ -760,12 +760,24 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @property
     def architecture_name(self) -> str | None:
-        """Returns the architecture class name from the HuggingFace config."""
+        """Returns the architecture class name from the HuggingFace config.
+
+        For transformers models, returns ``architectures[0]`` from the
+        HuggingFace config.  For diffusers repos (which lack an
+        ``architectures`` field), falls back to ``_class_name`` from
+        the diffusers ``model_index.json``.
+        """
         hf_config = self.huggingface_config
         if hf_config is not None:
             architectures = getattr(hf_config, "architectures", None)
             if architectures:
                 return architectures[0]
+        # Diffusers repos use _class_name instead of architectures.
+        diffusers_cfg = self.diffusers_config
+        if diffusers_cfg is not None:
+            class_name = diffusers_cfg.get("_class_name")
+            if class_name:
+                return class_name
         return None
 
     @computed_field  # type: ignore[prop-decorator]
