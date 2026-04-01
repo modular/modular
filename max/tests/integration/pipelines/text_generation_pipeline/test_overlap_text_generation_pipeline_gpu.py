@@ -363,6 +363,7 @@ def monkeypatch_weight_and_kvcache_loading(
 
 def create_overlap_pipeline(
     enable_overlap_scheduler: bool,
+    disable_overlap: bool = False,
 ) -> OverlapTextGenerationPipeline[Any]:
     sampling_config = FakeSamplingConfig(enable_penalties=False)
     model_config = FakeModelConfig(
@@ -385,6 +386,7 @@ def create_overlap_pipeline(
         eos_token_id=9999,
         weight_adapters=MagicMock(),
         tokenizer=MagicMock(),
+        disable_overlap=disable_overlap,
     )
     return pipeline
 
@@ -570,3 +572,46 @@ def test_overlap_execution_with_preemption(
     assert context.tokens.all.tolist() == (
         list(range(100, 120)) + [FUTURE_TOKEN]
     )
+
+
+def test_disable_overlap_returns_outputs_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify disable_overlap=True returns current-batch outputs in the same
+    execute() call, never deferring them to the next iteration."""
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
+    prime_host_buffer_cache()
+
+    pipeline = create_overlap_pipeline(
+        enable_overlap_scheduler=True,
+        disable_overlap=True,
+    )
+
+    def create_inputs(
+        contexts: list[TextContext],
+    ) -> TextGenerationInputs[TextContext]:
+        return TextGenerationInputs(batches=[contexts], num_steps=1)
+
+    # --- Single request, multiple generation steps ---
+    req_a = create_context(isl=17, osl=3, offset=100)
+    req_a_id = req_a.request_id
+
+    # Every execute() must return outputs immediately and never hold a
+    # deferred _prev_batch.
+    out = pipeline.execute(create_inputs([req_a]))
+    assert not pipeline.has_pending_outputs()
+    assert req_a_id in out
+    assert out[req_a_id].tokens == [117]
+
+    out = pipeline.execute(create_inputs([req_a]))
+    assert not pipeline.has_pending_outputs()
+    assert out[req_a_id].tokens == [118]
+
+    out = pipeline.execute(create_inputs([req_a]))
+    assert not pipeline.has_pending_outputs()
+    assert out[req_a_id].tokens == [119]
+
+    # --- Empty batch returns empty outputs and no pending state ---
+    out = pipeline.execute(create_inputs([]))
+    assert not pipeline.has_pending_outputs()
+    assert len(out) == 0
