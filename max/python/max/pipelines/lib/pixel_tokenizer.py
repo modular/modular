@@ -713,23 +713,6 @@ class PixelGenerationTokenizer(
                 f"{input_ids_array.shape} vs {attention_mask_array.shape}."
             )
 
-        # Flux2 text encoder path currently does not consume an explicit
-        # attention mask. Strip padded tokens here and keep a dense mask.
-        # FLUX2_KLEIN/Z-Image consume attention_mask directly.
-        if self._pipeline_class_name == PipelineClassName.FLUX2:
-            token_row = input_ids_array[0]
-            mask_row = attention_mask_array[0]
-            real_token_ids = token_row[mask_row]
-            if real_token_ids.size == 0:
-                raise ValueError(
-                    f"{self._pipeline_class_name.value} tokenization produced "
-                    "an empty effective prompt after attention masking."
-                )
-            input_ids_array = np.expand_dims(
-                real_token_ids.astype(np.int64, copy=False), axis=0
-            )
-            attention_mask_array = np.ones_like(input_ids_array, dtype=np.bool_)
-
         if (
             max_sequence_length is not None
             and input_ids_array.shape[1] > max_sequence_length

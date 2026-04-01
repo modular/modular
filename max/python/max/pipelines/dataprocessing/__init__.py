@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .causal_attention_mask import (
+    attention_bias_from_attention_mask_array,
     causal_attention_mask,
     causal_attention_mask_with_token_mask,
 )
@@ -24,6 +25,7 @@ from .max_tokens_to_generate import max_tokens_to_generate
 
 __all__ = [
     "PaddingDirection",
+    "attention_bias_from_attention_mask_array",
     "batch_padded_tokens_and_mask",
     "causal_attention_mask",
     "causal_attention_mask_with_token_mask",

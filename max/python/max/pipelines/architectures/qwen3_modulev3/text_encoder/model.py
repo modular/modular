@@ -30,8 +30,8 @@ from max.graph.weights import Weights
 from max.pipelines.architectures.llama3.weight_adapters import (
     LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
 )
-from max.pipelines.dataprocessing.causal_attention_mask import (
-    causal_attention_mask_with_token_mask,
+from max.pipelines.dataprocessing import (
+    attention_bias_from_attention_mask_array,
 )
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
@@ -145,36 +145,10 @@ class Qwen3TextEncoderModel(ComponentModel):
         self.model = model.compile(*model.input_types(), weights=state_dict)
         return self.model
 
-    @staticmethod
-    def attention_bias_from_attention_mask_array(
-        attention_mask: np.ndarray,
-        *,
-        expected_seq_len: int | None = None,
-    ) -> np.ndarray:
-        additive_mask = causal_attention_mask_with_token_mask(
-            [0],
-            attention_mask,
-        )
-        # TODO: Lift this batch_size=1 restriction if the Klein text-encoder
-        # path needs batched prompt-mask handling.
-        if additive_mask.shape[0] != 1:
-            raise ValueError(
-                f"batch size must be 1, got {additive_mask.shape[0]}."
-            )
-        if (
-            expected_seq_len is not None
-            and additive_mask.shape[1] != expected_seq_len
-        ):
-            raise ValueError(
-                "seq_len must match tokens "
-                f"({additive_mask.shape[1]} != {expected_seq_len})."
-            )
-        return additive_mask[:, np.newaxis, :, :].astype(np.float32, copy=False)
-
     def __call__(
         self,
         tokens: Tensor,
-        attention_mask: npt.ArrayLike | None = None,
+        attention_mask: npt.ArrayLike,
         *,
         hidden_state_index: int | None = None,
     ):
@@ -185,17 +159,11 @@ class Qwen3TextEncoderModel(ComponentModel):
                 )
             tokens = tokens[0]
 
-        if attention_mask is not None:
-            attention_mask_np = np.asarray(attention_mask)
-            attention_bias_np = self.attention_bias_from_attention_mask_array(
-                attention_mask_np,
-                expected_seq_len=int(tokens.shape[0]),
-            )
-        else:
-            attention_bias_np = self.attention_bias_from_attention_mask_array(
-                np.ones((int(tokens.shape[0]),), dtype=np.bool_),
-                expected_seq_len=int(tokens.shape[0]),
-            )
+        attention_mask_np = np.asarray(attention_mask)
+        attention_bias_np = attention_bias_from_attention_mask_array(
+            attention_mask_np,
+            expected_seq_len=int(tokens.shape[0]),
+        )
 
         attention_bias = Tensor(
             storage=Buffer.from_numpy(attention_bias_np).to(self.devices[0])

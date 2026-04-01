@@ -84,6 +84,9 @@ class Flux2ModelInputs:
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
+    attention_mask: np.ndarray | None = None
+    """Tokenizer-generated mask for the padded prompt sequence."""
+
     residual_threshold: Tensor | None = None
     """Scalar float32 tensor for FBCache residual threshold, on device.
     None when FBCache is not enabled."""
@@ -243,6 +246,7 @@ class Flux2Pipeline(DiffusionPipeline):
                     self.text_encoder.devices[0]
                 )
             ),
+            attention_mask=context.mask,
             latents=Tensor(
                 storage=Buffer.from_dlpack(context.latents).to(device)
             ),
@@ -735,6 +739,7 @@ class Flux2Pipeline(DiffusionPipeline):
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
+            attention_mask=model_inputs.attention_mask,
         )
         batch_size = int(prompt_embeds.shape[0])
 

@@ -76,7 +76,12 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         self.input_layernorm = RMSNorm(hidden_size, eps=rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(hidden_size, eps=rms_norm_eps)
 
-    def forward(self, x: Tensor, rope: RotaryEmbedding) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        rope: RotaryEmbedding,
+        attention_bias: Tensor,
+    ) -> Tensor:
         """Forward pass without KV cache.
 
         Args:
@@ -88,7 +93,7 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         """
         residual = x
         x = self.input_layernorm(x)
-        x = self.self_attn(x, rope)
+        x = self.self_attn(x, rope, attention_bias)
         x = residual + x
 
         residual = x
@@ -150,9 +155,18 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
                 shape=["total_seq_len"],
                 device=self.device,
             ),
+            TensorType(
+                DType.float32,
+                shape=[1, 1, "total_seq_len", "total_seq_len"],
+                device=self.device,
+            ),
         )
 
-    def forward(self, tokens: Tensor) -> tuple[Tensor, ...]:
+    def forward(
+        self,
+        tokens: Tensor,
+        attention_bias: Tensor,
+    ) -> tuple[Tensor, ...]:
         """Forward pass returning fused prompt embeddings.
 
         Runs the transformer up to the last configured layer, collects hidden
@@ -161,6 +175,8 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
 
         Args:
             tokens: Input token IDs [total_seq_len]
+            attention_bias: Additive causal+padding mask bias with shape
+                [1, 1, seq_len, seq_len].
 
         Returns:
             Tensor of shape [1, seq_len, num_layers * hidden_dim] with the
@@ -172,7 +188,7 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         selected: dict[int, Tensor] = {}
         max_layer = self._sorted_hidden_state_layers[-1]
         for i, layer in enumerate(self.layers):
-            h = layer(h, self.rope)
+            h = layer(h, self.rope, attention_bias)
             if i in self._hidden_state_layers:
                 selected[i] = h
             if i == max_layer:

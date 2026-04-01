@@ -124,3 +124,45 @@ def causal_attention_mask_with_token_mask(
         additive_mask,
         np.float32(FILL_VAL),
     ).astype(np.float32, copy=False)
+
+
+def attention_bias_from_attention_mask_array(
+    attention_mask: npt.ArrayLike,
+    *,
+    expected_seq_len: int | None = None,
+    batch_size: int = 1,
+    start_pos: int = 0,
+    mask_name: str = "attention_mask",
+) -> npt.NDArray[np.float32]:
+    """Converts a token attention mask into a 4D additive attention bias.
+
+    Args:
+        attention_mask: Rank-1 or rank-2 token-validity mask where ``True``
+            marks visible tokens.
+        expected_seq_len: Optional expected sequence length to validate.
+        batch_size: Expected batch size for the materialized bias.
+        start_pos: Start position used when embedding the token mask into a
+            larger causal context.
+        mask_name: Name used in validation errors.
+
+    Returns:
+        Float32 additive attention bias with shape ``[batch, 1, seq_len, seq_len]``.
+    """
+    additive_mask = causal_attention_mask_with_token_mask(
+        [start_pos] * batch_size,
+        attention_mask,
+        mask_name=mask_name,
+    )
+    if additive_mask.shape[0] != batch_size:
+        raise ValueError(
+            f"batch size must be {batch_size}, got {additive_mask.shape[0]}."
+        )
+    if (
+        expected_seq_len is not None
+        and additive_mask.shape[1] != expected_seq_len
+    ):
+        raise ValueError(
+            "seq_len must match tokens "
+            f"({additive_mask.shape[1]} != {expected_seq_len})."
+        )
+    return additive_mask[:, np.newaxis, :, :].astype(np.float32, copy=False)

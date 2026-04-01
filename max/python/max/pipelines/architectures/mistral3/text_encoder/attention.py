@@ -17,8 +17,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
+from max.nn.kernels import masked_flash_attention_gpu
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import RotaryEmbedding
@@ -98,7 +97,12 @@ class EncoderAttention(Module):
             [batch_size, seq_len, self.n_kv_heads * n_rep, self.head_dim],
         )
 
-    def __call__(self, x: TensorValue, rope: RotaryEmbedding) -> TensorValue:
+    def __call__(
+        self,
+        x: TensorValue,
+        rope: RotaryEmbedding,
+        attention_bias: TensorValue,
+    ) -> TensorValue:
         """Forward pass computing causal self-attention.
 
         Args:
@@ -126,11 +130,11 @@ class EncoderAttention(Module):
             k = self._repeat_kv(k, n_rep)
             v = self._repeat_kv(v, n_rep)
 
-        attn_out = flash_attention_gpu(
+        attn_out = masked_flash_attention_gpu(
             q,
             k,
             v,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            mask=ops.squeeze(attention_bias, axis=1),
             scale=self.scale,
         )
         attn_out = ops.reshape(attn_out, [total_seq_len, -1])
