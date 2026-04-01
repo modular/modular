@@ -45,7 +45,8 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "gpu/nn/bench_topk.mojo": select({
+    "gpu/bench_matmul_mxfp4.mojo": ["//:amd_gpu"],
+    "gpu/bench_topk.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MSTDL-1880
