@@ -89,12 +89,6 @@ public:
   // ParametricIREvaluator Interface
   //===--------------------------------------------------------------------===//
 
-  /// Compute the expected mangled name of a generator, assuming it has one
-  /// successful implementation. If it doesn't, elaboration will fail anyways.
-  static StringAttr getExpectedMangledName(GeneratorOp func,
-                                           ArrayRef<TypedAttr> params,
-                                           bool sanitize);
-
   /// Compute the expected mangled name of a generator from a parameter.
   /// Returns both the mangled name and the generator referenced by the
   /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.

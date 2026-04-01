@@ -481,15 +481,6 @@ ParametricElaborator::getConcreteStructTypeReference(
       genref.getType());
 }
 
-StringAttr ParametricElaborator::getExpectedMangledName(
-    GeneratorOp func, ArrayRef<TypedAttr> params, bool sanitize) {
-  auto baseName =
-      StringAttr::get(func.getContext(), mangleParameterValues(func, params));
-  if (sanitize)
-    baseName = sanitizeSymbolToAlnum(baseName);
-  return baseName;
-}
-
 ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
 ParametricElaborator::getExpectedMangledName(Location errorLoc,
                                              StringRef errorContext,
@@ -524,8 +515,12 @@ ParametricElaborator::getExpectedMangledName(Location errorLoc,
     return ErrorTree(errorLoc, errMsg);
   }
 
-  return std::make_pair(
-      getExpectedMangledName(func, symbol.getParamValues(), sanitize), func);
+  auto baseName = StringAttr::get(
+      func.getContext(), mangleParameterValues(func, symbol.getParamValues()));
+  if (sanitize)
+    baseName = sanitizeSymbolToAlnum(baseName);
+
+  return std::make_pair(baseName, func);
 }
 
 ErrorTreeOr<Attribute>
