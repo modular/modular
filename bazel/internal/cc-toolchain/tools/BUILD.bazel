@@ -6,7 +6,7 @@ load(":tools.bzl", "declare_tools")
 package(default_visibility = ["//visibility:public"])
 
 cc_tool(
-    name = "clang",
+    name = "multi-platform-clang",
     src = ":multi-platform-clang.sh",
     data = [
         "@clang-linux-aarch64//:bin/clang",
@@ -17,7 +17,7 @@ cc_tool(
 )
 
 cc_tool(
-    name = "clang++".format(platform),
+    name = "multi-platform-clang++",
     src = ":multi-platform-clang++.sh",
     data = [
         "@clang-linux-aarch64//:bin/clang++",
@@ -28,7 +28,7 @@ cc_tool(
 )
 
 cc_tool(
-    name = "linker_driver".format(platform),
+    name = "multi-platform-linker_driver",
     src = ":linker-driver.sh",
     data = [
         "@clang-linux-aarch64//:bin/clang",
