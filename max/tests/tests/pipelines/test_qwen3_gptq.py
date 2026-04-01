@@ -222,3 +222,20 @@ def test_qwen3_gptq_requires_single_device() -> None:
         Qwen3(_make_qwen3_gptq_config([DeviceRef.CPU(), DeviceRef.CPU()]))
 
     assert "single-device execution only" in str(exc_info.value)
+
+
+def test_qwen3_gptq_moe_constructs_dense_attention_and_quantized_experts() -> (
+    None
+):
+    model = Qwen3(_make_qwen3_gptq_config([DeviceRef.CPU()]))
+    first_layer = cast(Any, model.layers[0])
+    first_expert = cast(Any, first_layer.mlp.experts[0])
+
+    assert type(first_layer.self_attn).__name__ == "Qwen3GPTQAttention"
+    assert type(first_layer.mlp).__name__ == "MoEGPTQ"
+    assert not getattr(
+        first_layer.self_attn.q_proj, "_prefer_quantized_execution", False
+    )
+    assert getattr(first_expert.gate_proj, "_prefer_quantized_execution", False)
+    assert getattr(first_expert.up_proj, "_prefer_quantized_execution", False)
+    assert getattr(first_expert.down_proj, "_prefer_quantized_execution", False)
