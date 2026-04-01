@@ -32,6 +32,8 @@ _SANITIZER_INCOMPATIBLE = select({
 # CI quickly while the underlying bug is investigated. It should normally be
 # empty — do not add files that merely produce diagnostics.
 _NO_RUN_LIST = [
+    "algorithm/functional.mojo",  # LSP crash: cast<M::StoreToMemAttr> incompatible type assertion (MOCO-3641)
+    "gpu/host/device_context.mojo",  # LSP crash: cast<M::StoreToMemAttr> incompatible type assertion (MOCO-3641)
 ]
 
 # Files with known docstring example errors. These run against the LSP server
@@ -61,7 +63,6 @@ _NO_DOCSTRING_LIST = [
     "gpu/compute/__init__.mojo",  # docstring fix needed: undeclared placeholder vars 'a', 'b', 'c'
     "gpu/compute/arch/__init__.mojo",  # docstring fix needed (doc update required): relative imports in illustration snippets
     "gpu/compute/mma.mojo",  # docstring fix needed: undeclared 'ptr' placeholder
-    "gpu/host/device_context.mojo",  # docstring fix needed: stale API; wrong field name; missing imports
     "gpu/host/info.mojo",  # docstring fix needed: escaped triple-quote confuses lexer; missing imports
     "gpu/memory/memory.mojo",  # docstring fix needed: wrong 'Scope.CTA' (should be 'Scope.BLOCK'); undeclared 'addr'
     "gpu/primitives/warp.mojo",  # docstring fix needed: wrong import paths; not re-exported from std.gpu
