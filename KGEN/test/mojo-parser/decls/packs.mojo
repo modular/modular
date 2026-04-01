@@ -234,6 +234,48 @@ def test_comptime_call[a: Int]():
     # CHECK-SAME: <store_to_mem(a)>))
     comptime foo = pack(a)
 
+
+@fieldwise_init
+struct MyMemoryStruct(ImplicitlyCopyable):
+    var x: Int
+
+
+# CHECK-LABEL: lit.fn @"create_pack_direct
+def create_pack_direct(x: MyMemoryStruct, y: String):
+    # Create Tuple
+    var ptr_tuple = Tuple(UnsafePointer(to=x), UnsafePointer(to=y))
+    comptime PackType = VariadicPack[
+        origin=origin_of(x, y), False, AnyType, MyMemoryStruct, String
+    ]
+    # CHECK: %[[PACK:.*]] = lit.ref.pack.from_pointer_pack
+    # CHECK: lit.call {{.*}}@VariadicPack::@"__init__(!lit.ref.pack{{.*}}(%[[PACK]])
+    var built_pack = PackType(
+        __mlir_op.`lit.ref.pack.from_pointer_pack`[
+            _type=PackType._mlir_pack_type
+        ](ptr_tuple._mlir_value)
+    )
+    pack(*built_pack)
+
+
+# CHECK-LABEL: lit.fn @"create_pack_indirect
+def create_pack_indirect(x: MyMemoryStruct, y: String):
+    # Create Tuple
+    var ptr_tuple = Tuple(UnsafePointer(to=x), UnsafePointer(to=y))
+    comptime PackType = VariadicPack[
+        origin=origin_of(x, y), False, AnyType, MyMemoryStruct, String
+    ]
+    # CHECK: %[[PACK:.*]] = lit.ref.pack.from_pointer_pack
+    # CHECK: %[[VAR_RAW_PACK:.*]] = lit.var.decl "raw_pack" var
+    # CHECK: lit.ref.store %[[PACK]], %[[VAR_RAW_PACK]]
+    # CHECK: %[[VAR_LOAD_PACK:.*]] = lit.ref.load %[[VAR_RAW_PACK]]
+    # CHECK: lit.call {{.*}}@VariadicPack::@"__init__(!lit.ref.pack{{.*}}(%[[VAR_LOAD_PACK]])
+    var raw_pack = __mlir_op.`lit.ref.pack.from_pointer_pack`[
+        _type=PackType._mlir_pack_type
+    ](ptr_tuple._mlir_value)
+    var built_pack = PackType(raw_pack)
+    pack(*built_pack)
+
+
 # ===----------------------------------------------------------------------=== #
 # Forwarding
 # ===----------------------------------------------------------------------=== #

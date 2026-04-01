@@ -1670,7 +1670,7 @@ struct DepUser[b: Int]:
 # parameter-value.
 
 def infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, Movable, `>`], //,
     T: type_of(Tuple[*ArgTypes]),
 ]():
     pass
@@ -1678,9 +1678,9 @@ def infer_variadic[
 
 # CHECK-LABEL:     lit.fn @"test_infer_variadic()"
 def test_infer_variadic():
-    # CHECK: lit.call {{.*}}@"infer_variadic{{.*}}"<:variadic<!AnyType>
+    # CHECK: lit.call {{.*}}@"infer_variadic{{.*}}"<:variadic<!Movable>
     # CHECK-SAME: [!Int, !Bool]
-    # CHECK-SAME: :meta<!lit.struct<#Tuple <:variadic<!AnyType>
+    # CHECK-SAME: :meta<!lit.struct<#Tuple <:variadic<!Movable>
     infer_variadic[Tuple[Int, Bool]]()
 
 # Make sure we can store RP types with different sugars correctly.

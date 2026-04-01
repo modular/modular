@@ -146,6 +146,16 @@ lit.fn @ref_kgen_ptr<life: origin<1>, ilife: origin<0>>
   lit.end_fn
 }
 
+// CHECK-LABEL: @ref_pack_from_pointer_pack
+kgen.generator @ref_pack_from_pointer_pack(
+    %pack: !kgen.pack<[!kgen.pointer<index, 4>, !kgen.pointer<f32, 4>]>) {
+  // CHECK: %0 = lit.ref.pack.from_pointer_pack %arg0 : <[pointer<index, 4>, pointer<f32, 4>]> -> <:variadic<type> [index, f32], imm #lit.any.origin, 4>
+  %0 = lit.ref.pack.from_pointer_pack %pack
+    : !kgen.pack<[!kgen.pointer<index, 4>, !kgen.pointer<f32, 4>]>
+   -> !lit.ref.pack<:variadic<!kgen.type> [index, f32], imm #lit.any.origin, 4>
+  kgen.return
+}
+
 // CHECK-LABEL: lit.fn @nested_function_region
 lit.fn @nested_function_region() {
   // CHECK-NEXT: hlcf.loop

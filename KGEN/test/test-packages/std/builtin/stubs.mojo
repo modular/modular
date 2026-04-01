@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin.variadics import *
+
 # FIXME: "string" and "float" are not part of the standard library - they are
 # ancient relics of Mojo bringup. These should be removed from stubs.mojo and
 # the dependent tests should be migrated off of them.
@@ -849,6 +851,11 @@ trait RegisterPassable(Movable):
     pass
 
 
+trait Defaultable(ImplicitlyDestructible):
+    def __init__(out self):
+        ...
+
+
 def materialize[T: AnyType, //, value: T](out result: T):
     """Explicitly materialize a compile time parameter into a runtime value."""
     __mlir_op.`lit.materialize_into`[value=value](
@@ -998,13 +1005,14 @@ struct VariadicPack[
         Self.origin._mlir_origin,
         `>`,
     ]
+    var _value: Self._mlir_pack_type
 
     # This disables nested origin exclusivity checking because it is taking a
     # raw variadic pack which can have nested origins in it (which this does not
     # dereference).
     @__unsafe_disable_nested_origin_exclusivity
     def __init__(out self, value: Self._mlir_pack_type):
-        pass
+        self._value = value
 
     def __getitem_param__[
         index: Int
@@ -1104,7 +1112,15 @@ struct Pointer[
         return {self._value}  # allow lit.ref to convert.
 
 
-struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
+struct Tuple[*element_types: Movable](ImplicitlyCopyable):
+    comptime _mlir_type = __mlir_type[
+        `!kgen.pack<:`,
+        Variadic.TypesOfTrait[Movable],
+        Self.element_types,
+        `>`,
+    ]
+    var _mlir_value: Self._mlir_type
+
     def __init__(out self: Tuple[]):
         pass
 
@@ -1130,7 +1146,7 @@ struct UnsafePointer[
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](TrivialRegisterPassable):
+](Defaultable, TrivialRegisterPassable):
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,
