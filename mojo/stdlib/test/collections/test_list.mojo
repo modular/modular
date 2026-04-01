@@ -1185,6 +1185,69 @@ def test_list_hash() raises:
     assert_true(conforms_to(List[String], Hashable))
 
 
+def test_list_take_items() raises:
+    """Test that take_items drains the list and moves elements out."""
+    var my_list = List[String]("a", "b", "c")
+    assert_equal(len(my_list), 3)
+
+    # Collect elements from take_items iterator
+    var collected = List[String]()
+    for element in my_list.take_items():
+        collected.append(element[])
+
+    # List should be empty after draining
+    assert_equal(len(my_list), 0)
+    assert_equal(len(collected), 3)
+    assert_equal(collected[0], "a")
+    assert_equal(collected[1], "b")
+    assert_equal(collected[2], "c")
+
+
+def test_list_take_items_empty() raises:
+    """Test take_items on an empty list."""
+    var my_list = List[Int]()
+    assert_equal(len(my_list), 0)
+
+    var count = 0
+    for _ in my_list.take_items():
+        count += 1
+
+    assert_equal(count, 0)
+    assert_equal(len(my_list), 0)
+
+
+def test_list_take_items_partial() raises:
+    """Test that take_items works correctly when partially consumed."""
+    var my_list = List[Int](1, 2, 3, 4, 5)
+    assert_equal(len(my_list), 5)
+
+    var iter = my_list.take_items()
+    # Only consume 2 elements
+    _ = iter.__next__()
+    _ = iter.__next__()
+
+    # List should have 3 elements remaining
+    assert_equal(len(my_list), 3)
+
+    # Complete the iteration
+    var count = 0
+    for _ in iter:
+        count += 1
+
+    assert_equal(count, 3)
+    assert_equal(len(my_list), 0)
+
+
+def test_list_take_items_bounds() raises:
+    """Test that take_items reports correct bounds."""
+    var iter = List[Int](1, 2, 3).take_items()
+    for i in range(3, 0, -1):
+        var lower, upper = iter.bounds()
+        assert_equal(lower, i)
+        assert_equal(upper.value(), i)
+        _ = iter.__next__()
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
