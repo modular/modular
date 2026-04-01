@@ -27,7 +27,11 @@ from std.gpu import (
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_gpu
 from std.gpu.memory import external_memory
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import TensorLayout, TileTensor
 from std.random import Random
 from std.runtime.asyncrt import DeviceContextPtr
@@ -491,7 +495,7 @@ def rms_norm_fused_residual_gpu[
         seed,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
         shared_mem_bytes=shared_mem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(

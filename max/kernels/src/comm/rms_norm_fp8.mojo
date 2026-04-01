@@ -29,7 +29,11 @@ from std.gpu import (
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
@@ -445,7 +449,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 scale_ub.cast[scales_dtype](),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
     else:
         comptime kernel = _rms_norm_fused_fp8_kernel_block[
@@ -474,7 +478,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 scale_ub.cast[scales_dtype](),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
 

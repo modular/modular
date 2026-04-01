@@ -705,7 +705,7 @@ def _nvidia_gemv_config[
 def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     kernel_func: GEMVAlgorithm,
     c: TileTensor[mut=True, ...],
@@ -1004,7 +1004,7 @@ def log_shape[
 def gemv_gpu[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,

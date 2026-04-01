@@ -18,7 +18,7 @@ Expert Parallelism (EP) Communication Kernel.
 
 import compiler_internal as compiler
 from comm.sync import is_p2p_enabled
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_gpu
 from layout import TileTensor, Idx
@@ -1305,7 +1305,7 @@ struct Struct_ep_fused_silu:
                 row_offsets_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
 
@@ -1389,7 +1389,7 @@ struct Struct_ep_fused_silu_fp8:
                 row_offsets_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
 
@@ -1481,5 +1481,5 @@ struct Struct_ep_fused_silu_nvfp4:
                 input_scales_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )

@@ -135,7 +135,7 @@ def matmul_dispatch_sm100[
             gemv_gpu[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
-                pdl_level=pdl_level,
+                pdl_level=PDLLevel(1),
             ](c, a, b, ctx)
             return
 

@@ -30,7 +30,11 @@ from std.gpu import (
     lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
 )
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from std.gpu.host.info import is_gpu
 from layout import (
     Coord,
@@ -1126,5 +1130,5 @@ def router_group_limited[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )

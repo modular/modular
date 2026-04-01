@@ -18,7 +18,7 @@ Helper functions for Expert Parallelism (EP) Communication Kernels.
 
 from std.collections import OptionalReg
 
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
@@ -541,7 +541,7 @@ def ep_fused_dispatch_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )
 
 
@@ -1019,5 +1019,5 @@ def ep_fused_combine_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )
