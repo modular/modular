@@ -20,6 +20,7 @@
 #include "max/c/symbol_export.h"
 #include "max/c/tensor.h"
 #include "max/c/types.h"
+#include "max/c/weights.h"
 
 int main() {
   M_Dtype dtype = M_UNKNOWN;

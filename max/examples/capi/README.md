@@ -33,3 +33,17 @@ finally executing it on the GPU:
 ```sh
 pixi run test
 ```
+
+## Loading models with external weights
+
+The `weights_example.c` file demonstrates how to provide model weights at
+runtime using the C API's weights registry. This is the mechanism used when
+a model's weights are stored separately from the compiled graph (for example,
+in safetensors or GGUF files).
+
+The Python script `test_weights_capi.py` builds a graph that references an
+external weight via `ops.constant_external()`, compiles it to a MEF file, and
+then runs the C program. The C program creates a `M_WeightsRegistry` with the
+weight data and passes it to `M_initModel()`.
+
+This example runs on CPU and does not require a GPU.

@@ -199,6 +199,9 @@ typedef enum M_ValueType {
 } M_ValueType;
 
 /// Maps unique weight names to their backing data.
+///
+/// You can create this with `M_newWeightsRegistry()`.
+/// When you're done, call `M_freeWeightsRegistry()`.
 typedef struct M_WeightsRegistry M_WeightsRegistry;
 
 /// Represents the type of device.
