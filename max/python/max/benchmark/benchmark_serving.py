@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
+    PIXEL_GENERATION_TASKS,
     Backend,
     BenchmarkTask,
     Endpoint,
@@ -281,7 +282,7 @@ def build_single_turn_request_input(
     max_output_len: int | None,
 ) -> BaseRequestFuncInput:
     request_model_id = model_id if lora_id is None else lora_id
-    if benchmark_task == BenchmarkTask.text_generation:
+    if benchmark_task == "text-generation":
         max_tokens = min(
             filter(None, (request.output_len, max_output_len)),
             default=None,
@@ -299,7 +300,7 @@ def build_single_turn_request_input(
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
         )
-    if benchmark_task in BenchmarkTask.pixel_generation_tasks():
+    if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
             raise TypeError(
                 "pixel-generation benchmark requires PixelGenerationSampledRequest."
@@ -321,7 +322,7 @@ def print_section(title: str, char: str = "-") -> None:
 
 
 def _is_vllm_backend(backend: Backend) -> bool:
-    return backend in (Backend.vllm, Backend.vllm_chat)
+    return backend in ("vllm", "vllm-chat")
 
 
 def _add_spec_decode_result(
@@ -1649,9 +1650,7 @@ async def benchmark(
             else base_driver
         )
 
-        if benchmark_task == BenchmarkTask.text_generation and _is_vllm_backend(
-            backend
-        ):
+        if benchmark_task == "text-generation" and _is_vllm_backend(backend):
             spec_decode_metrics_before = fetch_spec_decode_metrics(
                 backend, base_url
             )
@@ -1710,9 +1709,7 @@ async def benchmark(
             if trace_path:
                 stop_trace(trace_session)
 
-    if benchmark_task == BenchmarkTask.text_generation and _is_vllm_backend(
-        backend
-    ):
+    if benchmark_task == "text-generation" and _is_vllm_backend(backend):
         spec_decode_metrics_after = fetch_spec_decode_metrics(backend, base_url)
     spec_decode_stats = None
     if (
@@ -1725,7 +1722,7 @@ async def benchmark(
         )
 
     if print_inputs_and_outputs:
-        if benchmark_task == BenchmarkTask.text_generation:
+        if benchmark_task == "text-generation":
             assert tokenizer is not None
             print("Generated output text:")
             for req_id, output in enumerate(outputs):
@@ -1738,7 +1735,7 @@ async def benchmark(
                         "output": output.generated_text,
                     }
                 )
-        elif benchmark_task in BenchmarkTask.pixel_generation_tasks():
+        elif benchmark_task in PIXEL_GENERATION_TASKS:
             print("Generated pixel generation outputs:")
             for req_id, output in enumerate(outputs):
                 assert isinstance(output, PixelGenerationRequestFuncOutput)
@@ -1800,7 +1797,7 @@ async def benchmark(
             round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
         )
 
-    if benchmark_task in BenchmarkTask.pixel_generation_tasks():
+    if benchmark_task in PIXEL_GENERATION_TASKS:
         if not _is_pixel_generation_outputs(outputs):
             raise TypeError(
                 "Expected all outputs to be PixelGenerationRequestFuncOutput"
@@ -2048,14 +2045,14 @@ async def benchmark(
 def validate_task_and_endpoint(
     benchmark_task: BenchmarkTask, endpoint: Endpoint
 ) -> None:
-    if benchmark_task == BenchmarkTask.text_generation:
-        if endpoint == Endpoint.responses:
+    if benchmark_task == "text-generation":
+        if endpoint == "/v1/responses":
             raise ValueError(
                 "--benchmark-task text-generation does not support "
                 "--endpoint /v1/responses"
             )
-    elif benchmark_task in BenchmarkTask.pixel_generation_tasks():
-        if endpoint != Endpoint.responses:
+    elif benchmark_task in PIXEL_GENERATION_TASKS:
+        if endpoint != "/v1/responses":
             raise ValueError(
                 "--benchmark-task pixel-generation requires "
                 "--endpoint /v1/responses"
@@ -2080,25 +2077,22 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         raise ValueError("--model is required when running benchmark")
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
-    benchmark_task = BenchmarkTask(args.benchmark_task)
-    try:
-        endpoint = Endpoint(args.endpoint)
-    except ValueError as e:
-        raise ValueError(f"Unknown endpoint: {args.endpoint}") from e
+    benchmark_task: BenchmarkTask = args.benchmark_task
+    endpoint: Endpoint = args.endpoint
 
     validate_task_and_endpoint(benchmark_task, endpoint)
-    chat = endpoint == Endpoint.chat_completions
+    chat = endpoint == "/v1/chat/completions"
 
     if args.base_url is not None:
         base_url = args.base_url
     else:
         base_url = f"http://{args.host}:{args.port}"
 
-    api_url = f"{base_url}{endpoint.value}"
+    api_url = f"{base_url}{endpoint}"
     tokenizer: PreTrainedTokenizerBase | None
     samples: Samples
 
-    if benchmark_task == BenchmarkTask.text_generation:
+    if benchmark_task == "text-generation":
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
@@ -2323,12 +2317,12 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             raise ValueError(
                 f"Unknown / unsupported dataset: {benchmark_dataset}"
             )
-    elif benchmark_task in BenchmarkTask.pixel_generation_tasks():
+    elif benchmark_task in PIXEL_GENERATION_TASKS:
         tokenizer = None
         if args.num_prompts is None:
             raise ValueError(
                 "Please specify '--num-prompts' for "
-                f"{benchmark_task.value} benchmarks."
+                f"{benchmark_task} benchmarks."
             )
         if args.dataset_name == "local-image" and args.dataset_path is None:
             raise ValueError(
@@ -2339,7 +2333,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             dataset_name=args.dataset_name,
             dataset_path=args.dataset_path,
         )
-        if benchmark_task == BenchmarkTask.text_to_image:
+        if benchmark_task == "text-to-image":
             if not isinstance(
                 benchmark_dataset, SyntheticPixelBenchmarkDataset
             ):
@@ -2359,7 +2353,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=None,
-            benchmark_task=benchmark_task.value,
+            benchmark_task=benchmark_task,
             image_width=args.image_width,
             image_height=args.image_height,
             image_steps=args.image_steps,
@@ -2411,13 +2405,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             f"Expected a single float value for request_rate, got {args.request_rate}"
         ) from e
 
-    try:
-        backend = Backend(args.backend)
-    except ValueError as e:
-        raise ValueError(
-            f"Unknown backend: {args.backend}. "
-            f"Supported backends: {', '.join(b.value for b in Backend)}"
-        ) from e
+    backend: Backend = args.backend
 
     # Handle trace flag
     trace_path = None
@@ -2505,7 +2493,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         current_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         result_json["date"] = current_dt
         result_json["backend"] = backend
-        result_json["benchmark_task"] = benchmark_task.value
+        result_json["benchmark_task"] = benchmark_task
         result_json["model_id"] = model_id
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
@@ -2561,10 +2549,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             json.dump(result_json, outfile)
 
     # Save output lengths if requested
-    if (
-        args.record_output_lengths
-        and benchmark_task == BenchmarkTask.text_generation
-    ):
+    if args.record_output_lengths and benchmark_task == "text-generation":
         # Save relevant input args for context
         args_to_save = (
             "backend",

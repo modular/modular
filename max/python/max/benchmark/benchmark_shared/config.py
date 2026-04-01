@@ -14,13 +14,12 @@
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
 import argparse
-import enum
 import logging
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 import yaml
 from pydantic import Field
@@ -31,43 +30,43 @@ logger = logging.getLogger(__name__)
 
 from max.config import ConfigFileModel, MAXConfig, deep_merge_max_configs
 
+Backend = Literal[
+    "modular",
+    "modular-chat",
+    "sglang",
+    "sglang-chat",
+    "trtllm",
+    "trtllm-chat",
+    "vllm",
+    "vllm-chat",
+]
 
-class Backend(str, enum.Enum):
-    modular = "modular"
-    modular_chat = "modular-chat"
-    sglang = "sglang"
-    sglang_chat = "sglang-chat"
-    trtllm = "trtllm"
-    trtllm_chat = "trtllm-chat"
-    vllm = "vllm"
-    vllm_chat = "vllm-chat"
-
-
-class Endpoint(str, enum.Enum):
-    completions = "/v1/completions"
-    chat_completions = "/v1/chat/completions"
-    ensemble_generate_stream = "/v2/models/ensemble/generate_stream"
-    responses = "/v1/responses"
-
+Endpoint = Literal[
+    "/v1/completions",
+    "/v1/chat/completions",
+    "/v2/models/ensemble/generate_stream",
+    "/v1/responses",
+]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
-    Backend.modular: "/reset_prefix_cache",
-    Backend.modular_chat: "/reset_prefix_cache",
-    Backend.vllm: "/reset_prefix_cache",
-    Backend.vllm_chat: "/reset_prefix_cache",
-    Backend.sglang: "/flush_cache",
-    Backend.sglang_chat: "/flush_cache",
+    "modular": "/reset_prefix_cache",
+    "modular-chat": "/reset_prefix_cache",
+    "vllm": "/reset_prefix_cache",
+    "vllm-chat": "/reset_prefix_cache",
+    "sglang": "/flush_cache",
+    "sglang-chat": "/flush_cache",
 }
 
+BenchmarkTask = Literal[
+    "text-generation",
+    "text-to-image",
+    "image-to-image",
+]
 
-class BenchmarkTask(str, enum.Enum):
-    text_generation = "text-generation"
-    text_to_image = "text-to-image"
-    image_to_image = "image-to-image"
-
-    @classmethod
-    def pixel_generation_tasks(cls) -> tuple["BenchmarkTask", ...]:
-        return (cls.text_to_image, cls.image_to_image)
+PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
+    "text-to-image",
+    "image-to-image",
+)
 
 
 def _add_config_file_arg_to_parser(
@@ -145,7 +144,7 @@ class BenchmarkCommonConfig(ConfigFileModel):
     dataset_path: str | None = None
     """Path to the dataset."""
 
-    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+    dataset_mode: DatasetMode = "huggingface"
     """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
 
     # Basic workload parameters
@@ -205,7 +204,7 @@ class BaseBenchmarkConfig(MAXConfig):
     dataset_path: str | None = None
     """Path to the dataset."""
 
-    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+    dataset_mode: DatasetMode = "huggingface"
     """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
 
     # Basic workload parameters
@@ -255,12 +254,11 @@ class BaseBenchmarkConfig(MAXConfig):
             Dictionary mapping field names to their valid choices.
         """
         return {
-            # TODO: Propagate proper enum choices here than just the string values
-            "backend": [backend.value for backend in Backend],
-            "endpoint": [endpoint.value for endpoint in Endpoint],
-            "benchmark_task": [task.value for task in BenchmarkTask],
+            "backend": list(get_args(Backend)),
+            "endpoint": list(get_args(Endpoint)),
+            "benchmark_task": list(get_args(BenchmarkTask)),
             "dataset_name": list(DATASET_REGISTRY.keys()),
-            "dataset_mode": [mode.value for mode in DatasetMode],
+            "dataset_mode": list(get_args(DatasetMode)),
         }
 
     @classmethod
@@ -283,9 +281,8 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """
 
     # Backend and API configuration (serving-specific)
-    # TODO: Propagate proper enum choices here than just the string values
-    backend: str = field(
-        default=Backend.modular.value,
+    backend: Backend = field(
+        default="modular",
         metadata={
             "group": "Backend and API Configuration",
             "group_description": "Configuration for backend selection and API endpoints",
@@ -308,14 +305,14 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Server port."""
 
-    endpoint: str = field(
-        default=Endpoint.chat_completions.value,
+    endpoint: Endpoint = field(
+        default="/v1/chat/completions",
         metadata={"group": "Backend and API Configuration"},
     )
     """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream"""
 
-    benchmark_task: str = field(
-        default=BenchmarkTask.text_generation.value,
+    benchmark_task: BenchmarkTask = field(
+        default="text-generation",
         metadata={"group": "Backend and API Configuration"},
     )
     """Benchmark task type. Choices: text-generation, text-to-image, image-to-image"""

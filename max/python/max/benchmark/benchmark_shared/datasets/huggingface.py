@@ -24,7 +24,7 @@ class HuggingFaceBenchmarkDataset(BenchmarkDataset):
     It handles automatic dataset fetching and provides a standardized interface for sampling requests.
     """
 
-    dataset_mode = DatasetMode.HUGGINGFACE
+    dataset_mode: DatasetMode = "huggingface"
 
     def fetch(self) -> None:
         pass

@@ -26,7 +26,7 @@ class LocalBenchmarkDataset(BenchmarkDataset):
     It handles automatic dataset fetching and provides a standardized interface for sampling requests.
     """
 
-    dataset_mode = DatasetMode.LOCAL
+    dataset_mode: DatasetMode = "local"
 
     def fetch(self) -> None:
         # For local mode, dataset_path should already be set and validated

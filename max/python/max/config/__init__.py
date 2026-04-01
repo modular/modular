@@ -22,7 +22,15 @@ from abc import abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Any,
+    Literal,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import yaml
 from pydantic import BaseModel, model_validator
@@ -273,6 +281,15 @@ def convert_max_config_value(
             field_type = resolved_enum_type
         elif field_type in STRINGLY_TYPED_BASIC_MAPPING:
             field_type = STRINGLY_TYPED_BASIC_MAPPING[field_type]
+
+    # Handle Literal types — validate the value is one of the allowed literals
+    if origin is Literal:
+        if value not in args:
+            raise ValueError(
+                f"Invalid value '{value}' for field '{field_name}'. "
+                f"Allowed values: {', '.join(repr(a) for a in args)}"
+            )
+        return value
 
     # Handle basic types
     if field_type in (int, float, str):

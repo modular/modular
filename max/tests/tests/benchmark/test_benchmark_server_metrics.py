@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
-from max.benchmark.benchmark_shared.config import Backend
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     StandardPercentileMetrics,
@@ -92,11 +91,11 @@ def test_histogram_mean() -> None:
 
 def test_get_metrics_url_supported_backends() -> None:
     """Test get_metrics_url returns correct URLs for supported backends."""
-    url = get_metrics_url(Backend.modular, "http://localhost:8000")
+    url = get_metrics_url("modular", "http://localhost:8000")
     assert url == "http://localhost:8001/metrics"
 
     # Test vllm backend (uses same port as base_url)
-    url = get_metrics_url(Backend.vllm, "http://localhost:8000")
+    url = get_metrics_url("vllm", "http://localhost:8000")
     assert url == "http://localhost:8000/metrics"
 
 
@@ -121,7 +120,7 @@ def test_fetch_and_parse_http_error(mock_get: MagicMock) -> None:
 
     with pytest.raises(requests.HTTPError, match="Failed to fetch metrics"):
         fetch_and_parse_metrics(
-            backend=Backend.modular, base_url="http://localhost:8000"
+            backend="modular", base_url="http://localhost:8000"
         )
 
 
@@ -343,12 +342,12 @@ def test_collect_server_metrics_without_baseline(
     mock_metrics = parse_metrics(sample_metrics)
     mock_fetch.return_value = mock_metrics
 
-    result = collect_server_metrics(Backend.modular, "http://localhost:8000")
+    result = collect_server_metrics("modular", "http://localhost:8000")
 
     assert result.counters == mock_metrics.counters
     assert result.gauges == mock_metrics.gauges
     mock_fetch.assert_called_once_with(
-        backend=Backend.modular, base_url="http://localhost:8000"
+        backend="modular", base_url="http://localhost:8000"
     )
 
 
@@ -362,7 +361,7 @@ def test_collect_server_metrics_with_baseline(
     final = ParsedMetrics(counters={}, gauges={}, histograms={}, raw_text="")
     mock_fetch.return_value = final
 
-    collect_server_metrics(Backend.modular, "http://localhost:8000", baseline)
+    collect_server_metrics("modular", "http://localhost:8000", baseline)
 
     mock_delta.assert_called_once_with(baseline=baseline, final=final)
 
@@ -373,7 +372,7 @@ def test_collect_server_metrics_raises_on_error(mock_fetch: MagicMock) -> None:
     mock_fetch.side_effect = Exception("Connection failed")
 
     with pytest.raises(Exception, match="Connection failed"):
-        collect_server_metrics(Backend.modular, "http://localhost:8000")
+        collect_server_metrics("modular", "http://localhost:8000")
 
 
 def test_benchmark_metrics_server_metrics_defaults_to_none() -> None:

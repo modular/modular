@@ -26,7 +26,6 @@ from max.benchmark.benchmark_shared.datasets import (
     AxolotlBenchmarkDataset,
     BenchmarkDataset,
     CodeDebugBenchmarkDataset,
-    DatasetMode,
     DatasetRegistryEntry,
     HuggingFaceBenchmarkDataset,
     LocalBenchmarkDataset,
@@ -352,7 +351,7 @@ def test_sonnet_from_flags_local_mode(mock_exists: Mock) -> None:
     assert isinstance(dataset, SonnetBenchmarkDataset)
     assert dataset.dataset_name == "sonnet"
     assert dataset.dataset_path == "/path/to/sonnet.txt"
-    assert dataset.dataset_mode == DatasetMode.LOCAL
+    assert dataset.dataset_mode == "local"
 
 
 @patch("os.path.exists")
@@ -367,7 +366,7 @@ def test_vision_arena_from_flags_local_mode(mock_exists: Mock) -> None:
     assert isinstance(dataset, VisionArenaBenchmarkDataset)
     assert dataset.dataset_name == "vision-arena"
     assert dataset.dataset_path == "/path/to/vision_arena.json"
-    assert dataset.dataset_mode == DatasetMode.LOCAL
+    assert dataset.dataset_mode == "local"
 
 
 @patch("os.path.exists")
@@ -382,7 +381,7 @@ def test_axolotl_from_flags_local_mode(mock_exists: Mock) -> None:
     assert isinstance(dataset, AxolotlBenchmarkDataset)
     assert dataset.dataset_name == "axolotl"
     assert dataset.dataset_path == "/path/to/axolotl.json"
-    assert dataset.dataset_mode == DatasetMode.LOCAL
+    assert dataset.dataset_mode == "local"
 
 
 @patch("os.path.exists")
@@ -397,7 +396,7 @@ def test_arxiv_summarization_from_flags_local_mode(mock_exists: Mock) -> None:
     assert isinstance(dataset, ArxivSummarizationBenchmarkDataset)
     assert dataset.dataset_name == "arxiv-summarization"
     assert dataset.dataset_path == "/path/to/arxiv.json"
-    assert dataset.dataset_mode == DatasetMode.LOCAL
+    assert dataset.dataset_mode == "local"
 
 
 def test_vision_arena_from_flags_unknown() -> None:
@@ -421,14 +420,7 @@ def test_obfuscated_conversations_from_flags_local_mode(
     assert isinstance(dataset, ObfuscatedConversationsBenchmarkDataset)
     assert dataset.dataset_name == "obfuscated-conversations"
     assert dataset.dataset_path == "/path/to/obfuscated.jsonl"
-    assert dataset.dataset_mode == DatasetMode.LOCAL
-
-
-# Tests for dataset modes
-def test_dataset_mode_enum() -> None:
-    """Test that DatasetMode enum has expected values."""
-    assert DatasetMode.LOCAL == "local"
-    assert DatasetMode.HUGGINGFACE == "huggingface"
+    assert dataset.dataset_mode == "local"
 
 
 @patch("os.path.exists")
@@ -502,7 +494,7 @@ def test_obfuscated_conversations_with_seed() -> None:
 def test_local_benchmark_dataset_base_class() -> None:
     """Test LocalBenchmarkDataset base class behavior."""
     # Test that LocalBenchmarkDataset has LOCAL mode by default
-    assert LocalBenchmarkDataset.dataset_mode == DatasetMode.LOCAL
+    assert LocalBenchmarkDataset.dataset_mode == "local"
 
     # Test that it sets default dataset_path and validates it exists
     dataset = AxolotlBenchmarkDataset()
@@ -524,7 +516,7 @@ def test_huggingface_benchmark_dataset_base_class(mock_download: Mock) -> None:
     """Test HuggingFaceBenchmarkDataset base class behavior."""
     mock_download.return_value = "/tmp/fake_code_debug.jsonl"
     # Test that HuggingFaceBenchmarkDataset has HUGGINGFACE mode by default
-    assert HuggingFaceBenchmarkDataset.dataset_mode == DatasetMode.HUGGINGFACE
+    assert HuggingFaceBenchmarkDataset.dataset_mode == "huggingface"
 
     # Test that fetch is a no-op by default using a concrete implementation
     dataset = CodeDebugBenchmarkDataset()
@@ -621,7 +613,7 @@ def test_local_datasets_with_default_files() -> None:
         dataset = BenchmarkDataset.from_flags(dataset_name="axolotl")
         assert isinstance(dataset, AxolotlBenchmarkDataset)
         assert dataset.dataset_name == "axolotl"
-        assert dataset.dataset_mode == DatasetMode.LOCAL
+        assert dataset.dataset_mode == "local"
         # Should have set the default path
         assert dataset.dataset_path is not None
         assert "axolotl_dummy.json" in dataset.dataset_path
@@ -631,7 +623,7 @@ def test_local_datasets_with_default_files() -> None:
         dataset = BenchmarkDataset.from_flags(dataset_name="sonnet")
         assert isinstance(dataset, SonnetBenchmarkDataset)
         assert dataset.dataset_name == "sonnet"
-        assert dataset.dataset_mode == DatasetMode.LOCAL
+        assert dataset.dataset_mode == "local"
         # Should have set the default path
         assert dataset.dataset_path is not None
         assert "sonnet_4x.txt" in dataset.dataset_path
