@@ -3015,9 +3015,11 @@ public:
     case AtomicOrdering::NOT_ATOMIC:
     case AtomicOrdering::UNORDERED:
     case AtomicOrdering::MONOTONIC:
-    case AtomicOrdering::RELEASE:
-      // These orderings can be represented via `release`
+      // These orderings can be represented via `relax`
       break;
+    case AtomicOrdering::RELEASE:
+      return op.emitError(
+          "Apple GPU does not supports `release` atomic ordering");
     case AtomicOrdering::ACQUIRE:
       return op.emitError(
           "Apple GPU does not supports `acquire` atomic ordering");
