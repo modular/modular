@@ -45,14 +45,14 @@ class ZImageArchConfig(ArchConfig):
         return cls(pipeline_config=pipeline_config)
 
 
-z_image_modulev3_arch = SupportedArchitecture(
-    name="ZImagePipeline_ModuleV3",
+z_image_arch = SupportedArchitecture(
+    name="ZImagePipeline",
     task=PipelineTask.PIXEL_GENERATION,
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    supported_encodings={"bfloat16", "float32"},
     example_repo_ids=[
         "Tongyi-MAI/Z-Image",
-        "Zyphra/Z-Image",
+        "Tongyi-MAI/Z-Image-Turbo",
     ],
     pipeline_model=ZImagePipeline,  # type: ignore[arg-type]
     context_type=PixelContext,

@@ -717,7 +717,12 @@ class PipelineRegistry:
                 "revision": pipeline_config.model.huggingface_model_revision,
                 "trust_remote_code": pipeline_config.model.trust_remote_code,
             }
-            if arch.name in ("Flux2Pipeline", "ZImagePipeline"):
+            if arch.name in (
+                "Flux2Pipeline",
+                "Flux2Pipeline_ModuleV3",
+                "ZImagePipeline",
+                "ZImagePipeline_ModuleV3",
+            ):
                 tokenizer_kwargs["max_length"] = 512
 
             if has_tokenizer_2:
