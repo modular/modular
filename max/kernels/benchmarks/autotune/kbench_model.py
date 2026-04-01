@@ -81,7 +81,7 @@ ScalarValue = str | int | float | bool
 
 _WRAPPER_SOURCE = """\
 from {module_name} import main as _bench_main
-from std.builtin._startup import _ensure_current_or_global_runtime_init
+from std.builtin._startup import _ensure_runtime_init
 
 
 @export
@@ -91,7 +91,7 @@ def benchmark_entry() -> Int32:
     # never registered.  Benchmarks that use CPU parallelism
     # (e.g. elementwise) will abort on a null Runtime* without
     # this.  The call is idempotent — a no-op after the first.
-    _ensure_current_or_global_runtime_init()
+    _ensure_runtime_init()
     try:
         _bench_main()
         return 0
