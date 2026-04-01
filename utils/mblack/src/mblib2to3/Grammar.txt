@@ -192,7 +192,7 @@ comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 star_expr: '*' expr
 expr: (VAR exprlist) | (REF exprlist) | or_expr
 or_expr: xor_expr ('|' xor_expr)*
-xor_expr: and_expr ('^' [and_expr | '.' NAME trailer* ['**' factor]])*
+xor_expr: and_expr ('^' [and_expr | '.' NAME trailer* ['**' factor] (('*'|'@'|'/'|'%'|'//') factor)* (('+' | '-') term)* (('<<' | '>>') arith_expr)* ('&' shift_expr)*])*
 and_expr: shift_expr ('&' shift_expr)*
 shift_expr: arith_expr (('<<'|'>>') arith_expr)*
 arith_expr: term (('+'|'-') term)*
@@ -221,7 +221,7 @@ dictsetmaker: ( ((test ':' asexpr_test | test '=' asexpr_test | test | '**' expr
 # Type-expression subgrammar (enables functype within bitwise chains only in type contexts)
 type_test: type_or_expr
 type_or_expr: type_xor_expr ('|' type_xor_expr)*
-type_xor_expr: type_and_expr ('^' [type_and_expr | '.' NAME trailer* ['**' factor]])*
+type_xor_expr: type_and_expr ('^' [type_and_expr | '.' NAME trailer* ['**' factor] (('*'|'@'|'/'|'%'|'//') type_factor)* (('+' | '-') type_term)* (('<<' | '>>') type_arith_expr)* ('&' type_shift_expr)*])*
 type_and_expr: type_shift_expr ('&' type_shift_expr)*
 type_shift_expr: type_arith_expr (('<<'|'>>') type_arith_expr)*
 type_arith_expr: type_term (('+'|'-') type_term)*
