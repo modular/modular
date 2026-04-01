@@ -3185,3 +3185,126 @@ class TestBottomKGPU:
             rtol=0,
             atol=0,
         )
+
+
+class TestScatterNdGPU:
+    """GPU tests for scatter_nd op (overwrite) via MO interpreter.
+
+    ``scatter_nd`` uses ``MO_SingleDevice`` so it supports GPU.
+    The PyTorch reference manually applies the index vectors.
+    """
+
+    @staticmethod
+    def _scatter_nd_ref_torch(
+        x_torch: "torch.Tensor",
+        updates_torch: "torch.Tensor",
+        indices_np: "Any",
+    ) -> "torch.Tensor":
+        """PyTorch reference: copy input then overwrite at N-D index positions."""
+        import numpy as np
+
+        out = x_torch.clone()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] = updates_torch[batch_idx]
+        return out
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd on a 2D GPU tensor with 1-D partial indexing."""
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        x_torch = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            dtype=torch.float32,
+            device="cuda",
+        )
+        updates_torch = torch.tensor(
+            [[10.0, 11.0, 12.0], [13.0, 14.0, 15.0]],
+            dtype=torch.float32,
+            device="cuda",
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+        indices_torch = torch.from_numpy(indices_np).to("cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        updates = Tensor.from_dlpack(updates_torch)
+        indices = Tensor.from_dlpack(indices_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        expected = self._scatter_nd_ref_torch(
+            x_torch, updates_torch, indices_np
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd on a 2D GPU tensor with full 2-D indexing."""
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        x_torch = torch.zeros(3, 3, dtype=torch.float32, device="cuda")
+        updates_torch = torch.tensor(
+            [10.0, 20.0, 30.0], dtype=torch.float32, device="cuda"
+        )
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+        indices_torch = torch.from_numpy(indices_np).to("cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        updates = Tensor.from_dlpack(updates_torch)
+        indices = Tensor.from_dlpack(indices_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        expected = self._scatter_nd_ref_torch(
+            x_torch, updates_torch, indices_np
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_nd on GPU with float32 and float16 dtypes."""
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        torch_dtype = {
+            DType.float32: torch.float32,
+            DType.float16: torch.float16,
+        }[dtype]
+        x_torch = torch.zeros(4, 3, dtype=torch_dtype, device="cuda")
+        updates_torch = torch.ones(2, 3, dtype=torch_dtype, device="cuda") * 5.0
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+        indices_torch = torch.from_numpy(indices_np).to("cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        updates = Tensor.from_dlpack(updates_torch)
+        indices = Tensor.from_dlpack(indices_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        expected = self._scatter_nd_ref_torch(
+            x_torch, updates_torch, indices_np
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )

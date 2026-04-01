@@ -69,6 +69,13 @@ This version is still a work in progress.
   axis.
 - Added `scatter` op handler to the experimental eager interpreter (CPU),
   scattering updates into a copy of the input tensor along a specified axis.
+- Added `scatter_nd` op handler to the experimental eager interpreter (CPU
+  and GPU), scattering slices from updates into input at N-dimensional index
+  positions via `max.experimental.functional.scatter_nd`.
+- Added `scatter_nd_add` op handler to the experimental eager interpreter
+  (CPU), accumulating slices from updates into input at N-dimensional index
+  positions and summing duplicate indices via
+  `max.experimental.functional.scatter_nd_add`.
 - Added `conv2d` and `conv2d_transpose` op handlers to the experimental eager
   interpreter with CPU and GPU support.
 - Added `max_pool2d` op handlers (floor and ceil mode) to the experimental

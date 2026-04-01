@@ -3976,6 +3976,304 @@ class TestScatterAddOp:
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
 
+class TestScatterNdOp:
+    """Tests for scatter_nd op via the MO interpreter (CPU + GPU capable).
+
+    Uses ``F.scatter_nd`` which routes through ``ops.scatter_nd`` ->
+    ``rmo.MoScatterNdOp`` -> ``mo.scatter_nd`` -> interpreter handler.
+    The NumPy reference iterates over update positions via ``np.ndindex``
+    to mirror the kernel's exact flat-index semantics.
+    """
+
+    @staticmethod
+    def _scatter_nd_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then overwrite at N-D index positions."""
+        out = x_np.copy()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] = updates_np[batch_idx]
+        return out
+
+    def test_1d_full_index(self) -> None:
+        """Test scatter_nd on a 1D tensor with full indexing (depth=1)."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
+        updates_np = np.array([10.0, 20.0], dtype=np.float32)
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        expected = self._scatter_nd_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd on a 2D tensor with 1-D partial indexing (row write)."""
+        x_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            dtype=np.float32,
+        )
+        updates_np = np.array(
+            [[10.0, 11.0, 12.0], [13.0, 14.0, 15.0]], dtype=np.float32
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        expected = self._scatter_nd_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd on a 2D tensor with full 2-D indexing (scalar write)."""
+        x_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            dtype=np.float32,
+        )
+        updates_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        expected = self._scatter_nd_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_3d_partial_index(self) -> None:
+        """Test scatter_nd on a 3D tensor with 1-D partial indexing (plane write)."""
+        x_np = np.zeros((3, 2, 4), dtype=np.float32)
+        updates_np = np.ones((2, 2, 4), dtype=np.float32) * 7.0
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        expected = self._scatter_nd_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_empty_updates(self) -> None:
+        """Test scatter_nd with zero update vectors (output equals input)."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        updates_np = np.empty((0,), dtype=np.float32)
+        indices_np = np.empty((0, 1), dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), x_np)
+
+    def test_int32_indices(self) -> None:
+        """Test scatter_nd with int32 index dtype."""
+        x_np = np.arange(6, dtype=np.float32).reshape(2, 3)
+        updates_np = np.array([99.0, 88.0, 77.0], dtype=np.float32)
+        indices_np = np.array([[0, 0], [1, 1], [0, 2]], dtype=np.int32)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd(x, updates, indices)
+
+        expected = self._scatter_nd_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterNdAddOp:
+    """Tests for scatter_nd_add op via the MO interpreter (CPU-only).
+
+    Uses ``F.scatter_nd_add`` which routes through ``ops.scatter_nd_add`` ->
+    ``rmo.MoScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
+    Duplicate index vectors are accumulated (summed).
+    """
+
+    @staticmethod
+    def _scatter_nd_add_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then accumulate at N-D index positions."""
+        out = x_np.copy()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] += updates_np[batch_idx]
+        return out
+
+    def test_1d_full_index(self) -> None:
+        """Test scatter_nd_add on a 1D tensor with full indexing."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
+        updates_np = np.array([10.0, 20.0], dtype=np.float32)
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_add(x, updates, indices)
+
+        expected = self._scatter_nd_add_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd_add on a 2D tensor with 1-D partial indexing."""
+        x_np = np.zeros((3, 3), dtype=np.float32)
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_add(x, updates, indices)
+
+        expected = self._scatter_nd_add_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd_add on a 2D tensor with full 2-D indexing."""
+        x_np = np.zeros((3, 3), dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_add(x, updates, indices)
+
+        expected = self._scatter_nd_add_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate index vectors must be summed, not overwritten."""
+        x_np = np.zeros((4,), dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        # indices[0] and indices[1] both point to slot 1 → slot 1 = 10+20=30
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_add(x, updates, indices)
+
+        expected = self._scatter_nd_add_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        # Explicit check: slot 1 must be 30.0, not 20.0.
+        assert float(np.from_dlpack(y)[1]) == 30.0
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.int32]
+    )
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_nd_add with various numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.zeros((4,), dtype=np_dtype)
+        updates_np = np.array([5, 10, 15], dtype=np_dtype)
+        indices_np = np.array([[0], [2], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_add(x, updates, indices)
+
+        expected = self._scatter_nd_add_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_int32_indices(self) -> None:
+        """Test scatter_nd_add with int32 index dtype (full 2-D indexing)."""
+        x_np = np.arange(6, dtype=np.float32).reshape(2, 3)
+        # Full depth=2 indexing: each index selects a scalar element.
+        updates_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        indices_np = np.array([[0, 0], [1, 2], [0, 0]], dtype=np.int32)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_add(x, updates, indices)
+
+        expected = self._scatter_nd_add_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
 class TestConv2dOp:
     """Tests for the mo.conv (2D forward convolution) interpreter handler."""
 

@@ -791,6 +791,9 @@ scatter_add = functional(ops.scatter_add)
 #: Scatters values using multi-dimensional indices.
 #: See :func:`max.graph.ops.scatter_nd` for details.
 scatter_nd = functional(ops.scatter_nd)
+#: Scatters values using multi-dimensional indices and accumulates duplicates.
+#: See :func:`max.graph.ops.scatter_nd_add` for details.
+scatter_nd_add = functional(ops.scatter_nd_add)
 #: Applies the sigmoid activation function.
 #: See :func:`max.graph.ops.sigmoid` for details.
 sigmoid = functional(ops.sigmoid)
