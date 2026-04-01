@@ -13,23 +13,27 @@
 """Dispatch logic for grouped 1D-1D block-scaled SM100 matmul.
 
 Selects optimal kernel configuration based on (N, K) shape and workload
-type (decode vs prefill), with parameters tuned via ablation on B200.
-NVFP4 gets shape-tuned decode/prefill tables; MXFP4 and MXFP8 use
-default configs.
+size, with parameters tuned via ablation on B200. NVFP4 gets shape-tuned
+three-regime dispatch; MXFP4 and MXFP8 use default configs.
 
 When `override=True`, uses the caller's AB_swapped/mma_bn/cta_group/
 num_pipeline_stages directly (for ablation studies and benchmarking).
 When `override=False` (default), ignores those parameters and selects
 from the tuning table based on (N, K) and `estimated_total_m`.
 
-NVFP4 tuning table (keyed on N, K):
+NVFP4 three regimes keyed on avg_m = estimated_total_m / num_active_experts:
 
-  Decode (estimated_total_m < num_active_experts * 8):
+  Decode (avg_m <= 8):
   - N=4096, K=7168:  AB_swapped=True, mma_bn=8, cta_group=1, stages=6
   - N=7168, K=2048:  AB_swapped=True, mma_bn=8, cta_group=1, stages=4
   - Default:         AB_swapped=True, mma_bn=8, cta_group=1, stages=auto
 
-  Prefill (estimated_total_m >= num_active_experts * 8):
+  Small prefill (8 < avg_m <= 64):
+  - N=4096, K=7168:  AB_swapped=True, mma_bn=64, cta_group=2, stages=6
+  - N=7168, K=2048:  AB_swapped=True, mma_bn=64, cta_group=2, stages=6
+  - Default:         AB_swapped=True, mma_bn=64, cta_group=2, stages=auto
+
+  Large prefill (avg_m > 64):
   - N=4096, K=7168:  AB_swapped=True, mma_bn=128, cta_group=2, stages=7
   - N=7168, K=2048:  AB_swapped=True, mma_bn=128, cta_group=2, stages=6
   - Default:         AB_swapped=True, mma_bn=128, cta_group=2, stages=auto
@@ -127,8 +131,14 @@ def _launch_grouped_block_scaled[
     )
 
 
-def _dispatch_decode[
-    transpose_b: Bool, N: Int, K: Int
+def _dispatch_regime[
+    transpose_b: Bool,
+    N: Int,
+    K: Int,
+    mma_bn: Int,
+    cta_group: Int,
+    stages_up_proj: Optional[Int],
+    stages_down_proj: Optional[Int],
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -142,95 +152,17 @@ def _dispatch_decode[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """Decode tuning table: small M, AB_swapped=True, mma_bn=8."""
-    comptime if N == 4096 and K == 7168:
-        # DeepSeek V3/Kimi K2.5 up-projection: stages=6
-        _launch_grouped_block_scaled[
-            transpose_b,
-            True,
-            8,
-            1,
-            num_pipeline_stages=6,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            a_scale_offsets,
-            expert_ids,
-            expert_scales,
-            num_active_experts,
-            ctx,
-        )
-    elif N == 7168 and K == 2048:
-        # DeepSeek V3/Kimi K2.5 down-projection: stages=4
-        _launch_grouped_block_scaled[
-            transpose_b,
-            True,
-            8,
-            1,
-            num_pipeline_stages=4,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            a_scale_offsets,
-            expert_ids,
-            expert_scales,
-            num_active_experts,
-            ctx,
-        )
-    else:
-        # Default decode: auto-compute pipeline stages
-        _launch_grouped_block_scaled[transpose_b, True, 8, 1](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            a_scale_offsets,
-            expert_ids,
-            expert_scales,
-            num_active_experts,
-            ctx,
-        )
+    """Dispatch with shape-specific pipeline stages.
 
-
-def _dispatch_prefill[
-    transpose_b: Bool, N: Int, K: Int
-](
-    c: TileTensor[...],
-    a: TileTensor[...],
-    b: TileTensor[...],
-    a_scales: TileTensor[...],
-    b_scales: TileTensor[...],
-    a_offsets: TileTensor[...],
-    a_scale_offsets: TileTensor[...],
-    expert_ids: TileTensor[...],
-    expert_scales: TileTensor[...],
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """Prefill tuning table: large M, AB_swapped=True, mma_bn=128, cta_group=2.
-
-    Tuned pipeline stages from ablation on B200:
-      N=4096, K=7168 (up-proj):  stages=7
-      N=7168, K=2048 (down-proj): stages=6
+    Uses tuned stages for known (N, K) shapes, auto-computes for others.
     """
     comptime if N == 4096 and K == 7168:
-        # DeepSeek V3/Kimi K2.5 up-projection: stages=7
         _launch_grouped_block_scaled[
             transpose_b,
             True,
-            128,
-            2,
-            num_pipeline_stages=7,
+            mma_bn,
+            cta_group,
+            num_pipeline_stages=stages_up_proj,
         ](
             c,
             a,
@@ -245,13 +177,12 @@ def _dispatch_prefill[
             ctx,
         )
     elif N == 7168 and K == 2048:
-        # DeepSeek V3/Kimi K2.5 down-projection: stages=6
         _launch_grouped_block_scaled[
             transpose_b,
             True,
-            128,
-            2,
-            num_pipeline_stages=6,
+            mma_bn,
+            cta_group,
+            num_pipeline_stages=stages_down_proj,
         ](
             c,
             a,
@@ -266,8 +197,7 @@ def _dispatch_prefill[
             ctx,
         )
     else:
-        # Default prefill: auto-compute pipeline stages
-        _launch_grouped_block_scaled[transpose_b, True, 128, 2](
+        _launch_grouped_block_scaled[transpose_b, True, mma_bn, cta_group](
             c,
             a,
             b,
@@ -368,10 +298,42 @@ def grouped_matmul_nvfp4_dispatch[
         comptime packed_K = type_of(a).static_shape[1]
         comptime K = packed_K * 2  # NVFP4: 2 values per byte
 
-        # The prefill optimized kernel is faster when on average there are more
-        # than 8 tokens per expert.
-        if estimated_total_m > num_active_experts * 8:
-            _dispatch_prefill[transpose_b, N, K](
+        # Three regimes based on avg_m = estimated_total_m / num_active_experts:
+        #   avg_m <= 8:      decode       (1SM, mma_bn=8)
+        #   8 < avg_m <= 64: small prefill (2SM, mma_bn=64)
+        #   avg_m > 64:      large prefill (2SM, mma_bn=128)
+        if estimated_total_m <= num_active_experts * 8:
+            _dispatch_regime[
+                transpose_b,
+                N,
+                K,
+                mma_bn=8,
+                cta_group=1,
+                stages_up_proj=6,
+                stages_down_proj=4,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                a_offsets,
+                a_scale_offsets,
+                expert_ids,
+                expert_scales,
+                num_active_experts,
+                ctx,
+            )
+        elif estimated_total_m <= num_active_experts * 64:
+            _dispatch_regime[
+                transpose_b,
+                N,
+                K,
+                mma_bn=64,
+                cta_group=2,
+                stages_up_proj=6,
+                stages_down_proj=6,
+            ](
                 c,
                 a,
                 b,
@@ -385,7 +347,15 @@ def grouped_matmul_nvfp4_dispatch[
                 ctx,
             )
         else:
-            _dispatch_decode[transpose_b, N, K](
+            _dispatch_regime[
+                transpose_b,
+                N,
+                K,
+                mma_bn=128,
+                cta_group=2,
+                stages_up_proj=7,
+                stages_down_proj=6,
+            ](
                 c,
                 a,
                 b,
