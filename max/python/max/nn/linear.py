@@ -18,7 +18,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
+from typing import Any
 
+import numpy as np
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -40,7 +43,7 @@ from max.support.math import ceildiv
 
 from .activation import activation_function_from_name
 from .clamp import clamp
-from .layer import Module, Shardable
+from .layer import Module, Shardable, recursive_named_layers
 
 
 class Linear(Module, Shardable):
@@ -660,7 +663,7 @@ class GPTQLinear(Linear):
             quantization_config: Extra :class:`~max.graph.quantization.QuantizationConfig` for the weight quantization.
             quant_config: :class:`~max.nn.quant_config.QuantConfig` for scaled quantization (not supported).
         """
-        del out_dim, dtype  # Unused.
+        del dtype  # Unused.
         if has_bias:
             raise ValueError("has_bias=True is not supported in GPTQLinear.")
         if quant_config:
@@ -671,6 +674,8 @@ class GPTQLinear(Linear):
         # Skip Linear initialization.
         Module.__init__(self)
         self.device = device
+        self.in_dim = in_dim
+        self.out_dim = out_dim
         self.qweight = Weight(
             name="qweight",
             dtype=DType.uint8,
@@ -709,19 +714,50 @@ class GPTQLinear(Linear):
         Returns:
             The transformed tensor after applying the GPTQ linear layer.
         """
-        assert self.qweight.quantization_encoding is not None
-        qweight_dtype, qweight_shape = self.qweight.original_dtype_and_shape
-        qweight = ops.reshape(
-            self.qweight,
-            (qweight_shape[0] * qweight_dtype.size_in_bytes, qweight_shape[1]),
-        ).transpose(0, 1)
+        prefer_quantized_execution = getattr(
+            self, "_prefer_quantized_execution", False
+        )
+        if prefer_quantized_execution:
+            assert self.qweight.quantization_encoding is not None
+            weight = self.packed_weight
+            if self.device:
+                weight = weight.to(self.device)
+            if self.perm_idx is not None:
+                perm_idx: TensorValue = self.perm_idx
+                if self.device:
+                    perm_idx = perm_idx.to(self.device)
+                res = ops.qmatmul(
+                    self.qweight.quantization_encoding,
+                    self.quantization_config,
+                    ops.gather(x, perm_idx, axis=(x.rank - 1)),
+                    weight,
+                    perm_idx,
+                )
+            else:
+                res = ops.qmatmul(
+                    self.qweight.quantization_encoding,
+                    self.quantization_config,
+                    x,
+                    weight,
+                )
+            if self.bias is not None:
+                res += TensorValue(self.bias)
+            return res
 
-        scales_dtype, scales_shape = self.scales.original_dtype_and_shape
-        scales = ops.reshape(
-            self.scales,
-            (scales_shape[0] * scales_dtype.size_in_bytes, scales_shape[1]),
-        ).transpose(0, 1)
-        weight = ops.concat((qweight, scales), axis=1).transpose(0, 1)
+        if hasattr(self, "weight"):
+            weight = self.weight.to(x.device)
+            x_matmul = x
+            if x.dtype != weight.dtype:
+                x_matmul = ops.cast(x, weight.dtype)
+            res = x_matmul @ weight.T
+            if res.dtype != x.dtype:
+                res = ops.cast(res, x.dtype)
+            if self.bias is not None:
+                res += TensorValue(self.bias)
+            return res
+
+        assert self.qweight.quantization_encoding is not None
+        weight = self.packed_weight
         if self.device:
             weight = weight.to(self.device)
         if self.perm_idx is not None:
@@ -745,6 +781,195 @@ class GPTQLinear(Linear):
         if self.bias is not None:
             res += TensorValue(self.bias)
         return res
+
+    @property
+    def packed_weight(self) -> TensorValue:
+        """Return the packed GPTQ operand layout expected by ``ops.qmatmul``."""
+        if hasattr(self, "packed_weight_tensor"):
+            return TensorValue(self.packed_weight_tensor)
+        return pack_gptq_weight(self.qweight, self.scales)
+
+
+def pack_gptq_weight(qweight: TensorValue, scales: TensorValue) -> TensorValue:
+    """Pack GPTQ byte views into the layout expected by the GPU repack kernels.
+
+    ``load_state_dict`` converts GPTQ checkpoint tensors into uint8 byte views
+    by expanding the byte dimension on the last axis. Reshape those byte views
+    back into ``[K / 2, N]`` and ``[K_groups * 2, N]`` matrices, then
+    concatenate along axis 0 to form ``[K_groups * group_bytes, N]``.
+    """
+    if qweight.rank != 2 or scales.rank != 2:
+        raise ValueError(
+            "GPTQ packed weights expect rank-2 qweight and scales tensors"
+        )
+    qweight = ops.reshape(qweight, (-1, qweight.shape[1] // 4))
+    scales = ops.reshape(scales, (-1, scales.shape[1] // 2))
+
+    if qweight.shape[1] != scales.shape[1]:
+        raise ValueError(
+            "GPTQ qweight and scales must agree on the output dimension"
+        )
+    return ops.concat((qweight, scales), axis=0)
+
+
+def _gptq_data_to_numpy(data: Any) -> np.ndarray[Any, Any]:
+    if isinstance(data, Buffer):
+        return data.to_numpy()
+    if isinstance(data, np.ndarray):
+        return data
+    return Buffer.from_dlpack(data).to_numpy()
+
+
+def _pack_gptq_weight_numpy(
+    qweight_bytes: np.ndarray[Any, Any],
+    qweight_dtype: DType,
+    qweight_shape: tuple[int, ...],
+    scales_bytes: np.ndarray[Any, Any],
+    scales_dtype: DType,
+    scales_shape: tuple[int, ...],
+) -> np.ndarray[Any, Any]:
+    """Pack GPTQ byte views into the flat uint8 operand expected by qmatmul."""
+
+    def _restore_byte_view(
+        raw: np.ndarray[Any, Any],
+        original_dtype: DType,
+        original_shape: tuple[int, ...],
+    ) -> np.ndarray[Any, Any]:
+        bytes_per_element = np.dtype(original_dtype.to_numpy()).itemsize
+        original_rows, original_cols = map(int, original_shape)
+
+        if raw.shape == (original_rows, original_cols * bytes_per_element):
+            return raw.reshape(original_rows * bytes_per_element, original_cols)
+        if raw.shape == (original_rows * bytes_per_element, original_cols):
+            return raw
+        if raw.dtype != np.uint8:
+            raw = raw.view(np.uint8)
+        return raw.reshape(original_rows * bytes_per_element, original_cols)
+
+    qweight = _restore_byte_view(qweight_bytes, qweight_dtype, qweight_shape)
+    scales = _restore_byte_view(scales_bytes, scales_dtype, scales_shape)
+    return np.ascontiguousarray(np.concatenate((qweight, scales), axis=0))
+
+
+def _dequantize_gptq_weight(
+    qweight_bytes: np.ndarray[Any, Any],
+    qweight_dtype: DType,
+    qweight_shape: tuple[int, ...],
+    scales_bytes: np.ndarray[Any, Any],
+    scales_dtype: DType,
+    scales_shape: tuple[int, ...],
+    *,
+    group_size: int,
+    perm_idx: np.ndarray[Any, Any] | None,
+) -> np.ndarray[Any, Any]:
+    qweight = qweight_bytes.view(qweight_dtype.to_numpy()).reshape(
+        qweight_shape
+    )
+    scales = scales_bytes.view(scales_dtype.to_numpy()).reshape(scales_shape)
+
+    shifts = (np.arange(8, dtype=np.uint32) * 4)[None, None, :]
+    unpacked = ((qweight[..., None] >> shifts) & np.uint32(0xF)).astype(
+        np.int16
+    )
+    unpacked = unpacked.reshape(qweight_shape[0] * 8, qweight_shape[1])
+    unpacked = unpacked.astype(np.float32) - 8.0
+
+    scale_rows = np.repeat(scales.astype(np.float32), group_size, axis=0)
+    if scale_rows.shape[0] < unpacked.shape[0]:
+        raise ValueError(
+            "GPTQ scales do not cover the dequantized input dimension"
+        )
+    dequantized = unpacked * scale_rows[: unpacked.shape[0]]
+
+    if perm_idx is not None:
+        dequantized = dequantized[perm_idx.astype(np.int64)]
+
+    return dequantized.T.copy()
+
+
+def materialize_gptq_linear_weights(module: Module) -> None:
+    """Materialize dense fallback weights for all GPTQLinear sublayers.
+
+    This keeps quantized loading/wiring intact while allowing execution to fall
+    back to standard dense matmuls when the GPTQ qmatmul kernels are
+    unavailable for a given graph shape or backend.
+    """
+
+    root_weights = module._weight_values
+    for name, layer in recursive_named_layers(module):
+        if type(layer).__name__ != "GPTQLinear":
+            continue
+
+        prefix = f"{name}." if name else ""
+        qweight_key = f"{prefix}qweight"
+        scales_key = f"{prefix}scales"
+        perm_key = f"{prefix}perm_idx"
+
+        qweight_value = root_weights.get(qweight_key)
+        scales_value = root_weights.get(scales_key)
+        if qweight_value is None or scales_value is None:
+            continue
+
+        qweight_meta = getattr(layer.qweight, "original_dtype_and_shape", None)
+        scales_meta = getattr(layer.scales, "original_dtype_and_shape", None)
+        if qweight_meta is None or scales_meta is None:
+            continue
+
+        qweight_dtype, qweight_shape = qweight_meta
+        scales_dtype, scales_shape = scales_meta
+
+        if getattr(layer, "_prefer_quantized_execution", False):
+            packed_weight = _pack_gptq_weight_numpy(
+                _gptq_data_to_numpy(qweight_value),
+                qweight_dtype,
+                tuple(int(dim) for dim in qweight_shape),
+                _gptq_data_to_numpy(scales_value),
+                scales_dtype,
+                tuple(int(dim) for dim in scales_shape),
+            )
+
+            if not hasattr(layer, "packed_weight_tensor"):
+                layer.packed_weight_tensor = Weight(
+                    name="packed_weight",
+                    dtype=DType.uint8,
+                    shape=packed_weight.shape,
+                    device=DeviceRef.CPU(),
+                )
+
+            packed_key = f"{prefix}packed_weight"
+            layer.packed_weight_tensor.name = packed_key
+            root_weights[packed_key] = Buffer.from_numpy(packed_weight)
+            continue
+
+        perm_idx_value = root_weights.get(perm_key)
+        perm_idx = None
+        if perm_idx_value is not None:
+            perm_idx = _gptq_data_to_numpy(perm_idx_value)
+
+        dense_weight = _dequantize_gptq_weight(
+            _gptq_data_to_numpy(qweight_value),
+            qweight_dtype,
+            tuple(int(dim) for dim in qweight_shape),
+            _gptq_data_to_numpy(scales_value),
+            scales_dtype,
+            tuple(int(dim) for dim in scales_shape),
+            group_size=layer.quantization_config.group_size,
+            perm_idx=perm_idx,
+        )
+
+        if not hasattr(layer, "weight"):
+            layer.weight = Weight(
+                name="weight",
+                dtype=DType.float32,
+                shape=dense_weight.shape,
+                device=DeviceRef.CPU(),
+            )
+
+        weight_key = f"{prefix}weight"
+        layer.weight.name = weight_key
+        root_weights[weight_key] = Buffer.from_numpy(
+            dense_weight.astype(np.float32, copy=False)
+        )
 
 
 class MLP(Module, Shardable):

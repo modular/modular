@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import PipelineConfig
@@ -27,6 +28,7 @@ from transformers import AutoConfig
 QWEN3_MOE_SAFETENSOR_MAPPING = {
     "model.": "",  # Removes the "model" prefix.
     "mlp.gate.weight": "mlp.gate.gate_score.weight",  # Router gate
+    "g_idx": "perm_idx",  # GPTQ activation-order permutation.
     "weight_scale_inv": "weight_scale",  # FP8 scale naming (e.g. compressed-tensors)
 }
 
@@ -80,5 +82,41 @@ def convert_qwen3_moe_state_dict(
         ):
             weight_data = weight_data.astype(DType.float32)
         new_state_dict[max_name] = weight_data
+
+    if pipeline_config.model._quant:
+        for key, weight_data in list(new_state_dict.items()):
+            if key.endswith("perm_idx"):
+                np_array = np.from_dlpack(weight_data.data)  # type: ignore[arg-type]
+                new_state_dict[key] = WeightData.from_numpy(
+                    np.argsort(np_array).astype(np.int32), key
+                )
+
+    if pipeline_config.model.quantization_encoding == "gptq":
+        for key, weight_data in list(new_state_dict.items()):
+            if weight_data.dtype == DType.float16 and not (
+                key.endswith("bias") or key.endswith("scales")
+            ):
+                new_state_dict[key] = weight_data.astype(DType.bfloat16)
+
+    if hasattr(huggingface_config, "quantization_config"):
+        unused_keys = [".bias", ".qzeros"]
+        quantization_config = huggingface_config.quantization_config
+        if quantization_config.get("desc_act") is True:
+            unused_keys.extend(
+                [
+                    "self_attn.k_proj.perm_idx",
+                    "self_attn.v_proj.perm_idx",
+                ]
+            )
+        else:
+            unused_keys.append("perm_idx")
+
+        keys_to_remove = [
+            key
+            for key in new_state_dict
+            if any(key.endswith(suffix) for suffix in unused_keys)
+        ]
+        for key in keys_to_remove:
+            new_state_dict.pop(key, None)
 
     return new_state_dict

@@ -54,7 +54,7 @@ from .kv_cache import (
 from .layer import Layer, LayerList, Module, Shardable
 from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
-from .moe import MoE, MoEGate, MoEQuantized
+from .moe import MoE, MoEGate, MoEGPTQ, MoEQuantized
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
 from .quant_config import (
     InputScaleSpec,
@@ -128,6 +128,7 @@ __all__ = [
     "LongRoPEScalingParams",
     "MinPSampler",
     "MoE",
+    "MoEGPTQ",
     "MoEGate",
     "MoEQuantized",
     "Module",
