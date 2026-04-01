@@ -96,7 +96,7 @@ def test_registry__retrieve_pipeline_task_returns_text_generation() -> None:
 
 
 @prepare_registry
-def test_registry__retrieve_pipeline_task_raises_on_ambiguous_architecture() -> (
+def test_registry__retrieve_pipeline_task_defaults_to_text_generation_on_ambiguous_architecture() -> (
     None
 ):
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
@@ -113,8 +113,8 @@ def test_registry__retrieve_pipeline_task_raises_on_ambiguous_architecture() -> 
         config=DummyLlamaArchConfig,
     )
     PIPELINE_REGISTRY.register(embedding_arch)
-    with pytest.raises(ValueError, match="multiple pipeline tasks"):
-        PIPELINE_REGISTRY.retrieve_pipeline_task("LlamaForCausalLM")
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task("LlamaForCausalLM")
+    assert task == PipelineTask.TEXT_GENERATION
 
 
 @prepare_registry
