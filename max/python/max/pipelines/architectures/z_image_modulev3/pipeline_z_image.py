@@ -769,7 +769,7 @@ class ZImagePipeline(DiffusionPipeline):
         )
 
         latents = self._postprocess_latents(latents)
-        decoded: Tensor = self.vae.decode(latents)  # type: ignore[arg-type, assignment]
+        decoded: Tensor = self.vae.decode(latents)
         return self._to_numpy(decoded)
 
     def _postprocess_latents(self, latents: Tensor) -> Tensor:
@@ -918,7 +918,7 @@ class ZImagePipeline(DiffusionPipeline):
         noise_latents = noise_latents.to(self.transformer.devices[0])
 
         encoder_output = self.vae.encode(
-            image_tensor,  # type: ignore[arg-type]
+            image_tensor,
             return_dict=True,
         )
         posterior = (
@@ -929,7 +929,7 @@ class ZImagePipeline(DiffusionPipeline):
         if not hasattr(posterior, "mode"):
             raise ValueError("VAE encoder output must expose mode().")
 
-        image_latents: Tensor = posterior.mode()  # type: ignore[assignment]
+        image_latents: Tensor = posterior.mode()
         image_latents = (
             image_latents - float(self.vae.config.shift_factor or 0.0)
         ) * float(self.vae.config.scaling_factor)
