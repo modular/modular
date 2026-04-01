@@ -726,7 +726,7 @@ def flash_attention_dispatch[
         # FA3 decoding impl only support half precision, while fp32 is supported
         # for fp32 as well.
         elif q_half_float_or_fp32 and is_token_generation:
-            comptime if depth < 512:
+            comptime if depth <= 512:
                 comptime BM = 16
                 comptime BN = depth
                 comptime BK = 32 if has_amd_gpu_accelerator() else (

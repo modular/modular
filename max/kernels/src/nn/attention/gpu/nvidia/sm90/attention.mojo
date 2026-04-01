@@ -75,6 +75,8 @@ from std.builtin.device_passable import DevicePassable
 from std.utils import StaticTuple
 
 
+from std.gpu import block_idx_uint as block_idx
+
 comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
     InternalLayout[
@@ -1171,6 +1173,7 @@ def produce[
     comptime k_smem_layout = tile_layout_k_major[
         qkv_type, BN, padded_depth, swizzle_mode
     ]()
+    comptime assert pipeline_stages >= 2
 
     @parameter
     @always_inline
@@ -1189,11 +1192,19 @@ def produce[
         comptime sz = BN * padded_depth
         tile = {kv_smem + UInt32(sz) * idx}
 
+    comptime KVTMA = KVTMATile[
+        qkv_type,
+        swizzle_mode,
+        BN=BN,
+        BK=padded_depth,
+    ]
+
     @parameter
     @always_inline("nodebug")
-    def produce_k[
+    def produce_kv[
         wait: Bool
     ](
+        tma_op: KVTMA,
         mut state: PipelineState[pipeline_stages],
         row: UInt32,
         kv_head_idx: UInt32,
@@ -1208,32 +1219,9 @@ def produce[
             consumed_mbar_kv[write_idx].wait(write_phase)
             comptime bytes = BN * padded_depth * size_of[qkv_type]()
             p_mbar.expect_bytes(Int32(bytes))
-        k_tma_op.async_copy(
+
+        tma_op.async_copy(
             k_sub,
-            p_mbar,
-            kv_coord[depth=depth](row, kv_head_idx),
-        )
-        state.step()
-
-    @parameter
-    @always_inline("nodebug")
-    def produce_v(
-        mut state: PipelineState[pipeline_stages],
-        row: UInt32,
-        kv_head_idx: UInt32,
-        key_start: UInt32,
-        key_end: UInt32,
-    ):
-        var write_idx: UInt32 = state.index()
-        var write_phase: UInt32 = state.phase()
-
-        ref p_mbar = produced_mbar_kv[write_idx]
-        v_sub = kv_tile(write_idx)
-        consumed_mbar_kv[write_idx].wait(write_phase)
-        comptime bytes = BN * padded_depth * size_of[qkv_type]()
-        p_mbar.expect_bytes(Int32(bytes))
-        v_tma_op.async_copy(
-            v_sub,
             p_mbar,
             kv_coord[depth=depth](row, kv_head_idx),
         )
@@ -1322,7 +1310,7 @@ def produce[
     var kv_row: UInt32 = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
     var kv_head_idx: UInt32 = position.kv_head_idx()
 
-    produce_k[False](write_pipeline_states, kv_row, kv_head_idx)
+    produce_kv[False](k_tma_op, write_pipeline_states, kv_row, kv_head_idx)
 
     var kv_row_prev: UInt32 = kv_row
     var kv_head_idx_prev: UInt32 = kv_head_idx
@@ -1404,24 +1392,22 @@ def produce[
         ):
             continue
         kv_row = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
-        produce_k[True](write_pipeline_states, kv_row, kv_head_idx)
-        produce_v(
+        produce_kv[True](k_tma_op, write_pipeline_states, kv_row, kv_head_idx)
+        produce_kv[True](
+            v_tma_op,
             write_pipeline_states,
             kv_row_prev,
             kv_head_idx_prev,
-            kv_tile_start_row_prev,
-            end,
         )
         kv_row_prev = kv_row
         kv_head_idx_prev = kv_head_idx
         kv_tile_start_row_prev = kv_tile_start_row
 
-    produce_v(
+    produce_kv[True](
+        v_tma_op,
         write_pipeline_states,
         kv_row_prev,
         kv_head_idx_prev,
-        kv_tile_start_row_prev,
-        end,
     )
 
 
