@@ -195,6 +195,44 @@ kgen.generator @closureSymbol(){
                               @bar_del<:type index, :type index> move : !kgen.pointer<struct<(index, index)>>>
 } : () -> ()
 
+kgen.struct.generator @WitnessedMemStruct = struct_inst<"WitnessedMemStruct"(data: index)> {
+  kgen.conformance @MemOps {
+    kgen.witness "copy" : (!kgen.pointer<struct<(index)>> read_mem,
+                           !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none = @witnessed_mem_copy
+    kgen.witness "move" : (!kgen.pointer<struct<(index)>> owned_in_mem,
+                           !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none = @witnessed_mem_move
+    kgen.witness "del" : (!kgen.pointer<struct<(index)>> owned_in_mem) -> !kgen.none = @witnessed_mem_del
+  }
+}
+
+kgen.generator @witnessed_mem_copy(%arg0: !kgen.pointer<struct<(index)>> read_mem,
+                                   %arg1: !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @witnessed_mem_move(%arg0: !kgen.pointer<struct<(index)>> owned_in_mem,
+                                   %arg1: !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in_mem) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// COM: GetWitness-backed mem_symbol_triple should round-trip too.
+"witness.mem.symbol.triple"() {
+  // CHECK: c = #kgen.mem_symbol_triple<#kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "copy"> : !kgen.generator<(!kgen.pointer<struct<(index)>> read_mem, !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none>,
+  // CHECK-SAME: #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "move"> : !kgen.generator<(!kgen.pointer<struct<(index)>> owned_in_mem, !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none>,
+  // CHECK-SAME: #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "del"> : !kgen.generator<(!kgen.pointer<struct<(index)>> owned_in_mem) -> !kgen.none> move>
+  c = #kgen.mem_symbol_triple<
+        #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "copy"> : !kgen.generator<(!kgen.pointer<struct<(index)>> read_mem, !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none>,
+        #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "move"> : !kgen.generator<(!kgen.pointer<struct<(index)>> owned_in_mem, !kgen.pointer<struct<(index)>> byref_result) -> !kgen.none>,
+        #kgen.get_witness<#kgen.genref<@WitnessedMemStruct>, "MemOps", "del"> : !kgen.generator<(!kgen.pointer<struct<(index)>> owned_in_mem) -> !kgen.none> move>
+} : () -> ()
+
 "some.op"() {
   a = 5 : index,
   // CHECK: gen0 = #kgen.gen<add(a, 3)> : !kgen.generator<<>index>

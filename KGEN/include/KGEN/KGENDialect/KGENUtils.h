@@ -475,21 +475,41 @@ struct SymbolParts {
   ParameterExprArrayAttr paramValues;
 };
 
+struct MemSymbolTripleEntry {
+  MemSymbolTripleEntry() = default;
+  MemSymbolTripleEntry(SymbolParts symbolParts) : symbolParts(symbolParts) {}
+  MemSymbolTripleEntry(TypedAttr attr) : attr(attr) {}
+
+  bool isSymbolShorthand() const { return symbolParts.callee != nullptr; }
+  bool isTypedAttr() const { return attr != nullptr; }
+
+  SymbolParts symbolParts;
+  TypedAttr attr;
+};
+
 struct MemSymbolTripleParts {
   MemSymbolTripleParts() : isTrivial(true) {}
-  MemSymbolTripleParts(SymbolParts copy, SymbolParts move, SymbolParts del,
-                       bool isMove)
+  MemSymbolTripleParts(MemSymbolTripleEntry copy, MemSymbolTripleEntry move,
+                       MemSymbolTripleEntry del, bool isMove)
       : copy(copy), move(move), del(del), isMove(isMove), isTrivial(false) {}
-  SymbolParts copy;
-  SymbolParts move;
-  SymbolParts del;
+  bool requiresCaptureType() const {
+    return copy.isSymbolShorthand() || move.isSymbolShorthand() ||
+           del.isSymbolShorthand();
+  }
+
+  MemSymbolTripleEntry copy;
+  MemSymbolTripleEntry move;
+  MemSymbolTripleEntry del;
   bool isMove;
   bool getIsTrivial() const { return isTrivial; }
 
 private:
   bool isTrivial = false;
 };
-/// Parse a MemSymbolTriple symbol ref and parameter values. Type is not parsed.
+/// Parse MemSymbolTriple entries without a capture type.
+///
+/// Each entry may use the legacy symbol shorthand (`@foo<...>`) or a fully
+/// typed attribute such as `#kgen.get_witness<...> : !kgen.generator<...>`.
 ParseResult parseMemSymbolParts(AsmParser &p, MemSymbolTripleParts &parts);
 
 SymbolConstantAttr makeSymbol(Type type, SymbolRefAttr symbol,
@@ -497,8 +517,7 @@ SymbolConstantAttr makeSymbol(Type type, SymbolRefAttr symbol,
                               ArrayRef<ArgConvention> argConventions,
                               bool isConstructor = true);
 void printMemSymbolTripleAttrWithoutType(
-    AsmPrinter &p, SymbolConstantAttr copy, SymbolConstantAttr move,
-    SymbolConstantAttr del,
+    AsmPrinter &p, TypedAttr copy, TypedAttr move, TypedAttr del,
     std::optional<llvm::function_ref<void(AsmPrinter &p, FuncTypeGeneratorType,
                                           ArrayRef<TypedAttr> params)>>
         parameterPrinter = {});

@@ -384,9 +384,9 @@ def ClosureAttr : DialectAttribute<(attr
 )>;
 
 def MemSymbolTripleAttr : DialectAttribute<(attr
-  ConcreteOptionalAttribute<"SymbolConstantAttr">:$copy,
-  ConcreteOptionalAttribute<"SymbolConstantAttr">:$move,
-  ConcreteOptionalAttribute<"SymbolConstantAttr">:$del,
+  OptionalAttribute<"TypedAttr">:$copy,
+  OptionalAttribute<"TypedAttr">:$move,
+  OptionalAttribute<"TypedAttr">:$del,
   ConcreteOptionalAttribute<"UnitAttr">:$isMove
 )>;
 

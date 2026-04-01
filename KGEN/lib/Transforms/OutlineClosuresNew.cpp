@@ -41,9 +41,9 @@ struct OutlineClosuresNewPass
 namespace {
 struct Capture {
   /// the symbol of the copy/move constructor, if applicable
-  std::optional<SymbolConstantAttr> moveOrCopySym;
+  std::optional<TypedAttr> moveOrCopySym;
   /// the symbol of the destructor, if applicable
-  std::optional<SymbolConstantAttr> delSym;
+  std::optional<TypedAttr> delSym;
 
   /// the source of the capture. This is the value used to create a copy if the
   /// symbol is nonnull.
@@ -157,12 +157,11 @@ struct ClosureLifter {
   /// True if built with debug metadata.
   bool debugBuild;
   struct ClosureInitData {
-    ClosureInitData(
-        llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
-        ClosureType closureType, ClosureInitOp closureInit,
-        StructGeneratorOp structGeneratorOp, GeneratorOp generator,
-        SmallVector<SymbolConstantAttr> &&moveSymbols,
-        std::optional<SmallVector<SymbolConstantAttr>> &&copySymbols);
+    ClosureInitData(llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
+                    ClosureType closureType, ClosureInitOp closureInit,
+                    StructGeneratorOp structGeneratorOp, GeneratorOp generator,
+                    SmallVector<TypedAttr> &&moveSymbols,
+                    std::optional<SmallVector<TypedAttr>> &&copySymbols);
     Type selfType(Type loweredClosureType) const {
       return closureType.getClosureMemoryKind() == ClosureMemoryKind::TRIVIAL
                  ? loweredClosureType
@@ -185,10 +184,10 @@ struct ClosureLifter {
     ArrayRef<ParamDeclAttr> getCapturedParamDecls() const {
       return ArrayRef(capturedParamDecls.begin(), capturedParamDecls.end());
     }
-    ArrayRef<SymbolConstantAttr> getMoveSymbols() const {
+    ArrayRef<TypedAttr> getMoveSymbols() const {
       return ArrayRef(moveSymbols.begin(), moveSymbols.end());
     }
-    ArrayRef<SymbolConstantAttr> getCopySymbols() const {
+    ArrayRef<TypedAttr> getCopySymbols() const {
       return ArrayRef(copySymbolsMaybe->begin(), copySymbolsMaybe->end());
     }
     bool isCopyable() const { return copySymbolsMaybe.has_value(); }
@@ -202,8 +201,8 @@ struct ClosureLifter {
     ClosureType closureType;
     ClosureInitOp closureInit;
     GeneratorOp generator;
-    SmallVector<SymbolConstantAttr> moveSymbols;
-    std::optional<SmallVector<SymbolConstantAttr>> copySymbolsMaybe;
+    SmallVector<TypedAttr> moveSymbols;
+    std::optional<SmallVector<TypedAttr>> copySymbolsMaybe;
     ParamClosureType paramClosureType;
     Location liftedLocation;
   };
@@ -318,8 +317,8 @@ ClosureLifter::ClosureInitData::ClosureInitData(
     llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
     ClosureType closureType, ClosureInitOp closureInit,
     StructGeneratorOp structGeneratorOp, GeneratorOp generator,
-    SmallVector<SymbolConstantAttr> &&moveSymbols,
-    std::optional<SmallVector<SymbolConstantAttr>> &&copySymbols)
+    SmallVector<TypedAttr> &&moveSymbols,
+    std::optional<SmallVector<TypedAttr>> &&copySymbols)
     : capturedParamDecls(std::move(capturedParamDecls)),
       closureType(closureType), closureInit(closureInit), generator(generator),
       moveSymbols(std::move(moveSymbols)),
@@ -439,8 +438,11 @@ void ClosureLifter::liftDelFunction(OpBuilder &b, Location loc,
     for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
       if (capture.delSym.has_value()) {
         Value field = KGEN::StructGEPOp::create(b, loc, source, index);
-        SymbolConstantAttr delSymbol = *capture.delSym;
-        KGEN::CallOp::create(b, loc, delSymbol, field);
+        TypedAttr delSym = *capture.delSym;
+        auto sig = cast<FuncTypeGeneratorType>(delSym.getType());
+        Type resultType = sig.getBody().getResults().front();
+        KGEN::CallParamOp::create(b, loc, resultType, delSym,
+                                  ValueRange(field));
       }
     }
     auto noneAttr = KGEN::ParamConstantOp::create(
@@ -452,23 +454,16 @@ void ClosureLifter::liftDelFunction(OpBuilder &b, Location loc,
 }
 
 static void emitCopyMoveCall(mlir::OpBuilder &b, Location location,
-                             GeneratorOp function, Value original, Value slot,
-                             SymbolConstantAttr symbol) {
-  if (function.getNumArguments() == 2) {
+                             TypedAttr symbol, Value original, Value slot) {
+  auto sig = cast<FuncTypeGeneratorType>(symbol.getType());
+  Type resultType = sig.getBody().getResults().front();
+  if (sig.getBody().getArguments().size() == 2) {
     SmallVector<Value> values = {original, slot};
-    KGEN::CallOp::create(b, location, function.getFunctionType().getResults(),
-                         symbol, ValueRange(values));
+    KGEN::CallParamOp::create(b, location, resultType, symbol,
+                              ValueRange(values));
   } else {
-    // copy init returns copy in register
-    auto baseSig = function.getFuncTypeGenerator();
-    FuncTypeGeneratorType boundSig = baseSig.getSpecializedGenerator(
-        symbol.getParamValues(), /*evaluationContext=*/nullptr,
-        function.getLoc());
-    auto symbolConstant = SymbolConstantAttr::get(symbol.getSymbol(), boundSig,
-                                                  symbol.getParamValues());
-    auto callOp =
-        KGEN::CallOp::create(b, location, boundSig.getBody().getResults(),
-                             symbolConstant, ValueRange(original));
+    auto callOp = KGEN::CallParamOp::create(b, location, resultType, symbol,
+                                            ValueRange(original));
     POP::StoreOp::create(b, location, callOp->getResults().front(), slot);
   }
 }
@@ -497,15 +492,10 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b, Location loc,
         POP::StoreOp::create(b, loc, POP::LoadOp::create(b, loc, sourceField),
                              targetField);
       } else {
-        SymbolConstantAttr symbol;
-        if (isMove)
-          symbol = closureInitData.getMoveSymbols()[symIndex++];
-        else
-          symbol = closureInitData.getCopySymbols()[symIndex++];
-        emitCopyMoveCall(
-            b, loc,
-            symtab.lookup<GeneratorOp>(symbol.getSymbol().getRootReference()),
-            sourceField, targetField, symbol);
+        TypedAttr symbol = isMove
+                               ? closureInitData.getMoveSymbols()[symIndex++]
+                               : closureInitData.getCopySymbols()[symIndex++];
+        emitCopyMoveCall(b, loc, symbol, sourceField, targetField);
       }
     }
     auto noneAttr = KGEN::ParamConstantOp::create(
@@ -646,12 +636,8 @@ void ClosureLifter::storeCaptures(OpBuilder &b, Value captureStruct,
   for (auto [index, captureMechanism] : llvm::enumerate(captureMechanisms)) {
     auto slot = StructGEPOp::create(b, location, captureStruct, index);
     if (captureMechanism.moveOrCopySym.has_value()) {
-      SymbolConstantAttr symbol = *captureMechanism.moveOrCopySym;
-      StringRef name = symbol.getSymbol().getRootReference();
-      Operation *op = symtab.lookup(name);
-      GeneratorOp function = cast<GeneratorOp>(op);
-      emitCopyMoveCall(b, location, function, captureMechanism.origin, slot,
-                       symbol);
+      TypedAttr symbol = *captureMechanism.moveOrCopySym;
+      emitCopyMoveCall(b, location, symbol, captureMechanism.origin, slot);
     } else {
       POP::StoreOp::create(b, location, captureMechanism.origin, slot);
     }
@@ -907,21 +893,21 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
   // Create the capture struct type and collect symbols.
   // In order to create the move constructor, we need the move constructors of
   // all capture by copy/move values.
-  SmallVector<SymbolConstantAttr> moveSymbols;
-  SmallVector<SymbolConstantAttr> copySymbols;
+  SmallVector<TypedAttr> moveSymbols;
+  SmallVector<TypedAttr> copySymbols;
   bool allCopySymbolsAvailable = true;
   for (Value capture : closureInit.getCaptures()) {
     auto ptr = captureToSymbol.find(capture);
     assert(ptr != captureToSymbol.end() && "capture must be in capture list");
     if (auto triple = dyn_cast<MemSymbolTripleAttr>(ptr->second)) {
-      SymbolConstantAttr symbol = cast<SymbolConstantAttr>(
-          triple.getIsMove() ? triple.getMove() : triple.getCopy());
-      auto moveSymbol = triple.getMove();
-      auto copySymbol = triple.getCopy();
+      TypedAttr symbol =
+          triple.getIsMove() ? triple.getMove() : triple.getCopy();
+      TypedAttr moveSymbol = triple.getMove();
+      TypedAttr copySymbol = triple.getCopy();
       if (moveSymbol)
-        moveSymbols.push_back(cast<SymbolConstantAttr>(moveSymbol));
+        moveSymbols.push_back(moveSymbol);
       else if (copySymbol)
-        moveSymbols.push_back(cast<SymbolConstantAttr>(copySymbol));
+        moveSymbols.push_back(copySymbol);
       else
         llvm_unreachable("cannot capture by move or copy and not include a "
                          "move or copy symbol");
@@ -929,7 +915,7 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
         copySymbols.push_back(copySymbol);
       else
         allCopySymbolsAvailable = false;
-      SymbolConstantAttr del = cast<SymbolConstantAttr>(triple.getDel());
+      TypedAttr del = triple.getDel();
       Type capturingType =
           cast<PointerType>(capture.getType()).getElementType();
       fieldTypes.push_back(capturingType);
@@ -940,7 +926,7 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
     captureMechanisms.push_back({{}, {}, capture});
   }
   bool isThin = fieldTypes.empty();
-  std::optional<SmallVector<SymbolConstantAttr>> copiesMaybe;
+  std::optional<SmallVector<TypedAttr>> copiesMaybe;
   if (allCopySymbolsAvailable)
     copiesMaybe = std::move(copySymbols);
 

@@ -2741,6 +2741,127 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   return typeParamAttr;
 }
 
+MemSymbolTripleAttr ClosureEmitter::validateAndBuildTriple(
+    TypedAttr copy, TypedAttr move, TypedAttr del, CaptureConvention convention,
+    const Capture &capture, UnitAttr &isMove, ASTDecl &nestedFnDecl) {
+  MLIRContext *ctx = shared.getContext();
+  if (convention == CaptureConvention::kConventionCopy && !copy) {
+    shared.emitError(nestedFnDecl.getLoc(),
+                     "cannot capture " + capture.getSpelling() +
+                         " by copy because it is not copyable.");
+    return nullptr;
+  }
+  if (convention == CaptureConvention::kConventionMove) {
+    if (!move) {
+      shared.emitError(nestedFnDecl.getLoc(),
+                       "cannot capture " + capture.getSpelling() +
+                           " by move because it is not movable.");
+      return nullptr;
+    }
+    isMove = UnitAttr::get(ctx);
+  }
+  if (!del) {
+    shared.emitError(nestedFnDecl.getLoc(),
+                     "cannot capture " + capture.getSpelling() +
+                         " because it is not destructable.");
+  }
+  return MemSymbolTripleAttr::get(ctx, copy, move, del, isMove);
+}
+
+std::pair<MemSymbolTripleAttr, bool> ClosureEmitter::buildStructCaptureInfo(
+    StructType structType, const Capture &capture, CaptureConvention convention,
+    bool isRegPassable, UnitAttr &isMove, ASTDecl &nestedFnDecl) {
+  SymbolConstantAttr del, move, copy;
+  ASTDecl &structDecl =
+      shared.declResolver->getDeclForTypeSymbol(structType.getSymbol());
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  if (isRegPassable && !structDeclOp.isRegisterPassable() &&
+      !structDeclOp.isRegisterPassableTrivial()) {
+    shared.emitError(
+        nestedFnDecl.getLoc(),
+        "cannot capture " + capture.getSpelling() +
+            " by copy or move because it is not register passable and "
+            "your closure is marked as register passable.");
+  }
+  bool isTrivial = structDeclOp.isRegisterPassableTrivial();
+  if (structDeclOp.getDestructor().has_value())
+    del = *structDeclOp.getDestructor();
+  if (!del) {
+    ArrayRef<ASTDecl *> results = structDecl.lookupInCurrentScope("__del__");
+    if (results.size() == 1) {
+      FnOp destructor = dyn_cast<FnOp>(results.front()->getIfOperation());
+      if (destructor)
+        del = destructor.getBoundSymbolRef(shared.getEvaluationContext());
+    }
+  }
+  if (structDeclOp.getMoveInit().has_value())
+    move = *structDeclOp.getMoveInit();
+  if (structDeclOp.getCopyInit().has_value())
+    copy = *structDeclOp.getCopyInit();
+
+  auto paramValues = structType.getParamValues();
+  auto paramArray =
+      ParameterExprArrayAttr::get(shared.getContext(), paramValues);
+  auto bind = [&](SymbolConstantAttr sym) -> SymbolConstantAttr {
+    if (!sym)
+      return sym;
+    ASTDecl *fnDecl =
+        shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
+    auto fnOp = cast<FnOp>(fnDecl->getIfOperation());
+    return fnOp.getBoundSymbolRef(shared.getEvaluationContext(), paramArray);
+  };
+  copy = bind(copy);
+  move = bind(move);
+  del = bind(del);
+
+  auto triple = validateAndBuildTriple(copy, move, del, convention, capture,
+                                       isMove, nestedFnDecl);
+  return {triple, isTrivial};
+}
+
+MemSymbolTripleAttr ClosureEmitter::buildParamCaptureInfo(
+    ParamType paramType, const Capture &capture, CaptureConvention convention,
+    UnitAttr &isMove, ASTDecl &nestedFnDecl, ASTDecl &moduleDecl) {
+  MLIRContext *ctx = shared.getContext();
+  auto paramRef = dyn_cast<ParamDeclRefAttr>(paramType.getParam());
+  if (!paramRef) {
+    shared.emitError(nestedFnDecl.getLoc(),
+                     "cannot capture " + capture.getSpelling() +
+                         " because its type is not a parameter reference.");
+    return nullptr;
+  }
+
+  auto traitType = dyn_cast<TraitType>(paramRef.getType());
+  if (!traitType) {
+    shared.emitError(nestedFnDecl.getLoc(),
+                     "cannot capture " + capture.getSpelling() +
+                         " because its type constraint is not a trait.");
+    return nullptr;
+  }
+
+  TypedAttr typeValue =
+      ParamDeclRefAttr::get(paramRef.getName(), paramRef.getType());
+
+  auto makeWitness = [&](ClosureParent &parent) -> TypedAttr {
+    FnOp fnOp = parent.getDefiningOp(moduleDecl);
+    if (!fnOp)
+      return nullptr;
+    ASTType selfType(paramType);
+    FnTypeGeneratorType sig =
+        specializeSignature(fnOp, selfType, *shared.declResolver);
+    StringAttr parentName = parent.getFullSymbolName(moduleDecl);
+    return GetWitnessAttr::get(ctx, typeValue, parentName,
+                               fnOp.getSymNameAttr(), sig);
+  };
+
+  TypedAttr move = makeWitness(moveParent);
+  TypedAttr del = makeWitness(implicitlyDestructibleParent);
+  TypedAttr copy = makeWitness(copyParent);
+
+  return validateAndBuildTriple(copy, move, del, convention, capture, isMove,
+                                nestedFnDecl);
+}
+
 Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                     ArrayRef<Capture> captures,
                                     StructDeclOp wrapper, TraitDeclOp trait,
@@ -2815,77 +2936,13 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
         mlirType = value.getType();
 
       if (auto structType = dyn_cast<StructType>(mlirType)) {
-        SymbolConstantAttr del, move, copy;
-        ASTDecl &structDecl =
-            shared.declResolver->getDeclForTypeSymbol(structType.getSymbol());
-        StructDeclOp structDeclOp =
-            cast<StructDeclOp>(structDecl.getIfOperation());
-        if (isRegPassable && !structDeclOp.isRegisterPassable() &&
-            !structDeclOp.isRegisterPassableTrivial()) {
-          shared.emitError(
-              nestedFnDecl.getLoc(),
-              "cannot capture " + capture.getSpelling() +
-                  " by copy or move because it is not register passable and "
-                  "your closure is marked as register passable.");
-        }
-        if (!structDeclOp.isRegisterPassableTrivial())
-          allCapturesAreTrivial = false;
-        if (structDeclOp.getDestructor().has_value())
-          del = *structDeclOp.getDestructor();
-        if (!del) {
-          ArrayRef<ASTDecl *> results =
-              structDecl.lookupInCurrentScope("__del__");
-          if (results.size() == 1) {
-            FnOp destructor = dyn_cast<FnOp>(results.front()->getIfOperation());
-            if (destructor)
-              del = destructor.getBoundSymbolRef(shared.getEvaluationContext());
-          }
-        }
-        if (structDeclOp.getMoveInit().has_value())
-          move = *structDeclOp.getMoveInit();
-        if (structDeclOp.getCopyInit().has_value())
-          copy = *structDeclOp.getCopyInit();
-
-        if (captureConvention == CaptureConvention::kConventionCopy && !copy) {
-          shared.emitError(nestedFnDecl.getLoc(),
-                           "cannot capture " + capture.getSpelling() +
-                               " by copy because it is not copyable.");
+        auto [memTriple, isTrivial] =
+            buildStructCaptureInfo(structType, capture, captureConvention,
+                                   isRegPassable, isMove, nestedFnDecl);
+        if (!memTriple)
           return {};
-        }
-        if (captureConvention == CaptureConvention::kConventionMove) {
-          if (!move) {
-            shared.emitError(nestedFnDecl.getLoc(),
-                             "cannot capture " + capture.getSpelling() +
-                                 " by move because it is not movable.");
-
-            return {};
-          }
-          isMove = UnitAttr::get(ctx);
-        }
-        if (!del)
-          shared.emitError(nestedFnDecl.getLoc(),
-                           "cannot capture " + capture.getSpelling() +
-                               " because it is not destructable.");
-        // rebind the parameterized symbol
-        auto paramValues = structType.getParamValues();
-        auto paramArray = ParameterExprArrayAttr::get(ctx, paramValues);
-        auto bind = [&](SymbolConstantAttr sym) -> SymbolConstantAttr {
-          if (!sym)
-            return sym;
-          // Resolve the FnOp, then bind concrete params on the symbol.
-          ASTDecl *fnDecl =
-              shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
-          auto fnOp = cast<FnOp>(fnDecl->getIfOperation());
-          SymbolConstantAttr bound =
-              fnOp.getBoundSymbolRef(shared.getEvaluationContext(), paramArray);
-          return bound;
-        };
-
-        copy = bind(copy);
-        move = bind(move);
-        del = bind(del);
-        MemSymbolTripleAttr memTriple =
-            MemSymbolTripleAttr::get(ctx, copy, move, del, isMove);
+        if (!isTrivial)
+          allCapturesAreTrivial = false;
         captureInfo.push_back(memTriple);
         break;
       } else if (auto traitType = dyn_cast<TraitType>(mlirType)) {
@@ -2893,8 +2950,16 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                          "cannot capture a value of trait type yet because "
                          "existentials are not implemented.");
         return {};
+      } else if (auto paramType = dyn_cast<ParamType>(mlirType)) {
+        auto memTriple =
+            buildParamCaptureInfo(paramType, capture, captureConvention, isMove,
+                                  nestedFnDecl, moduleDecl);
+        if (!memTriple)
+          return {};
+        allCapturesAreTrivial = false;
+        captureInfo.push_back(memTriple);
+        break;
       } else {
-        // this is a trivially copyable/movable type
         captureInfo.push_back(UnitAttr::get(ctx));
       }
       break;

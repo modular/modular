@@ -3973,10 +3973,8 @@ static void printClosureAttr(AsmPrinter &p, Type type) {
 // MemSymbolTripleAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseMemSymbolTripleAttr(AsmParser &p,
-                                            SymbolConstantAttr &copy,
-                                            SymbolConstantAttr &move,
-                                            SymbolConstantAttr &del,
+static ParseResult parseMemSymbolTripleAttr(AsmParser &p, TypedAttr &copy,
+                                            TypedAttr &move, TypedAttr &del,
                                             UnitAttr &isMove) {
   MemSymbolTripleParts parts;
   if (parseMemSymbolParts(p, parts))
@@ -3985,26 +3983,38 @@ static ParseResult parseMemSymbolTripleAttr(AsmParser &p,
     isMove = UnitAttr::get(p.getContext());
 
   Type type;
-  if (p.parseColon() || p.parseType(type))
+  if (parts.requiresCaptureType() && (p.parseColon() || p.parseType(type)))
     return failure();
 
-  if (parts.copy.callee)
-    copy = makeSymbol(type, parts.copy.callee, parts.copy.paramValues,
-                      {ArgConvention::ReadMem, ArgConvention::ByRefResult});
-  move = makeSymbol(type, parts.move.callee, parts.move.paramValues,
-                    {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
-  del = makeSymbol(type, parts.del.callee, parts.del.paramValues,
-                   {ArgConvention::OwnedMem}, false);
+  auto materialize = [&](const MemSymbolTripleEntry &entry,
+                         ArrayRef<ArgConvention> argConventions,
+                         bool isConstructor = true) -> TypedAttr {
+    if (entry.isTypedAttr())
+      return entry.attr;
+    if (!entry.isSymbolShorthand())
+      return {};
+    return makeSymbol(type, entry.symbolParts.callee,
+                      entry.symbolParts.paramValues, argConventions,
+                      isConstructor);
+  };
+
+  copy = materialize(parts.copy,
+                     {ArgConvention::ReadMem, ArgConvention::ByRefResult});
+  move = materialize(parts.move,
+                     {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
+  del = materialize(parts.del, {ArgConvention::OwnedMem},
+                    /*isConstructor=*/false);
   return success();
 }
 
-static void printMemSymbolTripleAttr(AsmPrinter &p, SymbolConstantAttr copy,
-                                     SymbolConstantAttr move,
-                                     SymbolConstantAttr del, UnitAttr isMove) {
+static void printMemSymbolTripleAttr(AsmPrinter &p, TypedAttr copy,
+                                     TypedAttr move, TypedAttr del,
+                                     UnitAttr isMove) {
   printMemSymbolTripleAttrWithoutType(p, copy, move, del);
   if (isMove)
     p << " " << MemSymbolTripleAttr::kIsMoveKeyword;
-  p << " : " << del.getType().getBody().getArguments().front();
+  if (auto symDel = dyn_cast<SymbolConstantAttr>(del))
+    p << " : " << symDel.getType().getBody().getArguments().front();
 }
 
 //===----------------------------------------------------------------------===//

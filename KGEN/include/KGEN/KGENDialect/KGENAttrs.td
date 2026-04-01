@@ -2242,9 +2242,9 @@ def KGEN_MemSymbolTripleAttr : KGENAttr<"MemSymbolTriple", "mem_symbol_triple"> 
     ```
   }];
 
-  let parameters = (ins "SymbolConstantAttr":$copy,
-                        "SymbolConstantAttr":$move,
-                        "SymbolConstantAttr":$del,
+  let parameters = (ins "TypedAttr":$copy,
+                        "TypedAttr":$move,
+                        "TypedAttr":$del,
                         OptionalParameter<"UnitAttr">:$isMove);
 
  let assemblyFormat = [{
