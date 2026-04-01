@@ -16,6 +16,7 @@ from __future__ import annotations
 import numpy as np
 from max.interfaces import RequestID
 from max.interfaces.context import SamplingParams
+from max.interfaces.eos_tracking import EOSTracker
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib.speculative_decoding.utils import (
@@ -30,7 +31,7 @@ def make_context(prompt_tokens: list[int]) -> TextContext:
         max_length=MAX_LENGTH,
         tokens=TokenBuffer(np.array(prompt_tokens, dtype=np.int64)),
         request_id=RequestID(),
-        eos_token_ids=set(),
+        eos_tracker=EOSTracker(),
         sampling_params=SamplingParams(),
     )
 

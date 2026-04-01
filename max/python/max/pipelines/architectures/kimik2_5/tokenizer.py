@@ -303,11 +303,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             else None
         )
 
-        if request.sampling_params.ignore_eos:
-            eos_token_ids: set[int] = set()
-        else:
-            eos_token_ids = self._default_eos_token_ids
-
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
@@ -323,7 +318,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         context = KimiK2_5TextAndVisionContext(
             request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
+            eos_tracker=await self.create_eos_tracker(request),
             tokens=token_buffer,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None

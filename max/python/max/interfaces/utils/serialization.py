@@ -22,6 +22,7 @@ from typing import Any
 
 import msgspec
 import numpy as np
+from max.interfaces.eos_tracking import EOSTracker
 from max.interfaces.generation import GenerationOutput
 from max.interfaces.request.open_responses import (
     OpenResponsesRequest,
@@ -52,6 +53,7 @@ def _build_type_registry() -> dict[str, type]:
 
     # Register each type with its full module path
     for cls in [
+        EOSTracker,
         OpenResponsesRequest,
         OutputImageContent,
         OutputTextContent,

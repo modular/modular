@@ -87,6 +87,7 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     BatchType,
+    EOSTracker,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
@@ -559,7 +560,7 @@ class OverlapTextGenerationPipeline(
                         tokens=TokenBuffer(
                             np.zeros(q_max_seq_len, dtype=np.int64)
                         ),
-                        eos_token_ids=self._eos_token_id,
+                        eos_tracker=EOSTracker(),
                         model_name=self._pipeline_config.model.model_name,
                     )
                     for idx in range(batch_size)

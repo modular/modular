@@ -90,6 +90,7 @@ from .tokenizer import (
     PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
+    build_eos_tracker_for_request,
     max_tokens_to_generate,
 )
 from .utils import CompilationTimer, upper_bounded_default
@@ -140,6 +141,7 @@ __all__ = [
     "TextGenerationPipeline",
     "TextTokenizer",
     "WeightPathParser",
+    "build_eos_tracker_for_request",
     "convert_max_config_value",
     "deep_merge_max_configs",
     "download_weight_files",

@@ -42,6 +42,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/interfaces",
         "//max/python/max/mlir",
         requirement("pytest-xdist"),
         requirement("numpy"),
