@@ -379,6 +379,24 @@ def _handle_broadcast_to(
     return [output]
 
 
+# Shared shape/stride helpers
+
+
+def _row_major_strides(shape: list[int]) -> tuple[int, ...]:
+    """Compute row-major (C-order) strides for the given shape.
+
+    Args:
+        shape: Tensor dimensions in order from outermost to innermost.
+
+    Returns:
+        Tuple of strides with the same length as ``shape``.
+    """
+    strides = [1] * len(shape)
+    for i in range(len(shape) - 2, -1, -1):
+        strides[i] = strides[i + 1] * shape[i + 1]
+    return tuple(strides)
+
+
 # Helper for device validation
 
 
@@ -2171,12 +2189,6 @@ def _handle_tile(
     rank = len(in_shape)
     out_shape = [in_shape[i] * repeats[i] for i in range(rank)]
 
-    def _row_major_strides(shape: list[int]) -> tuple[int, ...]:
-        strides = [1] * len(shape)
-        for i in range(len(shape) - 2, -1, -1):
-            strides[i] = strides[i + 1] * shape[i + 1]
-        return tuple(strides)
-
     in_strides = _row_major_strides(in_shape)
     out_strides = _row_major_strides(out_shape)
 
@@ -2550,3 +2562,209 @@ def _handle_arg_nonzero(
         )
 
     return [out_buf]
+
+
+# Padding operations
+
+
+def _pad_common(
+    op: _core.Operation,
+    input_buffer: Buffer,
+    paddings: list[int],
+    target_device: Device,
+) -> tuple[list[int], list[int], tuple[int, ...], tuple[int, ...], int]:
+    """Compute output shape, strides, and total elements for a pad op.
+
+    Args:
+        op: The pad operation (used only to name the caller in errors).
+        input_buffer: The input tensor buffer.
+        paddings: Flat list [pre_0, post_0, pre_1, post_1, ...].
+        target_device: The target execution device.
+
+    Returns:
+        Tuple of (out_shape, in_shape, out_strides, in_strides, total).
+    """
+    in_shape = list(input_buffer.shape)
+    rank = len(in_shape)
+    out_shape = [
+        in_shape[d] + paddings[2 * d] + paddings[2 * d + 1] for d in range(rank)
+    ]
+    in_strides = _row_major_strides(in_shape)
+    out_strides = _row_major_strides(out_shape)
+    total = prod(out_shape)
+    return out_shape, in_shape, out_strides, in_strides, total
+
+
+@register_op_handler(mo.PadConstantOp)
+def _handle_pad_constant(
+    op: mo.PadConstantOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.pad.constant via Mojo pad kernel (CPU and GPU).
+
+    Operands (MO_SingleDeviceWithHostOperands<["paddings", "constant"]>):
+      inputs[0]: input tensor (device)
+      inputs[1]: paddings (host, int32|int64, shape [2*rank])
+      inputs[2]: constant scalar (host, same dtype as input)
+
+    The padded region is filled with the scalar constant; the content
+    region copies from the input.
+
+    Args:
+        op: The pad_constant operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the padded output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+    assert isinstance(inputs[2], Buffer)
+
+    input_buffer = inputs[0]
+    paddings = [int(p) for p in inputs[1].to_numpy().flatten()]
+    const_addr = int(inputs[2]._data_ptr())
+
+    out_shape, in_shape, out_strides, in_strides, total = _pad_common(
+        op, input_buffer, paddings, target_device
+    )
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ctx_ptr = target_device._device_context_ptr()
+    ops.pad_ops.PadConstant(
+        output,
+        input_buffer,
+        (
+            paddings,
+            tuple(out_shape),
+            tuple(in_shape),
+            out_strides,
+            in_strides,
+            len(in_shape),
+            total,
+            const_addr,
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.PadReflectOp)
+def _handle_pad_reflect(
+    op: mo.PadReflectOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.pad.reflect via Mojo pad kernel (CPU-only).
+
+    Operands (MO_HostOnly):
+      inputs[0]: input tensor
+      inputs[1]: paddings (host, int32|int64, shape [2*rank])
+
+    Padded cells mirror values from the content region using a periodic
+    reflection with period 2*(input_dim-1) per axis.
+
+    Note: values are always computed; the op has no ``sorted`` flag.
+
+    Args:
+        op: The pad_reflect operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the reflected-padded output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_buffer = inputs[0]
+    paddings = [int(p) for p in inputs[1].to_numpy().flatten()]
+
+    out_shape, in_shape, out_strides, in_strides, total = _pad_common(
+        op, input_buffer, paddings, target_device
+    )
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ops.pad_ops.PadReflect(
+        output,
+        input_buffer,
+        (
+            paddings,
+            tuple(out_shape),
+            tuple(in_shape),
+            out_strides,
+            in_strides,
+            len(in_shape),
+            total,
+        ),
+        None,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.PadRepeatOp)
+def _handle_pad_repeat(
+    op: mo.PadRepeatOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.pad.repeat (edge pad) via Mojo pad kernel (CPU-only).
+
+    Operands (MO_HostOnly):
+      inputs[0]: input tensor
+      inputs[1]: paddings (host, int32|int64, shape [2*rank])
+
+    Padded cells are filled by clamping the output coordinate to the
+    nearest valid input index per axis (nearest-edge / repeat semantics).
+
+    Args:
+        op: The pad_repeat operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the edge-padded output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_buffer = inputs[0]
+    paddings = [int(p) for p in inputs[1].to_numpy().flatten()]
+
+    out_shape, in_shape, out_strides, in_strides, total = _pad_common(
+        op, input_buffer, paddings, target_device
+    )
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ops.pad_ops.PadRepeat(
+        output,
+        input_buffer,
+        (
+            paddings,
+            tuple(out_shape),
+            tuple(in_shape),
+            out_strides,
+            in_strides,
+            len(in_shape),
+            total,
+        ),
+        None,
+    )
+
+    return [output]

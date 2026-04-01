@@ -5021,3 +5021,263 @@ class TestArgNonzeroOp:
 
         ref = self._nonzero_ref(x_np)
         np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+
+class TestPadConstantOp:
+    """Tests for mo.PadConstantOp via F.pad(mode='constant')."""
+
+    @staticmethod
+    def _ref(
+        x: np.ndarray, paddings: list[int], constant_value: float = 0.0
+    ) -> np.ndarray:
+        """NumPy reference for constant padding.
+
+        Converts the flat [pre0, post0, pre1, post1, ...] paddings format
+        used by mo.PadConstantOp into NumPy's per-axis tuple format.
+        """
+        rank = x.ndim
+        pad_widths = [
+            (paddings[2 * d], paddings[2 * d + 1]) for d in range(rank)
+        ]
+        return np.pad(
+            x, pad_widths, mode="constant", constant_values=constant_value
+        )
+
+    def test_1d_zero_pad(self) -> None:
+        """1-D tensor padded with zeros on both sides."""
+        x_np = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 2])
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [1, 2])
+        )
+
+    def test_2d_constant_value(self) -> None:
+        """2-D tensor padded with a non-zero constant."""
+        x_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 1, 2, 0], value=7.0)
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out),
+            self._ref(x_np, [1, 1, 2, 0], constant_value=7.0),
+        )
+
+    def test_3d_asymmetric(self) -> None:
+        """3-D tensor with asymmetric paddings."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [0, 1, 2, 0, 1, 3])
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [0, 1, 2, 0, 1, 3])
+        )
+
+    def test_zero_padding(self) -> None:
+        """All-zero paddings should produce an identical tensor."""
+        x_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [0, 0, 0, 0])
+
+        np.testing.assert_array_equal(np.from_dlpack(out), x_np)
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.int32]
+    )
+    def test_dtypes(self, dtype: DType) -> None:
+        """Constant padding with multiple numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([[1, 2, 3], [4, 5, 6]], dtype=np_dtype)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 1, 0, 2])
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [1, 1, 0, 2])
+        )
+
+
+class TestPadReflectOp:
+    """Tests for mo.PadReflectOp via F.pad(mode='reflect')."""
+
+    @staticmethod
+    def _ref(x: np.ndarray, paddings: list[int]) -> np.ndarray:
+        """NumPy reference for reflect padding."""
+        rank = x.ndim
+        pad_widths = [
+            (paddings[2 * d], paddings[2 * d + 1]) for d in range(rank)
+        ]
+        return np.pad(x, pad_widths, mode="reflect")
+
+    def test_2d_basic(self) -> None:
+        """Basic 2-D reflect pad."""
+        x_np = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 1, 0, 1], mode="reflect")
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [1, 1, 0, 1])
+        )
+
+    def test_2d_symmetric(self) -> None:
+        """Symmetric reflect pad on all sides."""
+        x_np = np.arange(9, dtype=np.float32).reshape(3, 3)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [2, 2, 1, 1], mode="reflect")
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [2, 2, 1, 1])
+        )
+
+    def test_3d_reflect(self) -> None:
+        """3-D reflect pad along all axes."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 0, 1, 1, 0, 1], mode="reflect")
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [1, 0, 1, 1, 0, 1])
+        )
+
+    def test_zero_padding(self) -> None:
+        """All-zero paddings should produce an identical tensor."""
+        x_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [0, 0, 0, 0], mode="reflect")
+
+        np.testing.assert_array_equal(np.from_dlpack(out), x_np)
+
+
+class TestPadRepeatOp:
+    """Tests for mo.PadRepeatOp via F.pad(mode='edge')."""
+
+    @staticmethod
+    def _ref(x: np.ndarray, paddings: list[int]) -> np.ndarray:
+        """NumPy reference for edge (repeat) padding."""
+        rank = x.ndim
+        pad_widths = [
+            (paddings[2 * d], paddings[2 * d + 1]) for d in range(rank)
+        ]
+        return np.pad(x, pad_widths, mode="edge")
+
+    def test_2d_basic(self) -> None:
+        """Basic 2-D edge pad."""
+        x_np = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [2, 1, 1, 0], mode="edge")
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [2, 1, 1, 0])
+        )
+
+    def test_2d_only_pre(self) -> None:
+        """Edge pad only before each dimension (no post padding)."""
+        x_np = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [3, 0, 2, 0], mode="edge")
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [3, 0, 2, 0])
+        )
+
+    def test_3d_edge(self) -> None:
+        """3-D edge pad along all axes."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 2, 0, 1, 2, 0], mode="edge")
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [1, 2, 0, 1, 2, 0])
+        )
+
+    def test_zero_padding(self) -> None:
+        """All-zero paddings should produce an identical tensor."""
+        x_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [0, 0, 0, 0], mode="edge")
+
+        np.testing.assert_array_equal(np.from_dlpack(out), x_np)
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.int32]
+    )
+    def test_dtypes(self, dtype: DType) -> None:
+        """Edge padding with multiple numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([[1, 2, 3], [4, 5, 6]], dtype=np_dtype)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 1, 2, 0], mode="edge")
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), self._ref(x_np, [1, 1, 2, 0])
+        )

@@ -86,6 +86,9 @@ This version is still a work in progress.
 - `max.graph.ops.pad` (and `max.graph.experimental.functional.pad`) now
   accepts `mode='reflect'` and `mode='edge'` in addition to
   `mode='constant'`.
+- Added `pad` op handlers (`pad.constant`, `pad.reflect`, `pad.repeat`) to
+  the experimental eager interpreter. `pad.constant` supports CPU and GPU;
+  `pad.reflect` and `pad.repeat` (edge padding) run on CPU.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.
