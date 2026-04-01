@@ -463,27 +463,38 @@ def gemv_split_k[
             if lane_id == 0:
                 shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
     barrier()
-    # Sum across warps' results in shared memory then output.
-    # TODO: should be able to vectorize and maybe use larger tile_n.
-    for ii in range(tid, tile_m * tile_n, num_threads):
-        var mid, nid = divmod(ii, tile_n)
-        var val = Scalar[accum_type]()
-        comptime ValType = type_of(val)
+    # Sum across warps' results in shared memory then output (vectorized in N).
+    for mid in range(tid, tile_m, num_threads):
+        var vals = SIMD[accum_type, tile_n]()
 
         comptime for jj in range(k_warp_num):
-            val += rebind[ValType](shmem[0, jj * tile_m * tile_n + ii])
+            comptime for ni in range(tile_n):
+                vals[ni] += rebind[Scalar[accum_type]](
+                    shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
+                )
 
-        var idx = output_idx + mid * n + nid
+        var base_idx = output_idx + mid * n
 
         comptime if check_bounds:
-            if idx >= n:
-                continue
-
-        comptime if elementwise_lambda_fn:
-            comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda(Index(0, idx), val.cast[c_type]())
+            comptime for ni in range(tile_n):
+                if base_idx + ni < n:
+                    comptime if elementwise_lambda_fn:
+                        comptime elementwise_lambda = (
+                            elementwise_lambda_fn.value()
+                        )
+                        elementwise_lambda(
+                            Index(0, base_idx + ni),
+                            vals[ni].cast[c_type](),
+                        )
+                    else:
+                        output[0, base_idx + ni] = vals[ni].cast[c_type]()
         else:
-            output[0, idx] = val.cast[c_type]()
+            comptime if elementwise_lambda_fn:
+                comptime elementwise_lambda = elementwise_lambda_fn.value()
+                elementwise_lambda(Index(0, base_idx), vals.cast[c_type]())
+            else:
+                comptime for ni in range(tile_n):
+                    output[0, base_idx + ni] = vals[ni].cast[c_type]()
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
