@@ -1085,6 +1085,25 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
       func.getContext(),
       getUniqueSymbolName((origName.getValue() + "_c_wrapped").str(), symtab));
   symbolUsers.replaceAllUsesWith(func, newName);
+
+  // SymbolUserMap only tracks SymbolRefAttr-based uses. Ops such as
+  // kgen.create_closure store their callee as SymbolConstantAttr (which embeds
+  // a FlatSymbolRefAttr internally), so replaceAllUsesWith above misses them.
+  // Walk the whole module and update any FlatSymbolRefAttr that still names
+  // the old symbol so those callees point at the Mojo-ABI function.
+  ModuleOp theModule = func->getParentOfType<ModuleOp>();
+  mlir::AttrTypeReplacer symReplacer;
+  symReplacer.addReplacement(
+      [&](FlatSymbolRefAttr symRef) -> FlatSymbolRefAttr {
+        if (symRef.getAttr() == origName)
+          return FlatSymbolRefAttr::get(newName);
+        return symRef;
+      });
+  for (Operation &op : theModule.getOps())
+    symReplacer.recursivelyReplaceElementsIn(&op, /*replaceAttrs=*/true,
+                                             /*replaceLocs=*/false,
+                                             /*replaceTypes=*/false);
+
   symtab.remove(func);
   func.setSymNameAttr(newName);
   func.setLinkage(LLVM::Linkage::Internal);

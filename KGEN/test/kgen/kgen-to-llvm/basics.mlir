@@ -297,3 +297,41 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch 
     kgen.return
   }
 }
+
+// -----
+
+// COM: Regression test for MOCO-3626.
+// COM: When emitCWrapper renames a C-exported function to @name_c_wrapped,
+// COM: any kgen.create_closure ops referencing the old name must also be updated.
+// COM: These are not tracked by SymbolUserMap (which only tracks SymbolRefAttr),
+// COM: so they previously retained a stale callee reference.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// A C-exported function returning a struct — emitCWrapper will rename it to
+// @c_exported_method_c_wrapped when it has internal callers.
+// CHECK: llvm.func internal @c_exported_method_c_wrapped
+kgen.func export C @c_exported_method() -> !kgen.struct<(i32, i32)> {
+  kgen.unreachable
+}
+
+// CHECK: llvm.func @c_exported_method
+
+// A direct caller that makes hasInternalUsers=true for @c_exported_method,
+// triggering emitCWrapper.
+// CHECK: llvm.func internal @direct_caller
+kgen.func @direct_caller() {
+  kgen.call @c_exported_method() : () -> !kgen.struct<(i32, i32)>
+  kgen.return
+}
+
+// CHECK-LABEL: llvm.func internal @closure_creator
+kgen.func @closure_creator() {
+  // kgen.create_closure callee must be updated to @c_exported_method_c_wrapped.
+  // CHECK: kgen.create_closure
+  // CHECK-SAME: @c_exported_method_c_wrapped
+  %0 = kgen.create_closure[() -> !kgen.struct<(i32, i32)>: @c_exported_method]()
+  kgen.return
+}
+
+}
