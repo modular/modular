@@ -49,6 +49,7 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
     NVFP4_SF_DTYPE,
+    MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
 )
 from ..structured_kernels.config import BlockScaledMatmulConfig
@@ -103,9 +104,13 @@ def grouped_matmul_block_scaled[
         sfa_dtype == sfb_dtype
     ), "Only support same scales dtype for A and B"
     comptime assert sfa_dtype in (
-        MXFP8_SF_DTYPE,
         NVFP4_SF_DTYPE,
-    ), "Only support MXFP8_SF_DTYPE or NVFP4_SF_DTYPE for scales"
+        MXFP4_SF_DTYPE,
+        MXFP8_SF_DTYPE,
+    ), (
+        "Only support NVFP4_SF_DTYPE, MXFP4_SF_DTYPE, or MXFP8_SF_DTYPE for"
+        " scales"
+    )
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]

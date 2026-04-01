@@ -13,8 +13,8 @@
 """General dispatch for grouped block-scaled matmul.
 
 Routes to format-specific grouped matmul implementations based on the
-input dtype and target GPU architecture. Currently supports NVFP4 and MXFP8
-on SM100; MXFP4 will be added in a subsequent commit.
+input dtype and target GPU architecture. Currently supports NVFP4, MXFP4,
+and MXFP8 on SM100.
 """
 
 from std.gpu.host import DeviceContext
@@ -45,7 +45,7 @@ def grouped_matmul_block_scaled_dispatch[
 ) raises:
     """Dispatch grouped block-scaled matmul to format-specific implementation.
 
-    Currently NVFP4 and MXFP8 on SM100 are supported. See
+    Currently NVFP4, MXFP4, and MXFP8 on SM100 are supported. See
     `grouped_matmul_block_scaled_sm100_dispatch` for parameter documentation.
     """
     comptime assert _is_sm10x_gpu(

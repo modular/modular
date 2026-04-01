@@ -14,8 +14,8 @@
 
 Selects optimal kernel configuration based on (N, K) shape and workload
 type (decode vs prefill), with parameters tuned via ablation on B200.
-NVFP4 gets shape-tuned decode/prefill tables; MXFP8 uses a default
-config.
+NVFP4 gets shape-tuned decode/prefill tables; MXFP4 and MXFP8 use
+default configs.
 
 When `override=True`, uses the caller's AB_swapped/mma_bn/cta_group/
 num_pipeline_stages directly (for ablation studies and benchmarking).
@@ -42,7 +42,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.utils.index import Index
 from layout import TileTensor
 
-from linalg.fp4_utils import NVFP4_SF_DTYPE, MXFP8_SF_DTYPE
+from linalg.fp4_utils import NVFP4_SF_DTYPE, MXFP4_SF_DTYPE, MXFP8_SF_DTYPE
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul import grouped_matmul_block_scaled
 
@@ -51,6 +51,8 @@ def _scaling_kind[a_type: DType, scales_dtype: DType]() -> UMMAKind:
     """Infer UMMAKind from input and scale dtypes."""
     comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
         return UMMAKind.KIND_MXF4NVF4
+    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
+        return UMMAKind.KIND_MXF4
     else:
         comptime assert (
             a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
@@ -417,8 +419,8 @@ def grouped_matmul_block_scaled_sm100_dispatch[
 ) raises:
     """Dispatch grouped block-scaled matmul based on input dtypes.
 
-    Routes NVFP4 to shape-tuned decode/prefill dispatch, and MXFP8
-    to a common launcher with default config.
+    Routes NVFP4 to shape-tuned decode/prefill dispatch, and MXFP4/MXFP8
+    to a common launcher with default configs.
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
@@ -453,6 +455,26 @@ def grouped_matmul_block_scaled_sm100_dispatch[
             expert_scales,
             num_active_experts,
             estimated_total_m,
+            ctx,
+        )
+    elif scaling_kind == UMMAKind.KIND_MXF4:
+        _launch_grouped_block_scaled[
+            transpose_b,
+            AB_swapped=False,
+            mma_bn=128,
+            cta_group=1,
+            scaling_kind=UMMAKind.KIND_MXF4,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
             ctx,
         )
     elif scaling_kind == UMMAKind.KIND_MXF8F6F4:
