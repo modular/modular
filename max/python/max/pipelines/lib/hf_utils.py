@@ -644,11 +644,36 @@ class HuggingFaceRepo:
         """Returns the weight formats available in this repo."""
         return list(self.weight_files.keys())
 
-    def encoding_for_file(self, file: str | Path) -> SupportedEncoding:
-        """Infers the supported encoding for a given weight file path."""
+    def encoding_for_file(
+        self,
+        file: str | Path,
+        preferred_encoding: SupportedEncoding | None = None,
+    ) -> SupportedEncoding:
+        """Infers the supported encoding for a given weight file path.
+
+        Args:
+            file: The weight file path.
+            preferred_encoding: If set and present in the repo's supported
+                encodings, return it directly. Useful for multi-encoding
+                safetensors repos (e.g. FP4 repos that also contain BF16
+                norm weights).
+        """
         if str(file).endswith(".safetensors"):
-            # If this file is safetensors, return the first encoding, as Safetensor repos can only have one.
-            return self.supported_encodings[0]
+            supported = self.supported_encodings
+            if preferred_encoding and preferred_encoding in supported:
+                return preferred_encoding
+            # For multi-encoding repos, pick the most specific quantized
+            # format (matches priority in MAXModelConfig._try_infer_encoding).
+            if len(supported) > 1:
+                for candidate in (
+                    "float4_e2m1fnx2",
+                    "float8_e4m3fn",
+                    "bfloat16",
+                    "float32",
+                ):
+                    if candidate in supported:
+                        return candidate
+            return supported[0]
         elif str(file).endswith(".gguf"):
             encoding = parse_supported_encoding_from_file_name(str(file))
             if encoding:
