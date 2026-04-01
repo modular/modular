@@ -111,8 +111,9 @@ public:
                                  StructDeclOp closureWrapper,
                                  StructDeclOp closureImpl, SMLoc location);
   Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
-                      ArrayRef<Capture> captures, StructDeclOp wrapper,
-                      TraitDeclOp trait, Location location, bool isCopyable);
+                      ArrayRef<Capture> captures, TraitDeclOp trait,
+                      Location location, bool isCopyable,
+                      FnTypeGeneratorType closureSig);
   static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
                                   StringRef name, SMLoc location);
 
@@ -288,18 +289,21 @@ private:
                          UnitAttr &isMove, ASTDecl &nestedFnDecl);
 
   /// Build a MemSymbolTripleAttr for capturing a concrete StructType value.
-  /// Returns {triple, isTrivial}. Returns {nullptr, false} on error.
-  std::pair<MemSymbolTripleAttr, bool>
+  /// Returns {triple, highestConvention}. Returns {nullptr, Unspecified} on
+  /// error.
+  std::pair<MemSymbolTripleAttr, TypeConvention>
   buildStructCaptureInfo(StructType structType, const Capture &capture,
-                         CaptureConvention convention, bool isRegPassable,
-                         UnitAttr &isMove, ASTDecl &nestedFnDecl);
+                         CaptureConvention convention,
+                         TypeConvention requestedConvention, UnitAttr &isMove,
+                         ASTDecl &nestedFnDecl);
 
   /// Build a MemSymbolTripleAttr for capturing a generic ParamType value.
   /// Uses GetWitnessAttr to reference copy/move/del from the trait constraint.
-  /// Returns nullptr on error.
-  MemSymbolTripleAttr
+  /// Returns {nullptr, Unspecified} on error.
+  std::pair<MemSymbolTripleAttr, TypeConvention>
   buildParamCaptureInfo(ParamType paramType, const Capture &capture,
-                        CaptureConvention convention, UnitAttr &isMove,
+                        CaptureConvention convention,
+                        TypeConvention requestedConvention, UnitAttr &isMove,
                         ASTDecl &nestedFnDecl, ASTDecl &moduleDecl);
 
   /// AnyType is the base metatype for all types.
@@ -309,7 +313,9 @@ private:
   /// ImplicitlyDestructible trait is a parent of all closures. Cache its
   /// defining op.
   ClosureParent implicitlyDestructibleParent;
-  // TrivialRegisterPassable marks the state as register passable
+  /// RegisterPassable marks the type as register passable.
+  ClosureParent registerPassableParent;
+  /// TrivialRegisterPassable marks the state as trivially register passable.
   ClosureParent trivialRegisterTypeParent;
   /// Copy trait is a parent of some closures. Cache its defining op.
   ClosureParent copyParent;

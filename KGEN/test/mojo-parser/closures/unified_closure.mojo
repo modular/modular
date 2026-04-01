@@ -1284,3 +1284,52 @@ def arg_metadata_closure(x: Int):
         return x
 
     _ = _kernel(x)
+
+
+# // -----
+
+# COM: Verify that a register_passable closure capturing a generic
+# COM: register_passable closure and a concrete register_passable struct gets
+# COM: convention register_passable (not trivial)
+
+# CHECK: lit.struct.decl @"def(y: Int) register_passable -> Int_{{.*}}"{{.*}} register_passable attributes
+
+struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
+    var value: Int
+
+    def __init__(out self, value: Int):
+        self.value = value
+
+def call_inner[
+    F: ImplicitlyCopyable & def(Int) unified register_passable -> Int
+](f: F, x: Int) -> Int:
+    var payload = NonTrivialPayload(1)
+
+    def outer(y: Int) unified register_passable {var f, var payload} -> Int:
+        return f(y) + payload.value
+
+    return outer(x)
+
+# // -----
+
+# COM: Verify that a register_passable closure capturing a trivially
+# COM: register_passable callback and a trivial struct gets convention
+# COM: register_passable_trivial.
+
+# CHECK: lit.struct.decl @"def(y: Int) register_passable -> Int_{{.*}}"{{.*}} register_passable_trivial attributes
+
+struct TrivialPayload(TrivialRegisterPassable):
+    var value: Int
+
+    def __init__(out self, value: Int):
+        self.value = value
+
+def call_inner[
+    F: TrivialRegisterPassable & def(Int) unified register_passable -> Int
+](f: F, x: Int) -> Int:
+    var payload = TrivialPayload(1)
+
+    def outer(y: Int) unified register_passable {var f, var payload} -> Int:
+        return f(y) + payload.value
+
+    return outer(x)
