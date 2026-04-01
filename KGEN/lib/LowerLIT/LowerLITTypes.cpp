@@ -910,6 +910,12 @@ static Value lowerOp(RefPackExtractOp op, RefPackExtractOpAdaptor adaptor,
   return value;
 }
 
+static Value lowerOp(RefPackFromPointerPackOp op,
+                     RefPackFromPointerPackOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  return adaptor.getPack();
+}
+
 static Value lowerVersionOp(Operation *op, int64_t number, LITTypeLowerer &b) {
   return ParamConstantOp::create(
       b, op->getLoc(),
@@ -1012,8 +1018,9 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
               RefToPointerOp, RefFromPointerOp, RefFromPointerREPLOp,
               RefToKgenPtrOp, RefFromKgenPtrOp, RefStructGEROp, RefLoadOp,
               RefStoreOp, MemcpyOp, RebindOp, RefPackCreateOp, RefPackExtractOp,
-              VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp,
-              MojoVersionMajorOp, MojoVersionMinorOp, MojoVersionPatchOp>(
+              RefPackFromPointerPackOp, VarDeclOp, VarLifetimeStartOp,
+              VarLifetimeEndOp, MojoVersionMajorOp, MojoVersionMinorOp,
+              MojoVersionPatchOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });

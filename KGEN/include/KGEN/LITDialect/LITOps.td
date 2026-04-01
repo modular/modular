@@ -1990,6 +1990,34 @@ def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
 }
 
 //===----------------------------------------------------------------------===//
+// RefPackFromPointerPackOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefPackFromPointerPackOp : LITOp<"ref.pack.from_pointer_pack", [Pure]> {
+  let summary = "cast a pointer pack to a reference pack";
+  let description = [{
+    The `lit.ref.pack.from_pointer_pack` operation interprets a `!kgen.pack` of
+    pointers as a `!lit.ref.pack`. The result type supplies the common origin and
+    address space, and its variadic element list must match the operand pack's
+    element types after applying `variadic_ptrremove_map`.
+
+    Example:
+
+    ```mlir
+    %0 = lit.ref.pack.from_pointer_pack %pack
+      : !kgen.pack<[pointer<index>, pointer<f32>]>
+     -> !lit.ref.pack<:variadic<!kgen.type> [index, f32], imm #lit.any.origin>
+    ```
+  }];
+
+  let arguments = (ins KGEN_PackType:$pack);
+  let results = (outs LIT_RefPackType:$result);
+  let assemblyFormat = [{
+    $pack attr-dict `:` type($pack) `->` type($result)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ClosureInit
 //===----------------------------------------------------------------------===//
 

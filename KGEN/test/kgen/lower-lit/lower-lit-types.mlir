@@ -331,6 +331,20 @@ lit.fn @pass_pack<life: !lit.origin<1>>
 
 // -----
 
+// CHECK-LABEL: kgen.func @ref_pack_from_pointer_pack(
+// CHECK-SAME: %arg0: !kgen.pack<[pointer<index, 4>, pointer<f32, 4>]>) -> !kgen.pack<[pointer<index, 4>, pointer<f32, 4>]>
+kgen.func @ref_pack_from_pointer_pack(
+    %pack: !kgen.pack<[!kgen.pointer<index, 4>, !kgen.pointer<f32, 4>]>)
+    -> !lit.ref.pack<:variadic<!kgen.type> [index, f32], imm #lit.any.origin, 4> {
+  // CHECK-NEXT: kgen.return %arg0 : !kgen.pack<[pointer<index, 4>, pointer<f32, 4>]>
+  %0 = lit.ref.pack.from_pointer_pack %pack
+    : !kgen.pack<[!kgen.pointer<index, 4>, !kgen.pointer<f32, 4>]>
+   -> !lit.ref.pack<:variadic<!kgen.type> [index, f32], imm #lit.any.origin, 4>
+  kgen.return %0 : !lit.ref.pack<:variadic<!kgen.type> [index, f32], imm #lit.any.origin, 4>
+}
+
+// -----
+
 lit.fn @unbox(%arg: !lit.struct<@Int>) -> index {
   %0 = index.constant 0
   kgen.return %0 : index

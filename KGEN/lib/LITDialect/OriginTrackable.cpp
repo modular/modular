@@ -687,12 +687,32 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal) {
     // Handle positional/homogenous variadics.
     for (auto elt : vararg.getOperands())
       result.push_back(elt);
-  } else {
+  } else if (auto pack = ctorArg.getDefiningOp<RefPackCreateOp>()) {
     // Handle variadic packs.
-    auto pack = ctorArg.getDefiningOp<RefPackCreateOp>();
-    assert(pack && "unknown variadic pack processing logic");
     for (auto packOperand : pack.getOperands())
       result.push_back(packOperand);
+  } else {
+    // This is either a RefPackFromPointerPackOp directly, or a var defined by a
+    // RefPackFromPointerPackOp. Ensure it's one of these cases.
+    auto fromPointerPackOp = ctorArg.getDefiningOp<RefPackFromPointerPackOp>();
+    if (!fromPointerPackOp) {
+      auto extractStoredValue = [&](Value value) -> Value {
+        auto refLoad = ctorArg.getDefiningOp<RefLoadOp>();
+        if (!refLoad)
+          return {};
+        auto varDecl = refLoad.getOperand().getDefiningOp<VarDeclOp>();
+        if (!varDecl)
+          return {};
+        for (auto user : varDecl.getResult().getUsers())
+          if (auto refStore = dyn_cast<RefStoreOp>(user))
+            return refStore.getValue();
+        return {};
+      };
+      Value storedValue = extractStoredValue(ctorArg);
+      assert(storedValue && "unknown variadic pack processing logic");
+      fromPointerPackOp = storedValue.getDefiningOp<RefPackFromPointerPackOp>();
+      assert(fromPointerPackOp);
+    }
   }
   return result;
 }
