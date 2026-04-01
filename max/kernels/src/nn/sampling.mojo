@@ -230,7 +230,7 @@ def update_frequency_data[
             token_type=token_type,
             block_size=block_size,
         ]
-        dev_ctx.enqueue_function_experimental[kernel](
+        dev_ctx.enqueue_function[kernel, kernel](
             compressed_frequency_data,
             frequency_offsets.as_immut(),
             new_tokens.as_immut(),
