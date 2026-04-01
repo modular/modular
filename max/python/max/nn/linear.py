@@ -735,9 +735,7 @@ class GPTQLinear(Linear):
                 res = ops.qmatmul(
                     self.qweight.quantization_encoding,
                     self.quantization_config,
-                    ops.gather(
-                        x, perm_idx_for_device, axis=(x.rank - 1)
-                    ),
+                    ops.gather(x, perm_idx_for_device, axis=(x.rank - 1)),
                     weight,
                     perm_idx_for_device,
                 )

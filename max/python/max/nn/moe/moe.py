@@ -148,6 +148,19 @@ class MoEGate(Module):
         return shards
 
 
+def _run_gptq_expert(
+    expert: Callable[[TensorValue], TensorValue],
+    expert_input: TensorValue,
+) -> tuple[TensorValue]:
+    return (expert(expert_input),)
+
+
+def _return_gptq_expert_input(
+    expert_input: TensorValue,
+) -> tuple[TensorValue]:
+    return (expert_input,)
+
+
 class MoE(Module, Shardable):
     """Implementation of Mixture of Experts (MoE).
 
@@ -756,12 +769,6 @@ class MoEGPTQ(MoE):
                 0
             ].reshape(())
 
-            def _run_expert() -> tuple[TensorValue]:
-                return (expert(expert_input),)
-
-            def _pass_through() -> tuple[TensorValue]:
-                return (expert_input,)
-
             expert_outputs.append(
                 ops.cond(
                     expert_token_count
@@ -769,8 +776,8 @@ class MoEGPTQ(MoE):
                         0, expert_token_count.dtype, DeviceRef.CPU()
                     ),
                     [expert_input.type],
-                    _run_expert,
-                    _pass_through,
+                    partial(_run_gptq_expert, expert, expert_input),
+                    partial(_return_gptq_expert_input, expert_input),
                 )[0]
             )
 

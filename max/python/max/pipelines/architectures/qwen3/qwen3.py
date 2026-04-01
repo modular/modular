@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 
 from max.driver import DLPackArray
 from max.dtype import DType
@@ -79,6 +79,27 @@ class Qwen3TransformerBlock(Module):
         use_gptq = (
             config.model_quantization_encoding == QuantizationEncoding.GPTQ
         )
+        self.self_attn: Module
+        self.self_attn_shards: Sequence[
+            Callable[
+                [
+                    TensorValue,
+                    TensorValue,
+                    PagedCacheValues,
+                    TensorValue,
+                    TensorValue,
+                ],
+                TensorValue,
+            ]
+        ]
+        self.mlp: MLP | MoE
+        self.mlp_shards: Sequence[Callable[[TensorValue], TensorValue]]
+        self.input_layernorm_shards: Sequence[
+            Callable[[TensorValue], TensorValue]
+        ]
+        self.post_attention_layernorm_shards: Sequence[
+            Callable[[TensorValue], TensorValue]
+        ]
 
         # Create attention layer
         if use_gptq:
@@ -97,7 +118,7 @@ class Qwen3TransformerBlock(Module):
             )
             self.self_attn_shards = [self.self_attn]
         else:
-            self.self_attn = Qwen3Attention(
+            dense_self_attn = Qwen3Attention(
                 num_attention_heads=config.num_attention_heads,
                 num_key_value_heads=config.num_key_value_heads,
                 hidden_size=config.hidden_size,
@@ -112,10 +133,11 @@ class Qwen3TransformerBlock(Module):
                 norm_dtype=config.norm_dtype or config.dtype,
                 quant_config=config.quant_config,
             )
-            self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
-                num_devices
+            dense_self_attn.sharding_strategy = (
+                ShardingStrategy.tensor_parallel(num_devices)
             )
-            self.self_attn_shards = self.self_attn.shard(config.devices)
+            self.self_attn = dense_self_attn
+            self.self_attn_shards = dense_self_attn.shard(config.devices)
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx, linear_cls)
@@ -317,6 +339,7 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
             multiply_before_cast=False,
         )
 
+        linear_cls: Callable[..., Linear]
         if config.quantization_config is not None:
             linear_cls = functools.partial(
                 GPTQLinear,

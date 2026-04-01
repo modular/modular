@@ -20,7 +20,7 @@ from collections.abc import Callable, Iterable
 from functools import partial
 
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import _compute_shard_range
