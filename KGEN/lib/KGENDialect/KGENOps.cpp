@@ -1880,21 +1880,24 @@ assembleMemSymbolTripleAttr(MemSymbolTripleParts symbolTriple,
                             Type captureType) {
   MLIRContext *context = captureType.getContext();
 
-  SymbolConstantAttr copy;
-  if (symbolTriple.copy.callee)
-    copy = makeSymbol(captureType, symbolTriple.copy.callee,
-                      symbolTriple.copy.paramValues,
-                      {ArgConvention::ReadMem, ArgConvention::ByRefResult});
-  SymbolConstantAttr move;
-  if (symbolTriple.move.callee)
-    move = makeSymbol(captureType, symbolTriple.move.callee,
-                      symbolTriple.move.paramValues,
-                      {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
-  SymbolConstantAttr del;
-  if (symbolTriple.del.callee)
-    del = makeSymbol(captureType, symbolTriple.del.callee,
-                     symbolTriple.del.paramValues, {ArgConvention::OwnedMem},
-                     /*isConstructor=*/false);
+  auto materialize = [&](const MemSymbolTripleEntry &entry,
+                         ArrayRef<ArgConvention> argConventions,
+                         bool isConstructor = true) -> TypedAttr {
+    if (entry.isTypedAttr())
+      return entry.attr;
+    if (!entry.isSymbolShorthand())
+      return {};
+    return makeSymbol(captureType, entry.symbolParts.callee,
+                      entry.symbolParts.paramValues, argConventions,
+                      isConstructor);
+  };
+
+  TypedAttr copy = materialize(
+      symbolTriple.copy, {ArgConvention::ReadMem, ArgConvention::ByRefResult});
+  TypedAttr move = materialize(
+      symbolTriple.move, {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
+  TypedAttr del = materialize(symbolTriple.del, {ArgConvention::OwnedMem},
+                              /*isConstructor=*/false);
   UnitAttr isMove;
   if (symbolTriple.isMove)
     isMove = UnitAttr::get(context);
@@ -1980,6 +1983,8 @@ static void printMemSymbolTriple(OpAsmPrinter &p, MemSymbolTripleAttr triple) {
   p << "[";
   printMemSymbolTripleAttrWithoutType(p, triple.getCopy(), triple.getMove(),
                                       triple.getDel());
+  if (triple.getIsMove())
+    p << " " << MemSymbolTripleAttr::kIsMoveKeyword;
   p << "]";
 }
 

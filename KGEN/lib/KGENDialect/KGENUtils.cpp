@@ -2341,13 +2341,23 @@ void KGEN::printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region) {
 
 ParseResult KGEN::parseMemSymbolParts(AsmParser &p,
                                       MemSymbolTripleParts &parts) {
-  SmallVector<SymbolParts> symbols;
+  SmallVector<MemSymbolTripleEntry> symbols;
   do {
     SymbolRefAttr callee;
-    ParameterExprArrayAttr paramValues;
-    if (p.parseAttribute(callee) || parseParameterValues(p, paramValues))
-      return failure();
-    symbols.push_back(SymbolParts{callee, paramValues});
+    OptionalParseResult symbolParse = p.parseOptionalAttribute(callee);
+    if (symbolParse.has_value()) {
+      if (failed(*symbolParse))
+        return failure();
+      ParameterExprArrayAttr paramValues;
+      if (parseParameterValues(p, paramValues))
+        return failure();
+      symbols.push_back(SymbolParts{callee, paramValues});
+    } else {
+      TypedAttr entry;
+      if (p.parseAttribute(entry))
+        return failure();
+      symbols.push_back(entry);
+    }
   } while (succeeded(p.parseOptionalComma()));
   bool isMove =
       succeeded(p.parseOptionalKeyword(MemSymbolTripleAttr::kIsMoveKeyword));
@@ -2385,28 +2395,31 @@ SymbolConstantAttr KGEN::makeSymbol(Type type, SymbolRefAttr symbol,
 }
 
 void KGEN::printMemSymbolTripleAttrWithoutType(
-    AsmPrinter &p, SymbolConstantAttr copy, SymbolConstantAttr move,
-    SymbolConstantAttr del,
+    AsmPrinter &p, TypedAttr copy, TypedAttr move, TypedAttr del,
     std::optional<llvm::function_ref<void(AsmPrinter &p, FuncTypeGeneratorType,
                                           ArrayRef<TypedAttr> params)>>
         printParameterSet) {
-  auto printSymbol = [&](SymbolConstantAttr callee) {
-    p << callee.getSymbol();
-    if (printParameterSet.has_value())
-      printParameterSet.value()(p, callee.getType(), callee.getParamValues());
-    else
-      printParameterValues(p, callee.getParamValues());
+  auto printEntry = [&](TypedAttr entry) {
+    if (auto callee = dyn_cast<SymbolConstantAttr>(entry)) {
+      p << callee.getSymbol();
+      if (printParameterSet.has_value())
+        printParameterSet.value()(p, callee.getType(), callee.getParamValues());
+      else
+        printParameterValues(p, callee.getParamValues());
+    } else {
+      p.printAttribute(entry);
+    }
   };
   if (copy) {
-    printSymbol(copy);
+    printEntry(copy);
     p << ", ";
   }
   if (move) {
-    printSymbol(move);
+    printEntry(move);
     p << ", ";
   }
   if (del)
-    printSymbol(del);
+    printEntry(del);
 }
 
 std::string KGEN::printSimpleParamAttrValues(

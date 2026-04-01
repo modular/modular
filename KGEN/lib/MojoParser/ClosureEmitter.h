@@ -280,6 +280,28 @@ private:
                                       StructFieldOp devicePassedField,
                                       ParamDeclAttr impl,
                                       ParamDeclAttr originSet);
+  /// Validate copy/move/del symbols and build a MemSymbolTripleAttr.
+  /// Emits errors if required symbols are missing for the given convention.
+  MemSymbolTripleAttr
+  validateAndBuildTriple(TypedAttr copy, TypedAttr move, TypedAttr del,
+                         CaptureConvention convention, const Capture &capture,
+                         UnitAttr &isMove, ASTDecl &nestedFnDecl);
+
+  /// Build a MemSymbolTripleAttr for capturing a concrete StructType value.
+  /// Returns {triple, isTrivial}. Returns {nullptr, false} on error.
+  std::pair<MemSymbolTripleAttr, bool>
+  buildStructCaptureInfo(StructType structType, const Capture &capture,
+                         CaptureConvention convention, bool isRegPassable,
+                         UnitAttr &isMove, ASTDecl &nestedFnDecl);
+
+  /// Build a MemSymbolTripleAttr for capturing a generic ParamType value.
+  /// Uses GetWitnessAttr to reference copy/move/del from the trait constraint.
+  /// Returns nullptr on error.
+  MemSymbolTripleAttr
+  buildParamCaptureInfo(ParamType paramType, const Capture &capture,
+                        CaptureConvention convention, UnitAttr &isMove,
+                        ASTDecl &nestedFnDecl, ASTDecl &moduleDecl);
+
   /// AnyType is the base metatype for all types.
   ClosureParent anyParent;
   /// Movable trait is a parent of all closures. Cache its defining op.
