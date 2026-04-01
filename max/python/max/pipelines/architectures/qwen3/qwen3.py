@@ -384,13 +384,15 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         override_quantization_encoding: bool = False,
         weight_alignment: int | None = None,
         strict: bool = True,
-    ) -> None:
+        ) -> None:
         super().load_state_dict(
             state_dict,
             override_quantization_encoding=override_quantization_encoding,
             weight_alignment=weight_alignment,
             strict=strict,
         )
+        # GPTQ attention linears are materialized as dense fallback weights,
+        # while MoEGPTQ experts opt into packed-weight execution explicitly.
         materialize_gptq_linear_weights(self)
 
     def __call__(
