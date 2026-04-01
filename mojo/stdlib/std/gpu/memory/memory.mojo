@@ -870,9 +870,6 @@ def external_memory[
     - The pointer is only valid within the GPU kernel execution context.
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
-    comptime assert (
-        not is_apple_gpu()
-    ), "external memory is not supported on Apple GPU"
     var extern_ptr_symbol = UnsafePointer[
         StaticTuple[dtype, 0], MutAnyOrigin, address_space=address_space
     ](
