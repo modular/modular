@@ -369,7 +369,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
             if not key_ptr:
                 raise cpy.unsafe_get_error()
             var val = entry.value.copy().to_python_object()
-            var errno = cpy.PyDict_SetItem(dict_ptr, key_ptr, val._as_py_object_ptr())
+            var errno = cpy.PyDict_SetItem(
+                dict_ptr, key_ptr, val._as_py_object_ptr()
+            )
             cpy.Py_DecRef(key_ptr)
             _ = val
             if errno == -1:
@@ -427,7 +429,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
         for i in range(len(tuples)):
             var key = tuples[i][0].copy().to_python_object()
             var val = tuples[i][1].copy().to_python_object()
-            var errno = cpy.PyDict_SetItem(dict_ptr, key._as_py_object_ptr(), val._as_py_object_ptr())
+            var errno = cpy.PyDict_SetItem(
+                dict_ptr, key._as_py_object_ptr(), val._as_py_object_ptr()
+            )
             _ = key
             _ = val
             if errno == -1:
@@ -575,7 +579,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
             A PythonObject that holds the type object.
         """
         ref cpy = Self().cpython()
-        return PythonObject(from_owned=cpy.PyObject_Type(obj._as_py_object_ptr()))
+        return PythonObject(
+            from_owned=cpy.PyObject_Type(obj._as_py_object_ptr())
+        )
 
     @staticmethod
     def none() -> PythonObject:

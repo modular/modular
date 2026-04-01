@@ -210,7 +210,9 @@ struct PythonObject(
         #   _new_ PyTypeObject. We want to reference the existing _singleton_
         #   PyTypeObject that represents a given Mojo type.
         var type_obj = lookup_py_type_object[T]()
-        var type_obj_ptr = type_obj._obj_ptr.bitcast[PyTypeObject]()._as_unsafe_pointer()
+        var type_obj_ptr = type_obj._obj_ptr.bitcast[
+            PyTypeObject
+        ]()._as_unsafe_pointer()
         return _unsafe_alloc_init(type_obj_ptr, alloc^)
 
     # TODO(MSTDL-715):
@@ -402,7 +404,9 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var dict_ptr = cpy.PyDict_New()
         for key, val in zip(keys, values):
-            var errno = cpy.PyDict_SetItem(dict_ptr, key._as_py_object_ptr(), val._as_py_object_ptr())
+            var errno = cpy.PyDict_SetItem(
+                dict_ptr, key._as_py_object_ptr(), val._as_py_object_ptr()
+            )
             if errno == -1:
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=dict_ptr)
@@ -460,7 +464,9 @@ struct PythonObject(
             If the attribute does not exist.
         """
         ref cpy = Python().cpython()
-        var attr_ptr = cpy.PyObject_GetAttrString(self._as_py_object_ptr(), name^)
+        var attr_ptr = cpy.PyObject_GetAttrString(
+            self._as_py_object_ptr(), name^
+        )
         if not attr_ptr:
             raise cpy.unsafe_get_error()
         return PythonObject(from_owned=attr_ptr)
@@ -512,7 +518,9 @@ struct PythonObject(
             True if they are the same object and False otherwise.
         """
         ref cpy = Python().cpython()
-        return cpy.Py_Is(self._as_py_object_ptr(), other._as_py_object_ptr()) != 0
+        return (
+            cpy.Py_Is(self._as_py_object_ptr(), other._as_py_object_ptr()) != 0
+        )
 
     # TODO(MOCO-2924): This should take a `*Ts: ConvertibleToPython` like other
     #   methods, however this currently runs into a spurious inference warning.
@@ -602,7 +610,9 @@ struct PythonObject(
 
             comptime for i in range(size):
                 var arg = args[i].copy().to_python_object()
-                _ = cpy.PyTuple_SetItem(key_ptr, i, cpy.Py_NewRef(arg._as_py_object_ptr()))
+                _ = cpy.PyTuple_SetItem(
+                    key_ptr, i, cpy.Py_NewRef(arg._as_py_object_ptr())
+                )
                 _ = arg^
 
         var value_obj = value^.to_python_object()
@@ -1558,11 +1568,15 @@ struct PythonObject(
         comptime for i in range(size):
             var arg = args[i].copy().to_python_object()
 
-            _ = cpy.PyTuple_SetItem(args_ptr, i, cpy.Py_NewRef(arg._as_py_object_ptr()))
+            _ = cpy.PyTuple_SetItem(
+                args_ptr, i, cpy.Py_NewRef(arg._as_py_object_ptr())
+            )
 
             _ = arg^
         var kwargs_ptr = Python._dict(kwargs)
-        var res_ptr = cpy.PyObject_Call(self._as_py_object_ptr(), args_ptr, kwargs_ptr)
+        var res_ptr = cpy.PyObject_Call(
+            self._as_py_object_ptr(), args_ptr, kwargs_ptr
+        )
         cpy.Py_DecRef(args_ptr)
         cpy.Py_DecRef(kwargs_ptr)
         if not res_ptr:
@@ -1795,7 +1809,9 @@ struct PythonObject(
             If `T` has not been bound to a Python type object.
         """
         ref cpy = Python().cpython()
-        var type = PyObjectPtr(upcast_from=cpy.Py_TYPE(self._as_py_object_ptr()))
+        var type = PyObjectPtr(
+            upcast_from=cpy.Py_TYPE(self._as_py_object_ptr())
+        )
         var expected_type = lookup_py_type_object[T]()._as_py_object_ptr()
         if type == expected_type:
             ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
