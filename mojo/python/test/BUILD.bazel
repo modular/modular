@@ -12,3 +12,12 @@ modular_py_test(
         "@mojo//:python",
     ],
 )
+
+modular_py_test(
+    name = "test_entrypoints",
+    size = "small",
+    srcs = ["test_entrypoints.py"],
+    deps = [
+        "@mojo//:python",
+    ],
+)
