@@ -431,9 +431,6 @@ class InferenceSession:
         if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
             self.use_fi_topk_kernel(use_fi_topk)
 
-        if pdl_level := os.getenv("PDL_LEVEL"):
-            self._pdl_level(pdl_level)
-
     def __repr__(self) -> str:
         if self.num_threads:
             return f"<modular engine InferenceSession(num_threads={self.num_threads})>"
@@ -754,16 +751,6 @@ class InferenceSession:
             return
 
         self._set_mojo_define("MODULAR_USE_VENDOR_CCL", 1)
-
-    def _pdl_level(self, level: str | PDLLevel) -> None:
-        """Level of overlap of kernel launch."""
-        if not isinstance(level, PDLLevel):
-            if level not in {"0", "1", "2"}:
-                raise TypeError(
-                    f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PDLLevel]}"
-                )
-
-        self._set_mojo_define("PDL_LEVEL", int(level))
 
     def _dump_gpu_asm(self, option: bool | str | Path = True) -> None:
         """Enables dumping of gpu asm.

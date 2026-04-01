@@ -272,7 +272,6 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
         "device_specs",
         "in_dtype",
         "out_dtype",
-        "pdl_level",
     }
     if cls is PipelineConfig:
         skip_fields.update(
