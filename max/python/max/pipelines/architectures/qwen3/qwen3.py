@@ -384,7 +384,7 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         override_quantization_encoding: bool = False,
         weight_alignment: int | None = None,
         strict: bool = True,
-        ) -> None:
+    ) -> None:
         super().load_state_dict(
             state_dict,
             override_quantization_encoding=override_quantization_encoding,

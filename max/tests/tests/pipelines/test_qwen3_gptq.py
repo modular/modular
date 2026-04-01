@@ -142,6 +142,10 @@ def test_convert_qwen3_moe_gptq_state_dict_preserves_needed_perm_idx() -> None:
         cast(Any, pipeline_config),
     )
 
+    assert {key for key in new_state_dict if key.endswith("perm_idx")} == {
+        "layers.0.self_attn.q_proj.perm_idx",
+        "layers.0.mlp.experts.0.gate_proj.perm_idx",
+    }
     assert "layers.0.self_attn.q_proj.perm_idx" in new_state_dict
     assert "layers.0.mlp.experts.0.gate_proj.perm_idx" in new_state_dict
     assert "layers.0.self_attn.k_proj.perm_idx" not in new_state_dict
@@ -171,7 +175,9 @@ def test_convert_qwen3_moe_gptq_state_dict_preserves_needed_perm_idx() -> None:
     )
 
 
-def test_convert_qwen3_moe_gptq_state_dict_drops_perm_idx_without_desc_act() -> None:
+def test_convert_qwen3_moe_gptq_state_dict_drops_perm_idx_without_desc_act() -> (
+    None
+):
     state_dict = {
         "model.layers.0.self_attn.q_proj.g_idx": _FakeWeights(
             np.array([3, 0, 2, 1], dtype=np.int32),
@@ -200,6 +206,7 @@ def test_convert_qwen3_moe_gptq_state_dict_drops_perm_idx_without_desc_act() -> 
         cast(Any, _make_pipeline_config()),
     )
 
+    assert not any(key.endswith("perm_idx") for key in new_state_dict)
     assert "layers.0.self_attn.q_proj.perm_idx" not in new_state_dict
     assert "layers.0.mlp.experts.0.gate_proj.perm_idx" not in new_state_dict
     assert "layers.0.mlp.experts.0.gate_proj.qzeros" not in new_state_dict
@@ -212,10 +219,6 @@ def test_convert_qwen3_moe_gptq_state_dict_drops_perm_idx_without_desc_act() -> 
 
 def test_qwen3_gptq_requires_single_device() -> None:
     with pytest.raises(ValueError) as exc_info:
-        Qwen3(
-            _make_qwen3_gptq_config(
-                [DeviceRef.CPU(), DeviceRef.CPU()]
-            )
-        )
+        Qwen3(_make_qwen3_gptq_config([DeviceRef.CPU(), DeviceRef.CPU()]))
 
     assert "single-device execution only" in str(exc_info.value)
