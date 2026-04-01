@@ -158,7 +158,11 @@ def _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
     comptime if result.isa[Error]():
         comptime assert False, String(result[Error])
     else:
-        return result.take[List[Byte]]()
+        # Extract at comptime and explicitly materialize to runtime, since
+        # `Variant[List[Byte], Error]` is not `ImplicitlyCopyable` (`Error`
+        # is only `Copyable`).
+        comptime value = result.take[List[Byte]]()
+        return materialize[value]()
 
 
 def _encode_format_string_no_raises(

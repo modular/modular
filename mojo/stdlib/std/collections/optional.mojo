@@ -267,6 +267,18 @@ struct Optional[T: Movable](
     ):
         self = unsafe_origin_cast[AnyOrigin[mut=True]](nullable.as_nonnull())
 
+    # TODO(MOCO-3640): Remove once the compiler can synthesize copy
+    # constructors through variadic conditional conformances
+    # (AllCopyable[_NoneType, T] when T: Copyable).
+    @always_inline
+    def __init__(out self, *, copy: Self):
+        """Copy-initialize an `Optional`.
+
+        Args:
+            copy: The `Optional` to copy from.
+        """
+        self._value = Self._type(copy=copy._value)
+
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#

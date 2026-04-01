@@ -63,6 +63,7 @@ This version is still a work in progress.
   `_constrained_conforms_to` checks:
   - `Span`: `Writable`, `Hashable`
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
+  - `Variant`: `Copyable`, `ImplicitlyCopyable`
 
 - GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
   `Int`.
