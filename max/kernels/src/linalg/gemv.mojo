@@ -287,24 +287,14 @@ def _dot_accum[
     elif is_amd_gpu():
         # AMD non-BF16 (e.g. FP8): vector multiply + horizontal reduce.
         result += (a.cast[accum_type]() * b.cast[accum_type]()).reduce_add()
-    elif is_nvidia_gpu() and in_type.is_float8() and width >= 2:
-        # NVIDIA FP8: paired bitcast emits cvt.rn.f16x2.e4m3x2, eliminating
-        # PRMT byte-shuffle instructions. Multiply in f32 to avoid overflow
-        # (FP8 max=480, 480²=230400 > f16 max 65504).
-        comptime half_width = width // 2
-        var a_u16 = bitcast[DType.uint16, half_width](a)
-        var b_u16 = bitcast[DType.uint16, half_width](b)
-        comptime for l in range(half_width):
-            var a_f16 = bitcast[in_type, 2](a_u16[l]).cast[DType.float16]()
-            var b_f16 = bitcast[in_type, 2](b_u16[l]).cast[DType.float16]()
-            result += a_f16[0].cast[accum_type]() * b_f16[0].cast[accum_type]()
-            result += a_f16[1].cast[accum_type]() * b_f16[1].cast[accum_type]()
     else:
         # NVIDIA/generic: scalar element-wise loop. reduce_add() generates
         # wider intermediates that increase NVIDIA register pressure vs
         # sequential FMA chains (13% regression on small-K shapes).
+        var ac = a.cast[accum_type]()
+        var bc = b.cast[accum_type]()
         comptime for l in range(width):
-            result += a[l].cast[accum_type]() * b[l].cast[accum_type]()
+            result += ac[l] * bc[l]
 
     return result
 
