@@ -84,7 +84,7 @@ class Flux2ModelInputs:
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
-    attention_mask: np.ndarray | None = None
+    attention_mask: npt.NDArray[np.bool_] | None = None
     """Tokenizer-generated mask for the padded prompt sequence."""
 
     residual_threshold: Tensor | None = None
@@ -505,7 +505,7 @@ class Flux2Pipeline(DiffusionPipeline):
         self,
         tokens: Tensor,
         num_images_per_prompt: int = 1,
-        attention_mask: Tensor | npt.ArrayLike | None = None,
+        attention_mask: npt.ArrayLike | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Create prompt embeddings and text position IDs for the transformer.
 
@@ -529,13 +529,10 @@ class Flux2Pipeline(DiffusionPipeline):
         batch_size = 1
 
         with Tracer("text_encoder"):
-            if attention_mask is None:
-                prompt_embeds = self.text_encoder(tokens)
-            else:
-                prompt_embeds = self.text_encoder(  # type: ignore[call-arg]
-                    tokens,
-                    attention_mask=attention_mask,
-                )
+            prompt_embeds = self.text_encoder(
+                tokens,
+                attention_mask=attention_mask,
+            )
 
         with Tracer("post_process"):
             if num_images_per_prompt != 1:

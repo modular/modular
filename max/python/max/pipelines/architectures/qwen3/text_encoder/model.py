@@ -166,7 +166,7 @@ class Qwen3TextEncoderModel(ComponentModel):
     def __call__(
         self,
         tokens: Buffer,
-        attention_mask: npt.ArrayLike,
+        attention_mask: npt.ArrayLike | None = None,
         *,
         hidden_state_index: int | None = None,
     ) -> Buffer:
@@ -177,7 +177,13 @@ class Qwen3TextEncoderModel(ComponentModel):
                 )
             tokens = tokens[0]
 
-        attention_mask_np = np.asarray(attention_mask)
+        if attention_mask is None:
+            attention_mask_np = np.ones(
+                (int(tokens.shape[0]),),
+                dtype=np.bool_,
+            )
+        else:
+            attention_mask_np = np.asarray(attention_mask)
         attention_bias_np = attention_bias_from_attention_mask_array(
             attention_mask_np,
             expected_seq_len=int(tokens.shape[0]),

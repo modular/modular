@@ -90,7 +90,7 @@ class Flux2ModelInputs:
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
-    attention_mask: np.ndarray
+    attention_mask: npt.NDArray[np.bool_] | None
     """Tokenizer-generated mask for the padded prompt sequence."""
 
     def __post_init__(self) -> None:
