@@ -29,4 +29,7 @@ See PORTING_PLAN.md for implementation details.
 """
 
 from .grouped_1d1d_matmul import grouped_matmul_block_scaled
-from .dispatch import grouped_matmul_nvfp4_dispatch
+from .dispatch import (
+    grouped_matmul_nvfp4_dispatch,
+    grouped_matmul_block_scaled_sm100_dispatch,
+)
