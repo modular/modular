@@ -636,6 +636,12 @@ class ColumnParallelLinear(Linear):
 class GPTQLinear(Linear):
     """A :class:`~max.nn.Linear` layer for GPTQ encoding."""
 
+    qweight: Weight
+    scales: Weight
+    perm_idx: Weight | None
+    quantization_config: QuantizationConfig
+    packed_weight_tensor: Weight
+
     def __init__(
         self,
         in_dim: int,
@@ -723,15 +729,17 @@ class GPTQLinear(Linear):
             if self.device:
                 weight = weight.to(self.device)
             if self.perm_idx is not None:
-                perm_idx: TensorValue = self.perm_idx
+                perm_idx_for_device: TensorValue = self.perm_idx
                 if self.device:
-                    perm_idx = perm_idx.to(self.device)
+                    perm_idx_for_device = perm_idx_for_device.to(self.device)
                 res = ops.qmatmul(
                     self.qweight.quantization_encoding,
                     self.quantization_config,
-                    ops.gather(x, perm_idx, axis=(x.rank - 1)),
+                    ops.gather(
+                        x, perm_idx_for_device, axis=(x.rank - 1)
+                    ),
                     weight,
-                    perm_idx,
+                    perm_idx_for_device,
                 )
             else:
                 res = ops.qmatmul(
@@ -761,15 +769,15 @@ class GPTQLinear(Linear):
         if self.device:
             weight = weight.to(self.device)
         if self.perm_idx is not None:
-            perm_idx: TensorValue = self.perm_idx
+            perm_idx_for_fallback: TensorValue = self.perm_idx
             if self.device:
-                perm_idx = perm_idx.to(self.device)
+                perm_idx_for_fallback = perm_idx_for_fallback.to(self.device)
             res = ops.qmatmul(
                 self.qweight.quantization_encoding,
                 self.quantization_config,
-                ops.gather(x, perm_idx, axis=(x.rank - 1)),
+                ops.gather(x, perm_idx_for_fallback, axis=(x.rank - 1)),
                 weight,
-                perm_idx,
+                perm_idx_for_fallback,
             )
         else:
             res = ops.qmatmul(
@@ -868,11 +876,13 @@ def _dequantize_gptq_weight(
     scales = scales_bytes.view(scales_dtype.to_numpy()).reshape(scales_shape)
 
     shifts = (np.arange(8, dtype=np.uint32) * 4)[None, None, :]
-    unpacked = ((qweight[..., None] >> shifts) & np.uint32(0xF)).astype(
+    unpacked_int = ((qweight[..., None] >> shifts) & np.uint32(0xF)).astype(
         np.int16
     )
-    unpacked = unpacked.reshape(qweight_shape[0] * 8, qweight_shape[1])
-    unpacked = unpacked.astype(np.float32) - 8.0
+    unpacked_nibbles = unpacked_int.reshape(
+        qweight_shape[0] * 8, qweight_shape[1]
+    )
+    unpacked = unpacked_nibbles.astype(np.float32) - 8.0
 
     scale_rows = np.repeat(scales.astype(np.float32), group_size, axis=0)
     if scale_rows.shape[0] < unpacked.shape[0]:
@@ -897,7 +907,7 @@ def materialize_gptq_linear_weights(module: Module) -> None:
 
     root_weights = module._weight_values
     for name, layer in recursive_named_layers(module):
-        if type(layer).__name__ != "GPTQLinear":
+        if not isinstance(layer, GPTQLinear):
             continue
 
         prefix = f"{name}." if name else ""

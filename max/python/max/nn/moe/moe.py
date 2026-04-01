@@ -755,6 +755,13 @@ class MoEGPTQ(MoE):
             expert_token_count = ops.shape_to_tensor(expert_input.shape)[
                 0
             ].reshape(())
+
+            def _run_expert() -> tuple[TensorValue]:
+                return (expert(expert_input),)
+
+            def _pass_through() -> tuple[TensorValue]:
+                return (expert_input,)
+
             expert_outputs.append(
                 ops.cond(
                     expert_token_count
@@ -762,10 +769,8 @@ class MoEGPTQ(MoE):
                         0, expert_token_count.dtype, DeviceRef.CPU()
                     ),
                     [expert_input.type],
-                    lambda expert=expert, expert_input=expert_input: (
-                        expert(expert_input),
-                    ),
-                    lambda expert_input=expert_input: (expert_input,),
+                    _run_expert,
+                    _pass_through,
                 )[0]
             )
 
