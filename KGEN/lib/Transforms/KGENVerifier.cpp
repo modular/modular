@@ -67,8 +67,6 @@ static LogicalResult verifyOperation(Operation *op, TargetInfoAttr target) {
       return op->emitError(
           "atomic operations are not yet implemented on Apple GPU");
     }
-    if (isa<POP::ExternPointerSymbolOp>(op))
-      return op->emitError("external memory is not supported on Apple GPU");
   }
   return verifyAttributes(op, target);
 }
