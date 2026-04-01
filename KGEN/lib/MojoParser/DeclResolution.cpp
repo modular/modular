@@ -1323,32 +1323,6 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
   return true;
 }
 
-static TypeConvention getTypeConvention(ArrayRef<Capture> captures,
-                                        SharedState &shared, SMLoc loc) {
-  TypeConvention convention = TypeConvention::RegisterPassableTrivial;
-  for (const Capture &capture : captures) {
-    switch (convention) {
-    case TypeConvention::RegisterPassableTrivial: {
-      if (capture.getValue().getRValueType().isTrivial(loc, shared))
-        break;
-      if (capture.getValue().getRValueType().isRegisterPassable(loc, shared)) {
-        convention = TypeConvention::RegisterPassable;
-        break;
-      }
-      return TypeConvention::MemoryOnly;
-    }
-    case TypeConvention::RegisterPassable: {
-      if (capture.getValue().getRValueType().isRegisterPassable(loc, shared))
-        break;
-      return TypeConvention::MemoryOnly;
-    }
-    default:
-      break;
-    }
-  }
-  return convention;
-}
-
 static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
                                           ASTDecl &nestedFnDecl,
                                           SharedState &shared) {
@@ -1384,17 +1358,14 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   ASTDecl *closureTrait =
       shared.getOrCreateClosureTrait(loc, *moduleDecl, closureSig);
   bool isCopyable = allCopyable(captures, shared, loc);
-  TypeConvention convention = getTypeConvention(captures, shared, loc);
-  if (!closureSig.isRegisterPassable())
-    convention = TypeConvention::MemoryOnly;
-  ASTDecl *closureWrapper = shared.getOrCreateUnifiedClosureWrapper(
-      loc, closureSig, moduleDecl, isCopyable, convention, captures.empty());
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
-  Value wrapperInstance = emitter.emitClosureOp(
-      *moduleDecl, nestedFnDecl, captures,
-      cast<StructDeclOp>(closureWrapper->getIfOperation()),
-      cast<TraitDeclOp>(closureTrait->getIfOperation()), mlirLoc, isCopyable);
+  Value wrapperInstance =
+      emitter.emitClosureOp(*moduleDecl, nestedFnDecl, captures,
+                            cast<TraitDeclOp>(closureTrait->getIfOperation()),
+                            mlirLoc, isCopyable, closureSig);
+  if (!wrapperInstance)
+    return {};
 
   nestedFnDecl.getIfOperation()->erase();
   nestedFnDecl.setIRValue(nullptr);
