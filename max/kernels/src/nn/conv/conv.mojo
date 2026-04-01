@@ -5280,12 +5280,13 @@ def _conv3d_cudnn[
     var algo: cudnnConvolutionFwdAlgo_t
     var workspace_size_var: Int
 
-    if ptr_cached := _get_global_or_null(cache_key).bitcast[
-        _Conv3dAlgoCacheEntry
-    ]():
+    if ptr_cached := _get_global_or_null(cache_key):
+        var cached = ptr_cached.unsafe_value().bitcast[
+            _Conv3dAlgoCacheEntry
+        ]()
         # Cache hit — reuse previously selected algorithm.
-        algo = ptr_cached[].algo()
-        workspace_size_var = ptr_cached[].workspace_size
+        algo = cached[].algo()
+        workspace_size_var = cached[].workspace_size
     else:
         # Cache miss — run FindEx to find the fastest algorithm.
         var find_ws = ctx.enqueue_create_buffer[DType.uint8](FIND_WS_CAP)
