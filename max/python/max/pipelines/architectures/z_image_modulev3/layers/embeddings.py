@@ -18,8 +18,6 @@ from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
 
-from ...flux2_modulev3.layers.embeddings import get_1d_rotary_pos_embed
-
 
 class TimestepEmbedder(Module[[Tensor], Tensor]):
     def __init__(
@@ -67,7 +65,21 @@ class TimestepEmbedder(Module[[Tensor], Tensor]):
         return t_emb
 
 
-class RopeEmbedder(Module[[Tensor], tuple[Tensor, Tensor]]):
+def _get_1d_rope_interleaved(
+    dim: int,
+    pos: Tensor,
+    theta: float = 10000.0,
+) -> Tensor:
+    """Compute 1-D RoPE in [cos, sin] interleaved pair format."""
+    half = dim // 2
+    freq_exp = F.arange(0, half, dtype=DType.float32, device=pos.device) / half
+    freq = 1.0 / (theta**freq_exp)
+    freqs = F.outer(pos, freq)
+    paired = F.stack([F.cos(freqs), F.sin(freqs)], axis=2)
+    return F.reshape(paired, [freqs.shape[0], dim])
+
+
+class RopeEmbedder(Module[[Tensor], Tensor]):
     def __init__(
         self,
         theta: float = 256.0,
@@ -76,28 +88,15 @@ class RopeEmbedder(Module[[Tensor], tuple[Tensor, Tensor]]):
         self.theta = theta
         self.axes_dims = axes_dims
 
-    def forward(self, ids: Tensor) -> tuple[Tensor, Tensor]:
-        if ids.rank != 2:
-            raise ValueError(f"Expected 2D ids tensor, got rank={ids.rank}")
-
-        if int(ids.shape[-1]) != len(self.axes_dims):
-            raise ValueError(
-                "ids last dimension must match axes_dims length "
-                f"({len(self.axes_dims)}), got {ids.shape[-1]}"
-            )
-
+    def forward(self, ids: Tensor) -> Tensor:
         pos = ids.cast(DType.float32)
-        cos_out = []
-        sin_out = []
+        parts = []
         for i in range(len(self.axes_dims)):
-            cos_i, sin_i = get_1d_rotary_pos_embed(
-                self.axes_dims[i],
-                pos[:, i],
-                theta=self.theta,
-                use_real=True,
-                repeat_interleave_real=True,
+            parts.append(
+                _get_1d_rope_interleaved(
+                    self.axes_dims[i],
+                    pos[:, i],
+                    theta=self.theta,
+                )
             )
-            cos_out.append(cos_i)
-            sin_out.append(sin_i)
-
-        return F.concat(cos_out, axis=-1), F.concat(sin_out, axis=-1)
+        return F.concat(parts, axis=-1)

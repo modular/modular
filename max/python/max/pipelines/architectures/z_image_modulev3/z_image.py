@@ -85,7 +85,7 @@ class ZImageTransformerBlock(Module[..., Tensor]):
     def forward(
         self,
         x: Tensor,
-        freqs_cis: tuple[Tensor, Tensor],
+        freqs_cis: Tensor,
         adaln_input: Tensor | None = None,
     ) -> Tensor:
         if self.modulation:
@@ -331,24 +331,19 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         timestep: Tensor,
         img_ids: Tensor,
         txt_ids: Tensor,
-    ) -> tuple[Tensor, Any, Tensor, tuple[Tensor, Tensor]]:
+    ) -> tuple[Tensor, Any, Tensor, Tensor]:
         """Embed inputs, run refiners, return unified seq before main ``layers[0]``."""
         x = self.x_embedder(hidden_states)
         t_emb = self.t_embedder(timestep * self.t_scale).cast(x.dtype)
 
         cap = self.cap_proj(self.cap_norm(encoder_hidden_states))
 
-        if txt_ids.rank == 3:
-            txt_ids = txt_ids[0]
-        if img_ids.rank == 3:
-            img_ids = img_ids[0]
+        img_seq_len = img_ids.shape[0]
+        unified_ids = F.concat([img_ids, txt_ids], axis=0)
+        unified_freqs = self.rope_embedder(unified_ids).cast(x.dtype)
 
-        txt_freqs = self.rope_embedder(txt_ids)
-        img_freqs = self.rope_embedder(img_ids)
-        unified_freqs = (
-            F.concat([img_freqs[0], txt_freqs[0]], axis=0),
-            F.concat([img_freqs[1], txt_freqs[1]], axis=0),
-        )
+        img_freqs = unified_freqs[:img_seq_len]
+        txt_freqs = unified_freqs[img_seq_len:]
 
         for layer in self.noise_refiner:
             x = layer(x, freqs_cis=img_freqs, adaln_input=t_emb)
@@ -364,7 +359,7 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         self,
         unified0: Tensor,
         t_emb: Tensor,
-        unified_freqs: tuple[Tensor, Tensor],
+        unified_freqs: Tensor,
     ) -> Tensor:
         return self.layers[0](
             unified0,
@@ -378,7 +373,7 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         *,
         img_len: Any,
         t_emb: Tensor,
-        freqs_cis: tuple[Tensor, Tensor],
+        freqs_cis: Tensor,
     ) -> Tensor:
         u = unified
         for i in range(1, len(self.layers)):
