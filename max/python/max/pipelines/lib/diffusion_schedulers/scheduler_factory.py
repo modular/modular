@@ -18,9 +18,11 @@ from typing import Any
 from .scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
+from .scheduling_unipc_multistep import UniPCMultistepScheduler
 
 _SCHEDULER_REGISTRY: dict[str, type] = {
     "FlowMatchEulerDiscreteScheduler": FlowMatchEulerDiscreteScheduler,
+    "UniPCMultistepScheduler": UniPCMultistepScheduler,
 }
 
 
