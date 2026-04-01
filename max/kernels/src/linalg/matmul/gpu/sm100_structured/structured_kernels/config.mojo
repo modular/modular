@@ -567,12 +567,12 @@ def build_configs[
 
     var set = Set[config_t]()
 
-    for m in range(8, 128, 8):  # [8, 128]
+    for m in range(8, 256, 8):  # [8, 256)
         config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K)
         if config not in set:
             set.add(config)
 
-    for m in range(128, 8192 + 1, 64):  # [128, 8192]
+    for m in range(256, 8192 + 1, 64):  # [256, 8192]
         config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K)
         if config not in set:
             set.add(config)
