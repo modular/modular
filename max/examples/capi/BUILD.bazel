@@ -13,6 +13,17 @@ modular_cc_binary(
     ],
 )
 
+modular_cc_binary(
+    name = "graph_capture",
+    testonly = True,
+    srcs = ["graph_capture.c"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:CAPI.headers",
+        "//max/internal:max",
+    ],
+)
+
 modular_py_test(
     name = "test",
     srcs = ["test_capi.py"],
@@ -55,6 +66,26 @@ modular_py_test(
     mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_capture",
+    srcs = ["test_graph_capture.py"],
+    data = [
+        ":graph_capture",
+    ],
+    env = {
+        "GRAPH_EXECUTOR": "$(location :graph_capture)",
+    },
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
