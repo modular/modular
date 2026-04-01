@@ -12,17 +12,13 @@
 #define KGEN_LITDIALECT_LITTYPES_H
 
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 
 namespace M::KGEN {
 class ConstraintAttr;
 class ParameterExprArrayAttr;
 namespace LIT {
-class PogListAttr;
-class FnMetadataAttr;
 class RefPackType;
-class SymbolAttr;
-enum class PassingKind : uint32_t;
-enum class VariadicKind : uint32_t;
 } // namespace LIT
 } // namespace M::KGEN
 
@@ -133,51 +129,48 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// FnTypeGeneratorType
+// FnTypeWrapperGeneratorType
 //===----------------------------------------------------------------------===//
 
-class FnTypeGeneratorType : public FuncTypeGeneratorType {
+// A CRTP base class for FnTypeGeneratorType and FnLiteralTypeGeneratorType that
+// wraps a FnType.
+template <typename SubClass, typename BaseClass>
+class FnTypeWrapperGeneratorType : public BaseClass {
 public:
-  using FuncTypeGeneratorType::FuncTypeGeneratorType;
-  FnTypeGeneratorType(LITGeneratorType gen);
-  FnTypeGeneratorType(FuncTypeGeneratorType gen);
+  using BaseT = BaseClass;
+  using BaseClass::BaseClass;
 
-  FnType getBody();
+  FnType getBodyFnType() {
+    return static_cast<SubClass *>(this)->getBodyFnType();
+  }
+  PogListAttr getMetadata() {
+    return static_cast<SubClass *>(this)->getMetadata();
+  }
 
   //===--------------------------------------------------------------------===//
   // Acting as a LITGeneratorType
   //===--------------------------------------------------------------------===//
 
-  PogListAttr getMetadata();
-  PogListAttr getParamListAttrs();
-
-  /// Return the name for the parameter at the specified index.
-  StringAttr getParamName(size_t idx);
-
-  /// Reconstruct the generator using a list of named input parameters and info
-  /// about what kind of variadic they are. These parameters are prepended to
-  /// the current signature and references are remapped to index references.
-  static FnTypeGeneratorType
-  prependParams(FnTypeGeneratorType sig, ArrayRef<ParamDeclAttr> parentParams,
-                ArrayRef<StringAttr> paramNames = {});
+  PogListAttr getParamListAttrs() { return getMetadata(); }
+  StringAttr getParamName(size_t idx) { return getMetadata().getName(idx); }
 
   //===--------------------------------------------------------------------===//
   // Acting as a FnType
   //===--------------------------------------------------------------------===//
 
-  FunctionType getValues() { return getBody().getValues(); }
+  FunctionType getValues() { return getBodyFnType().getValues(); }
 
   llvm::ArrayRef<ArgConvention> getArgConventions() {
-    return getBody().getArgConventions();
+    return getBodyFnType().getArgConventions();
   }
-  FnEffects getFnEffects() { return getBody().getFnEffects(); }
+  FnEffects getFnEffects() { return getBodyFnType().getFnEffects(); }
 
   /// Helper to return the argument and result types.
-  ArrayRef<Type> getArguments() { return getBody().getArguments(); }
+  ArrayRef<Type> getArguments() { return getBodyFnType().getArguments(); }
   Type getArgument(size_t i) { return getArguments()[i]; }
-  ArrayRef<Type> getResults() { return getBody().getResults(); }
+  ArrayRef<Type> getResults() { return getBodyFnType().getResults(); }
 
-  bool hasMemoryOnlyResult() { return getBody().hasMemoryOnlyResult(); }
+  bool hasMemoryOnlyResult() { return getBodyFnType().hasMemoryOnlyResult(); }
 
   bool isThrows() { return getFnEffects().isThrows(); }
   bool isAsync() { return getFnEffects().isAsync(); }
@@ -196,60 +189,97 @@ public:
   size_t getNumArguments() { return getArguments().size(); }
   size_t getNumResults() { return getResults().size(); }
 
-  size_t getNumAsyncReturnSlots() { return getBody().getNumAsyncReturnSlots(); }
+  size_t getNumAsyncReturnSlots() {
+    return getBodyFnType().getNumAsyncReturnSlots();
+  }
 
   /// Get the signature metadata.
-  FnMetadataAttr getFnMetadata();
+  FnMetadataAttr getFnMetadata() { return getBodyFnType().getMetadata(); }
 
   /// Get the argument list metadata.
-  PogListAttr getArgListAttrs();
+  PogListAttr getArgListAttrs() { return getBodyFnType().getArgListAttrs(); }
 
   /// Return the name for the argument at the specified index.
-  StringAttr getArgName(size_t idx);
+  StringAttr getArgName(size_t idx) { return getArgListAttrs().getName(idx); }
 
   /// Get the origin set of the capture lifetimes.
-  TypedAttr getCaptureOrigins();
+  TypedAttr getCaptureOrigins() { return getBodyFnType().getCaptureOrigins(); }
 
   /// Get whether nested lifetimes are excluded from exclusivity checking.
-  bool getIsNestedOriginExclusivityCheckingDisabled();
+  bool getIsNestedOriginExclusivityCheckingDisabled() {
+    return getBodyFnType().getIsNestedOriginExclusivityCheckingDisabled();
+  }
 
   /// Get the number of implicit origin decls this function type carries.
-  size_t getNumImplicitOriginDecls();
+  size_t getNumImplicitOriginDecls() {
+    return getBodyFnType().getNumImplicitOriginDecls();
+  }
 
   /// LIT-level signatures always have one result type.
-  Type getResultType() { return getBody().getResults().front(); }
+  Type getResultType() { return getBodyFnType().getResults().front(); }
 
   /// Get the user result type of the signature.
-  Type getUserResultType();
+  Type getUserResultType() { return getBodyFnType().getUserResultType(); }
 
   /// Get the user thrown type for a raising function.
-  Type getUserThrownType();
+  Type getUserThrownType() { return getBodyFnType().getUserThrownType(); }
 
   /// Returns true if the argument at this index is any vararg or a pack.
-  bool isAnyVarArg(size_t index);
+  bool isAnyVarArg(size_t index) { return getBodyFnType().isAnyVarArg(index); }
 
   /// Returns true if the argument at this index is a positional vararg.
-  bool isPosVarArg(size_t index);
+  bool isPosVarArg(size_t index) { return getBodyFnType().isPosVarArg(index); }
 
   /// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
   /// elements. For example: def x(mut *args: Int) is declared 'mut'.
-  ArgConvention getVariadicConvention(size_t index);
+  ArgConvention getVariadicConvention(size_t index) {
+    return getBodyFnType().getVariadicConvention(index);
+  }
 
   /// Returns true if the argument at this index is a keyword vararg.
-  bool isKwVarArg(size_t index);
+  bool isKwVarArg(size_t index) { return getBodyFnType().isKwVarArg(index); }
 
   /// Returns true if the argument at this index is a pack vararg.
-  bool isPack(size_t index);
+  bool isPack(size_t index) { return getBodyFnType().isPack(index); }
 
   /// If the specified argument is a variadic list/pack, return the
   /// VariadicList/VariadicPack, stripping RefType, otherwise return null.
-  Type getIfVariadicListOrPack(size_t index);
+  Type getIfVariadicListOrPack(size_t index) {
+    return getBodyFnType().getIfVariadicListOrPack(index);
+  }
 
   /// Returns the index of the pack variadic arg, or std::nullopt if none.
-  std::optional<size_t> findPackVarArgIndex();
+  std::optional<size_t> findPackVarArgIndex() {
+    return getBodyFnType().findPackVarArgIndex();
+  }
 
   /// Returns true if the signature has keyword variadic arguments.
-  bool hasKwVarArgs();
+  bool hasKwVarArgs() { return getBodyFnType().hasKwVarArgs(); }
+};
+
+//===----------------------------------------------------------------------===//
+// FnTypeGeneratorType
+//===----------------------------------------------------------------------===//
+class FnTypeGeneratorType
+    : public FnTypeWrapperGeneratorType<FnTypeGeneratorType,
+                                        FuncTypeGeneratorType> {
+public:
+  using FnTypeWrapperGeneratorType::FnTypeWrapperGeneratorType;
+  FnTypeGeneratorType(LITGeneratorType gen);
+  FnTypeGeneratorType(FuncTypeGeneratorType gen);
+
+  // CRTP for FnTypeWrapperGeneratorType
+  FnType getBodyFnType() { return getBody(); }
+  PogListAttr getMetadata();
+
+  FnType getBody();
+
+  /// Reconstruct the generator using a list of named input parameters and info
+  /// about what kind of variadic they are. These parameters are prepended to
+  /// the current signature and references are remapped to index references.
+  static FnTypeGeneratorType
+  prependParams(FnTypeGeneratorType sig, ArrayRef<ParamDeclAttr> parentParams,
+                ArrayRef<StringAttr> paramNames = {});
 
   /// Substitute the specified implicit origin references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing
@@ -299,16 +329,66 @@ public:
 // FnLiteralTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
-class FnLiteralTypeGeneratorType : public FuncLiteralTypeGeneratorType {
+class FnLiteralTypeGeneratorType
+    : public FnTypeWrapperGeneratorType<FnLiteralTypeGeneratorType,
+                                        FuncLiteralTypeGeneratorType> {
 public:
-  using FuncLiteralTypeGeneratorType::FuncLiteralTypeGeneratorType;
+  using FnTypeWrapperGeneratorType::FnTypeWrapperGeneratorType;
   FnLiteralTypeGeneratorType(LITGeneratorType gen);
   FnLiteralTypeGeneratorType(FuncLiteralTypeGeneratorType gen);
+
+  // CRTP for FnTypeWrapperGeneratorType
+  FnType getBodyFnType() { return getBody().getFnType(); }
+  PogListAttr getMetadata();
 
   FnLiteralType getBody();
 
   static bool classof(FuncLiteralTypeGeneratorType type);
   static bool classof(Type type);
+};
+
+//===----------------------------------------------------------------------===//
+// FnOrFnLiteralTypeGeneratorType
+//===----------------------------------------------------------------------===//
+
+// A simple wrapper around smart variant of FnTypeGeneratorType and
+// FnLiteralTypeGeneratorType.
+class FnOrFnLiteralTypeGeneratorType
+    : public FnTypeWrapperGeneratorType<
+          FnOrFnLiteralTypeGeneratorType,
+          SmartVariant<FnTypeGeneratorType, FnLiteralTypeGeneratorType>> {
+
+  using VariantT = FnTypeWrapperGeneratorType::BaseT;
+  VariantT getAsVariant() const { return static_cast<VariantT>(*this); }
+
+public:
+  using FnTypeWrapperGeneratorType::FnTypeWrapperGeneratorType;
+  FnOrFnLiteralTypeGeneratorType(FnTypeGeneratorType gen)
+      : FnTypeWrapperGeneratorType(gen) {}
+  FnOrFnLiteralTypeGeneratorType(FnLiteralTypeGeneratorType gen)
+      : FnTypeWrapperGeneratorType(gen) {}
+
+  // Delegates to SmartVariant
+  FnTypeGeneratorType getIfFnTypeGenerator() {
+    return dyn_cast<FnTypeGeneratorType>(getAsVariant());
+  }
+
+  FnLiteralTypeGeneratorType getIfFnLiteralTypeGenerator() {
+    return dyn_cast<FnLiteralTypeGeneratorType>(getAsVariant());
+  }
+
+  // CRTP for FnTypeWrapperGeneratorType
+  FnType getBodyFnType() {
+    if (auto fnGen = getIfFnTypeGenerator())
+      return fnGen.getBodyFnType();
+    return getIfFnLiteralTypeGenerator().getBodyFnType();
+  }
+
+  PogListAttr getMetadata() {
+    if (auto fnGen = getIfFnTypeGenerator())
+      return fnGen.getMetadata();
+    return getIfFnLiteralTypeGenerator().getMetadata();
+  }
 };
 
 //===----------------------------------------------------------------------===//
