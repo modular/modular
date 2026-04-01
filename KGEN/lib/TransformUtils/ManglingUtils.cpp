@@ -91,19 +91,15 @@ static void printParameterMangling(TypedAttr value, raw_ostream &os) {
   os << resultToPrint;
 }
 
-std::string
-KGEN::mangleParameterValues(GeneratorOpInterface generator,
-                            ArrayRef<TypedAttr> inputParamValues,
-                            function_ref<std::string(StringRef)> getPrefix) {
+std::string KGEN::mangleParameterValues(GeneratorOpInterface generator,
+                                        ArrayRef<TypedAttr> inputParamValues) {
   Builder b(generator.getContext());
-  std::string prefix = getPrefix(generator.getName());
 
   if (inputParamValues.empty())
-    return prefix + generator.getName().str();
+    return generator.getName().str();
 
   std::string result;
   llvm::raw_string_ostream os(result);
-  os << prefix;
   os << generator.getName();
 
   // Mangle in things like "size=42" for each of the parameters to make it easy

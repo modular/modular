@@ -95,14 +95,21 @@ static SmallString<1024> replaceInvalidCharacter(StringRef name) {
 StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep) {
   VerboseCompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
                                            [name] { return name.str(); });
+  SmallString<1024> result;
   if (name.size() > charToKeep) {
     std::string hash = llvm::utohexstr(llvm::xxh3_64bits(name),
                                        /*LowerCase=*/true, /*Width=*/16);
-    return StringAttr::get(
-        name.getContext(),
-        replaceInvalidCharacter(name.strref().take_front(charToKeep)) + "_" +
-            hash);
+    result = replaceInvalidCharacter(name.strref().take_front(charToKeep));
+    result += "_";
+    result += hash;
+  } else {
+    result = replaceInvalidCharacter(name);
   }
 
-  return StringAttr::get(name.getContext(), replaceInvalidCharacter(name));
+  // Prefix with '_' if the result starts with a digit, which is not a valid
+  // identifier start in GPU assemblers (e.g. PTX).
+  if (!result.empty() && llvm::isDigit(result.front()))
+    result.insert(result.begin(), '_');
+
+  return StringAttr::get(name.getContext(), result);
 }

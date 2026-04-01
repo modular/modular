@@ -128,10 +128,10 @@ private:
   /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.
   /// If `allowParametric`, any not fully bound symbol reference will just have
   /// its symbol name returned. Otherwise, not fully bound symbols are errors.
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> getExpectedMangledName(
-      Location errorLoc, StringRef errorContext, TypedAttr symCst,
-      bool allowParametric, bool sanitize,
-      function_ref<std::string(StringRef)> getPrefix) override;
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
+  getExpectedMangledName(Location errorLoc, StringRef errorContext,
+                         TypedAttr symCst, bool allowParametric,
+                         bool sanitize = false) override;
 
   GeneratorOp getGenerator(SymbolRefAttr symbol) override;
 

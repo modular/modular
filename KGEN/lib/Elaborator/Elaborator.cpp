@@ -575,21 +575,20 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
       genref.getType());
 }
 
-StringAttr Elaborator::getExpectedMangledName(
-    GeneratorOp func, ArrayRef<TypedAttr> params, bool sanitize,
-    function_ref<std::string(StringRef)> getPrefix) {
-  auto baseName = StringAttr::get(
-      func.getContext(), mangleParameterValues(func, params, getPrefix));
+StringAttr Elaborator::getExpectedMangledName(GeneratorOp func,
+                                              ArrayRef<TypedAttr> params,
+                                              bool sanitize) {
+  auto baseName =
+      StringAttr::get(func.getContext(), mangleParameterValues(func, params));
   if (sanitize)
     baseName = sanitizeSymbolToAlnum(baseName);
   return baseName;
 }
 
 ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-Elaborator::getExpectedMangledName(
-    Location errorLoc, StringRef errorContext, TypedAttr symCst,
-    bool allowParametric, bool sanitize,
-    function_ref<std::string(StringRef)> getPrefix) {
+Elaborator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
+                                   TypedAttr symCst, bool allowParametric,
+                                   bool sanitize) {
   auto symbol = dyn_cast<SymbolConstantAttr>(symCst);
   if (!symbol) {
     return ErrorTree(
@@ -618,9 +617,8 @@ Elaborator::getExpectedMangledName(
     return ErrorTree(errorLoc, errMsg);
   }
 
-  return std::make_pair(getExpectedMangledName(func, symbol.getParamValues(),
-                                               sanitize, getPrefix),
-                        func);
+  return std::make_pair(
+      getExpectedMangledName(func, symbol.getParamValues(), sanitize), func);
 }
 
 ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
@@ -1907,49 +1905,10 @@ replaceSymNames(Operation *op,
                                         /*replaceTypes=*/true);
 }
 
-ErrorTreeOrSuccess Elaborator::bundleOffloadModules(
-    ModuleOp theModule, DenseMap<SymbolRefAttr, StringAttr> &symToRename) {
+ErrorTreeOrSuccess Elaborator::bundleOffloadModules(ModuleOp theModule) {
   std::optional<ErrorTree> error;
-  DenseMap<GeneratorOp, StringAttr> genNewNameMap;
-  for (CompileOffloadOp op : compileOffloadOps.get()) {
-    TargetInfoAttr target =
-        cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
-    SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(op.getFuncAttr());
-    StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
-
-    // Add "_" prefix to GPU kernel name if it starts with a number, otherwise
-    // ptx compiler will fail.
-    if (!target.isGPU() || !llvm::isDigit(name.str().front()))
-      continue;
-
-    StringAttr newName = StringAttr::get(name.getContext(), "_" + name.str());
-    symToRename.insert({symbol.getSymbol(), newName});
-
-    ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-        getExpectedMangledName(op.getLoc(), "compile_offload", symbol,
-                               /*allowParametric=*/false,
-                               /*sanitize=*/false);
-
-    if (pairOrError.isError()) {
-      error = pairOrError.takeError();
-      break;
-    }
-
-    StringAttr mangledName;
-    GeneratorOp func;
-    std::tie(mangledName, func) = pairOrError.takeValue();
-    genNewNameMap.insert({func, newName});
-  }
-
-  if (error)
-    return std::move(*error);
-
-  replaceSymNames(theModule, symToRename);
-  for (auto [gen, name] : genNewNameMap)
-    (void)oldSymTab.rename(gen, name);
 
   for (CompileOffloadOp op : compileOffloadOps.get()) {
-    replaceSymNames(op, symToRename);
     ErrorTreeOrSuccess result = bundleCompileOffloadOp(op);
     if (result.isError()) {
       error = result.takeError();
@@ -2738,8 +2697,7 @@ LogicalResult Elaborator::run(
     return failure();
   }
 
-  DenseMap<SymbolRefAttr, StringAttr> symToRename;
-  ErrorTreeOrSuccess bundleOr = bundleOffloadModules(theModule, symToRename);
+  ErrorTreeOrSuccess bundleOr = bundleOffloadModules(theModule);
 
   if (bundleOr.isError()) {
     emitLimitedError(
@@ -2872,6 +2830,7 @@ LogicalResult Elaborator::run(
   // type-level metadata that get erased after elaboration. Sanitizing them
   // would cause instref type mismatches when GPU-compiled function types are
   // plugged back into the host module via rewriteCompileOffloadOp.
+  DenseMap<SymbolRefAttr, StringAttr> symToRename;
   if (target.isGPU()) {
     for (auto func : theModule.getOps<FuncOp>()) {
       StringAttr name = func.getNameAttr();
@@ -2883,7 +2842,6 @@ LogicalResult Elaborator::run(
       }
     }
   }
-
   replaceSymNames(theModule, symToRename);
 
   theModule.walk([&](Operation *op) {
