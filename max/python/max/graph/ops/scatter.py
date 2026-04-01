@@ -166,6 +166,12 @@ def scatter_add(
 
     Returns:
         A new symbolic tensor with the same shape and dtype as input.
+
+    Raises:
+        ValueError: If ``axis`` is out of range, if dtypes mismatch, if
+            ``indices`` dtype is not int32/int64, or if any input is on a
+            non-CPU device and
+            ``strict_device_placement=DevicePlacementPolicy.Error``.
     """
     input = TensorValue(input)
 
@@ -190,14 +196,16 @@ def scatter_add(
         )
 
     assert_same_device(input=input, updates=updates, indices=indices)
+    old_device = input.device if not input.device.is_cpu() else None
+    if old_device is not None:
+        _check_device_placement("ops.scatter_add", "TODO(GEX-2197).")
+        input = transfer_to(input, DeviceRef.CPU())
+        updates = transfer_to(updates, DeviceRef.CPU())
+        indices = transfer_to(indices, DeviceRef.CPU())
+    # TODO(GEX-2197): Add GPU kernel support for scatter_add.
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
-    old_device = input.device
-    input = input.to(DeviceRef.CPU())
-    updates = updates.to(DeviceRef.CPU())
-    indices = indices.to(DeviceRef.CPU())
-
-    return Graph.current._add_op_generated(
+    result = Graph.current._add_op_generated(
         rmo.MoScatterAddOp,
         input.type,
         input,
@@ -205,7 +213,10 @@ def scatter_add(
         indices,
         axis_constant,
         kgen.ParamDeclArrayAttr([]),
-    )[0].tensor.to(old_device)
+    )[0].tensor
+    if old_device is not None:
+        return transfer_to(result, old_device)
+    return result
 
 
 def masked_scatter(
