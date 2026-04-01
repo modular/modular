@@ -99,8 +99,7 @@ static Level levelFromString(StringRef levelStr) {
   llvm_unreachable("unknown telemetry level");
 }
 
-static void configureInternalLogging(StringRef internalLogConfig,
-                                     std::string endpoint) {
+static void configureInternalLogging(StringRef internalLogConfig) {
   // OTel internal logging (e.g. warnings and errors related to OTel's
   // operation) is off by default and controlled with `telemetry.internal_log`
   // config key (or equivalently with `TELEMETRY_INTERNAL_LOG` env var).
@@ -123,33 +122,15 @@ static void configureInternalLogging(StringRef internalLogConfig,
       internalLogsOff = true;
     }
   }
-
-  // Create the base handler (noop or default).
-  std::shared_ptr<opentelemetry::sdk::common::internal_log::LogHandler>
-      baseHandler;
   if (internalLogsOff) {
-    baseHandler = std::make_shared<
+    // Use NOOP log handler to disable all OTel internal logs.
+    auto noopHandler = std::make_shared<
         opentelemetry::sdk::common::internal_log::NoopLogHandler>();
+    opentelemetry::sdk::common::internal_log::GlobalLogHandler::SetLogHandler(
+        noopHandler);
   } else {
-    // Use default handler (logs to stderr) for requested verbosity.
     opentelemetry::sdk::common::internal_log::GlobalLogHandler::SetLogLevel(
         logLevel);
-    baseHandler = opentelemetry::sdk::common::internal_log::GlobalLogHandler::
-        GetLogHandler();
-  }
-
-  // Wrap with our warning handler that detects export failures.
-  auto warningHandler = std::make_shared<TelemetryExportWarningHandler>(
-      std::move(baseHandler), std::move(endpoint));
-  opentelemetry::sdk::common::internal_log::GlobalLogHandler::SetLogHandler(
-      warningHandler);
-
-  // When internal logging is "off", set level to Warning so we still receive
-  // export error events for the warning handler. When the user explicitly
-  // configured a level, respect their choice (it's already set above).
-  if (internalLogsOff) {
-    opentelemetry::sdk::common::internal_log::GlobalLogHandler::SetLogLevel(
-        opentelemetry::sdk::common::internal_log::LogLevel::Warning);
   }
 }
 
@@ -342,17 +323,10 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
   auto level = settings.getValue("telemetry.level");
   telemetryLevel = levelFromString(level);
 
-  // Configure OTel internal logging. Resolve the telemetry endpoint early so
-  // the warning handler can include it in diagnostic messages.
-  auto metricsEndpoint =
-      settings.getValue("telemetry.exporters.metrics.http_endpoint");
-  std::string telemetryEndpoint =
-      metricsEndpoint.empty() ? MODULAR_TELEMETRY_URL : metricsEndpoint.str();
-
+  // Configure OTel internal logging.
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() {
-    configureInternalLogging(settings.getValue("telemetry.internal_log"),
-                             telemetryEndpoint);
+    configureInternalLogging(settings.getValue("telemetry.internal_log"));
   });
 
   // Get the user ID if we have one.
@@ -423,7 +397,6 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
 
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
-    otlpOptions.timeout = kOtlpRequestTimeout;
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
             otlpOptions);
@@ -471,7 +444,6 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
         otlpLogOptions;
 
     otlpLogOptions.url = (httpEndpoint + "/v1/logs").str();
-    otlpLogOptions.timeout = kOtlpRequestTimeout;
     auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
             otlpLogOptions);
