@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.gpu.primitives.warp as warp
-from std.gpu import global_idx_uint as global_idx, grid_dim_uint as grid_dim
+from std.gpu import global_idx, grid_dim
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
@@ -23,7 +23,7 @@ def kernel(
     size: Int,
 ):
     var global_tid = global_idx.x
-    if global_tid >= UInt(size):
+    if global_tid >= size:
         return
     if global_tid & 3 == 0:
         output[global_tid] = Float32(grid_dim.x)

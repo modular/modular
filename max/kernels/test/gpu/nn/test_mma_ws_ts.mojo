@@ -35,11 +35,7 @@ from std.memory import UnsafePointer, alloc
 from std.random import rand, randn, seed
 from std.sys import size_of
 
-from std.gpu import (
-    barrier,
-    thread_idx_int as thread_idx,
-    warp_id_uint as get_warp_id,
-)
+from std.gpu import barrier, thread_idx, warp_id as get_warp_id
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
@@ -265,8 +261,8 @@ def dense_mma_ws_ts_kernel[
     # MMA barrier at offset +24 bytes from metadata start.
     var mma_mbar = (metadata_ptr + 6).bitcast[SharedMemBarrier]()
 
-    var tid = Int(thread_idx.x)
-    var wid = Int(get_warp_id())
+    var tid = thread_idx.x
+    var wid = get_warp_id()
     var elect_one_thread = tid == 0
 
     # ---- Initialize barriers ----
@@ -536,8 +532,8 @@ def sparse_mma_ws_ts_kernel[
     var k_mbar = (metadata_ptr + 4).bitcast[SharedMemBarrier]()
     var mma_mbar = (metadata_ptr + 6).bitcast[SharedMemBarrier]()
 
-    var tid = Int(thread_idx.x)
-    var wid = Int(get_warp_id())
+    var tid = thread_idx.x
+    var wid = get_warp_id()
     var elect_one_thread = tid == 0
 
     # ---- Initialize barriers ----

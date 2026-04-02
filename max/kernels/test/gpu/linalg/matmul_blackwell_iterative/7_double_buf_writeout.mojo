@@ -27,12 +27,8 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-)
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import block_id_in_cluster, block_idx, lane_id
+from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import fence_async_view_proxy, external_memory
 from std.gpu.compute.mma import st_matrix
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -83,7 +79,7 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
@@ -95,7 +91,7 @@ struct WarpRole(TrivialRegisterPassable):
         return self._role != other._role
 
     @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
@@ -159,7 +155,7 @@ def load_AB[
     ],
     producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
-    work_tile_coord: Tuple[UInt, UInt],
+    work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
     iter_idx: UInt,
@@ -190,12 +186,12 @@ def load_AB[
         tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
     var a_gmem_slice_coord = (
-        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+        Int(peer_cta_coord[2]) * a_tma_rows + work_tile_coord[0] * BM
     )
     var b_gmem_slice_coord = (
         Int(peer_cta_coord[1]) * b_tma_rows
         + Int(peer_cta_coord[0]) * BN
-        + Int(work_tile_coord[1]) * MMA_N
+        + work_tile_coord[1] * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -325,7 +321,7 @@ def stsm_helper[
     comptime stride0 = dst.layout.stride[0].value()
     comptime shape0 = dst.layout.shape[1].value()
 
-    var lane = lane_id()
+    var lane = UInt(lane_id())
     var stsm_lane_offset = (lane & 15) * UInt(stride0) + (lane >> 4) * 8
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
@@ -373,7 +369,7 @@ def multi_stage_store_C[
     ],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
     tmem_addr: UInt32,
-    work_tile_coord: Tuple[UInt, UInt],
+    work_tile_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
 ):
     comptime BM = block_tile_shape[0]
@@ -436,7 +432,7 @@ def multi_stage_store_C[
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
-        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
+        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
 
         # Pack the upper frag to shared memory
         comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
@@ -459,8 +455,8 @@ def multi_stage_store_C[
             c_tma_op.async_store(
                 c_smem_tile,
                 (
-                    Int(work_tile_coord[1]) * MMA_N + stage * stageN,
-                    Int(work_tile_coord[0]) * BM,
+                    work_tile_coord[1] * MMA_N + stage * stageN,
+                    work_tile_coord[0] * BM,
                 ),
             )
             c_tma_op.commit_group()

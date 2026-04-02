@@ -24,11 +24,7 @@
 from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import Idx, IntTuple, Layout, LayoutTensor, TileTensor, row_major
 from layout.int_tuple import product
 from layout._fillers import random
@@ -240,7 +236,7 @@ def winograd_conv2d_gpu_nhwc[
     var w_out = (block_idx.y * block_dim.y + thread_idx.y) * 2
 
     # Check bounds
-    if h_out + 1 >= UInt(H_out) or w_out + 1 >= UInt(W_out):
+    if h_out + 1 >= H_out or w_out + 1 >= W_out:
         return
 
     # Allocate scratch space
@@ -297,7 +293,7 @@ def winograd_conv2d_gpu_nhwc[
             # TODO: Can we do something like this instead?
             # var input_tile = input_tensor.tile[1,1,4,4](c_out, c_in)
             var input_tile = get_tile[4](
-                input.as_any_origin(), Int(n), Int(h_out), Int(w_out), c_in
+                input.as_any_origin(), n, h_out, w_out, c_in
             )
 
             # 2. Transform input (B^T * d * B)
@@ -321,9 +317,9 @@ def winograd_conv2d_gpu_nhwc[
             # 5. Store result
             for di in range(2):
                 for dj in range(2):
-                    output[
-                        n, h_out + UInt(di), w_out + UInt(dj), c_out
-                    ] = output_tile[di, dj][0]
+                    output[n, h_out + di, w_out + dj, c_out] = output_tile[
+                        di, dj
+                    ][0]
 
 
 def winograd_conv2d_gpu_launcher[

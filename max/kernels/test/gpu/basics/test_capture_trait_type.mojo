@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
@@ -41,7 +41,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
     @parameter
     @__copy_capture(thing)
     def kernel_fn():
-        var idx = Int(thread_idx.x)
+        var idx = thread_idx.x
         print(thing.get_val(idx) * 2)
 
     comptime kernel = kernel_fn

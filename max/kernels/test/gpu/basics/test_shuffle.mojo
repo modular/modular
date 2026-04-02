@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.sys import has_amd_gpu_accelerator
 import std.gpu.primitives.warp as warp
-from std.gpu import barrier, thread_idx_uint as thread_idx
+from std.gpu import barrier, thread_idx
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.primitives.warp import (
@@ -31,11 +31,11 @@ def kernel_wrapper[
         dtype, simd_width
     ],
 ](device_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
-    var val = device_ptr.load[width=simd_width](thread_idx.x * UInt(simd_width))
+    var val = device_ptr.load[width=simd_width](thread_idx.x * simd_width)
     var result = kernel_fn(val)
     barrier()
 
-    device_ptr.store(thread_idx.x * UInt(simd_width), result)
+    device_ptr.store(thread_idx.x * simd_width, result)
 
 
 def _kernel_launch_helper[

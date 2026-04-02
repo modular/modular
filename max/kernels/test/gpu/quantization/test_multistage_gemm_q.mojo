@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import udivmod
 from std.random import rand, randint, random_float64
 from std.sys import align_of, argv, size_of
 
@@ -19,10 +20,8 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    grid_dim,
-    lane_id,
-    thread_idx_uint as thread_idx,
+    block_idx,
+    thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import lop
@@ -86,12 +85,11 @@ def repack_Q4_0_for_sm8x[
     comptime BN = 128
     comptime BK = 1024
 
-    var tid: UInt = thread_idx.x
-    var warp_id, lane_id_u = divmod(tid, UInt(WARP_SIZE))
+    var tid = thread_idx.x
+    var warp_id, lane_id = udivmod(tid, WARP_SIZE)
     comptime num_warps_x = BN // repack_tile[0]
-    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_x))
-    var lane_id = Int(lane_id_u)
-    var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
+    var warp_y, warp_x = udivmod(warp_id, num_warps_x)
+    var block_idx = Index(block_idx.x, block_idx.y)
 
     comptime N = Int(q_layout.shape[0])
     comptime K = Int(q_layout.shape[1]) // group_bytes * group_size
@@ -181,11 +179,9 @@ def repack_Q4_0_for_sm8x[
         )
         q_gmem_iter._incr()
         barrier()
-        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](
-            Int(warp_x), Int(warp_y)
-        )
+        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](warp_x, warp_y)
 
-        if (BK_groups * block_idx[1] + i * 2 + Int(warp_y)) < K_groups:
+        if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
             var frag_0: SIMD[DType.uint8, 16] = 0
             var frag_1: SIMD[DType.uint8, 16] = 0
             var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
@@ -203,7 +199,7 @@ def repack_Q4_0_for_sm8x[
 
             var repack_warp_tile = repacked_gemm_iter[].tile[
                 64, group_size // pack_factor
-            ](Int(warp_x), Int(warp_y))
+            ](warp_x, warp_y)
             # The repack_warp_tile is of shape [64, (2, 2)]. In this case,
             # elements [0, 0], [0, 1], [1, 0] and [1, 1] are stored continuously
             # in the memory. We need to use a element shape of [2, 2] to
@@ -224,7 +220,7 @@ def repack_Q4_0_for_sm8x[
 
             # cast scales to bf16 before storing back
             var scales_warp_tile = scales_gmem_iter[].tile[1, 64](
-                Int(warp_y), Int(warp_x)
+                warp_y, warp_x
             )
 
             scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
@@ -272,10 +268,10 @@ def create_ref_b[
     comptime TILE_K = 16
     comptime num_k_warps = BLOCK_K // repack_tile[1]
 
-    var tid: UInt = thread_idx.x
-    var warp_id, lane_id = divmod(tid, UInt(WARP_SIZE))
-    var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
-    var warp_x, warp_y = divmod(warp_id, UInt(num_k_warps))
+    var tid = thread_idx.x
+    var warp_id, lane_id = udivmod(tid, WARP_SIZE)
+    var block_idx = Index(block_idx.x, block_idx.y)
+    var warp_x, warp_y = udivmod(warp_id, num_k_warps)
 
     comptime group_bytes = group_size // 2 + 2
     comptime N = Int(b_q_layout.shape[0])
@@ -300,14 +296,14 @@ def create_ref_b[
     ](block_idx[0], block_idx[1])
     var warp_q_tile = b_q_gmem_tile.tile[
         1, (repack_tile[0] * repack_tile[1]) // pack_factor
-    ](Int(warp_x), Int(warp_y))
+    ](warp_x, warp_y)
 
     var scales_tile = scales.tile[ceildiv(BLOCK_K, group_size), BLOCK_N](
         (block_idx[1] * BLOCK_K) // group_size, block_idx[0]
     )
     var warp_scales_tile = scales_tile.tile[
         ceildiv(BLOCK_K, group_size), repack_tile[0]
-    ](0, Int(warp_x))
+    ](0, warp_x)
     comptime smem_reg_scales_layout = Layout.row_major(8, 4)
     var scales_reg_tiles = (
         LayoutTensor[
@@ -323,12 +319,12 @@ def create_ref_b[
     scales_reg_tiles.vectorize[8, 1]().copy_from(
         warp_scales_tile.vectorize[1, 8]().distribute[
             smem_reg_scales_layout, axis=0
-        ](Int(lane_id))
+        ](lane_id)
     )
 
     var b_out_tile = b_out.tile[BLOCK_N, BLOCK_K](block_idx[0], block_idx[1])
     var warp_out_tile = b_out_tile.tile[repack_tile[0], repack_tile[1]](
-        Int(warp_x), Int(warp_y)
+        warp_x, warp_y
     )
     var mma_tile_iter_1 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 0)
     var mma_tile_iter_2 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 1)
@@ -359,7 +355,7 @@ def create_ref_b[
         mma_tile_iter_1[].vectorize[1, 2]()[0, 0]
     )
 
-    var lane_row, lane_col = divmod(lane_id, 4)
+    var lane_row, lane_col = udivmod(lane_id, 4)
 
     comptime for i in range(0, TILE_N // 8, 2):
         var q_int = vec[i // 2]

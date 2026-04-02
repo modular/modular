@@ -16,12 +16,12 @@ from std.math import exp
 from std.gpu import (
     AMDScheduleBarrierMask,
     barrier,
-    block_dim_uint as block_dim,
-    grid_dim_uint as grid_dim,
-    lane_id_uint as lane_id,
+    thread_idx,
+    block_dim,
+    grid_dim,
+    lane_id,
     schedule_barrier,
     schedule_group_barrier,
-    thread_idx_uint as thread_idx,
     s_waitcnt,
     s_waitcnt_barrier,
 )
@@ -50,11 +50,11 @@ comptime FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
 def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
-    x[0] = Int(thread_idx.x)
+    x[0] = thread_idx.x
 
 
 def kernel_laneid(x: UnsafePointer[Int, MutAnyOrigin]):
-    x[0] = Int(lane_id())
+    x[0] = lane_id()
 
 
 def kernel_exp[
@@ -514,7 +514,7 @@ def test_nt_load_compile() raises:
     print("== test_nt_load_compile")
 
     def kernel(x: UnsafePointer[Float32, ImmutAnyOrigin]):
-        var ptr = x + Int(thread_idx.x) * 4
+        var ptr = x + thread_idx.x * 4
         var val = ptr.load[width=4, non_temporal=True]()
         keep(val)
 
@@ -530,8 +530,8 @@ def test_nt_store_compile() raises:
         x: UnsafePointer[Float32, ImmutAnyOrigin],
         y: UnsafePointer[Float32, MutAnyOrigin],
     ):
-        var ptr_in = x + Int(thread_idx.x) * 4
-        var ptr_out = y + Int(thread_idx.x) * 4
+        var ptr_in = x + thread_idx.x * 4
+        var ptr_out = y + thread_idx.x * 4
         var val = ptr_in.load[width=4]()
         ptr_out.store[non_temporal=True](val)
 

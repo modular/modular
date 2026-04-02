@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import size_of
+from std.math.uutils import umod, udivmod
 
-from std.gpu import barrier, thread_idx_uint as thread_idx
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import barrier, thread_idx
+from std.gpu import warp_id as get_warp_id
 from std.gpu.host import DeviceContext
 from std.gpu.memory import async_copy
 from std.gpu.sync import async_copy_arrive
@@ -47,7 +48,7 @@ def producer_consumer_kernel[NUM_THREADS: Int]():
         _ = mbar[0].arrive()
     else:
         mbar[0].wait(UInt32(mbar[0].arrive()))
-        if thread_idx.x % 8 == 0:
+        if umod(thread_idx.x, 8) == 0:
             print("Consumer thread_idx:", thread_idx.x, "warp_idx: ", warp_id)
 
 
@@ -151,7 +152,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
     comptime size_per_copy = 16 // size_of[DType.float32]()
     comptime size_per_stage = size_per_copy * 128
 
-    warpgroup_idx, warpgroup_tid = divmod(thread_idx.x, 128)
+    warpgroup_idx, warpgroup_tid = udivmod(thread_idx.x, 128)
 
     smem = stack_allocation[
         size_per_stage * num_stages,
@@ -163,7 +164,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
     # Initialize smem buffer
     if warpgroup_idx == 0:
         for i in range(num_stages):
-            offset = i * size_per_stage + Int(thread_idx.x) * size_per_copy
+            offset = i * size_per_stage + thread_idx.x * size_per_copy
 
             comptime for j in range(size_per_copy):
                 smem[offset + j] = -1000.0
@@ -194,7 +195,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
     # producer group
     if warpgroup_idx == 0:
         for i in range(num_stages):
-            offset = i * size_per_stage + Int(thread_idx.x) * size_per_copy
+            offset = i * size_per_stage + thread_idx.x * size_per_copy
             async_copy[16](
                 (src.unsafe_ptr() + offset).address_space_cast[
                     AddressSpace.GLOBAL
@@ -211,7 +212,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             produced_mbar[i].wait(read_pipeline_states.phase())
 
-            offset = i * size_per_stage + Int(warpgroup_tid) * size_per_copy
+            offset = i * size_per_stage + warpgroup_tid * size_per_copy
 
             comptime for j in range(size_per_copy):
                 smem[offset + j] += Float32(i)
@@ -220,7 +221,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
 
         # write back to global memory.
         for i in range(num_stages):
-            offset = i * size_per_stage + Int(warpgroup_tid) * size_per_copy
+            offset = i * size_per_stage + warpgroup_tid * size_per_copy
 
             comptime for j in range(size_per_copy):
                 dst[offset + j] = smem[offset + j]

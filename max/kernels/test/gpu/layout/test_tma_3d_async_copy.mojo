@@ -16,11 +16,7 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import (
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_idx, grid_dim, thread_idx
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -91,9 +87,9 @@ def test_tma_3d_load_kernel[
             smem_tile,
             mbar[0],
             (
-                Int(block_idx.x) * cta_tile_dim2,
-                Int(block_idx.y) * cta_tile_dim1,
-                Int(block_idx.z) * cta_tile_dim0,
+                block_idx.x * cta_tile_dim2,
+                block_idx.y * cta_tile_dim1,
+                block_idx.z * cta_tile_dim0,
             ),
         )
     # Ensure all threads sees initialized mbarrier
@@ -111,7 +107,7 @@ def test_tma_3d_load_kernel[
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 
         dst_tile = dst.tile[cta_tile_dim1, cta_tile_dim2](
-            Int(idx * UInt(cta_tile_dim0) + UInt(i)), 0
+            idx * cta_tile_dim0 + i, 0
         )
         if thread_idx.x == 0:
             dst_tile.copy_from(smem_tile_i)

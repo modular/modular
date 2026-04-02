@@ -13,14 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import (
-    AddressSpace,
-    barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import AddressSpace, barrier, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.memory import (
     memset_zero,
@@ -62,8 +55,8 @@ def matmul(
     ]()
 
     # Thread indexing offsets.
-    var row = Int(global_idx.x)
-    var col = Int(block_idx.y * TILE_SZ_B)
+    var row = global_idx.x
+    var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.int]()
@@ -72,7 +65,7 @@ def matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i, j = divmod(thread_idx.x, TILE_SZ_B)
+        var i, j = divmod(UInt(thread_idx.x), TILE_SZ_B)
 
         # Load the B matrix into shared memory.
         var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), col + Int(j)])

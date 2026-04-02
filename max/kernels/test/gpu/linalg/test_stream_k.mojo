@@ -13,12 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import (
-    Semaphore,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import Semaphore, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
@@ -100,11 +95,12 @@ def mac_loop[
 
     var tx = thread_idx.x
     var ty = thread_idx.y
-    var global_r = rm_base + Int(ty)
-    var global_c = rn_base + Int(tx)
+
+    var global_r = rm_base + ty
+    var global_c = rn_base + tx
     var accum = Scalar[c_type](0)
     var thread_id = thread_idx.x + thread_idx.y * block_dim.x
-    var sema = Semaphore(locks + tile_id, Int(thread_id))
+    var sema = Semaphore(locks + tile_id, thread_id)
     sema.fetch()
 
     for iter in range(start_iter, end_iter):
@@ -162,7 +158,7 @@ def first_wave_kernel[
     total_partial_tiles_streamk: Int,
     iters_per_tile: Int,
 ):
-    var pid = block_idx.x
+    var pid = UInt(block_idx.x)
 
     var start_iter = pid * UInt(total_full_tiles_streamk) + (
         pid if pid
@@ -230,7 +226,7 @@ def full_tiles_kernel[
     stride_cn: Int,
     total_tiles_streamk: Int,
 ):
-    var tile_id = Int(block_idx.x + UInt(total_tiles_streamk))
+    var tile_id = block_idx.x + total_tiles_streamk
     var pid: IndexList[2]
     if GROUP_M > 0:
         pid = swizzle_tile(tile_id, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_M)
@@ -243,8 +239,8 @@ def full_tiles_kernel[
     var tx = thread_idx.x
     var ty = thread_idx.y
 
-    var global_r = rm_base + Int(ty)
-    var global_c = rn_base + Int(tx)
+    var global_r = rm_base + ty
+    var global_c = rn_base + tx
     var accum = Scalar[c_type](0)
 
     var steps = (K + BLOCK_K - 1) // BLOCK_K

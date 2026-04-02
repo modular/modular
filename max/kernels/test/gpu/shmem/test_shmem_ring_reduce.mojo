@@ -12,13 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
-from std.gpu import (
-    block_dim_uint as block_dim,
-    grid_dim_uint as grid_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    barrier,
-)
+from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from std.math import iota
 from std.os import abort
 from shmem import *
@@ -64,13 +58,13 @@ def ring_reduce(
     var num_threads = block_dim.x
     var num_blocks = grid_dim.x
     var block_idx = block_idx.x
-    var elems_per_block = nreduce // Int(num_blocks)
+    var elems_per_block = nreduce // num_blocks
 
-    if elems_per_block * Int(block_idx + 1) > nreduce:
+    if elems_per_block * (block_idx + 1) > nreduce:
         return
 
-    var src = src_ptr + block_idx * UInt(elems_per_block)
-    var dst = dst_ptr + block_idx * UInt(elems_per_block)
+    var src = src_ptr + block_idx * elems_per_block
+    var dst = dst_ptr + block_idx * elems_per_block
     var signal = signal_ptr + block_idx
 
     var chunk_elems = chunk_size // size_of[DType.int32]()
@@ -86,7 +80,7 @@ def ring_reduce(
             barrier()
 
             var i = thread_id
-            while i < UInt(chunk_elems):
+            while i < chunk_elems:
                 dst[i] = dst[i] + src[i]
                 i += num_threads
             barrier()

@@ -14,7 +14,7 @@
 from std.sys.info import align_of
 
 from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier
 from std.memory import stack_allocation

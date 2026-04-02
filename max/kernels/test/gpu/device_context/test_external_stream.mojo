@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext, DeviceStream
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
@@ -36,7 +36,7 @@ def scale_kernel(
     scale: Float32,
 ):
     var tid = global_idx.x
-    if tid >= UInt(n):
+    if tid >= n:
         return
     output[tid] = input[tid] * scale
 

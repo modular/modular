@@ -15,7 +15,7 @@ from std.io.io import _printf
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from std.gpu import block_idx_uint as block_idx
+from std.gpu import block_idx
 from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -48,8 +48,8 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
     _printf[
         "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
     ](
-        block_idx.x,
-        block_idx.y,
+        UInt(block_idx.x),
+        UInt(block_idx.y),
         shmem[0].cast[DType.float64](),
         shmem[1].cast[DType.float64](),
         shmem[2].cast[DType.float64](),

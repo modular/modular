@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx_uint as block_idx
+from std.gpu import block_idx
 from linalg.matmul.gpu.tile_scheduler import TileScheduler
 
 from std.utils.index import Index

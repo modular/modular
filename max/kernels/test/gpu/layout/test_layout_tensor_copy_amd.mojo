@@ -15,7 +15,7 @@
 from std.gpu import barrier
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.memory import CacheOperation
 from layout import *
 from layout._fillers import arange

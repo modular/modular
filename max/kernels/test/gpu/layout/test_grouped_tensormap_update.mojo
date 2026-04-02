@@ -37,7 +37,7 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TMADescriptor
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -165,8 +165,8 @@ def test_grouped_tensormap_update_kernel[
         barrier()
 
         # ===== Step 1: Acquire fence on block's GMEM tensormaps =====
-        device_tma_a[Int(block_idx.x)][].tensormap_fence_acquire()
-        device_tma_b[Int(block_idx.x)][].tensormap_fence_acquire()
+        device_tma_a[block_idx.x][].tensormap_fence_acquire()
+        device_tma_b[block_idx.x][].tensormap_fence_acquire()
 
         # ===== Step 2: Update SMEM descriptors with group's pointers =====
         if thread_idx.x == 0:
@@ -183,12 +183,12 @@ def test_grouped_tensormap_update_kernel[
 
             # Update SMEM tensormaps with new addresses
             device_tma_a[
-                Int(block_idx.x)
+                block_idx.x
             ][].replace_tensormap_global_address_in_shared_mem(
                 smem_desc_a, a_ptr
             )
             device_tma_b[
-                Int(block_idx.x)
+                block_idx.x
             ][].replace_tensormap_global_address_in_shared_mem(
                 smem_desc_b, b_ptr
             )
@@ -197,8 +197,8 @@ def test_grouped_tensormap_update_kernel[
         syncwarp()
 
         # ===== Step 3: Fence release copies SMEM -> GMEM =====
-        device_tma_a[Int(block_idx.x)][].tensormap_cp_fence_release(smem_desc_a)
-        device_tma_b[Int(block_idx.x)][].tensormap_cp_fence_release(smem_desc_b)
+        device_tma_a[block_idx.x][].tensormap_cp_fence_release(smem_desc_a)
+        device_tma_b[block_idx.x][].tensormap_cp_fence_release(smem_desc_b)
 
         barrier()
 
@@ -208,9 +208,9 @@ def test_grouped_tensormap_update_kernel[
             mbar[1].expect_bytes(Int32(expected_bytes))
 
             # Load A tile using block's GMEM tensormap
-            device_tma_a[Int(block_idx.x)][].async_copy(tile_a, mbar[0], (0, 0))
+            device_tma_a[block_idx.x][].async_copy(tile_a, mbar[0], (0, 0))
             # Load B tile using block's GMEM tensormap
-            device_tma_b[Int(block_idx.x)][].async_copy(tile_b, mbar[1], (0, 0))
+            device_tma_b[block_idx.x][].async_copy(tile_b, mbar[1], (0, 0))
 
         barrier()
         mbar[0].wait()

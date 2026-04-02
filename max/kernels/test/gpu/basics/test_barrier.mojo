@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.gpu.primitives.warp as warp
-from std.gpu import barrier, global_idx_uint as global_idx
+from std.gpu import barrier, global_idx
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
@@ -27,7 +27,7 @@ def kernel[
     size: Int,
 ):
     var global_tid = global_idx.x
-    if global_tid >= UInt(size):
+    if global_tid >= size:
         return
     shared_data[global_tid] = input[global_tid]
 

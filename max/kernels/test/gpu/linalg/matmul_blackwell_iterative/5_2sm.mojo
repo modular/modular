@@ -13,6 +13,7 @@
 
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up
+from std.math.uutils import umod, ufloordiv
 from std.memory import bitcast
 from std.sys import argv, size_of
 
@@ -25,13 +26,7 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
 from std.gpu.memory import fence_async_view_proxy, external_memory
 from std.gpu.compute.mma import st_matrix
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -293,12 +288,12 @@ def kernel_5[
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = (
-                Int(peer_cta_coord[2]) * a_tma_rows + Int(block_idx.x) * BM
+                Int(peer_cta_coord[2]) * a_tma_rows + block_idx.x * BM
             )
             var b_gmem_slice_coord = (
                 Int(peer_cta_coord[1]) * b_tma_rows
                 + Int(peer_cta_coord[0]) * BN
-                + Int(block_idx.y) * MMA_N
+                + block_idx.y * MMA_N
             )
 
             comptime for j in range(BK // 64):
@@ -377,11 +372,11 @@ def kernel_5[
 
     comptime C_WBM = BM // 2 if MMA_M == 128 else BM // 4
     comptime C_WBN = BN if MMA_M == 128 else MMA_N
-    var c_coord_x = warp_id() % 2 if MMA_M == 128 else warp_id()
-    var c_coord_y = warp_id() // 2 if MMA_M == 128 else 0
+    var c_coord_x = umod(warp_id(), 2) if MMA_M == 128 else warp_id()
+    var c_coord_y = ufloordiv(warp_id(), 2) if MMA_M == 128 else 0
 
     # 32 x BN
-    c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](Int(c_coord_x), Int(c_coord_y))
+    c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
@@ -398,15 +393,15 @@ def kernel_5[
         Layout.row_major(BM * NUM_TMA_TILES, TMA_BN)
     ]()
 
-    var split_coord_x = warp_id() // 2 if MMA_M == 128 else 0
+    var split_coord_x = ufloordiv(warp_id(), 2) if MMA_M == 128 else 0
     var c_smem_split = c_smem_tile_reshaped.tile[C_SPLIT_ROWS, TMA_BN](
-        Int(split_coord_x), 0
+        split_coord_x, 0
     )
 
     comptime for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
-            Int(warp_id() % 2 if MMA_M == 128 else warp_id()), 0
+            umod(warp_id(), 2) if MMA_M == 128 else warp_id(), 0
         )
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
@@ -447,7 +442,7 @@ def kernel_5[
                         UNKNOWN_VALUE,
                     ),
                 )
-            ](Int(lane_id()), i, 0, 0)
+            ](lane_id(), i, 0, 0)
 
             var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
             var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
@@ -468,13 +463,13 @@ def kernel_5[
     # SMEM -> GMEM: Direct TMA store
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
-    if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
-        var row_start = Int(block_idx.x) * BM
+    if elect_one_warp and thread_idx.x < NUM_TMA_TILES:
+        var row_start = block_idx.x * BM
 
-        var col_start = Int(block_idx.y) * MMA_N + Int(thread_idx.x) * TMA_BN
+        var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
+        var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * thread_idx.x
 
         var c_tma_tile = LayoutTensor[
             c_type,

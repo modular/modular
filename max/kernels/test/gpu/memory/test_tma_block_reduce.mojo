@@ -17,13 +17,15 @@ from std.sys import argv
 from std.sys.info import simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.gpu import WARP_SIZE, lane_id_uint as lane_id, warp_id_uint as warp_id
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
+    block_dim,
+    block_idx,
+    thread_idx,
+    WARP_SIZE,
+    lane_id,
+    warp_id,
 )
 from std.gpu.memory import (
     AddressSpace,
@@ -57,7 +59,7 @@ def block_reduce[
     ]()
 
     var tid = thread_idx.x
-    for i in range(Int(tid), max_warps_per_block, Int(block_dim.x)):
+    for i in range(tid, max_warps_per_block, block_dim.x):
         m2_shared[i] = 0
 
     if tid == 0:
@@ -74,7 +76,7 @@ def block_reduce[
         m2_shared[warp_id] = warp_m2
     barrier()
 
-    if warp_id == 0 and lane_idx < UInt(max_warps_per_block):
+    if warp_id == 0 and lane_idx < max_warps_per_block:
         var block_m2 = warp.lane_group_sum[num_lanes=max_warps_per_block](
             m2_shared[lane_idx]
         )
@@ -95,13 +97,13 @@ def global_reduction_kernel[
 ](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols: Int):
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * UInt(simd_width)
+    var idx = tid * simd_width
     var vec_data = SIMD[accum_type, simd_width](0)
 
-    if idx < UInt(num_cols):
-        vec_data = input_fn[simd_width, 2](
-            IndexList[2](Int(row), Int(idx))
-        ).cast[accum_type]()
+    if idx < num_cols:
+        vec_data = input_fn[simd_width, 2](IndexList[2](row, idx)).cast[
+            accum_type
+        ]()
 
     var thread_sum = vec_data.reduce_add()
 
@@ -153,8 +155,8 @@ def tma_reduction_kernel[
 
     # Local thread reduction of loaded data.
     var vec_data = SIMD[accum_type, simd_width](0)
-    var idx = thread_idx.x * UInt(simd_width)
-    if idx < UInt(cols):
+    var idx = thread_idx.x * simd_width
+    if idx < cols:
         vec_data = shmem.load[width=simd_width](idx).cast[accum_type]()
     var local_sum = vec_data.reduce_add()
 

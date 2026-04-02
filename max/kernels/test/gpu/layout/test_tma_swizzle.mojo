@@ -16,7 +16,7 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
@@ -72,13 +72,13 @@ def tma_swizzle_load_kernel[
         tma_tile.async_copy(
             tile,
             mbar[0],
-            (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM),
+            (block_idx.x * tileN, block_idx.y * tileM),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
 
     if thread_idx.x == 0:
         dst_tile.copy_from(tile)

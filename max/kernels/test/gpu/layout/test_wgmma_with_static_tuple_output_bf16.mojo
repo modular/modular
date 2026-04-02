@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier, warp_id_uint as warp_id, lane_id_int as lane_id
+from std.gpu import barrier, warp_id, lane_id
 from std.gpu.host import DeviceContext
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
@@ -107,7 +107,7 @@ def wgmma_kernel_ss[
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
+        c_gmem.tile[16, WMMA_N](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )

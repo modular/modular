@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, DeviceStream
 from std.testing import assert_equal, assert_true
 
@@ -26,7 +26,7 @@ def simple_kernel(
 ):
     """Simple kernel that multiplies input by a multiplier."""
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = input[tid] * multiplier
 

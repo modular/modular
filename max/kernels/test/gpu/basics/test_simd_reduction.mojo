@@ -14,7 +14,7 @@
 # on GPUs.
 
 
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 
@@ -50,7 +50,7 @@ def test_simd_reduction(ctx: DeviceContext) raises:
         input: UnsafePointer[Scalar[DType.int], ImmutAnyOrigin],
     ):
         output[global_idx.x] = input.load[width=simd_width](
-            simd_width * Int(global_idx.x)
+            simd_width * global_idx.x
         ).reduce_add()
 
     ctx.enqueue_function_experimental[kernel](

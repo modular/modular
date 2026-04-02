@@ -13,6 +13,7 @@
 
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up
+from std.math.uutils import umod, ufloordiv
 from std.memory import bitcast
 from std.sys import argv, size_of
 
@@ -29,11 +30,11 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
+    block_idx,
+    lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
 )
-from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import fence_async_view_proxy, external_memory
 from std.gpu.compute.mma import st_matrix
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -88,7 +89,7 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
@@ -100,7 +101,7 @@ struct WarpRole(TrivialRegisterPassable):
         return self._role != other._role
 
     @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
@@ -164,7 +165,7 @@ def load_AB[
     ],
     producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
-    work_tile_coord: Tuple[UInt, UInt],
+    work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
     iter_idx: UInt,
@@ -195,12 +196,12 @@ def load_AB[
         tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
     var a_gmem_slice_coord = (
-        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+        Int(peer_cta_coord[2]) * a_tma_rows + work_tile_coord[0] * BM
     )
     var b_gmem_slice_coord = (
         Int(peer_cta_coord[1]) * b_tma_rows
         + Int(peer_cta_coord[0]) * BN
-        + Int(work_tile_coord[1]) * MMA_N
+        + work_tile_coord[1] * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -439,7 +440,7 @@ def store_C[
             dtype=accum_type,
             pack=False,
             width=remainder_frag_size,
-        ](tmem_addr + 128 | UInt32((warp_id * UInt(WARP_SIZE)) << 16))
+        ](tmem_addr + 128 | UInt32((warp_id * WARP_SIZE) << 16))
 
         c_lower_pow_2_rem = tcgen05_ld[
             datapaths=data_paths,
@@ -448,7 +449,7 @@ def store_C[
             dtype=accum_type,
             pack=False,
             width=remainder_frag_size,
-        ](tmem_addr + 128 | UInt32((warp_id * UInt(WARP_SIZE) + 16) << 16))
+        ](tmem_addr + 128 | UInt32((warp_id * WARP_SIZE + 16) << 16))
 
     # Remainder load happens later, only if needed
     tcgen05_load_wait()
@@ -472,15 +473,15 @@ def store_C[
         Layout.row_major(BM * NUM_TMA_TILES, TMA_BN)
     ]()
 
-    var split_coord_x = warp_id // 2 if MMA_M == 128 else 0
+    var split_coord_x = ufloordiv(warp_id, 2) if MMA_M == 128 else 0
     var c_smem_split = c_smem_tile_reshaped.tile[C_SPLIT_ROWS, TMA_BN](
-        Int(split_coord_x), 0
+        split_coord_x, 0
     )
 
     comptime for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
-            Int(warp_id % 2 if MMA_M == 128 else warp_id), 0
+            umod(warp_id, 2) if MMA_M == 128 else warp_id, 0
         )
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
@@ -499,7 +500,7 @@ def store_C[
                             UNKNOWN_VALUE,
                         ),
                     )
-                ](Int(lane_id()), i, m_mma, 0)
+                ](lane_id(), i, m_mma, 0)
                 # i,0,0
 
                 var d_reg_upper = SIMD[DType.bfloat16, 8]()
@@ -586,12 +587,12 @@ def store_C[
     # UMMA (tensor memory) → registers → shared memory → global memory
     # #           c_frag                   c_smem_tile      c_tma_op
 
-    if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
-        var row_start = Int(block_idx.x) * BM
-        var col_start = Int(block_idx.y) * MMA_N + Int(thread_idx.x) * TMA_BN
+    if elect_one_warp and thread_idx.x < NUM_TMA_TILES:
+        var row_start = block_idx.x * BM
+        var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
+        var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * thread_idx.x
 
         var c_tma_tile = LayoutTensor[
             c_type,

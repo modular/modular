@@ -16,10 +16,10 @@ from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import (
     barrier,
-    warp_id_uint as get_warp_id,
+    warp_id as get_warp_id,
     block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
+    block_idx,
+    lane_id,
 )
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -128,7 +128,7 @@ def blockscaled_pair_cta_mxfp8[
         b_scales_desc_shape,
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     comptime assert (
         a_type == b_type == DType.float8_e4m3fn
@@ -341,18 +341,18 @@ def blockscaled_pair_cta_mxfp8[
         b_mma_mask | b_mma_mask << 1
     )
 
-    for k_iter in range(Int(num_iters)):
+    for k_iter in range(num_iters):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = (
-                Int(peer_cta_coord[2]) * a_tma_rows + Int(block_idx.x) * BM
+                Int(peer_cta_coord[2]) * a_tma_rows + block_idx.x * BM
             )
             var b_gmem_slice_coord = (
                 Int(peer_cta_coord[1]) * b_tma_rows
                 + Int(peer_cta_coord[0]) * BN
-                + Int(block_idx.y) * MMA_N
+                + block_idx.y * MMA_N
             )
 
             var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
@@ -381,7 +381,7 @@ def blockscaled_pair_cta_mxfp8[
                     0,
                     0,
                     k_iter,
-                    Int(block_idx.x) * (BM // SF_MN_GROUP_SIZE),
+                    block_idx.x * (BM // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -392,7 +392,7 @@ def blockscaled_pair_cta_mxfp8[
                     0,
                     0,
                     k_iter,
-                    Int(block_idx.y) * (MMA_N // SF_MN_GROUP_SIZE),
+                    block_idx.y * (MMA_N // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -522,7 +522,7 @@ def blockscaled_pair_cta_mxfp8[
         tcgen05_release_allocation_lock[Int32(cta_group)]()
         tcgen05_dealloc[Int32(cta_group)](tmem_addr, max_tmem_cols)
 
-    warp_id = get_warp_id()
+    var warp_id = get_warp_id()
 
     var c_gmem_block = c.tile[MMA_M, MMA_N](
         Int(peer_cta_coord[1]), Int(peer_cta_coord[2])
@@ -531,7 +531,7 @@ def blockscaled_pair_cta_mxfp8[
 
     comptime if MMA_M == 128:
         var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
-            Int(warp_id) % 2, Int(warp_id) // 2
+            warp_id % 2, warp_id // 2
         ).vectorize[1, 2]()
 
         comptime for i in range(c_frag_size // 2):
@@ -543,7 +543,7 @@ def blockscaled_pair_cta_mxfp8[
             )
     else:
         var c_gmem_frag = c_gmem_slice.tile[BM // 4, MMA_N](
-            Int(warp_id), 0
+            warp_id, 0
         ).vectorize[1, 2]()
 
         comptime for i in range(c_frag_size // 2):
@@ -740,7 +740,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
         a_scales_tma_op,
         b_scales_tma_op,
         c,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         grid_dim=(
             align_up(ceildiv(M, BM), Int(cluster_shape[0])),
             align_up(ceildiv(N, BN) // cta_group, Int(cluster_shape[1])),

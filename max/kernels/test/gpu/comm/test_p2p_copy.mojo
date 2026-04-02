@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.sys import get_defined_int
 
 from comm.sync import enable_p2p
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_almost_equal, assert_true
 
@@ -26,7 +26,7 @@ def p2p_copy_kernel(
     num_elements: Int,
 ):
     var tid = global_idx.x
-    if tid < UInt(num_elements):
+    if tid < num_elements:
         dst[tid] = src[tid]
 
 

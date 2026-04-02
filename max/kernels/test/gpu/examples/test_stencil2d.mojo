@@ -13,11 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import (
-    barrier,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.memory import stack_allocation
 from layout import TileTensor, Coord, Idx, row_major
@@ -43,26 +39,17 @@ def stencil2d(
     var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
     var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
 
-    if (
-        tidy > 0
-        and tidx > 0
-        and tidy < UInt(num_rows - 1)
-        and tidx < UInt(num_cols - 1)
-    ):
-        var idx = Int(tidy * UInt(num_cols) + tidx)
+    if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
+        var idx = tidy * num_cols + tidx
         b.store(
             Coord(Idx(idx)),
             Float32(coeff0) * a.load[width=1](Coord(Idx(idx - 1)))
             + Float32(coeff1) * a.load[width=1](Coord(Idx(idx)))
             + Float32(coeff2) * a.load[width=1](Coord(Idx(idx + 1)))
             + Float32(coeff3)
-            * a.load[width=1](
-                Coord(Idx(Int((tidy - 1) * UInt(num_cols) + tidx)))
-            )
+            * a.load[width=1](Coord(Idx((tidy - 1) * num_cols + tidx)))
             + Float32(coeff4)
-            * a.load[width=1](
-                Coord(Idx(Int((tidy + 1) * UInt(num_cols) + tidx)))
-            ),
+            * a.load[width=1](Coord(Idx((tidy + 1) * num_cols + tidx))),
         )
 
 
@@ -97,68 +84,53 @@ def stencil2d_smem(
 
     # Each element is loaded in shared memory.
     a_shared.store(
-        Coord(Idx(Int(lindex_y)), Idx(Int(lindex_x))),
-        a.load[width=1](Coord(Idx(Int(tidy * UInt(num_cols) + tidx)))),
+        Coord(Idx(lindex_y), Idx(lindex_x)),
+        a.load[width=1](Coord(Idx(tidy * num_cols + tidx))),
     )
 
     # First column also loads elements left and right to the block.
     if thread_idx.x == 0:
-        var idx = Int(tidy * UInt(num_cols) + (tidx - 1))
+        var idx = tidy * num_cols + (tidx - 1)
         a_shared.store(
-            Coord(Idx(Int(lindex_y)), Idx(0)),
+            Coord(Idx(lindex_y), Idx(0)),
             a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
         )
 
-        idx = Int(tidy * UInt(num_cols) + tidx + BLOCK_DIM)
+        idx = tidy * num_cols + tidx + BLOCK_DIM
         a_shared.store(
-            Coord(Idx(Int(lindex_y)), Idx(BLOCK_DIM + 1)),
+            Coord(Idx(lindex_y), Idx(BLOCK_DIM + 1)),
             a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
         )
 
     # First row also loads elements above and below the block.
     if thread_idx.y == 0:
-        var idx = Int((tidy - 1) * UInt(num_cols) + tidx)
+        var idx = (tidy - 1) * num_cols + tidx
         a_shared.store(
-            Coord(Idx(0), Idx(Int(lindex_x))),
+            Coord(Idx(0), Idx(lindex_x)),
             a.load[width=1](Coord(Idx(idx))) if 0 < idx < arr_size else 0,
         )
 
-        idx = Int((tidy + BLOCK_DIM) * UInt(num_cols) + tidx)
+        idx = (tidy + BLOCK_DIM) * num_cols + tidx
         a_shared.store(
-            Coord(Idx(BLOCK_DIM + 1), Idx(Int(lindex_x))),
+            Coord(Idx(BLOCK_DIM + 1), Idx(lindex_x)),
             a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
         )
 
     barrier()
 
-    if (
-        tidy > 0
-        and tidx > 0
-        and tidy < UInt(num_rows - 1)
-        and tidx < UInt(num_cols - 1)
-    ):
+    if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
         b.store(
-            Coord(Idx(Int(tidy * UInt(num_cols) + tidx))),
+            Coord(Idx(tidy * num_cols + tidx)),
             Float32(coeff0)
-            * a_shared.load[width=1](
-                Coord(Idx(Int(lindex_y)), Idx(Int(lindex_x - 1)))
-            )
+            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x - 1)))
             + Float32(coeff1)
-            * a_shared.load[width=1](
-                Coord(Idx(Int(lindex_y)), Idx(Int(lindex_x)))
-            )
+            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x)))
             + Float32(coeff2)
-            * a_shared.load[width=1](
-                Coord(Idx(Int(lindex_y)), Idx(Int(lindex_x + 1)))
-            )
+            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x + 1)))
             + Float32(coeff3)
-            * a_shared.load[width=1](
-                Coord(Idx(Int(lindex_y - 1)), Idx(Int(lindex_x)))
-            )
+            * a_shared.load[width=1](Coord(Idx(lindex_y - 1), Idx(lindex_x)))
             + Float32(coeff4)
-            * a_shared.load[width=1](
-                Coord(Idx(Int(lindex_y + 1)), Idx(Int(lindex_x)))
-            ),
+            * a_shared.load[width=1](Coord(Idx(lindex_y + 1), Idx(lindex_x))),
         )
 
 

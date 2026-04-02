@@ -40,7 +40,7 @@ See ``nn/mha_operand.mojo`` for the trait definition and implementations.
 from std.math import ceildiv
 from std.sys.info import size_of
 
-from std.gpu import block_dim_uint as block_dim, thread_idx_uint as thread_idx
+from std.gpu import block_dim, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
@@ -125,8 +125,8 @@ def gather4_raw_smoke_kernel[
     barrier()
 
     var total_elems = 4 * row_width
-    var tid = Int(thread_idx.x)
-    var num_threads = Int(block_dim.x)
+    var tid = thread_idx.x
+    var num_threads = block_dim.x
     for i in range(tid, total_elems, num_threads):
         d_out[i] = shmem[i]
 
@@ -739,8 +739,8 @@ def gather4_kernel[
 
     comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
-    var tid = Int(thread_idx.x)
-    var num_threads = Int(block_dim.x)
+    var tid = thread_idx.x
+    var num_threads = block_dim.x
     var phase = UInt32(0)
 
     var tile_idx: Int32 = 0
@@ -1483,7 +1483,7 @@ def gather4_tile_api_kernel[
     var smem_ptr = smem_base.bitcast[Scalar[dtype]]()
     var mbar = (smem_base + smem_bytes).bitcast[SharedMemBarrier]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var elect_one_thread = tid == 0
 
     if elect_one_thread:

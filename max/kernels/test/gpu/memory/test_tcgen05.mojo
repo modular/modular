@@ -13,7 +13,7 @@
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import thread_idx_uint as thread_idx, warp_id_uint as warp_id
+from std.gpu import thread_idx, warp_id
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import barrier
 from std.gpu.compute.arch.tcgen05 import *
@@ -45,7 +45,7 @@ def tcgen05_st_ld_roundtrip_kernel[
 
     var data_st = InlineArray[Scalar[DType.float32], width](uninitialized=True)
     for n in range(N):
-        data_st[n] = Float32(thread_idx.x * UInt(N) + UInt(n))
+        data_st[n] = Float32(thread_idx.x * N + n)
 
     tcgen05_st[
         datapaths=16,
@@ -180,8 +180,8 @@ def tcgen05_cp_ld_roundtrip_kernel[
     # Spread data to the 4 quadrants accordingly, such that each thread will have
     # [thread_idx.x + 0, ..., thread_idx.x + 3] in it's registers after the `tcgen05.ld`.
 
-    var n = (thread_idx.x // 2) % 2 * 4 + (thread_idx.x // 8)
-    var k = (thread_idx.x // 4) % 2 * 4 + (thread_idx.x % 2) * 2
+    var n = (UInt(thread_idx.x) // 2) % 2 * 4 + (UInt(thread_idx.x) // 8)
+    var k = (UInt(thread_idx.x) // 4) % 2 * 4 + (UInt(thread_idx.x) % 2) * 2
 
     smem_tile[n, k + 0] = Float32(thread_idx.x * 4 + 0)
     smem_tile[n, k + 1] = Float32(thread_idx.x * 4 + 1)
@@ -226,7 +226,7 @@ def tcgen05_cp_ld_roundtrip_kernel[
         tcgen05_dealloc[1](tmem_addr, num_cols)
 
     for n in range(N):
-        if data_ld[n] == Float32(thread_idx.x * UInt(N) + UInt(n)):
+        if data_ld[n] == Float32(thread_idx.x * N + n):
             data[thread_idx.x, n] = data_ld[n]
 
 

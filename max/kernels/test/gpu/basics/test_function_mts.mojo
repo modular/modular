@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from tensor import InputTensor, OutputTensor, StaticTensorSpec

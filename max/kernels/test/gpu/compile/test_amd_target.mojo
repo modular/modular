@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_dim, block_idx, grid_dim, thread_idx
 
 
 # CHECK-LABEL: test_amd_dims
