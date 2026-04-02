@@ -357,6 +357,42 @@ private:
   PogListAttr paramListAttr;
 };
 
+//===----------------------------------------------------------------------===//
+// Constraint Implication
+//===----------------------------------------------------------------------===//
+
+/// Check if propA logically implies propB.
+/// Uses canonicalization, weakening rules (A implies A OR B),
+/// conjunction elimination ((A AND B) implies A), and set-containment
+/// subsumption for TypeConformsToTraitAttr (relies on conforms_to attrs
+/// being canonicalized at construction to include ancestor traits).
+/// Returns true if propA implies propB.
+bool constraintImplies(TypedAttr propA, TypedAttr propB);
+
+/// Check if propA and propB are logically contradictory.
+/// Two propositions contradict if their conjunction is necessarily false.
+/// E.g., X and NOT(X) contradict, as do (X AND Y) and NOT(X).
+/// Uses canonicalization and recursive decomposition of AND/NOT expressions.
+/// Returns true if propA and propB contradict.
+bool constraintsContradict(TypedAttr propA, TypedAttr propB);
+
+/// Result of checking whether a type conforms to a trait.
+/// This is a 3-state result because conditional conformances may not be
+/// provable at compile time.
+enum class ConformanceResult {
+  Yes,          // Definitely conforms (unconditional or constraint proven true)
+  No,           // Definitely does not conform (constraint proven false)
+  NeedsEvidence // Conditional conformance that can't be proven statically
+};
+
+/// Evaluate a conditional constraint using a pre-built evaluator that already
+/// has struct parameters bound.
+/// Shared by the parser's doesNominalTypeConformTo and CheckLifetimes'
+/// destructor resolution.
+ConformanceResult
+evaluateConstraint(ParameterEvaluator &evaluator, ConstraintAttr constraint,
+                   ArrayRef<ConstraintAttr> callerAssumptions = {});
+
 } // namespace LIT
 
 //===----------------------------------------------------------------------===//

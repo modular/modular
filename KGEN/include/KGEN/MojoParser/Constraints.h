@@ -66,21 +66,6 @@ ConstraintResult checkConstraints(
 /// legal during constraint checking.
 TypedAttr deShortCircuitCond(TypedAttr value);
 
-/// Check if propA logically implies propB.
-/// Uses canonicalization, weakening rules (A implies A OR B),
-/// conjunction elimination ((A AND B) implies A), and set-containment
-/// subsumption for TypeConformsToTraitAttr (relies on conforms_to attrs
-/// being canonicalized at construction to include ancestor traits).
-/// Returns true if propA implies propB.
-bool constraintImplies(TypedAttr propA, TypedAttr propB);
-
-/// Check if propA and propB are logically contradictory.
-/// Two propositions contradict if their conjunction is necessarily false.
-/// E.g., X and NOT(X) contradict, as do (X AND Y) and NOT(X).
-/// Uses canonicalization and recursive decomposition of AND/NOT expressions.
-/// Returns true if propA and propB contradict.
-bool constraintsContradict(TypedAttr propA, TypedAttr propB);
-
 } // namespace LIT
 } // namespace M::KGEN
 
