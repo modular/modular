@@ -2977,6 +2977,7 @@ class FuncOp(max._core.Operation):
         _llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr,
         cross_device_captures: max._core.dialects.m.StringArrayAttr,
         coroutine_type: max._core.dialects.builtin.TypeAttr,
+        linkage_name: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2989,6 +2990,7 @@ class FuncOp(max._core.Operation):
         export_kind: ExportKind = ExportKind.not_exported,
         external: bool = False,
         convergent: bool = False,
+        linkage_name: max._core.dialects.builtin.TypedAttr = ...,
         decorators: Sequence[max._core.dialects.builtin.TypedAttr] = [],
         llvm_metadata: max._core.dialects.builtin.DictionaryAttr = ...,
         llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr = ...,
@@ -3053,6 +3055,12 @@ class FuncOp(max._core.Operation):
     def coroutine_type(
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
+    @property
+    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @linkage_name.setter
+    def linkage_name(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
 
 class GeneratorOp(max._core.Operation):
     """
@@ -3090,6 +3098,7 @@ class GeneratorOp(max._core.Operation):
         export_kind: ExportKindAttr,
         external: max._core.dialects.builtin.UnitAttr,
         inlined_form: max._core.dialects.builtin.TypedAttr,
+        linkage_name: max._core.dialects.builtin.TypedAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
@@ -3105,6 +3114,7 @@ class GeneratorOp(max._core.Operation):
         input_params: Sequence[ParamDeclAttr],
         inline_level: InlineLevel = InlineLevel.automatic,
         inlined_form: max._core.dialects.builtin.TypedAttr = ...,
+        linkage_name_attr: max._core.dialects.builtin.TypedAttr = ...,
         llvm_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
         llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
     ) -> None: ...
@@ -3164,6 +3174,12 @@ class GeneratorOp(max._core.Operation):
     def inlined_form(self) -> max._core.dialects.builtin.TypedAttr | None: ...
     @inlined_form.setter
     def inlined_form(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
+    @property
+    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @linkage_name.setter
+    def linkage_name(
         self, arg: max._core.dialects.builtin.TypedAttr, /
     ) -> None: ...
     @property
