@@ -34,7 +34,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
-from std.gpu.memory import external_memory
+from std.gpu.memory import external_memory, load as gpu_load
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from std.gpu.primitives import block
 from std.gpu.primitives.grid_controls import (
@@ -1039,34 +1039,41 @@ def rms_norm_gpu_warp_tiling[
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
-    var vec_data = SIMD[accum_type, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * UInt(simd_width)
 
     with PDL():
-        var gamma_val = SIMD[dtype, simd_width](0)
+        var vec_data = SIMD[accum_type, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
             ]()
-            # Prefetch gamma before reduction to overlap load with compute.
-            gamma_val = gamma.load[width=simd_width, alignment=align](
-                Coord(Idx(idx))
-            )
 
-        var norm_val = _rms_norm_warp_tiling_subkernel[
-            max_warps_per_block, multiply_before_cast
-        ](
-            Int(row),
-            Int(idx),
-            vec_data,
-            gamma_val,
-            eps_accum,
-            weight_offset_accum,
-            num_cols,
+        var thread_m2: Scalar[accum_type] = (vec_data ** 2).reduce_add()
+        var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2
         )
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
+        )
+
+        var norm_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
+            var gamma_val = gpu_load[
+                width=simd_width, read_only=True, alignment=align
+            ](gamma.ptr + Int(gamma.layout(Idx(idx))))
+
+            comptime if multiply_before_cast:
+                var gamma_accum = (
+                    gamma_val.cast[accum_type]() + weight_offset_accum
+                )
+                norm_val = (vec_data * norm_factor * gamma_accum).cast[dtype]()
+            else:
+                norm_val = (vec_data * norm_factor).cast[dtype]() * (
+                    gamma_val + weight_offset_accum.cast[dtype]()
+                )
+
             output_fn[simd_width, align](Int(row), Int(idx), norm_val)
 
 
@@ -1215,7 +1222,16 @@ def rms_norm_gpu[
     def output_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate a given 2D index back to the original n-D tensor
+        comptime if rank == 3:
+            if shape[0] == 1:
+                var indices = IndexList[rank]()
+                indices[0] = 0
+                indices[1] = row
+                indices[2] = col
+                output_fn[simd_width, alignment](
+                    indices.canonicalize(), val
+                )
+                return
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_fn[simd_width, alignment](indices.canonicalize(), val)
@@ -1225,7 +1241,13 @@ def rms_norm_gpu[
     def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate a given 2D index back to the original n-D tensor
+        comptime if rank == 3:
+            if shape[0] == 1:
+                var indices = IndexList[rank]()
+                indices[0] = 0
+                indices[1] = row
+                indices[2] = col
+                return input_fn[simd_width](indices.canonicalize())
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
