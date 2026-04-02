@@ -233,6 +233,7 @@ def load_text_generation_scheduler(
     # Build DP batch padder when DP > 1 with device graph capture.
     kv_manager = pipeline.kv_manager
     dp_padder: DPBatchPadder | None = None
+    assert pipeline_config.model is not None
     if (
         scheduler_config.data_parallel_degree > 1
         and pipeline_config.runtime.device_graph_capture

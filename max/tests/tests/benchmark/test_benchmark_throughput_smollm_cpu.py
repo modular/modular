@@ -40,14 +40,14 @@ def test_python_serving_cpu() -> None:
 
     smoke_cmd = [
         os.environ["BENCHMARK_THROUGHPUT_BINARY"],
-        f"--pipeline.model.model-path={model_path}",
-        "--pipeline.model.quantization-encoding=float32",
+        f"--pipeline.models.main.model-path={model_path}",
+        "--pipeline.models.main.quantization-encoding=float32",
         "--other.num-prompts=2",
         "--pipeline.runtime.max-batch-size=1",
         "--input-len=108",
         "--output-len=50",
         "--other.trust-remote-code",
-        "--pipeline.model.max-length=512",
+        "--pipeline.models.main.max-length=512",
     ]
     process_result = subprocess.run(
         smoke_cmd,

@@ -20,6 +20,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
@@ -56,11 +57,15 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
 
     with pytest.raises(ValueError):
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path="GSAI-ML/LLaDA-8B-Instruct",
-                # This forces it to fail if we dont have it.
-                trust_remote_code=True,
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="GSAI-ML/LLaDA-8B-Instruct",
+                        # This forces it to fail if we dont have it.
+                        trust_remote_code=True,
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
@@ -79,10 +84,14 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         match=r"Cannot determine architecture|no 'architectures' field",
     ):
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path="GSAI-ML/LLaDA-8B-Instruct",
-                trust_remote_code=True,
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="GSAI-ML/LLaDA-8B-Instruct",
+                        trust_remote_code=True,
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )

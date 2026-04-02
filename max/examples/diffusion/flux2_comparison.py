@@ -70,6 +70,7 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
@@ -821,13 +822,19 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     model_id = args.model
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_id,
-            device_specs=[DeviceSpec.accelerator()],
-            weight_path=(
-                [Path(p) for p in args.weight_path] if args.weight_path else []
-            ),
-            quantization_encoding=args.quantization_encoding,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_id,
+                    device_specs=[DeviceSpec.accelerator()],
+                    weight_path=(
+                        [Path(p) for p in args.weight_path]
+                        if args.weight_path
+                        else []
+                    ),
+                    quantization_encoding=args.quantization_encoding,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=args.prefer_module_v3,

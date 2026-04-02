@@ -26,6 +26,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.hf_utils import HuggingFaceRepo
+from max.pipelines.lib.model_manifest import ModelManifest
 from test_common.mocks import (
     mock_pipeline_config_resolve,
 )
@@ -37,14 +38,24 @@ class TestMAXModelConfigSubfolder:
     @mock_pipeline_config_resolve
     def test_subfolder_default_is_none(self) -> None:
         """Test that subfolder defaults to None."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
         assert config.model.subfolder is None
 
     @mock_pipeline_config_resolve
     def test_subfolder_can_be_set(self) -> None:
         """Test that subfolder can be set to a string value."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path="test/model", subfolder="vae")
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model", subfolder="vae"
+                    )
+                }
+            )
         )
         assert config.model.subfolder == "vae"
 

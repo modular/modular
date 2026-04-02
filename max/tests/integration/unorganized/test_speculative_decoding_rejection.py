@@ -30,6 +30,7 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib.config.kv_cache_config import KVCacheConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
@@ -63,16 +64,20 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
         device_memory_utilization=0.3,
     )
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_name,
-            quantization_encoding="float32",
-            device_specs=[DeviceSpec.accelerator()],
-            kv_cache=kv_cache_config,
-            max_length=1024,
-        ),
-        draft_model=MAXModelConfig(
-            model_path=model_name,
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_name,
+                    quantization_encoding="float32",
+                    device_specs=[DeviceSpec.accelerator()],
+                    kv_cache=kv_cache_config,
+                    max_length=1024,
+                ),
+                "draft": MAXModelConfig(
+                    model_path=model_name,
+                    device_specs=[DeviceSpec.accelerator()],
+                ),
+            }
         ),
         speculative=SpeculativeConfig(
             speculative_method="standalone",

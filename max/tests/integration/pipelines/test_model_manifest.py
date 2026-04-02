@@ -202,15 +202,18 @@ class TestDiffusersAutoExpansion:
         assert registry["main"].model_path == "org/llm-model"
         assert len(registry) == 1
 
-    def test_rejects_kwargs_for_composite_model(
+    def test_propagates_kwargs_to_diffusers_components(
         self, _mock_validate: Any
     ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
-            with pytest.raises(ValueError, match="ModelManifest directly"):
-                ModelManifest.from_model_path(
-                    "org/diffusion-model",
-                    quantization_encoding="float32",
-                )
+            registry = ModelManifest.from_model_path(
+                "org/diffusion-model",
+                quantization_encoding="float32",
+            )
+
+        # kwargs are forwarded to each component's MAXModelConfig
+        for config in registry.values():
+            assert config.quantization_encoding == "float32"
 
     def test_skips_private_keys(self, _mock_validate: Any) -> None:
         model_index: dict[str, object] = {

@@ -957,6 +957,8 @@ class PipelineRegistry:
                 f"pipeline tasks: {task_list}. "
                 f"Please specify --task explicitly."
             )
+        if len(matching_tasks) == 1:
+            return matching_tasks[0]
         if arch := self.architectures.get(architecture_name):
             return arch.task
         raise ValueError(

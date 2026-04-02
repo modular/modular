@@ -30,6 +30,7 @@ from max.interfaces import (
 from max.pipelines import PipelineConfig, TextGenerationPipeline
 from max.pipelines.core import TextContext
 from max.pipelines.lib import MAXModelConfig, SamplingConfig, TextTokenizer
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PipelineRegistry
 
@@ -44,12 +45,16 @@ def test_smollm_with_structured_output_gpu(
     )
     assert revision is not None
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-            quantization_encoding="bfloat16",
-            device_specs=[DeviceSpec.accelerator()],
-            huggingface_model_revision=revision,
-            max_length=8192,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+                    quantization_encoding="bfloat16",
+                    device_specs=[DeviceSpec.accelerator()],
+                    huggingface_model_revision=revision,
+                    max_length=8192,
+                )
+            }
         ),
         sampling=SamplingConfig(enable_structured_output=True),
         runtime=PipelineRuntimeConfig(max_batch_size=1),

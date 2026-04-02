@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.serve.schemas.openai import CreateEmbeddingResponse
 
 MPNET_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
@@ -30,11 +31,15 @@ assert MPNET_REVISION is not None
     "pipeline_config",
     [
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path=MPNET_REPO_ID,
-                huggingface_model_revision=MPNET_REVISION,
-                device_specs=[DeviceSpec.cpu()],
-                max_length=256,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=MPNET_REPO_ID,
+                        huggingface_model_revision=MPNET_REVISION,
+                        device_specs=[DeviceSpec.cpu()],
+                        max_length=256,
+                    )
+                }
             ),
         )
     ],

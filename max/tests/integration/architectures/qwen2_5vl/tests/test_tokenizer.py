@@ -23,6 +23,7 @@ from max.interfaces import (
 )
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from pytest_mock import MockerFixture
 from transformers import Qwen2_5_VLConfig
 
@@ -67,7 +68,17 @@ class MockModelConfig(MAXModelConfig):
 
 class MockPipelineConfig(PipelineConfig):
     def __init__(self) -> None:
-        self._model_config = MockModelConfig()
+        mock_model = MockModelConfig()
+        manifest = ModelManifest({"main": mock_model})
+        base = PipelineConfig.model_construct(models=manifest)
+        self.__dict__.update(base.__dict__)
+        for attr in (
+            "__pydantic_fields_set__",
+            "__pydantic_extra__",
+            "__pydantic_private__",
+        ):
+            if hasattr(base, attr):
+                object.__setattr__(self, attr, getattr(base, attr))
 
 
 @pytest.mark.asyncio

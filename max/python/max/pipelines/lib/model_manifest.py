@@ -20,8 +20,10 @@ import logging
 import os
 from typing import Any
 
-from max.pipelines.lib.config import MAXModelConfig
+from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.hf_utils import HuggingFaceRepo
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import CoreSchema, core_schema
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,62 @@ class ModelManifest(dict[str, MAXModelConfig]):
         self._metadata: dict[str, Any] = dict(metadata) if metadata else {}
         self._resolved: bool = False
 
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source_type: Any,
+        handler: GetCoreSchemaHandler,
+    ) -> CoreSchema:
+        """Teach Pydantic how to validate/coerce plain dicts into ModelManifest.
+
+        Without this, Pydantic's ``arbitrary_types_allowed`` falls back to a
+        strict ``is_instance_of`` check which rejects plain dicts produced by
+        JSON/YAML deserialization.
+        """
+
+        def _validate(value: Any) -> ModelManifest:
+            if isinstance(value, ModelManifest):
+                return value
+            if isinstance(value, dict):
+                coerced: dict[str, MAXModelConfig] = {}
+                metadata: dict[str, Any] | None = None
+                for k, v in value.items():
+                    if k == "metadata":
+                        metadata = v
+                    elif isinstance(v, MAXModelConfig):
+                        coerced[k] = v
+                    elif isinstance(v, dict):
+                        coerced[k] = MAXModelConfig.model_validate(v)
+                    else:
+                        raise ValueError(
+                            f"Expected MAXModelConfig or dict for role "
+                            f"{k!r}, got {type(v).__name__}"
+                        )
+                return cls(coerced, metadata=metadata)
+            raise ValueError(
+                f"Expected ModelManifest or dict, got {type(value).__name__}"
+            )
+
+        def _serialize(value: ModelManifest, info: Any) -> dict[str, Any]:
+            if info.mode == "json":
+                return {
+                    role: cfg.model_dump(
+                        mode="json", exclude_computed_fields=True
+                    )
+                    for role, cfg in value.items()
+                }
+            # mode="python" — return a plain dict so equality checks
+            # (e.g. exclude_defaults) work without deep serialisation.
+            return dict(value)
+
+        return core_schema.no_info_plain_validator_function(
+            _validate,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                _serialize,
+                info_arg=True,
+            ),
+        )
+
     # ------------------------------------------------------------------
     # Dict overrides
     # ------------------------------------------------------------------
@@ -71,7 +129,9 @@ class ModelManifest(dict[str, MAXModelConfig]):
             ) from None
 
     def _check_frozen(self) -> None:
-        if self._resolved:
+        # During pickle reconstruction, __setitem__ is called before
+        # __init__, so _resolved may not exist yet.
+        if getattr(self, "_resolved", False):
             raise TypeError(
                 "ModelManifest is frozen after resolve(). "
                 "Use with_override() to create a new manifest."
@@ -115,6 +175,20 @@ class ModelManifest(dict[str, MAXModelConfig]):
         empty dict.
         """
         return self._metadata
+
+    @property
+    def model_name(self) -> str:
+        """Returns the served model name for metrics and API responses.
+
+        For single-model pipelines (``"main"`` key), delegates to
+        ``MAXModelConfig.model_name``.  For diffusion pipelines,
+        returns ``model_path`` from the first component config.
+        """
+        if "main" in self:
+            return self["main"].model_name
+        if not self:
+            return "unknown"
+        return next(iter(self.values())).model_name
 
     @property
     def main_architecture_name(self) -> str:
@@ -293,9 +367,8 @@ class ModelManifest(dict[str, MAXModelConfig]):
 
         If the model is a diffusion pipeline (has a ``model_index.json``),
         the registry is automatically expanded into per-component
-        ``MAXModelConfig`` instances.  Extra *kwargs* are rejected in this
-        case — construct the ``ModelManifest`` directly to configure
-        each component individually.
+        ``MAXModelConfig`` instances.  Extra *kwargs* are forwarded to
+        each component's ``MAXModelConfig``.
 
         For single-model repos, a ``MAXModelConfig`` is constructed from
         *model_path* and any extra *kwargs*, then stored under the
@@ -318,15 +391,8 @@ class ModelManifest(dict[str, MAXModelConfig]):
             repo_kwargs["revision"] = revision
         repo = HuggingFaceRepo(**repo_kwargs)
 
-        result = cls._discover_diffusers_components(repo, revision)
+        result = cls._discover_diffusers_components(repo, revision, **kwargs)
         if result is not None:
-            if kwargs:
-                raise ValueError(
-                    f"from_model_path() does not support extra keyword "
-                    f"arguments for multi-component diffusers pipelines. "
-                    f"Construct the ModelManifest directly to configure "
-                    f"each component individually. Got: {sorted(kwargs)}"
-                )
             components, metadata = result
             return cls(components, metadata=metadata)
 
@@ -376,6 +442,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
     def _discover_diffusers_components(
         repo: HuggingFaceRepo,
         revision: str | None = None,
+        **kwargs: Any,
     ) -> tuple[dict[str, MAXModelConfig], dict[str, Any]] | None:
         """Detect a diffusers repo and expand it into per-component configs.
 
@@ -389,6 +456,8 @@ class ModelManifest(dict[str, MAXModelConfig]):
             revision: The user-supplied revision, or ``None`` if the caller
                 did not specify one.  Only propagated to each component's
                 ``huggingface_model_revision`` when explicitly provided.
+            **kwargs: Additional keyword arguments forwarded to
+                ``MAXModelConfig`` construction for each component.
 
         Returns:
             A ``(components, metadata)`` tuple, or ``None`` if this is
@@ -420,6 +489,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
                 and all(isinstance(v, str) and v for v in value)
             ):
                 config_kwargs: dict[str, Any] = {
+                    **kwargs,
                     "model_path": repo.repo_id,
                     "subfolder": key,
                 }

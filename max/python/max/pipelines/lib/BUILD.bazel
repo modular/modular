@@ -47,6 +47,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("pillow"),
         requirement("pydantic"),
+        requirement("pydantic-core"),
         requirement("requests"),
         requirement("tqdm"),
         requirement("transformers"),

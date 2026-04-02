@@ -25,6 +25,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.interfaces import ModelOutputs
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 
@@ -34,10 +35,14 @@ def pipeline() -> TextGenerationPipeline[TextContext]:
     """Retrieve the text generation pipeline once for all tests in this module."""
     _, p = PIPELINE_REGISTRY.retrieve(
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path="kathywu95/deepseek-v3-small-random",
-                kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                max_length=100,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="kathywu95/deepseek-v3-small-random",
+                        kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                        max_length=100,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=2),
         ),

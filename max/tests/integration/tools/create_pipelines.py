@@ -54,6 +54,7 @@ from max.pipelines.lib import (
     PixelGenerationPipeline,
     PixelGenerationTokenizer,
 )
+from max.pipelines.lib.model_manifest import ModelManifest
 from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
@@ -279,7 +280,7 @@ def _create_vision_max_pipeline(
     else:
         runtime = PipelineRuntimeConfig(max_num_steps=1)
     config = pipelines.PipelineConfig(
-        model=model,
+        models=ModelManifest({"main": model}),
         runtime=runtime,
     )
     tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -669,12 +670,16 @@ class PixtralPipelineOracle(PipelineOracle):
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         assert revision is not None
         config = pipelines.PipelineConfig(
-            model=pipelines.MAXModelConfig(
-                device_specs=device_specs,
-                quantization_encoding=encoding,
-                model_path=self.model_path,
-                huggingface_model_revision=revision,
-                max_length=self.max_length,
+            models=ModelManifest(
+                {
+                    "main": pipelines.MAXModelConfig(
+                        device_specs=device_specs,
+                        quantization_encoding=encoding,
+                        model_path=self.model_path,
+                        huggingface_model_revision=revision,
+                        max_length=self.max_length,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_num_steps=1),
         )
@@ -1161,9 +1166,13 @@ class ImageGenerationOracle(PipelineOracle):
         """Create MAX FLUX pixel generation pipeline."""
 
         config = pipelines.PipelineConfig(
-            model=pipelines.MAXModelConfig(
-                model_path=self.model_path,
-                device_specs=device_specs,
+            models=ModelManifest(
+                {
+                    "main": pipelines.MAXModelConfig(
+                        model_path=self.model_path,
+                        device_specs=device_specs,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(prefer_module_v3=True),
         )
