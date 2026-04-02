@@ -23,12 +23,12 @@ instructions (MMA_N=ov_depth/2 each). Each half has its own commit barrier
 correction warp to rescale O_lo while the MMA is still producing O_hi.
 
 Barrier layout (low to high index):
-    [0]   PO_lo           (count-256: softmax 128 + correction 128)
-    [1]   PO_hi           (count-128: correction 128 only)
-    [2]   S_even consumer (count-128: softmax 4 warps)
-    [3]   S_odd consumer  (count-128: softmax 4 warps)
-    [4]   C producer      (count-128: softmax 4 warps)
-    [5]   C consumer      (count-128: correction 4 warps)
+    [0]   PO_lo           (count-512: softmax 128×2 CTAs + correction 128×2 CTAs)
+    [1]   PO_hi           (count-256: correction 128×2 CTAs)
+    [2]   S_even consumer (count-256: softmax 128×2 CTAs)
+    [3]   S_odd consumer  (count-256: softmax 128×2 CTAs)
+    [4]   C producer      (count-128: softmax 4 warps, CTA-local)
+    [5]   C consumer      (count-128: correction 4 warps, CTA-local)
     [6]   S_even producer (count-1: MMA mma_arrive)
     [7]   S_odd producer  (count-1: MMA mma_arrive)
     [8]   O_mma_lo        (count-1: MMA mma_arrive after V_lo stages)
@@ -109,12 +109,17 @@ struct Depth512MBars[
     def _init_count(lane_idx: Int32) -> Int32:
         """Return mbarrier thread count for the given barrier index.
 
-        Index 0: count-256 (PO_lo: softmax 128 + correction 128).
-        Index 1: count-128 (PO_hi: correction 128 only).
-        Indices 2-5: count-128 (S consumers, C producer, C consumer).
+        Indices 0-3 use cluster-scope arrives (umma_arrive_leader_cta) from
+        both CTAs, so counts are doubled vs single-CTA.
+        Index 0: count-512 (PO_lo: softmax 128×2 + correction 128×2).
+        Index 1: count-256 (PO_hi: correction 128×2).
+        Indices 2-3: count-256 (S consumers: softmax 128×2).
+        Indices 4-5: count-128 (C producer/consumer: CTA-local).
         Indices 6+: count-1 (S producers, O mma lo/hi, KV pipeline).
         """
         if lane_idx == Int32(Self.PO_lo_offset):
+            return 512
+        if lane_idx < Int32(Self.C_producer_offset):
             return 256
         if lane_idx < Int32(Self.num_high_count_barriers):
             return 128

@@ -548,6 +548,9 @@ def main() raises:
     comptime num_heads = get_defined_int["num_heads", 8]()
     comptime group = get_defined_int["group", 1]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
+    comptime do_bench_flash = get_defined_bool["bench_flash", True]()
+    comptime do_bench_naive = get_defined_bool["bench_naive", False]()
+    comptime do_bench_manual = get_defined_bool["bench_manual", True]()
 
     var seq_len = Int(arg_parse("seq_len", 16384))
     var num_keys = Int(arg_parse("num_keys", 16384))
@@ -556,13 +559,16 @@ def main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-        bench_flash[qkv_type, depth, num_heads, group, cache_busting](
-            m, seq_len, num_keys, batch_size, bench, ctx
-        )
-        bench_naive[qkv_type, depth, num_heads, group, cache_busting](
-            m, seq_len, num_keys, batch_size, bench, ctx
-        )
-        bench_manual[qkv_type, depth, num_heads, group, cache_busting](
-            m, seq_len, num_keys, batch_size, bench, ctx
-        )
+        comptime if do_bench_flash:
+            bench_flash[qkv_type, depth, num_heads, group, cache_busting](
+                m, seq_len, num_keys, batch_size, bench, ctx
+            )
+        comptime if do_bench_naive:
+            bench_naive[qkv_type, depth, num_heads, group, cache_busting](
+                m, seq_len, num_keys, batch_size, bench, ctx
+            )
+        comptime if do_bench_manual:
+            bench_manual[qkv_type, depth, num_heads, group, cache_busting](
+                m, seq_len, num_keys, batch_size, bench, ctx
+            )
     m.dump_report()

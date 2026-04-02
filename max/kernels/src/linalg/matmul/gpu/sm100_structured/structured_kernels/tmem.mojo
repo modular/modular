@@ -63,6 +63,7 @@ struct TmemAllocation[
         self.addr = addr
 
     @staticmethod
+    @always_inline("nodebug")
     def allocate(smem_addr: Self.SmemAddrStorage) -> Self:
         """Allocate TMEM (MMA warp). Address stored in smem for epilogue."""
         tcgen05_alloc[Int32(Self.cta_group)](
@@ -72,14 +73,17 @@ struct TmemAllocation[
         return Self(smem_addr.ptr[0])
 
     @staticmethod
+    @always_inline
     def from_shared(smem_addr: Self.SmemAddrStorage) -> Self:
         """Get handle from existing allocation (epilogue warp)."""
         return Self(smem_addr.ptr[0])
 
+    @always_inline
     def release_lock(self):
         """Release allocation lock before waiting for epilogue."""
         tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
 
+    @always_inline
     def deallocate(self):
         """Free TMEM after epilogue completion."""
         tcgen05_dealloc[Int32(Self.cta_group)](self.addr, UInt32(Self.max_cols))
