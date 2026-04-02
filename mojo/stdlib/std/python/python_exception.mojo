@@ -65,9 +65,8 @@ struct PythonException(Movable, ImplicitlyCopyable):
         Args:
             error_message: The error message for the exception.
         """
-        # Create a standard Exception using Python's eval
-        var py = Python()
-        var builtins = py.builtins()
+        # Create a standard Exception using Python's builtins
+        var builtins = Python.import_module("builtins")
         var exc_type = builtins["Exception"]
         self._exception_obj = exc_type(error_message)
     
