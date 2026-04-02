@@ -137,10 +137,19 @@ public:
       return false;
     }
 
+    /// Cached facts for parameterless attributes and types.
+    struct ParameterlessInfo {
+      bool hasConstExpr = false;
+      /// Intrinsic requirement of this sub-expression: minimum number of
+      /// surrounding signature scopes needed for it to be valid.
+      size_t requiredSignatureDepth = 0;
+    };
+
     /// Types and attributes contained in this map are known to have no
     /// parameter uses as sub-elements. They are mapped to whether there is an
-    /// unresolved parameter operator in the sub-elements.
-    DenseMap<const void *, bool> parameterLess;
+    /// unresolved parameter operator and the intrinsic required signature depth
+    /// for the sub-elements to be valid.
+    DenseMap<const void *, ParameterlessInfo> parameterLess;
   };
 
   /// Create a parameter collector with a collection cache.
@@ -150,26 +159,35 @@ public:
 
   /// Scan the specified attribute and its recursive uses, diagnosing incorrect
   /// parameter declarations and collecting parameter uses into `uses`.
+  /// `hasConstExpr` is set if unresolved param expressions are seen.
+  /// `requiredSignatureDepth` is set to the intrinsic minimum number of
+  /// surrounding signature scopes needed for this expression to be valid.
   /// If `unresolvedCaptures` is non-null, any ClosureAttr encountered during
   /// the walk is collected there instead of being walked into.
   void collectUsesFromAttr(
       Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
-      bool &hasConstExpr,
+      bool &hasConstExpr, size_t &requiredSignatureDepth,
       SmallVectorImpl<ClosureAttr> *unresolvedCaptures = nullptr);
 
   /// Scan the specified type and its recursive uses, diagnosing incorrect
   /// parameter declarations and collecting parameter uses into `uses`.
+  /// `hasConstExpr` is set if unresolved param expressions are seen.
+  /// `requiredSignatureDepth` is set to the intrinsic minimum number of
+  /// surrounding signature scopes needed for this type to be valid.
   void collectUsesFromType(
       Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
+      size_t &requiredSignatureDepth,
       SmallVectorImpl<ClosureAttr> *unresolvedCaptures = nullptr);
 
 private:
-  void collectUsesFromAttrImpl(
-      Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
-      bool &hasConstExpr, SmallVectorImpl<ClosureAttr> *unresolvedCaptures);
+  void
+  collectUsesFromAttrImpl(Attribute attr,
+                          SmallVectorImpl<ParamDeclRefAttr> &uses,
+                          bool &hasConstExpr, size_t &requiredSignatureDepth,
+                          SmallVectorImpl<ClosureAttr> *unresolvedCaptures);
   void
   collectUsesFromTypesImpl(Type type, SmallVectorImpl<ParamDeclRefAttr> &uses,
-                           bool &hasConstExpr,
+                           bool &hasConstExpr, size_t &requiredSignatureDepth,
                            SmallVectorImpl<ClosureAttr> *unresolvedCaptures);
 
   /// The first time we encounter an attribute with a reference to an
@@ -189,7 +207,8 @@ private:
   /// naively scanning them can lead to exponential compile time behavior.  As
   /// such, we memoize the attributes and types we've already checked that we
   /// know have no parameters in them and whether the paramless attributes are
-  /// constant parameter expressions.
+  /// constant parameter expressions. The memoized required signature depth is
+  /// intrinsic to each sub-expression and context-independent.
   Analysis &cache;
 
   /// An internal stack of scoped parameter types representing the input param

@@ -467,8 +467,10 @@ Block &SharedState::getArgumentOwningBlock() {
 
 void SharedState::collectParamRefsInType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses) {
-  bool hasConstExpr = false; // ignored
-  impl->collector.collectUsesFromType(type, uses, hasConstExpr);
+  bool hasConstExpr = false;         // ignored
+  size_t requiredSignatureDepth = 0; // ignored
+  impl->collector.collectUsesFromType(type, uses, hasConstExpr,
+                                      requiredSignatureDepth);
 }
 
 void SharedState::deleteDecl(ASTDecl &decl) {

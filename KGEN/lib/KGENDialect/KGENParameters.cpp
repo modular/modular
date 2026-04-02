@@ -22,6 +22,7 @@
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
+#include <algorithm>
 
 using namespace M;
 using namespace M::KGEN;
@@ -95,40 +96,50 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
 
 void ParameterCollector::collectUsesFromAttr(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
+    size_t &requiredSignatureDepth,
     SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
   if (auto sig = dyn_cast<ParameterScopeAttrInterface>(attr)) {
     signatures.push_back(sig.getInputParamTypes());
-    collectUsesFromAttrImpl(attr, uses, hasConstExpr, unresolvedCaptures);
+    collectUsesFromAttrImpl(attr, uses, hasConstExpr, requiredSignatureDepth,
+                            unresolvedCaptures);
     signatures.pop_back();
+    // The result is intrinsic to `attr` itself; stepping out one signature
+    // scope reduces the required surrounding depth by one.
+    if (requiredSignatureDepth > 0)
+      --requiredSignatureDepth;
     return;
   }
-  collectUsesFromAttrImpl(attr, uses, hasConstExpr, unresolvedCaptures);
+  collectUsesFromAttrImpl(attr, uses, hasConstExpr, requiredSignatureDepth,
+                          unresolvedCaptures);
 }
 
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
 void ParameterCollector::collectUsesFromAttrImpl(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
+    size_t &requiredSignatureDepth,
     SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
   if (auto it = cache.parameterLess.find(attr.getAsOpaquePointer());
       it != cache.parameterLess.end()) {
-    hasConstExpr |= it->second;
+    hasConstExpr |= it->second.hasConstExpr;
+    requiredSignatureDepth =
+        std::max(requiredSignatureDepth, it->second.requiredSignatureDepth);
     return;
   }
 
   // Look through any SugarAttr's we encounter.
   if (auto sugar = dyn_cast<SugarAttr>(attr)) {
-    collectUsesFromAttrImpl(sugar.getCanonical(), uses, hasConstExpr,
-                            unresolvedCaptures);
+    collectUsesFromAttr(sugar.getCanonical(), uses, hasConstExpr,
+                        requiredSignatureDepth, unresolvedCaptures);
     return;
   }
 
   // Collect parameter references.
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     collectUsesFromType(paramRef.getType(), uses, hasConstExpr,
-                        unresolvedCaptures);
+                        requiredSignatureDepth, unresolvedCaptures);
     uses.push_back(paramRef);
     return;
   }
@@ -145,7 +156,12 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // TODO(MOCO-2080): Should this be dyn_cast<IndexRefAttrInterface>?
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
     collectUsesFromType(indexRef.getType(), uses, hasConstExpr,
-                        unresolvedCaptures);
+                        requiredSignatureDepth, unresolvedCaptures);
+    // Intrinsic requirement for this sub-expression: a ref with depth D needs
+    // at least D+1 enclosing signature scopes around itself to be valid.
+    size_t localRequiredDepth = indexRef.getDepth() + 1;
+    requiredSignatureDepth =
+        std::max(requiredSignatureDepth, localRequiredDepth);
     maybeVerify(
         [&](function_ref<InFlightDiagnostic()> emitError) -> LogicalResult {
           if (signatures.empty())
@@ -211,47 +227,63 @@ void ParameterCollector::collectUsesFromAttrImpl(
   size_t oldSize = uses.size();
   // Parameterized type constants are by definition unresolved expressions.
   bool hasNestedConstExpr = false;
+  size_t nestedRequiredDepth = 0;
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
   attr.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr, unresolvedCaptures);
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr, nestedRequiredDepth,
+                            unresolvedCaptures);
       },
       [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr, unresolvedCaptures);
+        collectUsesFromType(type, uses, hasNestedConstExpr, nestedRequiredDepth,
+                            unresolvedCaptures);
       });
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
-  if (oldSize == uses.size()) {
+  if (oldSize == uses.size() && !nestedRequiredDepth) {
     // Check whether this is a parameterless expression.
     hasNestedConstExpr |= isa<ContextuallyEvaluatedAttrInterface>(attr);
-    cache.parameterLess.try_emplace(attr.getAsOpaquePointer(),
-                                    hasNestedConstExpr);
+    cache.parameterLess.try_emplace(
+        attr.getAsOpaquePointer(),
+        Analysis::ParameterlessInfo{hasNestedConstExpr, nestedRequiredDepth});
     hasConstExpr |= hasNestedConstExpr;
   }
+  requiredSignatureDepth =
+      std::max(requiredSignatureDepth, nestedRequiredDepth);
 }
 
 void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
+    size_t &requiredSignatureDepth,
     SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
   if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
     signatures.push_back(sig.getInputParamTypes());
-    collectUsesFromTypesImpl(type, uses, hasConstExpr, unresolvedCaptures);
+    collectUsesFromTypesImpl(type, uses, hasConstExpr, requiredSignatureDepth,
+                             unresolvedCaptures);
     signatures.pop_back();
+    // The result is intrinsic to `type` itself; stepping out one signature
+    // scope reduces the required surrounding depth by one.
+    if (requiredSignatureDepth > 0)
+      --requiredSignatureDepth;
     return;
   }
-  return collectUsesFromTypesImpl(type, uses, hasConstExpr, unresolvedCaptures);
+  return collectUsesFromTypesImpl(type, uses, hasConstExpr,
+                                  requiredSignatureDepth, unresolvedCaptures);
 }
 
 void ParameterCollector::collectUsesFromTypesImpl(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
+    size_t &requiredSignatureDepth,
     SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
   // Ignore types we have already scanned.
   if (auto it = cache.parameterLess.find(type.getAsOpaquePointer());
       it != cache.parameterLess.end()) {
-    hasConstExpr |= it->second;
+    hasConstExpr |= it->second.hasConstExpr;
+    requiredSignatureDepth =
+        std::max(requiredSignatureDepth, it->second.requiredSignatureDepth);
     return;
   }
 
@@ -266,25 +298,31 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // parametric because the external type definition could contain parametric
   // types. We don't want to assume that the type is concrete.
   bool hasNestedConstExpr = isa<StructTypeInterface>(type);
+  size_t nestedRequiredDepth = 0;
 
   // Recursively check for any nested types, e.g. the input/outputs of a
   // function type, types like !pop.scalar<ty> etc.
   type.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr, unresolvedCaptures);
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr, nestedRequiredDepth,
+                            unresolvedCaptures);
       },
       [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr, unresolvedCaptures);
+        collectUsesFromType(type, uses, hasNestedConstExpr, nestedRequiredDepth,
+                            unresolvedCaptures);
       });
 
   // If the type had parameter uses or constant expressions, don't consider it
   // "parameterless".  We want other operations using the same type to record
   // the uses as well.
-  if (oldSize == uses.size()) {
-    cache.parameterLess.try_emplace(type.getAsOpaquePointer(),
-                                    hasNestedConstExpr);
+  if (oldSize == uses.size() && !nestedRequiredDepth) {
+    cache.parameterLess.try_emplace(
+        type.getAsOpaquePointer(),
+        Analysis::ParameterlessInfo{hasNestedConstExpr, nestedRequiredDepth});
     hasConstExpr |= hasNestedConstExpr;
   }
+  requiredSignatureDepth =
+      std::max(requiredSignatureDepth, nestedRequiredDepth);
 }
 
 //===----------------------------------------------------------------------===//
@@ -569,14 +607,18 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
                         Operation *op, bool isDefOrDecl) {
   // Track whether parameter uses or expressions were found.
   bool hasConstExpr = false;
+  // Ignored. Free index refs are verified and errors in the collector.
+  size_t requiredSignatureDepth = 0;
   SmallVector<ParamDeclRefAttr> uses;
   SmallVector<ClosureAttr> unresolvedCaptures;
 
   auto scanAttr = [&](Attribute attr) {
-    c.collectUsesFromAttr(attr, uses, hasConstExpr, &unresolvedCaptures);
+    c.collectUsesFromAttr(attr, uses, hasConstExpr, requiredSignatureDepth,
+                          &unresolvedCaptures);
   };
   auto scanType = [&](Type type) {
-    c.collectUsesFromType(type, uses, hasConstExpr, &unresolvedCaptures);
+    c.collectUsesFromType(type, uses, hasConstExpr, requiredSignatureDepth,
+                          &unresolvedCaptures);
   };
 
   auto itf = dyn_cast<ParamOpInterface>(op);
@@ -794,9 +836,11 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
         }
         isDefOrDecl = true;
         (*def)->index = index++;
-        bool unused = false;
+        bool unusedHasConstExpr = false;
+        size_t unusedRequiredSignatureDepth = 0;
         for (Attribute expr : value.exprs) {
-          c.collectUsesFromAttr(expr, (*def)->uses, unused);
+          c.collectUsesFromAttr(expr, (*def)->uses, unusedHasConstExpr,
+                                unusedRequiredSignatureDepth);
         }
         // If the definition of this parameter depends on a region, defer
         // processing of the nested region uses.

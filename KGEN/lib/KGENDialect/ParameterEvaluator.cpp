@@ -78,19 +78,20 @@ static Type tryReplaceVariadicSplat(Type type) {
 /// parameters.  This fails if an unknown parameter expression exists.
 void KGEN::collectParameterReferences(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &results,
-    bool &hasConstExpr) {
+    bool &hasConstExpr, size_t &requiredSignatureDepth) {
   ParameterCollector::Analysis cache;
   ParameterCollector c(cache);
-  c.collectUsesFromAttr(attr, results, hasConstExpr);
+  c.collectUsesFromAttr(attr, results, hasConstExpr, requiredSignatureDepth);
 }
 
 /// Given a potentially-parameterized MLIR type, walk it and return any
 /// references to named parameters.
 void KGEN::collectParameterReferences(
-    Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasConstExpr) {
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasConstExpr,
+    size_t &requiredSignatureDepth) {
   ParameterCollector::Analysis cache;
   ParameterCollector c(cache);
-  c.collectUsesFromType(type, results, hasConstExpr);
+  c.collectUsesFromType(type, results, hasConstExpr, requiredSignatureDepth);
 }
 
 /// Return true if the specified type contains parameter references, e.g.
@@ -101,8 +102,10 @@ void KGEN::collectParameterReferences(
 bool KGEN::isParameterizedType(Type type) {
   SmallVector<ParamDeclRefAttr> paramDecls;
   bool hasConstExpr = false;
-  collectParameterReferences(type, paramDecls, hasConstExpr);
-  return !paramDecls.empty() || hasConstExpr;
+  size_t requiredSignatureDepth = 0;
+  collectParameterReferences(type, paramDecls, hasConstExpr,
+                             requiredSignatureDepth);
+  return !paramDecls.empty() || hasConstExpr || requiredSignatureDepth != 0;
 }
 
 //===----------------------------------------------------------------------===//

@@ -228,8 +228,13 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     diScopeGuard = shared.diBuilder->pushScopeGuard(/*scope=*/nullptr);
 
   auto keyValues = cast<ArrayAttr>(key);
-  auto actualSignature =
-      cast<FnTypeGeneratorType>(cast<TypeAttr>(keyValues[0]).getValue());
+  // The actual signature may be wrapped in a GeneratorType that provides the
+  // scope for clarifying parameter index references. Unwrap if needed.
+  Type keyActualType = cast<TypeAttr>(keyValues[0]).getValue();
+  auto actualSignature = dyn_cast<FnTypeGeneratorType>(keyActualType);
+  if (!actualSignature)
+    actualSignature =
+        cast<FnTypeGeneratorType>(cast<GeneratorType>(keyActualType).getBody());
   auto thunkSignature =
       cast<FnTypeGeneratorType>(cast<TypeAttr>(keyValues[1]).getValue());
 
@@ -619,8 +624,18 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
 #endif
 
   // We can attempt to generate the thunk now.
-  Attribute key = ArrayAttr::get(ctx, {TypeAttr::get(reparamActualForThunkKey),
-                                       TypeAttr::get(thunkSignature)});
+  // When there are clarifying parameters, `reparamActualForThunkKey` contains
+  // depth-1 index references that refer to those parameters. Wrap it in a
+  // GeneratorType whose inputParamTypes are the clarifying types so that the
+  // depth-1 refs have a valid enclosing scope and don't escape.
+  Type keyActualType = reparamActualForThunkKey;
+  if (!mentionedParamRefs.empty()) {
+    keyActualType = GeneratorType::get(
+        ArrayRef(thunkParamTypes).take_front(mentionedParamRefs.size()),
+        reparamActualForThunkKey);
+  }
+  Attribute key = ArrayAttr::get(
+      ctx, {TypeAttr::get(keyActualType), TypeAttr::get(thunkSignature)});
   FnOp thunk = emitter.shared.getOrCreateFunctionThunk(
       key, generateConversionThunk, expr->getLoc());
   if (!thunk) {

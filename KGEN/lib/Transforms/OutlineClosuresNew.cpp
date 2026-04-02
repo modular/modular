@@ -778,24 +778,33 @@ ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
   // results and regions, explicitly collect parameter usages from the captured
   // values.
   for (Value capture : captures.keys()) {
-    bool unused = false;
-    collector.collectUsesFromType(capture.getType(), capturedUses, unused);
+    bool unusedHasConstExpr = false;
+    size_t unusedRequiredSignatureDepth = 0;
+    collector.collectUsesFromType(capture.getType(), capturedUses,
+                                  unusedHasConstExpr,
+                                  unusedRequiredSignatureDepth);
   }
 
   if (debugBuild) {
     region.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      bool unused = false;
-      collector.collectUsesFromAttr(op->getLoc(), capturedUses, unused);
+      bool unusedHasConstExpr = false;
+      size_t unusedRequiredSignatureDepth = 0;
+      collector.collectUsesFromAttr(op->getLoc(), capturedUses,
+                                    unusedHasConstExpr,
+                                    unusedRequiredSignatureDepth);
       return WalkResult::advance();
     });
 
     // Collect parameter captures from closure location.
-    bool unused = false;
+    bool unusedHasConstExpr = false;
+    size_t unusedRequiredSignatureDepth = 0;
     collector.collectUsesFromAttr(region.getParentOp()->getLoc(), capturedUses,
-                                  unused);
+                                  unusedHasConstExpr,
+                                  unusedRequiredSignatureDepth);
     if (auto closureInit = dyn_cast<ClosureInitOp>(region.getParentOp())) {
       if (DebugInfo::DISubprogramAttr scope = closureInit.getSubprogramScope())
-        collector.collectUsesFromAttr(scope, capturedUses, unused);
+        collector.collectUsesFromAttr(scope, capturedUses, unusedHasConstExpr,
+                                      unusedRequiredSignatureDepth);
     }
   }
 
