@@ -77,6 +77,7 @@ const maxSidebars = {
         "max/develop/dtypes",
         "max/develop/basic-ops",
         "max/develop/pipelines",
+        "max/develop/model-bringup-workflow",
         {
           type: "doc",
           id: "max/develop/get-started-with-max-graph-in-python",
