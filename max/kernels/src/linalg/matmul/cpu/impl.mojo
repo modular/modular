@@ -443,13 +443,11 @@ def _matmul_cpu_impl[
         comptime alignment = align_of[SIMD[c.dtype, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = UnsafePointer[Scalar[a.dtype], MutExternalOrigin]()
-        if use_i8mm:
+        var a_packed_ptr: Optional[
+            UnsafePointer[Scalar[a.dtype], MutExternalOrigin]
+        ] = None
+        comptime if use_i8mm:
             a_packed_ptr = alloc[Scalar[a.dtype]](mh * kh, alignment=alignment)
-        var a_packed = TileTensor(
-            a_packed_ptr,
-            row_major(Coord(Idx(mh), Idx(kh))),
-        )
 
         @always_inline
         @__copy_capture(m, k, num_tasks)
@@ -469,10 +467,10 @@ def _matmul_cpu_impl[
                 return
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
-            packA_i8mm[a.dtype](t0, t1, k, a.ptr, a_packed_ptr)
+            packA_i8mm[a.dtype](t0, t1, k, a.ptr, a_packed_ptr.unsafe_value())
 
         @always_inline
-        @__copy_capture(m, k, num_tasks, n, a_packed)
+        @__copy_capture(m, k, num_tasks, n, a_packed_ptr, mh, kh)
         @parameter
         def task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
@@ -501,7 +499,10 @@ def _matmul_cpu_impl[
                 ](
                     alg,
                     c,
-                    a_packed.as_any_origin(),
+                    TileTensor(
+                        a_packed_ptr.unsafe_value(),
+                        row_major(Coord(Idx(mh), Idx(kh))),
+                    ),
                     b,
                     GemmShape(sub_matmul_config.shape),
                     GemmShape(sub_matmul_config.offset),
@@ -528,13 +529,15 @@ def _matmul_cpu_impl[
         # i8mm partition needs to be optimized as a function of m, n and k
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
         # See issue 27734
-        if use_i8mm:
+        comptime if use_i8mm:
             sync_parallelize[pack_task_func](num_tasks)
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
         sync_parallelize[task_func](num_tasks)
-        a_packed_ptr.free()
+
+        if a_packed_ptr:
+            a_packed_ptr.unsafe_value().free()
 
 
 @always_inline
