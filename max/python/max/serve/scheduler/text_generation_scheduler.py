@@ -34,10 +34,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     TextGenerationPipeline,
 )
-from max.pipelines.lib.speculative_decoding import (
-    SpeculativeDecodingPipelineBase,
-    UnifiedEAGLEPipeline,
-)
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
@@ -169,11 +165,8 @@ class TokenGenerationScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            speculative_decoding_metrics=self.pipeline.metrics
-            if isinstance(
-                self.pipeline,
-                (SpeculativeDecodingPipelineBase, UnifiedEAGLEPipeline),
-            )
+            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
+            if hasattr(self.pipeline, "spec_decode_metrics")
             else None,
         )
 

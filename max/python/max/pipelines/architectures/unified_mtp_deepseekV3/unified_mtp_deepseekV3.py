@@ -220,17 +220,11 @@ class UnifiedMTPDeepseekV3(Module):
             tokens_type,
             device_input_row_offsets_type,
             host_input_row_offsets_type,
-            draft_tokens_type,
             return_n_logits_type,
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
         all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
-
-        if draft_kv_params is not None:
-            for sym in draft_kv_params.get_symbolic_inputs():
-                assert isinstance(sym, PagedCacheInputSymbols)
-                all_input_types.append(sym.kv_blocks)
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
@@ -241,5 +235,11 @@ class UnifiedMTPDeepseekV3(Module):
 
         if self.target.ep_manager is not None:
             all_input_types.extend(self.target.ep_manager.input_types())
+
+        all_input_types.append(draft_tokens_type)
+        if draft_kv_params is not None:
+            for sym in draft_kv_params.get_symbolic_inputs():
+                assert isinstance(sym, PagedCacheInputSymbols)
+                all_input_types.append(sym.kv_blocks)
 
         return tuple(all_input_types)

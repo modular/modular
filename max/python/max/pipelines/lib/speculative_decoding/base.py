@@ -273,7 +273,7 @@ class SpeculativeDecodingPipelineBase(
         self._num_draft_steps = self._speculative_config.num_speculative_tokens
 
         # Initialize metrics tracker
-        self.metrics = SpeculativeDecodingMetrics.empty(
+        self._metrics = SpeculativeDecodingMetrics.empty(
             num_speculative_tokens=self._num_draft_steps
         )
 

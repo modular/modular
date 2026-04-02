@@ -84,7 +84,6 @@ class UnifiedEagleLlama3(Module):
         (
             tokens,
             input_row_offsets,
-            draft_tokens,
             return_n_logits,
             # target model kvcache inputs
             target_kv_blocks,
@@ -92,7 +91,9 @@ class UnifiedEagleLlama3(Module):
             lookup_table,
             max_lengths,
             dispatch_metadata,
-            # draft model kvcache inputs
+            # draft model inputs
+            draft_tokens,
+            # draft kvcache
             draft_kv_blocks,
         ) = inputs
 
@@ -142,9 +143,9 @@ class UnifiedEagleLlama3(Module):
         return (
             tokens_type,
             input_row_offsets_type,
-            draft_tokens_type,
             return_n_logits_type,
             *target_kv_flat,
+            draft_tokens_type,
             draft_kv_blocks,
         )
 

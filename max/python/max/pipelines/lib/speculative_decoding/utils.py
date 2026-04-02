@@ -22,7 +22,12 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.interfaces import GenerationStatus, RequestID, TextGenerationOutput
+from max.interfaces import (
+    GenerationStatus,
+    RequestID,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
 from max.pipelines.core import TextContext
 from max.pipelines.lib.utils import upper_bounded_default
 
@@ -164,7 +169,7 @@ def update_contexts_and_compute_metrics_standalone(
 
 
 def build_response(
-    context_batch: list[TextContext], max_seq_len: int
+    context_batch: list[TextGenerationContextType], max_seq_len: int
 ) -> dict[RequestID, TextGenerationOutput]:
     """Build response from updated contexts.
 
@@ -196,7 +201,7 @@ def build_response(
 
 
 def compute_max_num_draft_steps(
-    replica_batches: list[list[TextContext]],
+    replica_batches: list[list[TextGenerationContextType]],
     desired_num_draft_steps: int,
     max_seq_len: int,
     is_draft: bool,

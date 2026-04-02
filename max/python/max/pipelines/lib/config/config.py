@@ -65,6 +65,9 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
     "Gemma4ForConditionalGeneration",
+    "UnifiedEagleLlama3ForCausalLM",
+    "UnifiedMTPDeepseekV3ForCausalLM",
+    "UnifiedEagleKimik25ForCausalLM",
 )
 
 _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
@@ -700,10 +703,6 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "Variable logits are not supported with the Overlap scheduler. "
                 )
-            if self.speculative:
-                raise ValueError(
-                    "Speculative decoding is not supported with the Overlap scheduler."
-                )
             if self.lora:
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
@@ -722,7 +721,6 @@ class PipelineConfig(ConfigFileModel):
             self.runtime.pipeline_role == "prefill_and_decode"
             and not self.sampling.enable_structured_output
             and not self.sampling.enable_variable_logits
-            and not self.speculative
             and not self.lora
             and self.model.device_specs[0].device_type != "cpu"
         )

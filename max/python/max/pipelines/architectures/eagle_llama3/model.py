@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
@@ -29,7 +29,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
-from ..llama3.model import Llama3Inputs, LlamaModelBase
+from ..llama3.model import LlamaModelBase
 from .eagle_llama3 import EagleLlama3
 from .model_config import Llama3Config
 
@@ -62,34 +62,8 @@ class EagleLlama3Model(LlamaModelBase):
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-        assert isinstance(model_inputs, Llama3Inputs)
-
-        # EAGLE models require hidden states
-        assert (
-            hasattr(model_inputs, "hidden_states")
-            and model_inputs.hidden_states is not None
-            and isinstance(model_inputs.hidden_states, Buffer)
-        ), (
-            "EAGLE model requires hidden_states as a single Buffer in model_inputs"
-        )
-
-        model_outputs = self.model.execute(
-            model_inputs.tokens,
-            model_inputs.input_row_offsets,
-            model_inputs.return_n_logits,
-            model_inputs.hidden_states,
-            *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
-        )
-
-        assert len(model_outputs) == 2
-        assert isinstance(model_outputs[0], Buffer)
-        assert isinstance(model_outputs[1], Buffer)
-
-        return ModelOutputs(
-            logits=model_outputs[0],
-            hidden_states=model_outputs[1],
+        raise NotImplementedError(
+            "Cannot directly execute EagleLlama3Model. You should use the UnifiedEagleLlama3Model instead."
         )
 
     def _build_graph(
