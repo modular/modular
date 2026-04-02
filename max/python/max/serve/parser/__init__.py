@@ -11,7 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# Re-export ToolParser protocol and generic types from interfaces
+from max.interfaces import (
+    ParsedToolCall,
+    ParsedToolCallDelta,
+    ParsedToolResponse,
+    ToolParser,
+)
+
 from .json_utils import parse_json_from_text
 from .llama_tool_parser import LlamaToolParser
 
-__all__ = ["LlamaToolParser", "parse_json_from_text"]
+__all__ = [
+    "LlamaToolParser",
+    "ParsedToolCall",
+    "ParsedToolCallDelta",
+    "ParsedToolResponse",
+    "ToolParser",
+    "parse_json_from_text",
+]

@@ -42,6 +42,8 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
+    from max.interfaces import ToolParser
+
     from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
 
@@ -263,6 +265,16 @@ class SupportedArchitecture:
 
     If True and max_batch_context_length is not specified, we will default to
     the max sequence length of the model.
+    """
+
+    tool_parser: type[ToolParser] | None = None
+    """Optional tool parser class for parsing tool calls from model responses.
+
+    When set, the serving layer will use this parser to extract tool calls
+    from the model's output. Different model architectures may use different
+    tool calling formats (e.g., Llama uses JSON, Kimi K2.5 uses structural tags).
+
+    If None, the default LlamaToolParser will be used.
     """
 
     @property

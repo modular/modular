@@ -78,7 +78,9 @@ modular_py_test(
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
     deps = [
+        "//max/python/max/interfaces",
         "//max/python/max/serve/parser",
+        "//max/python/max/serve/router",
         "//max/python/max/serve/schemas",
     ],
 )
