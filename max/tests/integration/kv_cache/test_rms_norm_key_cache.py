@@ -87,7 +87,6 @@ class RMSNormKeyCacheModel:
 def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     seq_lens = [10, 4]
     batch_size = 2
-    max_seq_len = 16
     kv_params = KVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
@@ -167,7 +166,6 @@ def test_partial_rms_norm_key_cache(
         10,
     ]
     batch_size = 1
-    max_seq_len = 16
     gamma_size = 512
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -262,7 +260,6 @@ def test_rms_norm_new_key_cache(
         10,
     ]
     batch_size = 1
-    max_seq_len = 32
     gamma_size = 128
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -406,7 +403,6 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     """Test RMS normalization applied per token (across all heads) rather than per head."""
     seq_lens = [5, 3]
     batch_size = 2
-    max_seq_len = 16
     n_kv_heads = 4
     head_dim = 64
 

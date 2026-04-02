@@ -222,11 +222,6 @@ def test_sampling_return_logits(session: InferenceSession) -> None:
 
 def test_rejection_sampler(session: InferenceSession) -> None:
     device = session.devices[0]
-    sampling_config = SamplingConfig(
-        in_dtype=DType.float32,
-        out_dtype=DType.float32,
-    )
-    sampling_params = SamplingParams(top_k=1, temperature=1.0)
     graph = rejection_sampler(
         device=DeviceRef.from_device(device),
     )
@@ -252,15 +247,6 @@ def test_rejection_sampler(session: InferenceSession) -> None:
     target_logit_offsets = np.arange(
         0, (batch_size + 1) * (num_steps + 1), num_steps + 1
     )
-
-    top_k_np = np.array([sampling_params.top_k] * batch_size, dtype=np.int64)
-    top_k_tensor = Buffer.from_numpy(top_k_np).to(device)
-    max_k_tensor = Buffer.from_numpy(
-        np.array([np.max(top_k_np)], dtype=np.int64)
-    )
-    temperature_tensor = Buffer.from_numpy(
-        np.array([sampling_params.temperature] * batch_size, dtype=np.float32)
-    ).to(device)
 
     first_rejected_token, sampled_tokens = sampler(
         Buffer.from_dlpack(draft_tokens).to(device),

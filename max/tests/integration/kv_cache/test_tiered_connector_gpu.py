@@ -607,10 +607,6 @@ def test_write_locked_blocks_lifecycle() -> None:
         # After sync, _pending_disk_writes is cleared
         assert len(connector._pending_disk_writes) == 0
 
-        # _write_locked_blocks may have entries (in-flight writes)
-        # or they may have already completed
-        locked_count = len(connector._write_locked_blocks)
-
         # Wait for all writes to complete
         connector._disk_tier.wait_for_writes()
 

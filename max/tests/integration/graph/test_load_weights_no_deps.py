@@ -31,6 +31,6 @@ def test_load_gguf(graph_testdata: Path) -> None:
     """Tests adding an external weight to a graph."""
 
     with pytest.raises(ImportError) as info:
-        weights = GGUFWeights(graph_testdata / "example_data.gguf")
+        GGUFWeights(graph_testdata / "example_data.gguf")
     # Also test the error message, we want to make sure we hit our custom error message
     assert str(info.value) == "Unable to load gguf file, gguf not installed"

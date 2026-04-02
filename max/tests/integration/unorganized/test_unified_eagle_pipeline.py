@@ -173,7 +173,7 @@ class TestUnifiedDecode:
         assert k == 1
         np.testing.assert_array_equal(draft_tokens, [[100]])
 
-        metrics = simulate_decode(
+        simulate_decode(
             context_batch=[ctx],
             num_accepted_draft_tokens=np.array([1], dtype=np.int64),
             next_tokens=np.array([300], dtype=np.int64),
@@ -195,7 +195,7 @@ class TestUnifiedDecode:
 
         draft_tokens, k = load_draft_tokens([ctx])
 
-        metrics = simulate_decode(
+        simulate_decode(
             context_batch=[ctx],
             num_accepted_draft_tokens=np.array([0], dtype=np.int64),
             next_tokens=np.array([200], dtype=np.int64),
@@ -219,7 +219,7 @@ class TestUnifiedDecode:
 
         draft_tokens = np.array([[100], [200]], dtype=np.int64)
 
-        metrics = simulate_decode(
+        simulate_decode(
             context_batch=[ctx0, ctx1],
             num_accepted_draft_tokens=np.array([1, 0], dtype=np.int64),
             next_tokens=np.array([300, 700], dtype=np.int64),

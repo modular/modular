@@ -70,7 +70,7 @@ def load_from_s3(s3_path: str, cache_dir: str | None = None) -> str:
                 "AWS authentication failed. Please run 'aws sso login' to "
                 "refresh your credentials."
             ) from e
-        except SSOTokenLoadError as e:
+        except SSOTokenLoadError:
             print(
                 "Error loading SSO Token, attempting with anonymous credentials"
             )

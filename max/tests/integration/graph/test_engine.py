@@ -507,13 +507,6 @@ def test_execute_external_weights_resident(
     )
     compiled = session.load(graph, weights_registry={"foo": weights})
 
-    # Check that this graph has a device constant external op.
-    const_external_op = next(
-        op
-        for op in graph._mlir_op.regions[0].blocks[0].operations
-        if isinstance(op, mo.ConstantExternalOp)
-    )
-
     # Compile and execute with the device-resident weights.
     compiled = session.load(graph, weights_registry={"foo": weights})
 

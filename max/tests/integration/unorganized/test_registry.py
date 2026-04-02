@@ -55,7 +55,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
     with pytest.raises(ValueError):
-        config = PipelineConfig(
+        PipelineConfig(
             model=MAXModelConfig(
                 model_path="GSAI-ML/LLaDA-8B-Instruct",
                 # This forces it to fail if we dont have it.
@@ -78,7 +78,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         Exception,
         match=r"Cannot determine architecture|no 'architectures' field",
     ):
-        config = PipelineConfig(
+        PipelineConfig(
             model=MAXModelConfig(
                 model_path="GSAI-ML/LLaDA-8B-Instruct",
                 trust_remote_code=True,

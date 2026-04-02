@@ -53,7 +53,7 @@ def test_unnamed_print_hook(
     )
 
     model = session.load(g)
-    unused_output = model(Buffer.zeros((2, 4, 6), DType.float32))
+    model(Buffer.zeros((2, 4, 6), DType.float32))
 
     print_hook.remove()
     del print_hook  # Trigger print_hook.summarize()
@@ -87,7 +87,7 @@ def test_named_print_hook(
     )
 
     model = session.load(g)
-    unused_output = model(Buffer.zeros((2, 4, 6), DType.float32))
+    model(Buffer.zeros((2, 4, 6), DType.float32))
 
     print_hook.remove()
     del print_hook  # Trigger print_hook.summarize()

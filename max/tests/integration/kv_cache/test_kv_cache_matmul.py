@@ -20,7 +20,7 @@ from enum import Enum
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Buffer
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
@@ -576,12 +576,6 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=InferenceSession(devices=[CPU()]),
-        max_batch_size=128,
-    )
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(
         "matmul_kv_cache_ragged",

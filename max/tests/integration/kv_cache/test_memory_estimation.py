@@ -210,7 +210,6 @@ def test_bytes_per_block() -> None:
     num_layers = 17
     page_size = 128
     data_parallel_degree = 1
-    n_devices = 1
 
     params = KVCacheParams(
         dtype=dtype,

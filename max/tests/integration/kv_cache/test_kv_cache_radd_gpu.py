@@ -70,8 +70,6 @@ def test_kv_cache_radd_basic() -> None:
     num_active_loras = 1
     layer_idx = 1
     num_layers = 2
-    seq_len = 100
-    max_seq_len = 1024
     device = Accelerator()
     session = InferenceSession(devices=[device])
 

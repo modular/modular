@@ -78,10 +78,6 @@ def max_flash_attention_with_sinks(
     )
 
     # Create KV manager
-    max_seq_len = max(
-        input_row_offsets[i + 1] - input_row_offsets[i]
-        for i in range(batch_size)
-    )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=8,
@@ -217,9 +213,6 @@ def test_flash_attention_ragged_with_sinks(
     input_row_offsets = np.cumsum([0] + seq_lens, dtype=np.int32)
 
     # Generate test inputs
-    # For reference impl, we need padded tensors
-    max_seq_len = max(seq_lens)
-
     q = torch.randn(
         total_seq_len, num_heads, head_dim, dtype=dtype, device=device
     )

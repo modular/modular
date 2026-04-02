@@ -128,7 +128,6 @@ def test_compare_attention_with_rope_no_opaque() -> None:
     max_seq_len = 1024
     device = CPU()
     page_size = 128
-    max_batch_size = 8
     batch_size = 2
     session = InferenceSession(devices=[device])
     kv_params = KVCacheParams(
@@ -255,7 +254,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         [0, max_seq_len, max_seq_len * 2], dtype=np.uint32
     )
 
-    reference_output = build_and_execute_graph(
+    build_and_execute_graph(
         session,
         hidden_state,
         input_row_offsets,
