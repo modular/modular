@@ -293,11 +293,11 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
+from std.ffi import external_call
 from std.runtime.asyncrt import (
     DeviceContextPtr,
     DeviceContextPtrList,
     TaskGroup,
-    parallelism_level,
 )
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor import (
@@ -9952,12 +9952,18 @@ def _check_signal_buffer_size(
 
 
 @always_inline("nodebug")
-def task_id_for_device(device_id: Int, num_workers: Int) -> Int:
-    # Map from device ID to task ID for CPU affinity.
-    # Note: Keep in sync with taskIdForDevice() in MGPPrimitives.cpp
-    if num_workers <= 1:
-        return -1
-    return 1 + (device_id % (num_workers - 1))
+def task_id_for_device(device_id: Int) -> Int:
+    """Map from device ID to task ID for CPU affinity.
+
+    Delegates to the shared C++ implementation in DeviceAffinity.cpp which
+    handles explicit MODULAR_RUNTIME_DEVICE_TASK_CPU_IDS config,
+    NUMA-inferred GPU-to-CPU core mapping, and round-robin fallback.
+    """
+    return Int(
+        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+            Int32(device_id),
+        )
+    )
 
 
 @always_inline
@@ -9988,10 +9994,9 @@ def _launch_device_collective[
 
     # Set up a task group to launch the tasks in parallel.
     var tg = TaskGroup()
-    var num_workers = parallelism_level()
     comptime for i in range(num_devices):
         # Dispatch to the worker thread that has affinity for this device.
-        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()), num_workers)
+        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()))
         tg._create_task(wrapper[i](), desired_worker_id=worker_id)
 
     # Wait for all tasks to complete.
