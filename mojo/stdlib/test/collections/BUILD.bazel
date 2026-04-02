@@ -11,6 +11,7 @@ _FILECHECK_TESTS = [
 
 _LIT_TESTS = [
     "test_asan_annotations_list.mojo",
+    "test_inline_array_comptime_oob_compile_fail.mojo",
 ]
 
 _MOJO_COMPILE_OPTS = {
