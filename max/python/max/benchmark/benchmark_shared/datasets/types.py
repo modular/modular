@@ -78,6 +78,7 @@ class PixelGenerationSampledRequest(SampledRequest):
     output_len: int | None = None
     encoded_images: list[OpenAIImage] = field(default_factory=list)
     ignore_eos: bool = True
+    input_image_paths: list[str] = field(default_factory=list)
     image_options: PixelGenerationImageOptions | None = None
 
 

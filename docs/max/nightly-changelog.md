@@ -14,6 +14,7 @@ This version is still a work in progress.
 - Added TaylorSeer denoising cache support to the FLUX.2 Klein pipeline,
   enabling significant speedups for image-to-image generation by skipping
   redundant transformer passes during the denoising loop.
+- Added the Mamba state space model architecture.
 
 ## MAX framework {#26-3-max}
 
@@ -24,11 +25,17 @@ This version is still a work in progress.
 - Consolidated KV connector CLI flags (`--host-kvcache-swap-space-gb`,
   `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
   `--lmcache-config-file`) into the `--kv-connector-config` JSON dict.
+- Removed the `--allow-safetensors-weights-fp32-bf16-bidirectional-cast` CLI
+  flag. Float32 <-> bfloat16 safetensors weight casting is now unconditionally
+  enabled.
 
 ### `max` CLI {#26-3-max-cli}
 
 ### Python API {#26-3-max-python}
 
+- Added support for the `bfloat16` data type on ARM CPU devices in MAX graphs.
+  Previously, `session.load()` raised a `ValueError` when a graph contained
+  bf16 tensors targeting an ARM CPU.
 - Fixed slow `axis=None` reductions (`mean`, `sum`, `prod`, `max`, `min`) in
   `max.experimental.functional`. The previous implementation flattened the
   tensor before reducing, serializing the work onto a single GPU block.
@@ -59,9 +66,23 @@ This version is still a work in progress.
   scattering updates into a copy of the input tensor along a specified axis.
 - Added `conv2d` and `conv2d_transpose` op handlers to the experimental eager
   interpreter with CPU and GPU support.
+- Added `max_pool2d` op handlers (floor and ceil mode) to the experimental
+  eager interpreter with CPU and GPU support.
+- Added `tile` op handler to the experimental eager interpreter (CPU),
+  repeating the input tensor along each dimension.
+- Added `band_part` op handler to the experimental eager interpreter with
+  CPU and GPU support, masking tensor matrices based on a diagonal band.
+- Added `avg_pool2d` op handlers (floor and ceil mode) to the experimental
+  eager interpreter with CPU and GPU support.
+- Added `top_k` op handler to the experimental eager interpreter with CPU
+  and GPU support, returning the top-k values and their original indices
+  along a specified axis.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.
+- Fixed `torch.compile(fullgraph=True)` failing with an "Unsupported context
+  manager" error when accessing `CustomOpLibrary` ops inside the compiled
+  function. Ops are now eagerly compiled during library initialization.
 
 ## Breaking changes {#26-3-breaking}
 
@@ -72,6 +93,10 @@ This version is still a work in progress.
 
 - `max/python/max/benchmark/benchmark_throughput.py` has been deprecated and
   will be removed in a future MAX release.
+
+- Removed `Dim` and `DimList` types from `buffer.dimlist`. Custom kernel code
+  using these types should migrate to `IntTuple` and `TileLayout` from the
+  `layout` package.
 
 ### Mojo API {#26-3-max-mojo}
 

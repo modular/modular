@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import c_char, external_call
+from std.ffi import c_char, external_call, _CPointer
 
 from .pwd import Passwd
 
@@ -32,7 +32,7 @@ struct _C_Passwd(TrivialRegisterPassable):
 
 def _build_pw_struct(
     passwd_ptr: UnsafePointer[mut=False, _C_Passwd, _]
-) raises -> Passwd:
+) -> Passwd:
     var c_pwuid = passwd_ptr[]
     return Passwd(
         pw_name=String(unsafe_from_utf8_ptr=c_pwuid.pw_name),
@@ -47,17 +47,19 @@ def _build_pw_struct(
 
 def _getpw_linux(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwuid", UnsafePointer[_C_Passwd, MutExternalOrigin]
+        "getpwuid", _CPointer[_C_Passwd, ExternalOrigin[mut=True]]
     ](uid)
-    if not passwd_ptr:
+    try:
+        return _build_pw_struct(passwd_ptr[])
+    except:
         raise Error("user ID not found in the password database: ", uid)
-    return _build_pw_struct(passwd_ptr)
 
 
 def _getpw_linux(var name: String) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwnam", UnsafePointer[_C_Passwd, MutExternalOrigin]
+        "getpwnam", _CPointer[_C_Passwd, ExternalOrigin[mut=True]]
     ](name.as_c_string_slice().unsafe_ptr())
-    if not passwd_ptr:
+    try:
+        return _build_pw_struct(passwd_ptr[])
+    except:
         raise Error("user name not found in the password database: ", name)
-    return _build_pw_struct(passwd_ptr)

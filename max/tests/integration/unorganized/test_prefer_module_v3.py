@@ -64,7 +64,7 @@ def test_registry__retrieve_architecture_default() -> None:
     )
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model.huggingface_model_repo,
+        architecture_name="LlamaForCausalLM",
         prefer_module_v3=False,
     )
 
@@ -103,7 +103,7 @@ def test_registry__retrieve_architecture_v3_falls_back_to_v2() -> None:
 
     # When prefer_module_v3=True but only ModuleV2 exists, should fall back
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model.huggingface_model_repo,
+        architecture_name="LlamaForCausalLM",
         prefer_module_v3=True,
     )
 
@@ -160,12 +160,12 @@ def test_registry__retrieve_architecture_module_v3() -> None:
     )
 
     arch_v3 = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model.huggingface_model_repo,
+        architecture_name="LlamaForCausalLM",
         prefer_module_v3=True,
     )
 
     arch_v2 = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model.huggingface_model_repo,
+        architecture_name="LlamaForCausalLM",
         prefer_module_v3=False,
     )
 
@@ -308,7 +308,7 @@ def test_registry__retrieve_architecture_falls_back_to_v3() -> None:
 
     # Default prefer_module_v3=False, but only ModuleV3 exists — should fall back
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model.huggingface_model_repo,
+        architecture_name="LlamaForCausalLM",
         prefer_module_v3=False,
     )
 
@@ -350,7 +350,7 @@ def test_config__prefer_module_v3_with_draft_model() -> None:
     assert config.runtime.prefer_module_v3 is True
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model.huggingface_model_repo,
+        architecture_name="LlamaForCausalLM",
         prefer_module_v3=config.runtime.prefer_module_v3,
     )
 

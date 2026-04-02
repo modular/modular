@@ -12,10 +12,7 @@ modular_sphinx_docs(
         "@numpy-objects-inv",
         "@python-objects-inv",
     ],
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    tags = ["skip-remote-macos"],
 )
 
 modular_sphinx_docs(
@@ -23,10 +20,7 @@ modular_sphinx_docs(
     srcs = ["//max/python/docs:cli-rst"],
     builder = "markdown",
     config_file = ":cli-conf-py",
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    tags = ["skip-remote-macos"],
 )
 
 modular_versioned_expand_template(

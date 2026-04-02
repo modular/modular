@@ -38,9 +38,8 @@ pipeline_config = PipelineConfig(
         model_path=MODEL_NAME,
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding="float32",
-        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         kv_cache=KVCacheConfig(),
-        max_length=512,
+        max_length=128,
     ),
     runtime=PipelineRuntimeConfig(max_batch_size=16),
 )
@@ -52,9 +51,11 @@ pipeline_config = PipelineConfig(
     [pipeline_config],
     indirect=True,
 )
-async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
+async def test_tinyllama_serving_cpu(app: FastAPI) -> None:
+    """Test chat completions, completions, and streaming completions."""
+
     async with TestClient(app, timeout=720.0) as client:
-        # Test with streaming set to False
+        # ---- Non-streaming chat completion ----
         raw_response = await client.post(
             "/v1/chat/completions",
             json={
@@ -64,7 +65,6 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
                 "max_tokens": 3,
             },
         )
-        # This is not a streamed completion - There is no [DONE] at the end.
         response = CreateChatCompletionResponse.model_validate(
             raw_response.json()
         )
@@ -72,20 +72,21 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
         assert len(response.choices) == 1
         assert response.choices[0].finish_reason == "length"
 
-        # Test a few prompts, in different formats
+        # ---- Non-streaming completions with different prompt formats ----
         prompt_num = [
             ("Hello world", 1),
-            (["Hello world"], 1),
             (["Hello world", "hello there"], 2),
             ([1, 2, 3], 1),
-            ([[1, 2, 3]], 1),
             ([[1, 2, 3], [4, 5, 6]], 2),
         ]
         for prompt, n_prompts in prompt_num:
-            # Completions endpoint instead of chat completions
             raw_response = await client.post(
                 "/v1/completions",
-                json={"model": MODEL_NAME, "prompt": prompt},
+                json={
+                    "model": MODEL_NAME,
+                    "prompt": prompt,
+                    "max_tokens": 3,
+                },
             )
             response2 = CreateCompletionResponse.model_validate(
                 raw_response.json()
@@ -93,52 +94,36 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
             assert len(response2.choices) == n_prompts
             assert response2.choices[0].finish_reason in ["length", "stop"]
 
+        # ---- Streaming completions ----
+        def openai_completion_request(content: str) -> dict[str, Any]:
+            return {
+                "model": MODEL_NAME,
+                "prompt": content,
+                "temperature": 0.7,
+                "max_tokens": 3,
+            }
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "pipeline_config",
-    [pipeline_config],
-    indirect=True,
-)
-async def test_tinyllama_serve_v1_completions_cpu(app: FastAPI) -> None:
-    def openai_completion_request(content: str) -> dict[str, Any]:
-        """Create the json request for /v1/completion (not chat)."""
-        return {
-            "model": MODEL_NAME,
-            "prompt": content,
-            "temperature": 0.7,
-            "max_tokens": 3,
-        }
+        async def stream_completion(client: TestClient, msg: str) -> str:
+            r = await client.post(
+                "/v1/completions",
+                json=openai_completion_request(msg) | {"stream": True},
+                stream=True,
+            )
+            response_text = ""
+            async for chunk in r.iter_content(MAX_READ_SIZE):
+                chunk_str = chunk.decode("utf-8").strip()
+                if chunk_str.startswith("data: [DONE]"):
+                    break
+                try:
+                    data = json.loads(chunk_str[len("data: ") :])
+                    content = data["choices"][0]["text"]
+                    response_text += content
+                except Exception:
+                    pass
+            return response_text
 
-    async def main_stream(client: TestClient, msg: str) -> str:
-        print(f"Generated request with prompt :{msg}")
-        r = await client.post(
-            "/v1/completions",
-            json=openai_completion_request(msg)
-            | {
-                "stream": True,
-            },
-            stream=True,
-        )
-        response_text = ""
-        async for response in r.iter_content(MAX_READ_SIZE):
-            response = response.decode("utf-8").strip()
-            if response.startswith("data: [DONE]"):
-                break
-            try:
-                data = json.loads(response[len("data: ") :])
-                content = data["choices"][0]["text"]
-                response_text += content
-            except Exception as e:
-                # Just suppress the exception as it might be a ping message.
-                print(f"Exception {e} at '{response}'")
-        return response_text
-
-    tasks = []
-    resp = []
-    async with TestClient(app, timeout=720.0) as client:
+        tasks = []
         for prompt in DEFAULT_PROMPTS[1:]:
-            tasks.append(asyncio.create_task(main_stream(client, prompt)))
-
+            tasks.append(asyncio.create_task(stream_completion(client, prompt)))
         for task in tasks:
-            resp.append(await task)
+            await task

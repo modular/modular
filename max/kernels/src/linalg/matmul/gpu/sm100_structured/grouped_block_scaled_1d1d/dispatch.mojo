@@ -10,17 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Dispatch logic for grouped 1D-1D block-scaled SM100 NVFP4 matmul.
+"""Dispatch logic for grouped 1D-1D block-scaled SM100 matmul.
 
 Selects optimal kernel configuration based on (N, K) shape and workload
 type (decode vs prefill), with parameters tuned via ablation on B200.
+NVFP4 gets shape-tuned decode/prefill tables; MXFP4 and MXFP8 use
+default configs.
 
 When `override=True`, uses the caller's AB_swapped/mma_bn/cta_group/
 num_pipeline_stages directly (for ablation studies and benchmarking).
 When `override=False` (default), ignores those parameters and selects
 from the tuning table based on (N, K) and `estimated_total_m`.
 
-Tuning table (keyed on N, K):
+NVFP4 tuning table (keyed on N, K):
 
   Decode (estimated_total_m < num_active_experts * 8):
   - N=4096, K=7168:  AB_swapped=True, mma_bn=8, cta_group=1, stages=6
@@ -40,8 +42,22 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.utils.index import Index
 from layout import TileTensor
 
+from linalg.fp4_utils import NVFP4_SF_DTYPE, MXFP4_SF_DTYPE, MXFP8_SF_DTYPE
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul import grouped_matmul_block_scaled
+
+
+def _scaling_kind[a_type: DType, scales_dtype: DType]() -> UMMAKind:
+    """Infer UMMAKind from input and scale dtypes."""
+    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
+        return UMMAKind.KIND_MXF4NVF4
+    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
+        return UMMAKind.KIND_MXF4
+    else:
+        comptime assert (
+            a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
+        ), "unsupported a_type/scales_dtype for grouped block-scaled matmul"
+        return UMMAKind.KIND_MXF8F6F4
 
 
 def _launch_grouped_block_scaled[
@@ -72,7 +88,7 @@ def _launch_grouped_block_scaled[
         mma_bn: MMA tile N dimension.
         cta_group: CTA group size.
         num_pipeline_stages: Pipeline depth override. None = auto-compute.
-        scaling_kind: Block-scaling format (only NVFP4 currently supported).
+        scaling_kind: Block-scaling format (NVFP4, MXFP4, or MXFP8).
     """
     comptime a_type = a.dtype
     comptime b_type = b.dtype
@@ -382,3 +398,102 @@ def grouped_matmul_nvfp4_dispatch[
                 num_active_experts,
                 ctx,
             )
+
+
+def grouped_matmul_block_scaled_sm100_dispatch[
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+](
+    c: TileTensor[...],
+    a: TileTensor[...],
+    b: TileTensor[...],
+    a_scales: TileTensor[...],
+    b_scales: TileTensor[...],
+    a_offsets: TileTensor[...],
+    a_scale_offsets: TileTensor[...],
+    expert_ids: TileTensor[...],
+    expert_scales: TileTensor[...],
+    num_active_experts: Int,
+    estimated_total_m: Int,
+    ctx: DeviceContext,
+) raises:
+    """Dispatch grouped block-scaled matmul based on input dtypes.
+
+    Routes NVFP4 to shape-tuned decode/prefill dispatch, and MXFP4/MXFP8
+    to a common launcher with default configs.
+
+    Parameters:
+        transpose_b: Whether B is transposed (must be True).
+        target: Target device (unused, for MOGG interface compatibility).
+
+    Args:
+        c: Output tensor (total_tokens, N).
+        a: Input A tensor (total_tokens, K//2 packed).
+        b: Weight tensor B (num_experts, N, K//2 packed).
+        a_scales: Scale factors for A (5D).
+        b_scales: Scale factors for B (6D).
+        a_offsets: Per-expert token offsets (num_active_experts + 1).
+        a_scale_offsets: Per-expert scale offsets (num_active_experts).
+        expert_ids: Active expert IDs (num_active_experts).
+        expert_scales: Per-expert output scaling (num_experts).
+        num_active_experts: Number of active experts.
+        estimated_total_m: Estimated number of total non-padded tokens.
+        ctx: Device context.
+    """
+    comptime scaling_kind = _scaling_kind[a.dtype, a_scales.dtype]()
+
+    comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
+        grouped_matmul_nvfp4_dispatch[transpose_b, target](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
+            estimated_total_m,
+            ctx,
+        )
+    elif scaling_kind == UMMAKind.KIND_MXF4:
+        _launch_grouped_block_scaled[
+            transpose_b,
+            AB_swapped=False,
+            mma_bn=128,
+            cta_group=1,
+            scaling_kind=UMMAKind.KIND_MXF4,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
+            ctx,
+        )
+    elif scaling_kind == UMMAKind.KIND_MXF8F6F4:
+        _launch_grouped_block_scaled[
+            transpose_b,
+            AB_swapped=False,
+            mma_bn=128,
+            cta_group=1,
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
+            ctx,
+        )

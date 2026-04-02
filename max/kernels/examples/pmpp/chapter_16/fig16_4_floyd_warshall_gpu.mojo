@@ -15,12 +15,7 @@
 # GPU-accelerated all-pairs shortest path algorithm
 
 from std.math import ceildiv
-from std.gpu import (
-    barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.itertools import product
@@ -53,14 +48,14 @@ def floyd_warshall_kernel(
     ]()
 
     # blockIdx.y gives row i, blockIdx.x and threadIdx.x give column j
-    var i = Int(block_idx.y)
-    var j = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var i = block_idx.y
+    var j = block_idx.x * block_dim.x + thread_idx.x
 
     if i >= num_vertices or j >= num_vertices:
         return
 
     # Thread 0 loads A[i][k] into shared memory once for the whole block
-    if Int(thread_idx.x) == 0:
+    if thread_idx.x == 0:
         k_row_shared[0] = Scalar[DType.float32](A[i * num_vertices + curr_k])
 
     barrier()

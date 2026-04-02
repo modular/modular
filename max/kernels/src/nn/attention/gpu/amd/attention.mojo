@@ -688,27 +688,7 @@ struct Attention[
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
-        comptime if not is_causal_mask or (
-            not Self.attention_config_t.double_buffer
-        ):
-            # using double buffer as proxy for the experimental kernel,
-            # using readfirstlane for the gfx942 kernel leads to incorrect results.
-            # This needs more investigation.
-            # Disable inline asm for all other masks except causal mask,
-            # Inline asm was generating bad code for the MaterializedMask,
-            # and for now we only care about the performance of the causal mask.
-            self.scale = scale_log2e
-        else:
-            self.scale = inlined_assembly[
-                "v_readfirstlane_b32 $0, $1",
-                Scalar[Self.accum_type],
-                constraints="=s,v",
-            ](scale_log2e)
-            # readfirstlane does not work without inline asm
-            # bitcast[Self.accum_type](
-            #     readfirstlane(bitcast[DType.int32](Float32(scale_log2e)))
-            # )
-
+        self.scale = scale_log2e
         self.seq_len = seq_len
         self.num_keys = num_keys
         self.start_pos = start_pos

@@ -34,6 +34,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib.tokenizer import run_with_default_executor
 from max.support.image import find_contiguous_ranges, hash_image
 from transformers import AutoTokenizer
 
@@ -128,6 +129,48 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.rope_max_width: int = int(
             getattr(vision_cfg, "rope_max_width", 512)
         )
+
+    async def encode(
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Transforms the provided prompt into a token array.
+
+        Kimi's ``TikTokenTokenizer.encode()`` accepts
+        ``allow_special_tokens`` instead of the HuggingFace-standard
+        ``add_special_tokens``.  Passing the unrecognised kwarg causes
+        HF to silently fall back to the slow
+        ``PreTrainedTokenizer.encode()`` path (actually slow in
+        transformers v5+).  This override calls the delegate with
+        ``allow_special_tokens=True`` so the fast tiktoken path is
+        always used.
+
+        The ``add_special_tokens`` parameter is accepted for interface
+        compatibility but is effectively a no-op: the tiktoken fast
+        path never prepends/appends BOS/EOS tokens regardless, and
+        ``allow_special_tokens`` (whether tiktoken *recognises* special
+        token strings in the input) must stay ``True`` so that
+        chat-templated text is tokenised correctly.
+        """
+        encoded_prompt: npt.NDArray[np.integer[Any]]
+        if isinstance(prompt, str):
+
+            def _encode_fn(
+                prompt: str,
+            ) -> npt.NDArray[np.integer[Any]]:
+                return self.delegate.encode(prompt, allow_special_tokens=True)
+
+            encoded_prompt = await run_with_default_executor(_encode_fn, prompt)
+
+            max_length = self.max_length or self.delegate.model_max_length
+            if max_length and len(encoded_prompt) > max_length:
+                raise ValueError(
+                    f"Input string is larger than tokenizer's max length"
+                    f" ({len(encoded_prompt)} > {max_length})."
+                )
+        else:
+            encoded_prompt = np.array(list(prompt))
+
+        return encoded_prompt
 
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]

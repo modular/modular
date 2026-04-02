@@ -250,9 +250,6 @@ class SpeculativeDecodingPipelineBase(
         )
         self._needs_all_draft_logits = strategy == "residual"
 
-        # Initialize metrics tracker
-        self.metrics = SpeculativeDecodingMetrics.empty()
-
         # Track draft model replica assignments per request
         self._draft_replica_idx: dict[RequestID, int] = {}
 
@@ -274,6 +271,11 @@ class SpeculativeDecodingPipelineBase(
         )
 
         self._num_draft_steps = self._speculative_config.num_speculative_tokens
+
+        # Initialize metrics tracker
+        self.metrics = SpeculativeDecodingMetrics.empty(
+            num_speculative_tokens=self._num_draft_steps
+        )
 
         target_cache_mem = target_config.kv_cache._available_cache_memory
         draft_cache_mem = draft_config.kv_cache._available_cache_memory

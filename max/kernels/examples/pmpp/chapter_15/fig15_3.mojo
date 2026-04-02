@@ -14,11 +14,7 @@
 """Figure 15.3: Tiled matrix multiplication kernel combining all optimizations."""
 
 from std.math import ceildiv
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.itertools import product
@@ -62,7 +58,7 @@ def loadTile(
     var num_rows_per_tile = NUM_THREADS_PER_BLOCK // width
     var num_subtiles = height // num_rows_per_tile
 
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     for subtile in range(num_subtiles):
         var row, col = divmod(tx, width)
@@ -92,9 +88,9 @@ def mm_tiled_kernel(
         N: Number of columns in B and C.
         K: Number of columns in A and rows in B.
     """
-    var bx = Int(block_idx.x)
-    var by = Int(block_idx.y)
-    var tx = Int(thread_idx.x)
+    var bx = block_idx.x
+    var by = block_idx.y
+    var tx = thread_idx.x
 
     var tiles_across_x = bN // tN
     var tile_x, tile_y = divmod(tx, tiles_across_x)

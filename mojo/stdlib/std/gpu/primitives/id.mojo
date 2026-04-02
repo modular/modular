@@ -101,16 +101,8 @@ def lane_id_uint() -> UInt:
     return _lane_id[UInt]()
 
 
-# fmt: off
-@deprecated(
-    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
-    "  Postpone: Use `from std.gpu import lane_id_uint as lane_id` to continue using `UInt` for the time being.\n"
-    "   Migrate: Use `from std.gpu import lane_id_int as lane_id` to migrate to `Int`, which is the end state.\n"
-    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
-)
-# fmt: on
 @always_inline("nodebug")
-def lane_id() -> UInt:
+def lane_id() -> Int:
     """Returns the lane ID of the current thread within its warp.
 
     The lane ID is a unique identifier for each thread within a warp, ranging from 0 to
@@ -120,7 +112,7 @@ def lane_id() -> UInt:
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
-    return _lane_id[UInt]()
+    return _lane_id[Int]()
 
 
 @always_inline("nodebug")
@@ -201,16 +193,8 @@ def warp_id_uint[*, broadcast: Bool = False]() -> UInt:
     return _warp_id[UInt, broadcast=broadcast]()
 
 
-# fmt: off
-@deprecated(
-    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
-    "  Postpone: Use `from std.gpu import warp_id_uint as warp_id` to continue using `UInt` for the time being.\n"
-    "   Migrate: Use `from std.gpu import warp_id_int as warp_id` to migrate to `Int`, which is the end state.\n"
-    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
-)
-# fmt: on
 @always_inline("nodebug")
-def warp_id[*, broadcast: Bool = False]() -> UInt:
+def warp_id[*, broadcast: Bool = False]() -> Int:
     """Returns the warp ID of the current thread within its block.
     The warp ID is a unique identifier for each warp within a block, ranging
     from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
@@ -224,7 +208,7 @@ def warp_id[*, broadcast: Bool = False]() -> UInt:
     Returns:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
-    return _warp_id[UInt, broadcast=broadcast]()
+    return _warp_id[Int, broadcast=broadcast]()
 
 
 @always_inline("nodebug")
@@ -326,15 +310,7 @@ struct _ThreadIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         return Self.ResultType(from_int=Int(i))
 
 
-# fmt: off
-@deprecated(
-    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
-    "  Postpone: Use `from std.gpu import thread_idx_uint as thread_idx` to continue using `UInt` for the time being.\n"
-    "   Migrate: Use `from std.gpu import thread_idx_int as thread_idx` to migrate to `Int`, which is the end state.\n"
-    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
-)
-# fmt: on
-comptime thread_idx = _ThreadIdx[UInt]()
+comptime thread_idx = _ThreadIdx[Int]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values.
 
 Note: This accessor is in the process of migrating from `UInt` to `Int` values.
@@ -409,15 +385,7 @@ struct _BlockIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         return Self.ResultType(from_int=Int(i))
 
 
-# fmt: off
-@deprecated(
-    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
-    "  Postpone: Use `from std.gpu import block_idx_uint as block_idx` to continue using `UInt` for the time being.\n"
-    "   Migrate: Use `from std.gpu import block_idx_int as block_idx` to migrate to `Int`, which is the end state.\n"
-    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
-)
-# fmt: on
-comptime block_idx = _BlockIdx[UInt]()
+comptime block_idx = _BlockIdx[Int]()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 comptime block_idx_int = _BlockIdx[Int]()
@@ -483,15 +451,7 @@ struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             ]()
 
 
-# fmt: off
-@deprecated(
-    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
-    "  Postpone: Use `from std.gpu import block_dim_uint as block_dim` to continue using `UInt` for the time being.\n"
-    "   Migrate: Use `from std.gpu import block_dim_int as block_dim` to migrate to `Int`, which is the end state.\n"
-    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
-)
-# fmt: on
-comptime block_dim = _BlockDim[UInt]()
+comptime block_dim = _BlockDim[Int]()
 """Contains the dimensions of the block as `x`, `y`, and `z` values.
 
 For example: `block_dim.y`."""
@@ -570,15 +530,7 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             ]()
 
 
-# fmt: off
-@deprecated(
-    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
-    "  Postpone: Use `from std.gpu import grid_dim_uint as grid_dim` to continue using `UInt` for the time being.\n"
-    "   Migrate: Use `from std.gpu import grid_dim_int as grid_dim` to migrate to `Int`, which is the end state.\n"
-    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
-)
-# fmt: on
-comptime grid_dim = _GridDim[UInt]()
+comptime grid_dim = _GridDim[Int]()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
@@ -619,15 +571,7 @@ struct _GlobalIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         return Self.ResultType(from_int=Int(std.math.fma(b_idx, b_dim, t_idx)))
 
 
-# fmt: off
-@deprecated(
-    "GPU index accessors are being migrated from `UInt` to `Int`.\n"
-    "  Postpone: Use `from std.gpu import global_idx_uint as global_idx` to continue using `UInt` for the time being.\n"
-    "   Migrate: Use `from std.gpu import global_idx_int as global_idx` to migrate to `Int`, which is the end state.\n"
-    "Note: This deprecation is brief, and will be undeprecated after the type is changed to `Int`."
-)
-# fmt: on
-comptime global_idx = _GlobalIdx[UInt]()
+comptime global_idx = _GlobalIdx[Int]()
 """Contains the global offset of the kernel launch, as `x`, `y`, and `z`
 values."""
 

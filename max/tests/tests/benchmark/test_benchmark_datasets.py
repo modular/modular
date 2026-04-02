@@ -13,6 +13,8 @@
 
 """Unit tests for benchmark_shared.datasets module."""
 
+import json
+from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
 import pytest
@@ -28,13 +30,17 @@ from max.benchmark.benchmark_shared.datasets import (
     DatasetRegistryEntry,
     HuggingFaceBenchmarkDataset,
     LocalBenchmarkDataset,
+    LocalImageBenchmarkDataset,
     ObfuscatedConversationsBenchmarkDataset,
+    PixelGenerationSampledRequest,
     RandomBenchmarkDataset,
     SampledRequest,
     ShareGPTBenchmarkDataset,
     SonnetBenchmarkDataset,
+    SyntheticPixelBenchmarkDataset,
     VisionArenaBenchmarkDataset,
 )
+from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
@@ -55,6 +61,7 @@ def test_dataset_registry_contents() -> None:
     expected_datasets = {
         "agentic-code",
         "arxiv-summarization",
+        "instruct-coder",
         "sharegpt",
         "code_debug",
         "random",
@@ -65,6 +72,7 @@ def test_dataset_registry_contents() -> None:
         "axolotl",
         "batch-job",
         "obfuscated-conversations",
+        "local-image",
     }
     assert set(DATASET_REGISTRY.keys()) == expected_datasets
 
@@ -75,6 +83,7 @@ def test_dataset_registry_multiturn_support_mapping() -> None:
         "agentic-code": True,
         "arxiv-summarization": False,
         "code_debug": True,
+        "instruct-coder": True,
         "random": True,
         "synthetic": True,
         "sharegpt": False,
@@ -83,6 +92,7 @@ def test_dataset_registry_multiturn_support_mapping() -> None:
         "axolotl": False,
         "batch-job": False,
         "synthetic-pixel": False,
+        "local-image": False,
     }
 
     for dataset_name, expected_support in expected_multiturn.items():
@@ -625,3 +635,85 @@ def test_local_datasets_with_default_files() -> None:
         # Should have set the default path
         assert dataset.dataset_path is not None
         assert "sonnet_4x.txt" in dataset.dataset_path
+
+
+def _write_test_image(image_path: Path) -> None:
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (8, 8), color="red").save(image_path)
+
+
+def test_image_edit_dataset_sample_requests(tmp_path: Path) -> None:
+    image_path = tmp_path / "images" / "sample.png"
+    _write_test_image(image_path)
+    dataset_path = tmp_path / "image_edit.jsonl"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "prompt": "Turn this into watercolor",
+                "image_path": "images/sample.png",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = BenchmarkDataset.from_flags(
+        dataset_name="local-image",
+        dataset_path=str(dataset_path),
+    )
+    assert isinstance(dataset, LocalImageBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=1,
+        tokenizer=None,
+        image_width=1024,
+        image_steps=28,
+        image_guidance_scale=3.5,
+    )
+    request = samples.requests[0]
+    assert isinstance(request, PixelGenerationSampledRequest)
+    assert request.prompt_formatted == "Turn this into watercolor"
+    assert request.input_image_paths == [str(image_path.resolve())]
+    assert request.image_options is not None
+    assert request.image_options.width == 1024
+    assert request.image_options.steps == 28
+    assert request.image_options.guidance_scale == 3.5
+
+
+def test_image_edit_dataset_invalid_jsonl(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "bad.jsonl"
+    dataset_path.write_text("{not-json}\n", encoding="utf-8")
+    dataset = BenchmarkDataset.from_flags(
+        dataset_name="local-image",
+        dataset_path=str(dataset_path),
+    )
+
+    with pytest.raises(ValueError, match="Invalid JSON"):
+        dataset.sample_requests(num_requests=1, tokenizer=None)
+
+
+def test_synthetic_pixel_dataset_sample_requests_for_image_to_image() -> None:
+    dataset = BenchmarkDataset.from_flags(dataset_name="synthetic-pixel")
+    assert isinstance(dataset, SyntheticPixelBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=2,
+        tokenizer=None,
+        benchmark_task="image-to-image",
+        image_width=640,
+        image_height=832,
+        image_steps=18,
+        image_guidance_scale=3.0,
+    )
+
+    assert len(samples.requests) == 2
+    for request in samples.requests:
+        assert isinstance(request, PixelGenerationSampledRequest)
+        assert request.prompt_formatted.startswith("Random prompt")
+        assert len(request.input_image_paths) == 1
+        assert Path(request.input_image_paths[0]).exists()
+        assert request.image_options is not None
+        assert request.image_options.width == 640
+        assert request.image_options.height == 832
+        assert request.image_options.steps == 18
+        assert request.image_options.guidance_scale == 3.0

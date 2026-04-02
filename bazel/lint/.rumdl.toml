@@ -17,6 +17,7 @@ disable = [
 
 exclude = [
     ".claude",
+    "third-party",
 ]
 
 [ul-style]

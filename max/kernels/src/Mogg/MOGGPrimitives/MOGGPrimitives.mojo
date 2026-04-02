@@ -15,9 +15,7 @@ from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
 
-from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
-from compiler_internal.directives import _DimListToTileLayout
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.device_context import _DeviceContextPtr
@@ -25,6 +23,8 @@ from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
+    IntTuple,
+    TensorLayout,
     TileTensor,
     row_major,
 )
@@ -581,16 +581,16 @@ def mgp_buffer_get_size(
 @register_internal("mgp.tensor_spec.create")
 @no_inline
 def mgp_tensor_spec_create[
-    aRawDims: DimList,
+    aRawDims: IntTuple,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> IndexList[aRawDimsRank]:
     var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
     # Update Shape with runtime elements.
+    # Negative values in aRawDims indicate dynamic dimensions.
     comptime for i in range(aRawDimsRank):
-        var dim = aRawDims.at[i]()
-        if dim.get() > -1:
-            shape[i] = dim.get()
+        if Int(aRawDims[i]) >= 0:
+            shape[i] = Int(aRawDims[i])
         else:
             shape[i] = runtimeDims[runtimeIndex]
             runtimeIndex += 1
@@ -1009,8 +1009,7 @@ def mogg_tensor_init[
     rank: Int,
     mut: Bool,
     input: IO,
-    static_shape: DimList,
-    static_stride: DimList,
+    static_layout: TensorLayout,
     alignment: Int,
     exclusive: Bool,
 ](
@@ -1020,7 +1019,7 @@ def mogg_tensor_init[
     static_spec=StaticTensorSpec[
         dtype,
         rank,
-        static_layout=_DimListToTileLayout[static_shape, static_stride],
+        static_layout=static_layout,
     ](
         alignment,
         AddressSpace.GENERIC,
@@ -1125,7 +1124,7 @@ def mogg_format_region_error(
 @register_internal("mogg.tensor.reshape")
 @always_inline
 def reshape_contiguous_buffer[
-    static_shape: DimList, static_stride: DimList, new_rank: Int
+    static_layout: TensorLayout, new_rank: Int
 ](
     buffer: ManagedTensorSlice,
     shape: IndexList[new_rank],
@@ -1134,7 +1133,7 @@ def reshape_contiguous_buffer[
     static_spec=StaticTensorSpec[
         buffer.dtype,
         new_rank,
-        static_layout=_DimListToTileLayout[static_shape, static_stride],
+        static_layout=static_layout,
     ](
         1,
         AddressSpace.GENERIC,

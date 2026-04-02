@@ -11,18 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import (
-    WARP_SIZE,
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 from std.gpu.primitives.id import (
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
+    lane_id,
+    warp_id,
 )
 from std.gpu.primitives.warp import shuffle_up
 
@@ -86,25 +81,25 @@ def block_scan(
     var result = warp_scan(val)
 
     # Store warp sums
-    if lane_id() == UInt(WARP_SIZE - 1):
-        warp_sums[Int(warp_id())] = result
+    if lane_id() == WARP_SIZE - 1:
+        warp_sums[warp_id()] = result
 
     barrier()
 
     # Scan warp sums
     if warp_id() == 0:
         var warp_sum: UInt32 = 0
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sum = warp_sums[Int(thread_idx.x)]
+        if thread_idx.x < NUM_WARPS:
+            warp_sum = warp_sums[thread_idx.x]
         warp_sum = warp_scan(warp_sum)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sums[Int(thread_idx.x)] = warp_sum
+        if thread_idx.x < NUM_WARPS:
+            warp_sums[thread_idx.x] = warp_sum
 
     barrier()
 
     # Add previous warp sum
     if warp_id() > 0:
-        result += warp_sums[Int(warp_id()) - 1]
+        result += warp_sums[warp_id() - 1]
 
     return result
 
@@ -129,12 +124,12 @@ def block_exclusive_scan(
         Exclusive scan result for this thread.
     """
     var inclusive = block_scan(val, warp_sums)
-    temp[Int(thread_idx.x)] = inclusive
+    temp[thread_idx.x] = inclusive
     barrier()
 
     var exclusive: UInt32 = 0
-    if Int(thread_idx.x) > 0:
-        exclusive = temp[Int(thread_idx.x) - 1]
+    if thread_idx.x > 0:
+        exclusive = temp[thread_idx.x - 1]
 
     return exclusive
 
@@ -166,7 +161,7 @@ def filter_kernel(
         address_space=AddressSpace.SHARED,
     ]()
 
-    var i = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
+    var i = block_idx.x * BLOCK_DIM + thread_idx.x
     var val: UInt32 = 0
     var keep: UInt32 = 0
     if UInt32(i) < N:

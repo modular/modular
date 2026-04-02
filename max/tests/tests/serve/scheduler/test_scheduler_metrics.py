@@ -45,6 +45,8 @@ def test_metric_to_string() -> None:
         disk_blocks_read=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
+        avg_acceptance_length=0.0,
+        max_acceptance_length=0,
     )
 
     assert (
@@ -61,7 +63,9 @@ def test_metric_to_string() -> None:
 
     metrics.draft_tokens_generated = 10
     metrics.draft_tokens_accepted = 5
+    metrics.avg_acceptance_length = 2.5
+    metrics.max_acceptance_length = 3
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks | All Preemptions: 14 reqs"
     )

@@ -24,6 +24,7 @@ from std.python._cpython import (
     Py_TPFLAGS_LONG_SUBCLASS,
     Py_TPFLAGS_LIST_SUBCLASS,
 )
+from std.ffi import _CPointer
 from std.testing import (
     assert_equal,
     assert_false,
@@ -252,7 +253,7 @@ def _test_unicode_object_api(cpy: CPython) raises:
     assert_true(py_str)
 
     var res = cpy.PyUnicode_AsUTF8AndSize(py_str)
-    assert_equal(res, str)
+    assert_equal(res[], str)
 
 
 def _test_tuple_object_api(cpy: CPython) raises:
@@ -367,9 +368,9 @@ def _test_capsule_api(cpy: CPython) raises:
 
 
 def _test_memory_management_api(cpy: CPython) raises:
-    var ptr = cpy.lib.call["PyObject_Malloc", OpaquePointer[MutExternalOrigin]](
-        64
-    )
+    var ptr = cpy.lib.call[
+        "PyObject_Malloc", _CPointer[NoneType, AnyOrigin[mut=True]]
+    ](64)
     assert_true(ptr)
 
     cpy.PyObject_Free(ptr)

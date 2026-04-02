@@ -58,7 +58,6 @@ import std.sys
 from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.os import abort
 
-from buffer.dimlist import DimList
 
 from std.utils import IndexList
 
@@ -412,53 +411,6 @@ struct Layout(
         return Layout(shape, prefix_product(shape))
 
     @staticmethod
-    def col_major[*, dims: DimList]() -> Layout:
-        """Creates a col-major layout from a DimList with compile-time rank.
-
-        This method creates a col-major layout where the first dimension varies fastest in memory.
-        It handles both known and unknown dimensions at compile time, properly calculating
-        strides for each dimension. If any dimension is unknown, subsequent strides will
-        also be marked as unknown.
-
-        Parameters:
-            dims: A DimList containing the dimensions of the layout.
-
-        Returns:
-            A col-major Layout with the specified dimensions and computed strides.
-
-        Example:
-
-            ```mojo
-            from layout import Layout
-            from layout.layout import DimList
-
-            # Create a col-major layout with compile-time rank
-            comptime dims = DimList[3, 4]()
-            comptime layout = Layout.col_major[dims]()
-            # Result: Layout with shape (3,4) and stride (1,3)
-            ```
-        """
-        var c_stride = 1
-        var shape = IntTuple()
-        var stride = IntTuple(c_stride)
-        comptime rank = len(dims)
-
-        comptime for i in range(rank):
-            var dim = dims.get[i]()
-            shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
-
-        var unknown_flag = False
-
-        comptime for i in range(rank - 1):
-            var dim = dims.get[i]()
-            if not dims.has_value[i]():
-                unknown_flag = True
-            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
-            c_stride *= dim
-
-        return Layout(shape, stride)
-
-    @staticmethod
     def col_major[rank: Int](tuple: IndexList[rank]) -> Layout:
         """Creates a col-major layout from a IndexList with compile-time rank.
 
@@ -533,53 +485,6 @@ struct Layout(
         """
         var shape = IntTuple(dims)
         return Self.row_major(shape)
-
-    @staticmethod
-    def row_major[*, dims: DimList]() -> Layout:
-        """Creates a row-major layout from a DimList with compile-time rank.
-
-        This method creates a row-major layout where the last dimension varies fastest in memory.
-        It handles both known and unknown dimensions at compile time, properly calculating
-        strides for each dimension. If any dimension is unknown, subsequent strides will
-        also be marked as unknown.
-
-        Parameters:
-            dims: A DimList containing the dimensions of the layout.
-
-        Returns:
-            A row-major Layout with the specified dimensions and computed strides.
-
-        Example:
-
-            ```mojo
-            from layout import Layout
-            from layout.layout import DimList
-
-            # Create a row-major layout with compile-time rank
-            comptime dims = DimList[3, 4]()
-            comptime layout = Layout.row_major[2](dims)
-            # Result: Layout with shape (3,4) and stride (4,1)
-            ```
-        """
-        var c_stride = 1
-        var shape = IntTuple()
-        var stride = IntTuple(c_stride)
-        comptime rank = len(dims)
-
-        comptime for i in range(rank):
-            var dim = dims.get[i]()
-            shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
-
-        var unknown_flag = False
-
-        comptime for i in range(rank - 1):
-            var dim = dims.get[rank - 1 - i]()
-            if not dims.has_value[rank - 1 - i]():
-                unknown_flag = True
-            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
-            c_stride *= dim
-
-        return Layout(shape, reverse(stride))
 
     @staticmethod
     def row_major[rank: Int](tuple: IndexList[rank]) -> Layout:
@@ -1252,9 +1157,12 @@ def complement(layout: Layout, size: Int = 1) -> Layout:
         i += 1
         current_idx = shape * stride
 
-    result_shape.replace_entry(
-        i, int_value=(size + current_idx - 1) // current_idx
-    )  # ceil_div
+    if size == UNKNOWN_VALUE:
+        result_shape.replace_entry(i, int_value=UNKNOWN_VALUE)
+    else:
+        result_shape.replace_entry(
+            i, int_value=(size + current_idx - 1) // current_idx
+        )  # ceil_div
     result_stride.replace_entry(i, int_value=current_idx)
     i += 1
 

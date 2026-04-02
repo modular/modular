@@ -13,7 +13,7 @@
 
 """Figure 13.9: Basic merge kernel implementation in Mojo."""
 
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.math import min, max
 
@@ -118,7 +118,7 @@ def merge_basic_kernel(
         block_dim_x: Block dimension (threads per block).
         grid_dim_x: Grid dimension (number of blocks).
     """
-    var tid = Int(block_idx.x) * block_dim_x + Int(thread_idx.x)
+    var tid = block_idx.x * block_dim_x + thread_idx.x
     var total_elements = m + n
     var total_threads = block_dim_x * grid_dim_x
     var elements_per_thread = ceildiv(total_elements, total_threads)

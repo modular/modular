@@ -13,11 +13,7 @@
 
 """Figures 13.16, 13.18, 13.19, 13.20: Circular buffer merge kernel implementation in Mojo."""
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -208,10 +204,10 @@ def merge_circular_buffer_kernel(
     # Block-level co-rank (same as tiled version)
     # Dynamic grid size based on launch configuration
     var grid_size = ceildiv(m + n, 2 * tile_size)  # Max 2 iterations per block
-    var C_curr = Int(block_idx.x) * ceildiv(m + n, grid_size)
-    var C_next = min((Int(block_idx.x) + 1) * ceildiv(m + n, grid_size), m + n)
+    var C_curr = block_idx.x * ceildiv(m + n, grid_size)
+    var C_next = min((block_idx.x + 1) * ceildiv(m + n, grid_size), m + n)
 
-    if Int(thread_idx.x) == 0:
+    if thread_idx.x == 0:
         A_S[0] = Scalar[DType.int32](co_rank(C_curr, A, m, B, n))
         A_S[1] = Scalar[DType.int32](co_rank(C_next, A, m, B, n))
 
@@ -245,46 +241,34 @@ def merge_circular_buffer_kernel(
         # into A_S and B_S using circular buffer indexing
         for i in range(0, A_S_consumed, Int(128)):  # blockDim.x = 128
             if (
-                i + Int(thread_idx.x) < A_length - A_consumed
-                and i + Int(thread_idx.x) < A_S_consumed
+                i + thread_idx.x < A_length - A_consumed
+                and i + thread_idx.x < A_S_consumed
             ):
                 A_S[
-                    (
-                        A_S_start
-                        + (tile_size - A_S_consumed)
-                        + i
-                        + Int(thread_idx.x)
-                    )
+                    (A_S_start + (tile_size - A_S_consumed) + i + thread_idx.x)
                     % tile_size
                 ] = Scalar[DType.int32](
-                    A[Int(A_curr) + A_consumed + i + Int(thread_idx.x)]
+                    A[Int(A_curr) + A_consumed + i + thread_idx.x]
                 )
 
         # Loading B_S_consumed elements into B_S
         for i in range(0, B_S_consumed, Int(128)):  # blockDim.x = 128
             if (
-                i + Int(thread_idx.x) < B_length - B_consumed
-                and i + Int(thread_idx.x) < B_S_consumed
+                i + thread_idx.x < B_length - B_consumed
+                and i + thread_idx.x < B_S_consumed
             ):
                 B_S[
-                    (
-                        B_S_start
-                        + (tile_size - B_S_consumed)
-                        + i
-                        + Int(thread_idx.x)
-                    )
+                    (B_S_start + (tile_size - B_S_consumed) + i + thread_idx.x)
                     % tile_size
                 ] = Scalar[DType.int32](
-                    B[B_curr + B_consumed + i + Int(thread_idx.x)]
+                    B[B_curr + B_consumed + i + thread_idx.x]
                 )
 
         barrier()
 
         # Figure 13.18: Part 3 - Thread-level merge
-        var c_curr = Int(thread_idx.x) * (
-            tile_size // Int(128)
-        )  # blockDim.x = 128
-        var c_next = (Int(thread_idx.x) + 1) * (tile_size // Int(128))
+        var c_curr = thread_idx.x * (tile_size // Int(128))  # blockDim.x = 128
+        var c_next = (thread_idx.x + 1) * (tile_size // Int(128))
 
         c_curr = min(c_curr, C_length - C_completed)
         c_next = min(c_next, C_length - C_completed)

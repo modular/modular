@@ -13,11 +13,7 @@
 
 from std.collections import List
 from spmv_utils import ELLMatrix, generate_sparse_matrix, spmv_cpu, verify
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-)
+from std.gpu import block_idx, thread_idx, block_dim
 from std.gpu.host import DeviceContext
 
 
@@ -27,14 +23,14 @@ def spmv_ell_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
-    if Int(row) < ellMatrix.numRows:
+    if row < ellMatrix.numRows:
         var sum: Float32 = 0.0
         for t in range(ellMatrix.nnzPerRow):
-            var i = t * ellMatrix.numRows + Int(row)
+            var i = t * ellMatrix.numRows + row
             var col = ellMatrix.colIdx[i]
             var val = ellMatrix.value[i]
             sum += x[Int(col)] * val
-        y[Int(row)] = sum
+        y[row] = sum
 
 
 def main() raises:

@@ -47,7 +47,7 @@ def test_path() raises:
 
 def test_path_exists() raises:
     assert_true(
-        Path(source_location().file_name).exists(), msg="does not exist"
+        Path(source_location().file_name()).exists(), msg="does not exist"
     )
 
     assert_false(
@@ -61,7 +61,7 @@ def test_path_isdir() raises:
 
 
 def test_path_isfile() raises:
-    assert_true(Path(source_location().file_name).is_file())
+    assert_true(Path(source_location().file_name()).is_file())
     assert_false(Path("this/file/does/not/exist").is_file())
 
 
@@ -144,7 +144,7 @@ def test_home() raises:
 
 
 def test_stat() raises:
-    var path = Path(source_location().file_name)
+    var path = Path(source_location().file_name())
     var stat = path.stat()
     assert_equal(
         String(stat),

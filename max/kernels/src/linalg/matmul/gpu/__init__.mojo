@@ -501,7 +501,7 @@ def _matmul_gpu[
         gemv_gpu[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
-            pdl_level=pdl_level,
+            pdl_level=PDLLevel(1),
         ](c, a, b, ctx)
 
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.

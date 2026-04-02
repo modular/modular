@@ -38,6 +38,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
     MXFP4_SF_DTYPE,
+    MXFP4_SF_VECTOR_SIZE,
     set_scale_factor,
 )
 from std.random import random_ui64, seed, rand
@@ -586,7 +587,7 @@ def _test_kernel_impl_base[
         # cuBLASLt does not support MXFP4; fall back to naive reference.
         comptime if scales_dtype == MXFP4_SF_DTYPE:
             naive_block_scaled_matmul[
-                scaling_kind=UMMAKind.KIND_MXF8F6F4,
+                scaling_kind=scaling_kind,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
             ](
@@ -744,7 +745,7 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             benchmark: Bool = False,
             swapAB: Bool = False,
             k_group_size: Int = 1,
-            SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
+            SF_VECTOR_SIZE: Int = suite_sf_vector_size,
         ](
             num_active_experts: Int,
             num_tokens_by_expert: List[Int],
@@ -1787,4 +1788,7 @@ def run_grouped_matmul_sm100_block_fp4_suite[
 def main() raises:
     run_grouped_matmul_sm100_block_fp4_suite[
         NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, UMMAKind.KIND_MXF4NVF4
+    ]()
+    run_grouped_matmul_sm100_block_fp4_suite[
+        MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, UMMAKind.KIND_MXF4
     ]()

@@ -21,7 +21,7 @@ Handlers are registered using the @register_op_handler decorator.
 """
 
 from collections.abc import Callable, Sequence
-from math import prod
+from math import ceil, prod
 from typing import Any
 
 import max._interpreter_ops as ops
@@ -2022,3 +2022,411 @@ def _handle_conv_transpose(
     )
 
     return [output]
+
+
+# Pooling operations
+
+
+def _compute_pool_out_dim(
+    in_dim: int,
+    filter_dim: int,
+    stride: int,
+    dilation: int,
+    pad: int,
+    ceil_mode: bool,
+) -> int:
+    """Compute output spatial dim for a sliding window operation."""
+    numerator = in_dim + pad - (dilation * (filter_dim - 1) + 1)
+    if ceil_mode:
+        return 1 + -(-numerator // stride)  # ceildiv
+    return 1 + numerator // stride
+
+
+def _handle_max_pool_impl(
+    op: mo.MaxPoolOp | mo.MaxPoolCeilModeTrueOp,
+    inputs: Sequence[Buffer | None],
+    ceil_mode: bool,
+) -> Sequence[Buffer]:
+    """Shared implementation for MaxPoolOp and MaxPoolCeilModeTrueOp."""
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input (NHWC)
+    assert isinstance(inputs[1], Buffer)  # filter_shape
+    assert isinstance(inputs[2], Buffer)  # strides
+    assert isinstance(inputs[3], Buffer)  # dilations
+    assert isinstance(inputs[4], Buffer)  # paddings
+
+    input_buffer = inputs[0]
+    filter_shape = [int(x) for x in inputs[1].to_numpy().flatten()]
+    strides = [int(x) for x in inputs[2].to_numpy().flatten()]
+    dilations = [int(x) for x in inputs[3].to_numpy().flatten()]
+    paddings = [int(x) for x in inputs[4].to_numpy().flatten()]
+
+    in_shape = list(input_buffer.shape)
+    batch = in_shape[0]
+    in_h = in_shape[1]
+    in_w = in_shape[2]
+    channels = in_shape[3]
+
+    filter_h, filter_w = filter_shape[0], filter_shape[1]
+    stride_h, stride_w = strides[0], strides[1]
+    dilation_h, dilation_w = dilations[0], dilations[1]
+    pad_h_before, pad_h_after = paddings[0], paddings[1]
+    pad_w_before, pad_w_after = paddings[2], paddings[3]
+
+    out_h = _compute_pool_out_dim(
+        in_h,
+        filter_h,
+        stride_h,
+        dilation_h,
+        pad_h_before + pad_h_after,
+        ceil_mode,
+    )
+    out_w = _compute_pool_out_dim(
+        in_w,
+        filter_w,
+        stride_w,
+        dilation_w,
+        pad_w_before + pad_w_after,
+        ceil_mode,
+    )
+
+    output = Buffer(
+        shape=[batch, out_h, out_w, channels],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ctx_ptr = target_device._device_context_ptr()
+    kernel_fn = (
+        ops.pooling_ops.MaxPoolCeil if ceil_mode else ops.pooling_ops.MaxPool
+    )
+    kernel_fn(
+        output,
+        input_buffer,
+        (
+            batch,
+            in_h,
+            in_w,
+            channels,
+            out_h,
+            out_w,
+            filter_h,
+            filter_w,
+            stride_h,
+            stride_w,
+            dilation_h,
+            dilation_w,
+            pad_h_before,
+            pad_w_before,
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.MaxPoolOp)
+def _handle_max_pool(
+    op: mo.MaxPoolOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.max_pool via Mojo max pooling kernel (floor mode)."""
+    return _handle_max_pool_impl(op, inputs, ceil_mode=False)
+
+
+@register_op_handler(mo.MaxPoolCeilModeTrueOp)
+def _handle_max_pool_ceil(
+    op: mo.MaxPoolCeilModeTrueOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.max_pool_ceil_mode_true via Mojo max pooling kernel."""
+    return _handle_max_pool_impl(op, inputs, ceil_mode=True)
+
+
+@register_op_handler(mo.TileOp)
+def _handle_tile(
+    op: mo.TileOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.tile by repeating the input along each dimension.
+
+    Operands: input (device tensor), repeats (host int64 rank-1).
+    Output shape[i] = input shape[i] * repeats[i].
+    CPU-only (mo.tile is MO_HostOnly).
+
+    Args:
+        op: The tile operation.
+        inputs: Input buffers - [input_tensor, repeats_tensor].
+
+    Returns:
+        List containing the tiled output tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # repeats (host int64)
+
+    input_buffer = inputs[0]
+    repeats = [int(r) for r in inputs[1].to_numpy().flatten()]
+
+    in_shape = list(input_buffer.shape)
+    rank = len(in_shape)
+    out_shape = [in_shape[i] * repeats[i] for i in range(rank)]
+
+    def _row_major_strides(shape: list[int]) -> tuple[int, ...]:
+        strides = [1] * len(shape)
+        for i in range(len(shape) - 2, -1, -1):
+            strides[i] = strides[i + 1] * shape[i + 1]
+        return tuple(strides)
+
+    in_strides = _row_major_strides(in_shape)
+    out_strides = _row_major_strides(out_shape)
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.tile_ops.Tile(
+        output,
+        input_buffer,
+        (tuple(in_shape), out_strides, in_strides, rank),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.LinalgBandPartOp)
+def _handle_band_part(
+    op: mo.LinalgBandPartOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.linalg.band_part (matrix band part masking).
+
+    Operands: input (device), num_lower (host int64 scalar),
+    num_upper (host int64 scalar), exclude (host bool scalar).
+
+    Args:
+        op: The band_part operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the masked output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # num_lower
+    assert isinstance(inputs[2], Buffer)  # num_upper
+    assert isinstance(inputs[3], Buffer)  # exclude
+
+    input_buffer = inputs[0]
+    num_lower = int(inputs[1].to_numpy().item())
+    num_upper = int(inputs[2].to_numpy().item())
+    exclude = int(inputs[3].to_numpy().item())
+
+    in_shape = list(input_buffer.shape)
+    if len(in_shape) < 2:
+        raise ValueError(
+            f"band_part expects rank >= 2 input, got rank {len(in_shape)}"
+        )
+
+    M = in_shape[-2]
+    N = in_shape[-1]
+    total = prod(in_shape)
+
+    output = Buffer(
+        shape=in_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.band_part_ops.BandPart(
+        output,
+        input_buffer,
+        (total, M, N, num_lower, num_upper, exclude),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+# Average pooling
+
+
+def _avg_pool_common(
+    op: mo.AvgPoolOp | mo.AvgPoolCeilModeTrueOp,
+    inputs: Sequence[Buffer | None],
+    ceil_mode: bool,
+) -> Sequence[Buffer]:
+    """Shared logic for avg_pool (floor) and avg_pool_ceil_mode_true.
+
+    Args:
+        op: The avg_pool operation.
+        inputs: Input buffers [input, filter_shape, strides, dilations, paddings].
+        ceil_mode: Whether to use ceiling mode for output shape.
+
+    Returns:
+        List containing the pooled output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # filter_shape
+    assert isinstance(inputs[2], Buffer)  # strides
+    assert isinstance(inputs[3], Buffer)  # dilations
+    assert isinstance(inputs[4], Buffer)  # paddings
+
+    input_buffer = inputs[0]
+    filter_np = inputs[1].to_numpy().flatten()
+    strides_np = inputs[2].to_numpy().flatten()
+    dilations_np = inputs[3].to_numpy().flatten()
+    paddings_np = inputs[4].to_numpy().flatten()
+
+    in_shape = list(input_buffer.shape)
+    if len(in_shape) != 4:
+        raise ValueError(
+            f"avg_pool2d expects rank-4 NHWC input, got rank {len(in_shape)}"
+        )
+
+    batch, in_h, in_w, channels = in_shape
+    kH, kW = int(filter_np[0]), int(filter_np[1])
+    stride_h, stride_w = int(strides_np[0]), int(strides_np[1])
+    dil_h, dil_w = int(dilations_np[0]), int(dilations_np[1])
+    pad_h_before = int(paddings_np[0])
+    pad_h_after = int(paddings_np[1])
+    pad_w_before = int(paddings_np[2])
+    pad_w_after = int(paddings_np[3])
+
+    count_boundary = bool(op.count_boundary)
+
+    eff_kH = dil_h * (kH - 1) + 1
+    eff_kW = dil_w * (kW - 1) + 1
+    if ceil_mode:
+        out_h = ceil(
+            (in_h + pad_h_before + pad_h_after - eff_kH + 1) / stride_h
+        )
+        out_w = ceil(
+            (in_w + pad_w_before + pad_w_after - eff_kW + 1) / stride_w
+        )
+    else:
+        out_h = (in_h + pad_h_before + pad_h_after - eff_kH) // stride_h + 1
+        out_w = (in_w + pad_w_before + pad_w_after - eff_kW) // stride_w + 1
+
+    output = Buffer(
+        shape=[batch, out_h, out_w, channels],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.avg_pool_ops.AvgPool2d(
+        output,
+        input_buffer,
+        (
+            batch,
+            in_h,
+            in_w,
+            channels,
+            out_h,
+            out_w,
+            kH,
+            kW,
+            stride_h,
+            stride_w,
+            dil_h,
+            dil_w,
+            pad_h_before,
+            pad_w_before,
+            int(count_boundary),
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.AvgPoolOp)
+def _handle_avg_pool(
+    op: mo.AvgPoolOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.avg_pool (floor-mode 2D average pooling)."""
+    return _avg_pool_common(op, inputs, ceil_mode=False)
+
+
+@register_op_handler(mo.AvgPoolCeilModeTrueOp)
+def _handle_avg_pool_ceil(
+    op: mo.AvgPoolCeilModeTrueOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.avg_pool_ceil_mode_true (ceil-mode 2D average pooling)."""
+    return _avg_pool_common(op, inputs, ceil_mode=True)
+
+
+# Top-K operation
+
+
+@register_op_handler(mo.TopKOp)
+def _handle_top_k(
+    op: mo.TopKOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.top_k by dispatching to Mojo top-k kernel.
+
+    Operands (per MO_SingleDeviceWithHostOperands<["k", "axis", "sorted"]>):
+      inputs[0]: input tensor (device)
+      inputs[1]: k scalar (host, int64)
+      inputs[2]: axis scalar (host, int64)
+      inputs[3]: sorted scalar (host, bool)
+
+    Returns two buffers: values (same dtype as input) and indices (int64),
+    both of shape input_shape with shape[axis] replaced by k.
+
+    Note: values are always returned in descending order; the ``sorted``
+    flag is accepted but currently ignored since the implementation always
+    sorts.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+    assert isinstance(inputs[2], Buffer)
+    assert isinstance(inputs[3], Buffer)
+
+    input_buffer = inputs[0]
+    k = int(inputs[1].to_numpy().item())
+    axis = int(inputs[2].to_numpy().item())
+
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+    if axis < 0:
+        axis += ndim
+
+    out_shape = list(in_shape)
+    out_shape[axis] = k
+
+    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
+    dim1 = in_shape[axis]
+    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+
+    out_vals = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    out_idxs = Buffer(
+        shape=out_shape,
+        dtype=DType.int64,
+        device=target_device,
+    )
+
+    ctx_ptr = target_device._device_context_ptr()
+    ops.topk_ops.TopK(
+        out_vals,
+        out_idxs,
+        input_buffer,
+        (dim0, dim1, dim2, k),
+        ctx_ptr,
+    )
+
+    return [out_vals, out_idxs]

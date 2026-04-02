@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import IntTuple, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE
 from std.gpu.host import DeviceContext
 from linalg.grouped_matmul import grouped_matmul
 
@@ -84,24 +84,14 @@ def shrink_qkv_permute_3mn_sm100(
 
     comptime c_type = c_lora.dtype
 
-    comptime c_shape = IntTuple(
-        c_lora.static_shape[0] if c_lora.static_shape[0]
-        > -1 else UNKNOWN_VALUE,
-        c_lora.static_shape[1] if c_lora.static_shape[1]
-        > -1 else UNKNOWN_VALUE,
-        c_lora.static_shape[2] if c_lora.static_shape[2]
-        > -1 else UNKNOWN_VALUE,
+    comptime N = c_lora.static_shape[2]
+    comptime B = c_lora.static_shape[0]
+    comptime assert N != UNKNOWN_VALUE and B == 3, String(
+        "the outer dimension of c_shape must be known and equal to 3",
     )
 
     var M = Int(c_lora.dim(1))
     var c_tensor_lora = c_lora.to_layout_tensor()
-    comptime N = c_shape[2].value()
-    comptime B = c_shape[0].value()
-    comptime assert (
-        c_shape[2].value() != UNKNOWN_VALUE and c_shape[0].value() == 3
-    ), String(
-        "the outer dimension of c_shape must be known and equal to 3",
-    )
     comptime N_Total = B * N
     # Create a null-backed TileTensor for C. This ensures GroupGEMM does NOT
     # write into C directly; any changes to the final C output must happen
@@ -138,7 +128,7 @@ def shrink_qkv_permute_3mn_sm100(
                 * Input view is row-major (M, 3N).
                 * Output view is row-major (3, M, N) with head-major tiles.
         """
-        comptime N = c_shape[2].value()
+        comptime N = c_lora.static_shape[2]
         var i = idx[0]
         var j = idx[1]
         var new_j, new_k = divmod(j, N)

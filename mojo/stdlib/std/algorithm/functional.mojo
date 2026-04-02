@@ -123,73 +123,10 @@ def _get_start_indices_of_nth_subvolume[
         return {0}
 
     res = {}
+    # If the index type is unsigned, be sure to use unsigned div/mod operations.
     var curr_index = IntType(n)
 
     comptime for i in reversed(range(1, rank - subvolume_rank)):
-        curr_index, res.data[i] = divmod(curr_index, IntType(shape.get[i]()))
-
-    res.data[0] = curr_index
-
-
-@always_inline
-def _get_start_indices_of_nth_subvolume_uint[
-    rank: Int,
-    //,
-    subvolume_rank: UInt = 1,
-](n: UInt, shape: IndexList[rank, ...], out res: type_of(shape)):
-    """Converts a flat index into the starting ND indices of the nth subvolume
-    with rank `subvolume_rank`, using unsigned arithmetic.
-
-    For example:
-        - `_get_start_indices_of_nth_subvolume_uint[0](n, shape)` will return
-        the starting indices of the nth element in shape.
-        - `_get_start_indices_of_nth_subvolume_uint[1](n, shape)` will return
-        the starting indices of the nth row in shape.
-        - `_get_start_indices_of_nth_subvolume_uint[2](n, shape)` will return
-        the starting indices of the nth horizontal slice in shape.
-
-    The ND indices will iterate from right to left. I.E
-
-        shape = (20, 5, 2, N)
-        _get_start_indices_of_nth_subvolume_uint[1](1, shape) = (0, 0, 1, 0)
-        _get_start_indices_of_nth_subvolume_uint[1](5, shape) = (0, 2, 1, 0)
-        _get_start_indices_of_nth_subvolume_uint[1](50, shape) = (5, 0, 0, 0)
-        _get_start_indices_of_nth_subvolume_uint[1](56, shape) = (5, 1, 1, 0)
-
-    Parameters:
-        rank: The rank of the ND index.
-        subvolume_rank: The rank of the subvolume under consideration.
-
-    Args:
-        n: The flat index to convert (the nth subvolume to retrieve).
-        shape: The shape of the ND space we are converting into.
-
-    Returns:
-        Constructed ND-index.
-    """
-
-    comptime assert (
-        Int(subvolume_rank) <= rank
-    ), "subvolume rank cannot be greater than indices rank"
-
-    comptime IntType = type_of(shape)._int_type
-
-    # fast impls for common cases
-    comptime if rank == 2 and subvolume_rank == 1:
-        return {Int(n), 0}
-
-    comptime if rank - 1 == Int(subvolume_rank):
-        res = {0}
-        res[0] = Int(n)
-        return
-
-    comptime if rank == Int(subvolume_rank):
-        return {0}
-
-    res = {}
-    var curr_index = IntType(n)
-
-    comptime for i in reversed(range(1, rank - Int(subvolume_rank))):
         curr_index, res.data[i] = divmod(curr_index, IntType(shape.get[i]()))
 
     res.data[0] = curr_index
@@ -377,7 +314,7 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when

@@ -22,7 +22,6 @@ from std.sys import (
 )
 
 import std.gpu.primitives.warp as warp
-from buffer.dimlist import Dim
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -200,7 +199,7 @@ def multistage_mma[
     /,
     *,
     swizzle_a: Bool = True,
-    static_num_iters: Dim = Dim(),
+    static_num_iters: Int = -1,
     prefetch_init: Bool = True,
     continue_prefetch_b: Bool = False,
     transpose_b_next: Bool = False,
@@ -448,7 +447,7 @@ def multistage_mma[
 
         mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, UInt(warp_x))
 
-    comptime if static_num_iters.has_value():
+    comptime if static_num_iters >= 0:
         comptime assert (
             a_iter.address_space == AddressSpace.SHARED
             or a_iter.address_space == AddressSpace.LOCAL
@@ -457,7 +456,7 @@ def multistage_mma[
             " iteration bound.\n"
         )
 
-        comptime for k_tile_id in range(static_num_iters.get()):
+        comptime for k_tile_id in range(static_num_iters):
             var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
                 b_wtile_coord0,
                 b_wtile_coord1,
@@ -478,7 +477,7 @@ def multistage_mma[
                         # Prefetch one k tile (if valid) from global memory to current
                         # shared memory buffer.
                         comptime if b_iter.address_space == AddressSpace.GENERIC:
-                            comptime if prefetch_tile_id < static_num_iters.get():
+                            comptime if prefetch_tile_id < static_num_iters:
                                 var b_smem_prefetch_tile = (
                                     b_smem_iter.next_unsafe(
                                         b_smem_iter.linear_uint_type(

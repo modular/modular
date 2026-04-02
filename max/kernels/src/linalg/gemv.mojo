@@ -287,24 +287,14 @@ def _dot_accum[
     elif is_amd_gpu():
         # AMD non-BF16 (e.g. FP8): vector multiply + horizontal reduce.
         result += (a.cast[accum_type]() * b.cast[accum_type]()).reduce_add()
-    elif is_nvidia_gpu() and in_type.is_float8() and width >= 2:
-        # NVIDIA FP8: paired bitcast emits cvt.rn.f16x2.e4m3x2, eliminating
-        # PRMT byte-shuffle instructions. Multiply in f32 to avoid overflow
-        # (FP8 max=480, 480²=230400 > f16 max 65504).
-        comptime half_width = width // 2
-        var a_u16 = bitcast[DType.uint16, half_width](a)
-        var b_u16 = bitcast[DType.uint16, half_width](b)
-        comptime for l in range(half_width):
-            var a_f16 = bitcast[in_type, 2](a_u16[l]).cast[DType.float16]()
-            var b_f16 = bitcast[in_type, 2](b_u16[l]).cast[DType.float16]()
-            result += a_f16[0].cast[accum_type]() * b_f16[0].cast[accum_type]()
-            result += a_f16[1].cast[accum_type]() * b_f16[1].cast[accum_type]()
     else:
         # NVIDIA/generic: scalar element-wise loop. reduce_add() generates
         # wider intermediates that increase NVIDIA register pressure vs
         # sequential FMA chains (13% regression on small-K shapes).
+        var ac = a.cast[accum_type]()
+        var bc = b.cast[accum_type]()
         comptime for l in range(width):
-            result += a[l].cast[accum_type]() * b[l].cast[accum_type]()
+            result += ac[l] * bc[l]
 
     return result
 
@@ -463,27 +453,38 @@ def gemv_split_k[
             if lane_id == 0:
                 shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
     barrier()
-    # Sum across warps' results in shared memory then output.
-    # TODO: should be able to vectorize and maybe use larger tile_n.
-    for ii in range(tid, tile_m * tile_n, num_threads):
-        var mid, nid = divmod(ii, tile_n)
-        var val = Scalar[accum_type]()
-        comptime ValType = type_of(val)
+    # Sum across warps' results in shared memory then output (vectorized in N).
+    for mid in range(tid, tile_m, num_threads):
+        var vals = SIMD[accum_type, tile_n]()
 
         comptime for jj in range(k_warp_num):
-            val += rebind[ValType](shmem[0, jj * tile_m * tile_n + ii])
+            comptime for ni in range(tile_n):
+                vals[ni] += rebind[Scalar[accum_type]](
+                    shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
+                )
 
-        var idx = output_idx + mid * n + nid
+        var base_idx = output_idx + mid * n
 
         comptime if check_bounds:
-            if idx >= n:
-                continue
-
-        comptime if elementwise_lambda_fn:
-            comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda(Index(0, idx), val.cast[c_type]())
+            comptime for ni in range(tile_n):
+                if base_idx + ni < n:
+                    comptime if elementwise_lambda_fn:
+                        comptime elementwise_lambda = (
+                            elementwise_lambda_fn.value()
+                        )
+                        elementwise_lambda(
+                            Index(0, base_idx + ni),
+                            vals[ni].cast[c_type](),
+                        )
+                    else:
+                        output[0, base_idx + ni] = vals[ni].cast[c_type]()
         else:
-            output[0, idx] = val.cast[c_type]()
+            comptime if elementwise_lambda_fn:
+                comptime elementwise_lambda = elementwise_lambda_fn.value()
+                elementwise_lambda(Index(0, base_idx), vals.cast[c_type]())
+            else:
+                comptime for ni in range(tile_n):
+                    output[0, base_idx + ni] = vals[ni].cast[c_type]()
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -705,7 +706,7 @@ def _nvidia_gemv_config[
 def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     kernel_func: GEMVAlgorithm,
     c: TileTensor[mut=True, ...],
@@ -1004,7 +1005,7 @@ def log_shape[
 def gemv_gpu[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,

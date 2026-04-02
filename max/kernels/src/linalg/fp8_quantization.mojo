@@ -130,7 +130,7 @@ def quantize_dynamic_scaled_fp8[
     ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
     num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     scaled_output: TileTensor[mut=True, dtype=out_dtype, ...],
     scales: TileTensor[mut=True, dtype=scales_dtype, ...],
@@ -292,7 +292,7 @@ def batched_quantize_dynamic_scaled_fp8[
     ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
     num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     scaled_output: TileTensor[mut=True, dtype=out_dtype, ...],
     scales: TileTensor[mut=True, dtype=scales_dtype, ...],

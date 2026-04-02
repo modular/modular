@@ -2835,3 +2835,292 @@ class TestConvTranspose2dGPU:
         torch.testing.assert_close(
             torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
         )
+
+
+class TestMaxPool2dGPU:
+    """Tests for GPU max_pool2d operations with interpreter."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_basic_2x2(self, dtype: DType) -> None:
+        """Test basic 2x2 max pool on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(
+            1 * 4 * 4 * 1, dtype=torch_dtype, device="cuda"
+        ).reshape(1, 4, 4, 1)
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(2, 2))
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        expected_nchw = torch.nn.functional.max_pool2d(
+            x_nchw, kernel_size=2, stride=1
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_stride_and_padding(self) -> None:
+        """Test max pool with stride 2 and padding on GPU."""
+        x_torch = torch.arange(
+            1 * 6 * 6 * 2, dtype=torch.float32, device="cuda"
+        ).reshape(1, 6, 6, 2)
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(3, 3), stride=2, padding=1)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        expected_nchw = torch.nn.functional.max_pool2d(
+            x_nchw, kernel_size=3, stride=2, padding=1
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_ceil_mode(self) -> None:
+        """Test max pool with ceil_mode on GPU."""
+        x_torch = torch.arange(
+            1 * 5 * 5 * 1, dtype=torch.float32, device="cuda"
+        ).reshape(1, 5, 5, 1)
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.max_pool2d(x, kernel_size=(2, 2), stride=2, ceil_mode=True)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        expected_nchw = torch.nn.functional.max_pool2d(
+            x_nchw, kernel_size=2, stride=2, ceil_mode=True
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+
+class TestBandPartGPU:
+    """GPU tests for mo.linalg.band_part interpreter handler."""
+
+    @staticmethod
+    def _band_part_ref_torch(
+        x: torch.Tensor,
+        num_lower: int,
+        num_upper: int,
+        exclude: bool = False,
+    ) -> torch.Tensor:
+        """PyTorch band_part reference."""
+        M, N = x.shape[-2], x.shape[-1]
+        m = torch.arange(M, device=x.device).unsqueeze(1)
+        n = torch.arange(N, device=x.device).unsqueeze(0)
+        lower_ok = (num_lower < 0) | ((m - n) <= num_lower)
+        upper_ok = (num_upper < 0) | ((n - m) <= num_upper)
+        in_band = lower_ok & upper_ok
+        if exclude:
+            in_band = ~in_band
+        return torch.where(in_band, x, torch.zeros_like(x))
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_lower_triangle(self, dtype: DType) -> None:
+        """Test causal mask (lower triangle) on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = (
+            torch.arange(12, dtype=torch_dtype, device="cuda").reshape(3, 4) + 1
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=None, num_upper=0)
+
+        expected = self._band_part_ref_torch(x_torch, -1, 0)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_band(self, dtype: DType) -> None:
+        """Test tridiagonal band on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = (
+            torch.arange(20, dtype=torch_dtype, device="cuda").reshape(4, 5) + 1
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=1, num_upper=1)
+
+        expected = self._band_part_ref_torch(x_torch, 1, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_exclude(self, dtype: DType) -> None:
+        """Test inverted mask on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = (
+            torch.arange(9, dtype=torch_dtype, device="cuda").reshape(3, 3) + 1
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.band_part(x, num_lower=None, num_upper=0, exclude=True)
+
+        expected = self._band_part_ref_torch(x_torch, -1, 0, exclude=True)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+
+class TestAvgPool2dGPU:
+    """GPU tests for mo.avg_pool interpreter handler."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_basic_2x2(self, dtype: DType) -> None:
+        """Test 2x2 avg pool on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_nchw = torch.arange(16, dtype=torch_dtype, device="cuda").reshape(
+            1, 1, 4, 4
+        )
+        x_nhwc = x_nchw.permute(0, 2, 3, 1).contiguous()
+
+        x = Tensor.from_dlpack(x_nhwc)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(x, kernel_size=(2, 2))
+
+        expected_nchw = torch.nn.functional.avg_pool2d(
+            x_nchw, kernel_size=2, stride=1
+        )
+        expected_nhwc = expected_nchw.permute(0, 2, 3, 1).contiguous()
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected_nhwc, rtol=1e-3, atol=1e-3
+        )
+
+    def test_stride_and_padding(self) -> None:
+        """Test stride 2, padding 1 on GPU."""
+        x_nchw = torch.arange(25, dtype=torch.float32, device="cuda").reshape(
+            1, 1, 5, 5
+        )
+        x_nhwc = x_nchw.permute(0, 2, 3, 1).contiguous()
+
+        x = Tensor.from_dlpack(x_nhwc)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(
+                x,
+                kernel_size=(3, 3),
+                stride=2,
+                padding=1,
+                count_boundary=True,
+            )
+
+        expected_nchw = torch.nn.functional.avg_pool2d(
+            x_nchw,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            count_include_pad=True,
+        )
+        expected_nhwc = expected_nchw.permute(0, 2, 3, 1).contiguous()
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected_nhwc, rtol=1e-5, atol=1e-5
+        )
+
+    def test_ceil_mode(self) -> None:
+        """Test ceil mode on GPU."""
+        x_nchw = torch.arange(25, dtype=torch.float32, device="cuda").reshape(
+            1, 1, 5, 5
+        )
+        x_nhwc = x_nchw.permute(0, 2, 3, 1).contiguous()
+
+        x = Tensor.from_dlpack(x_nhwc)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.avg_pool2d(x, kernel_size=(3, 3), stride=2, ceil_mode=True)
+
+        expected_nchw = torch.nn.functional.avg_pool2d(
+            x_nchw, kernel_size=3, stride=2, ceil_mode=True
+        )
+        expected_nhwc = expected_nchw.permute(0, 2, 3, 1).contiguous()
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected_nhwc, rtol=1e-5, atol=1e-5
+        )
+
+
+class TestTopKGPU:
+    """GPU tests for mo.top_k interpreter handler."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    @pytest.mark.parametrize("axis", [-1, 0])
+    def test_basic_2d(self, dtype: DType, axis: int) -> None:
+        """Test top-2 on a 2D GPU tensor along axis 0 and -1."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.tensor(
+            [[3.0, 1.0, 4.0, 1.0, 5.0], [9.0, 2.0, 6.0, 5.0, 3.0]],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.top_k(x, k=2, axis=axis)
+
+        ref_vals, ref_idxs = torch.topk(
+            x_torch, k=2, dim=axis, largest=True, sorted=True
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(vals), ref_vals, rtol=0, atol=0
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(idxs),
+            ref_idxs.to(torch.int64),
+            rtol=0,
+            atol=0,
+        )
+
+    def test_3d(self) -> None:
+        """Test top-3 on a 3D float32 GPU tensor along axis 1."""
+        x_torch = torch.randn(2, 8, 4, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            vals, idxs = F.top_k(x, k=3, axis=1)
+
+        ref_vals, ref_idxs = torch.topk(
+            x_torch, k=3, dim=1, largest=True, sorted=True
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(vals), ref_vals, rtol=1e-5, atol=1e-5
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(idxs),
+            ref_idxs.to(torch.int64),
+            rtol=0,
+            atol=0,
+        )

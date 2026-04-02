@@ -23,6 +23,7 @@ and Python code.
 from std.ffi import _Global, c_int
 from std.sys.info import size_of
 
+from std.builtin._startup import _ensure_runtime_init
 from std.reflection import get_type_name
 from std.memory import OpaquePointer, stack_allocation
 from std.python import Python, PythonObject
@@ -181,7 +182,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
     """
     ref cpython = Python().cpython()
 
-    ref self = py_self.bitcast[PyMojoObject[T]]()[]
+    ref self = py_self.bitcast[PyMojoObject[T]]().value()[]
 
     # TODO(MSTDL-633):
     #   Is this always safe? Wrap in GIL, because this could
@@ -214,7 +215,7 @@ def _tp_repr_wrapper[
     """
     ref cpython = Python().cpython()
 
-    ref self = py_self.bitcast[PyMojoObject[T]]()[]
+    ref self = py_self.bitcast[PyMojoObject[T]]().value()[]
 
     var repr_str = String()
     if self.is_initialized:
@@ -483,6 +484,8 @@ struct PythonModuleBuilder:
         for ref builder in self.type_builders:
             builder.finalize(self.module)
         self.type_builders.clear()
+
+        _ensure_runtime_init()
 
         return self.module
 

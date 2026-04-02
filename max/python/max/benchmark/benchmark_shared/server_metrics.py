@@ -26,6 +26,7 @@ import requests
 from prometheus_client.parser import text_string_to_metric_families
 
 from .config import Backend
+from .metrics import SpecDecodeMetrics, parse_spec_decode_metrics
 
 if TYPE_CHECKING:
     from prometheus_client.metrics_core import Metric
@@ -399,6 +400,26 @@ def collect_server_metrics(
     if baseline is not None:
         return compute_metrics_delta(baseline=baseline, final=final)
     return final
+
+
+def fetch_spec_decode_metrics(
+    backend: Backend,
+    base_url: str,
+) -> SpecDecodeMetrics | None:
+    """Fetch speculative decoding metrics from the Prometheus endpoint.
+
+    Returns ``None`` when the backend does not expose speculative decoding
+    metrics or the metrics endpoint cannot be reached.
+
+    Args:
+        backend: Backend type (e.g., ``Backend.vllm``).
+        base_url: Server base URL (e.g., ``http://localhost:8000``).
+    """
+    try:
+        metrics_text = fetch_metrics(get_metrics_url(backend, base_url))
+    except Exception:
+        return None
+    return parse_spec_decode_metrics(metrics_text)
 
 
 def print_server_metrics(metrics: ParsedMetrics) -> None:

@@ -43,6 +43,7 @@ from layout import (
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
     TMATensorTile,
+    _gather4_box_width,
     create_split_tma,
     create_tma_tile_gather4,
     RaggedTMA3DTile,
@@ -164,9 +165,8 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
-# bypassing the LTToTTLayout → _LTDims → _int_to_dim → _DimsToCoordLike
-# comptime alias chain where the compiler can't simplify
-# Variadic.size(_Flattened[...]) to 1.
+# bypassing the LTToTTLayout comptime alias chain where the compiler can't
+# simplify Variadic.size(_Flattened[...]) to 1.
 comptime _1d_tt_layout = InternalLayout[
     shape_types=Variadic.types[T=CoordLike, RuntimeInt[DType.int64]],
     stride_types=Variadic.types[T=CoordLike, ComptimeInt[1]],
@@ -400,22 +400,38 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
 
     @always_inline
     def create_gather4_tma_tile[
-        row_width: Int,
+        *,
+        tile_height: Int = 4,
+        tile_width: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.dtype,
         2,
-        tile_shape=IndexList[2](4, row_width),
-        desc_shape=IndexList[2](1, row_width),
+        tile_shape=IndexList[2](
+            tile_height,
+            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+        ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
         The descriptor views the KV cache as a flat 2D matrix of
-        ``[num_kv_rows, row_width]`` and is configured for gather4 operations
-        that load 4 non-contiguous rows per TMA instruction.
+        ``[num_kv_rows, tile_width]`` and is configured for gather4 operations
+        that load 4 non-contiguous rows per TMA instruction. The box width
+        is derived from the swizzle mode; for SWIZZLE_NONE it equals
+        ``tile_width``.
+
+        The ``tile_height`` parameter records the full tile height (e.g. 64
+        rows) in the returned ``TMATensorTile.tile_shape``. The hardware
+        descriptor shape stays ``(1, box_width)`` as required by TMA gather4.
 
         Parameters:
-            row_width: Number of elements per row (innermost dimension).
+            tile_height: Number of rows in the tile. Must be a multiple of 4.
+                Defaults to 4 for backward compatibility.
+            tile_width: Number of elements per row (innermost dimension).
             swizzle_mode: TMA swizzle mode for shared memory access pattern.
                 Defaults to SWIZZLE_NONE.
 
@@ -423,8 +439,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
             ctx: The CUDA device context used to create the TMA descriptor.
 
         Returns:
-            A TMATensorTile with tile_shape=(4, row_width) and
-            desc_shape=(1, row_width).
+            A TMATensorTile with box width derived from the swizzle mode.
         """
         ...
 
@@ -723,22 +738,34 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     def create_gather4_tma_tile[
-        row_width: Int,
+        *,
+        tile_height: Int = 4,
+        tile_width: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.dtype,
         2,
-        tile_shape=IndexList[2](4, row_width),
-        desc_shape=IndexList[2](1, row_width),
+        tile_shape=IndexList[2](
+            tile_height,
+            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+        ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
         The descriptor views the KV cache as a flat 2D matrix of
-        ``[num_kv_rows, row_width]`` and is configured for gather4 operations
-        that load 4 non-contiguous rows per TMA instruction.
+        ``[num_kv_rows, tile_width]`` and is configured for gather4 operations
+        that load 4 non-contiguous rows per TMA instruction. The box width
+        is derived from the swizzle mode; for SWIZZLE_NONE it equals
+        ``tile_width``.
 
         Parameters:
-            row_width: Number of elements per row (innermost dimension).
+            tile_height: Number of rows in the tile. Must be a multiple of 4.
+                Defaults to 4 for backward compatibility.
+            tile_width: Number of elements per row (innermost dimension).
             swizzle_mode: TMA swizzle mode for shared memory access pattern.
                 Defaults to SWIZZLE_NONE.
 
@@ -746,12 +773,14 @@ struct ContinuousBatchingKVCache[
             ctx: The CUDA device context used to create the TMA descriptor.
 
         Returns:
-            A TMATensorTile with tile_shape=(4, row_width) and
-            desc_shape=(1, row_width).
+            A TMATensorTile with box width derived from the swizzle mode.
         """
-        return create_tma_tile_gather4[Self.dtype, row_width, swizzle_mode](
-            ctx, self.blocks.ptr, self.num_kv_rows()
-        )
+        return create_tma_tile_gather4[
+            Self.dtype,
+            tile_height=tile_height,
+            tile_width=tile_width,
+            swizzle_mode=swizzle_mode,
+        ](ctx, self.blocks.ptr, self.num_kv_rows())
 
     @always_inline
     def create_ragged_tma_tile[
@@ -1078,22 +1107,34 @@ struct PagedKVCache[
 
     @always_inline
     def create_gather4_tma_tile[
-        row_width: Int,
+        *,
+        tile_height: Int = 4,
+        tile_width: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.dtype,
         2,
-        tile_shape=IndexList[2](4, row_width),
-        desc_shape=IndexList[2](1, row_width),
+        tile_shape=IndexList[2](
+            tile_height,
+            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+        ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
         The descriptor views the KV cache as a flat 2D matrix of
-        ``[num_kv_rows, row_width]`` and is configured for gather4 operations
-        that load 4 non-contiguous rows per TMA instruction.
+        ``[num_kv_rows, tile_width]`` and is configured for gather4 operations
+        that load 4 non-contiguous rows per TMA instruction. The box width
+        is derived from the swizzle mode; for SWIZZLE_NONE it equals
+        ``tile_width``.
 
         Parameters:
-            row_width: Number of elements per row (innermost dimension).
+            tile_height: Number of rows in the tile. Must be a multiple of 4.
+                Defaults to 4 for backward compatibility.
+            tile_width: Number of elements per row (innermost dimension).
             swizzle_mode: TMA swizzle mode for shared memory access pattern.
                 Defaults to SWIZZLE_NONE.
 
@@ -1101,12 +1142,14 @@ struct PagedKVCache[
             ctx: The CUDA device context used to create the TMA descriptor.
 
         Returns:
-            A TMATensorTile with tile_shape=(4, row_width) and
-            desc_shape=(1, row_width).
+            A TMATensorTile with box width derived from the swizzle mode.
         """
-        return create_tma_tile_gather4[Self.dtype, row_width, swizzle_mode](
-            ctx, self.blocks.ptr, self.num_kv_rows()
-        )
+        return create_tma_tile_gather4[
+            Self.dtype,
+            tile_height=tile_height,
+            tile_width=tile_width,
+            swizzle_mode=swizzle_mode,
+        ](ctx, self.blocks.ptr, self.num_kv_rows())
 
     @always_inline
     def create_ragged_tma_tile[

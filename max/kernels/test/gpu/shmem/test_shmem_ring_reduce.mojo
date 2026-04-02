@@ -12,7 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
-from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
+from std.gpu import (
+    block_dim_uint as block_dim,
+    grid_dim_uint as grid_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+    barrier,
+)
 from std.math import iota
 from std.os import abort
 from shmem import *
@@ -75,7 +81,7 @@ def ring_reduce(
         # Wait for data from previous PE (except PE 0 which starts)
         if mype != 0:
             if thread_id == 0:
-                shmem_signal_wait_until(signal, SHMEM_CMP_GE, chunk + 1)
+                shmem_signal_wait_until(signal, SHMEM_CMP_GE, UInt64(chunk + 1))
 
             barrier()
 
@@ -106,7 +112,7 @@ def ring_reduce(
                 shmem_signal_wait_until(
                     signal,
                     SHMEM_CMP_GE,
-                    chunk + 1 if mype == 0 else num_chunks + chunk + 1,
+                    UInt64(chunk + 1 if mype == 0 else num_chunks + chunk + 1),
                 )
             if mype < npes - 2:
                 shmem_put_signal_nbi(
@@ -179,7 +185,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.barrier_all()
 
         var elapsed_ns = dev_ctx.execution_time[benchmark](iters) / iters
-        var elapsed_ms = elapsed_ns / 1e6
+        var elapsed_ms = Float64(elapsed_ns) / 1e6
 
         ctx.synchronize()
 
@@ -189,7 +195,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
         # Each element should be i * npes after allreduce
         for i in range(num_ints):
-            var expected = Int32(i * npes)
+            var expected = Int32(Int32(i) * npes)
             if data_h[i] != expected:
                 # Avoid assert_equal overhead on these large buffers
                 abort(

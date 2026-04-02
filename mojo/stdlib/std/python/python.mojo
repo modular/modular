@@ -562,7 +562,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             Mojo string representing the given Python object.
         """
         ref cpy = self.cpython()
-        return cpy.PyUnicode_AsUTF8AndSize(obj._obj_ptr)
+        return cpy.PyUnicode_AsUTF8AndSize(obj._obj_ptr).or_else("")
 
     @staticmethod
     def type(obj: PythonObject) -> PythonObject:

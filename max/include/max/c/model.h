@@ -196,6 +196,83 @@ M_executeModelSync(const M_RuntimeContext *context,
                    M_AsyncModel *initializedModel, M_AsyncTensorMap *inputs,
                    M_Status *status);
 
+/// Captures model execution into a device graph for later replay.
+///
+/// This records model execution as a device graph (e.g. a CUDA graph) that can
+/// be replayed with `M_replayModelSync()` for faster repeated execution. The
+/// captured graph is associated with the provided keys for later lookup.
+///
+/// Graph keys identify the captured graph. A single key is broadcast to all
+/// capture devices; multiple keys provide one key per device.
+///
+/// The returned output tensors are updated in-place when the graph is replayed.
+/// Keep them alive and read from them after each `M_replayModelSync()` call to
+/// get the latest results.
+///
+/// @param context The runtime context, from `M_newRuntimeContext()`.
+/// @param initializedModel The model to capture, from `M_initModel()`.
+/// @param graphKeys Array of `uint64_t` graph keys. Pass one key to broadcast
+///   to all devices, or one key per device.
+/// @param numGraphKeys Number of graph keys in the array.
+/// @param inputs Array of input tensors in model input order.
+/// @param numInputs Number of input tensors.
+/// @param numOutputs Receives the number of output tensors on success.
+/// @param status The status used to report errors in the case of failures.
+///
+/// @returns A `malloc`-allocated array of `M_AsyncTensor` pointers, one per
+///   model output. The caller owns both the array and each tensor. Free each
+///   tensor with `M_freeTensor()` and the array itself with `free()`. Returns
+///   `NULL` on failure, with an error in `status`.
+MODULAR_API_EXPORT M_AsyncTensor **
+M_captureModelSync(const M_RuntimeContext *context,
+                   M_AsyncModel *initializedModel, const uint64_t *graphKeys,
+                   size_t numGraphKeys, M_AsyncTensor *const *inputs,
+                   size_t numInputs, size_t *numOutputs, M_Status *status);
+
+/// Replays a previously captured device graph.
+///
+/// The inputs must use the same buffers (same addresses, shapes, dtypes, and
+/// devices) as the inputs used during `M_captureModelSync()`. Results are
+/// written to the output tensors returned by the original capture call.
+///
+/// @param context The runtime context, from `M_newRuntimeContext()`.
+/// @param initializedModel The model containing the captured graph, from
+///   `M_initModel()`.
+/// @param graphKeys Array of `uint64_t` graph keys matching those used in
+///   `M_captureModelSync()`.
+/// @param numGraphKeys Number of graph keys.
+/// @param inputs Array of input tensors matching the capture-time signature.
+/// @param numInputs Number of input tensors.
+/// @param status The status used to report errors in the case of failures.
+MODULAR_API_EXPORT void M_replayModelSync(const M_RuntimeContext *context,
+                                          M_AsyncModel *initializedModel,
+                                          const uint64_t *graphKeys,
+                                          size_t numGraphKeys,
+                                          M_AsyncTensor *const *inputs,
+                                          size_t numInputs, M_Status *status);
+
+/// Executes eagerly and verifies that the kernel launch trace matches a
+/// previously captured device graph.
+///
+/// This is a debugging tool. It runs the model eagerly (not via the captured
+/// graph) and compares the resulting kernel launch trace against the trace
+/// recorded during `M_captureModelSync()`. If the traces differ, an error is
+/// reported in `status`.
+///
+/// @param context The runtime context, from `M_newRuntimeContext()`.
+/// @param initializedModel The model containing the captured graph, from
+///   `M_initModel()`.
+/// @param graphKeys Array of `uint64_t` graph keys matching those used in
+///   `M_captureModelSync()`.
+/// @param numGraphKeys Number of graph keys.
+/// @param inputs Array of input tensors.
+/// @param numInputs Number of input tensors.
+/// @param status The status used to report errors in the case of failures.
+MODULAR_API_EXPORT void M_debugVerifyReplayModelSync(
+    const M_RuntimeContext *context, M_AsyncModel *initializedModel,
+    const uint64_t *graphKeys, size_t numGraphKeys,
+    M_AsyncTensor *const *inputs, size_t numInputs, M_Status *status);
+
 /// Deallocates the memory for the model.  No-op if `model` is `NULL`.
 ///
 /// @param model The model to deallocate.

@@ -54,6 +54,22 @@ def test_cores() raises:
     assert_true(num_performance_cores() > 0)
 
 
+def test_target_is_apple() raises:
+    # Consistency: ensure predicates exist + returns Bool
+    var _is_apple_mx: Bool = CompilationTarget.is_apple_m1()
+    _is_apple_mx |= CompilationTarget.is_apple_m2()
+    _is_apple_mx |= CompilationTarget.is_apple_m3()
+    _is_apple_mx |= CompilationTarget.is_apple_m4()
+    _is_apple_mx |= CompilationTarget.is_apple_m5()
+
+    # Invariant: M series implies apple silicon
+    if _is_apple_mx:
+        assert_true(
+            CompilationTarget.is_apple_silicon(),
+            "Target is Apple M-Series but is_apple_silicon() returned False",
+        )
+
+
 def test_target_has_feature() raises:
     # Ensures target feature check functions exist and return a boolable value.
     var _has_feature: Bool = CompilationTarget.has_avx()

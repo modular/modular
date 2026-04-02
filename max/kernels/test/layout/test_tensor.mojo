@@ -2024,6 +2024,28 @@ def test_merge():
     print(a)
 
 
+def test_flatten_vectorize() raises:
+    """Regression test: flatten().vectorize[N]() must report correct dims
+    and allow element access. Previously, the compile-time layout of the
+    vectorized view had shape 0 (from UNKNOWN_VALUE / N = -1 / N = 0),
+    causing bounds-check assertions to fire on valid accesses.
+    """
+    comptime W = 4
+    var managed = ManagedLayoutTensor[DType.float32, Layout.row_major(W, W)]()
+    var t = managed.tensor()
+    for i in range(W * W):
+        t.ptr[i] = Float32(i)
+    var v = t.flatten().vectorize[W]()
+    # The vectorized view should have dim[0] == W (not 0).
+    assert_equal(v.dim[0](), W)
+    assert_equal(v.size(), W)
+    # Verify element reads produce correct values.
+    assert_equal(v[0][0], Float32(0))
+    assert_equal(v[0][3], Float32(3))
+    assert_equal(v[3][0], Float32(12))
+    assert_equal(v[3][3], Float32(15))
+
+
 def main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -2057,3 +2079,4 @@ def main() raises:
     test_vectorized_tile()
     test_nested_tile()
     test_tensor_size()
+    test_flatten_vectorize()

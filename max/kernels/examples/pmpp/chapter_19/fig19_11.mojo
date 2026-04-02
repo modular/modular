@@ -26,13 +26,7 @@ with shared memory. The key optimization is that B is loaded from X using
 complex indexing that implicitly performs the im2col transformation.
 """
 
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim,
-    grid_dim,
-    barrier,
-)
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -86,12 +80,12 @@ def conv_layer_mm_kernel(
         address_space=AddressSpace.SHARED,
     ]()
 
-    var bx = Int(block_idx.x)
-    var by = Int(block_idx.y)
-    var bz = Int(block_idx.z)  # Batch index
+    var bx = block_idx.x
+    var by = block_idx.y
+    var bz = block_idx.z  # Batch index
 
-    var tx = Int(thread_idx.x)
-    var ty = Int(thread_idx.y)
+    var tx = thread_idx.x
+    var ty = thread_idx.y
 
     # Identify row/column of Y element
     # Row corresponds to Output Channel m

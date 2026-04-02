@@ -51,16 +51,14 @@ def _make_config(
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestFromModelPath:
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_get_primary(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_get_main(self, _mock_load: Any, _mock_validate: Any) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
-        assert registry["primary"].model_path == "test-model"
+        assert registry["main"].model_path == "test-model"
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_contains_primary(
-        self, _mock_load: Any, _mock_validate: Any
-    ) -> None:
+    def test_contains_main(self, _mock_load: Any, _mock_validate: Any) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
-        assert "primary" in registry
+        assert "main" in registry
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_does_not_contain_other(
@@ -75,7 +73,7 @@ class TestFromModelPath:
         items = list(registry.items())
         assert len(items) == 1
         role, cfg = items[0]
-        assert role == "primary"
+        assert role == "main"
         assert cfg.model_path == "test-model"
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
@@ -84,52 +82,52 @@ class TestFromModelPath:
         assert len(registry) == 1
 
 
-class TestFromComponents:
+class TestDirectConstruction:
     def test_get_by_role(self) -> None:
         vae = _make_config("vae-model")
         unet = _make_config("unet-model")
-        registry = ModelManifest.from_components({"vae": vae, "unet": unet})
+        registry = ModelManifest({"vae": vae, "unet": unet})
         assert registry["vae"] is vae
         assert registry["unet"] is unet
 
     def test_contains(self) -> None:
-        registry = ModelManifest.from_components(
+        registry = ModelManifest(
             {"vae": _make_config(), "unet": _make_config()}
         )
         assert "vae" in registry
         assert "unet" in registry
-        assert "primary" not in registry
+        assert "main" not in registry
 
     def test_items(self) -> None:
         vae = _make_config("vae-model")
         unet = _make_config("unet-model")
-        registry = ModelManifest.from_components({"vae": vae, "unet": unet})
+        registry = ModelManifest({"vae": vae, "unet": unet})
         items = dict(registry.items())
         assert items == {"vae": vae, "unet": unet}
 
     def test_len(self) -> None:
-        registry = ModelManifest.from_components(
+        registry = ModelManifest(
             {"vae": _make_config(), "unet": _make_config()}
         )
         assert len(registry) == 2
 
     def test_does_not_mutate_input(self) -> None:
         components: dict[str, MAXModelConfig] = {"vae": _make_config()}
-        registry = ModelManifest.from_components(components)
+        registry = ModelManifest(components)
         components["extra"] = _make_config()
         assert "extra" not in registry
 
 
 class TestSpeculativeDecoding:
-    """Test a spec-decoding scenario with primary + draft models."""
+    """Test a spec-decoding scenario with main + draft models."""
 
-    def test_primary_and_draft(self) -> None:
-        primary = _make_config("primary-model")
+    def test_main_and_draft(self) -> None:
+        main_model = _make_config("main-model")
         draft = _make_config("draft-model")
         registry = ModelManifest(
-            models={"primary": primary, "draft": draft},
+            {"main": main_model, "draft": draft},
         )
-        assert registry["primary"] is primary
+        assert registry["main"] is main_model
         assert registry["draft"] is draft
         assert len(registry) == 2
 
@@ -150,7 +148,7 @@ class TestErrorMessages:
         self, _mock_load: Any, _mock_validate: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
-        with pytest.raises(KeyError, match="primary"):
+        with pytest.raises(KeyError, match="main"):
             registry["draft"]
 
 
@@ -195,20 +193,20 @@ class TestDiffusersAutoExpansion:
         for role, component_cfg in registry.items():
             assert component_cfg.subfolder == role
 
-    def test_non_diffusers_stays_primary(self, _mock_validate: Any) -> None:
+    def test_non_diffusers_stays_main(self, _mock_validate: Any) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=None):
             registry = ModelManifest.from_model_path(
                 "org/llm-model", device_specs=[]
             )
 
-        assert registry["primary"].model_path == "org/llm-model"
+        assert registry["main"].model_path == "org/llm-model"
         assert len(registry) == 1
 
     def test_rejects_kwargs_for_composite_model(
         self, _mock_validate: Any
     ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
-            with pytest.raises(ValueError, match="from_components"):
+            with pytest.raises(ValueError, match="ModelManifest directly"):
                 ModelManifest.from_model_path(
                     "org/diffusion-model",
                     quantization_encoding="float32",
@@ -227,6 +225,23 @@ class TestDiffusersAutoExpansion:
         assert "_class_name" not in registry
         assert "_diffusers_version" not in registry
 
+    def test_metadata_populated(self, _mock_validate: Any) -> None:
+        model_index: dict[str, object] = {
+            "_class_name": "FluxPipeline",
+            "_diffusers_version": "0.30.0",
+            "is_distilled": True,
+            "transformer": ["diffusers", "FluxTransformer2DModel"],
+            "vae": ["diffusers", "AutoencoderKL"],
+        }
+        with patch(LOAD_INDEX_TARGET, return_value=model_index):
+            registry = ModelManifest.from_model_path("org/model")
+
+        assert registry.metadata == {
+            "_class_name": "FluxPipeline",
+            "_diffusers_version": "0.30.0",
+            "is_distilled": True,
+        }
+
 
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
@@ -234,13 +249,13 @@ class TestRevisionPropagation:
     """Verify that the revision parameter propagates to MAXModelConfig."""
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_revision_propagates_to_primary(
+    def test_revision_propagates_to_main(
         self, _mock_load: Any, _mock_validate: Any
     ) -> None:
         registry = ModelManifest.from_model_path(
             "test-model", revision="abc123", device_specs=[]
         )
-        assert registry["primary"].huggingface_model_revision == "abc123"
+        assert registry["main"].huggingface_model_revision == "abc123"
 
     def test_revision_propagates_to_components(
         self, _mock_validate: Any
@@ -265,7 +280,7 @@ class TestWithOverride:
     @staticmethod
     def _flux2_manifest() -> ModelManifest:
         base = "black-forest-labs/FLUX.2-dev"
-        return ModelManifest.from_components(
+        return ModelManifest(
             {
                 "transformer": _make_config(
                     base, quantization_encoding="bfloat16"
@@ -329,11 +344,11 @@ class TestWithOverride:
 
     def test_getitem_works_after_override(self) -> None:
         cfg = _make_config("test/model", weight_path=[Path("old.safetensors")])
-        manifest = ModelManifest(models={"primary": cfg})
+        manifest = ModelManifest({"main": cfg})
         updated = manifest.with_override(
-            "primary", weight_path=[Path("new.safetensors")]
+            "main", weight_path=[Path("new.safetensors")]
         )
-        assert updated["primary"].weight_path == [Path("new.safetensors")]
+        assert updated["main"].weight_path == [Path("new.safetensors")]
 
     def test_partial_update_missing_role_raises(self) -> None:
         manifest = self._flux2_manifest()
@@ -392,10 +407,10 @@ class TestWithOverride:
         assert updated["draft"].quantization_encoding == "q4_0"
 
     def test_spec_decoding_override_draft(self) -> None:
-        primary = _make_config("org/primary-model")
+        main_model = _make_config("org/main-model")
         draft = _make_config("org/draft-model")
         manifest = ModelManifest(
-            models={"primary": primary, "draft": draft},
+            {"main": main_model, "draft": draft},
         )
         updated = manifest.with_override(
             "draft",
@@ -406,7 +421,224 @@ class TestWithOverride:
             Path("org/draft-quantized/weights.gguf")
         ]
         assert updated["draft"].quantization_encoding == "q4_0"
-        assert updated["primary"] is primary  # primary unchanged
+        assert updated["main"] is main_model  # main unchanged
+
+
+DEVICES_EXIST_TARGET = "max.pipelines.lib.config.model_config.devices_exist"
+WEIGHT_PARSE_TARGET = (
+    "max.pipelines.lib.config.model_config.WeightPathParser.parse"
+)
+
+
+class TestResolve:
+    """Tests for ModelManifest.resolve()."""
+
+    def test_resolve_calls_each_config(self) -> None:
+        """resolve() delegates to MAXModelConfig.resolve() for every component."""
+        vae = _make_config("vae-model")
+        unet = _make_config("unet-model")
+        manifest = ModelManifest({"vae": vae, "unet": unet})
+
+        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
+            manifest.resolve()
+
+        assert mock_resolve.call_count == 2
+
+    def test_resolve_empty_manifest(self) -> None:
+        """resolve() on an empty manifest is a no-op."""
+        manifest = ModelManifest({})
+        manifest.resolve()  # should not raise
+
+    def test_resolve_single_main(self) -> None:
+        """resolve() works for a single-model manifest."""
+        cfg = _make_config("org/llm-model")
+        manifest = ModelManifest({"main": cfg})
+
+        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
+            manifest.resolve()
+
+        mock_resolve.assert_called_once()
+
+    @patch(DEVICES_EXIST_TARGET, return_value=True)
+    @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
+    def test_resolve_flux2_with_overrides(
+        self, _mock_validate: Any, _mock_devices: Any
+    ) -> None:
+        """Resolve a FLUX.2-dev manifest with transformer and VAE overrides.
+
+        Simulates:
+          - main repo: black-forest-labs/FLUX.2-dev (diffusers pipeline)
+          - transformer weights from black-forest-labs/FLUX.2-dev-NVFP4
+            with float4_e2m1fnx2 quantization
+          - VAE replaced by fal/FLUX.2-Tiny-AutoEncoder
+        """
+        # Build the base diffusers manifest via direct construction
+        # (avoids network calls that from_model_path would make).
+        base_repo = "black-forest-labs/FLUX.2-dev"
+        manifest = ModelManifest(
+            {
+                "transformer": _make_config(
+                    base_repo, quantization_encoding="bfloat16"
+                ),
+                "vae": _make_config(
+                    base_repo, quantization_encoding="bfloat16"
+                ),
+                "text_encoder": _make_config(
+                    base_repo, quantization_encoding="bfloat16"
+                ),
+                "scheduler": _make_config(
+                    base_repo, quantization_encoding="bfloat16"
+                ),
+            }
+        )
+
+        # Apply overrides: NVFP4 transformer weights + tiny VAE.
+        manifest = manifest.with_override(
+            "transformer",
+            weight_path=[
+                Path("black-forest-labs/FLUX.2-dev-NVFP4/weights.safetensors")
+            ],
+            quantization_encoding="float4_e2m1fnx2",
+        ).with_override(
+            "vae",
+            config=_make_config(
+                "fal/FLUX.2-Tiny-AutoEncoder",
+                quantization_encoding="bfloat16",
+            ),
+        )
+
+        # Verify pre-resolve state.
+        assert (
+            manifest["transformer"].quantization_encoding == "float4_e2m1fnx2"
+        )
+        assert manifest["transformer"].model_path == base_repo
+        assert manifest["vae"].model_path == "fal/FLUX.2-Tiny-AutoEncoder"
+        assert manifest["text_encoder"].model_path == base_repo
+        assert manifest["scheduler"].model_path == base_repo
+
+        # Mock WeightPathParser.parse to return weight_path unchanged
+        # (avoids filesystem/network access).
+        def fake_parse(
+            model_path: str, weight_path: list[Path]
+        ) -> tuple[list[Path], str | None]:
+            return (weight_path, None)
+
+        with patch(WEIGHT_PARSE_TARGET, side_effect=fake_parse):
+            manifest.resolve()
+
+        # Print resolved manifest for manual inspection.
+        import logging
+
+        logging.basicConfig(level=logging.INFO, force=True)
+        manifest.log_model_info()
+
+        # Post-resolve: configs should retain their values.
+        assert (
+            manifest["transformer"].quantization_encoding == "float4_e2m1fnx2"
+        )
+        assert manifest["transformer"].weight_path == [
+            Path("black-forest-labs/FLUX.2-dev-NVFP4/weights.safetensors")
+        ]
+        assert manifest["vae"].model_path == "fal/FLUX.2-Tiny-AutoEncoder"
+        assert manifest["vae"].quantization_encoding == "bfloat16"
+        # Other components untouched.
+        assert manifest["text_encoder"].model_path == base_repo
+        assert manifest["scheduler"].model_path == base_repo
+
+
+class TestFrozenAfterResolve:
+    """Tests that ModelManifest rejects mutations after resolve()."""
+
+    @staticmethod
+    def _resolved_manifest() -> ModelManifest:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        with patch.object(MAXModelConfig, "resolve"):
+            manifest.resolve()
+        return manifest
+
+    def test_setitem_raises_after_resolve(self) -> None:
+        manifest = self._resolved_manifest()
+        with pytest.raises(TypeError, match="frozen after resolve"):
+            manifest["new"] = _make_config("org/other")
+
+    def test_delitem_raises_after_resolve(self) -> None:
+        manifest = self._resolved_manifest()
+        with pytest.raises(TypeError, match="frozen after resolve"):
+            del manifest["main"]
+
+    def test_update_raises_after_resolve(self) -> None:
+        manifest = self._resolved_manifest()
+        with pytest.raises(TypeError, match="frozen after resolve"):
+            manifest.update({"new": _make_config("org/other")})
+
+    def test_pop_raises_after_resolve(self) -> None:
+        manifest = self._resolved_manifest()
+        with pytest.raises(TypeError, match="frozen after resolve"):
+            manifest.pop("main")
+
+    def test_clear_raises_after_resolve(self) -> None:
+        manifest = self._resolved_manifest()
+        with pytest.raises(TypeError, match="frozen after resolve"):
+            manifest.clear()
+
+    def test_mutations_allowed_before_resolve(self) -> None:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        new_cfg = _make_config("org/other")
+        manifest["draft"] = new_cfg
+        assert manifest["draft"] is new_cfg
+
+
+class TestTotalWeightsSize:
+    """Tests for ModelManifest.total_weights_size."""
+
+    def test_raises_before_resolve(self) -> None:
+        """Accessing total_weights_size before resolve() raises RuntimeError."""
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        with pytest.raises(RuntimeError, match="must be resolved"):
+            _ = manifest.total_weights_size
+
+    def test_sums_component_weights(self) -> None:
+        """total_weights_size sums weights_size() across all components."""
+        manifest = ModelManifest(
+            {
+                "transformer": _make_config("org/model"),
+                "vae": _make_config("org/model"),
+            }
+        )
+        with (
+            patch.object(MAXModelConfig, "resolve"),
+            patch.object(
+                MAXModelConfig,
+                "weights_size",
+                side_effect=[100, 200],
+            ),
+        ):
+            manifest.resolve()
+            assert manifest.total_weights_size == 300
+
+    def test_empty_weight_path_contributes_zero(self) -> None:
+        """Components with no weight_path contribute zero bytes."""
+        scheduler = _make_config("org/model", weight_path=[])
+        transformer = _make_config("org/model")
+        manifest = ModelManifest(
+            {"scheduler": scheduler, "transformer": transformer}
+        )
+        with (
+            patch.object(MAXModelConfig, "resolve"),
+            patch.object(
+                MAXModelConfig,
+                "weights_size",
+                side_effect=[0, 500],
+            ),
+        ):
+            manifest.resolve()
+            assert manifest.total_weights_size == 500
+
+    def test_empty_manifest_returns_zero(self) -> None:
+        """An empty resolved manifest has total_weights_size == 0."""
+        manifest = ModelManifest({})
+        manifest.resolve()
+        assert manifest.total_weights_size == 0
 
 
 class TestSerialization:
@@ -421,17 +653,17 @@ class TestSerialization:
     def test_single_model_msgpack_round_trip(self) -> None:
         """A single-model manifest round-trips through msgpack."""
         cfg = _make_config("org/llm-model", quantization_encoding="bfloat16")
-        manifest = ModelManifest(models={"primary": cfg})
+        manifest = ModelManifest({"main": cfg})
 
         restored = _msgpack_round_trip(manifest)
 
-        assert list(restored.models.keys()) == ["primary"]
-        assert restored["primary"].model_path == "org/llm-model"
-        assert restored["primary"].quantization_encoding == "bfloat16"
+        assert list(restored.keys()) == ["main"]
+        assert restored["main"].model_path == "org/llm-model"
+        assert restored["main"].quantization_encoding == "bfloat16"
 
     def test_multi_component_msgpack_round_trip(self) -> None:
         """A multi-component manifest round-trips."""
-        manifest = ModelManifest.from_components(
+        manifest = ModelManifest(
             {
                 "vae": _make_config(
                     "org/model", quantization_encoding="bfloat16"
@@ -444,22 +676,22 @@ class TestSerialization:
 
         restored = _msgpack_round_trip(manifest)
 
-        assert set(restored.models.keys()) == {"vae", "unet"}
+        assert set(restored.keys()) == {"vae", "unet"}
         assert restored["vae"].quantization_encoding == "bfloat16"
         assert restored["unet"].quantization_encoding == "float32"
 
     def test_speculative_decoding_msgpack_round_trip(self) -> None:
-        """A primary + draft manifest round-trips through msgpack."""
+        """A main + draft manifest round-trips through msgpack."""
         manifest = ModelManifest(
-            models={
-                "primary": _make_config("org/target"),
+            {
+                "main": _make_config("org/target"),
                 "draft": _make_config("org/draft"),
             },
         )
 
         restored = _msgpack_round_trip(manifest)
 
-        assert restored["primary"].model_path == "org/target"
+        assert restored["main"].model_path == "org/target"
         assert restored["draft"].model_path == "org/draft"
 
     def test_weight_path_survives_msgpack_round_trip(self) -> None:
@@ -473,21 +705,21 @@ class TestSerialization:
                 ]
             }
         )
-        manifest = ModelManifest(models={"primary": cfg})
+        manifest = ModelManifest({"main": cfg})
 
         restored = _msgpack_round_trip(manifest)
 
-        primary = restored["primary"]
-        assert len(primary.weight_path) == 2
+        main_model = restored["main"]
+        assert len(main_model.weight_path) == 2
         # After msgpack round-trip, Path objects are serialized as strings.
         # Coerce back to Path for comparison — this mirrors what Pydantic's
         # model_validate (as opposed to model_construct) would do.
-        assert Path(primary.weight_path[0]) == Path("shard-0.safetensors")
-        assert Path(primary.weight_path[1]) == Path("shard-1.safetensors")
+        assert Path(main_model.weight_path[0]) == Path("shard-0.safetensors")
+        assert Path(main_model.weight_path[1]) == Path("shard-1.safetensors")
 
     def test_empty_manifest_msgpack_round_trip(self) -> None:
         """An empty manifest round-trips through msgpack."""
-        manifest = ModelManifest(models={})
+        manifest = ModelManifest({})
 
         restored = _msgpack_round_trip(manifest)
 
@@ -497,11 +729,203 @@ class TestSerialization:
         """Subfolder field survives msgpack serialization."""
         cfg = _make_config("org/diffusion-model")
         cfg = cfg.model_copy(update={"subfolder": "transformer"})
-        manifest = ModelManifest.from_components({"transformer": cfg})
+        manifest = ModelManifest({"transformer": cfg})
 
         restored = _msgpack_round_trip(manifest)
 
         assert restored["transformer"].subfolder == "transformer"
+
+    def test_metadata_survives_msgpack_round_trip(self) -> None:
+        """Metadata survives msgpack serialization."""
+        meta = {
+            "_class_name": "FluxPipeline",
+            "_diffusers_version": "0.30.0",
+            "is_distilled": True,
+        }
+        manifest = ModelManifest(
+            {"transformer": _make_config("org/model")}, metadata=meta
+        )
+
+        restored = _msgpack_round_trip(manifest)
+
+        assert restored.metadata == meta
+
+    def test_empty_metadata_survives_msgpack_round_trip(self) -> None:
+        """Empty metadata round-trips as empty dict, not None."""
+        manifest = ModelManifest({"main": _make_config("org/model")})
+
+        restored = _msgpack_round_trip(manifest)
+
+        assert restored.metadata == {}
+
+    def test_metadata_with_diverse_types_survives_msgpack_round_trip(
+        self,
+    ) -> None:
+        """Metadata with ints, floats, None, and nested structures round-trips."""
+        meta: dict[str, Any] = {
+            "_class_name": "StableDiffusionPipeline",
+            "num_steps": 50,
+            "guidance_scale": 7.5,
+            "optional_field": None,
+            "scheduler_config": {"beta_start": 0.0001, "beta_end": 0.02},
+        }
+        manifest = ModelManifest(
+            {"unet": _make_config("org/model")}, metadata=meta
+        )
+
+        restored = _msgpack_round_trip(manifest)
+
+        assert restored.metadata["_class_name"] == "StableDiffusionPipeline"
+        assert restored.metadata["num_steps"] == 50
+        assert restored.metadata["guidance_scale"] == 7.5
+        assert restored.metadata["optional_field"] is None
+        assert restored.metadata["scheduler_config"] == {
+            "beta_start": 0.0001,
+            "beta_end": 0.02,
+        }
+
+
+class TestMetadata:
+    """Tests for the metadata property."""
+
+    def test_empty_for_non_diffusion(self) -> None:
+        """Non-diffusion manifests have empty metadata."""
+        manifest = ModelManifest({"main": _make_config("org/llm-model")})
+        assert manifest.metadata == {}
+
+    def test_empty_for_direct_construction(self) -> None:
+        """Direct construction without metadata kwarg gives empty dict."""
+        manifest = ModelManifest(
+            {
+                "vae": _make_config("org/model"),
+                "unet": _make_config("org/model"),
+            }
+        )
+        assert manifest.metadata == {}
+
+    def test_explicit_metadata(self) -> None:
+        """Metadata is accessible when passed at construction."""
+        meta = {"_class_name": "FluxPipeline", "is_distilled": True}
+        manifest = ModelManifest(
+            {"transformer": _make_config("org/model")}, metadata=meta
+        )
+        assert manifest.metadata == meta
+
+    def test_metadata_is_defensive_copy(self) -> None:
+        """Mutating the original dict does not affect the manifest."""
+        meta: dict[str, Any] = {"_class_name": "FluxPipeline"}
+        manifest = ModelManifest(
+            {"transformer": _make_config("org/model")}, metadata=meta
+        )
+        meta["extra"] = "should not appear"
+        assert "extra" not in manifest.metadata
+
+    def test_with_override_preserves_metadata(self) -> None:
+        """with_override carries metadata to the new manifest."""
+        meta = {"_class_name": "FluxPipeline", "_diffusers_version": "0.30.0"}
+        manifest = ModelManifest(
+            {
+                "transformer": _make_config(
+                    "org/model", quantization_encoding="bfloat16"
+                ),
+                "vae": _make_config("org/model"),
+            },
+            metadata=meta,
+        )
+        updated = manifest.with_override(
+            "transformer", quantization_encoding="float4_e2m1fnx2"
+        )
+        assert updated.metadata == meta
+
+
+class TestPrimaryArchitectureName:
+    """Tests for the main_architecture_name property."""
+
+    def test_non_diffusion_with_architectures(self) -> None:
+        """Falls back to architectures[0] when _class_name is absent."""
+        cfg = _make_config("org/llm-model")
+        manifest = ModelManifest({"main": cfg})
+
+        class FakeHFConfig:
+            architectures = ["LlamaForCausalLM"]
+
+        with patch.object(
+            type(cfg),
+            "huggingface_config",
+            new_callable=lambda: property(lambda self: FakeHFConfig()),
+        ):
+            assert manifest.main_architecture_name == "LlamaForCausalLM"
+
+    def test_non_diffusion_prefers_architectures_over_class_name(
+        self,
+    ) -> None:
+        """Prefers architectures[0] over _class_name for registry lookup."""
+        cfg = _make_config("org/llm-model")
+        manifest = ModelManifest({"main": cfg})
+
+        class FakeHFConfig:
+            _class_name = "CustomModelForCausalLM"
+            architectures = ["LlamaForCausalLM"]
+
+        with patch.object(
+            type(cfg),
+            "huggingface_config",
+            new_callable=lambda: property(lambda self: FakeHFConfig()),
+        ):
+            assert manifest.main_architecture_name == "LlamaForCausalLM"
+
+    def test_non_diffusion_no_hf_config_raises(self) -> None:
+        """Raises ValueError when huggingface_config is unavailable."""
+        cfg = _make_config("org/llm-model")
+        manifest = ModelManifest({"main": cfg})
+
+        with (
+            patch.object(
+                type(cfg),
+                "huggingface_config",
+                new_callable=lambda: property(lambda self: None),
+            ),
+            patch.object(
+                type(cfg),
+                "diffusers_config",
+                new_callable=lambda: property(lambda self: None),
+            ),
+        ):
+            with pytest.raises(
+                ValueError, match="Cannot determine architecture name"
+            ):
+                _ = manifest.main_architecture_name
+
+    @patch(HF_OFFLINE_TARGET, False)
+    @patch(VALIDATE_HF_ACCESS_TARGET)
+    def test_diffusion_returns_class_name(self, _mock_validate: Any) -> None:
+        """Diffusion manifests return _class_name from stored metadata."""
+        model_index: dict[str, object] = {
+            "_class_name": "FluxPipeline",
+            "_diffusers_version": "0.30.0",
+            "transformer": ["diffusers", "FluxTransformer2DModel"],
+            "vae": ["diffusers", "AutoencoderKL"],
+        }
+        with patch(LOAD_INDEX_TARGET, return_value=model_index):
+            manifest = ModelManifest.from_model_path("org/diffusion-model")
+
+        # No need to re-load model_index — metadata is stored.
+        assert manifest.main_architecture_name == "FluxPipeline"
+
+    def test_diffusion_no_class_name_raises(self) -> None:
+        """Raises ValueError when metadata has no _class_name."""
+        manifest = ModelManifest(
+            {"transformer": _make_config("org/model")},
+            metadata={"_diffusers_version": "0.30.0"},
+        )
+        with pytest.raises(ValueError, match="metadata has no"):
+            _ = manifest.main_architecture_name
+
+    def test_empty_manifest_raises(self) -> None:
+        """Raises ValueError for an empty manifest."""
+        manifest = ModelManifest({})
+        with pytest.raises(ValueError, match="manifest is empty"):
+            _ = manifest.main_architecture_name
 
 
 # -- Computed fields on MAXModelConfig that trigger network access and must
@@ -532,8 +956,9 @@ def _msgpack_round_trip(manifest: ModelManifest) -> ModelManifest:
     payload = {
         "models": {
             role: cfg.model_dump(mode="json", exclude=_COMPUTED_FIELDS)
-            for role, cfg in manifest.models.items()
+            for role, cfg in manifest.items()
         },
+        "metadata": manifest.metadata,
     }
     packed = msgspec.msgpack.encode(payload)
     unpacked = msgspec.msgpack.decode(packed)
@@ -542,4 +967,4 @@ def _msgpack_round_trip(manifest: ModelManifest) -> ModelManifest:
         role: MAXModelConfig.model_construct(**cfg_data)
         for role, cfg_data in unpacked["models"].items()
     }
-    return ModelManifest(models=models)
+    return ModelManifest(models, metadata=unpacked.get("metadata"))

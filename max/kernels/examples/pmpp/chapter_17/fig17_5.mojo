@@ -13,11 +13,7 @@
 
 from std.collections import List
 from spmv_utils import COOMatrix, generate_sparse_matrix, spmv_cpu, verify
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-)
+from std.gpu import block_idx, thread_idx, block_dim
 from std.gpu.host import DeviceContext
 from std.os import Atomic
 
@@ -28,10 +24,10 @@ def spmv_coo_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var i = block_idx.x * block_dim.x + thread_idx.x
-    if Int(i) < cooMatrix.numNonzeros:
-        var row = Int(cooMatrix.rowIdx[Int(i)])
-        var col = Int(cooMatrix.colIdx[Int(i)])
-        var val = cooMatrix.value[Int(i)]
+    if i < cooMatrix.numNonzeros:
+        var row = Int(cooMatrix.rowIdx[i])
+        var col = Int(cooMatrix.colIdx[i])
+        var val = cooMatrix.value[i]
 
         # Atomic add to y[row]
         _ = Atomic.fetch_add(y + row, x[col] * val)

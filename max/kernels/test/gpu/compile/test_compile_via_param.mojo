@@ -18,7 +18,7 @@
 # RUN: cat %t/test_compile_via_param/test_compile_via_param.ptx | FileCheck %s
 # RUN: rm -fr %t/test_compile_via_param/
 
-from std.gpu import thread_idx
+from std.gpu import thread_idx_int as thread_idx
 from std.gpu.host import DeviceContext
 
 
@@ -26,7 +26,7 @@ def test_compile_function() raises:
     print("== test_compile_function")
 
     def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
-        x[0] = Int(thread_idx.x)
+        x[0] = thread_idx.x
 
     # CHECK: tid.x
 

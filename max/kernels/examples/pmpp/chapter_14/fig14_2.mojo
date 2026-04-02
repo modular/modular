@@ -13,7 +13,7 @@
 
 """Figure 14.2: Parallel odd-even sort kernel implementation in Mojo."""
 
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.random import random_ui64
 
@@ -34,7 +34,7 @@ def sort_kernel(
         isOddStep: 1 for odd phase, 0 for even phase.
         block_dim_x: Block dimension.
     """
-    var i = 2 * (Int(block_idx.x) * block_dim_x + Int(thread_idx.x)) + (
+    var i = 2 * (block_idx.x * block_dim_x + thread_idx.x) + (
         1 if isOddStep == 1 else 0
     )
 

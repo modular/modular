@@ -483,6 +483,7 @@ def get_seq_info[
     BM: Int,
     num_heads: Int,
     flip_prompt_idx: Bool,
+    pair_cta: Bool = False,
 ](
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,
@@ -497,7 +498,10 @@ def get_seq_info[
         max_seq_len.as_uint32(),
     )
     scheduler = TransientScheduler[
-        UInt32(BM), UInt32(num_heads), flip_prompt_idx=flip_prompt_idx
+        UInt32(BM),
+        UInt32(num_heads),
+        flip_prompt_idx=flip_prompt_idx,
+        pair_cta=pair_cta,
     ]()
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[

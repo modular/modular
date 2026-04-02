@@ -1592,6 +1592,93 @@ struct TMATensorTile[
         )
 
     @always_inline
+    def gather4_tile_bytes[tile_width: Int](self) -> Int32:
+        """Returns total expected bytes for a full gather4 tile load.
+
+        Computes ``tile_height * tile_width * sizeof(dtype)`` which is
+        the number of bytes that ``async_copy_gather4_tile`` will transfer
+        into shared memory.  Pass this value to
+        ``SharedMemBarrier.expect_bytes`` before issuing the tile load.
+
+        Parameters:
+            tile_width: Total number of elements per row in global
+                memory.
+
+        Returns:
+            The total expected transfer size in bytes as ``Int32``.
+        """
+        comptime BN = Self.tile_shape[0]
+        return Int32(BN * tile_width * size_of[Self.dtype]())
+
+    @always_inline
+    def async_copy_gather4_tile[
+        tile_width: Int,
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        smem_base: UnsafePointer[
+            Scalar[Self.dtype], _, address_space=AddressSpace.SHARED
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        d_indices: UnsafePointer[Int32, _],
+        start_idx: Int = 0,
+    ):
+        """Loads a full tile of ``tile_height`` rows via gather4 in 4-row chunks.
+
+        Internally loops over column groups and 4-row chunks, issuing one
+        ``async_copy_gather4`` call per chunk per column group.  The SMEM
+        destination layout matches the bulk TMA async_copy ordering: column
+        groups are stored contiguously (each group holds ``tile_height``
+        rows of ``box_width`` elements), and within each group 4-row chunks
+        are contiguous.
+
+        The caller must call ``mem_barrier.expect_bytes(self.gather4_tile_bytes[tile_width]())``
+        before invoking this method.
+
+        Parameters:
+            tile_width: Total number of elements per row in global
+                memory.
+            cta_group: CTA group configuration. Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to
+                EVICT_NORMAL.
+
+        Args:
+            smem_base: Base pointer to the shared memory destination region.
+            mem_barrier: The shared memory barrier tracking the transfers.
+            d_indices: Pointer to ``tile_height`` Int32 row indices in shared
+                or global memory.
+            start_idx: Offset into ``d_indices`` for the first row index.
+                Defaults to 0.
+        """
+        comptime BN = Self.tile_shape[0]
+        comptime box_w = Self.tile_shape[1]
+        comptime num_col_groups = ceildiv(tile_width, box_w)
+        comptime num_4row_chunks = BN // 4
+
+        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
+        var mbar_ptr = mem_barrier.unsafe_ptr()
+
+        comptime for cg in range(num_col_groups):
+            comptime for c in range(num_4row_chunks):
+                var idx = start_idx + c * 4
+                var elem_off = cg * BN * box_w + c * 4 * box_w
+                var dst_ptr = (smem_base + elem_off).mut_cast[True]()
+                cp_async_bulk_tensor_2d_gather4[
+                    cta_group=cta_group,
+                    eviction_policy=eviction_policy,
+                ](
+                    dst_ptr,
+                    desc_ptr,
+                    mbar_ptr,
+                    Int32(cg * box_w),
+                    d_indices[idx + 0],
+                    d_indices[idx + 1],
+                    d_indices[idx + 2],
+                    d_indices[idx + 3],
+                )
+
+    @always_inline
     def async_store[
         coord_rank: Int, //, cta_group: Int = 1
     ](
@@ -2903,10 +2990,69 @@ def create_tma_tile[
     )
 
 
+@parameter
+def _gather4_box_width[
+    dtype: DType,
+    tile_width: Int,
+    swizzle_mode: TensorMapSwizzle,
+]() -> Int:
+    """Computes the TMA box width for gather4 based on the swizzle mode.
+
+    For SWIZZLE_NONE, the box width equals the tile width (no chunking).
+    For swizzle modes (32B, 64B, 128B), the box width is
+    ``swizzle_bytes // sizeof(dtype)``, so that each gather4 call loads one
+    swizzle-group-sized chunk of the row.
+
+    The caller iterates over column groups using
+    ``_gather4_num_col_groups`` which uses ``ceildiv`` to handle
+    non-divisible widths (TMA hardware zero-fills out-of-bounds elements).
+
+    Parameters:
+        dtype: Element data type.
+        tile_width: Total number of elements per row in the global tensor.
+        swizzle_mode: TMA swizzle mode.
+
+    Returns:
+        The box width (number of elements per gather4 call along the column
+        dimension).
+    """
+    comptime if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
+        return tile_width
+    else:
+        return swizzle_mode.bytes() // size_of[dtype]()
+
+
+@parameter
+def _gather4_num_col_groups[
+    dtype: DType,
+    tile_width: Int,
+    swizzle_mode: TensorMapSwizzle,
+]() -> Int:
+    """Returns the number of column groups for a gather4 load of a wide row.
+
+    Each column group loads ``box_width`` elements. The last group may extend
+    past the end of the row when ``tile_width`` is not a multiple of
+    ``box_width``; the TMA hardware zero-fills the out-of-bounds elements.
+
+    Parameters:
+        dtype: Element data type.
+        tile_width: Total number of elements per row in the global tensor.
+        swizzle_mode: TMA swizzle mode.
+
+    Returns:
+        ``ceildiv(tile_width, box_width)`` where ``box_width`` comes
+        from ``_gather4_box_width``.
+    """
+    comptime bw = _gather4_box_width[dtype, tile_width, swizzle_mode]()
+    return ceildiv(tile_width, bw)
+
+
 @always_inline
 def create_tma_tile_gather4[
     dtype: DType,
-    row_width: Int,
+    *,
+    tile_height: Int = 4,
+    tile_width: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
     ctx: DeviceContext,
@@ -2915,53 +3061,68 @@ def create_tma_tile_gather4[
 ) raises -> TMATensorTile[
     dtype,
     2,
-    tile_shape=IndexList[2](4, row_width),
-    desc_shape=IndexList[2](1, row_width),
+    tile_shape=IndexList[2](
+        tile_height,
+        _gather4_box_width[dtype, tile_width, swizzle_mode](),
+    ),
+    desc_shape=IndexList[2](
+        1,
+        _gather4_box_width[dtype, tile_width, swizzle_mode](),
+    ),
 ]:
-    """Creates a TMATensorTile configured for gather4 operations.
+    """Creates a TMATensorTile for gather4 with automatic box-width computation.
 
-    Gather4 loads 4 non-contiguous rows from a 2D tensor using a single TMA
-    instruction (SM100/Blackwell). The descriptor's box shape (desc_shape) is
-    (1, row_width) because the hardware requires one row per tile — gather4
-    internally issues 4 single-row copies at 4 different row indices. The tile
-    shape is (4, row_width) to reflect the total shared memory footprint of the
-    4 gathered rows.
+    The global tensor has ``tile_width`` elements per row.  The TMA box
+    width is derived from the swizzle mode so that each gather4 call loads one
+    swizzle-group-sized column chunk (for SWIZZLE_NONE the box equals the full
+    row).  The caller iterates over column groups using the ``col_idx``
+    parameter of ``async_copy_gather4``::
+
+        for cg in range(_gather4_num_col_groups[dtype, tile_width, swizzle_mode]()):
+            tile.async_copy_gather4(dst, bar, col_idx=Int32(cg * box_width),
+                                    row0, row1, row2, row3)
+
+    Alternatively, use ``async_copy_gather4_tile`` to load the full
+    ``tile_height``-row tile in one call (it loops over 4-row chunks and
+    column groups internally).
 
     Parameters:
-        dtype: The element data type of the tensor.
-        row_width: Number of elements per row (innermost dimension).
-        swizzle_mode: TMA swizzle mode for shared memory access pattern.
-            Defaults to SWIZZLE_NONE. Use SWIZZLE_64B or SWIZZLE_128B for
-            bandwidth-optimized access (e.g. BF16 RoPE data in FlashMLA).
+        dtype: The element data type.
+        tile_height: Number of rows in the tile. Must be a multiple of 4.
+            Defaults to 4 for backward compatibility.
+        tile_width: Number of elements per row in global memory.
+        swizzle_mode: TMA swizzle mode.
 
     Args:
-        ctx: The CUDA device context used to create the TMA descriptor.
-        device_buf: Device buffer containing the 2D tensor data in row-major
-            layout.
-        num_rows: Total number of rows in the tensor (outermost dimension).
+        ctx: CUDA device context for TMA descriptor creation.
+        device_buf: Device buffer containing the 2D row-major tensor data.
+        num_rows: Total number of rows in the tensor.
 
     Returns:
-        A TMATensorTile with tile_shape=(4, row_width) and
-        desc_shape=(1, row_width), configured for use with
-        `async_copy_gather4`.
+        A TMATensorTile configured for gather4 with the appropriate box width.
 
     Raises:
         If TMA descriptor creation fails.
     """
-    comptime assert row_width > 0, "row_width must be positive"
+    comptime assert tile_width > 0, "tile_width must be positive"
+    comptime assert tile_height > 0, "tile_height must be positive"
+    comptime assert tile_height % 4 == 0, "tile_height must be a multiple of 4"
 
+    comptime box_w = _gather4_box_width[dtype, tile_width, swizzle_mode]()
     return create_tma_descriptor[dtype, 2, swizzle_mode](
         device_buf,
-        IndexList[2](num_rows, row_width),
-        IndexList[2](row_width, 1),
-        IndexList[2](1, row_width),
+        IndexList[2](num_rows, tile_width),
+        IndexList[2](tile_width, 1),
+        IndexList[2](1, box_w),
     )
 
 
 @always_inline
 def create_tma_tile_gather4[
     dtype: DType,
-    row_width: Int,
+    *,
+    tile_height: Int = 4,
+    tile_width: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
     ctx: DeviceContext,
@@ -2970,38 +3131,44 @@ def create_tma_tile_gather4[
 ) raises -> TMATensorTile[
     dtype,
     2,
-    tile_shape=IndexList[2](4, row_width),
-    desc_shape=IndexList[2](1, row_width),
+    tile_shape=IndexList[2](
+        tile_height,
+        _gather4_box_width[dtype, tile_width, swizzle_mode](),
+    ),
+    desc_shape=IndexList[2](
+        1,
+        _gather4_box_width[dtype, tile_width, swizzle_mode](),
+    ),
 ]:
-    """Creates a TMATensorTile configured for gather4 operations from a raw
-    pointer.
+    """Creates a TMATensorTile for gather4 from a raw pointer with automatic
+    box-width computation.
 
-    This overload accepts a raw device pointer instead of a DeviceBuffer,
-    matching the pattern used by ``create_split_tma`` and the KV cache TMA
-    tile factories.  A non-owning ``DeviceBuffer`` is constructed internally.
+    The TMA box width is derived from the swizzle mode. For SWIZZLE_NONE the
+    box width equals ``tile_width``.
 
     Parameters:
-        dtype: The element data type of the tensor.
-        row_width: Number of elements per row (innermost dimension).
-        swizzle_mode: TMA swizzle mode for shared memory access pattern.
-            Defaults to SWIZZLE_NONE. Use SWIZZLE_64B or SWIZZLE_128B for
-            bandwidth-optimized access (e.g. BF16 RoPE data in FlashMLA).
+        dtype: The element data type.
+        tile_height: Number of rows in the tile. Must be a multiple of 4.
+            Defaults to 4 for backward compatibility.
+        tile_width: Number of elements per row in global memory.
+        swizzle_mode: TMA swizzle mode.
 
     Args:
-        ctx: The CUDA device context used to create the TMA descriptor.
-        ptr: Raw device pointer to the 2D tensor data in row-major layout.
-        num_rows: Total number of rows in the tensor (outermost dimension).
+        ctx: CUDA device context for TMA descriptor creation.
+        ptr: Raw device pointer to the 2D row-major tensor data.
+        num_rows: Total number of rows in the tensor.
 
     Returns:
-        A TMATensorTile with tile_shape=(4, row_width) and
-        desc_shape=(1, row_width), configured for use with
-        ``async_copy_gather4``.
+        A TMATensorTile configured for gather4 with the appropriate box width.
 
     Raises:
         If TMA descriptor creation fails.
     """
-    comptime assert row_width > 0, "row_width must be positive"
+    comptime assert tile_width > 0, "tile_width must be positive"
+    comptime assert tile_height > 0, "tile_height must be positive"
+    comptime assert tile_height % 4 == 0, "tile_height must be a multiple of 4"
 
+    comptime box_w = _gather4_box_width[dtype, tile_width, swizzle_mode]()
     return create_tma_descriptor[dtype, 2, swizzle_mode](
         DeviceBuffer(
             ctx,
@@ -3009,9 +3176,9 @@ def create_tma_tile_gather4[
             1,
             owning=False,
         ),
-        IndexList[2](num_rows, row_width),
-        IndexList[2](row_width, 1),
-        IndexList[2](1, row_width),
+        IndexList[2](num_rows, tile_width),
+        IndexList[2](tile_width, 1),
+        IndexList[2](1, box_w),
     )
 
 

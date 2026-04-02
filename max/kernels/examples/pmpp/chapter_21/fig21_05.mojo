@@ -23,11 +23,7 @@ atomic operations which can be a performance bottleneck.
 
 from std.math import sqrt
 from std.os import Atomic
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-)
+from std.gpu import block_idx, thread_idx, block_dim
 from std.gpu.host import DeviceContext
 
 from dcs_utils import GridDim, init_atoms, verify_grid
@@ -57,7 +53,7 @@ def cenergy_scatter_kernel(
         numatoms: Number of atoms.
     """
     # Each thread handles one atom
-    var n = (Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)) * 4
+    var n = (block_idx.x * block_dim.x + thread_idx.x) * 4
 
     # Bounds check for atom array
     if n < numatoms * 4:

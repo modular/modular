@@ -126,7 +126,7 @@ struct RMSNormFusedResidual:
             multiply_before_cast=multiply_before_cast,
         ](
             input.shape(),
-            gamma.to_layout_tensor(),  # TODO(MSTDL-2472): migrate to TileTensor
+            gamma.to_tile_tensor[DType.int64](),
             epsilon,
             weight_offset,
             ctx,

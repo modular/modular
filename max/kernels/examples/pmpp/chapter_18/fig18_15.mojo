@@ -17,13 +17,7 @@ Uses shared memory to create a private frontier per block,
 reducing contention on global memory atomics.
 """
 
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-    grid_dim,
-    barrier,
-)
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -68,7 +62,7 @@ def bfs_kernel(
 
     barrier()
 
-    var i = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var i = block_idx.x * block_dim.x + thread_idx.x
 
     if i < num_prev_frontier:
         var vertex = Int(prev_frontier[i])
@@ -117,10 +111,10 @@ def bfs_kernel(
     var curr_frontier_start_idx = Int(start_idx_ptr[0])
     var local_frontier_size = Int(num_curr_frontier_s[0])
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     while tid < local_frontier_size:
         curr_frontier[curr_frontier_start_idx + tid] = curr_frontier_s[tid]
-        tid += Int(block_dim.x)
+        tid += block_dim.x
 
 
 def main() raises:

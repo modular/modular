@@ -35,10 +35,9 @@ from std.gpu import (
     grid_dim_uint as grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
+    PDL,
     PDLLevel,
-    launch_dependent_grids,
     pdl_launch_attributes,
-    wait_on_dependent_grids,
 )
 
 from std.math import ceildiv
@@ -65,7 +64,6 @@ def scatter_pull_kernel[
     tp_size: Int,
     dp_size: Int,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     input_ptrs: InlineArray[
@@ -85,37 +83,32 @@ def scatter_pull_kernel[
     var global_tid = Int(global_idx.x)
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
-        launch_dependent_grids()
+    with PDL():
+        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    comptime if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
+        var dp_idx = my_rank // tp_size
+        var data_ptr = input_ptrs[dp_idx]
+        var num_elems = chunk_num_elems[dp_idx]
+        var num_simd_vectors = num_elems // simd_width
 
-    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        # Grid-strided vectorized copy.
+        for idx in range(global_tid, num_simd_vectors, stride):
+            var elem_idx = idx * simd_width
+            output_ptr.store[width=simd_width](
+                elem_idx,
+                data_ptr.load[width=simd_width](elem_idx),
+            )
 
-    var dp_idx = my_rank // tp_size
-    var data_ptr = input_ptrs[dp_idx]
-    var num_elems = chunk_num_elems[dp_idx]
-    var num_simd_vectors = num_elems // simd_width
+        # Tail elements.
+        var tail_start = num_simd_vectors * simd_width
+        var tail_idx = tail_start + global_tid
+        if tail_idx < num_elems:
+            output_ptr.store[width=1](
+                tail_idx,
+                data_ptr.load[width=1](tail_idx),
+            )
 
-    # Grid-strided vectorized copy.
-    for idx in range(global_tid, num_simd_vectors, stride):
-        var elem_idx = idx * simd_width
-        output_ptr.store[width=simd_width](
-            elem_idx,
-            data_ptr.load[width=simd_width](elem_idx),
-        )
-
-    # Tail elements.
-    var tail_start = num_simd_vectors * simd_width
-    var tail_idx = tail_start + global_tid
-    if tail_idx < num_elems:
-        output_ptr.store[width=1](
-            tail_idx,
-            data_ptr.load[width=1](tail_idx),
-        )
-
-    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 # --- Wrapper functions ---
@@ -130,7 +123,7 @@ def scatter[
     dp_size: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     input_buffers: InlineArray[
         TileTensor[dtype, in_layout, in_origin], dp_size
@@ -192,7 +185,6 @@ def scatter[
         ngpus,
         tp_size,
         dp_size,
-        pdl_level=pdl_level,
     ]
 
     ctx.enqueue_function[kernel, kernel](

@@ -174,7 +174,7 @@ class CustomOpLibrary:
     _kernel_library: KernelLibrary
     _session: InferenceSession
     _ops: dict[str, CustomOp]
-    _ops_lock: threading.Lock
+    _deferred_errors: dict[str, Exception]
 
     def __init__(self, kernel_library: Path | KernelLibrary) -> None:
         devices = [Accelerator(i) for i in range(accelerator_count())]
@@ -186,30 +186,35 @@ class CustomOpLibrary:
             self._kernel_library.load_paths([kernel_library])
 
         self._session = InferenceSession(devices=[*devices])
-        self._ops = {}
-        self._ops_lock = threading.Lock()
+
+        # Eagerly register all ops so that __getattr__ is a trivial
+        # dict lookup.  This is required for torch.compile with
+        # fullgraph=True: Dynamo traces into __getattr__ and cannot
+        # handle threading.Lock context managers or complex init
+        # logic.  Ops that fail to register (e.g. unsupported arg
+        # types) have their exceptions stored and re-raised on access.
+        self._ops: dict[str, CustomOp] = {}
+        self._deferred_errors: dict[str, Exception] = {}
+        for name in self._kernel_library:
+            try:
+                self._ops[name] = CustomOp(self, name)
+            except Exception as e:
+                # The kernel library iterator yields internal ops
+                # (MOGG primitives, EP ops, etc.) that are not meant
+                # for PyTorch registration and fail in various ways:
+                # ValueError (unsupported arg types), RuntimeError
+                # (schema parsing), KeyError (missing MLIR attrs).
+                self._deferred_errors[name] = e
 
     def __getattr__(self, attr: str) -> CustomOp:
         """Get a custom op from the library registered with the given name."""
-        compiled = self._ops
-        with self._ops_lock:
-            if not (result := compiled.get(attr)):
-
-                @torch.compiler.disable
-                def update_cache() -> None:
-                    nonlocal result
-                    if attr not in self._kernel_library:
-                        raise AttributeError(
-                            f"custom library does not register operation {attr}"
-                        )
-
-                    result = CustomOp(self, attr)
-                    compiled[attr] = result
-
-                update_cache()
-
-        assert result is not None
-        return result
+        if attr in self._ops:
+            return self._ops[attr]
+        if attr in self._deferred_errors:
+            raise self._deferred_errors[attr]
+        raise AttributeError(
+            f"custom library does not register operation {attr}"
+        )
 
 
 ParametersDict = Mapping[str, bool | int | str | DType]

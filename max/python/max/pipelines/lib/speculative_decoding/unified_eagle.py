@@ -21,9 +21,8 @@ from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, load_devices
+from max.driver import Buffer, DevicePinnedBuffer, load_devices
 from max.engine import InferenceSession
-from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
     WeightsFormat,
@@ -40,10 +39,9 @@ from max.interfaces import (
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.registry import load_multi_kv_managers
 from max.nn import ReturnLogits
-from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
 from max.pipelines.core import TextContext
-from max.profiler import traced
+from max.profiler import Tracer, traced
 
 from ..interfaces import (
     ModelInputs,
@@ -214,17 +212,13 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
         n_devices = len(self.devices)
         assert len(self._draft_kv_blocks) == n_devices
 
-        device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
-        if len(self.devices) > 1:
-            self._draft_signal_buffers = Signals(device_refs).buffers()
-        else:
-            self._draft_signal_buffers = []
-
-        self.metrics = SpeculativeDecodingMetrics.empty()
-
         assert pipeline_config.speculative is not None
         self._num_speculative_tokens: int = (
             pipeline_config.speculative.num_speculative_tokens
+        )
+
+        self.metrics = SpeculativeDecodingMetrics.empty(
+            num_speculative_tokens=self._num_speculative_tokens
         )
 
         logger.info(
@@ -270,17 +264,6 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
         """
         assert isinstance(self._model, UnifiedEagleModel)
 
-        # Allocate KV pages (target + draft share page table).
-        # Need space for: verify K drafts + generate K new drafts
-        for replica_idx, replica_batch in enumerate(inputs.batches):
-            for ctx in replica_batch:
-                self._target_kv_manager.alloc(
-                    ctx,
-                    replica_idx=replica_idx,
-                    num_steps=1,
-                    num_speculative_steps=self._num_speculative_tokens,
-                )
-
         context_batch = inputs.flat_batch
         verify_draft_tokens = all(
             ctx.spec_decoding_state.num_draft_tokens
@@ -314,10 +297,6 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             num_speculative_steps=self._num_speculative_tokens,
         )
 
-        extra_kwargs: dict[str, Any] = {}
-        if self._draft_signal_buffers:
-            extra_kwargs["draft_signal_buffers"] = self._draft_signal_buffers
-
         return_n_logits = (
             self._num_speculative_tokens + 1 if verify_draft_tokens else 1
         )
@@ -328,19 +307,48 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             return_n_logits=return_n_logits,
             draft_tokens=Buffer.from_numpy(draft_tokens).to(self.devices[0]),
             draft_kv_cache_buffers=self._draft_kv_blocks,
-            **extra_kwargs,
         )
 
         # Single graph call.
         outputs = self._model.execute(model_inputs)
         assert isinstance(outputs, UnifiedEagleOutputs)
 
-        # Get and validate outputs.
-        num_accepted_draft_tokens_np = (
-            outputs.num_accepted_draft_tokens.to_numpy()
-        )
-        next_tokens_np = outputs.next_tokens.to_numpy()
-        next_draft_tokens_np = outputs.next_draft_tokens.to_numpy()
+        # Do the copy to host for each model output using pinned memory.
+        with Tracer("D2H generated_tokens"):
+            device0 = self.devices[0]
+            device0.synchronize()
+            num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
+            generated_tokens_host = DevicePinnedBuffer(
+                shape=num_accepted_draft_tokens_device.shape,
+                dtype=num_accepted_draft_tokens_device.dtype,
+                device=device0,
+            )
+            generated_tokens_host.inplace_copy_from(
+                num_accepted_draft_tokens_device
+            )
+
+            next_tokens_device = outputs.next_tokens
+            next_tokens_host = DevicePinnedBuffer(
+                shape=next_tokens_device.shape,
+                dtype=next_tokens_device.dtype,
+                device=device0,
+            )
+            next_tokens_host.inplace_copy_from(next_tokens_device)
+
+            next_draft_tokens_device = outputs.next_draft_tokens
+            next_draft_tokens_host = DevicePinnedBuffer(
+                shape=next_draft_tokens_device.shape,
+                dtype=next_draft_tokens_device.dtype,
+                device=device0,
+            )
+            next_draft_tokens_host.inplace_copy_from(next_draft_tokens_device)
+
+            # Sync to ensure all prior pinned d2h transfers are complete.
+            device0.synchronize()
+
+            num_accepted_draft_tokens_np = generated_tokens_host.to_numpy()
+            next_tokens_np = next_tokens_host.to_numpy()
+            next_draft_tokens_np = next_draft_tokens_host.to_numpy()
 
         assert num_accepted_draft_tokens_np.shape == (len(context_batch),)
         assert next_tokens_np.shape == (len(context_batch),)
@@ -365,14 +373,9 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
                 )
 
         self.metrics.update(
-            SpeculativeDecodingMetrics(
-                bonus_tokens_used=0,
-                draft_tokens_accepted=num_accepted_draft_tokens_np.sum(),
-                draft_tokens_generated=num_draft_tokens_to_verify
-                * len(context_batch),
-                total_acceptance_lengths=num_accepted_draft_tokens_np.sum(),
-                num_generations=1,
-            )
+            draft_tokens_accepted=num_accepted_draft_tokens_np.sum(),
+            draft_tokens_generated=num_draft_tokens_to_verify
+            * len(context_batch),
         )
 
         res = build_response(

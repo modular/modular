@@ -54,8 +54,6 @@ class UnifiedMTPDeepseekV3ModelInputs(DeepseekV3Inputs):
     )
 
     draft_kv_cache_buffers: list[Buffer] = field(default_factory=list)
-    draft_signal_buffers: list[Buffer] = field(default_factory=list)
-    draft_ep_inputs: tuple[Buffer, ...] = field(default_factory=tuple)
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -69,10 +67,8 @@ class UnifiedMTPDeepseekV3ModelInputs(DeepseekV3Inputs):
             *self.signal_buffers,
             *(self.kv_cache_inputs or ()),
             *self.draft_kv_cache_buffers,
-            *self.draft_signal_buffers,
             *self.batch_context_lengths,
             *self.ep_inputs,
-            *self.draft_ep_inputs,
         )
 
 
@@ -280,30 +276,16 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                         )
                     )
 
-                draft_signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
-
                 batch_context_lengths = [
                     next(variadic_args_iter).tensor
                     for _ in range(len(self.devices))
                 ]
 
                 target_ep_inputs: list[Value[Any]] | None = None
-                draft_ep_inputs: list[Value[Any]] | None = None
                 if nn_model.target.ep_manager is not None:
                     n_target_ep = len(nn_model.target.ep_manager.input_types())
                     target_ep_inputs = [
                         next(variadic_args_iter) for _ in range(n_target_ep)
-                    ]
-                if (
-                    nn_model.draft is not None
-                    and nn_model.draft.ep_manager is not None
-                ):
-                    n_draft_ep = len(nn_model.draft.ep_manager.input_types())
-                    draft_ep_inputs = [
-                        next(variadic_args_iter) for _ in range(n_draft_ep)
                     ]
 
                 outputs = nn_model(
@@ -318,8 +300,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     batch_context_lengths,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
-                    draft_signal_buffers=draft_signal_buffers,
-                    draft_ep_inputs=draft_ep_inputs,
                 )
 
                 graph.output(*outputs)
@@ -354,8 +334,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         draft_kv_cache_buffers: list[Buffer] | None = None,
-        draft_signal_buffers: list[Buffer] | None = None,
-        draft_ep_inputs: tuple[Buffer, ...] | None = None,
     ) -> UnifiedMTPDeepseekV3ModelInputs:
         base = super().prepare_initial_token_inputs(
             replica_batches=replica_batches,
@@ -369,21 +347,12 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                 np.zeros((batch_size, 0), dtype=np.int64)
             ).to(self.devices[0])
 
-        if draft_ep_inputs is None:
-            draft_ep_inputs = (
-                ()
-                if self.draft_ep_comm_initializer is None
-                else tuple(self.draft_ep_comm_initializer.model_inputs())
-            )
-
         return UnifiedMTPDeepseekV3ModelInputs(
             tokens=base.tokens,
             input_row_offsets=base.input_row_offsets,
             host_input_row_offsets=base.host_input_row_offsets,
             draft_tokens=draft_tokens,
             draft_kv_cache_buffers=draft_kv_cache_buffers or [],
-            draft_signal_buffers=draft_signal_buffers or [],
-            draft_ep_inputs=draft_ep_inputs,
             batch_context_lengths=base.batch_context_lengths,
             signal_buffers=base.signal_buffers,
             kv_cache_inputs=base.kv_cache_inputs,
@@ -406,8 +375,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             host_input_row_offsets=base.host_input_row_offsets,
             draft_tokens=prev_model_inputs.draft_tokens,
             draft_kv_cache_buffers=prev_model_inputs.draft_kv_cache_buffers,
-            draft_signal_buffers=prev_model_inputs.draft_signal_buffers,
-            draft_ep_inputs=prev_model_inputs.draft_ep_inputs,
             batch_context_lengths=base.batch_context_lengths,
             signal_buffers=base.signal_buffers,
             kv_cache_inputs=base.kv_cache_inputs,

@@ -60,7 +60,7 @@ def welford_update(
     var delta: Float64
     var delta2: Float64
     delta = new_value - mean
-    mean += delta / count
+    mean += delta / Float64(count)
     delta2 = new_value - mean
     m2 += delta * delta2
 
@@ -388,7 +388,7 @@ def test_combine[
 
         # First, bench kernel overhead
         run_full_dispatch(ctx)
-        new_value = ctx.execution_time[run_combine_async](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_combine_async](1)) * 1e-3
         welford_update(
             combine_async_stat_m, combine_async_stat_m2, i + 1, new_value
         )
@@ -396,7 +396,9 @@ def test_combine[
         # sleep 10 ms to make sure transfer is finished
         std.time.sleep(1e-2)
 
-        new_value = ctx.execution_time[run_combine_async_wait](1) * 1e-3
+        new_value = (
+            Float64(ctx.execution_time[run_combine_async_wait](1)) * 1e-3
+        )
         welford_update(
             combine_wait_stat_m, combine_wait_stat_m2, i + 1, new_value
         )
@@ -404,7 +406,7 @@ def test_combine[
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
         run_full_dispatch(ctx)
-        new_value = ctx.execution_time[run_e2e](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 
@@ -442,11 +444,11 @@ def test_combine[
     ](
         my_rank,
         combine_async_stat_m,
-        sqrt(combine_async_stat_m2 / num_iters),
+        sqrt(combine_async_stat_m2 / Float64(num_iters)),
         combine_wait_stat_m,
-        sqrt(combine_wait_stat_m2 / num_iters),
+        sqrt(combine_wait_stat_m2 / Float64(num_iters)),
         e2e_stat_m,
-        sqrt(e2e_stat_m2 / num_iters),
+        sqrt(e2e_stat_m2 / Float64(num_iters)),
     )
 
     shmem_free(send_buf)

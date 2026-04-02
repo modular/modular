@@ -1409,17 +1409,17 @@ def generic_get_paged_cache[
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
-            UInt(blocks.static_spec.shape.get[4]()),
-            UInt(blocks.static_spec.shape.get[5]()),
-            blocks.static_spec.shape.get[1]() == 1,
+            UInt(Int(blocks.static_spec.shape_tuple[4])),
+            UInt(Int(blocks.static_spec.shape_tuple[5])),
+            Int(blocks.static_spec.shape_tuple[1]) == 1,
         ),
-        blocks.static_spec.shape.get[3](),
+        Int(blocks.static_spec.shape_tuple[3]),
     ],
 ):
-    comptime page_size = blocks.static_spec.shape.get[3]()
-    comptime head_dim = blocks.static_spec.shape.get[5]()
-    comptime num_heads = blocks.static_spec.shape.get[4]()
-    comptime is_mla = blocks.static_spec.shape.get[1]() == 1
+    comptime page_size = Int(blocks.static_spec.shape_tuple[3])
+    comptime head_dim = Int(blocks.static_spec.shape_tuple[5])
+    comptime num_heads = Int(blocks.static_spec.shape_tuple[4])
+    comptime is_mla = Int(blocks.static_spec.shape_tuple[1]) == 1
     return generic_get_paged_cache[
         dtype,
         KVCacheStaticParams(UInt(num_heads), UInt(head_dim), is_mla),

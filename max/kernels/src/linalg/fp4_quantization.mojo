@@ -199,7 +199,7 @@ def quantize_dynamic_scaled_fp4fp8[
         tensor_sf,
         block_dim=block_dim,
         grid_dim=grid_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 
@@ -1144,7 +1144,7 @@ def quantize_dynamic_scaled_fp4_async[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 

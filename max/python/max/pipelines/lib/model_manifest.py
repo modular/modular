@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass, field
 from typing import Any
 
 from max.pipelines.lib.config import MAXModelConfig
@@ -27,57 +26,182 @@ from max.pipelines.lib.hf_utils import HuggingFaceRepo
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ModelManifest:
+class ModelManifest(dict[str, MAXModelConfig]):
     """Registry mapping semantic role strings to MAXModelConfig instances.
 
-    Each model is identified by a role string (e.g. ``"primary"``,
+    Each model is identified by a role string (e.g. ``"main"``,
     ``"draft"``, ``"vae"``, ``"unet"``).  Single-model pipelines use the
-    ``"primary"`` key by convention; multi-component pipelines (diffusion,
+    ``"main"`` key by convention; multi-component pipelines (diffusion,
     speculative decoding) store models under their respective roles.
+
+    ``ModelManifest`` is a ``dict[str, MAXModelConfig]`` subclass, so
+    standard dict operations (``[]``, ``in``, ``len``, ``items``, etc.)
+    work directly.
+
+    For diffusion pipelines constructed from ``model_index.json``, the
+    ``metadata`` property exposes non-component entries (e.g.
+    ``_class_name``, ``_diffusers_version``, ``is_distilled``) as a
+    plain dict.
     """
 
-    models: dict[str, MAXModelConfig] = field(default_factory=dict)
+    # ------------------------------------------------------------------
+    # Construction
+    # ------------------------------------------------------------------
+
+    def __init__(
+        self,
+        *args: Any,
+        metadata: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._metadata: dict[str, Any] = dict(metadata) if metadata else {}
+        self._resolved: bool = False
 
     # ------------------------------------------------------------------
-    # Accessors
+    # Dict overrides
     # ------------------------------------------------------------------
 
     def __getitem__(self, role: str) -> MAXModelConfig:
-        """Get model config by role.
+        try:
+            return super().__getitem__(role)
+        except KeyError:
+            raise KeyError(
+                f"{role!r} (available roles: {list(self.keys())})"
+            ) from None
 
-        Args:
-            role: The semantic role string identifying the model.
+    def _check_frozen(self) -> None:
+        if self._resolved:
+            raise TypeError(
+                "ModelManifest is frozen after resolve(). "
+                "Use with_override() to create a new manifest."
+            )
 
-        Returns:
-            The ``MAXModelConfig`` for the given role.
+    def __setitem__(self, key: str, value: MAXModelConfig) -> None:
+        self._check_frozen()
+        super().__setitem__(key, value)
+
+    def __delitem__(self, key: str) -> None:
+        self._check_frozen()
+        super().__delitem__(key)
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        """Update the manifest with new model configs."""
+        self._check_frozen()
+        super().update(*args, **kwargs)
+
+    def pop(self, *args: Any) -> Any:
+        """Remove and return a model config by key."""
+        self._check_frozen()
+        return super().pop(*args)
+
+    def clear(self) -> None:
+        """Remove all model configs from the manifest."""
+        self._check_frozen()
+        super().clear()
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Non-component entries from ``model_index.json``.
+
+        For diffusion pipelines built via ``from_model_path``, this
+        contains every key/value pair from ``model_index.json`` that is
+        not a component (e.g. ``_class_name``, ``_diffusers_version``,
+        ``is_distilled``).  For non-diffusion manifests, returns an
+        empty dict.
+        """
+        return self._metadata
+
+    @property
+    def main_architecture_name(self) -> str:
+        """Returns the main architecture class name.
+
+        For non-diffusion models (those with a ``"main"`` key),
+        delegates to ``MAXModelConfig.architecture_name`` which returns
+        ``architectures[0]`` from the HuggingFace config.
+
+        For diffusion pipelines (no ``"main"`` key), returns
+        ``metadata["_class_name"]`` (e.g. ``"FluxPipeline"``).
 
         Raises:
-            KeyError: If the role is not found in the registry.
+            ValueError: If the architecture name cannot be determined.
         """
-        if role not in self.models:
-            raise KeyError(
-                f"Role {role!r} not found in registry. "
-                f"Available roles: {list(self.models.keys())}"
+        if "main" in self:
+            arch_name = self["main"].architecture_name
+            if arch_name:
+                return arch_name
+            raise ValueError(
+                f"Cannot determine architecture name for main model "
+                f"{self['main'].model_path!r}: HuggingFace config has "
+                f"no 'architectures' field."
             )
-        return self.models[role]
 
-    def get(
-        self, role: str, default: MAXModelConfig | None = None
-    ) -> MAXModelConfig | None:
-        """Get model config by role, returning *default* if not found."""
-        return self.models.get(role, default)
+        # Diffusion pipeline — use stored metadata from model_index.json.
+        if not self:
+            raise ValueError(
+                "Cannot determine architecture name: manifest is empty."
+            )
+        class_name = self._metadata.get("_class_name")
+        if class_name:
+            return class_name
+        any_config = next(iter(self.values()))
+        raise ValueError(
+            f"Cannot determine architecture name for diffusion model "
+            f"{any_config.model_path!r}: metadata has no "
+            f"'_class_name' field."
+        )
 
-    def __contains__(self, role: str) -> bool:
-        """Check if a role exists in the registry."""
-        return role in self.models
+    @property
+    def total_weights_size(self) -> int:
+        """Total weight size in bytes across all components.
 
-    def items(self) -> list[tuple[str, MAXModelConfig]]:
-        """Return a snapshot of ``(role, config)`` pairs."""
-        return list(self.models.items())
+        Walks every ``MAXModelConfig`` in the manifest and sums
+        ``weights_size()``.  Components with no weight files (e.g.
+        schedulers) contribute zero.
 
-    def __len__(self) -> int:
-        return len(self.models)
+        Raises:
+            RuntimeError: If the manifest has not been resolved via
+                ``resolve()`` first.
+        """
+        if not self._resolved:
+            raise RuntimeError(
+                "ModelManifest must be resolved before accessing "
+                "total_weights_size. Call resolve() first."
+            )
+        return sum(config.weights_size() for config in self.values())
+
+    # ------------------------------------------------------------------
+    # Logging
+    # ------------------------------------------------------------------
+
+    def log_model_info(self) -> None:
+        """Logs model configuration information for every model in the manifest.
+
+        Iterates over each role and delegates to
+        ``MAXModelConfig.log_model_info()`` for per-model details.
+        """
+        logger.info("")
+        logger.info("Model Information")
+        logger.info("=" * 60)
+        for role, config in self.items():
+            config.log_model_info(role=role)
+
+    # ------------------------------------------------------------------
+    # Resolution
+    # ------------------------------------------------------------------
+
+    def resolve(self) -> None:
+        """Validates and resolves every config in the manifest.
+
+        Delegates to ``MAXModelConfig.resolve()`` for each component.
+        """
+        for config in self.values():
+            config.resolve()
+        self._resolved = True
 
     # ------------------------------------------------------------------
     # Immutable update operations
@@ -135,21 +259,21 @@ class ModelManifest:
             )
 
         if config is None:
-            if role not in self.models:
+            if role not in self:
                 raise ValueError(
                     f"Cannot partially update role {role!r}: not found. "
-                    f"Available roles: {list(self.models.keys())}. "
+                    f"Available roles: {list(self.keys())}. "
                     f"Pass config= to add a new component."
                 )
-            base = self.models[role]
+            base = self[role]
         else:
             base = config
 
         updated_config = (
             base.model_copy(update=field_overrides) if field_overrides else base
         )
-        new_models = {**self.models, role: updated_config}
-        return ModelManifest(models=new_models)
+        new_models = {**self, role: updated_config}
+        return ModelManifest(new_models, metadata=self._metadata)
 
     # ------------------------------------------------------------------
     # Constructors
@@ -170,12 +294,12 @@ class ModelManifest:
         If the model is a diffusion pipeline (has a ``model_index.json``),
         the registry is automatically expanded into per-component
         ``MAXModelConfig`` instances.  Extra *kwargs* are rejected in this
-        case — use ``from_components()`` to configure each component
-        individually.
+        case — construct the ``ModelManifest`` directly to configure
+        each component individually.
 
         For single-model repos, a ``MAXModelConfig`` is constructed from
         *model_path* and any extra *kwargs*, then stored under the
-        ``"primary"`` key.
+        ``"main"`` key.
 
         Args:
             model_path: HuggingFace repo ID or local path to the model.
@@ -186,7 +310,7 @@ class ModelManifest:
 
         Returns:
             A new ``ModelManifest``.  For transformers-style models this
-            has a single ``"primary"`` entry; for diffusion models it
+            has a single ``"main"`` entry; for diffusion models it
             contains one entry per component.
         """
         repo_kwargs: dict[str, Any] = {"repo_id": model_path}
@@ -194,36 +318,23 @@ class ModelManifest:
             repo_kwargs["revision"] = revision
         repo = HuggingFaceRepo(**repo_kwargs)
 
-        components = cls._discover_diffusers_components(repo, revision)
-        if components is not None:
+        result = cls._discover_diffusers_components(repo, revision)
+        if result is not None:
             if kwargs:
                 raise ValueError(
                     f"from_model_path() does not support extra keyword "
                     f"arguments for multi-component diffusers pipelines. "
-                    f"Use from_components() to configure each component "
-                    f"individually. Got: {sorted(kwargs)}"
+                    f"Construct the ModelManifest directly to configure "
+                    f"each component individually. Got: {sorted(kwargs)}"
                 )
-            return cls(models=components)
+            components, metadata = result
+            return cls(components, metadata=metadata)
 
         config_kwargs: dict[str, Any] = {"model_path": model_path, **kwargs}
         if revision is not None:
             config_kwargs["huggingface_model_revision"] = revision
         model = MAXModelConfig(**config_kwargs)
-        return cls(models={"primary": model})
-
-    @classmethod
-    def from_components(
-        cls, components: dict[str, MAXModelConfig]
-    ) -> ModelManifest:
-        """Create a registry from named component models.
-
-        Args:
-            components: Mapping of role names to model configurations.
-
-        Returns:
-            A new ``ModelManifest``.
-        """
-        return cls(models=dict(components))
+        return cls({"main": model})
 
     # ------------------------------------------------------------------
     # Diffusers discovery
@@ -265,12 +376,13 @@ class ModelManifest:
     def _discover_diffusers_components(
         repo: HuggingFaceRepo,
         revision: str | None = None,
-    ) -> dict[str, MAXModelConfig] | None:
+    ) -> tuple[dict[str, MAXModelConfig], dict[str, Any]] | None:
         """Detect a diffusers repo and expand it into per-component configs.
 
         Reads ``model_index.json`` from *repo*.  If the file exists, each
         component listed in it gets its own ``MAXModelConfig`` with
-        ``subfolder`` set to the component name.
+        ``subfolder`` set to the component name.  Non-component entries
+        are returned as metadata.
 
         Args:
             repo: A ``HuggingFaceRepo`` handle (local or remote).
@@ -279,8 +391,10 @@ class ModelManifest:
                 ``huggingface_model_revision`` when explicitly provided.
 
         Returns:
-            A dict mapping component role names to ``MAXModelConfig``
-            instances, or ``None`` if this is not a diffusion pipeline.
+            A ``(components, metadata)`` tuple, or ``None`` if this is
+            not a diffusion pipeline.  *components* maps role names to
+            ``MAXModelConfig`` instances; *metadata* contains all
+            non-component entries from ``model_index.json``.
         """
         try:
             model_index = ModelManifest._load_model_index(repo)
@@ -297,21 +411,23 @@ class ModelManifest:
             return None
 
         components: dict[str, MAXModelConfig] = {}
-        for component_name, component_info in model_index.items():
-            if component_name.startswith("_"):
-                continue
-            if not isinstance(component_info, list) or len(component_info) != 2:
-                continue
-            if not all(isinstance(v, str) and v for v in component_info):
-                continue
-
-            config_kwargs: dict[str, Any] = {
-                "model_path": repo.repo_id,
-                "subfolder": component_name,
-            }
-            if revision is not None:
-                config_kwargs["huggingface_model_revision"] = revision
-            components[component_name] = MAXModelConfig(**config_kwargs)
+        metadata: dict[str, Any] = {}
+        for key, value in model_index.items():
+            # A valid component is a 2-element list of non-empty strings.
+            if (
+                isinstance(value, list)
+                and len(value) == 2
+                and all(isinstance(v, str) and v for v in value)
+            ):
+                config_kwargs: dict[str, Any] = {
+                    "model_path": repo.repo_id,
+                    "subfolder": key,
+                }
+                if revision is not None:
+                    config_kwargs["huggingface_model_revision"] = revision
+                components[key] = MAXModelConfig(**config_kwargs)
+            else:
+                metadata[key] = value
 
         if not components:
             return None
@@ -321,4 +437,4 @@ class ModelManifest:
             repo.repo_id,
             list(components.keys()),
         )
-        return components
+        return components, metadata

@@ -16,6 +16,7 @@ from kv_cache.types import KVCacheT, swizzle_granularity, padded_depth
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
+    _gather4_box_width,
     create_split_tma,
     RaggedTMA3DTile,
     TMATensorTile,
@@ -168,22 +169,30 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
 
     @always_inline
     def create_gather4_tma_tile[
-        row_width: Int,
+        tile_width: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.dtype,
         2,
-        tile_shape=IndexList[2](4, row_width),
-        desc_shape=IndexList[2](1, row_width),
+        tile_shape=IndexList[2](
+            4,
+            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+        ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this operand.
 
         The descriptor views the data as a flat 2D matrix of
-        ``[num_kv_rows, row_width]`` and is configured for gather4 operations
-        that load 4 non-contiguous rows per TMA instruction.
+        ``[num_kv_rows, tile_width]`` and is configured for gather4 operations
+        that load 4 non-contiguous rows per TMA instruction. The box width
+        is derived from the swizzle mode; for SWIZZLE_NONE it equals
+        ``tile_width``.
 
         Parameters:
-            row_width: Number of elements per row (innermost dimension).
+            tile_width: Number of elements per row (innermost dimension).
             swizzle_mode: TMA swizzle mode for shared memory access pattern.
                 Defaults to SWIZZLE_NONE.
 
@@ -191,8 +200,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
             ctx: The CUDA device context used to create the TMA descriptor.
 
         Returns:
-            A TMATensorTile with tile_shape=(4, row_width) and
-            desc_shape=(1, row_width).
+            A TMATensorTile with box width derived from the swizzle mode.
         """
         ...
 
@@ -389,7 +397,7 @@ struct KVCacheMHAOperand[
 
     @always_inline
     def create_gather4_tma_tile[
-        row_width: Int,
+        tile_width: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         self,
@@ -397,13 +405,21 @@ struct KVCacheMHAOperand[
         out tma: TMATensorTile[
             Self.dtype,
             2,
-            tile_shape=IndexList[2](4, row_width),
-            desc_shape=IndexList[2](1, row_width),
+            tile_shape=IndexList[2](
+                4,
+                _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            ),
+            desc_shape=IndexList[2](
+                1,
+                _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            ),
         ],
     ) raises:
         """Creates a 2D TMA gather4 descriptor for this KV cache operand."""
         tma = rebind[type_of(tma)](
-            self.cache.create_gather4_tma_tile[row_width, swizzle_mode](ctx)
+            self.cache.create_gather4_tma_tile[
+                tile_width=tile_width, swizzle_mode=swizzle_mode
+            ](ctx)
         )
 
     @always_inline
@@ -577,7 +593,7 @@ struct KVCacheScalesMHAOperand[
 
     @always_inline
     def create_gather4_tma_tile[
-        row_width: Int,
+        tile_width: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         self,
@@ -585,8 +601,14 @@ struct KVCacheScalesMHAOperand[
         out tma: TMATensorTile[
             Self.dtype,
             2,
-            tile_shape=IndexList[2](4, row_width),
-            desc_shape=IndexList[2](1, row_width),
+            tile_shape=IndexList[2](
+                4,
+                _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            ),
+            desc_shape=IndexList[2](
+                1,
+                _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            ),
         ],
     ) raises:
         """Not supported for KVCacheScalesMHAOperand."""
@@ -842,7 +864,7 @@ struct LayoutTensorMHAOperand[
 
     @always_inline
     def create_gather4_tma_tile[
-        row_width: Int,
+        tile_width: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         self,
@@ -850,16 +872,22 @@ struct LayoutTensorMHAOperand[
         out tma: TMATensorTile[
             Self.dtype,
             2,
-            tile_shape=IndexList[2](4, row_width),
-            desc_shape=IndexList[2](1, row_width),
+            tile_shape=IndexList[2](
+                4,
+                _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            ),
+            desc_shape=IndexList[2](
+                1,
+                _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            ),
         ],
     ) raises:
         """Creates a 2D TMA gather4 descriptor for this LayoutTensor operand."""
-        # View the 4D buffer as a 2D matrix [batch*seq, row_width]
+        # View the 4D buffer as a 2D matrix [batch*seq, tile_width]
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
-        tma = create_tma_tile_gather4[Self.dtype, row_width, swizzle_mode](
-            ctx, self.buffer.ptr, rows
-        )
+        tma = create_tma_tile_gather4[
+            Self.dtype, tile_width=tile_width, swizzle_mode=swizzle_mode
+        ](ctx, self.buffer.ptr, rows)
 
     @always_inline
     def scales_raw_ptr(
@@ -1142,7 +1170,7 @@ struct RaggedMHAOperand[
 
     @always_inline
     def create_gather4_tma_tile[
-        row_width: Int,
+        tile_width: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         self,
@@ -1150,16 +1178,22 @@ struct RaggedMHAOperand[
         out tma: TMATensorTile[
             Self.dtype,
             2,
-            tile_shape=IndexList[2](4, row_width),
-            desc_shape=IndexList[2](1, row_width),
+            tile_shape=IndexList[2](
+                4,
+                _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            ),
+            desc_shape=IndexList[2](
+                1,
+                _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            ),
         ],
     ) raises:
         """Creates a 2D TMA gather4 descriptor for this ragged operand."""
-        # View the ragged buffer as a 2D matrix [total_tokens, row_width]
+        # View the ragged buffer as a 2D matrix [total_tokens, tile_width]
         var rows = self.buffer.dim[0]()
-        tma = create_tma_tile_gather4[Self.dtype, row_width, swizzle_mode](
-            ctx, self.buffer.ptr, rows
-        )
+        tma = create_tma_tile_gather4[
+            Self.dtype, tile_width=tile_width, swizzle_mode=swizzle_mode
+        ](ctx, self.buffer.ptr, rows)
 
     @always_inline
     def scales_raw_ptr(
