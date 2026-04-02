@@ -776,6 +776,9 @@ repeat_interleave = functional(ops.repeat_interleave)
 #: Reshapes a tensor to a new shape.
 #: See :func:`max.graph.ops.reshape` for details.
 reshape = functional(ops.reshape)
+#: Resizes a tensor using linear (bilinear) interpolation.
+#: See :func:`max.graph.ops.resize_linear` for details.
+resize_linear = functional(ops.resize_linear)
 #: Rounds tensor values element-wise.
 #: See :func:`max.graph.ops.round` for details.
 round = functional(ops.round)
