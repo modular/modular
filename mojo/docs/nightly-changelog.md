@@ -176,6 +176,9 @@ This version is still a work in progress.
 
 ## ❌ Removed
 
+- The `escaping` function effect is no longer supported. Migrate
+  `def(...) escaping -> T` closures to `unified` closures.
+
 - The deprecated `@doc_private` decorator has been removed. Use `@doc_hidden`
   instead.
 
