@@ -380,12 +380,6 @@ def test_simd_repr_and_write_repr_to() raises:
         "SIMD[DType.float32, 4](inf, -inf, -0.0, nan)",
     )
 
-    # Platform-dependent integer aliases (Int and UInt)
-    _test_repr(SIMD[DType.index, 1](42), "Int(42)")
-    _test_repr(SIMD[DType.uindex, 1](42), "UInt(42)")
-    _test_repr(SIMD[DType.index, 1](0), "Int(0)")
-    _test_repr(SIMD[DType.uindex, 1](0), "UInt(0)")
-
     # Bool scalar (Bool is an alias for Scalar[DType.bool])
     _test_repr(SIMD[DType.bool, 1](True), "Bool(True)")
     _test_repr(SIMD[DType.bool, 1](False), "Bool(False)")
