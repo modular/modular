@@ -75,15 +75,30 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
   }
   auto [mangledName, generator] = pairOrError.takeValue();
 
-  // If the generator has an explicit linkage name, it must be a simple string
-  // literal. Parametric linkage name expressions are not yet supported.
-  if (TypedAttr linkageNameAttr = generator.getLinkageNameAttr()) {
-    if (auto linkageName = dyn_cast<StringAttr>(linkageNameAttr)) {
+  // If the generator has an explicit linkage name, return the resolved name.
+  if (Attribute linkageNameAttr = generator.getLinkageNameAttr()) {
+    // Constant linkage name — return directly.
+    if (auto linkageName = dyn_cast<StringAttr>(linkageNameAttr))
       return {StringAttr::get(linkageName.getValue(),
                               getLinkageNameAttr.getType())};
+
+    // Parametric linkage name — resolve via the evaluator.
+    if (auto symbol =
+            dyn_cast<SymbolConstantAttr>(getLinkageNameAttr.getFunc())) {
+      FailureOr<TypedAttr> result = concretizeLinkageName(generator, symbol);
+      if (succeeded(result)) {
+        if (!*result)
+          return TypedAttr(); // Not ready yet — signal retry.
+        if (auto resolved = dyn_cast<StringAttr>(*result)) {
+          return {StringAttr::get(resolved.getValue(),
+                                  getLinkageNameAttr.getType())};
+        }
+      }
+      emitError({*errorLoc,
+                 "failed to resolve linkage name for '" +
+                     symbol.getSymbol().getLeafReference().getValue() + "'"});
+      return failure();
     }
-    emitError({*errorLoc, "unable to resolve linkage name"});
-    return failure();
   }
 
   return {
@@ -336,7 +351,28 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
     emitError(pairOrError.takeError());
     return failure();
   }
-  StringAttr name = pairOrError.takeValue().first;
+  auto [name, generator] = pairOrError.takeValue();
+
+  // The offload elaborator's finalization renames functions with a linkageName
+  // attribute to that name. The populate_captures function name must match what
+  // writeCaptureArgs will produce after offload finalization. Constant linkage
+  // names are already handled by getExpectedMangledName; resolve parametric
+  // ones here.
+  if (Attribute linkageNameAttr = generator.getLinkageNameAttr()) {
+    if (!isa<StringAttr>(linkageNameAttr)) {
+      if (auto symbol = dyn_cast<SymbolConstantAttr>(
+              compileOffloadClosureAttr.getFunc())) {
+        FailureOr<TypedAttr> resolved =
+            concretizeLinkageName(generator, symbol);
+        if (succeeded(resolved)) {
+          if (!*resolved)
+            return TypedAttr(); // Not ready yet — signal retry.
+          if (auto resolvedStr = dyn_cast<StringAttr>(*resolved))
+            name = resolvedStr;
+        }
+      }
+    }
+  }
 
   // Construct the expected result type.
   MLIRContext *ctx = compileOffloadClosureAttr.getContext();

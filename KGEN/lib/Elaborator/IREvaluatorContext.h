@@ -242,6 +242,12 @@ private:
              TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) = 0;
 
   virtual ImplNodeBase *getParentNode() = 0;
+
+  /// Resolve a parametric linkageName expression to a concrete string.
+  /// Only called for non-StringAttr linkage names; constant linkage names are
+  /// handled directly in evaluateGetLinkageNameAttr.
+  virtual FailureOr<TypedAttr>
+  concretizeLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) = 0;
 };
 
 } // namespace M::KGEN

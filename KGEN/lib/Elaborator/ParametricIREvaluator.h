@@ -252,6 +252,9 @@ private:
 
   ImplNodeBase *getParentNode() override;
 
+  FailureOr<TypedAttr>
+  concretizeLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) override;
+
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
   ParametricElaborator *elaborator;

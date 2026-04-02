@@ -515,6 +515,11 @@ ParametricElaborator::getExpectedMangledName(Location errorLoc,
     return ErrorTree(errorLoc, errMsg);
   }
 
+  // If the generator has a constant linkage name, that is the final name.
+  if (auto linkageName =
+          dyn_cast_if_present<StringAttr>(func.getLinkageNameAttr()))
+    return std::make_pair(linkageName, func);
+
   auto baseName = StringAttr::get(
       func.getContext(), mangleParameterValues(func, symbol.getParamValues()));
   if (sanitize)
