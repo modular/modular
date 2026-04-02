@@ -792,12 +792,40 @@ def _matmul_dynamic_scaled_fp8_impl[
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
 
-            matmul[
-                target=target,
-                transpose_b=transpose_b,
-                elementwise_compute_lambda_fn=scale_compute_lambda_fn,
-                _trace_description=_trace_string,
-            ](c, a, b, Optional[DeviceContext](ctx))
+            @parameter
+            @always_inline
+            @__copy_capture(a_scales, b_scales)
+            def scale_compute_lambda_fn_tensor[
+                _dtype: DType,
+                width: Int,
+                *,
+                alignment: Int = align_of[SIMD[_dtype, width]](),
+            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+                _dtype, width
+            ]:
+                var a_scale = a_scales.load[width=1](
+                    Coord(Idx[0](), Idx[0]())
+                ).cast[DType.float32]()
+                var b_scale = b_scales.load[width=1](
+                    Coord(Idx[0](), Idx[0]())
+                ).cast[DType.float32]()
+                var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
+                return scaled_val.cast[_dtype]()
+
+            comptime if input_scale_granularity == "tensor":
+                matmul[
+                    target=target,
+                    transpose_b=transpose_b,
+                    elementwise_compute_lambda_fn=scale_compute_lambda_fn_tensor,
+                    _trace_description=_trace_string,
+                ](c, a, b, Optional[DeviceContext](ctx))
+            else:
+                matmul[
+                    target=target,
+                    transpose_b=transpose_b,
+                    elementwise_compute_lambda_fn=scale_compute_lambda_fn,
+                    _trace_description=_trace_string,
+                ](c, a, b, Optional[DeviceContext](ctx))
 
         else:
             # create a dummy TileTensor to instruct the matmul kernel to
@@ -830,6 +858,25 @@ def _matmul_dynamic_scaled_fp8_impl[
                     scaled_val.cast[c_type](),
                 )
 
+            @parameter
+            @__copy_capture(c, a_scales, b_scales)
+            @always_inline
+            def scaled_output_fn_tensor[
+                dtype: DType, width: Int, *, alignment: Int = 1
+            ](idx: IndexList[2], val: SIMD[dtype, width]):
+                var a_scale = a_scales.load[width=1](
+                    Coord(Idx[0](), Idx[0]())
+                ).cast[dtype]()
+                var b_scale = b_scales.load[width=1](
+                    Coord(Idx[0](), Idx[0]())
+                ).cast[dtype]()
+                var scaled_val = val * a_scale * b_scale
+
+                c.store[width=width, alignment=alignment](
+                    Coord(Idx(idx[0]), Idx(idx[1])),
+                    scaled_val.cast[c_type](),
+                )
+
             # Preserve the compile-time-static N dimension from b so
             # the SM90 dispatch sees c.static_shape[1] > -1.
             comptime b_N = b.static_shape[b_row_axis]
@@ -839,12 +886,20 @@ def _matmul_dynamic_scaled_fp8_impl[
                     row_major(Coord(Idx(M), Idx[b_N]())),
                 )
 
-                matmul[
-                    target=target,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=scaled_output_fn,
-                    _trace_description=_trace_string,
-                ](c_dummy, a, b, Optional[DeviceContext](ctx))
+                comptime if input_scale_granularity == "tensor":
+                    matmul[
+                        target=target,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=scaled_output_fn_tensor,
+                        _trace_description=_trace_string,
+                    ](c_dummy, a, b, Optional[DeviceContext](ctx))
+                else:
+                    matmul[
+                        target=target,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=scaled_output_fn,
+                        _trace_description=_trace_string,
+                    ](c_dummy, a, b, Optional[DeviceContext](ctx))
             else:
                 var N_rt = Int(b.dim[b_row_axis]())
                 var c_dummy = TileTensor(
@@ -852,12 +907,20 @@ def _matmul_dynamic_scaled_fp8_impl[
                     row_major(Coord(Idx(M), Idx(N_rt))),
                 )
 
-                matmul[
-                    target=target,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=scaled_output_fn,
-                    _trace_description=_trace_string,
-                ](c_dummy, a, b, Optional[DeviceContext](ctx))
+                comptime if input_scale_granularity == "tensor":
+                    matmul[
+                        target=target,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=scaled_output_fn_tensor,
+                        _trace_description=_trace_string,
+                    ](c_dummy, a, b, Optional[DeviceContext](ctx))
+                else:
+                    matmul[
+                        target=target,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=scaled_output_fn,
+                        _trace_description=_trace_string,
+                    ](c_dummy, a, b, Optional[DeviceContext](ctx))
 
     elif (
         input_scale_granularity == "block"
