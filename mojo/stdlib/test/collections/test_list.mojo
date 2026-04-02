@@ -1187,7 +1187,10 @@ def test_list_hash() raises:
 
 def test_list_take_items() raises:
     """Test that take_items drains the list and moves elements out."""
-    var my_list = List[String]("a", "b", "c")
+    var my_list = List[String]()
+    my_list.append("a")
+    my_list.append("b")
+    my_list.append("c")
     assert_equal(len(my_list), 3)
 
     # Collect elements from take_items iterator
@@ -1218,7 +1221,12 @@ def test_list_take_items_empty() raises:
 
 def test_list_take_items_partial() raises:
     """Test that take_items works correctly when partially consumed."""
-    var my_list = List[Int](1, 2, 3, 4, 5)
+    var my_list = List[Int]()
+    my_list.append(1)
+    my_list.append(2)
+    my_list.append(3)
+    my_list.append(4)
+    my_list.append(5)
     assert_equal(len(my_list), 5)
 
     var iter = my_list.take_items()
@@ -1240,11 +1248,15 @@ def test_list_take_items_partial() raises:
 
 def test_list_take_items_bounds() raises:
     """Test that take_items reports correct bounds."""
-    var iter = List[Int](1, 2, 3).take_items()
+    var my_list = List[Int]()
+    my_list.append(1)
+    my_list.append(2)
+    my_list.append(3)
+    var iter = my_list.take_items()
     for i in range(3, 0, -1):
-        var lower, upper = iter.bounds()
-        assert_equal(lower, i)
-        assert_equal(upper.value(), i)
+        var bounds = iter.bounds()
+        assert_equal(bounds[0], i)
+        assert_equal(bounds[1].value(), i)
         _ = iter.__next__()
 
 
