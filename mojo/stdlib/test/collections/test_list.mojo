@@ -1198,7 +1198,7 @@ def test_list_take_items() raises:
     for element in my_list.take_items():
         collected.append(element)
 
-    # List should be empty after draining
+    # List should be empty (length set to 0 immediately when iterator created)
     assert_equal(len(my_list), 0)
     assert_equal(len(collected), 3)
     assert_equal(collected[0], "a")
@@ -1220,7 +1220,12 @@ def test_list_take_items_empty() raises:
 
 
 def test_list_take_items_partial() raises:
-    """Test that take_items works correctly when partially consumed."""
+    """Test that take_items works correctly when partially consumed.
+    
+    Note: The list length is set to 0 immediately when take_items() is called
+    to prevent double-free. Remaining elements are tracked in the iterator
+    and destroyed when the iterator is dropped.
+    """
     var my_list = List[Int]()
     my_list.append(1)
     my_list.append(2)
@@ -1230,12 +1235,17 @@ def test_list_take_items_partial() raises:
     assert_equal(len(my_list), 5)
 
     var iter = my_list.take_items()
+    # List is immediately empty (length set to 0)
+    assert_equal(len(my_list), 0)
+    # But iterator reports remaining elements
+    assert_equal(iter.bounds()[0], 5)
+
     # Only consume 2 elements
     _ = iter.__next__()
     _ = iter.__next__()
 
-    # List should have 3 elements remaining
-    assert_equal(len(my_list), 3)
+    # Iterator now has 3 elements remaining
+    assert_equal(iter.bounds()[0], 3)
 
     # Complete the iteration
     var count = 0
@@ -1243,16 +1253,20 @@ def test_list_take_items_partial() raises:
         count += 1
 
     assert_equal(count, 3)
-    assert_equal(len(my_list), 0)
 
 
 def test_list_take_items_bounds() raises:
-    """Test that take_items reports correct bounds."""
+    """Test that take_items reports correct bounds and list is empty immediately."""
     var my_list = List[Int]()
     my_list.append(1)
     my_list.append(2)
     my_list.append(3)
+    assert_equal(len(my_list), 3)
+    
     var iter = my_list.take_items()
+    # List is immediately empty when iterator is created
+    assert_equal(len(my_list), 0)
+    # Iterator bounds track remaining elements
     for i in range(3, 0, -1):
         var bounds = iter.bounds()
         assert_equal(bounds[0], i)

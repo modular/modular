@@ -151,47 +151,58 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
 struct _ListTakeIter[
     T: Copyable,
     origin: MutOrigin,
-](Copyable, Iterable, Iterator):
-    """Iterator over mutable List element references that moves elements out of the list.
+](Movable, IterableOwned, Iterator):
+    """Iterator over List elements that moves elements out of the list.
 
     This iterator drains the list as it iterates, moving elements out using
-    `take_pointee()` and updating the list's length accordingly.
+    `take_pointee()`. The list's length is set to 0 immediately when the
+    iterator is created to prevent double-free issues. Remaining elements
+    are destroyed by the iterator's destructor if not fully consumed.
 
     Parameters:
         T: The type of the elements in the list.
         origin: The mutable origin of the List.
     """
 
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
+    comptime IteratorType: Iterator = Self
     comptime Element = Self.T
 
     var _index: Int
     var _list: Pointer[List[Self.T], Self.origin]
+    var _original_len: Int
 
     def __init__(out self, ref[Self.origin] list: List[Self.T]):
         self._index = 0
         self._list = Pointer(to=list)
+        # Store original length and immediately set list length to 0
+        # to prevent double-free when list destructor runs
+        self._original_len = len(list)
+        list._len = 0
 
     @always_inline
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self.copy()
+    def __iter__(owned self) -> Self:
+        return self^
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
-        if self._index >= len(self._list[]):
+        if self._index >= self._original_len:
             raise StopIteration()
 
-        # Move the element out and update the list state
+        # Move the element out
         var element = (self._list[].unsafe_ptr() + self._index).take_pointee()
         self._index += 1
-        self._list[]._len -= 1
         return element^
+
+    def __del__(deinit self):
+        """Destroy any remaining elements that weren't iterated over."""
+        # Destroy remaining elements from current index to original length
+        while self._index < self._original_len:
+            (self._list[].unsafe_ptr() + self._index).destroy_pointee()
+            self._index += 1
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var iter_len = len(self._list[]) - self._index
+        var iter_len = self._original_len - self._index
         return (iter_len, {iter_len})
 
 
