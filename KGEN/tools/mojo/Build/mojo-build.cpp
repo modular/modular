@@ -244,11 +244,12 @@ AMD (ROCm/HIP):
   gfx1201     - RDNA4 (Radeon 9070)
 
 Apple Silicon GPU:
-  apple-m1    - Apple M1
-  apple-m2    - Apple M2
-  apple-m3    - Apple M3
-  apple-m4    - Apple M4
-  apple-m5    - Apple M5
+  apple-m1         - Apple M1
+  apple-m2         - Apple M2
+  apple-m3         - Apple M3
+  apple-m4         - Apple M4
+  apple-m5         - Apple M5
+  apple-m5-metal4  - Apple M5 (Metal 4.0 / macOS 26)
 
 Other:
   cuda        - Generic CUDA

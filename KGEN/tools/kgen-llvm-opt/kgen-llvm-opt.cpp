@@ -70,6 +70,7 @@ struct CLOptions : public M::CLOptionsBase {
   bool optLevelO2 = false;
   bool optLevelO3 = false;
   std::string targetTriple;
+  std::string targetAccelerator;
   std::string dataLayout;
   bool noOutput = false;
   bool outputAssembly = false;

@@ -1663,12 +1663,32 @@ static void setupMetalModule(llvm::Module &module, llvm::TargetMachine &tm,
 }
 
 // Helper function to get nicer error message when `xcrun metal` command failed.
-static std::string getPrettyMetallibError(StringRef metalCompilerErrorMessage) {
+static std::string getPrettyMetallibError(StringRef metalCompilerErrorMessage,
+                                          llvm::Module &module) {
   if (metalCompilerErrorMessage.contains("is using language version ") ||
-      metalCompilerErrorMessage.contains("air version set to"))
+      metalCompilerErrorMessage.contains("air version set to")) {
+    unsigned metalMajor = 3;
+    if (llvm::NamedMDNode *md =
+            module.getNamedMetadata("air.language_version")) {
+      if (md->getNumOperands() > 0) {
+        llvm::MDNode *node = md->getOperand(0);
+        if (node->getNumOperands() >= 2) {
+          if (auto *majorMD =
+                  dyn_cast<llvm::ConstantAsMetadata>(node->getOperand(1)))
+            metalMajor =
+                cast<llvm::ConstantInt>(majorMD->getValue())->getZExtValue();
+        }
+      }
+    }
+    if (metalMajor >= 4) {
+      return "Targeting Metal 4.0 requires Xcode with Metal 4.0 support and "
+             "macOS 26.0 or later.\nIf after update you still see compilation "
+             "error, please submit a bug report.";
+    }
     return "Please make sure Xcode version is at least 16.0 and macOS is at "
            "least 15.0.\nIf after update you still see compilation error, "
            "please submit a bug report.";
+  }
   if (metalCompilerErrorMessage.contains("unable to find utility \"metallib\""))
     return "Please make sure Xcode is installed and setup correctly\n" +
            metalCompilerErrorMessage.str();
@@ -1771,8 +1791,8 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
       auto metallibErrorBuffer = llvm::MemoryBuffer::getFile(metallibErrorFile);
       if (metallibErrorBuffer) {
         cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
-        return Error(
-            getPrettyMetallibError(metallibErrorBuffer.get()->getBuffer()));
+        return Error(getPrettyMetallibError(
+            metallibErrorBuffer.get()->getBuffer(), module));
       }
     }
     cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
