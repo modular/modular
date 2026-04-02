@@ -52,6 +52,8 @@ single_version_override(
         "//bazel/public-patches:rules_cc_textual_hdrs.patch",
         # https://github.com/bazelbuild/rules_cc/pull/578
         "//bazel/public-patches:rules_cc_private_api.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/675
+        "//bazel/public-patches:rules_cc_set_soname.patch",
     ],
 )
 
