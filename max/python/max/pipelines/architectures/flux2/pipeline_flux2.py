@@ -90,6 +90,9 @@ class Flux2ModelInputs:
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
+    attention_mask: npt.NDArray[np.bool_] | None
+    """Tokenizer-generated mask for the padded prompt sequence."""
+
     def __post_init__(self) -> None:
         if not isinstance(self.height, int) or self.height <= 0:
             raise ValueError(
@@ -227,6 +230,7 @@ class Flux2Pipeline(DiffusionPipeline):
             tokens=Buffer.from_dlpack(context.tokens.array).to(
                 self.text_encoder.devices[0]
             ),
+            attention_mask=context.mask,
             latents=Buffer.from_dlpack(context.latents).to(device),
             latent_image_ids=Buffer.from_dlpack(context.latent_image_ids).to(
                 device
@@ -615,6 +619,7 @@ class Flux2Pipeline(DiffusionPipeline):
         self,
         tokens: Buffer,
         num_images_per_prompt: int = 1,
+        attention_mask: npt.ArrayLike | None = None,
     ) -> tuple[Buffer, Buffer]:
         """Create prompt embeddings and text position IDs for the transformer.
 
@@ -638,7 +643,7 @@ class Flux2Pipeline(DiffusionPipeline):
         with Tracer("text_encoder"):
             prompt_embeds = cast(
                 Buffer,
-                self.text_encoder(tokens),
+                self.text_encoder(tokens, attention_mask=attention_mask),
             )
 
         with Tracer("post_process"):
@@ -816,6 +821,7 @@ class Flux2Pipeline(DiffusionPipeline):
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
+            attention_mask=model_inputs.attention_mask,
         )
         batch_size = int(prompt_embeds.shape[0])
 

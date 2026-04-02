@@ -22,10 +22,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from max.driver import Device
+import numpy as np
+import numpy.typing as npt
+from max.driver import Buffer, Device
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
+from max.pipelines.dataprocessing import (
+    attention_bias_from_attention_mask_array,
+)
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.profiler import traced
@@ -77,9 +82,34 @@ class Mistral3TextEncoderModel(ComponentModel):
         self.model = model.compile(*model.input_types(), weights=state_dict)
         return self.model
 
-    def __call__(self, tokens: Tensor) -> Tensor:
+    def __call__(
+        self,
+        tokens: Tensor,
+        attention_mask: npt.ArrayLike | None = None,
+    ) -> Tensor:
         """Run the compiled text encoder."""
-        outputs = self.model(tokens)
+        if tokens.rank == 2:
+            if int(tokens.shape[0]) != 1:
+                raise ValueError(
+                    "Mistral3TextEncoderModel expects batch_size=1 for 2D token input."
+                )
+            tokens = tokens[0]
+
+        if attention_mask is None:
+            attention_mask_np = np.ones(
+                (int(tokens.shape[0]),),
+                dtype=np.bool_,
+            )
+        else:
+            attention_mask_np = np.asarray(attention_mask)
+        attention_bias_np = attention_bias_from_attention_mask_array(
+            attention_mask_np,
+            expected_seq_len=int(tokens.shape[0]),
+        )
+        attention_bias = Tensor(
+            storage=Buffer.from_numpy(attention_bias_np).to(self.devices[0])
+        )
+        outputs = self.model(tokens, attention_bias)
         if isinstance(outputs, (list, tuple)):
             return outputs[0]
         return outputs

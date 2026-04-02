@@ -20,15 +20,16 @@ from typing import TYPE_CHECKING
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.kernels import (
+    masked_flash_attention_gpu as _masked_flash_attention_gpu,
+)
 
 if TYPE_CHECKING:
     from max.experimental.nn.common_layers.rotary_embedding import (
         RotaryEmbedding,
     )
 
-flash_attention_gpu = F.functional(_flash_attention_gpu)
+masked_flash_attention_gpu = F.functional(_masked_flash_attention_gpu)
 
 
 class EncoderAttention(Module[..., Tensor]):
@@ -117,7 +118,12 @@ class EncoderAttention(Module[..., Tensor]):
 
         return x
 
-    def forward(self, x: Tensor, rope: RotaryEmbedding) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        rope: RotaryEmbedding,
+        attention_bias: Tensor,
+    ) -> Tensor:
         """Forward pass computing causal self-attention.
 
         Args:
@@ -146,16 +152,15 @@ class EncoderAttention(Module[..., Tensor]):
             k = self._repeat_kv(k, n_rep)
             v = self._repeat_kv(v, n_rep)
 
-        # flash_attention_gpu expects [B, S, heads, head_dim]
         q = F.unsqueeze(q, 0)
         k = F.unsqueeze(k, 0)
         v = F.unsqueeze(v, 0)
 
-        attn_out = flash_attention_gpu(
+        attn_out = masked_flash_attention_gpu(
             q,
             k,
             v,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            mask=F.squeeze(attention_bias, axis=1),
             scale=self.scale,
         )
 

@@ -116,7 +116,12 @@ class EncoderTransformerBlock(Module):
             multiply_before_cast=False,
         )
 
-    def __call__(self, x: TensorValue, rope: RotaryEmbedding) -> TensorValue:
+    def __call__(
+        self,
+        x: TensorValue,
+        rope: RotaryEmbedding,
+        attention_bias: TensorValue,
+    ) -> TensorValue:
         """Forward pass without KV cache.
 
         Args:
@@ -128,7 +133,7 @@ class EncoderTransformerBlock(Module):
         """
         residual = x
         x = self.input_layernorm(x)
-        x = self.self_attn(x, rope)
+        x = self.self_attn(x, rope, attention_bias)
         x = residual + x
 
         residual = x
@@ -195,13 +200,24 @@ class Mistral3TextEncoderTransformer(Module):
                 shape=["total_seq_len"],
                 device=self.device,
             ),
+            TensorType(
+                DType.float32,
+                shape=[1, 1, "total_seq_len", "total_seq_len"],
+                device=self.device,
+            ),
         )
 
-    def __call__(self, tokens: TensorValue) -> TensorValue:
+    def __call__(
+        self,
+        tokens: TensorValue,
+        attention_bias: TensorValue,
+    ) -> TensorValue:
         """Forward pass returning fused prompt embeddings.
 
         Args:
             tokens: Input token IDs ``[total_seq_len]``.
+            attention_bias: Additive causal+padding mask bias with shape
+                ``[1, 1, seq_len, seq_len]``.
 
         Returns:
             Tensor of shape ``[1, seq_len, num_layers * hidden_dim]`` with the
@@ -213,7 +229,7 @@ class Mistral3TextEncoderTransformer(Module):
         selected: dict[int, TensorValue] = {}
         max_layer = self._sorted_hidden_state_layers[-1]
         for i, layer in enumerate(self.layers):
-            h = layer(h, self.rope)
+            h = layer(h, self.rope, attention_bias)
             if i in self._hidden_state_layers:
                 selected[i] = h
             if i == max_layer:
