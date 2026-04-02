@@ -17,8 +17,10 @@ from std.sys.intrinsics import readfirstlane
 
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
+from std.memory.unsafe import bitcast
 
 from std.utils import IndexList
 
@@ -236,6 +238,37 @@ def make_amd_buffer_resource(
     return AMDBufferResource(
         readfirstlane(tensor_iter.ptr), readfirstlane(bound)
     )
+
+
+@always_inline
+def _get_bounds(tensor: TileTensor) -> Int:
+    """Computes buffer bounds from a rank-2 TileTensor.
+
+    Works with MixedLayout (RuntimeInt + ComptimeInt dimensions).
+    Only dim[0] may be runtime; strides and dim[1] are typically comptime,
+    so the compiler constant-folds everything except the valid_rows multiply.
+    """
+    var dim0 = Int(tensor.dim[0]())
+    var dim1 = Int(tensor.dim[1]())
+    if dim0 == 0 or dim1 == 0:
+        return 0
+    var stride0 = tensor.layout.stride[0]().value()
+    var stride1 = tensor.layout.stride[1]().value()
+    return (dim0 - 1) * stride0 + (dim1 - 1) * stride1 + 1
+
+
+@always_inline
+def make_amd_buffer_resource(
+    tensor: TileTensor,
+) -> AMDBufferResource:
+    """Creates an AMD buffer resource descriptor from a TileTensor.
+
+    Uses _get_bounds to compute the valid range. For TileTensors with
+    ComptimeInt strides, only the RuntimeInt dimension contributes
+    runtime register cost.
+    """
+    var size = _get_bounds(tensor)
+    return AMDBufferResource(readfirstlane(tensor.ptr), readfirstlane(size))
 
 
 @always_inline

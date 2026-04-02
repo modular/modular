@@ -27,6 +27,7 @@ from std.sys import (
     size_of,
 )
 from std.sys.info import _is_amd_rdna
+from std.sys.intrinsics import _type_is_eq
 import std.gpu.primitives.warp as warp
 from std.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -83,9 +84,15 @@ from std.memory import stack_allocation
 
 from .amd.mha_gfx942 import MHAAttentionConfig
 from .amd.mha_gfx950 import Attention
+from .amd.mha_structured import Attention
 from .amd.mha_rdna import MHAAttentionConfigRDNA
 from .amd.attention_rdna import AttentionRDNA
-from nn.attention.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
+from nn.attention.mha_mask import (
+    CausalMask,
+    MaterializedMask,
+    MHAMask,
+    TileMaskStatus,
+)
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
@@ -1722,7 +1729,19 @@ def mha[
         )
 
         comptime if attention_config.use_gfx950_mha_kernel:
-            attention.mha_prefill_gfx950()
+            # The structured kernel assumes contiguous non-masked tile
+            # ranges (no FULL_MASK gaps in the middle).  This holds for
+            # CausalMask but NOT for OrMask-based masks like
+            # ChunkedCausalMask, which can have interior FULL_MASK tiles.
+            comptime use_structured = (
+                config.depth <= 256
+                and not get_defined_bool["MHA_NO_STRUCTURED", False]()
+                and _type_is_eq[mask_t, CausalMask]()
+            )
+            comptime if use_structured:
+                attention.mha_prefill_structured()
+            else:
+                attention.mha_prefill_gfx950()
         else:
             attention.mha_prefill_gfx942()
     else:
