@@ -1221,7 +1221,12 @@ class PixelGenerationTokenizer(
             preprocessed_image_arrays = []
             for img in input_images_list:
                 preprocessed_image = self._preprocess_input_image(
-                    img, target_height, target_width
+                    img,
+                    target_height=target_height,
+                    target_width=target_width,
+                    preserve_aspect_ratio=(
+                        self._pipeline_class_name != PipelineClassName.ZIMAGE
+                    ),
                 )
                 if (
                     not preprocessed_image_arrays
