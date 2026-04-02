@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
 
+import numpy as np
 from max.driver import load_devices
 from max.interfaces import (
     GenerationStatus,
@@ -117,6 +118,28 @@ class PixelGenerationPipeline(
         images = model_outputs.images
         num_images_per_prompt = model_inputs.num_images_per_prompt
         expected_images = len(flat_batch) * num_images_per_prompt
+
+        # Video output: shape [B, C, T, H, W]
+        if isinstance(images, np.ndarray) and images.ndim == 5:
+            video_responses: dict[RequestID, GenerationOutput] = {}
+            for index, (request_id, _context) in enumerate(flat_batch):
+                # video_clip shape: [C, T, H, W]
+                video_clip = images[index]
+                # Video decoders are expected to return uint8 pixel values.
+                # Reorder to [T, H, W, C] for per-frame PNG encoding.
+                frames = np.transpose(video_clip, (1, 2, 3, 0))
+                video_responses[request_id] = GenerationOutput(
+                    request_id=request_id,
+                    final_status=GenerationStatus.END_OF_SEQUENCE,
+                    output=[
+                        OutputImageContent.from_numpy(
+                            frames[t],
+                            format="png",
+                        )
+                        for t in range(frames.shape[0])
+                    ],
+                )
+            return video_responses
 
         if images.shape[0] != expected_images:
             raise ValueError(
