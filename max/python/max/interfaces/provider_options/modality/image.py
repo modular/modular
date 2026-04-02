@@ -161,7 +161,7 @@ class ImageProviderOptions(BaseModel):
     )
 
     response_format: GeneratedMediaResponseFormat = Field(
-        GeneratedMediaResponseFormat.url,
+        GeneratedMediaResponseFormat.b64_json,
         description=(
             "How generated images are returned. Use 'url' for file-backed "
             "downloads or 'b64_json' for inline base64 image data."
