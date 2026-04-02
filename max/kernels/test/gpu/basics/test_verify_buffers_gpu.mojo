@@ -126,12 +126,12 @@ def run_verify_kernel[
 
     comptime kernel = _verify_buffers_gpu[dtype, BLOCK_SIZE]
     ctx.enqueue_function_experimental[kernel](
-        output_buf.unsafe_ptr(),
-        reference_buf.unsafe_ptr(),
+        output_buf,
+        reference_buf,
         length,
         atol,
         rtol,
-        result_device.unsafe_ptr(),
+        result_device,
         grid_dim=NUM_BLOCKS,
         block_dim=BLOCK_SIZE,
     )
@@ -180,7 +180,7 @@ def fill_on_device[
     var fill_grid = ceildiv(length, FILL_BLOCK)
     comptime kernel = _fill_buffer[dtype]
     ctx.enqueue_function_experimental[kernel](
-        buf.unsafe_ptr(),
+        buf,
         length,
         val,
         grid_dim=fill_grid,

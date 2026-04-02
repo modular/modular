@@ -1574,8 +1574,8 @@ def test_gather4_tile_api[
     ]
     ctx.enqueue_function[kernel, kernel](
         g4t_tma,
-        d_indices.unsafe_ptr(),
-        out_device.unsafe_ptr(),
+        d_indices,
+        out_device,
         grid_dim=(1, 1),
         block_dim=num_threads,
         shared_mem_bytes=total_smem_bytes,
@@ -1774,8 +1774,8 @@ def test_gather4_tile_api_paged[
     ]
     ctx.enqueue_function[kernel, kernel](
         g4t_tma,
-        d_indices.unsafe_ptr(),
-        out_device.unsafe_ptr(),
+        d_indices,
+        out_device,
         grid_dim=(1, 1),
         block_dim=num_threads,
         shared_mem_bytes=total_smem_bytes,

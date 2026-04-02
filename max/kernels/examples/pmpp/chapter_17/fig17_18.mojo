@@ -160,8 +160,8 @@ def main() raises:
 
     ctx.enqueue_function_experimental[spmv_csc_kernel](
         d_cscMatrix,
-        d_x_buf.unsafe_ptr(),
-        d_y_buf.unsafe_ptr(),
+        d_x_buf,
+        d_y_buf,
         grid_dim=numBlocks,
         block_dim=blockSize,
     )

@@ -31,7 +31,7 @@ def main() raises:
     with SHMEMContext() as ctx:
         var destination = ctx.enqueue_create_buffer[DType.int32](1)
         ctx.enqueue_function[simple_shift_kernel](
-            destination.unsafe_ptr(), grid_dim=1, block_dim=1
+            destination, grid_dim=1, block_dim=1
         )
         ctx.barrier_all()
 

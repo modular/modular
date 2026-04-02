@@ -955,8 +955,8 @@ def reduce_launch[
                 ctx.enqueue_function[kernel, kernel](
                     shape,
                     init,
-                    partials_buf.unsafe_ptr(),
-                    counter_buf.unsafe_ptr(),
+                    partials_buf,
+                    counter_buf,
                     blocks_per_row,
                     grid_dim=total_blocks,
                     block_dim=BLOCK_SIZE,

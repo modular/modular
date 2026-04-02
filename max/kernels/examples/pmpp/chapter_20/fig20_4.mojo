@@ -198,9 +198,9 @@ def main() raises:
         device.enqueue_copy(d_S, h_S)
 
         device.enqueue_function_experimental[softmax_kernel](
-            d_S.unsafe_ptr(),
-            d_D.unsafe_ptr(),
-            d_P.unsafe_ptr(),
+            d_S,
+            d_D,
+            d_P,
             N,
             grid_dim=(N, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),

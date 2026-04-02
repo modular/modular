@@ -309,13 +309,13 @@ def main() raises:
     print("Launching kernel with grid=", grid_size, "block=", BLOCK_SIZE, "...")
 
     device.enqueue_function_experimental[flashattention_forward_kernel](
-        d_Q.unsafe_ptr(),
-        d_K.unsafe_ptr(),
-        d_V.unsafe_ptr(),
+        d_Q,
+        d_K,
+        d_V,
         N,
         scaling,
-        d_D_out.unsafe_ptr(),
-        d_O.unsafe_ptr(),
+        d_D_out,
+        d_O,
         grid_dim=(grid_size, 1, 1),
         block_dim=(BLOCK_SIZE, 1, 1),
     )

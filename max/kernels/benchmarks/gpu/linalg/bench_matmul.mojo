@@ -211,12 +211,12 @@ def verify_matmul[
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function_experimental[kernel](
-        c_device.unsafe_ptr(),
-        c_device_ref.unsafe_ptr(),
+        c_device,
+        c_device_ref,
         c_size,
         atol,
         rtol,
-        result_device.unsafe_ptr(),
+        result_device,
         grid_dim=NUM_BLOCKS,
         block_dim=BLOCK_SIZE,
     )
