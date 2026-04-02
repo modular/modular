@@ -32,7 +32,7 @@ import std.os
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.os import PathLike, listdir, stat_result
-from std.ffi import c_char, external_call
+from std.ffi import c_char, external_call, _CPointer
 from std.sys import CompilationTarget
 
 from std.reflection import call_location
@@ -63,7 +63,7 @@ def cwd() raises -> Path:
     var buf = InlineArray[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
 
     var ptr = buf.unsafe_ptr()
-    var res = external_call["getcwd", type_of(ptr)](
+    var res = external_call["getcwd", _CPointer[c_char, origin_of(buf)]](
         ptr, Int(MAX_CWD_BUFFER_SIZE)
     )
 
@@ -81,7 +81,7 @@ def _dir_of_current_file() raises -> Path:
     Returns:
       The directory the file calling is at.
     """
-    return _dir_of_current_file_impl(call_location().file_name)
+    return _dir_of_current_file_impl(call_location().file_name())
 
 
 @no_inline

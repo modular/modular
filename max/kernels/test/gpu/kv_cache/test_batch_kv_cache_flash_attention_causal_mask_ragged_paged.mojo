@@ -27,7 +27,7 @@ from std.memory import memcpy, memset_zero
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal, assert_equal
-from std.sys import has_nvidia_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from std.utils import IndexList
 
@@ -45,7 +45,7 @@ def execute_ragged_flash_attention[
     comptime if dtype == DType.float32 and kv_params.head_size == 256:
         return
 
-    comptime page_size = 512
+    comptime page_size = 256
 
     var batch_size = len(valid_lengths)
     assert len(valid_lengths) == len(
@@ -498,3 +498,8 @@ def main() raises:
         execute_flash_attention_suite[
             8, KVCacheStaticParams(num_heads=4, head_size=256)
         ](ctx)
+        # depth=512
+        comptime if has_amd_gpu_accelerator():
+            execute_flash_attention_suite[
+                8, KVCacheStaticParams(num_heads=4, head_size=512)
+            ](ctx)

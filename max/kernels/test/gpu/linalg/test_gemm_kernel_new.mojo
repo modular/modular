@@ -15,11 +15,7 @@ from std.math import ceildiv, isclose
 from std.sys import argv
 
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    block_idx_uint as block_idx,
-    global_idx_uint as global_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import block_idx, global_idx, warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
 from std.memory import alloc
@@ -88,8 +84,8 @@ def gemm_kernel[
     ](row_major[BK, BN]())
 
     var n_warp_n = BN // WN
-    var warp_m = Int(warp_id()) // n_warp_n
-    var warp_n = Int(warp_id()) % n_warp_n
+    var warp_m = warp_id() // n_warp_n
+    var warp_n = warp_id() % n_warp_n
 
     # Allocate register tiles.
     var a_reg = stack_allocation[
@@ -112,16 +108,12 @@ def gemm_kernel[
     comptime warp_layout = row_major[8, 4]()
 
     for k_i in range(ceildiv(K, Scalar[mat_a.linear_idx_type](BK))):
-        var a_tile_dram = mat_a.tile[BM, BK](
-            (Idx(Int(block_idx.y)), Idx(Int(k_i)))
-        )
+        var a_tile_dram = mat_a.tile[BM, BK]((Idx(block_idx.y), Idx(Int(k_i))))
         copy_dram_to_sram_async[
             thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
         ](a_tile_sram.to_layout_tensor(), a_tile_dram.to_layout_tensor())
 
-        var b_tile_dram = mat_b.tile[BK, BN](
-            (Idx(Int(k_i)), Idx(Int(block_idx.x)))
-        )
+        var b_tile_dram = mat_b.tile[BK, BN]((Idx(Int(k_i)), Idx(block_idx.x)))
         copy_dram_to_sram_async[
             thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
         ](b_tile_sram.to_layout_tensor(), b_tile_dram.to_layout_tensor())
@@ -149,7 +141,7 @@ def gemm_kernel[
         barrier()
 
     var c_warp_tile = mat_c.tile[BM, BN](
-        (Idx(Int(block_idx.y)), Idx(Int(block_idx.x)))
+        (Idx(block_idx.y), Idx(block_idx.x))
     ).tile[WM, WN]((Idx(warp_m), Idx(warp_n)))
 
     copy_local_to_dram[dst_thread_layout=warp_layout.to_layout()](
@@ -512,8 +504,8 @@ def matmul_kernel_naive[
     n: Int,
     k: Int,
 ) where (c.flat_rank == 2 and a.flat_rank == 2 and b.flat_rank == 2):
-    var x = Int(global_idx.x)
-    var y = Int(global_idx.y)
+    var x = global_idx.x
+    var y = global_idx.y
 
     if x >= m or y >= n:
         return

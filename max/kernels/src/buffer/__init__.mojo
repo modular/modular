@@ -11,5 +11,3 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Implements the buffer package."""
-
-from .dimlist import Dim, DimList

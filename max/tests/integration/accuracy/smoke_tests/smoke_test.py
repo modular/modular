@@ -119,7 +119,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     },
     "nvidia/kimi-k2.5-nvfp4__no_vision": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
-        "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1",
+        "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
     },
     "meta-llama/llama-3.1-8b-instruct__eagle": {
         "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",

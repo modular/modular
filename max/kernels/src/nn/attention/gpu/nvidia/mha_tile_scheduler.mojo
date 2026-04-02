@@ -410,6 +410,7 @@ struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
     flip_prompt_idx: Bool,
+    pair_cta: Bool = False,
 ](Defaultable, MHATileScheduler, TrivialRegisterPassable):
     comptime may_advance: Bool = False
     comptime mha_schedule: MHASchedule = MHASchedule.DEFAULT
@@ -428,6 +429,8 @@ struct TransientScheduler[
             + String(Self.num_heads)
             + ", flip_prompt_idx = "
             + String(Self.flip_prompt_idx)
+            + ", pair_cta = "
+            + String(Self.pair_cta)
             + "]"
         )
 
@@ -437,11 +440,16 @@ struct TransientScheduler[
 
     @always_inline
     def get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
+        var raw_idx: UInt32
+        comptime if Self.pair_cta:
+            raw_idx = UInt32(block_idx.x) >> 1
+        else:
+            raw_idx = UInt32(block_idx.x)
         var prompt_tile_idx: UInt32
         comptime if Self.flip_prompt_idx:
-            prompt_tile_idx = num_prompt_tiles - 1 - UInt32(block_idx.x)
+            prompt_tile_idx = num_prompt_tiles - 1 - raw_idx
         else:
-            prompt_tile_idx = UInt32(block_idx.x)
+            prompt_tile_idx = raw_idx
         return WorkInfo(
             prompt_tile_idx * Self.tile_shape,
             UInt32(block_idx.y),
@@ -477,11 +485,18 @@ struct TransientScheduler[
     def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
-        return (
-            Int(max_num_prompt_tiles),
-            Int(Self.num_heads),
-            Int(batch_size),
-        )
+        comptime if Self.pair_cta:
+            return (
+                Int(max_num_prompt_tiles * 2),
+                Int(Self.num_heads),
+                Int(batch_size),
+            )
+        else:
+            return (
+                Int(max_num_prompt_tiles),
+                Int(Self.num_heads),
+                Int(batch_size),
+            )
 
     @always_inline
     def initial_state[

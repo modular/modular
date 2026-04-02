@@ -27,7 +27,11 @@ from std.gpu import (
     grid_dim_uint as grid_dim,
     thread_idx_int as thread_idx,
 )
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import (
     Coord,
@@ -565,7 +569,7 @@ def mla_fused_rope_rmsnorm_quantization[
         epsilon,
         grid_dim=(n_rope_blocks + n_rms_blocks, num_workers, 1),
         block_dim=block_size,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 
@@ -1426,7 +1430,7 @@ def convert_bf16_to_fp8_e4m3fn(
 
     comptime if input_buffer.rank == 2:
         _elementwise_impl_gpu[
-            func=convert_kernel, simd_width=UInt(target_simd_width)
+            func=convert_kernel, simd_width=target_simd_width
         ](
             shape=IndexList[2](
                 Int(input_buffer.dim[0]()),
@@ -1436,7 +1440,7 @@ def convert_bf16_to_fp8_e4m3fn(
         )
     else:
         _elementwise_impl_gpu[
-            func=convert_kernel, simd_width=UInt(target_simd_width)
+            func=convert_kernel, simd_width=target_simd_width
         ](
             shape=IndexList[3](
                 Int(input_buffer.dim[0]()),

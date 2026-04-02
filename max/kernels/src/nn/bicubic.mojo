@@ -316,7 +316,7 @@ def resize_bicubic[
             input_origin=ImmutOrigin(input.origin),
             InputLayoutType=input.LayoutType,
         ]
-        ctx.get_device_context().enqueue_function_experimental[kernel](
+        ctx.get_device_context().enqueue_function[kernel, kernel](
             output,
             input.as_immut(),
             grid_dim=(N, C),

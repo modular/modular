@@ -17,7 +17,6 @@ import base64
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from enum import Enum
 from io import BytesIO
 from typing import Any, Literal
 
@@ -25,17 +24,7 @@ from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import TypedDict
 
-
-class DatasetMode(str, Enum):
-    """Enumeration of supported dataset loading modes.
-
-    This enum defines the different ways datasets can be loaded:
-    - LOCAL: Load from a local file path (from environment variable or --dataset-path)
-    - HUGGINGFACE: Load from HuggingFace Hub (default behavior)
-    """
-
-    LOCAL = "local"
-    HUGGINGFACE = "huggingface"
+DatasetMode = Literal["local", "huggingface"]
 
 
 class OpenAIImageURL(TypedDict):
@@ -78,6 +67,7 @@ class PixelGenerationSampledRequest(SampledRequest):
     output_len: int | None = None
     encoded_images: list[OpenAIImage] = field(default_factory=list)
     ignore_eos: bool = True
+    input_image_paths: list[str] = field(default_factory=list)
     image_options: PixelGenerationImageOptions | None = None
 
 

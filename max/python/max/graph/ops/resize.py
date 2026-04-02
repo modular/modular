@@ -14,7 +14,7 @@
 
 from enum import Enum
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import builtin, kgen, mo, rmo
 
 from ..graph import Graph
 from ..type import Shape, ShapeLike, TensorType
@@ -26,20 +26,89 @@ class InterpolationMode(Enum):
     """Interpolation modes for image resize operations.
 
     This enum defines the available interpolation methods that can be used
-    when resizing tensors. Currently only ``BICUBIC`` is implemented, with
-    ``BILINEAR`` and ``NEAREST`` planned for future support.
+    when resizing tensors.
     """
 
     NEAREST = "nearest"
     """Nearest neighbor interpolation."""
     BILINEAR = "bilinear"
-    """Bilinear interpolation."""
+    """Bilinear (linear) interpolation."""
     BICUBIC = "bicubic"
     """Bicubic interpolation."""
 
     def __str__(self) -> str:
         """Return the string representation of the interpolation mode."""
         return self.value
+
+
+def resize_linear(
+    input: TensorValueLike,
+    size: ShapeLike,
+    coordinate_transform_mode: int = 0,
+    antialias: bool = False,
+) -> TensorValue:
+    """Resize a tensor using linear (bilinear) interpolation.
+
+    Produces an output tensor whose spatial dimensions are given by ``size``
+    using separable 1-D linear filters.  The operation maps output coordinates
+    back to input coordinates according to ``coordinate_transform_mode``.
+
+    Args:
+        input: The input symbolic tensor to resize.
+        size: Desired output shape.  Must have the same rank as ``input``.
+        coordinate_transform_mode: How to map an output coordinate to an input
+            coordinate.  Allowed values:
+
+            - ``0`` -- ``half_pixel`` (default): shifts by 0.5 before scaling,
+              consistent with most deep-learning frameworks.
+            - ``1`` -- ``align_corners``: aligns the corner pixels of input and
+              output so that the first and last coordinates are preserved
+              exactly.
+            - ``2`` -- ``asymmetric``: no shift; equivalent to floor-dividing
+              coordinates by the scale factor.
+            - ``3`` -- ``half_pixel_1D``: like ``half_pixel`` but only applied
+              to the last spatial dimension.
+        antialias: When ``True``, applies an antialiasing filter when the
+            output is smaller than the input (i.e. when downscaling), which
+            reduces aliasing artifacts by widening the tent filter support by
+            ``1 / scale``.  Has no effect when upscaling.
+
+    Returns:
+        A new symbolic tensor with shape ``size`` and the same dtype as
+        ``input``.
+
+    Raises:
+        ValueError: If ``coordinate_transform_mode`` is not 0-3, or if
+            ``size`` has a different rank than ``input``.
+    """
+    if coordinate_transform_mode not in (0, 1, 2, 3):
+        raise ValueError(
+            f"coordinate_transform_mode must be 0-3, got"
+            f" {coordinate_transform_mode}"
+        )
+
+    input = TensorValue(input)
+    size = Shape(size)
+
+    if len(size) != input.rank:
+        raise ValueError(
+            f"size must have the same rank as input ({input.rank}), got"
+            f" {len(size)}"
+        )
+
+    result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
+
+    return Graph.current._add_op_generated(
+        rmo.MoResizeLinearOp,
+        result_type.to_mlir(),
+        input,
+        shape_to_tensor(size),
+        mo.CoordinateTransformModeAttr(
+            mo.CoordinateTransformMode(coordinate_transform_mode)
+        ),
+        builtin.BoolAttr(antialias),
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
 
 
 def resize(
@@ -55,9 +124,9 @@ def resize(
     Args:
         input: The input tensor to resize. Must have rank 4 in NCHW format.
         shape: Desired output shape of length 4 corresponding to (N, C, H, W).
-        interpolation: Desired interpolation enum defined by InterpolationMode.
-            Default is :attr:`InterpolationMode.BILINEAR`. Currently only ``BICUBIC`` is
-            supported.
+        interpolation: Desired interpolation enum defined by
+            :class:`InterpolationMode`.  Defaults to
+            :attr:`InterpolationMode.BILINEAR`.
 
     Returns:
         A resized tensor with the shape specified by the shape argument.
@@ -65,29 +134,31 @@ def resize(
     Raises:
         ValueError: If the input doesn't have rank 4, shape has wrong number
             of elements, or unsupported interpolation mode is specified.
-        NotImplementedError: If single integer size or non-``BICUBIC`` interpolation
-            mode is specified.
+        NotImplementedError: If ``InterpolationMode.NEAREST`` is specified.
     """
     input = TensorValue(input)
     shape = Shape(shape)
 
     if input.rank != 4:
         raise ValueError(
-            f"Input tensor must have rank 4 (NCHW format) for resize operation, "
-            f"but got rank {input.rank}"
+            f"Input tensor must have rank 4 (NCHW format) for resize"
+            f" operation, but got rank {input.rank}"
         )
 
     if len(shape) != 4:
         raise ValueError(
-            f"shape must have 4 elements for NCHW format (batch, channels, height, width), "
-            f"but got {len(shape)} elements"
+            f"shape must have 4 elements for NCHW format"
+            f" (batch, channels, height, width), but got {len(shape)} elements"
         )
 
-    if interpolation != InterpolationMode.BICUBIC:
+    if interpolation == InterpolationMode.NEAREST:
         raise NotImplementedError(
-            f"Interpolation mode {interpolation} is not yet supported. "
-            "Currently only InterpolationMode.BICUBIC is available."
+            "InterpolationMode.NEAREST is not yet supported."
         )
+
+    if interpolation == InterpolationMode.BILINEAR:
+        # Delegate to resize_linear with default half_pixel coordinate mode.
+        return resize_linear(input, shape)
 
     # NOTE: half_pixel is the default coordinate transform mode.
     # This matches the behavior of torchvision and other libraries.

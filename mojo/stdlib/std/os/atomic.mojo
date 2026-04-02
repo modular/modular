@@ -29,7 +29,7 @@ from std.memory import bitcast
 # Consistency
 # ===-----------------------------------------------------------------------===#
 
-comptime _DEFAULT_ARITHMETIC_CONSISTENCY = Consistency.RELEASE if is_apple_gpu() else Consistency.SEQUENTIAL
+comptime _DEFAULT_ARITHMETIC_CONSISTENCY = Consistency.MONOTONIC if is_apple_gpu() else Consistency.SEQUENTIAL
 comptime _DEFAULT_COMPARISON_CONSISTENCY = _DEFAULT_ARITHMETIC_CONSISTENCY
 comptime _DEFAULT_MEMORY_CONSISTENCY = Consistency.SEQUENTIAL
 

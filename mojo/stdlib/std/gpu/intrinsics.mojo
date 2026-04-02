@@ -50,7 +50,8 @@ from std.sys.info import (
     _is_amd_rdna4,
 )
 from std.sys.intrinsics import llvm_intrinsic, readfirstlane
-from std.gpu import lane_id_uint as lane_id
+from std.gpu import lane_id
+from std.math.uutils import ufloordiv, umod
 
 from std.memory.unsafe import bitcast
 
@@ -1492,12 +1493,10 @@ def permlane_shuffle[
     Returns:
         Shuffled SIMD vector in the `res` output parameter.
     """
-    var lane_group = lane_id() // UInt(stride)
+    var lane_group = ufloordiv(lane_id(), stride)
 
     var out = type_of(res)()
 
     comptime for i in range(simd_width):
-        out[i] = permlane_swap[stride](val[i], val[i])[
-            Int((lane_group + 1) % 2)
-        ]
+        out[i] = permlane_swap[stride](val[i], val[i])[umod(lane_group + 1, 2)]
     return out

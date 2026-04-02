@@ -226,7 +226,6 @@ def create_pipeline_config_with_lora(
         model=MAXModelConfig(
             model_path=model_path,
             quantization_encoding="bfloat16",  # Use bfloat16 for GPU
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             device_specs=[DeviceSpec(device_type="gpu", id=0)],
             kv_cache=KVCacheConfig(
                 enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
@@ -256,7 +255,6 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
         model=MAXModelConfig(
             model_path=model_path,
             quantization_encoding="bfloat16",  # Use bfloat16 for GPU
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             device_specs=[DeviceSpec(device_type="gpu", id=0)],
             kv_cache=KVCacheConfig(),
             max_length=512,

@@ -262,7 +262,6 @@ def run_sgmv_qkv_lora_kernel(
     kv_dim = lora_b_kv.shape[1]
     num_lora_groups = len(lora_ids)
 
-    batch_size = len(seq_lens)
     total_seq_len = sum(seq_lens)
 
     # input_row_offsets contains all sequences

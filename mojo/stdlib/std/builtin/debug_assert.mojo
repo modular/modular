@@ -428,40 +428,34 @@ def _debug_assert_msg(
     )
 
     comptime if is_nvidia_gpu():
-        from std.gpu.primitives.id import (
-            block_idx_uint as block_idx,
-            thread_idx_uint as thread_idx,
-        )
+        from std.gpu.primitives.id import block_idx, thread_idx
 
         _printf[fmt](
-            loc.file_name.unsafe_ptr(),
-            loc.line,
-            loc.col,
-            block_idx.x,
-            block_idx.y,
-            block_idx.z,
-            thread_idx.x,
-            thread_idx.y,
-            thread_idx.z,
+            loc.file_name().unsafe_ptr(),
+            loc.line(),
+            loc.column(),
+            UInt(block_idx.x),
+            UInt(block_idx.y),
+            UInt(block_idx.z),
+            UInt(thread_idx.x),
+            UInt(thread_idx.y),
+            UInt(thread_idx.z),
             message,
         )
     # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
     elif is_amd_gpu():
-        from std.gpu.primitives.id import (
-            block_idx_uint as block_idx,
-            thread_idx_uint as thread_idx,
-        )
+        from std.gpu.primitives.id import block_idx, thread_idx
 
         var fd = printf_begin()
         _ = printf_append_string_n(fd, fmt.as_bytes(), False)
         # Runtime %s types must be passed as separate append_string calls
-        _ = printf_append_string_n(fd, loc.file_name.as_bytes(), False)
+        _ = printf_append_string_n(fd, loc.file_name().as_bytes(), False)
         # Can only pass 7 args at a time
         _ = printf_append_args(
             fd,
             7,
-            UInt64(loc.line),
-            UInt64(loc.col),
+            UInt64(loc.line()),
+            UInt64(loc.column()),
             UInt64(block_idx.x),
             UInt64(block_idx.y),
             UInt64(block_idx.z),
@@ -475,7 +469,10 @@ def _debug_assert_msg(
         _ = printf_append_string_n(fd, Span(ptr=message, length=length), True)
     else:
         _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-            loc.file_name.unsafe_ptr(), loc.line, loc.col, message
+            loc.file_name().unsafe_ptr(),
+            loc.line(),
+            loc.column(),
+            message,
         )
 
     comptime if ASSERT_MODE != "warn":

@@ -15,5 +15,5 @@ from std.os import abort
 
 
 def main():
-    # CHECK: hello world
+    # CHECK: ABORT: {{.*}}/test_trap.mojo:19:10: hello world
     abort("hello world")

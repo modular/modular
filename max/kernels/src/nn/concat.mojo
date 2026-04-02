@@ -19,7 +19,7 @@ from std.sys.info import simd_width_of, size_of
 
 from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
-    _get_start_indices_of_nth_subvolume_uint,
+    _get_start_indices_of_nth_subvolume,
     elementwise,
     sync_parallelize,
 )
@@ -777,8 +777,8 @@ def _concat_inner_most_single_dim[
     if idx >= UInt(output.num_elements()):
         return
 
-    var index = _get_start_indices_of_nth_subvolume_uint[1](
-        idx, coord_to_index_list(output.layout.shape_coord())
+    var index = _get_start_indices_of_nth_subvolume[1](
+        Int(idx), coord_to_index_list(output.layout.shape_coord())
     )
     var in_coord = Coord(index)
 
@@ -1110,8 +1110,8 @@ def _fused_concat_inner_most_single_dim[
     if idx >= UInt(product(input_shapes[0], rank)):
         return
 
-    var index = _get_start_indices_of_nth_subvolume_uint[1](
-        idx, coord_to_index_list(output.layout.shape_coord())
+    var index = _get_start_indices_of_nth_subvolume[1](
+        Int(idx), coord_to_index_list(output.layout.shape_coord())
     )
 
     comptime for i in range(num_inputs):

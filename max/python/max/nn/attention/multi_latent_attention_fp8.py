@@ -39,7 +39,7 @@ from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
-from ..quant_config import QuantConfig, nvfp4_packed_k
+from ..quant_config import QuantConfig, fp4_packed_k
 from ..quant_ops import quantized_matmul
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
@@ -253,7 +253,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
         o_proj_quant_config = quant_config
-        o_proj_in_dim = nvfp4_packed_k(
+        o_proj_in_dim = fp4_packed_k(
             self.n_heads * self.v_head_dim, quant_config
         )
         self.o_proj = linear_cls(

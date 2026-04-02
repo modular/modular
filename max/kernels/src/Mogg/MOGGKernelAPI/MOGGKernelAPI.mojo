@@ -52,8 +52,8 @@ from std.algorithm import mean
 from std.algorithm import min as reduce_min
 from std.algorithm import elementwise, product, sum
 from std.algorithm.reduction import _reduce_generator
-from buffer.dimlist import Dim, DimList
 from std.builtin.simd import _pow
+from std.builtin.variadics import _ReduceVariadicAndIdxToVariadic
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 
@@ -68,6 +68,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    ComptimeInt,
     Coord,
     CoordLike,
     Idx,
@@ -81,18 +82,19 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.coord import DynamicCoord
+from layout.coord import DynamicCoord, _IntTupleToCoordLike
 from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.fp8_quantization import (
+    batched_quantize_dynamic_scaled_fp8,
     convert_e4m3fn_to_e4m3fnuz,
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
-    batched_quantize_dynamic_scaled_fp8,
+    quantize_tensor_dynamic_scaled_fp8,
 )
 from linalg.fp4_quantization import (
     block_scaled_matmul,
@@ -184,6 +186,7 @@ from nn.kv_cache import (
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
     rms_norm_kv_cache_ragged_paged,
+    rms_norm_value_cache_ragged_paged,
 )
 from nn.rope_split_store import rope_split_store_paged_ragged
 from nn.kv_cache_ragged import (
@@ -1819,8 +1822,8 @@ struct StaticBroadcastTo:
     def get_view_strides_list[
         out_rank: Int,
         in_rank: Int,
-        input_shape: DimList,
-        input_strides: DimList,
+        input_shape: IntTuple,
+        input_strides: IntTuple,
     ]() -> IndexList[out_rank]:
         var new_strides = IndexList[out_rank]()
         comptime delta = out_rank - in_rank
@@ -1829,28 +1832,13 @@ struct StaticBroadcastTo:
             comptime if i < delta:
                 new_strides[i] = 0
             else:
-                if input_shape.at[i - delta]().is_dynamic():
+                if Int(input_shape[i - delta]) == UNKNOWN_VALUE:
                     new_strides[i] = -1
-                elif input_shape.get[i - delta]() <= 1:
+                elif Int(input_shape[i - delta]) <= 1:
                     new_strides[i] = 0
                 else:
-                    new_strides[i] = input_strides.get[i - delta]()
+                    new_strides[i] = Int(input_strides[i - delta])
         return new_strides
-
-    @staticmethod
-    def get_view_strides[
-        out_rank: Int,
-        in_rank: Int,
-        input_shape: DimList,
-        input_strides: DimList,
-    ]() -> DimList[
-        *DimList.from_index_list[
-            Self.get_view_strides_list[
-                out_rank, in_rank, input_shape, input_strides
-            ]()
-        ]().values
-    ]:
-        return {}
 
     @staticmethod
     def update_input_view[
@@ -1858,16 +1846,19 @@ struct StaticBroadcastTo:
         in_rank: Int,
         out_rank: Int,
         //,
-        output_static_shape: DimList,
+        output_static_shape: IntTuple,
     ](
         x: InputTensor[dtype=dtype, rank=in_rank, ...],
         output_shape: IndexList[out_rank],
         out result: InputTensor[
-            static_spec=x.static_spec.with_layout[
+            static_spec=x.static_spec.with_int_tuple_layout[
                 out_rank,
                 output_static_shape,
-                Self.get_view_strides[
-                    out_rank, x.rank, x._static_shape, x._static_strides
+                Self.get_view_strides_list[
+                    out_rank,
+                    x.rank,
+                    x._static_shape_tuple,
+                    x._static_strides_tuple,
                 ](),
             ]()
         ],
@@ -1892,7 +1883,9 @@ struct StaticBroadcastTo:
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
-        var x_view = Self.update_input_view[z._static_shape](x, output_shape)
+        var x_view = Self.update_input_view[z._static_shape_tuple](
+            x, output_shape
+        )
 
         view_copy_impl[
             _trace_name=_trace_name,
@@ -1905,25 +1898,17 @@ struct StaticBroadcastTo:
 @compiler.view_kernel
 struct StaticReshape:
     @staticmethod
-    def get_view_strides[
-        out_shape: DimList
-    ]() -> DimList[*out_shape.get_row_major_strides().values]:
-        return {}
-
-    @staticmethod
     def update_input_view[
         dtype: DType,
         output_rank: Int,
         //,
-        output_static_shape: DimList,
+        output_static_shape: IntTuple,
     ](
         input: InputTensor[dtype=dtype, ...],
         shape: IndexList[output_rank],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout[
-                output_rank,
-                output_static_shape,
-                Self.get_view_strides[output_static_shape](),
+            static_spec=input.static_spec.with_row_major_int_tuple_layout[
+                output_rank, output_static_shape
             ]()
         ],
     ):
@@ -1954,7 +1939,7 @@ struct StaticReshape:
         shape: IndexList[output_rank],
         ctx: DeviceContextPtr,
     ) raises:
-        var view_tensor = Self.update_input_view[output._static_shape](
+        var view_tensor = Self.update_input_view[output._static_shape_tuple](
             input, shape
         )
 
@@ -1986,11 +1971,36 @@ struct Reshape:
         )
 
 
-comptime _transpose_tabulate[
-    permutations: DimList, input_strides: DimList, idx: Int
-]: Dim = Dim() if permutations.at[idx]().is_dynamic() else input_strides.at[
-    permutations.get[idx]()
-]()
+# Type-level transpose stride computation.  Uses _ReduceVariadicAndIdxToVariadic
+# (MLIR attribute evaluation) to permute input stride CoordLike types according
+# to a permutation IntTuple.  This avoids the interpreter heap limit that
+# prevents direct IntTuple element access in comptime-for loops.
+comptime _TransposeStrideMapper[
+    permutations: IntTuple,
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[T=CoordLike, RuntimeInt[]] if Int(permutations[idx])
+    == UNKNOWN_VALUE else Variadic.types[
+        T=CoordLike, input_stride_types[Int(permutations[idx])]
+    ],
+]
+
+comptime _TransposeStrideTypes[
+    permutations: IntTuple,
+    rank: Int,
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=Variadic.types[
+        T=CoordLike,
+        *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
+    ],
+    Reducer=_TransposeStrideMapper[permutations, input_stride_types, ...],
+]
 
 
 @compiler.register("mo.transpose")
@@ -2014,32 +2024,28 @@ struct Transpose:
         return {new_shape, new_stride}
 
     @staticmethod
-    def get_view_strides[
-        permutations: DimList, rank: Int, input_strides: DimList
-    ]() -> DimList[
-        *Variadic.tabulate[
-            rank, _transpose_tabulate[permutations, input_strides, _]
-        ]
-    ]:
-        return {}
-
-    @staticmethod
     def update_input_view[
         dtype: DType,
         rank: Int,
         //,
-        output_static_shape: DimList,
-        static_permutations: DimList,
+        output_static_shape: IntTuple,
+        static_permutations: IntTuple,
     ](
         input: InputTensor[dtype=dtype, rank=rank, ...],
         permutations: InputTensor[rank=1, ...],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout[
+            static_spec=input.static_spec.with_tile_layout[
                 rank,
-                output_static_shape,
-                Self.get_view_strides[
-                    static_permutations, rank, input._static_strides
-                ](),
+                TileLayout[
+                    shape_types=_IntTupleToCoordLike[
+                        DType.int, output_static_shape
+                    ],
+                    stride_types=_TransposeStrideTypes[
+                        static_permutations,
+                        rank,
+                        input.static_spec.static_layout._stride_types,
+                    ],
+                ],
             ]()
         ],
     ):
@@ -2050,7 +2056,7 @@ struct Transpose:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
-        static_permutations: DimList,
+        static_permutations: IntTuple,
         dtype: DType,
         rank: Int,
     ](
@@ -2060,7 +2066,7 @@ struct Transpose:
         ctx: DeviceContextPtr,
     ) raises:
         var view = Self.update_input_view[
-            output._static_shape, static_permutations
+            output._static_shape_tuple, static_permutations
         ](input, permutations)
 
         view_copy_impl[
@@ -2102,50 +2108,84 @@ struct Transpose:
         return Self.shape_impl(input, permutations)
 
 
-comptime _slice_stride_at[
-    input_strides: DimList, steps: DimList, idx: Int
-]: Dim = input_strides.at[idx]() * steps.at[idx]()
+# Type-level slice stride computation: multiplies input stride types by step
+# types element-wise.  Uses _ReduceVariadicAndIdxToVariadic (MLIR attribute
+# evaluation) to avoid the interpreter heap limit.
+comptime _SliceStrideMapper[
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    step_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[
+            input_stride_types[idx].static_value * step_types[idx].static_value
+        ],
+    ] if input_stride_types[idx].is_static_value
+    and step_types[idx].is_static_value else Variadic.types[
+        T=CoordLike, RuntimeInt[]
+    ],
+]
+
+comptime _SliceStrideTypes[
+    rank: Int,
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    step_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=Variadic.types[
+        T=CoordLike,
+        *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
+    ],
+    Reducer=_SliceStrideMapper[input_stride_types, step_types, ...],
+]
 
 
 @compiler.register("mo.slice")
 @compiler.view_kernel
 struct Slice:
     @staticmethod
-    def get_view_strides[
-        rank: Int, input_strides: DimList, steps: DimList
-    ]() -> DimList[
-        *Variadic.tabulate[rank, _slice_stride_at[input_strides, steps, _]]
-    ]:
-        return {}
-
-    @staticmethod
     def get_view_alignment[
         rank: Int,
         dtype: DType,
-        input_strides: DimList,
-        static_starts: DimList,
-        static_steps: DimList,
+        input_strides: IntTuple,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
     ](input_alignment: Int) -> Int:
+        # Convert IntTuples to CoordLike types at the MLIR level, then
+        # use type-level access (no interpreter heap allocation).
+        comptime stride_types = _IntTupleToCoordLike[DType.int, input_strides]
+        comptime start_types = _IntTupleToCoordLike[DType.int, static_starts]
+        comptime step_types = _IntTupleToCoordLike[DType.int, static_steps]
+
         var alignment = input_alignment
         comptime for i in range(rank):
-            comptime step = static_steps.at[i]()
             # Bail if step is unknown or negative.
-            comptime if not step.has_value() or step.get() < 0:
+            comptime if not step_types[i].is_static_value or step_types[
+                i
+            ].static_value < 0:
                 return 1
             comptime if i == rank - 1:
                 # Slicing the innermost dimension: need the exact offset.
-                comptime start = static_starts.at[i]()
-                comptime if not start.has_value():
+                comptime if not start_types[i].is_static_value:
                     return 1
                 alignment = gcd(
-                    alignment, start.get() * step.get() * align_of[dtype]()
+                    alignment,
+                    start_types[i].static_value
+                    * step_types[i].static_value
+                    * align_of[dtype](),
                 )
             else:
                 # Non-innermost: alignment is bounded by the innermost stride.
-                comptime stride = input_strides.at[rank - 1]()
-                comptime if not stride.has_value():
+                comptime if not stride_types[rank - 1].is_static_value:
                     return 1
-                alignment = gcd(alignment, stride.get() * align_of[dtype]())
+                alignment = gcd(
+                    alignment,
+                    stride_types[rank - 1].static_value * align_of[dtype](),
+                )
         return alignment
 
     @staticmethod
@@ -2153,26 +2193,32 @@ struct Slice:
         dtype: DType,
         rank: Int,
         //,
-        output_static_shape: DimList,
-        static_starts: DimList,
-        static_steps: DimList,
+        output_static_shape: IntTuple,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
     ](
         input: InputTensor[dtype=dtype, rank=rank, ...],
         starts: InputTensor[rank=1, ...],
         stops: InputTensor[rank=1, ...],
         steps: InputTensor[rank=1, ...],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout_and_alignment[
+            static_spec=input.static_spec.with_tile_layout_and_alignment[
                 rank,
-                output_static_shape,
-                Self.get_view_strides[
-                    rank, input._static_strides, static_steps
-                ](),
+                TileLayout[
+                    shape_types=_IntTupleToCoordLike[
+                        DType.int, output_static_shape
+                    ],
+                    stride_types=_SliceStrideTypes[
+                        rank,
+                        input.static_spec.static_layout._stride_types,
+                        _IntTupleToCoordLike[DType.int, static_steps],
+                    ],
+                ],
             ](
                 Self.get_view_alignment[
                     rank,
                     dtype,
-                    input._static_strides,
+                    input._static_strides_tuple,
                     static_starts,
                     static_steps,
                 ](input.alignment),
@@ -2200,8 +2246,8 @@ struct Slice:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
-        static_starts: DimList,
-        static_steps: DimList,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
         dtype: DType,
         rank: Int,
         use_blocking_impl: Bool = False,
@@ -2214,7 +2260,7 @@ struct Slice:
         ctx: DeviceContextPtr,
     ) raises:
         var view_tensor = Self.update_input_view[
-            output._static_shape, static_starts, static_steps
+            output._static_shape_tuple, static_starts, static_steps
         ](input, starts, stops, steps)
 
         view_copy_impl[
@@ -4622,9 +4668,9 @@ struct Conv:
         input_layout: StaticString,
         filter_layout: StaticString,
         lambdas_have_fusion: Bool,
-        static_strides: DimList,
-        static_dilations: DimList,
-        static_padding: DimList,
+        static_strides: IntTuple,
+        static_dilations: IntTuple,
+        static_padding: IntTuple,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -4689,18 +4735,18 @@ struct Conv:
             pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
             pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
 
-        comptime input_shape = input._static_shape.at[
-            input.rank - 1
-        ]()  # input C, NHWC
-        comptime filter_shape = filter._static_shape.at[
-            filter.rank - 2
-        ]()  # filter C, RSCF or FRSCf
+        comptime input_shape_val = Int(
+            input._static_shape_tuple[input.rank - 1]
+        )  # input C, NHWC
+        comptime filter_shape_val = Int(
+            filter._static_shape_tuple[filter.rank - 2]
+        )  # filter C, RSCF or FRSCf
         comptime conv_attr = ConvInfoStatic[input.rank - 2](
-            IntTuple(static_padding),
-            IntTuple(static_strides),
-            IntTuple(static_dilations),
-            input_shape.get() if input_shape else UNKNOWN_VALUE,
-            filter_shape.get() if filter_shape else UNKNOWN_VALUE,
+            static_padding,
+            static_strides,
+            static_dilations,
+            input_shape_val,
+            filter_shape_val,
         )
 
         comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
@@ -5201,10 +5247,10 @@ struct MLAIndexerRaggedFloat8Paged:
             ctx: Device context for GPU execution.
         """
         # Extract cache parameters from block shapes
-        comptime page_size = k_blocks.static_spec.shape.get[3]()
-        comptime head_dim = k_blocks.static_spec.shape.get[5]()
-        comptime k_num_heads = k_blocks.static_spec.shape.get[4]()
-        comptime is_mla = k_blocks.static_spec.shape.get[1]() == 1
+        comptime page_size = Int(k_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(k_blocks.static_spec.shape_tuple[5])
+        comptime k_num_heads = Int(k_blocks.static_spec.shape_tuple[4])
+        comptime is_mla = Int(k_blocks.static_spec.shape_tuple[1]) == 1
         comptime kv_params = KVCacheStaticParams(
             UInt(k_num_heads), UInt(head_dim), is_mla
         )
@@ -7359,7 +7405,7 @@ struct Struct_mla_decode_ragged_paged:
         context: DeviceContextPtr,
     ) raises:
         comptime assert (
-            kv_blocks.static_spec.shape.get[1]() == 1
+            Int(kv_blocks.static_spec.shape_tuple[1]) == 1
         ), "Only support only_k=True for MLA decompress"
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
@@ -7411,12 +7457,12 @@ struct Struct_mla_decode_ragged_paged_scaled:
         context: DeviceContextPtr,
     ) raises:
         comptime assert (
-            kv_blocks.static_spec.shape.get[1]() == 1
+            Int(kv_blocks.static_spec.shape_tuple[1]) == 1
         ), "Only support only_k=True for MLA decompress"
 
-        comptime page_size = kv_blocks.static_spec.shape.get[3]()
-        comptime head_dim = kv_blocks.static_spec.shape.get[5]()
-        comptime kv_num_heads = kv_blocks.static_spec.shape.get[4]()
+        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime kv_num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
         comptime kv_params = KVCacheStaticParams(
             UInt(kv_num_heads), UInt(head_dim), True
         )
@@ -7552,7 +7598,7 @@ struct Struct_mla_prefill_ragged_plan:
         buffer_tok_size: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        comptime assert kv_blocks.static_spec.shape.get[1]() == 1, (
+        comptime assert Int(kv_blocks.static_spec.shape_tuple[1]) == 1, (
             "Expected is_mla=True for MLA decompress, but found both k and"
             " v dimensions."
         )
@@ -8919,10 +8965,10 @@ struct Struct_kv_cache_store_k_scales_paged:
         layer_idx: UInt32,
         context: DeviceContextPtr,
     ) capturing raises:
-        comptime page_size = kv_blocks.static_spec.shape.get[3]()
-        comptime head_dim = kv_blocks.static_spec.shape.get[5]()
-        comptime num_heads = kv_blocks.static_spec.shape.get[4]()
-        comptime is_mla = kv_blocks.static_spec.shape.get[1]() == 1
+        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
         comptime kv_params = KVCacheStaticParams(
             UInt(num_heads), UInt(head_dim), is_mla
         )
@@ -9146,12 +9192,12 @@ struct PackConvFilterShape:
     def shape[
         rank: Int,
         filter_type: DType,
-        input_shape: DimList,
-        filter_shape: DimList,
-        output_shape: DimList,
-        strides: DimList,
-        dilations: DimList,
-        paddings: DimList,
+        input_shape: IntTuple,
+        filter_shape: IntTuple,
+        output_shape: IntTuple,
+        strides: IntTuple,
+        dilations: IntTuple,
+        paddings: IntTuple,
         num_groups: Int,
     ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
         rank + 1
@@ -9180,12 +9226,12 @@ struct PackConvFilterShape:
         return rebind[IndexList[rank + 1]](
             pack_filter_shape_conv[
                 filter_type,
-                IntTuple(input_shape),
-                IntTuple(filter_shape),
-                IntTuple(output_shape),
-                IntTuple(strides),
-                IntTuple(dilations),
-                IntTuple(paddings),
+                input_shape,
+                filter_shape,
+                output_shape,
+                strides,
+                dilations,
+                paddings,
                 num_groups,
             ](filter_buf.to_tile_tensor[DType.int64]())
         )
@@ -9272,11 +9318,11 @@ struct LayoutTransformMatmulKN2KNkni:
     @staticmethod
     def execute[
         a_type: DType,
-        a_shape: DimList,
+        a_shape: IntTuple,
         b_type: DType,
-        b_shape: DimList,
+        b_shape: IntTuple,
         c_type: DType,
-        c_shape: DimList,
+        c_shape: IntTuple,
     ](
         output_buffer: OutputTensor[dtype=b_type, rank=2, ...],
         b_input: InputTensor[dtype=b_type, rank=2, ...],
@@ -9284,8 +9330,8 @@ struct LayoutTransformMatmulKN2KNkni:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
 
-        comptime if a_shape.at[0]().has_value():
-            kernel_type_m = a_shape.at[0]().get()
+        comptime if a_shape[0] != UNKNOWN_VALUE:
+            kernel_type_m = Int(a_shape[0])
         _pack_b_ndbuffer_impl[
             a_type=a_type,
             c_type=c_type,
@@ -9303,11 +9349,11 @@ struct LayoutTransformMatmulNK2KNkni:
     @staticmethod
     def execute[
         a_type: DType,
-        a_shape: DimList,
+        a_shape: IntTuple,
         b_type: DType,
-        b_shape: DimList,
+        b_shape: IntTuple,
         c_type: DType,
-        c_shape: DimList,
+        c_shape: IntTuple,
     ](
         output_buffer: OutputTensor[dtype=b_type, rank=2, ...],
         b_input: InputTensor[dtype=b_type, rank=2, ...],
@@ -9315,8 +9361,8 @@ struct LayoutTransformMatmulNK2KNkni:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
 
-        comptime if a_shape.at[0]().has_value():
-            kernel_type_m = a_shape.at[0]().get()
+        comptime if a_shape[0] != UNKNOWN_VALUE:
+            kernel_type_m = Int(a_shape[0])
         _pack_b_ndbuffer_impl[
             a_type=a_type,
             c_type=c_type,
@@ -9339,16 +9385,16 @@ struct PackMatmulBShapeFunc:
     @staticmethod
     def shape[
         a_type: DType,
-        a_shape: DimList,
+        a_shape: IntTuple,
         b_type: DType,
-        b_shape: DimList,
+        b_shape: IntTuple,
         c_type: DType,
-        c_shape: DimList,
+        c_shape: IntTuple,
         transpose_in_0: Bool,
     ](b_input: InputTensor[dtype=b_type, rank=2, ...]) -> IndexList[2]:
         var kernel_type_m = 0
-        comptime if a_shape.at[0]().has_value():
-            kernel_type_m = a_shape.at[0]().get()
+        comptime if a_shape[0] != UNKNOWN_VALUE:
+            kernel_type_m = Int(a_shape[0])
         return pack_matmul_b_shape_func[
             a_type,
             c_type,
@@ -9395,6 +9441,52 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             max_lengths,
         )
         rms_norm_kv_cache_ragged_paged[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
+        ](
+            kv_collection,
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            layer_idx,
+            total_seq_len,
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.rms_norm_value_cache.ragged.paged")
+struct Struct_rms_norm_value_cache_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        multiply_before_cast: Bool,
+        per_head_norm: Bool,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype],
+        layer_idx: UInt32,
+        total_seq_len: UInt32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        rms_norm_value_cache_ragged_paged[
             target=target,
             multiply_before_cast=multiply_before_cast,
             per_head_norm=per_head_norm,
@@ -10957,6 +11049,37 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         )
 
 
+@compiler.register("mo.quantize_tensor_dynamic_scaled_float8")
+struct QuantizeTensorDynamicScaledFloat8:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_type: DType,
+        output_type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        scale: OutputTensor[dtype=DType.float32, rank=1, ...],
+        input: InputTensor[dtype=input_type, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert output_type in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
+        var cuda_ctx = ctx.get_device_context()
+        quantize_tensor_dynamic_scaled_fp8[
+            output_type,
+            input_type,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            scale.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
 @compiler.register("mo.quantize_dynamic_scaled_float8")
 struct QuantizeDynamicScaledFloat8:
     @parameter
@@ -10993,7 +11116,7 @@ struct QuantizeDynamicScaledFloat8:
             scales_dtype=scales_type,
             input_fn,
             group_size_or_per_token,
-            num_cols=input.static_spec.shape.get[1](),
+            num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),
@@ -11035,7 +11158,7 @@ struct BatchedQuantizeDynamicScaledFloat8:
         batched_quantize_dynamic_scaled_fp8[
             input_fn=input_fn,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols=input.static_spec.shape.get[2](),
+            num_cols=Int(input.static_spec.shape_tuple[2]),
         ](
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),

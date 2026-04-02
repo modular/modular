@@ -49,8 +49,8 @@ def test_i8_to_i32() raises:
     var av16u = (a + 128 + 64).bitcast[Int32]().load[width=16]()
     var av16s = (asat + 128 + 64).bitcast[Int32]().load[width=16]()
     var bv16 = b.bitcast[Int32]().load[width=16]()
-    var cv16u: SIMD[DType.int32, 16] = 0
-    var cv16s: SIMD[DType.int32, 16] = 0
+    var cv16u: SIMD[DType.int32, 16]
+    var cv16s: SIMD[DType.int32, 16]
     if CompilationTarget.has_avx512f():
         cv16u = dot_i8_to_i32_AVX2[16](c.load[width=16](), av16u, bv16)
         cv16s = dot_i8_to_i32_saturated_AVX2[16](

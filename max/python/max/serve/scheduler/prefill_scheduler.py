@@ -113,6 +113,7 @@ class PrefillScheduler(Scheduler):
             pipeline=pipeline,
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.PREFILL_FIRST,
+            extra_kv_caches=getattr(pipeline, "extra_kv_managers", []),
         )
         self.scheduler_logger = SchedulerLogger()
         self.dispatcher = dispatcher

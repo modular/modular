@@ -364,6 +364,61 @@ def test_skip_first_and_last_n_requests() -> None:
     assert math.isclose(metrics.ttft_ms.mean, 100.0, rel_tol=1e-3)
 
 
+def test_skip_last_with_cancelled_requests() -> None:
+    """skip_last counts from end of completed requests, not the output array."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="first",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.2,
+            prompt_len=10,
+            generated_text="second",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.5,
+            prompt_len=10,
+            generated_text="third",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        # Cancelled requests pad the output array
+        RequestFuncOutput(cancelled=True),
+        RequestFuncOutput(cancelled=True),
+        RequestFuncOutput(cancelled=True),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"first": 2, "second": 2, "third": 2})
+
+    metrics, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics={},
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        collect_gpu_stats=False,
+    )
+
+    assert metrics.completed == 3
+    # Only the second request should be measured (skip first 1, last 1)
+    assert math.isclose(metrics.ttft_ms.mean, 200.0, rel_tol=1e-3)
+
+
 def test_skip_all_requests_warns() -> None:
     """Skipping all requests emits a warning."""
     outputs = [

@@ -13,7 +13,7 @@
 """Inverse real FFT kernel using cuFFT."""
 
 
-from std.ffi import external_call
+from std.ffi import external_call, _get_global_or_null
 
 from _cufft.cufft import (
     cufftCreate,
@@ -34,15 +34,6 @@ from std.gpu.host._nvidia_cuda import CUDA
 from layout import TileTensor, coord_to_index_list
 
 
-# This should eventually be moved to ffi.mojo with a more general global cache method
-# cache key is a string and cache value is a pointer.
-@always_inline
-def global_cache_lookup(key: String) -> OpaquePointer[MutExternalOrigin]:
-    return external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
-    ](key.unsafe_ptr(), key.byte_length())
-
-
 @always_inline
 def global_cache_insert(key: String, value: OpaquePointer):
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -59,9 +50,9 @@ def _get_fft_workarea(
         "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
     )
 
-    if lookup := global_cache_lookup(fft_buffer_key):
+    if lookup := _get_global_or_null(fft_buffer_key):
         # we found the allocated device buffer
-        return lookup
+        return lookup.unsafe_value()
 
     # manually allocate the memory on the device, and cache the pointer
     var work_space = ctx.enqueue_create_buffer[DType.uint8](buffer_size)
@@ -91,9 +82,9 @@ def _get_fft_plan[
         "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
     )
 
-    if lookup := global_cache_lookup(cached_plan_key):
+    if lookup := _get_global_or_null(cached_plan_key):
         # We found the plan in the cache, so just return it
-        return cufftHandle(Int(lookup))
+        return cufftHandle(Int(lookup.unsafe_value()))
 
     comptime if not create_if_not_found:
         # a valid cufft handle is always non-zero

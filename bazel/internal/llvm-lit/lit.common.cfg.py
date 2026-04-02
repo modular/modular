@@ -73,95 +73,41 @@ llvm_config.with_environment(
     append_path=True,
 )
 
-extra_mojo_args = []
+#---------------------------------------
+# Mojo tools
+#---------------------------------------
 
 mojo_exe = "mojo"
 if shutil.which("mojo-compiler-only"):
     mojo_exe = "mojo-compiler-only"
 
+def mojo_subst(name, args):
+    return ToolSubst(name, mojo_exe, extra_args=args)
+
+sanitize_args = []
 if config.llvm_use_sanitizer and config.llvm_use_sanitizer != "undefined":
-    extra_mojo_args.extend(["--sanitize", config.llvm_use_sanitizer.lower()])
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-no-debug-no-assert",
-            mojo_exe,
-            extra_args=extra_mojo_args,
-        )
-    ]
-)
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-build-no-debug-no-assert",
-            mojo_exe,
-            extra_args=["build"] + extra_mojo_args,
-        )
-    ]
-)
+    sanitize_args = ["--sanitize", config.llvm_use_sanitizer.lower()]
 
 # The rest of the mojo commands just inherit the assert options. In this case
 # run with assertions enabled unless one explicitly sets
 # MOJO_ENABLE_ASSERTIONS_IN_TESTS=0 environment variable.
-if bool(int(os.environ.get("MOJO_ENABLE_ASSERTIONS_IN_TESTS", 1))):
-    extra_mojo_args.extend(["-D", "ASSERT=all"])
+assert_args = ["-D", "ASSERT=all"] if bool(int(os.environ.get("MOJO_ENABLE_ASSERTIONS_IN_TESTS", 1))) else []
 
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-no-debug",
-            mojo_exe,
-            extra_args=extra_mojo_args,
-        )
-    ]
-)
+asan_args = ["--sanitize", "address"] if "--sanitize" not in set(sanitize_args) else []
+debug_full_args = ["--debug-level", "full"]
 
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-build-no-debug",
-            mojo_exe,
-            extra_args=["build"] + extra_mojo_args,
-        )
-    ]
-)
+llvm_config.add_tool_substitutions([
+    mojo_subst("%mojo-no-debug-no-assert",       [         "-Werror"] + sanitize_args                                            ),
+    mojo_subst("%mojo-build-no-debug-no-assert", ["build", "-Werror"] + sanitize_args                                            ),
+    mojo_subst("%mojo-no-debug",                 [         "-Werror"] + sanitize_args + assert_args                              ),
+    mojo_subst("%mojo-build-no-debug",           ["build", "-Werror"] + sanitize_args + assert_args                              ),
+    mojo_subst("%mojo",                          [         "-Werror"] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build",                    ["build", "-Werror"] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build-no-werror",          ["build"           ] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build-asan",               ["build", "-Werror"] + sanitize_args + assert_args + debug_full_args + asan_args),
+])
 
-extra_mojo_args = ["--debug-level", "full"] + extra_mojo_args
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo",
-            mojo_exe,
-            extra_args=extra_mojo_args,
-        )
-    ]
-)
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-build",
-            mojo_exe,
-            extra_args=["build"] + extra_mojo_args,
-        )
-    ]
-)
-
-if("--sanitize" not in set(extra_mojo_args)):
-    extra_mojo_args.extend(["--sanitize", "address"])
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-build-asan",
-            mojo_exe,
-            extra_args=["build"] + extra_mojo_args
-        )
-    ]
-)
+#---------------------------------------
 
 # For %mpirun-gpu-per-process, we dynamically detect the number of GPUs at runtime
 mpirun_gpu_per_process = (

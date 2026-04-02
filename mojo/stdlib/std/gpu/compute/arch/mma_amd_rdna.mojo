@@ -21,7 +21,7 @@ Reference: https://gpuopen.com/learn/wmma_on_rdna3/
 from std.sys import llvm_intrinsic
 from std.sys.info import _is_amd_rdna3, _is_amd_rdna4
 from std.memory import bitcast
-from std.gpu import lane_id_uint as lane_id
+from std.gpu import lane_id
 
 # Import helper functions from parent module
 from ..mma import _has_type, _has_shape, _unsupported_mma_op
@@ -48,7 +48,7 @@ def _load_matrix_a_amd_rdna[
     var a = SIMD[DType.float16, 16]()
 
     comptime for i in range(16):
-        var a_idx = ldm * (tile_row + Int(thread_x)) + tile_col + i
+        var a_idx = ldm * (tile_row + thread_x) + tile_col + i
         a[i] = a_ptr[a_idx]
 
     return a
@@ -70,7 +70,7 @@ def _load_matrix_a_amd_rdna[
     var a = SIMD[DType.bfloat16, 16]()
 
     comptime for i in range(16):
-        var a_idx = ldm * (tile_row + Int(thread_x)) + tile_col + i
+        var a_idx = ldm * (tile_row + thread_x) + tile_col + i
         a[i] = a_ptr[a_idx]
 
     return a
@@ -92,7 +92,7 @@ def _load_matrix_b_amd_rdna[
     var b = SIMD[DType.float16, 16]()
 
     comptime for i in range(16):
-        var b_idx = ldm * (tile_row + i) + tile_col + Int(thread_y)
+        var b_idx = ldm * (tile_row + i) + tile_col + thread_y
         b[i] = b_ptr[b_idx]
 
     return b
@@ -114,7 +114,7 @@ def _load_matrix_b_amd_rdna[
     var b = SIMD[DType.bfloat16, 16]()
 
     comptime for i in range(16):
-        var b_idx = ldm * (tile_row + i) + tile_col + Int(thread_y)
+        var b_idx = ldm * (tile_row + i) + tile_col + thread_y
         b[i] = b_ptr[b_idx]
 
     return b

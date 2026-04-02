@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    block_dim,
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.compute.mma import mma
 from std.gpu.sync import barrier
 from layout import *

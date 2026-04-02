@@ -31,7 +31,12 @@ from .coord import (
     coord,
     coord_to_index_list,
 )
-from .int_tuple import UNKNOWN_VALUE, IntTuple
+from .int_tuple import (
+    UNKNOWN_VALUE,
+    IntTuple,
+    create_unknown_int_tuple,
+    to_index_list,
+)
 from .layout import Layout, LayoutList, composition, print_layout
 from .layout_tensor import LayoutTensor, stack_allocation_like
 from .tile_layout import (

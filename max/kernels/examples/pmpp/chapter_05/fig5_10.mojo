@@ -15,11 +15,7 @@
 # Demonstrates how to use shared memory to optimize matrix multiplication
 
 from std.math import ceildiv
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -56,10 +52,10 @@ def matrix_mul_tiled_kernel(
     ]()
 
     # Get global and shared indices
-    var g_row = Int(block_idx.y) * TILE_WIDTH + Int(thread_idx.y)
-    var g_col = Int(block_idx.x) * TILE_WIDTH + Int(thread_idx.x)
-    var s_row = Int(thread_idx.y)
-    var s_col = Int(thread_idx.x)
+    var g_row = block_idx.y * TILE_WIDTH + thread_idx.y
+    var g_col = block_idx.x * TILE_WIDTH + thread_idx.x
+    var s_row = thread_idx.y
+    var s_col = thread_idx.x
 
     var tmp = Float32(0)
 

@@ -26,6 +26,7 @@ import requests
 from prometheus_client.parser import text_string_to_metric_families
 
 from .config import Backend
+from .metrics import SpecDecodeMetrics, parse_spec_decode_metrics
 
 if TYPE_CHECKING:
     from prometheus_client.metrics_core import Metric
@@ -148,7 +149,7 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
 
     # For MAX backends, use dedicated metrics port from SDK config
     # For other backends, use the same port as the base URL
-    if backend in (Backend.modular, Backend.modular_chat):
+    if backend in ("modular", "modular-chat"):
         metrics_port = _MAX_METRICS_PORT
     else:
         metrics_port = parsed_url.port or 8000
@@ -371,7 +372,7 @@ def collect_server_metrics(
     and optionally computes the delta from a baseline measurement.
 
     Args:
-        backend: Backend type (e.g., Backend.modular)
+        backend: Backend type (e.g., "modular")
         base_url: Server base URL (e.g., 'http://localhost:8000')
         baseline: Optional baseline metrics to compute delta from. If provided,
             returns the delta between baseline and current metrics. If None,
@@ -385,13 +386,13 @@ def collect_server_metrics(
 
     Examples:
         >>> # Capture baseline before benchmark
-        >>> baseline = collect_server_metrics(Backend.modular, "http://localhost:8000")
+        >>> baseline = collect_server_metrics("modular", "http://localhost:8000")
         >>>
         >>> # ... run benchmark ...
         >>>
         >>> # Capture final metrics and compute delta
         >>> delta = collect_server_metrics(
-        ...     Backend.modular, "http://localhost:8000", baseline
+        ...     "modular", "http://localhost:8000", baseline
         ... )
     """
     final = fetch_and_parse_metrics(backend=backend, base_url=base_url)
@@ -399,6 +400,26 @@ def collect_server_metrics(
     if baseline is not None:
         return compute_metrics_delta(baseline=baseline, final=final)
     return final
+
+
+def fetch_spec_decode_metrics(
+    backend: Backend,
+    base_url: str,
+) -> SpecDecodeMetrics | None:
+    """Fetch speculative decoding metrics from the Prometheus endpoint.
+
+    Returns ``None`` when the backend does not expose speculative decoding
+    metrics or the metrics endpoint cannot be reached.
+
+    Args:
+        backend: Backend type (e.g., ``"vllm"``).
+        base_url: Server base URL (e.g., ``http://localhost:8000``).
+    """
+    try:
+        metrics_text = fetch_metrics(get_metrics_url(backend, base_url))
+    except Exception:
+        return None
+    return parse_spec_decode_metrics(metrics_text)
 
 
 def print_server_metrics(metrics: ParsedMetrics) -> None:

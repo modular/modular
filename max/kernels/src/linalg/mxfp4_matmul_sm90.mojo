@@ -16,13 +16,11 @@ Dequantizes MXFP4 weights to FP8, then uses the SM90 warp-specialized FP8 GEMM.
 Activations (BF16) are cast to FP8 on-the-fly.
 """
 
-from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
-from std.sys.info import _accelerator_arch, simd_width_of
+from std.sys.info import _accelerator_arch
 from layout import Coord, Idx, TileTensor, row_major
-from std.utils.index import Index, IndexList
 
-from .mxfp4_dequant import dequant_mxfp4
+from .mxfp4_dequant import dequant_mxfp4, _cast_bf16_to_fp8
 from .matmul.gpu import _matmul_gpu
 
 
@@ -95,37 +93,3 @@ def mxfp4_matmul_sm90(
     # Keep temp buffers alive through async GEMM enqueue.
     _ = b_fp8_buf^
     _ = a_fp8_buf^
-
-
-def _cast_bf16_to_fp8(
-    ctx: DeviceContext,
-    output: TileTensor,
-    input: TileTensor,
-    num_rows: Int,
-    num_cols: Int,
-) raises:
-    var out_tt = output.as_any_origin()
-    var in_tt = input.as_any_origin()
-    comptime assert out_tt.flat_rank == 2, "output must be rank 2"
-    comptime assert in_tt.flat_rank == 2, "input must be rank 2"
-    comptime assert out_tt.mut, "output must be mutable"
-
-    @always_inline
-    @__copy_capture(out_tt, in_tt)
-    @parameter
-    def cast_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank],):
-        comptime assert rank == 2, "cast_fn only supports rank-2 tensors"
-        var idx = rebind[IndexList[2]](idx_arg)
-        var coord = Coord(idx)
-        comptime assert in_tt.flat_rank >= coord.flat_rank
-        comptime assert out_tt.flat_rank >= coord.flat_rank
-        out_tt.store[width=width](
-            coord,
-            in_tt.load[width=width](coord).cast[out_tt.dtype](),
-        )
-
-    elementwise[cast_fn, simd_width_of[input.dtype](), target="gpu"](
-        Index(num_rows, num_cols), ctx
-    )

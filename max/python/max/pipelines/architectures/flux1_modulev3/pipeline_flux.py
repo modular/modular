@@ -36,7 +36,7 @@ from max.pipelines.lib.interfaces.diffusion_pipeline import (
 from PIL import Image
 from typing_extensions import Self
 
-from ..autoencoders import AutoencoderKLModel
+from ..autoencoders_modulev3 import AutoencoderKLModel
 from ..clip import ClipModel
 from ..t5 import T5Model
 from .model import Flux1TransformerModel

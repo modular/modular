@@ -321,6 +321,9 @@ avg_pool2d = functional(ops.avg_pool2d)
 #: Copies a tensor setting everything outside a central band to zero.
 #: See :func:`max.graph.ops.band_part` for details.
 band_part = functional(ops.band_part)
+#: Returns the k smallest elements along an axis.
+#: See :func:`max.graph.ops.bottom_k` for details.
+bottom_k = functional(ops.bottom_k)
 #: Broadcasts a tensor to a new shape.
 #: See :func:`max.graph.ops.broadcast_to` for details.
 broadcast_to = functional(ops.broadcast_to)
@@ -773,6 +776,9 @@ repeat_interleave = functional(ops.repeat_interleave)
 #: Reshapes a tensor to a new shape.
 #: See :func:`max.graph.ops.reshape` for details.
 reshape = functional(ops.reshape)
+#: Resizes a tensor using linear (bilinear) interpolation.
+#: See :func:`max.graph.ops.resize_linear` for details.
+resize_linear = functional(ops.resize_linear)
 #: Rounds tensor values element-wise.
 #: See :func:`max.graph.ops.round` for details.
 round = functional(ops.round)
@@ -782,9 +788,15 @@ rsqrt = functional(ops.rsqrt)
 #: Scatters values along an axis.
 #: See :func:`max.graph.ops.scatter` for details.
 scatter = functional(ops.scatter)
+#: Scatters values and accumulates duplicates along an axis.
+#: See :func:`max.graph.ops.scatter_add` for details.
+scatter_add = functional(ops.scatter_add)
 #: Scatters values using multi-dimensional indices.
 #: See :func:`max.graph.ops.scatter_nd` for details.
 scatter_nd = functional(ops.scatter_nd)
+#: Scatters values using multi-dimensional indices and accumulates duplicates.
+#: See :func:`max.graph.ops.scatter_nd_add` for details.
+scatter_nd_add = functional(ops.scatter_nd_add)
 #: Applies the sigmoid activation function.
 #: See :func:`max.graph.ops.sigmoid` for details.
 sigmoid = functional(ops.sigmoid)

@@ -28,14 +28,20 @@ from ..layer import Module
 class GroupNorm(Module):
     """Group normalization block.
 
-    Divides channels into groups and computes normalization stats per group.
-    Follows the implementation pattern from PyTorch's group_norm.
+    This layer divides channels into groups and computes normalization
+    statistics per group.
+
+    When called, ``GroupNorm`` accepts a :class:`~max.graph.TensorValue` of shape
+    ``(N, C, *)`` where ``C`` is the number of channels. Then, it returns a
+    normalized :class:`~max.graph.TensorValue` of the same shape.
 
     Args:
-        num_groups: Number of groups to separate the channels into
-        num_channels: Number of input channels
-        eps: Small constant added to denominator for numerical stability
-        affine: If True, apply learnable affine transform parameters
+        num_groups: The number of groups to divide the channels into.
+        num_channels: The number of input channels.
+        eps: A small value added to the denominator for numerical stability.
+        affine: Whether to apply a learnable affine transformation after
+            normalization.
+        device: The target :class:`~max.graph.DeviceRef` for computation.
     """
 
     def __init__(

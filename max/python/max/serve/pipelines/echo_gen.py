@@ -31,6 +31,7 @@ from max.interfaces import (
 )
 from max.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.pipelines.lib import build_eos_tracker_for_request
 
 
 @dataclass
@@ -129,13 +130,16 @@ class EchoPipelineTokenizer(
         token_buffer = TokenBuffer(
             array=encoded_prompt.astype(np.int64, copy=False),
         )
-
         # Create TextContext manually
         context = TextContext(
             request_id=request.request_id,
             max_length=max_length,
             tokens=token_buffer,
-            eos_token_ids={self.eos},  # Set containing the EOS token
+            eos_tracker=await build_eos_tracker_for_request(
+                {self.eos},
+                request,
+                self.encode,
+            ),
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,

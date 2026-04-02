@@ -36,7 +36,7 @@ from std.gpu import (
     thread_idx_uint as thread_idx,
     warp_id_uint as warp_id,
 )
-from std.gpu.host import get_gpu_target
+from std.gpu.host import get_gpu_target, DeviceBuffer
 from std.gpu.intrinsics import Scope, load_acquire, store_release
 from std.gpu.sync import syncwarp
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
@@ -1075,6 +1075,10 @@ struct EPLocalSyncCounters[n_experts: Int](
         self.ptr = ptr.unsafe_origin_cast[
             MutExternalOrigin
         ]().address_space_cast[AddressSpace.GENERIC]()
+
+    @always_inline
+    def __init__(out self, buffer: DeviceBuffer[DType.int32]):
+        self.ptr = buffer.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin]()
 
     def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the

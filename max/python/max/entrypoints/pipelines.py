@@ -214,9 +214,7 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
 @main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
-@click.option(
-    "--task", type=str, default="text_generation", help="The task to run."
-)
+@click.option("--task", type=str, default="undefined", help="The task to run.")
 @click.option(
     "--task-arg",
     multiple=True,

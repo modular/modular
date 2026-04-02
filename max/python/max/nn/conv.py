@@ -33,20 +33,26 @@ class Conv2d(Module, Shardable):
     """A 2D convolution over an input signal composed of several input
     planes.
 
-    Example:
-        .. code-block:: python
+    When called, ``Conv2d`` accepts a :class:`~max.graph.TensorValue` of shape
+    ``(batch, height, width, in_channels)`` and returns a
+    :class:`~max.graph.TensorValue` of shape ``(batch, new_height, new_width,
+    out_channels)``. If ``permute=True``, the input and output follow PyTorch
+    channel-first layout: ``(batch, in_channels, height, width)`` and ``(batch,
+    out_channels, new_height, new_width)``.
 
-            conv = nn.Conv2d(
-                kernel_size=3,
-                in_channels=64,
-                out_channels=128,
-                dtype=DType.float32,
-                stride=1,
-                padding=0,
-                has_bias=False,
-                name="conv2d_weight",
-                device=DeviceRef.GPU(),
-            )
+    .. code-block:: python
+
+        conv = nn.Conv2d(
+            kernel_size=3,
+            in_channels=64,
+            out_channels=128,
+            dtype=DType.float32,
+            stride=1,
+            padding=0,
+            has_bias=False,
+            name="conv2d_weight",
+            device=DeviceRef.GPU(),
+        )
     """
 
     device: DeviceRef | None
@@ -316,20 +322,27 @@ class Conv1D(Module):
     """A 1D convolution over an input signal composed of several input
     planes.
 
-    Example:
-        .. code-block:: python
+    When called, ``Conv1D`` accepts a :class:`~max.graph.TensorValue` of shape
+    ``(batch, length, in_channels)`` and returns a
+    :class:`~max.graph.TensorValue` of shape ``(batch, new_length,
+    out_channels)``. If ``permute=True``, the input and output follow PyTorch
+    channel-first layout: ``(batch, in_channels, length)`` and ``(batch,
+    out_channels, new_length)``.
 
-            conv = nn.Conv1D(
-                kernel_size=3,
-                in_channels=64,
-                out_channels=128,
-                dtype=DType.float32,
-                stride=1,
-                padding=0,
-                has_bias=False,
-                name="conv1d_weight",
-                device=DeviceRef.GPU(),
-            )
+
+    .. code-block:: python
+
+        conv = nn.Conv1D(
+            kernel_size=3,
+            in_channels=64,
+            out_channels=128,
+            dtype=DType.float32,
+            stride=1,
+            padding=0,
+            has_bias=False,
+            name="conv1d_weight",
+            device=DeviceRef.GPU(),
+        )
     """
 
     device: DeviceRef | None
@@ -518,22 +531,28 @@ class Conv3D(Module):
     """A 3D convolution over an input signal composed of several input
     planes.
 
-    Example:
-        .. code-block:: python
+    When called, ``Conv3D`` accepts a :class:`~max.graph.TensorValue` of shape
+    ``(batch, depth, height, width, in_channels)`` and returns a
+    :class:`~max.graph.TensorValue` of shape ``(batch, new_depth, new_height,
+    new_width, out_channels)``. If ``permute=True``, the input and output
+    follow PyTorch channel-first layout: ``(batch, in_channels, depth, height,
+    width)`` and ``(batch, out_channels, new_depth, new_height, new_width)``.
 
-            conv = nn.Conv3D(
-                depth=3,
-                height=3,
-                width=3,
-                in_channels=64,
-                out_channels=128,
-                dtype=DType.float32,
-                stride=1,
-                padding=0,
-                has_bias=False,
-                name="conv3d_weight",
-                device=DeviceRef.GPU(),
-            )
+    .. code-block:: python
+
+        conv = nn.Conv3D(
+            depth=3,
+            height=3,
+            width=3,
+            in_channels=64,
+            out_channels=128,
+            dtype=DType.float32,
+            stride=1,
+            padding=0,
+            has_bias=False,
+            name="conv3d_weight",
+            device=DeviceRef.GPU(),
+        )
     """
 
     device: DeviceRef | None

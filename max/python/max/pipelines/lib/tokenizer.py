@@ -19,12 +19,13 @@ import asyncio
 import io
 import json
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    EOSTracker,
     ImageMetadata,
     PipelineTokenizer,
     TextGenerationRequest,
@@ -227,6 +228,41 @@ async def run_with_default_executor(
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args, **kwargs)
+
+
+async def build_eos_tracker_for_request(
+    default_eos_token_ids: set[int],
+    request: TextGenerationRequest,
+    encode_fn: Callable[[str, bool], Awaitable[npt.NDArray[np.integer[Any]]]],
+) -> EOSTracker:
+    """Builds an :class:`~max.interfaces.EOSTracker` from request sampling params.
+
+    Args:
+        default_eos_token_ids: Default EOS token IDs from tokenizer/model config.
+        request: Generation request; uses ``request.sampling_params`` for stops.
+        encode_fn: Async encode callable ``(text, add_special_tokens) -> token ids``.
+
+    Returns:
+        Configured :class:`~max.interfaces.EOSTracker` for this request.
+    """
+    params = request.sampling_params
+    eos_token_ids = set(default_eos_token_ids)
+    eos_sequences: list[list[int]] = []
+    if params.ignore_eos:
+        eos_token_ids = set()
+    else:
+        if params.stop_token_ids:
+            eos_token_ids.update(params.stop_token_ids)
+        if params.stop:
+            for stop_string in params.stop:
+                tokenized = (await encode_fn(stop_string, False)).tolist()
+                if tokenized:
+                    eos_sequences.append(tokenized)
+    return EOSTracker(
+        eos_token_ids=eos_token_ids,
+        eos_sequences=eos_sequences,
+        eos_stop_strings=params.stop or [],
+    )
 
 
 class TextTokenizer(
@@ -444,13 +480,23 @@ class TextTokenizer(
                 "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TextGenerationRequestMessage]"
             )
 
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes ``stop`` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+        return stop_tokenized
+
     async def _get_eos_variables(
         self,
         ignore_eos: bool,
         stop_token_ids: list[int] | None,
         stop: list[str] | None,
     ) -> tuple[set[int], list[list[int]]]:
-        eos_token_ids = self._default_eos_token_ids
+        eos_token_ids = set(self._default_eos_token_ids)
         eos_sequences = list()
 
         if ignore_eos:
@@ -461,6 +507,16 @@ class TextTokenizer(
             eos_sequences = await self._encode_stop_criteria(stop)
 
         return eos_token_ids, eos_sequences
+
+    async def create_eos_tracker(
+        self, request: TextGenerationRequest
+    ) -> EOSTracker:
+        """Builds an EOSTracker from the request sampling params and tokenizer default EOS token IDs."""
+        return await build_eos_tracker_for_request(
+            self._default_eos_token_ids,
+            request,
+            self.encode,
+        )
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Create a new TextContext object, leveraging necessary information from TextGenerationRequest."""
@@ -478,12 +534,6 @@ class TextTokenizer(
             else None
         )
 
-        eos_token_ids, eos_sequences = await self._get_eos_variables(
-            request.sampling_params.ignore_eos,
-            request.sampling_params.stop_token_ids,
-            request.sampling_params.stop,
-        )
-
         # Calculate Max Length
         max_new_tokens = None
         if request.sampling_params.max_new_tokens is not None:
@@ -499,8 +549,7 @@ class TextTokenizer(
 
         context = TextContext(
             request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
-            eos_sequences=eos_sequences,
+            eos_tracker=await self.create_eos_tracker(request),
             max_length=len(token_ids) + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
@@ -547,17 +596,6 @@ class TextTokenizer(
             **kwargs,
         )
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
-
-    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
-        """Encodes `stop` to be used as stop criteria during generation."""
-        stop_tokenized: list[list[int]] = []
-        for stop_crit in stop:
-            tokenized: list[int] = (
-                await self.encode(stop_crit, False)
-            ).tolist()
-            stop_tokenized.append(tokenized)
-
-        return stop_tokenized
 
 
 class TextAndVisionTokenizer(
@@ -680,6 +718,8 @@ class TextAndVisionTokenizer(
                 raise ValueError(
                     f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {max_length})."
                 )
+
+            encoded_prompt = np.array(encoded_prompt)
         else:
             encoded_prompt = np.array(list(prompt))
 
@@ -694,6 +734,16 @@ class TextAndVisionTokenizer(
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e
+
+    async def create_eos_tracker(
+        self, request: TextGenerationRequest
+    ) -> EOSTracker:
+        """Builds an EOSTracker from the request sampling params and tokenizer default EOS token IDs."""
+        return await build_eos_tracker_for_request(
+            self._default_eos_token_ids,
+            request,
+            self.encode,
+        )
 
     async def new_context(
         self, request: TextGenerationRequest
@@ -792,11 +842,6 @@ class TextAndVisionTokenizer(
             else None
         )
 
-        if request.sampling_params.ignore_eos:
-            eos_token_ids = set()
-        else:
-            eos_token_ids = self._default_eos_token_ids
-
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 "encoded_prompt is greater than the max_length of the tokenizer"
@@ -812,7 +857,7 @@ class TextAndVisionTokenizer(
 
         context = TextAndVisionContext(
             request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
+            eos_tracker=await self.create_eos_tracker(request),
             extra_model_args=extra_model_args,
             tokens=token_buffer,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
@@ -837,6 +882,35 @@ class TextAndVisionTokenizer(
         )
 
         return context
+
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes `stop` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+
+        return stop_tokenized
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = set(self._default_eos_token_ids)
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
 
 
 def _rgba_to_rgb(

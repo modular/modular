@@ -16,6 +16,7 @@ from __future__ import annotations
 import numpy as np
 from max.interfaces import RequestID
 from max.interfaces.context import SamplingParams
+from max.interfaces.eos_tracking import EOSTracker
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib.speculative_decoding.utils import (
@@ -30,7 +31,7 @@ def make_context(prompt_tokens: list[int]) -> TextContext:
         max_length=MAX_LENGTH,
         tokens=TokenBuffer(np.array(prompt_tokens, dtype=np.int64)),
         request_id=RequestID(),
-        eos_token_ids=set(),
+        eos_tracker=EOSTracker(),
         sampling_params=SamplingParams(),
     )
 
@@ -113,11 +114,9 @@ def simulate_decode(
             ].copy()
 
     return SpeculativeDecodingMetrics(
-        bonus_tokens_used=0,
+        num_speculative_tokens=num_draft_tokens_generated,
         draft_tokens_accepted=int(num_accepted_draft_tokens.sum()),
         draft_tokens_generated=num_draft_tokens_generated * len(context_batch),
-        total_acceptance_lengths=int(num_accepted_draft_tokens.sum()),
-        num_generations=1,
     )
 
 
@@ -174,7 +173,7 @@ class TestUnifiedDecode:
         assert k == 1
         np.testing.assert_array_equal(draft_tokens, [[100]])
 
-        metrics = simulate_decode(
+        simulate_decode(
             context_batch=[ctx],
             num_accepted_draft_tokens=np.array([1], dtype=np.int64),
             next_tokens=np.array([300], dtype=np.int64),
@@ -196,7 +195,7 @@ class TestUnifiedDecode:
 
         draft_tokens, k = load_draft_tokens([ctx])
 
-        metrics = simulate_decode(
+        simulate_decode(
             context_batch=[ctx],
             num_accepted_draft_tokens=np.array([0], dtype=np.int64),
             next_tokens=np.array([200], dtype=np.int64),
@@ -220,7 +219,7 @@ class TestUnifiedDecode:
 
         draft_tokens = np.array([[100], [200]], dtype=np.int64)
 
-        metrics = simulate_decode(
+        simulate_decode(
             context_batch=[ctx0, ctx1],
             num_accepted_draft_tokens=np.array([1, 0], dtype=np.int64),
             next_tokens=np.array([300, 700], dtype=np.int64),
@@ -336,7 +335,6 @@ class TestUnifiedMetrics:
         )
         assert metrics.draft_tokens_accepted == 1
         assert metrics.draft_tokens_generated == 1
-        assert metrics.bonus_tokens_used == 0
         assert metrics.acceptance_rate == 1.0
 
     def test_metrics_all_rejected(self) -> None:
@@ -351,5 +349,4 @@ class TestUnifiedMetrics:
         )
         assert metrics.draft_tokens_accepted == 0
         assert metrics.draft_tokens_generated == 1
-        assert metrics.bonus_tokens_used == 0
         assert metrics.acceptance_rate == 0.0

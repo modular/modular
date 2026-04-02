@@ -52,7 +52,7 @@ from .file_descriptor import FileDescriptor
 
 
 @fieldwise_init
-struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
+struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
     var handle: FILE_ptr
 
     def __init__(out self, stream_id: FileDescriptor):
@@ -64,8 +64,7 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
 
         self.handle = fdopen(
             dup(Int32(stream_id.value)),
-            # Guarantee this is nul terminated.
-            get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
+            Self.mode.as_c_string_slice().unsafe_ptr(),
         )
 
     def __enter__(self) -> Self:

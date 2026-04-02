@@ -15,10 +15,10 @@ from std.math import ceildiv
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier, warp_id_uint as warp_id, lane_id_int as lane_id
+from std.gpu import barrier, warp_id, lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -70,7 +70,7 @@ def _load_a_reg_tile[
 ):
     comptime assert ret.layout[0].shape[0].value() > 0
     ret = type_of(ret).stack_allocation()
-    var tid = thread_idx.x
+
     comptime WGMMA_M = wgmma_shape[0]
     comptime WGMMA_K = wgmma_shape[2]
 
@@ -89,7 +89,7 @@ def _load_a_reg_tile[
             comptime r_id = m_mma + k_mma * num_wgmma_m
             var smem_wg = (
                 smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma)
-                .tile[WGMMA_M // 4, WGMMA_K](Int(warp_id()), 0)
+                .tile[WGMMA_M // 4, WGMMA_K](warp_id(), 0)
                 .vectorize[1, simd_size]()
                 .distribute[Layout.row_major(8, 4)](lane_id())
             )
@@ -194,16 +194,16 @@ def tma_wgmma_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar[0],
-                (Int(i) * BK, Int(block_idx.y) * BM),
+                (Int(i) * BK, block_idx.y * BM),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 mbar[0],
                 (
                     Int(i) * BK,
-                    Int(block_idx.x) * BN,
+                    block_idx.x * BN,
                 ) if transpose_b else (
-                    Int(block_idx.x) * BN,
+                    block_idx.x * BN,
                     Int(i) * BK,
                 ),
             )
@@ -228,7 +228,7 @@ def tma_wgmma_kernel[
 
         barrier()
 
-    c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -237,7 +237,7 @@ def tma_wgmma_kernel[
             # (m_mma, n_mma) is coordinates for a warp group's tile.
             # A warp group is 4x1 warps.
             warp_tile = c_gmem_tile.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
-                m_mma * 4 + Int(warp_id()), n_mma
+                m_mma * 4 + warp_id(), n_mma
             )
 
             # Tile at (mma_id, 0) is a long vector containing all fragments

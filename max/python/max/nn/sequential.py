@@ -16,6 +16,9 @@ from .layer import LayerList
 
 
 class Sequential(LayerList):
-    """A sequential stack of layers where each layer is called by the outputs
-    of the previous layer.
+    """A sequential stack of layers.
+
+    When called, ``Sequential`` accepts the input expected by the first layer,
+    passes the data through each layer in order, and returns the output of the
+    last layer.
     """

@@ -21,12 +21,7 @@ _FILECHECK_TESTS = [
     "test_tensor_core_fp8_mma_sync.mojo",
 ]
 
-_EXTRA_COPTS = {
-    "test_grid_dependence_control.mojo": [
-        "-D",
-        "PDL_LEVEL=1",
-    ],
-}
+_EXTRA_COPTS = {}
 
 _APPLE_GPU_INCOMPATIBLE = select({
     "//:apple_gpu": ["@platforms//:incompatible"],

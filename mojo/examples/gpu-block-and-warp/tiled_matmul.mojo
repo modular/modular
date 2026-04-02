@@ -34,7 +34,7 @@ from std.sys import exit, has_accelerator
 # GPU programming imports from open source stdlib
 from std.gpu.sync import barrier
 from std.gpu.host import DeviceContext
-from std.gpu import thread_idx_uint as thread_idx, block_idx_uint as block_idx
+from std.gpu import thread_idx, block_idx
 from std.gpu.memory import AddressSpace
 
 # Layout tensor support from open source layout package
@@ -116,8 +116,8 @@ def tiled_matmul_kernel(
         # Cooperative tile loading
         # Calculate global coordinates for tile loading
         var a_global_row = tile_row_start + thread_y
-        var a_global_col = UInt(k_tile) + thread_x
-        var b_global_row = UInt(k_tile) + thread_y
+        var a_global_col = k_tile + thread_x
+        var b_global_row = k_tile + thread_y
         var b_global_col = tile_col_start + thread_x
 
         # Bounds checking

@@ -296,7 +296,7 @@ def test_forward_inplace_custom(custom_ops_path: Path) -> None:
     """Tests that returning the result of an `inplace_custom` op works."""
     M = 42
     N = 37
-    graph = Graph(
+    Graph(
         "foo",
         forward=lambda x: ops.inplace_custom(
             "foo", device=x.device, values=[x]

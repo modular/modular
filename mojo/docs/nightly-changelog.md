@@ -38,12 +38,34 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `abort(message)` now includes the call site location in its output. The
+  location is automatically captured and printed alongside the message. You can
+  also pass an explicit `SourceLocation` to override it:
+
+  ```mojo
+  abort("something went wrong")
+  # prints: ABORT: path/to/file.mojo:42:5: something went wrong
+
+  var loc = current_location()
+  abort("something went wrong", location=loc)
+  ```
+
+- `SourceLocation` fields (`line`, `col`, `file_name`) are now private.
+  Use the new accessor methods `line()`, `column()`, and `file_name()` instead.
+
+- Fixed default alignment in `TileTensor.load()` and `TileTensor.store()` to
+  use the caller-specified `width` parameter instead of `Self.element_size`.
+
+- Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
+  targets at compile time. `is_apple_silicon()` now includes M5 in its check.
+
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `Span`: `Writable`, `Hashable`
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
+  - `Variant`: `Copyable`, `ImplicitlyCopyable`
 
-- GPU primitive id accessors (e.g. `thread_idx`) are migrating from `UInt` to
+- GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
   `Int`.
 
   This is part of a broader migration to standardize on the `Int` type for all
@@ -62,9 +84,8 @@ This version is still a work in progress.
   | `lane_id`    | `lane_id_uint`    | `lane_id_int`     |
   | `warp_id`    | `warp_id_uint`    | `warp_id_int`     |
 
-  To fix the temporary warning about the deprecation of the `UInt` form of
-  e.g. `thread_idx`, code can preserve its prior behavior by using a renaming
-  import of the `thread_idx_uint` alias instead:
+  Code can preserve its prior behavior by using a renaming import of the
+  `thread_idx_uint` alias:
 
   ```diff
   - from std.gpu import thread_idx
@@ -74,11 +95,11 @@ This version is still a work in progress.
   Note that `thread_idx_uint` and the other `_*uint` aliases will eventually
   be deprecated and removed as well.
 
-  After the temporary deprecation acting as a "speed bump", `thread_idx` will
-  change from `UInt` to `Int`.
+  After a temporary deprecation acting as a "speed bump" in the 2026-03-29
+  nightly release, `thread_idx` etc. have changed from `UInt` to `Int`.
 
-  While `thread_idx` is still a `UInt`, code can proactively migrate to the
-  eventual `Int` behavior using the `thread_idx_int` alias:
+  Code built with a version where `thread_idx` is still `UInt`, can proactively
+  migrate to the eventual `Int` behavior using the `thread_idx_int` alias:
 
   ```diff
   - from std.gpu import thread_idx
@@ -170,3 +191,9 @@ This version is still a work in progress.
   normal/subnormal boundary (e.g., `Float64("4.4501363245856945e-308")`
   returned half the correct value).
   ([#6196](https://github.com/modular/modular/issues/6196))
+
+- [Issue #5872](https://github.com/modular/modular/issues/5872): Fixed a
+  compiler crash ("'get_type_name' requires a concrete type") when using
+  default `Writable`, `Equatable`, or `Hashable` implementations on structs
+  with MLIR-type fields (e.g. `__mlir_type.index`). The compiler now correctly
+  reports that the field does not implement the required trait.

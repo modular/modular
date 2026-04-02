@@ -58,7 +58,6 @@ var total_size = size(shape)  # Results in 120
 
 from std.os import abort
 
-from buffer import DimList
 from std.builtin.range import _StridedRange
 from std.memory import memcpy
 from std.sys.intrinsics import _type_is_eq_parse_time
@@ -266,6 +265,20 @@ comptime UNKNOWN_VALUE = -1
 This constant is used throughout the `IntTuple` system to represent dimensions
 that are not known at compile time or have not been specified.
 """
+
+
+def create_unknown_int_tuple(rank: Int) -> IntTuple:
+    """Creates an IntTuple of the given rank with all UNKNOWN_VALUE entries.
+
+    Args:
+        rank: The number of dimensions.
+
+    Returns:
+        An IntTuple with `rank` elements, all set to UNKNOWN_VALUE.
+    """
+    var result = IntTuple(rank)
+    _to_unknown(result)
+    return result
 
 
 struct _IntTupleIter[origin: ImmutOrigin](
@@ -607,40 +620,6 @@ struct IntTuple(
         for i in rng:
             storage = self._insert(pos, storage, existing[i])
             pos += 1
-
-        self.validate_structure()
-
-    @always_inline
-    def __init__(out self, dimlist: DimList):
-        """Initialize an `IntTuple` from a DimList.
-
-        Creates an `IntTuple` containing the dimensions from a DimList, handling
-        both defined and undefined dimensions appropriately.
-
-        Args:
-            dimlist: The DimList containing dimension information.
-
-        Notes:
-
-            - Converts undefined dimensions to `UNKNOWN_VALUE`.
-            - Validates that all values are above `MinimumValue`. If any value is
-              less than `MinimumValue`, assertion fails with an error message.
-        """
-        var size = len(dimlist) + 1
-        self._store = IntArray(size)
-        self._store[0] = len(dimlist)
-
-        var i = 0
-        for dim in VariadicParamList[*dimlist.values]():
-            var value = dim.get() if dim else UNKNOWN_VALUE
-            debug_assert(
-                value >= Self.MinimumValue,
-                "IntTuple value must be >= MinimumValue: ",
-                value,
-            )
-
-            self._store[i + 1] = value
-            i += 1
 
         self.validate_structure()
 

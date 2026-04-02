@@ -58,6 +58,8 @@ class PipelineTask(str, Enum):
     """Task for generating speech tokens."""
     PIXEL_GENERATION = "pixel_generation"
     """Task for generating pixels."""
+    UNDEFINED = "undefined"
+    """Undefined task, used as default when task should be auto-detected."""
 
     @property
     def output_type(

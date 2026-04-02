@@ -6,6 +6,7 @@ _FILECHECK_TESTS = [
     "test_index_normalization.mojo",
     "test_list_getitem_invalid_index_int.mojo",
     "test_list_getitem_invalid_index_uint.mojo",
+    "test_optional_none_abort.mojo",
 ]
 
 _LIT_TESTS = [
@@ -34,6 +35,7 @@ _DISABLED_ASSERTIONS = [
 _EXPECT_CRASH = [
     "test_list_getitem_invalid_index_int.mojo",
     "test_list_getitem_invalid_index_uint.mojo",
+    "test_optional_none_abort.mojo",
 ]
 
 [

@@ -29,12 +29,7 @@ This is currently only checking via `_matmul_gpu` dispatch for a single shape
 and only for bfloat16.
 """
 
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-    grid_dim_uint as grid_dim,
-)
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim
 from std.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -62,8 +57,8 @@ def consumer_kernel[
     """
     wait_on_dependent_grids()
 
-    var tid = Int(thread_idx.x + block_idx.x * block_dim.x)
-    var stride = Int(grid_dim.x * block_dim.x)
+    var tid = thread_idx.x + block_idx.x * block_dim.x
+    var stride = grid_dim.x * block_dim.x
     var inverse_tid = stride - tid
 
     # Read from matmul output and write to our output

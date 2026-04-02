@@ -59,7 +59,7 @@ def welford_update(
     var delta: Float64
     var delta2: Float64
     delta = new_value - mean
-    mean += delta / count
+    mean += delta / Float64(count)
     delta2 = new_value - mean
     m2 += delta * delta2
 
@@ -265,7 +265,7 @@ def test_dispatch[
             send_buf,
             recv_buf_ptrs,
             recv_count_ptrs,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -282,7 +282,7 @@ def test_dispatch[
             src_token_info_tensor,
             recv_buf,
             recv_count,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             OptionalReg[
                 TileTensor[
@@ -334,7 +334,7 @@ def test_dispatch[
         var new_value: Float64
 
         # First, bench kernel overhead
-        new_value = ctx.execution_time[run_dispatch_async](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_dispatch_async](1)) * 1e-3
         welford_update(
             dispatch_async_stat_m, dispatch_async_stat_m2, i + 1, new_value
         )
@@ -342,7 +342,9 @@ def test_dispatch[
         # sleep 10 ms to make sure transfer is finished
         std.time.sleep(1e-2)
 
-        new_value = ctx.execution_time[run_dispatch_async_wait](1) * 1e-3
+        new_value = (
+            Float64(ctx.execution_time[run_dispatch_async_wait](1)) * 1e-3
+        )
         welford_update(
             dispatch_wait_stat_m, dispatch_wait_stat_m2, i + 1, new_value
         )
@@ -350,7 +352,7 @@ def test_dispatch[
 
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
-        new_value = ctx.execution_time[run_e2e](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 
@@ -430,7 +432,9 @@ def test_dispatch[
             # Then, check the output
             for expert_idx in range(n_local_experts):
                 var curr_local_expert = host_expert_ids[expert_idx]
-                var curr_expert = n_local_experts * my_rank + curr_local_expert
+                var curr_expert = (
+                    Int32(n_local_experts * my_rank) + curr_local_expert
+                )
 
                 for remote_rank in range(n_ranks):
                     var expert_rank_offset = curr_local_expert * Int32(
@@ -459,7 +463,7 @@ def test_dispatch[
 
                         assert_equal(
                             remote_rank_top_k_ids[
-                                remote_loc * top_k + remote_topk_id
+                                remote_loc * Int32(top_k) + remote_topk_id
                             ],
                             curr_expert,
                         )
@@ -470,13 +474,14 @@ def test_dispatch[
                         )
                         for i in range(hidden_size):
                             var remote_token_val = remote_rank_input_tokens[
-                                remote_loc * hidden_size + i
+                                remote_loc * Int32(hidden_size) + Int32(i)
                             ]
                             var curr_fp8_val = host_output[
-                                token_idx * hidden_size + i
+                                token_idx * Int32(hidden_size) + Int32(i)
                             ]
                             var curr_token_scale = host_output_scales[
-                                (i // group_size) * max_recv_tokens + token_idx
+                                Int32((i // group_size) * max_recv_tokens)
+                                + token_idx
                             ]
                             var curr_token_val = (
                                 curr_fp8_val.cast[scales_dtype]()
@@ -499,11 +504,11 @@ def test_dispatch[
     ](
         my_rank,
         dispatch_async_stat_m,
-        sqrt(dispatch_async_stat_m2 / num_iters),
+        sqrt(dispatch_async_stat_m2 / Float64(num_iters)),
         dispatch_wait_stat_m,
-        sqrt(dispatch_wait_stat_m2 / num_iters),
+        sqrt(dispatch_wait_stat_m2 / Float64(num_iters)),
         e2e_stat_m,
-        sqrt(e2e_stat_m2 / num_iters),
+        sqrt(e2e_stat_m2 / Float64(num_iters)),
     )
 
     shmem_free(send_buf)

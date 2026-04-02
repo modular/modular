@@ -26,7 +26,7 @@ def test_compile_function() raises:
     print("== test_compile_function")
 
     def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
-        x[0] = Int(thread_idx.x)
+        x[0] = thread_idx.x
 
     # CHECK: tid.x
 

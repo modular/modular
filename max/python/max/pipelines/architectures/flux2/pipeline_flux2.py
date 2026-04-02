@@ -19,6 +19,7 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
+from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue, ops
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import float32_array_to_buffer
@@ -35,7 +36,7 @@ from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
 
 if TYPE_CHECKING:
-    from ..autoencoders.vae import DiagonalGaussianDistribution
+    from ..autoencoders_modulev3.vae import DiagonalGaussianDistribution
 
 
 @dataclass(kw_only=True)
@@ -566,7 +567,9 @@ class Flux2Pipeline(DiffusionPipeline):
                     device=device,
                 )
 
-            encoder_output = self.vae.encode(image, return_dict=True)  # type: ignore[arg-type]
+            encoder_output = self.vae.encode(
+                Tensor(storage=image), return_dict=True
+            )
             if isinstance(encoder_output, dict):
                 encoder_output = encoder_output["latent_dist"]
             raw_latents = self.retrieve_latents(
@@ -635,7 +638,7 @@ class Flux2Pipeline(DiffusionPipeline):
         with Tracer("text_encoder"):
             prompt_embeds = cast(
                 Buffer,
-                self.text_encoder(tokens),  # type: ignore[arg-type]
+                self.text_encoder(tokens),
             )
 
         with Tracer("post_process"):

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the unified LayoutLike system."""
 
-from buffer import Dim, DimList
 from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq
 
@@ -22,7 +21,6 @@ from layout import ComptimeInt, Coord, CoordLike, Idx, RuntimeInt, coord
 from layout.coord import (
     coord_to_int_tuple,
     idx2crd,
-    _DimsToCoordLike,
     _Idx2CrdResultTypes,
 )
 from std.testing import assert_equal, assert_true, TestSuite
@@ -113,21 +111,6 @@ def test_default_init_nested() raises:
     assert_equal(c[1][0].value(), 0)
     assert_equal(c[1][1].value(), 3)
     assert_equal(c[2].value(), 0)
-
-
-def test_from_dimlist_empty() raises:
-    comptime dims = DimList[]()
-    comptime coord = _DimsToCoordLike[DType.int32, dims]
-    assert_equal(Variadic.size(coord), 0)
-
-
-def test_from_dimlist() raises:
-    comptime dims = DimList[Dim(5), Dim(), Dim(3)]()
-    comptime coord = _DimsToCoordLike[DType.int32, dims]
-    assert_equal(Variadic.size(coord), 3)
-    assert_true(_type_is_eq[coord[0], ComptimeInt[5]]())
-    assert_true(_type_is_eq[coord[1], RuntimeInt[DType.int32]]())
-    assert_true(_type_is_eq[coord[2], ComptimeInt[3]]())
 
 
 def test_idx2crd_basic() raises:
@@ -359,6 +342,155 @@ def test_idx2crd_mixed_static_dynamic_idx() raises:
     assert_true(_type_is_eq[type_of(c5[0]), RuntimeInt[DType.int64]]())
     # (5 // 1) % 4 = 1
     assert_true(_type_is_eq[type_of(c5[1]), ComptimeInt[1]]())
+
+
+def test_idx2crd_nested_depth2() raises:
+    """Test idx2crd with depth-2 nested shape: Coord(Coord(2, 3), Coord(4, 5)).
+
+    Each sub-element gets the same idx, and the leaf formula is
+    (idx // stride) % shape.
+    """
+    # Shape: ((2, 3), (4, 5)), Stride: ((60, 20), (5, 1))
+    # This represents a 4D layout with strides grouped into two pairs.
+    var shape = Coord(
+        Coord(Idx[2](), Idx[3]()),
+        Coord(Idx[4](), Idx[5]()),
+    )
+    var stride = Coord(
+        Coord(Idx[60](), Idx[20]()),
+        Coord(Idx[5](), Idx[1]()),
+    )
+
+    # idx=0 -> ((0,0), (0,0))
+    var c0 = idx2crd(0, shape, stride)
+    assert_equal(c0[0][0].value(), 0)
+    assert_equal(c0[0][1].value(), 0)
+    assert_equal(c0[1][0].value(), 0)
+    assert_equal(c0[1][1].value(), 0)
+
+    # idx=27 -> ((27//60)%2=0, (27//20)%3=1), ((27//5)%4=1, (27//1)%5=2))
+    var c27 = idx2crd(27, shape, stride)
+    assert_equal(c27[0][0].value(), 0)
+    assert_equal(c27[0][1].value(), 1)
+    assert_equal(c27[1][0].value(), 1)
+    assert_equal(c27[1][1].value(), 2)
+
+    # idx=65 -> ((65//60)%2=1, (65//20)%3=0), ((65//5)%4=1, (65//1)%5=0))
+    var c65 = idx2crd(65, shape, stride)
+    assert_equal(c65[0][0].value(), 1)
+    assert_equal(c65[0][1].value(), 0)  # 65//20 = 3, 3%3 = 0
+    assert_equal(c65[1][0].value(), 1)  # 65//5 = 13, 13%4 = 1
+    assert_equal(c65[1][1].value(), 0)  # 65%5 = 0
+
+
+def test_idx2crd_nested_depth3() raises:
+    """Test idx2crd with depth-3 nested shape: Coord(Coord(Coord(2, 3), Idx(4))).
+    """
+    var shape = Coord(
+        Coord(Coord(Idx[2](), Idx[3]()), Idx[4]()),
+    )
+    var stride = Coord(
+        Coord(Coord(Idx[12](), Idx[4]()), Idx[1]()),
+    )
+
+    # idx=0 -> (((0, 0), 0))
+    var c0 = idx2crd(0, shape, stride)
+    assert_equal(c0[0][0][0].value(), 0)
+    assert_equal(c0[0][0][1].value(), 0)
+    assert_equal(c0[0][1].value(), 0)
+
+    # idx=7 -> (((7//12)%2=0, (7//4)%3=1), (7//1)%4=3))
+    var c7 = idx2crd(7, shape, stride)
+    assert_equal(c7[0][0][0].value(), 0)
+    assert_equal(c7[0][0][1].value(), 1)
+    assert_equal(c7[0][1].value(), 3)
+
+    # idx=15 -> (((15//12)%2=1, (15//4)%3=0), (15//1)%4=3))
+    var c15 = idx2crd(15, shape, stride)
+    assert_equal(c15[0][0][0].value(), 1)
+    assert_equal(c15[0][0][1].value(), 0)  # 15//4 = 3, 3%3 = 0
+    assert_equal(c15[0][1].value(), 3)  # 15%4 = 3
+
+
+def test_idx2crd_nested_depth4() raises:
+    """Test idx2crd with depth-4 nested shape."""
+    # Shape: ((2, 3), ((4, 5), 6)) — depth 4 at the deepest path
+    # Using stride-per-element formula: (idx // stride) % shape
+    var shape = Coord(
+        Coord(Idx[2](), Idx[3]()),
+        Coord(Coord(Idx[4](), Idx[5]()), Idx[6]()),
+    )
+    var stride = Coord(
+        Coord(Idx[360](), Idx[120]()),
+        Coord(Coord(Idx[30](), Idx[6]()), Idx[1]()),
+    )
+
+    # idx=0 -> ((0, 0), ((0, 0), 0))
+    var c0 = idx2crd(0, shape, stride)
+    assert_equal(c0[0][0].value(), 0)
+    assert_equal(c0[0][1].value(), 0)
+    assert_equal(c0[1][0][0].value(), 0)
+    assert_equal(c0[1][0][1].value(), 0)
+    assert_equal(c0[1][1].value(), 0)
+
+    # idx=37:
+    #   (37//360)%2=0, (37//120)%3=0
+    #   (37//30)%4=1, (37//6)%5=1, (37//1)%6=1
+    var c37 = idx2crd(37, shape, stride)
+    assert_equal(c37[0][0].value(), 0)
+    assert_equal(c37[0][1].value(), 0)
+    assert_equal(c37[1][0][0].value(), 1)
+    assert_equal(c37[1][0][1].value(), 1)  # 37//6=6, 6%5=1
+    assert_equal(c37[1][1].value(), 1)  # 37%6=1
+
+
+def test_idx2crd_nested_depth4_linear() raises:
+    """Test idx2crd with a linear chain of 4 nested Coords."""
+    var shape = Coord(
+        Coord(Coord(Coord(Idx[2](), Idx[3]()), Idx[4]()), Idx[5]()),
+    )
+    var stride = Coord(
+        Coord(Coord(Coord(Idx[60](), Idx[20]()), Idx[5]()), Idx[1]()),
+    )
+
+    # idx=0 -> ((((0, 0), 0), 0))
+    var c0 = idx2crd(0, shape, stride)
+    assert_equal(c0[0][0][0][0].value(), 0)
+    assert_equal(c0[0][0][0][1].value(), 0)
+    assert_equal(c0[0][0][1].value(), 0)
+    assert_equal(c0[0][1].value(), 0)
+
+    # idx=27 -> ((((27//60)%2=0, (27//20)%3=1), (27//5)%4=1), (27//1)%5=2))
+    var c27 = idx2crd(27, shape, stride)
+    assert_equal(c27[0][0][0][0].value(), 0)
+    assert_equal(c27[0][0][0][1].value(), 1)
+    assert_equal(c27[0][0][1].value(), 1)  # 27//5 = 5, 5%4 = 1
+    assert_equal(c27[0][1].value(), 2)  # 27%5 = 2
+
+
+def test_idx2crd_nested_mixed_flat_and_nested() raises:
+    """Test idx2crd with a mix of flat and nested elements at depth 2."""
+    # Shape: (Coord(2, 3), 4) — first element nested, second flat.
+    var shape = Coord(
+        Coord(Idx[2](), Idx[3]()),
+        Idx[4](),
+    )
+    var stride = Coord(
+        Coord(Idx[12](), Idx[4]()),
+        Idx[1](),
+    )
+
+    # idx=0 -> ((0, 0), 0)
+    var c0 = idx2crd(0, shape, stride)
+    assert_equal(c0[0][0].value(), 0)
+    assert_equal(c0[0][1].value(), 0)
+    assert_equal(c0[1].value(), 0)
+
+    # idx=7 -> (((7//12)%2=0, (7//4)%3=1), (7//1)%4=3)
+    var c7 = idx2crd(7, shape, stride)
+    assert_equal(c7[0][0].value(), 0)
+    assert_equal(c7[0][1].value(), 1)
+    assert_equal(c7[1].value(), 3)
 
 
 def main() raises:

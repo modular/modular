@@ -141,7 +141,7 @@ def matmul_dispatch_sm100[
 
     comptime if _vendor_blas_fallback_disabled():
         comptime if (
-            c_type == DType.bfloat16
+            c_type in (DType.bfloat16, DType.float8_e4m3fn)
             and static_N * size_of[c_type]() % 16 == 0
             and static_K * size_of[a_type]() % 16 == 0
             and transpose_b
@@ -154,9 +154,10 @@ def matmul_dispatch_sm100[
             ](c, a, b, ctx)
             if status:
                 return
-            # Heuristic had no config for this (N,K) or m; fall through to normal
-        # When vendor fallback is disabled but shape is not the benchmarking path,
-        # fall through to normal SM100 dispatch.
+            else:
+                raise Error(
+                    "Heuristic failed to find a config for this (N,K) or m"
+                )
 
     var epilogue_type = String("None")
 
@@ -445,8 +446,9 @@ def heuristic_and_outliers_dispatch[
     comptime configs = build_configs[
         a_type, b_type, c_type, static_N, static_K, transpose_b
     ]()
+    var aligned_m = align_up(m, 64) if m >= 256 else m
     var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
-        m, static_N, static_K
+        aligned_m, static_N, static_K
     )
 
     comptime for config in configs:
@@ -536,6 +538,13 @@ def matmul_dispatch_sm100_bf16[
         Index(4608, 1536),
         Index(1536, 1536),
         Index(8192, 1536),
+        Index(5376, 16384),
+        Index(5376, 21504),
+        Index(16384, 5376),
+        Index(20480, 5376),
+        Index(262144, 5376),
+        Index(43008, 5376),
+        Index(5376, 8192),
     ]
 
     comptime FLUX2_NK = [
@@ -936,8 +945,9 @@ def sm100_heuristic_and_outliers_dispatch[
     comptime configs = build_configs[
         a_type, b_type, c_type, static_N, static_K, transpose_b
     ]()
+    var aligned_m = align_up(m, 64) if m >= 256 else m
     var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
-        m, static_N, static_K
+        aligned_m, static_N, static_K
     )
 
     comptime for config in configs:

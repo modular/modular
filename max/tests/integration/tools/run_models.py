@@ -32,7 +32,6 @@ from create_pipelines import (
 )
 from max import driver, pipelines
 from max.interfaces import PipelineTask
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
@@ -168,10 +167,13 @@ def get_max_default_encoding(
     trust_remote_code = getattr(pipeline_oracle, "config_params", {}).get(
         "trust_remote_code", False
     )
-    hf_repo = HuggingFaceRepo(
-        pipeline_name, trust_remote_code=trust_remote_code
+    model_config = pipelines.MAXModelConfig(
+        model_path=pipeline_name, trust_remote_code=trust_remote_code
     )
-    arch = pipelines.PIPELINE_REGISTRY.retrieve_architecture(hf_repo)
+    arch_name = model_config.architecture_name
+    if arch_name is None:
+        raise ValueError("Model architecture not yet supported by MAX.")
+    arch = pipelines.PIPELINE_REGISTRY.retrieve_architecture(arch_name)
     if arch is None:
         raise ValueError("Model architecture not yet supported by MAX.")
 
