@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic
 
@@ -186,6 +186,13 @@ class ModelInputs:
     """
 
     kv_cache_inputs: KVCacheInputs | None = None
+
+    extra_kv_cache_inputs: list[KVCacheInputs] = field(default_factory=list)
+    """Extra KV cache inputs beyond the primary (e.g., global attention).
+
+    Models with multiple KV caches populate this so the graph capture
+    runner can patch all caches generically during capture and replay.
+    """
 
     lora_ids: Buffer | None = None
     """Buffer containing the LoRA ids."""

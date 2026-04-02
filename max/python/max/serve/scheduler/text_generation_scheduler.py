@@ -93,6 +93,7 @@ class TokenGenerationScheduler(Scheduler):
             kv_cache=kv_cache,
             batch_scheduling_strategy=batch_strategy,
             dp_padder=dp_padder,
+            extra_kv_caches=getattr(pipeline, "extra_kv_managers", []),
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches

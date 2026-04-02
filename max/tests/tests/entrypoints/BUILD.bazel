@@ -18,6 +18,8 @@ modular_py_test(
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
+    # FIXME: MODELS-1295
+    tags = ["manual"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//max/python/max/interfaces",

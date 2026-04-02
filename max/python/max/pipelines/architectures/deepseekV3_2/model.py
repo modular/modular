@@ -24,7 +24,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
-from max.interfaces.request import RequestID
 from max.kv_cache import PagedKVCacheManager
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.kv_cache import (
@@ -37,7 +36,6 @@ from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
     ModelInputs,
-    ModelOutputs,
     PipelineConfig,
 )
 from max.pipelines.lib.quant import parse_quant_config
@@ -336,19 +334,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
             replica_batches, kv_cache_inputs, return_n_logits
         )
 
-        # Claim and allocate blocks for indexer KV cache
-        for replica_idx, batch in enumerate(replica_batches):
-            for ctx in batch:
-                if not self.indexer_kv_manager.contains(
-                    ctx.request_id, replica_idx=replica_idx
-                ):
-                    self.indexer_kv_manager.claim(
-                        ctx.request_id, replica_idx=replica_idx
-                    )
-                self.indexer_kv_manager.alloc(
-                    ctx, replica_idx=replica_idx, num_steps=1
-                )
-
         # Combine primary (MLA) and indexer KV cache inputs
         indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
             replica_batches
@@ -371,14 +356,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_inputs = super().prepare_next_token_inputs(
             next_tokens, prev_model_inputs
         )
-
-        # Allocate blocks for indexer KV cache for next step
-        for replica_idx, batch in enumerate(self._current_batches):
-            for ctx in batch:
-                self.indexer_kv_manager.alloc(
-                    ctx, replica_idx=replica_idx, num_steps=1
-                )
-
         # Get updated indexer KV inputs
         indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
             self._current_batches
@@ -394,18 +371,3 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
 
         return model_inputs
-
-    @override
-    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        outputs = super().execute(model_inputs)
-
-        # Step indexer KV manager (commit new tokens)
-        self.indexer_kv_manager.step(self._current_batches)
-
-        return outputs
-
-    def release(self, request_id: RequestID) -> None:
-        """Release indexer KV cache resources for the request."""
-        for replica_idx in range(len(self.devices)):
-            if self.indexer_kv_manager.contains(request_id, replica_idx):
-                self.indexer_kv_manager.release(request_id, replica_idx)

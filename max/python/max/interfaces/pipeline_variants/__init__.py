@@ -45,6 +45,7 @@ from .text_generation import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VideoContentPart,
     VLMContextType,
     VLMTextGenerationContext,
 )
@@ -79,4 +80,5 @@ __all__ = [
     "TextGenerationResponseFormat",
     "VLMContextType",
     "VLMTextGenerationContext",
+    "VideoContentPart",
 ]

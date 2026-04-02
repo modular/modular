@@ -59,7 +59,9 @@ package(default_visibility = [
             "*.py",
             "pipelines/*.py",
         ],
-        exclude = ["conftest.py"],
+        exclude = [
+            "conftest.py",
+        ],
     )
 ]
 

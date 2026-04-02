@@ -111,6 +111,7 @@ class DecodeScheduler(Scheduler):
             pipeline=pipeline,
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
+            extra_kv_caches=getattr(pipeline, "extra_kv_managers", []),
         )
         self.scheduler_logger = SchedulerLogger()
         # None corresponds to the default destination address.

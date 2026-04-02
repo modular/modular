@@ -158,3 +158,43 @@ def test_sampling_params_from_input_not_shared_across_calls() -> None:
     assert params1.temperature == 0.1
     # This must be 0.7 (generation default), not 0.1 (leaked from first call)
     assert params2.temperature == 0.7
+
+
+def test_sampling_params_eos_token_id_single_int() -> None:
+    """Test that a single eos_token_id in generation config maps to stop_token_ids."""
+    defaults = SamplingParamsGenerationConfigDefaults(eos_token_id=42)
+    params = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(),
+        sampling_params_defaults=defaults,
+    )
+    assert params.stop_token_ids == [42]
+
+
+def test_sampling_params_eos_token_id_list() -> None:
+    """Test that a list of eos_token_ids in generation config maps to stop_token_ids."""
+    defaults = SamplingParamsGenerationConfigDefaults(eos_token_id=[42, 99])
+    params = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(),
+        sampling_params_defaults=defaults,
+    )
+    assert params.stop_token_ids == [42, 99]
+
+
+def test_sampling_params_eos_token_id_not_set() -> None:
+    """Test that stop_token_ids remains None when eos_token_id is not set."""
+    defaults = SamplingParamsGenerationConfigDefaults(temperature=0.5)
+    params = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(),
+        sampling_params_defaults=defaults,
+    )
+    assert params.stop_token_ids is None
+
+
+def test_sampling_params_user_stop_token_ids_override_eos_token_id() -> None:
+    """Test that user-provided stop_token_ids take priority over generation config eos_token_id."""
+    defaults = SamplingParamsGenerationConfigDefaults(eos_token_id=42)
+    params = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(stop_token_ids=[100, 200]),
+        sampling_params_defaults=defaults,
+    )
+    assert params.stop_token_ids == [100, 200]

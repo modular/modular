@@ -19,6 +19,7 @@ import logging
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
+from functools import cached_property
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from .logit_processors_type import LogitsProcessor
@@ -134,9 +135,26 @@ class SamplingParamsGenerationConfigDefaults:
     do_sample: bool | None = None
     """If ``False``, uses greedy sampling."""
 
-    # Do not cache this property, callers mutate the returned dict.
+    eos_token_id: int | list[int] | None = None
+    """EOS token ID from the model's GenerationConfig, if explicitly set."""
+
+    @cached_property
+    def _values_to_update(self) -> dict[str, float | int | list[int]]:
+        values: dict[str, float | int | list[int]] = {}
+        for _field in fields(self):
+            field_value = getattr(self, _field.name)
+            if field_value is not None:
+                if _field.name == "eos_token_id":
+                    if isinstance(field_value, int):
+                        values["stop_token_ids"] = [field_value]
+                    elif isinstance(field_value, list):
+                        values["stop_token_ids"] = field_value
+                else:
+                    values[_field.name] = field_value
+        return values
+
     @property
-    def values_to_update(self) -> dict[str, float | int]:
+    def values_to_update(self) -> dict[str, float | int | list[int]]:
         """Non-``None`` field values as a dictionary.
 
         Returns:
@@ -153,13 +171,8 @@ class SamplingParamsGenerationConfigDefaults:
             defaults.values_to_update
             # {'temperature': 0.7, 'top_k': 50}
         """
-        values = {}
-        for _field in fields(self):
-            field_value = getattr(self, _field.name)
-            if field_value is not None:
-                values[_field.name] = field_value
-
-        return values
+        # Return a copy of the values, because the caller mutates the returned dict.
+        return self._values_to_update.copy()
 
 
 @dataclass(frozen=False)

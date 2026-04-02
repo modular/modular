@@ -480,6 +480,34 @@ class TextTokenizer(
                 "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TextGenerationRequestMessage]"
             )
 
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes ``stop`` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+        return stop_tokenized
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = set(self._default_eos_token_ids)
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
+
     async def create_eos_tracker(
         self, request: TextGenerationRequest
     ) -> EOSTracker:
@@ -690,6 +718,8 @@ class TextAndVisionTokenizer(
                 raise ValueError(
                     f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {max_length})."
                 )
+
+            encoded_prompt = np.array(encoded_prompt)
         else:
             encoded_prompt = np.array(list(prompt))
 
@@ -852,6 +882,35 @@ class TextAndVisionTokenizer(
         )
 
         return context
+
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes `stop` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+
+        return stop_tokenized
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = set(self._default_eos_token_ids)
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
 
 
 def _rgba_to_rgb(

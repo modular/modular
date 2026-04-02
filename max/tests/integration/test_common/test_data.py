@@ -79,8 +79,10 @@ class MockTextGenerationRequest:
             proper_messages = [
                 TextGenerationRequestMessage(
                     role="user",
-                    content=[TextContentPart(text=prompt)]
-                    + [ImageContentPart() for _ in images],
+                    content=[
+                        TextContentPart(text=prompt),
+                        *(ImageContentPart() for _ in images),
+                    ],
                 )
             ]
         else:

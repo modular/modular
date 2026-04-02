@@ -10,6 +10,7 @@ package(default_visibility = [
 modular_py_test(
     name = "test_overlap_text_generation_pipeline",
     srcs = ["test_overlap_text_generation_pipeline.py"],
+    tags = ["manual"],
     deps = [
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",

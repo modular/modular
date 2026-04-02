@@ -3330,6 +3330,68 @@ def rms_norm_key_cache(
     )
 
 
+def rms_norm_value_cache(
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    gamma: TensorValue,
+    epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    total_seq_len: Dim,
+    input_row_offsets: TensorValue,
+    weight_offset: float | np.floating[Any],
+    rms_norm_cols: int | None = None,
+    multiply_before_cast: bool = True,
+    per_head_norm: bool = True,
+) -> None:
+    """Applies RMSNorm in place to the _new_ entries in the value cache.
+    Semantics match :func:`rms_norm_key_cache`, but updates the value tensor
+    for the layer instead of the key tensor.
+    """
+    gamma_rank_expected = 1
+    if gamma.rank != gamma_rank_expected:
+        raise ValueError(
+            f"expected gamma of rank {gamma_rank_expected} but got {gamma.rank}"
+        )
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        )
+    if gamma.shape[0] != kv_params.head_dim and per_head_norm:
+        if rms_norm_cols is None:
+            raise ValueError(
+                "Size of gamma doesn't match head_dim. Please pass rms_norm_cols "
+                "explicitly if you intend to apply RMSNorm to only a subset of "
+                "head dimensions"
+            )
+        elif rms_norm_cols != gamma.shape[0]:
+            raise ValueError(
+                f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
+            )
+    if gamma.dtype != kv_params.dtype:
+        raise TypeError(
+            f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
+        )
+    parameters: dict[str, int | str | DType | bool] = {
+        "multiply_before_cast": multiply_before_cast,
+        "per_head_norm": per_head_norm,
+    }
+    assert kv_params.page_size is not None
+    ops.inplace_custom(
+        "mo.rms_norm_value_cache.ragged.paged",
+        device=input_row_offsets.device,
+        values=[
+            *kv_collection,
+            gamma,
+            ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.cast(TensorValue(total_seq_len), DType.uint32),
+            input_row_offsets,
+            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
+        ],
+        parameters=parameters,
+    )
+
+
 def moe_create_indices(
     topk_ids: TensorValue,
     num_local_experts: int,

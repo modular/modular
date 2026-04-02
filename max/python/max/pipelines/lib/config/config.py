@@ -64,6 +64,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "DeepseekV32ForCausalLM",
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
+    "Gemma4ForConditionalGeneration",
 )
 
 _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
@@ -73,6 +74,7 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "DeepseekV32ForCausalLM",
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
+    "Gemma4ForConditionalGeneration",
 )
 
 
@@ -947,7 +949,7 @@ class PipelineConfig(ConfigFileModel):
         # TODO(E2EOPT-28): remove this constraint.
         # Gemma has a MHA head size of 256.
         # This requires a kv cache page size of at least 256.
-        if "Gemma3" in arch.name:
+        if "Gemma3" in arch.name or "Gemma4" in arch.name:
             model_config.kv_cache.kv_cache_page_size = max(
                 model_config.kv_cache.kv_cache_page_size, 256
             )

@@ -477,8 +477,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                         "prompt must be a string when images are provided"
                     )
                 content: list[MessageContent] = [
-                    TextContentPart(text=request.prompt),
-                ] + [ImageContentPart() for _ in request.images]
+                    TextContentPart(text=request.prompt)
+                ]
+                content.extend(ImageContentPart() for _ in request.images)
                 messages = [
                     TextGenerationRequestMessage(role="user", content=content)
                 ]
