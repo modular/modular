@@ -538,6 +538,13 @@ def matmul_dispatch_sm100_bf16[
         Index(4608, 1536),
         Index(1536, 1536),
         Index(8192, 1536),
+        Index(5376, 16384),
+        Index(5376, 21504),
+        Index(16384, 5376),
+        Index(20480, 5376),
+        Index(262144, 5376),
+        Index(43008, 5376),
+        Index(5376, 8192),
     ]
 
     comptime FLUX2_NK = [
