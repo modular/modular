@@ -108,6 +108,7 @@ def _make_qwen3_gptq_block(
     devices: list[DeviceRef],
 ) -> Qwen3TransformerBlock:
     config = _make_qwen3_gptq_config(devices)
+    assert config.rms_norm_eps is not None
     rope = Llama3RotaryEmbedding(
         dim=config.hidden_size,
         n_heads=config.num_attention_heads,
