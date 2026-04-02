@@ -21,11 +21,7 @@ introducing a comm → nn → comm circular dependency.
 from std.math import rsqrt
 from std.sys import align_of, simd_width_of
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
-from std.gpu import (
-    WARP_SIZE,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import WARP_SIZE, block_idx, thread_idx
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
@@ -313,8 +309,8 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var row = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var row = block_idx.x
+    var tid = thread_idx.x
     var idx = tid * simd_width
 
     # Helper: Load gamma and apply to value (shared between both kernel variants)
@@ -521,8 +517,8 @@ def _rms_norm_fused_fp8_kernel_block[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var row = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var row = block_idx.x
+    var tid = thread_idx.x
 
     # Helper: Load gamma and apply to value (same as warp-tiling variant)
     @always_inline

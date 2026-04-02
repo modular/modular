@@ -99,9 +99,9 @@ from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    block_dim_uint as block_dim,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    block_dim,
+    global_idx,
+    grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -236,7 +236,7 @@ def _naive_reduce_kernel[
     var stride = grid_dim.x * block_dim.x
 
     # Each thread handles multiple elements with striding
-    for i in range(Int(tid), num_elements, Int(stride)):
+    for i in range(tid, num_elements, stride):
         dst_buf[i] += src_buf[i]
 
 
@@ -257,7 +257,7 @@ def _naive_reduce_kernel_with_lambda[
     var stride = grid_dim.x * block_dim.x
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    for idx in range(Int(tid), num_elements // simd_width, Int(stride)):
+    for idx in range(tid, num_elements // simd_width, stride):
         var elem_idx = idx * simd_width
         output_lambda[width=simd_width, alignment=alignment](
             dst_buf.layout.idx2crd(elem_idx),
@@ -458,9 +458,9 @@ def _allreduce_2stage_kernel[
     var my_sig = rank_sigs[my_rank]
 
     # --- Thread Indexing ---
-    var global_tid = Int(global_idx.x)
+    var global_tid = global_idx.x
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = Int(grid_dim.x) * BLOCK_SIZE
+    var stride = grid_dim.x * BLOCK_SIZE
 
     var rs_config = ReduceScatterConfig[dtype, ngpus](num_elements, stride)
 
@@ -544,7 +544,7 @@ def _allreduce_2stage_kernel[
 
         # Main loop - only process unragged elements (no bounds check)
         for idx in range(
-            rs_config.thr_local_start(UInt(global_tid)),
+            rs_config.thr_local_start(global_tid),
             rs_config.rank_part(ngpus - 1),
             rs_config.stride,
         ):
@@ -561,7 +561,7 @@ def _allreduce_2stage_kernel[
 
         # Ragged tail - max 1 simd vector per gpu, spread work between threads
         if global_tid < ngpus:
-            var peer_rank = circular_add[ngpus](my_rank, Int(global_tid))
+            var peer_rank = circular_add[ngpus](my_rank, global_tid)
             if peer_rank < rs_config.axis_remainder:
                 var idx = (
                     rs_config.rank_part(0) - simd_width
@@ -622,7 +622,7 @@ def _allreduce_1stage_kernel[
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * UInt(BLOCK_SIZE)
+    var stride = grid_dim.x * BLOCK_SIZE
     var my_sig = rank_sigs[my_rank]
     var num_simd_vectors = num_elements // simd_width
 
@@ -644,7 +644,7 @@ def _allreduce_1stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
         # Vectorized grid-strided loop with SIMD loads.
-        for idx in range(Int(global_tid), num_simd_vectors, Int(stride)):
+        for idx in range(global_tid, num_simd_vectors, stride):
             var elem_idx = idx * simd_width
 
             var reduced_result = _load_reduce[

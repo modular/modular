@@ -65,9 +65,9 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_int as thread_idx,
+    block_idx,
+    grid_dim,
+    thread_idx,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
@@ -210,8 +210,8 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
 
     # Row loop: each block processes rows with stride = grid_dim.
     # For rows <= grid_dim, the loop body runs exactly once per block.
-    var num_blocks = Int(grid_dim.x)
-    for row in range(Int(block_idx.x), rows, num_blocks):
+    var num_blocks = grid_dim.x
+    for row in range(block_idx.x, rows, num_blocks):
         # Phase 0: P2P load from all GPUs + accumulate in float32 regs.
         # Gamma load latency from above is hidden during P2P stalls.
         var vec_data = SIMD[accum_type, simd_width](0)
@@ -388,7 +388,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     var tid = thread_idx.x
     var col_idx = tid * simd_width
     var is_valid = col_idx < cols
-    var num_blocks = Int(grid_dim.x)
+    var num_blocks = grid_dim.x
 
     # Row-aligned partitioning: each GPU owns ceildiv(rows, ngpus) rows.
     var rows_per_rank = ceildiv(rows, ngpus)
@@ -477,7 +477,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     # === Stage 1: RS + RMSNorm + FP8 (partition rows only) ===
     # Each block iterates over its partition rows directly. With
     # grid_dim <= rows_per_rank, every block has at least one row.
-    for local_row in range(Int(block_idx.x), rows_per_rank, num_blocks):
+    for local_row in range(block_idx.x, rows_per_rank, num_blocks):
         var row = my_row_start + local_row
         if row < rows:
             # P2P load from all GPUs + accumulate in f32 registers.
@@ -564,7 +564,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
         var gpu_row_start = gpu * rows_per_rank
         var gpu_row_end = min(gpu_row_start + rows_per_rank, rows)
         var gpu_rows = gpu_row_end - gpu_row_start
-        for local_row in range(Int(block_idx.x), gpu_rows, num_blocks):
+        for local_row in range(block_idx.x, gpu_rows, num_blocks):
             var row = gpu_row_start + local_row
             var local_elem = local_row * cols + col_idx
 
