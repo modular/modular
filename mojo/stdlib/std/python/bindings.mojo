@@ -1100,8 +1100,11 @@ def _py_c_function_wrapper[
                 # An exception was returned - set the Python error indicator
                 var exc = result[PythonException]
                 var exc_obj = exc.get_exception_object()
-                cpython.PyErr_SetObject(
-                    cpython.PyExc_Exception, exc_obj._obj_ptr
+                var error_type = cpython.get_error_global("PyExc_Exception")
+                # Use the exception object's string representation as the message
+                var exc_str = String(exc_obj)
+                cpython.PyErr_SetString(
+                    error_type, exc_str.as_c_string_slice().unsafe_ptr()
                 )
                 # Return NULL to indicate exception
                 return PyObjectPtr()
