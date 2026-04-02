@@ -727,10 +727,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 def Index[
     *Ts: Intable,
     dtype: DType = DType.int64,
-](
-    *args: *Ts,
-    out result: IndexList[type_of(args).__len__(), element_type=dtype],
-):
+](*args: *Ts, out result: IndexList[args.__len__(), element_type=dtype]):
     """Constructs an N-D Index from the given values.
 
     Parameters:
@@ -743,11 +740,8 @@ def Index[
     Returns:
         The constructed IndexList.
     """
-    comptime arg_count = args.__len__()
-
-    result = IndexList[arg_count, element_type=dtype]()
-
-    comptime for i in range(arg_count):
+    result = {}
+    comptime for i in range(args.__len__()):
         result[i] = Int(args[i])
 
 
