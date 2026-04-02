@@ -657,6 +657,7 @@ class PixelGenerationTokenizer(
         npt.NDArray[np.int64],
         npt.NDArray[np.bool_],
         npt.NDArray[np.int64] | None,
+        npt.NDArray[np.bool_] | None,
         npt.NDArray[np.int64] | None,
         npt.NDArray[np.int64] | None,
     ]:
@@ -671,7 +672,14 @@ class PixelGenerationTokenizer(
             images: Optional list of images for image-to-image generation (Flux2 only).
 
         Returns:
-            Tuple of (token_ids, attn_mask, token_ids_2, negative_token_ids, negative_token_ids_2).
+            Tuple of (
+                token_ids,
+                attn_mask,
+                token_ids_2,
+                negative_token_ids,
+                negative_attn_mask,
+                negative_token_ids_2,
+            ).
             token_ids_2 and negative_token_ids_2 are None if no secondary tokenizer is configured.
         """
         token_ids, attn_mask = await self.encode(prompt, images=images)
@@ -684,9 +692,10 @@ class PixelGenerationTokenizer(
             )
 
         negative_token_ids: npt.NDArray[np.int64] | None = None
+        negative_attn_mask: npt.NDArray[np.bool_] | None = None
         negative_token_ids_2: npt.NDArray[np.int64] | None = None
         if do_true_cfg:
-            negative_token_ids, _attn_mask_neg = await self.encode(
+            negative_token_ids, negative_attn_mask = await self.encode(
                 negative_prompt or ""
             )
             if self.delegate_2 is not None:
@@ -700,6 +709,7 @@ class PixelGenerationTokenizer(
             attn_mask,
             token_ids_2,
             negative_token_ids,
+            negative_attn_mask,
             negative_token_ids_2,
         )
 

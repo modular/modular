@@ -86,8 +86,8 @@ class QwenImageEditModelInputs:
     vae_condition_images: list[npt.NDArray[np.uint8]] | None = None
 
     @classmethod
-    def kwargs_from_context(cls, context: PixelContext) -> dict[str, Any]:
-        """Build kwargs from PixelContext using matching dataclass fields."""
+    def from_context(cls, context: PixelContext) -> "QwenImageEditModelInputs":
+        """Create model inputs from a PixelContext."""
         kwargs: dict[str, Any] = {}
         for dataclass_field in fields(cls):
             name = dataclass_field.name
@@ -103,7 +103,7 @@ class QwenImageEditModelInputs:
                     kwargs[name] = None
             else:
                 kwargs[name] = value
-        return kwargs
+        return cls(**kwargs)
 
 
 @dataclass
@@ -549,9 +549,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
 
     def prepare_inputs(self, context: PixelContext) -> QwenImageEditModelInputs:  # type: ignore[override]
         """Convert a PixelContext into QwenImageEditModelInputs."""
-        return QwenImageEditModelInputs(
-            **QwenImageEditModelInputs.kwargs_from_context(context)
-        )
+        return QwenImageEditModelInputs.from_context(context)
 
     def _patchify_and_pack(self, latents: TensorValue) -> TensorValue:
         """(B,C,H//2,2,W//2,2) → (B, H//2*W//2, C*4)"""
@@ -1001,22 +999,35 @@ class QwenImageEditPipeline(DiffusionPipeline):
             latents_bhwc, latents_mean, latents_std
         )
         decoded = self.vae.decode(latents_decoded)
-        return self._image_to_flat_hwc(self._to_numpy(decoded))
+        image = self._image_to_flat_hwc(self._to_numpy(decoded))
+        image = ((image * 0.5 + 0.5) * 255.0).clip(0.0, 255.0)
+        return image.astype(np.uint8, copy=False)
 
     def _to_numpy(self, image: Any) -> np.ndarray:
-        cpu_image = image.to(CPU())
-        try:
-            return np.from_dlpack(cpu_image).astype(np.float32)
-        except (RuntimeError, TypeError):
-            from max.experimental.tensor import Tensor as _Tensor
-
-            if isinstance(cpu_image, _Tensor):
-                return np.from_dlpack(cpu_image.cast(DType.float32)).astype(
-                    np.float32
+        if isinstance(image, Buffer):
+            cpu_buf = image.to(CPU())
+            if cpu_buf.dtype == DType.bfloat16:
+                image_np = (
+                    np.from_dlpack(
+                        cpu_buf.view(dtype=DType.uint16, shape=cpu_buf.shape)
+                    )
+                    .astype(np.uint32)
+                    << 16
+                ).view(np.float32)
+            else:
+                image_np = np.from_dlpack(cpu_buf).astype(
+                    np.float32, copy=False
                 )
-            return np.from_dlpack(
-                _Tensor(storage=cpu_image).cast(DType.float32)
-            ).astype(np.float32)
+        elif hasattr(image, "to_numpy"):
+            image_np = image.to_numpy()
+        elif hasattr(image, "to") and hasattr(image, "__dlpack__"):
+            image_np = np.from_dlpack(image.to(CPU()))
+        else:
+            image_np = image.driver_tensor.to_numpy()
+
+        if image_np.dtype != np.float32:
+            image_np = image_np.astype(np.float32, copy=False)
+        return image_np
 
     @staticmethod
     def _image_to_flat_hwc(image: np.ndarray) -> np.ndarray:
