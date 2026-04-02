@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Device mesh for organizing devices into an N-dimensional logical grid.
-
-A device mesh enables combining different parallelism strategies. For example,
-a 2x4 mesh with `(Replicated(), Sharded(axis=0))` placement gives DP=2, TP=4.
-"""
+"""Device mesh for organizing devices into an N-dimensional logical grid."""
 
 from __future__ import annotations
 
@@ -31,8 +27,8 @@ class DeviceMesh:
 
     Args:
         devices: Flat tuple of devices in row-major order.
-        mesh_shape: Shape of the logical grid, e.g. `(2, 4)` for DP=2, TP=4.
-        axis_names: Human-readable names for each axis, e.g. `("dp", "tp")`.
+        mesh_shape: Shape of the logical grid, e.g. ``(2, 4)`` for DP=2, TP=4.
+        axis_names: Human-readable names for each axis, e.g. ``("dp", "tp")``.
     """
 
     devices: tuple[Device, ...]
@@ -57,6 +53,20 @@ class DeviceMesh:
             raise ValueError(
                 f"axis_names must be unique, got {self.axis_names}"
             )
+        # Device homogeneity: either all devices are the same physical
+        # device (simulated multi-device on one CPU/GPU) or all devices
+        # are distinct (real multi-device).  Mixed meshes (some repeated,
+        # some different) are not supported.
+        if len(self.devices) > 1:
+            unique = set(self.devices)
+            n_unique = len(unique)
+            if n_unique != 1 and n_unique != len(self.devices):
+                raise ValueError(
+                    f"DeviceMesh requires either all-same devices "
+                    f"(simulated) or all-distinct devices (multi-device), "
+                    f"but got {n_unique} unique devices for "
+                    f"{len(self.devices)} slots."
+                )
 
     @property
     def ndim(self) -> int:
@@ -96,3 +106,22 @@ class DeviceMesh:
             )
         )
         return f"DeviceMesh({shape_str})"
+
+    @staticmethod
+    def single(device: Device) -> DeviceMesh:
+        """Creates a trivial single-device mesh."""
+        return DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("_",))
+
+    @property
+    def is_single(self) -> bool:
+        """Returns ``True`` if this mesh contains exactly one device."""
+        return self.num_devices == 1
+
+    @property
+    def is_simulated(self) -> bool:
+        """Returns ``True`` if all mesh slots reference the same device.
+
+        A simulated mesh uses graph-level ops (add, concat, split) to
+        emulate multi-device collectives on a single CPU or GPU.
+        """
+        return self.num_devices > 1 and len(set(self.devices)) == 1
