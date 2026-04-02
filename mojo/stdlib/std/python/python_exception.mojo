@@ -57,7 +57,7 @@ struct PythonException(Movable, ImplicitlyCopyable):
     var _exception_obj: PythonObject
     """The underlying Python exception object."""
     
-    def __init__(out self, error_message: String):
+    def __init__(out self, error_message: String) raises:
         """Initialize a PythonException from an error message.
         
         This creates a standard Python Exception with the given message.
