@@ -1028,44 +1028,16 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
         continue;
       }
 
-      // Evaluate the constraint with the parameter bindings.
-      TypedAttr prop = constraint.getProposition();
-      prop = getCanonicalAttr(prop);
-      prop = evaluator->getReboundAttribute(prop);
-      // Strip any sugar (e.g., sugar_preserved) to get the actual value.
-      prop = getCanonicalAttr(prop);
-
-      // If the constraint folds to a constant, we know the answer.
-      if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
-        if (intValue.getValue().isZero()) {
-          // Constraint is definitely false - trait is not provided.
-          continue;
-        }
-        // Constraint is true - trait is definitely provided.
+      switch (evaluateConstraint(*evaluator, constraint, callerAssumptions)) {
+      case ConformanceResult::Yes:
         provenSymbols.insert(symbol);
-        continue;
+        break;
+      case ConformanceResult::NeedsEvidence:
+        unprovenSymbols.insert(symbol);
+        break;
+      case ConformanceResult::No:
+        break;
       }
-
-      // Constraint didn't fold. Check if the caller's where-clause
-      // assumptions imply it (e.g. AllWritable[*types] assumed by a where
-      // clause can prove Tuple's conditional Writable conformance).
-      if (!callerAssumptions.empty()) {
-        bool implied = false;
-        for (auto &assumption : callerAssumptions) {
-          TypedAttr assumptionProp =
-              getCanonicalAttr(assumption.getProposition());
-          if (constraintImplies(assumptionProp, prop)) {
-            implied = true;
-            break;
-          }
-        }
-        if (implied) {
-          provenSymbols.insert(symbol);
-          continue;
-        }
-      }
-
-      unprovenSymbols.insert(symbol);
     }
   }
 

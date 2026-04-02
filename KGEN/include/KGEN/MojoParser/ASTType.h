@@ -12,7 +12,7 @@
 #define KGEN_MOJOPARSER_ASTTYPE_H
 
 #include "KGEN/KGENDialect/KGENEnums.h"
-#include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
@@ -43,15 +43,6 @@ class RefType;
 class RefPackType;
 class SharedState;
 class TraitType;
-
-/// Result of checking whether a type conforms to a trait.
-/// This is a 3-state result because conditional conformances may not be
-/// provable at parse time.
-enum class ConformanceResult {
-  Yes,          // Definitely conforms (unconditional or constraint proven true)
-  No,           // Definitely does not conform (constraint proven false)
-  NeedsEvidence // Conditional conformance that can't be proven statically
-};
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
