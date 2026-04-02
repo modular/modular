@@ -75,10 +75,7 @@ struct Driver(Movable):
             var err = plugin.get_status_message(status)
             raise HALError(
                 err.status,
-                message="Failed to initialise driver plugin from "
-                + plugin.so_path
-                + ": "
-                + err.message,
+                message=String(t"Failed to initialise driver plugin from {plugin.so_path}: {err.message}"),
             )
 
         var driver_handle = handle.unsafe_assume_init_ref()
@@ -92,7 +89,7 @@ struct Driver(Movable):
             var err = plugin.get_status_message(status)
             raise HALError(
                 err.status,
-                message="Failed to get device count: " + err.message,
+                message=String(t"Failed to get device count: {err.message}"),
             )
 
         return ArcPointer(
@@ -125,11 +122,7 @@ struct Driver(Movable):
         if id < 0 or id >= self._device_count:
             raise HALError(
                 STATUS_INVALID_ARG,
-                message="Invalid device ID "
-                + String(id)
-                + " — range is [0, "
-                + String(self._device_count)
-                + ")",
+                message=String(t"Invalid device ID {id}. range is [0, {self._device_count})"),
             )
         var cached = self._devices.find(id)
         if cached:
@@ -143,10 +136,7 @@ struct Driver(Movable):
             var err = self._plugin.get_status_message(status)
             raise HALError(
                 err.status,
-                message="Failed to get device "
-                + String(id)
-                + ": "
-                + err.message,
+                message=String(t"Failed to get device {id}: {err.message}"),
             )
 
         var arc = ArcPointer(Device(device_handle.unsafe_assume_init_ref(), id))
