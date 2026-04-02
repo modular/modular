@@ -54,8 +54,9 @@ def dispatch_max_num_blocks[
     and ngpus. If such configs are found, then the search continues for
     finding the config x where num_bytes <= x.num_bytes.
 
-    If no matching config is found then falls back to default configs
-    (encoded with ngpus=-1 and num_bytes=-1)
+    Falls back to the arch-specific default (ngpus=-1, num_bytes=-1,
+    matching sm_version), or if none exists, to the global default
+    (ngpus=-1, num_bytes=-1, sm_version="default").
     """
 
     # Validate that every entry has num_blocks <= 512 (MAX_NUM_BLOCKS_UPPER_BOUND
@@ -74,16 +75,28 @@ def dispatch_max_num_blocks[
         len(_over_limit) == 0
     ), "tuning_table entry has num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND (512)"
 
-    # get default entry
+    # get default entry: prefer arch-specific, fall back to global default
     @parameter
     def rule_eq_arch_default(x: tuning_table.type) -> Bool:
         return (
             x.ngpus == -1 and x.num_bytes == -1 and x.sm_version == sm_version
         )
 
-    comptime default_idx = tuning_table.query_index[rule_eq_arch_default]()
+    @parameter
+    def rule_eq_global_default(x: tuning_table.type) -> Bool:
+        return x.ngpus == -1 and x.num_bytes == -1 and x.sm_version == "default"
+
+    comptime arch_default_idx = tuning_table.query_index[rule_eq_arch_default]()
+    comptime global_default_idx = tuning_table.query_index[
+        rule_eq_global_default
+    ]()
+    comptime default_idx = arch_default_idx if len(
+        arch_default_idx
+    ) > 0 else global_default_idx
     comptime assert len(default_idx) > 0, (
-        "tuning_table must have a default entry for sm_version: " + sm_version
+        "tuning_table must have a default entry for sm_version: "
+        + sm_version
+        + " or a global default entry (sm_version='default')"
     )
     comptime default_entry = tuning_table.configs[default_idx[0]]
     var default_num_blocks = default_entry.num_blocks
