@@ -301,9 +301,13 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](StructMetaType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
+      [=](StructMetaMetaType) { return typeType; });
+  replacer.addInferredDomainNonRecursiveReplacement(
       [=](AnyTraitType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](TraitType) { return typeType; });
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [=](FnLiteralTypeGeneratorMetaType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](NonStructTypeType) { return typeType; });
 
