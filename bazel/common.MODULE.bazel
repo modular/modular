@@ -224,6 +224,13 @@ filegroup(
 )
 
 http_archive(
+    name = "llvm-ifs",
+    build_file_content = "filegroup(name = 'llvm-ifs', srcs = glob(['**']), visibility = ['//visibility:public'])",
+    sha256 = "126f4b14273588f221eb98e8d9952675eddd7f8a0466347be9c8e6d0530c9144",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-tools/1/126f4b14273588f221eb98e8d9952675eddd7f8a0466347be9c8e6d0530c9144/tools.tar.gz",
+)
+
+http_archive(
     name = "nvshmem_prebuilt",
     build_file_content = """
 package(default_visibility = ["//visibility:public"])
