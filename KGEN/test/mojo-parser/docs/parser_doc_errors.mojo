@@ -360,3 +360,23 @@ def _fn_with_params[x: Int](s: _AutoParamTest):
 # These mangled names should NOT require documentation.
 comptime AliasWithAutoParams = _fn_with_params[1]
 """This alias has compiler-generated autoparams that should be ignored."""
+
+
+# ===----------------------------------------------------------------------=== #
+# @doc_hidden suppresses missing doc string warnings (MOTO-957)
+# ===----------------------------------------------------------------------=== #
+
+
+# @doc_hidden on a comptime alias suppresses the missing doc string warning.
+# (MOTO-957: previously @doc_hidden caused a compiler error on aliases)
+@doc_hidden
+comptime doc_hidden_alias = 42
+
+
+# @doc_hidden on a struct field suppresses the missing doc string warning.
+# (MOTO-957: previously @doc_hidden caused a compiler error on struct fields)
+struct StructWithDocHiddenField:
+    """A struct testing @doc_hidden on fields."""
+
+    @doc_hidden
+    var hidden_field: Int

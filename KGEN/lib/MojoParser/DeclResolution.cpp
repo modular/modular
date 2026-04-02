@@ -93,18 +93,6 @@ static LogicalResult resolveDefaultedOpFromTrait(DeclResolver &resolver,
 // Decorator Support
 //===----------------------------------------------------------------------===//
 
-static void
-rejectDecorators(ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
-                 ASTDecl &decl, SharedState &shared) {
-  if (decoratorExprs.empty())
-    return;
-
-  shared.emitError(decoratorExprs[0].first->getLoc(),
-                   "decorators not supported on this statement")
-      << SourceRange(decoratorExprs.front().first->getRangeStart(),
-                     decoratorExprs.back().first->getRangeEnd());
-}
-
 namespace {
 /// Decorators attached to a declaration may be "signature" decorators or "body"
 /// decorators.
@@ -132,6 +120,10 @@ public:
   /// Handle the `@stable` decorator for decls that implement
   /// StabilityDecoratorInterface.
   LogicalResult handleStable(ExprNode *expr, ASTDecl &decl);
+
+  /// Handle the `@doc_hidden` decorator for decls that implement
+  /// DocHiddenDecoratorInterface (AliasDeclOp and StructFieldOp).
+  LogicalResult handleDocHidden(ExprNode *expr, ASTDecl &decl);
 
   /// Process signature decorators on the declaration using the provided
   /// functor. The functor should return success if the decorator was processed
@@ -372,6 +364,28 @@ LogicalResult Decorators::handleStable(ExprNode *expr, ASTDecl &decl) {
   return applyStable();
 }
 
+LogicalResult Decorators::handleDocHidden(ExprNode *expr, ASTDecl &decl) {
+  // Only handle bare `@doc_hidden` (no arguments) on declaration types that
+  // cannot use the full decorator resolution machinery (IREmitter) without
+  // causing recursive scope lookup issues: AliasDeclOp and StructFieldOp.
+  // For FnOp, StructDeclOp, etc., @doc_hidden is deferred to body processing.
+  auto declRef = dyn_cast<DeclRefNode>(expr);
+  if (!declRef || declRef->spelling != "doc_hidden")
+    return failure(); // Not our decorator.
+
+  Operation *op = decl.getIfOperation();
+  if (auto aliasOp = dyn_cast_if_present<AliasDeclOp>(op)) {
+    aliasOp.setHasDocHiddenDecoratorAttr(UnitAttr::get(aliasOp.getContext()));
+    return success();
+  }
+  if (auto fieldOp = dyn_cast_if_present<StructFieldOp>(op)) {
+    fieldOp.setIsDocHiddenAttr(UnitAttr::get(fieldOp.getContext()));
+    return success();
+  }
+  // For other op types, fall through to body decorator processing.
+  return failure();
+}
+
 void Decorators::applySignatureDecorators(
     ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
     function_ref<LogicalResult(ExprNode *)> process) {
@@ -381,6 +395,7 @@ void Decorators::applySignatureDecorators(
   for (auto &[decorator, _] : decoratorExprs) {
     if (succeeded(handleDeprecated(decorator, decl)) ||
         succeeded(handleStable(decorator, decl)) ||
+        succeeded(handleDocHidden(decorator, decl)) ||
         succeeded(process(decorator)))
       continue;
     bodyDecorators.push_back(decorator);
@@ -3943,7 +3958,21 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   }
 
   fieldOp.setType(type);
-  rejectDecorators(decoratorExprs, decl, shared);
+
+  // Process field decorators syntactically to avoid recursive scope lookups
+  // that can arise when using the IR emitter from within a struct's scope.
+  // Currently only @doc_hidden is supported on struct fields.
+  for (auto &[decorator, _] : decoratorExprs) {
+    if (auto *declRef = dyn_cast<DeclRefNode>(decorator);
+        declRef && declRef->spelling == "doc_hidden") {
+      fieldOp.setIsDocHiddenAttr(UnitAttr::get(fieldOp.getContext()));
+    } else {
+      shared.emitError(decorator->getLoc(),
+                       "decorators not supported on this statement")
+          << SourceRange(decorator->getRangeStart(), decorator->getRangeEnd());
+    }
+  }
+
   shared.notifyListenerOnStructFieldDecl(decl, identifierLoc);
   return success();
 }

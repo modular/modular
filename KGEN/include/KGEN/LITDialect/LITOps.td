@@ -504,7 +504,9 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
   let arguments = (ins
     StrAttr:$name,
     TypeAttr:$type,
-    OptionalAttr<LIT_DocStringAttr>:$docString
+    OptionalAttr<LIT_DocStringAttr>:$docString,
+    // Set if the field has an @doc_hidden decorator on it.
+    UnitAttr:$isDocHidden
   );
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 
@@ -919,7 +921,9 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     // Present if the decl has an @stable decorator on it.
     UnitAttr:$hasStableDecorator,
     // Present if the decl has an @stable(since="version") decorator.
-    OptionalAttr<StrAttr>:$stableSinceVersion
+    OptionalAttr<StrAttr>:$stableSinceVersion,
+    // Present if the alias has an @doc_hidden decorator on it.
+    UnitAttr:$hasDocHiddenDecorator
   );
   let assemblyFormat = [{
     custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
@@ -944,7 +948,8 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
       build($_builder, $_state, decl, value, /*docString=*/{},
             /*deprecationInfo=*/{},
             /*inheritedFrom=*/{}, /*defaultedAssociatedAlias=*/false,
-            /*hasStableDecorator=*/false, /*stableSinceVersion=*/{});
+            /*hasStableDecorator=*/false, /*stableSinceVersion=*/{},
+            /*hasDocHiddenDecorator=*/false);
     }]>,
   ];
 

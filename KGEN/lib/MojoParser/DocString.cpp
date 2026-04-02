@@ -56,14 +56,27 @@ bool LIT::shouldHideDeclInDocGen(ASTDecl &decl, StringRef name) {
   return TypeSwitch<Operation *, bool>(declOp)
       .Case<FnOp, StructDeclOp>(
           [&](auto op) { return hasDocHiddenDecorator(op.getDecorators()); })
+      .Case<AliasDeclOp>(
+          [](AliasDeclOp op) { return op.getHasDocHiddenDecorator(); })
+      .Case<StructFieldOp>([](StructFieldOp op) { return op.getIsDocHidden(); })
       .Default(false);
 }
 
-/// A struct requires a doc string if it's defined at the top level of a module,
-/// unless its name begins with an underscore.
+/// A struct or trait requires a doc string if it's defined at the top level of
+/// a module, unless its name begins with an underscore.
 static bool requiresDocString(ASTDeclInterface op) {
   return !op.getDeclName().strref().starts_with("_") &&
          isa<FileModuleOp>(op->getParentOp());
+}
+
+/// A struct requires a doc string if it's defined at the top level of a
+/// module, unless its name begins with an underscore or it is @doc_hidden.
+static bool requiresDocString(StructDeclOp op) {
+  if (isPrivateMemberName(op.getDeclName().strref()))
+    return false;
+  if (hasDocHiddenDecorator(op.getDecorators()))
+    return false;
+  return isa<FileModuleOp>(op->getParentOp());
 }
 
 /// If a function matches all of the following conditions, it requires a doc
@@ -104,18 +117,24 @@ static bool requiresDocString(FnOp op) {
 /// string:
 /// 1. It's a "public" field, meaning its name does not start with an
 ///    underscore.
-/// 2. Its parent struct requires a doc string.
+/// 2. It is not explicitly annotated with @doc_hidden.
+/// 3. Its parent struct requires a doc string.
 static bool requiresDocString(StructFieldOp op) {
-  return !op.getName().starts_with("_") &&
-         requiresDocString(cast<StructDeclOp>(op->getParentOp()));
+  if (op.getName().starts_with("_"))
+    return false;
+  if (op.getIsDocHidden())
+    return false;
+  return requiresDocString(cast<StructDeclOp>(op->getParentOp()));
 }
 
 /// An alias requires a doc string if it's defined at the top level of a module
-/// (or within a struct that requires a doc string), and its name does not begin
-/// with an underscore.
+/// (or within a struct that requires a doc string), its name does not begin
+/// with an underscore, and it is not explicitly annotated with @doc_hidden.
 static bool requiresDocString(AliasDeclOp op) {
   StringRef name = op.getParamDecl().getName();
   if (name.starts_with("_"))
+    return false;
+  if (op.getHasDocHiddenDecorator())
     return false;
 
   Operation *parent = op->getParentOp();

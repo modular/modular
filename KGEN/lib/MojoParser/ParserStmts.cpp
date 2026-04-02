@@ -3466,7 +3466,6 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
   if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
-    rejectDecorator();
     declOp = StructFieldOp::create(builder, loc, name, unresolvedType);
 
     // Skip the body of this definition: go to a token the starts a line at the
