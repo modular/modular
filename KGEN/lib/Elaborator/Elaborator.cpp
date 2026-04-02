@@ -1734,7 +1734,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
             generatorOp.getFuncTypeGenerator().getBody().getFnEffects()),
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
         generatorOp.getExternal(), /*convergent=*/false,
-        generatorOp.getDecorators(), DictionaryAttr::get(b.getContext())));
+        generatorOp.getLinkageNameAttr(), generatorOp.getDecorators(),
+        DictionaryAttr::get(b.getContext())));
     // Process LLVM metadata recorded in the generator by fusing names and
     // values from the LLVMetadataName and LLVMMetadataValue dictionaries.
     auto newFunc = cast<FuncOp>(*instance);
@@ -2815,26 +2816,42 @@ LogicalResult Elaborator::run(
   // Update the symbol table with the new one.
   theModule.getBodyRegion().push_back(newBlock);
 
-  // For GPU targets, sanitize function symbol names to be compatible with GPU
-  // backends that only accept alphanumeric characters (and valid identifier
-  // starts). sanitizeSymbolToAlnum handles both non-alnum characters and
-  // leading digits. We collect renames into a map so replaceSymNames can
-  // update all references.
-  // Only function symbols are sanitized — struct instance symbols are purely
-  // type-level metadata that get erased after elaboration. Sanitizing them
-  // would cause instref type mismatches when GPU-compiled function types are
-  // plugged back into the host module via rewriteCompileOffloadOp.
+  // Resolve linkage names and sanitize GPU symbol names in a single pass.
+  // Functions with a linkageName attribute are renamed to that name.
+  // On GPU targets, remaining functions are sanitized to alphanumeric names.
+  // After renaming sym_names, replaceSymNames fixes SymbolConstantAttr refs.
   DenseMap<SymbolRefAttr, StringAttr> symToRename;
-  if (target.isGPU()) {
-    for (auto func : theModule.getOps<FuncOp>()) {
-      StringAttr name = func.getNameAttr();
-      StringAttr sanitized = sanitizeSymbolToAlnum(name);
-      if (name != sanitized) {
-        symToRename[FlatSymbolRefAttr::get(name)] = sanitized;
-        func.setName(sanitized);
-        DebugInfo::updateSubprogram(func, sanitized);
+  DenseMap<StringAttr, FuncOp> renamedTo;
+  for (auto func : theModule.getOps<FuncOp>()) {
+    StringAttr newName;
+    if (auto linkageNameAttr = func.getLinkageNameAttr()) {
+      if (!isa<StringAttr>(linkageNameAttr)) {
+        failed = true;
+        mlir::emitError(func.getLoc()) << "unable to resolve `linkageName` '"
+                                       << linkageNameAttr << "' to a string";
+        continue;
       }
+      // Convert from a !kgen.string-typed StringAttr to a built-in StringAttr
+      newName = StringAttr::get(theModule.getContext(),
+                                cast<StringAttr>(linkageNameAttr).getValue());
+      func.removeLinkageNameAttr();
+    } else if (target.isGPU()) {
+      newName = sanitizeSymbolToAlnum(func.getSymNameAttr());
     }
+
+    if (!newName || newName == func.getSymNameAttr())
+      continue;
+
+    auto [it, inserted] = renamedTo.try_emplace(newName, func);
+    if (!inserted) {
+      failed = true;
+      mlir::emitError(func.getLoc()) << "duplicate functions named " << newName;
+      mlir::emitRemark(it->second.getLoc()) << "existing function here";
+      continue;
+    }
+    symToRename[FlatSymbolRefAttr::get(func.getSymNameAttr())] = newName;
+    func.setSymName(newName);
+    DebugInfo::updateSubprogram(func, newName);
   }
   replaceSymNames(theModule, symToRename);
 

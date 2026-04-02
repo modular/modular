@@ -463,3 +463,17 @@ kgen.generator @count_to_zero_has_next(%arg0: index) -> i1 {
   %0 = index.cmp ne(%idx0, %arg0)
   kgen.return %0 : i1
 }
+
+// -----
+
+// Two generators with the same linkage name should report a clash error.
+
+// expected-remark @below {{existing function here}}
+kgen.generator @"clash::a"() attributes {linkageName = "foo" : !kgen.string} {
+  kgen.return
+}
+
+// expected-error @below {{duplicate functions named "foo"}}
+kgen.generator @"clash::b"() attributes {linkageName = "foo" : !kgen.string} {
+  kgen.return
+}

@@ -297,18 +297,6 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
   }
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
-  // If the function has a linkage name, rename it.
-  if (TypedAttr newNameAttr = func.getLinkageNameAttr()) {
-    auto newName = dyn_cast<StringAttr>(newNameAttr);
-    // Linkage names must be simple string literals
-    assert(newName && "Unresolvable linkage name");
-    // The linkage name is a !kgen.string-typed StringAttr - convert it to an
-    // *untyped* StringAttr as that's what is required for symbols.
-    renamedSymbols[func.getSymNameAttr()] =
-        StringAttr::get(newName.getContext(), newName.getValue());
-    func.setSymName(newName);
-  }
-
   // Now that we have the full parameter list, remove any singleton parameters.
   // This ensures that the elaborator doesn't instantiate the function based on
   // lifetimes.
@@ -327,7 +315,8 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
                      sigAttr, func.getFunctionTypeAttr(), inputParamsArr,
                      func.getDecoratorsAttr(), func.getInlineLevelAttr(),
                      func.getExportKindAttr(), func.getExternalAttr(),
-                     /*inlinedForm=*/nullptr, func.getLLVMMetadataArray(),
+                     /*inlinedForm=*/nullptr, func.getLinkageNameAttr(),
+                     func.getLLVMMetadataArray(),
                      func.getLLVMArgMetadataArray());
 
   for (const NamedAttribute &attr : func->getDialectAttrs())

@@ -59,13 +59,11 @@ StringAttr ParamNodeBase::getMangledName() {
 
 FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
     GetLinkageNameAttr getLinkageNameAttr) {
-  // This only supports generators with an empty set of parameters, otherwise we
-  // need to resolve the symbol name after elaboration.
   TargetInfoAttr target =
       cast<TargetParamAttr>(getLinkageNameAttr.getTarget()).getTarget();
-  // For GPU targets, predict the sanitized name that the elaborator will
-  // produce during finalization. sanitizeSymbolToAlnum handles both
-  // non-alphanumeric characters and leading digits.
+  // The elaborator's finalization sanitizes GPU symbol names (via
+  // sanitizeSymbolToAlnum). This call predicts the final sanitized name so that
+  // user code receiving the linkage name references the correct symbol.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(*errorLoc, "get_linkage_name",
                              getLinkageNameAttr.getFunc(),
@@ -75,8 +73,21 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
     emitError(pairOrError.takeError());
     return failure();
   }
-  StringAttr name = pairOrError.takeValue().first;
-  return {StringAttr::get(name.getValue(), getLinkageNameAttr.getType())};
+  auto [mangledName, generator] = pairOrError.takeValue();
+
+  // If the generator has an explicit linkage name, it must be a simple string
+  // literal. Parametric linkage name expressions are not yet supported.
+  if (TypedAttr linkageNameAttr = generator.getLinkageNameAttr()) {
+    if (auto linkageName = dyn_cast<StringAttr>(linkageNameAttr)) {
+      return {StringAttr::get(linkageName.getValue(),
+                              getLinkageNameAttr.getType())};
+    }
+    emitError({*errorLoc, "unable to resolve linkage name"});
+    return failure();
+  }
+
+  return {
+      StringAttr::get(mangledName.getValue(), getLinkageNameAttr.getType())};
 }
 
 FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(

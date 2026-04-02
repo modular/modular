@@ -106,3 +106,29 @@ kgen.generator export @top() {
   kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(!pop.simd<4, ui32>) -> (!pop.simd<4, ui32>) @kernel<:dtype ui32>>>
   kgen.return
 }
+
+// -----
+
+// COM: When a generator has a linkageName and debug info, the elaborator
+// COM: renames the function and updates the subprogram accordingly.
+
+// The subprogram's linkageName should be updated to the export name.
+// CHECK-LABEL: kgen.func @my_export()
+// CHECK-NOT: linkageName = "my_export"
+// CHECK: } loc([[LOC:#.*]])
+// CHECK-NEXT: } loc([[MODULE_LOC:#.*]])
+
+kgen.generator @"mangled::original_name"() attributes {linkageName = "my_export" : !kgen.string} {
+  kgen.return loc(#export_loc)
+} loc(#export_loc)
+
+// CHECK-DAG: [[EXPORT_SP:#.*]] = #debuginfo.subprogram
+// CHECK-SAME:  sourceName = <"original_name">
+// CHECK-SAME:  linkageName = "my_export"
+
+// CHECK-DAG: [[LOC]] = loc(fused<[[EXPORT_SP]]>[{{.*}}]
+#original_sp = #debuginfo.subprogram<
+  sourceName = <"original_name">
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#export_loc = loc(fused<#original_sp>["export.mlir":1:1])

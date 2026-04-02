@@ -175,6 +175,9 @@ private:
       if (op == oldFunction) {
         walker.walk(oldFunction.getLLVMMetadataArray());
 
+        // The linkage name might contain parameter references.
+        if (auto linkageName = oldFunction.getLinkageNameAttr())
+          walker.walk(linkageName);
         // Most function attrs will only contain false positives, types on the
         // arguments / results are the real source of truth.
         walker.walk(oldFunction.getDecoratorsAttr());
@@ -540,6 +543,9 @@ void RemoveUnusedParams::runOnOperation() {
 
     // Will either be an internal func or a cloned copy of an external func.
     newFunc.setNotExported();
+    // The linkage name applies to the exported original, not this internal
+    // optimized variant.
+    newFunc.removeLinkageNameAttr();
 
     // Update the name so the ABI's don't clash. I.E so this doesn't name match
     // with another package which didn't run this optimization.
