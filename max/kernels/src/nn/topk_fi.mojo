@@ -22,7 +22,11 @@ from std.gpu import (
     warp_id_uint as warp_id,
 )
 from std.gpu.primitives import block, warp
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    pdl_launch_attributes,
+    PDLLevel,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
@@ -419,7 +423,7 @@ def topk_mask_logits[
                 d,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
         # Runtime dispatch to compile-time parameter.
@@ -985,7 +989,7 @@ def topk_sampling_from_prob[
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
         # Runtime dispatch to compile-time parameter.
@@ -1371,7 +1375,7 @@ def topk_topp_sampling_from_prob[
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
         @parameter
@@ -1759,7 +1763,7 @@ def topk_softmax_sample[
                 grid_dim=batch_size,
                 block_dim=block_size,
                 shared_mem_bytes=shared_mem_bytes,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
         # Runtime dispatch to compile-time parameter.
