@@ -2755,6 +2755,15 @@ struct ConvertPOPCallToAIRIntrinsic
       return success();
     }
 
+    // simdgroup_matrix intrinsics use custom mangling
+    if (airName.starts_with("air.simdgroup_matrix_")) {
+      LLVM::LLVMFuncOp func = createSimdgroupMatrixAIRFunction(
+          rewriter, module, op.getLoc(), airName, newOperands, types,
+          op.getOperands().getTypes());
+      rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, newOperands);
+      return success();
+    }
+
     AIRIntrinsicName airFunctionName(airName.str());
     LLVM::LLVMFuncOp func = createAIRFunction(
         rewriter, module, op.getLoc(), airFunctionName, newOperands, types);
@@ -2810,6 +2819,56 @@ private:
     LLVM::LLVMFuncOp func = createAIRFunction(
         rewriter, module, loc, airFunctionName, operands, resultTypes);
     return func;
+  }
+
+  // Create AIR function for simdgroup_matrix intrinsics with custom mangling.
+  LLVM::LLVMFuncOp createSimdgroupMatrixAIRFunction(
+      ConversionPatternRewriter &rewriter, ModuleOp module, Location loc,
+      StringRef airName, ValueRange operands, TypeRange resultTypes,
+      TypeRange origOpTypes) const {
+    SmallVector<Type> argTypes;
+    for (Value value : operands)
+      argTypes.push_back(value.getType());
+
+    assert(argTypes.size() == 5 &&
+           "expected expanded operands: A, transpose_a, B, transpose_b, C");
+    assert(!resultTypes.empty() && "expected result type");
+
+    // Extract KGENDType from the original kgen struct's A and B fields to
+    // determine the scalar-type chars.
+    assert(origOpTypes.size() == 1 && "expected single struct operand");
+    auto kgenStructTy = cast<StructType>(origOpTypes[0]);
+    auto elemTypes = *kgenStructTy.getElementTypes();
+
+    auto aDType = *cast<SIMDType>(elemTypes[0]).getResolvedDType();
+    auto bDType = *cast<SIMDType>(elemTypes[2]).getResolvedDType();
+
+    //   'f' - floating point
+    //   's' - signed integer
+    //   'u' - unsigned integer
+    auto mangleScalarTypeChar = [](KGENDType dtype) {
+      assert(!dtype.isAddress() &&
+             "address dtype not valid for simdgroup_matrix");
+      if (dtype.isIntLike())
+        return (dtype.isSInt() || dtype.isIndex()) ? 's' : 'u';
+      return 'f';
+    };
+
+    // Mangled name:
+    //   airName.{charA}.{charB}.{mangledD}.{mangledA}.{mangledB}.{mangledC}
+    std::string funcName = airName.str();
+    funcName += '.';
+    funcName += mangleScalarTypeChar(aDType);
+    funcName += '.';
+    funcName += mangleScalarTypeChar(bDType);
+    funcName += "." + mangleType(resultTypes[0]); // D
+    funcName += "." + mangleType(argTypes[0]);    // A
+    funcName += "." + mangleType(argTypes[2]);    // B
+    funcName += "." + mangleType(argTypes[4]);    // C
+
+    AIRIntrinsicName airFunctionName(funcName, /*requiresMangling=*/false);
+    return createAIRFunction(rewriter, module, loc, airFunctionName, operands,
+                             resultTypes);
   }
 };
 
