@@ -317,6 +317,7 @@ def gemv_split_k[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
     check_bounds: Bool = True,
+    check_k_bounds: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     output: TileTensor[c_type, c_layout, MutAnyOrigin],
@@ -374,13 +375,9 @@ def gemv_split_k[
     @parameter
     @always_inline
     def _k_iter_body():
-        """Single K-iteration: load weights, load activations, accumulate."""
         var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
         var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
 
-        # Load weights into tile_w.
-        # On AMD, use non-temporal loads to avoid L1/L2 cache pollution
-        # (weights are read exactly once).
         comptime for i in range(tile_n):
             comptime if check_bounds:
                 if i + tile_id_n >= n:
@@ -395,13 +392,11 @@ def gemv_split_k[
                 var b_vec = vec_weight_tile[i, thread_idx.x]
                 tile_w.store(i, 0, rebind[WeightVecType](b_vec))
 
-        # Load activations and accumulate dot products.
         comptime for i in range(tile_m):
             comptime if check_bounds:
                 if i + tile_id_m >= m:
                     continue
             var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
-
             comptime NativeVecType = SIMD[a_type, simd_width]
             var act_native = rebind[NativeVecType](act_vec)
             comptime for j in range(tile_n):
@@ -414,25 +409,61 @@ def gemv_split_k[
 
         iteration += 1
 
-    comptime if unroll_factor == 1:
-        # Simple loop — no ceildiv, no main_iters/remainder split.
-        # Produces minimal PTX with fewest registers on NVIDIA.
+    @parameter
+    @always_inline
+    def _k_scalar_iter():
+        var kc = iteration * tile_k + Int(thread_idx.x) * simd_width
+        if kc < k:
+            var valid = min(simd_width, k - kc)
+
+            comptime for i in range(tile_n):
+                comptime if check_bounds:
+                    if i + tile_id_n >= n:
+                        continue
+                var bv = SIMD[b_type, simd_width](0)
+                var wr = block_idx.y * tile_n + Int(i)
+                var w_base = wr * k + kc
+                comptime for el in range(simd_width):
+                    if Int(el) < valid:
+                        bv[el] = weight.ptr[w_base + Int(el)]
+                tile_w.store(i, 0, bv)
+
+            comptime for i in range(tile_m):
+                comptime if check_bounds:
+                    if i + tile_id_m >= m:
+                        continue
+                comptime NativeVecType = SIMD[a_type, simd_width]
+                var act_native = SIMD[a_type, simd_width](0)
+                var a_base = (block_idx.x * tile_m + Int(i)) * k + kc
+                comptime for el in range(simd_width):
+                    if Int(el) < valid:
+                        act_native[el] = act.ptr[a_base + Int(el)]
+                comptime for j in range(tile_n):
+                    var weight_native = rebind[NativeVecType](
+                        tile_w.vectorize[1, simd_width]()[j, 0]
+                    )
+                    var local_accum = rebind[Scalar[accum_type]](acc[i, j])
+                    local_accum = _dot_accum(act_native, weight_native, local_accum)
+                    acc.store(i, j, local_accum)
+
+        iteration += 1
+
+    comptime if check_k_bounds:
         for _ in range(tid * simd_width, k, tile_k):
-            _k_iter_body()
+            _k_scalar_iter()
     else:
-        # Unrolled loop for ILP — comptime for duplicates the body.
-        var k_start = tid * simd_width
-        var num_k_iters = ceildiv(k - k_start, tile_k) if k > k_start else 0
-        var main_iters = align_down(num_k_iters, unroll_factor)
-
-        # Main unrolled loop.
-        for _outer in range(0, main_iters, unroll_factor):
-            comptime for _u in range(unroll_factor):
+        comptime if unroll_factor == 1:
+            for _ in range(tid * simd_width, k, tile_k):
                 _k_iter_body()
-
-        # Remainder iterations (at most unroll_factor - 1).
-        for _rem in range(main_iters, num_k_iters):
-            _k_iter_body()
+        else:
+            var k_start = tid * simd_width
+            var num_k_iters = ceildiv(k - k_start, tile_k) if k > k_start else 0
+            var main_iters = align_down(num_k_iters, unroll_factor)
+            for _outer in range(0, main_iters, unroll_factor):
+                comptime for _u in range(unroll_factor):
+                    _k_iter_body()
+            for _rem in range(main_iters, num_k_iters):
+                _k_iter_body()
 
     # Warps are arranged along K.
     comptime k_warp_num = num_threads // WARP_SIZE
@@ -687,11 +718,15 @@ def _nvidia_gemv_config[
         else:
             tile_n = 2
 
-    # BF16: always unroll=1 (I-cache sensitive due to scalar FMA chain).
+    # BF16: unroll=2/4 for large K to improve ILP across iterations.
+    # Small K stays unroll=1 to avoid I-cache pressure from scalar FMA chain.
     # FP8: unroll benefits from fewer instructions per iteration.
     var unroll: Int
     comptime if simd_width <= 8:
-        unroll = 1
+        if k_iters >= 16:
+            unroll = 2
+        else:
+            unroll = 1
     else:
         if k_iters == 4:
             unroll = 4
@@ -744,6 +779,7 @@ def gemv_gpu_dispatch[
             unroll_factor: Int = 2,
         ]() raises:
             comptime check_bounds = static_N % tile_n != 0
+            comptime check_k_bounds = static_K % simd_width != 0
             comptime kernel = gemv_split_k[
                 c_type,
                 a_type,
@@ -758,6 +794,7 @@ def gemv_gpu_dispatch[
                 unroll_factor=unroll_factor,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 check_bounds=check_bounds,
+                check_k_bounds=check_k_bounds,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel, kernel](
@@ -1049,15 +1086,12 @@ def gemv_gpu[
 
     elif m == 1 and transpose_b == True:
         comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
-            if k % simd_width == 0:
-                if ceildiv(n, 2) <= ctx.get_attribute(
-                    DeviceAttribute.MAX_GRID_DIM_Y
-                ):
-                    kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
-                else:
-                    kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
+            if ceildiv(n, 2) <= ctx.get_attribute(
+                DeviceAttribute.MAX_GRID_DIM_Y
+            ):
+                kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
             else:
-                kernel_func = GEMVAlgorithm.GEMV_KERNEL
+                kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
         else:
             kernel_func = GEMVAlgorithm.GEMV_KERNEL
 
