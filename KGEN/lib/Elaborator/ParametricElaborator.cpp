@@ -516,12 +516,15 @@ ParametricElaborator::getExpectedMangledName(Location errorLoc,
   }
 
   // If the generator has a constant linkage name, that is the final name.
+  StringAttr baseName;
   if (auto linkageName =
-          dyn_cast_if_present<StringAttr>(func.getLinkageNameAttr()))
-    return std::make_pair(linkageName, func);
-
-  auto baseName = StringAttr::get(
-      func.getContext(), mangleParameterValues(func, symbol.getParamValues()));
+          dyn_cast_if_present<StringAttr>(func.getLinkageNameAttr())) {
+    baseName = linkageName;
+  } else {
+    baseName =
+        StringAttr::get(func.getContext(),
+                        mangleParameterValues(func, symbol.getParamValues()));
+  }
   if (sanitize)
     baseName = sanitizeSymbolToAlnum(baseName);
 
@@ -2788,7 +2791,7 @@ LogicalResult ParametricElaborator::run(
 
   // Resolve linkage names and sanitize GPU symbol names in a single pass.
   // Functions with a linkageName attribute are renamed to that name.
-  // On GPU targets, remaining functions are sanitized to alphanumeric names.
+  // On GPU targets, names are sanitized to alphanumeric names.
   // After renaming sym_names, replaceSymNames fixes SymbolConstantAttr refs.
   DenseMap<SymbolRefAttr, StringAttr> symToRename;
   DenseMap<StringAttr, FuncOp> renamedTo;
@@ -2805,8 +2808,11 @@ LogicalResult ParametricElaborator::run(
       newName = StringAttr::get(theModule.getContext(),
                                 cast<StringAttr>(linkageNameAttr).getValue());
       func.removeLinkageNameAttr();
-    } else if (target.isGPU()) {
-      newName = sanitizeSymbolToAlnum(func.getSymNameAttr());
+    }
+
+    if (target.isGPU()) {
+      newName =
+          sanitizeSymbolToAlnum(newName ? newName : func.getSymNameAttr());
     }
 
     if (!newName || newName == func.getSymNameAttr())
