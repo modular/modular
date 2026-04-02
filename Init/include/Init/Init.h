@@ -10,7 +10,6 @@
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Context.h"
 #include "Support/ErrorOr.h"
-#include "Support/SymbolExport.h"
 
 namespace M {
 namespace Init {
@@ -48,14 +47,6 @@ private:
 ErrorOr<ContextRef> createContext(StringRef programName,
                                   const Options &options = {},
                                   StringRef subCommand = "");
-
-/// Returns a reference to the process-wide global AsyncRT runtime, creating it
-/// on first use with \p source and \p options. If a global runtime already
-/// exists, triggers a fatal error if \p options do not match those used at
-/// creation, and returns a copy of the existing reference.
-MODULAR_CXX_EXPORT AsyncRT::RuntimeRef getOrCreateRuntime(
-    AsyncRT::RuntimeSource source,
-    const AsyncRT::RuntimeOptions &options = AsyncRT::RuntimeOptions());
 
 } // namespace Init
 } // namespace M
