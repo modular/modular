@@ -597,6 +597,20 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     ](self) -> StaticString:
         return self
 
+    @always_inline("nodebug")
+    def __add__(
+        self, rhs: StringLiteral
+    ) -> StringLiteral[
+        __mlir_attr[
+            `#pop.string_concat<`,
+            self.value,
+            `,`,
+            rhs.value,
+            `> : !kgen.string`,
+        ]
+    ]:
+        return {}
+
 
 struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     TrivialRegisterPassable
@@ -679,6 +693,9 @@ struct String(ImplicitlyCopyable, KeyElement):
 
     def __contains__(self, substr: StringSlice[mut=False, ...]) -> Bool:
         return True
+
+    def __add__(self, other: StringSlice) -> String:
+        pass
 
     def __iadd__(mut self, rhs: StringSlice[mut=False, ...]):
         pass

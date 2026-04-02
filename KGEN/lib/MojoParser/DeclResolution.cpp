@@ -500,22 +500,50 @@ void Decorators::applyBodyDecorators(
 
 static constexpr const StringLiteral kMainSymbolName = "main";
 
-/// Apply `@export("linkageName")` to an exportable declaration and register it
-/// with the shared state to ensure no duplicate exports.
-static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
-                        const CallNode *node, ExportInterface itf) {
+/// Try to set the linkage name on a FnOp. If a different linkage name is
+/// already set, emit an error and return true.
+static bool trySetLinkageName(SMLoc loc, ASTDecl &decl, TypedAttr linkageName) {
+  auto fnOp = llvm::dyn_cast_if_present<FnOp>(decl.getIfOperation());
+  if (!fnOp)
+    return false;
+
+  if (auto existing = fnOp.getLinkageNameAttr()) {
+    if (existing != linkageName) {
+      decl.getShared().emitError(loc)
+          << "function has conflicting linkage name from a previous @__name or "
+             "@export decorator";
+      return true;
+    }
+    return false; // same value; no conflict
+  }
+  fnOp.setLinkageNameAttr(linkageName);
+  return false;
+}
+
+/// Apply `@export("linkageName")` or `@__name("linkageName")` to a declaration,
+/// optionally mark it external, and register it with the shared state to ensure
+/// no duplicate linkage names.
+static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
+                            StringRef unmangledName, const CallNode *node,
+                            TypeCheckedParamList &paramList,
+                            ExportInterface itf, IREmitter &emitter) {
   auto &shared = decl.getShared();
   ArrayRef<Operand> operands;
   if (node)
     operands = node->operands;
-  SMLoc nodeLoc = node ? node->getLoc() : loc;
-  if (operands.size() > 2) {
-    shared.emitError(nodeLoc, "@export requires at most 2 arguments");
+  StringRef spelling = isExport ? "@export" : "@__name";
+  if (!isExport && operands.size() != 1) {
+    shared.emitError(loc, spelling) << " must have 1 argument";
     return;
   }
+  if (isExport && operands.size() > 2) {
+    shared.emitError(loc, spelling) << " requires at most 2 arguments";
+    return;
+  }
+  SMLoc nodeLoc = node ? node->getLoc() : loc;
 
+  TypedAttr linkageName;
   std::optional<std::string> exportABI;
-  std::optional<std::string> aliasName;
   for (const Operand &operand : operands) {
     auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
     if (strNode && operand.isKeyword() && operand.name == "ABI") {
@@ -526,20 +554,73 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
         return;
       }
     } else if (strNode && operand.isPositional()) {
-      aliasName = strNode->getValue();
+      linkageName = StringAttr::get(strNode->getValue(),
+                                    KGEN::StringType::get(decl.getContext()));
+    } else if (operand.isPositional() && !isExport) { // Not @export for now
+      auto paramEmitter = emitter.getParamEmitter(EC_Decorator);
+      CValue linkageNameVal =
+          paramEmitter.emitExprCValue(operand.expr, EC_Decorator);
+      if (!linkageNameVal) {
+        shared.emitError(nodeLoc, spelling)
+            << " requires a string specifying the linkage name of the symbol";
+        return;
+      }
+
+      auto stringSliceType = shared.getBuiltinStringSliceType(decl, nodeLoc)
+                                 .getWithoutParameters(emitter.shared);
+
+      if (linkageNameVal.getType().getDecl(emitter.shared) !=
+          stringSliceType.getDecl(emitter.shared)) {
+        if (!paramEmitter.canImplicitlyConvertToType(
+                {linkageNameVal, operand.expr}, stringSliceType,
+                *decl.getParentDecl())) {
+          shared.emitError(nodeLoc)
+              << "cannot implicitly convert " << linkageNameVal.getType()
+              << " to a `StringSlice` for " << spelling << " name";
+          return;
+        }
+
+        ValueDest dest(EC_Decorator);
+        linkageNameVal = paramEmitter.emitConstructorCall(
+            stringSliceType,
+            CallOperands(CallSyntax::kTypeCall, operand.expr,
+                         {{linkageNameVal, operand.expr}}),
+            dest);
+        // If this isn't implicitly convertable, should this ever fail?
+        assert(linkageNameVal && "Could not construct String");
+      }
+
+      auto linkageNamePVal =
+          paramEmitter.emitPValue({linkageNameVal, operand.expr}, EC_Decorator);
+
+      if (!linkageNamePVal) {
+        shared.emitError(nodeLoc) << "failure to create linkage name";
+        return;
+      }
+
+      linkageName = ParamOperatorAttr::get(
+          POC::DataToStr,
+          {linkageNamePVal,
+           VariadicAttr::get({},
+                             VariadicType::get(linkageNamePVal.getType()))});
+      if (!linkageName) {
+        shared.emitError(nodeLoc) << "failure to create linkage name";
+        return;
+      }
     } else {
-      shared.emitError(nodeLoc, "@export requires a string specifying the "
-                                "name of the exported symbol");
+      shared.emitError(nodeLoc, spelling)
+          << " requires a string specifying the name of the exported symbol";
       return;
     }
   }
 
-  bool isCExport = exportABI.has_value();
-  StringRef linkageName = aliasName ? StringRef(*aliasName) : unmangledName;
-
   // Handle the unique case of main. We implicitly export main, so this is
   // simply checking that the user didn't try to export it as something else.
-  if (linkageName == kMainSymbolName) {
+  std::optional<StringRef> simpleLinkageName = unmangledName;
+  if (auto strAttr = dyn_cast_or_null<StringAttr>(linkageName))
+    simpleLinkageName = strAttr.getValue();
+
+  if (simpleLinkageName == kMainSymbolName) {
     if (unmangledName != kMainSymbolName)
       shared.emitError(loc, "only 'main' can be exported as 'main'");
     if (!isa<FnOp>(decl.getIfOperation()))
@@ -551,24 +632,38 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
     return;
   }
 
-  llvm::TypeSwitch<Operation *, void>(decl.getIfOperation())
-      .Case([linkageName](FnOp op) {
-        auto linkageNameAttr = StringAttr::get(
-            linkageName, KGEN::StringType::get(op.getContext()));
-        op.setLinkageNameAttr(linkageNameAttr);
-      });
+  if (linkageName) {
+    if (trySetLinkageName(loc, decl, linkageName))
+      return;
+  }
+  if (!isExport)
+    return;
+
+  bool isCExport = exportABI.has_value();
   if (!isCExport)
     itf.setExported();
   else {
     itf.setCExported();
 
-    if (!isCIdentifier(linkageName)) {
-      shared.emitError(loc, linkageName) << " is not a valid C identifier";
+    // Validate the linkage name is a valid C identifer. We don't permit
+    // non-literal identifiers for these functions.
+    if (linkageName && !simpleLinkageName) {
+      shared.emitError(loc)
+          << " \"C\" ABI functions must have literal identifiers";
+      return;
+    }
+
+    if (!isCIdentifier(*simpleLinkageName)) {
+      shared.emitError(loc, *simpleLinkageName)
+          << " is not a valid C identifier";
       return;
     }
   }
 
-  shared.declResolver->registerAndCheckExport(linkageName, loc);
+  // FIXME: This is an incomplete check as doesn't handle complex
+  // non-literal expressions. Should we just defer it all until later?
+  if (simpleLinkageName)
+    shared.declResolver->registerAndCheckExport(*simpleLinkageName, loc);
 }
 
 namespace {
@@ -674,7 +769,13 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
       decl.setErroneous();
       return failure();
     }
-    applyExport(decorator->getLoc(), decl, baseName, callNode, funcOp);
+    IREmitter emitter(sigDecl, EC_Decorator);
+    applyExportLike(decorator->getLoc(), decl, /*isExport=*/true, baseName,
+                    callNode, tcSignature.paramList, funcOp, emitter);
+  } else if (spelling == "__name") {
+    IREmitter emitter(sigDecl, EC_Decorator);
+    applyExportLike(decorator->getLoc(), decl, /*isExport=*/false, baseName,
+                    callNode, tcSignature.paramList, funcOp, emitter);
   } else if (spelling == "staticmethod") {
     applyArgumentless(spelling, callNode, [&]() {
       if (!decl.tryGetMethodParentDecl()) {
@@ -904,16 +1005,16 @@ void FnSigDecorators::applyExtern(SMLoc decoratorLoc,
     return;
   }
 
-  auto linkageName = StringAttr::get(strNode->getValue(),
-                                     KGEN::StringType::get(decl.getContext()));
-  funcOp.setLinkageNameAttr(linkageName);
-
   if (!funcOp.getInputParams().empty()) {
     // TODO: Can this even happen?
     emitError(callNode->getLoc(),
               "'@extern' cannot be applied to a function with parameters");
     return;
   }
+
+  std::string libName = strNode->getValue();
+  auto ctx = funcOp->getContext();
+  funcOp.setLinkageNameAttr(StringAttr::get(libName, StringType::get(ctx)));
 
   if (decl.getParentDecl() && llvm::isa_and_nonnull<TraitDeclOp, StructDeclOp>(
                                   decl.getParentDecl()->getIfOperation())) {
@@ -1112,6 +1213,13 @@ void FnSigDecorators::finalize() {
       return;
     }
     funcOp.setInlineLevel(InlineLevel::Never);
+  }
+
+  // If we've an exported function with no explicit linkage name, set it now.
+  if (funcOp.isExported() && !funcOp.getLinkageName()) {
+    trySetLinkageName(
+        decl.getLoc(), decl,
+        StringAttr::get(baseName, StringType::get(decl.getContext())));
   }
 
   if (!llvmArgMetadata.empty())
