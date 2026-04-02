@@ -26,6 +26,7 @@
 # CHECK: %0 = lit.call {{.*}}:@"def(x: Int) -> Int_PtrWrapper"::@"__init__()"
 # CHECK: %1 = lit.ref.immut %wrappedFnPtr
 
+
 def top_level(x: Int) -> Int:
     return x
 
@@ -37,14 +38,17 @@ def use_closure[Impl: def(x: Int) unified -> Int](cb: Impl) -> Int:
 def wrap_fn() -> Int:
     return use_closure(top_level)
 
+
 # // -----
 
 # COM: Verify that wrappers are deduplicated
 
 # CHECK-COUNT-1: lit.struct.decl @"def(x: Int) -> Int_PtrWrapper"
 
+
 def a(x: Int) -> Int:
     return x
+
 
 def b(x: Int) -> Int:
     return x * x
@@ -57,12 +61,14 @@ def use_closure[Impl: def(x: Int) unified -> Int](cb: Impl) -> Int:
 def wrap_fn() -> Int:
     return use_closure(a) + use_closure(b)
 
+
 # // -----
 
 # COM: Wrappers should be rebound if signatures are compatible.
 
 # CHECK: kgen.conformance @"def(x: Int) -> Int"
 # CHECK: kgen.conformance @"def(Int) -> Int"
+
 
 def top_level(x: Int) -> Int:
     return x
@@ -75,3 +81,25 @@ def use_closure[Impl: def(Int) unified -> Int](cb: Impl) -> Int:
 
 def wrap_fn() -> Int:
     return use_closure(top_level)
+
+
+# // -----
+
+# COM: fn literals can be converted to closure wrappers.
+
+# CHECK: kgen.conformance @"def(x: Int) -> Int"
+# CHECK: kgen.conformance @"def(Int) -> Int"
+
+
+__def top_level(x: Int) -> Int:
+    return x
+
+
+# COM: Note the lack of an argument name in the signature.
+def use_closure[Impl: def(Int) unified -> Int](cb: Impl) -> Int:
+    return cb(1)
+
+
+def wrap_fn() -> Int:
+    var _ = use_closure(top_level)
+    var _ = use_closure[type_of(top_level)](top_level)

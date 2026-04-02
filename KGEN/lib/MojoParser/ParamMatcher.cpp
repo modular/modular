@@ -641,7 +641,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // repr[T: Writable](Tuple[*Ts]) inside a fn with `where AllWritable[*Ts]`.
   FailureOr<bool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
       shared, state.declScope.getLoc(), actualType, expectedType,
-      ASTDecl::getAssumptionsFromScope(&state.declScope));
+      &state.declScope);
   if (succeeded(typeUpCastable) && typeUpCastable.value())
     return success();
 
@@ -763,7 +763,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           }
           FailureOr<bool> upCastable = IREmitter::canMetaTypeUpCastTo(
               shared, state.declScope.getLoc(), tightestBound, targetMT,
-              ASTDecl::getAssumptionsFromScope(&state.declScope));
+              &state.declScope);
           return succeeded(upCastable) && upCastable.value();
         });
 

@@ -1273,7 +1273,9 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!typeDecl) {
     [[maybe_unused]] Type metaType = type.extractMetaType();
-    assert(!metaType || sugarIsa<NonStructTypeType>(metaType));
+    assert(sugarIsa<NonStructTypeType>(metaType) ||
+           sugarIsa<FnLiteralTypeGeneratorMetaType>(metaType));
+
     // This is a MLIR type, so we need to bind it to the builtin stub.
     // Use a special wrapper decl in the builtins as stubs.
     typeDecl = shared.getBuiltinStubsMLIRType(errorLoc).getDecl(shared);
@@ -1282,9 +1284,13 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
       shared.emitError(errorLoc, "malformed builtin._stubs.__MLIRType");
       return {};
     }
+
+    auto typeValue =
+        TypeParamAttr::get(type, NonStructTypeType::get(shared.getContext()));
+
     // Need to update the type itself to the wrapper type.
     type = cast<StructDeclOp>(typeDecl->getIfOperation())
-               .bindReference({PValue(type)});
+               .bindReference({typeValue});
   }
 
   if (type.checkConformance(trait, shared, callerAssumptions) ==
@@ -1376,7 +1382,8 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   if (!type)
     return {};
 
-  if (sugarIsa<NonStructTypeType>(type.extractMetaType())) {
+  if (sugarIsa<NonStructTypeType, FnLiteralTypeGeneratorMetaType>(
+          type.extractMetaType())) {
     // Create the new type value with the trait metatype.
     return this->bindNonStructTypeToTrait({type, value.expr}, trait);
   }

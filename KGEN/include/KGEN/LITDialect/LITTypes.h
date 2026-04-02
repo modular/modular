@@ -463,6 +463,19 @@ public:
   StructMetaMetaType bindUnbound(ArrayRef<TypedAttr> values) const;
 };
 
+class FnLiteralTypeGeneratorMetaType
+    : public MetaTypeOf<FnLiteralTypeGeneratorType> {
+private:
+  using Base = MetaTypeOf<FnLiteralTypeGeneratorType>;
+
+public:
+  using Base::classof;
+  using Base::get;
+  using Base::MetaTypeOf;
+
+  FnLiteralTypeGeneratorMetaType(Base base) : Base(base) {}
+};
+
 //===----------------------------------------------------------------------===//
 // Type Utilities
 //===----------------------------------------------------------------------===//

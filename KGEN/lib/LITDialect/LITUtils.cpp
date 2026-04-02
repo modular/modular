@@ -35,7 +35,7 @@ bool LIT::isMetaType(Type type) {
   if (auto param = dyn_cast<ParamType>(type))
     return sugarIsa<StructMetaType, AnyTraitType>(param.getParam().getType());
   if (isa<NonStructTypeType, StructMetaType, StructMetaMetaType, TraitType,
-          AnyTraitType, TypeType>(type))
+          AnyTraitType, TypeType, FnLiteralTypeGeneratorMetaType>(type))
     return true;
   return false;
 }
@@ -49,7 +49,8 @@ bool LIT::isFirstLevelTypeExpr(TypedAttr typeExpr) {
   if (auto param = dyn_cast<ParamType>(type))
     return sugarIsa<StructMetaMetaType, AnyTraitType>(
         param.getParam().getType());
-  if (isa<StructMetaType, TraitType, NonStructTypeType>(type))
+  if (isa<StructMetaType, TraitType, NonStructTypeType,
+          FnLiteralTypeGeneratorMetaType>(type))
     return true;
 
   // TypeType is not always a L1 type expression.

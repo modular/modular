@@ -771,8 +771,9 @@ isValidUpCastToTypeType(SharedState &shared, ASTType fromType, ASTType toType) {
   // Trait metatypes/struct MetaMetaType are allowed to upcast to trivial types.
   if (sugarIsa<TypeType>(toType)) {
     // Allowing casting from any metatype to type of all types.
-    return sugarIsa<AnyTraitType, StructMetaMetaType, StructMetaType, TraitType,
-                    NonStructTypeType>(fromType);
+    return sugarIsa<StructMetaType, StructMetaMetaType, TraitType, AnyTraitType,
+                    TypeType, NonStructTypeType,
+                    FnLiteralTypeGeneratorMetaType>(fromType);
   }
 
   // Not applicable.
@@ -793,6 +794,11 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       isValidUpCastToTypeType(shared, fromType, toType);
   if (succeeded(upCastable))
     return upCastable.value();
+
+  // fn type is non-struct type (but should it?)
+  if (sugarIsa<FnLiteralTypeGeneratorMetaType>(fromType) &&
+      sugarIsa<NonStructTypeType>(toType))
+    return true;
 
   // Check for param type conversions.
   if (auto fromParamType = sugarDynCast<ParamType>(fromType))
@@ -1214,6 +1220,10 @@ PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
   if (sugarIsa<TypeType>(toType) && sugarIsa<TraitType>(value.getType()))
     return TypeParamAttr::get(ASTType(value), toType);
 
+  if (sugarIsa<FnLiteralTypeGeneratorMetaType>(value.getType()) &&
+      sugarIsa<NonStructTypeType>(toType))
+    return TypeParamAttr::get(ASTType(value), toType);
+
   return ParamOperatorAttr::getRebind(value.get(), toType);
 }
 
@@ -1260,8 +1270,15 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
                      "existentials are not supported yet!");
     return {};
   }
-  ASTType mlirType = typeValue.getIfTypeValue();
 
+  // If the function generator type is upcastable to a non-struct type (but
+  // should it?, esp. for parametric type. We can not easily disable the
+  // conversion at the moment since many existing code relies on it).
+  if (sugarIsa<FnLiteralTypeGeneratorMetaType>(typeValue.getType()))
+    typeValue =
+        UpcastAttr::get(NonStructTypeType::get(getContext()), typeValue.get());
+
+  ASTType mlirType = typeValue.getIfTypeValue();
   SMLoc loc = value.expr->getLoc();
 
   // Use a special wrapper decl in the builtins as stubs.
@@ -1296,14 +1313,56 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   return TypeParamAttr::get(boundWrapper, mlirType, trait);
 }
 
+//===----------------------------------------------------------------------===//
+// Generalized Implicit Conversions
+//===----------------------------------------------------------------------===//
+
+static ASTDecl *getClosureTraitDecl(SharedState &shared,
+                                    const TraitType &traitTy) {
+  for (const auto &symbol : traitTy.getSymbols()) {
+    auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    if (symbolDecl.isErroneous())
+      continue;
+
+    if (auto traitDeclOp =
+            dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+        traitDeclOp && traitDeclOp.getDefinesClosure())
+      return &symbolDecl;
+  }
+
+  return nullptr;
+}
+
+/// Build the concrete closure-wrapper type instantiated with a function symbol.
+static Type getConcreteClosureWrapperTypeForFnSymbol(SharedState &shared,
+                                                     ASTDecl &declScope,
+                                                     SMLoc loc,
+                                                     PValue fnPValue) {
+  auto fnSig = cast<FnTypeGeneratorType>(fnPValue.getType());
+  ASTDecl &moduleDecl = *declScope.getNearestDeclOfType<FileModuleOp>();
+  auto &closureEmitter = shared.getClosureEmitter();
+  auto rvClosureTrait = shared.getOrCreateClosureTrait(loc, moduleDecl, fnSig);
+  ASTDecl *wrapper = closureEmitter.createFnStructWrapper(
+      moduleDecl, *rvClosureTrait, fnSig, loc);
+  assert(wrapper && "createFnStructWrapper must return a declaration");
+
+  auto structDeclOp = dyn_cast<StructDeclOp>(wrapper->getIfOperation());
+  assert(structDeclOp && "createFnStructWrapper must return a StructDeclOp");
+  assert(!structDeclOp.getInputParams().empty() &&
+         "closure wrapper must have an implementation parameter");
+
+  TypedAttr fnVal = ParamOperatorAttr::getRebind(
+      fnPValue.get(), structDeclOp.getInputParams().front().getType());
+  return structDeclOp.bindReference({fnVal});
+}
+
 // Returns true/false to indicate that whether a type value can be upcast to a
 // trait.
 // Returns failure when it is an non-applicable cases (i.e., `fromType` is not a
 // typetype and/or `toType` is not a trait type).
-FailureOr<bool>
-IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
-                               ASTType toType,
-                               ArrayRef<ConstraintAttr> callerAssumptions) {
+FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
+                                               ASTType fromType, ASTType toType,
+                                               ASTDecl *declScope) {
   if (isEqualCanon(fromType, toType))
     return true;
 
@@ -1343,9 +1402,26 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
 
         // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
         // Tuple[*Ts]: Writable when binding to a Writable parameter.
-        return fromType.checkConformance(trait, shared, callerAssumptions) ==
+        // Assumptions needed: implicit conversion of e.g. Tuple[*Ts] to
+        // Writable
+        // inside a fn with `where AllWritable[*Ts]`.
+        auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
+        return fromType.checkConformance(trait, shared, assumptions) ==
                ConformanceResult::Yes;
       }
+    } else if (auto fnGen =
+                   sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(
+                       fromType)) {
+      TraitType closureTrait = anyTrait.getTraitType();
+      if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
+        TypedAttr fnPValue = fnGen.getType().getConstantTargetLiteral();
+        Type concreteWrapperType = getConcreteClosureWrapperTypeForFnSymbol(
+            shared, *declScope, loc, fnPValue);
+        return succeeded(shared.getClosureEmitter().isCompatibleWith(
+            concreteWrapperType, traitDecl));
+      }
+      // Maintain convertibility as a MLIR type ...
+      return checkMLIRTypeConformance(shared, loc, closureTrait);
     } else {
       // This isn't relevant, e.g. in function pointer to closure case.
       return failure();
@@ -1366,10 +1442,12 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
 
     // Assumptions needed: e.g. AnyTraitType[Copyable] → AnyTraitType[Movable]
     // upcast when the Copyable conformance depends on caller assumptions.
-    if (concreteType)
+    if (concreteType) {
+      auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
       return concreteType.checkConformance(anyTrait.getTraitType(), shared,
-                                           callerAssumptions) ==
+                                           assumptions) ==
              ConformanceResult::Yes;
+    }
   }
 
   // Not applicable.
@@ -1433,12 +1511,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     return isConvertible;
   };
 
-  // Assumptions needed: implicit conversion of e.g. Tuple[*Ts] to Writable
-  // inside a fn with `where AllWritable[*Ts]`.
-  SmallVector<ConstraintAttr> assumptions;
-  declScope.getKnownAssumptionsIncludingParents(assumptions);
   FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
-      shared, value.expr->getLoc(), rvType, requiredType, assumptions);
+      shared, value.expr->getLoc(), rvType, requiredType, &declScope);
   if (succeeded(canUpCast))
     return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
 
@@ -1455,7 +1529,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     ASTType fromEltTp = sugarCast<VariadicType>(rvType).getElementType();
     // Reuse assumptions from above for variadic element upcast.
     FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
-        shared, value.expr->getLoc(), fromEltTp, toEltTp, assumptions);
+        shared, value.expr->getLoc(), fromEltTp, toEltTp, &declScope);
     if (succeeded(canUpCast))
       return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
   }
@@ -1472,11 +1546,14 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Functions can implicitly convert to their corresponding closure wrapper.
   // This is distinct from converting to a closure trait.
-  if (auto fnSig = sugarDynCast<FnTypeGeneratorType>(rvType)) {
+  if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(rvType)) {
     if (auto structMeta =
             sugarDynCast<StructMetaType>(requiredType.extractMetaType())) {
       StructType structTy = structMeta.getType();
-      if (isClosureWrapperStruct(shared, value.ir.getIfPValue(), structTy))
+      PValue target = value.ir.getIfPValue();
+      if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
+        target = PValue(fnLiteral.getConstantTargetLiteral());
+      if (isClosureWrapperStruct(shared, target, structTy))
         return cacheAndReturnVal(rvType, requiredType, true);
     }
   }
@@ -1574,6 +1651,22 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
         // Conversions from structs or traits.
         return emitMetaTypeToTraitConversion(valueExpr, trait);
       }
+
+      if (auto fnGen =
+              sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(fromType)) {
+        if (auto traitDecl = getClosureTraitDecl(shared, trait)) {
+          TypedAttr fnPValue = fnGen.getType().getConstantTargetLiteral();
+          ASTType structWrapper = getConcreteClosureWrapperTypeForFnSymbol(
+              shared, declScope, valueExpr.expr->getLoc(), fnPValue);
+          (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
+              structWrapper, traitDecl);
+          return emitMetaTypeToTraitConversion(
+              {PValue(structWrapper), valueExpr.expr}, trait);
+        }
+
+        // FnTypeGeneratorType is still a non-struct type...
+        return bindNonStructTypeToTrait(valueExpr, trait);
+      }
     }
 
     // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
@@ -1613,19 +1706,20 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     return emitCResult(*typeValueCast, expr, dest);
 
   // Conversions from function pointers to closures.
-  if (auto fnSig = sugarDynCast<FnTypeGeneratorType>(rvType)) {
-    // Functions can also implicitly convert to their corresponding closure
-    // wrapper. This is distinct from converting to a closure trait.
+  if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(rvType)) {
+    // Functions can implicitly convert to their corresponding closure wrapper.
     if (auto structMeta =
             sugarDynCast<StructMetaType>(requiredType.extractMetaType())) {
       StructType structTy = structMeta.getType();
-      if (isClosureWrapperStruct(shared, valueExpr.ir.getIfPValue(),
-                                 structTy)) {
+      auto target = valueExpr.ir.getIfPValue();
+      if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
+        target = PValue(fnLiteral.getConstantTargetLiteral());
+      if (isClosureWrapperStruct(shared, target, structTy)) {
         auto module = getDeclScope().getNearestDeclOfType<FileModuleOp>();
         assert(builder);
         auto convertedResult = shared.getClosureEmitter().emitFnPtrConversion(
-            *builder, valueExpr.expr->getLocation(*this), *module,
-            valueExpr.ir.getIfPValue(), structTy);
+            *builder, valueExpr.expr->getLocation(*this), *module, target,
+            structTy);
         return emitCResult(convertedResult, expr, dest);
       }
     }
@@ -1665,9 +1759,9 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       return emitCResult(VariadicAttr::get(converted, dstVATp), expr, dest);
     } else {
       // Must match the check in canImplicitlyConvertToType.
-      FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
-          shared, valueExpr.expr->getLoc(), fromEltTp, toEltTp,
-          ASTDecl::getAssumptionsFromScope(&getDeclScope()));
+      FailureOr<bool> canUpCast =
+          canMetaTypeUpCastTo(shared, valueExpr.expr->getLoc(), fromEltTp,
+                              toEltTp, &getDeclScope());
       if (failed(canUpCast) || !canUpCast.value())
         return emitVariadicError();
 

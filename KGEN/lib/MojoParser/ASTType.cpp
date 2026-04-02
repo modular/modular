@@ -330,12 +330,16 @@ Type ASTType::extractMetaType() const {
     if (auto metaType = pti.getMetaType())
       return metaType;
 
+  if (auto fnGen = dyn_cast<FnLiteralTypeGeneratorType>(mlirType))
+    return FnLiteralTypeGeneratorMetaType::get(fnGen);
+
   // Otherwise, it is a generic MLIR type.
   return NonStructTypeType::get(mlirType.getContext());
 }
 
 static bool isMetaTypeForUserDefinedType(Type type) {
-  return !sugarIsa<NonStructTypeType, TypeType>(type);
+  return !sugarIsa<FnLiteralTypeGeneratorMetaType, NonStructTypeType, TypeType>(
+      type);
 }
 
 bool ASTType::isUserDefined() const {
@@ -561,9 +565,8 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
     if (!trait)
       return !decl;
 
-    return IREmitter::canMetaTypeUpCastTo(
-               shared, loc, type.extractMetaType(), trait,
-               ASTDecl::getAssumptionsFromScope(decl))
+    return IREmitter::canMetaTypeUpCastTo(shared, loc, type.extractMetaType(),
+                                          trait, decl)
         .value_or(false);
   };
 
