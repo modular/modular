@@ -15,8 +15,10 @@
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
+from urllib.parse import urlparse
 
 import numpy as np
 import pytest
@@ -32,6 +34,7 @@ from max.interfaces.generation import GenerationOutput
 from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import OutputImageContent
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.request import register_request
 from max.serve.router import openresponses_routes
@@ -120,9 +123,41 @@ class MockGeneralPipelineHandler(GeneralPipelineHandler):
         )
 
 
+class MockVideoPipelineHandler(GeneralPipelineHandler):
+    """Mock implementation that yields multiple frames for a video response."""
+
+    def __init__(self) -> None:
+        self.model_name = "test-model"
+        self.logger = Mock()
+        self.debug_logging = False
+
+    async def next(
+        self, request: OpenResponsesRequest
+    ) -> AsyncGenerator[GenerationOutput, None]:
+        frame_a = np.zeros((8, 8, 3), dtype=np.uint8)
+        frame_a[:, :, 0] = 255
+        frame_b = np.zeros((8, 8, 3), dtype=np.uint8)
+        frame_b[:, :, 1] = 255
+        yield GenerationOutput(
+            request_id=request.request_id,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
+            output=[
+                OutputImageContent.from_numpy(frame_a, format="png"),
+                OutputImageContent.from_numpy(frame_b, format="png"),
+            ],
+        )
+
+
 @pytest.fixture(scope="function")
-def app(fixture_tokenizer, mock_pipeline_config: PipelineConfig):  # noqa: ANN001, ANN201
+def app(
+    fixture_tokenizer: Any,
+    mock_pipeline_config: PipelineConfig,
+    tmp_path: Path,
+) -> FastAPI:
     """Create a test app with OpenResponses API enabled."""
+    _ = fixture_tokenizer
+    _ = mock_pipeline_config
+
     # Create a minimal FastAPI app without the full lifespan
     app = FastAPI(title="MAX Serve Test")
 
@@ -134,6 +169,8 @@ def app(fixture_tokenizer, mock_pipeline_config: PipelineConfig):  # noqa: ANN00
 
     # Inject a mock handler into app.state
     app.state.handler = MockGeneralPipelineHandler()
+    app.state.media_store = GeneratedMediaStore(tmp_path / "media")
+    app.state.pipeline_config = Mock(model=Mock(model_name="test-model"))
 
     return app
 
@@ -208,3 +245,84 @@ def test_openresponses_invalid_request(app) -> None:  # noqa: ANN001
         response = client.post("/v1/responses", json=request_data)
 
         assert response.status_code == 422  # UNPROCESSABLE_ENTITY
+
+
+def test_openresponses_rejects_unknown_model(app: FastAPI) -> None:
+    """Requests should fail when the requested model differs from the served model."""
+    with TestClient(app) as client:
+        request_data = {
+            "model": "other-model",
+            "input": "Generate an image of a cat",
+        }
+        response = client.post("/v1/responses", json=request_data)
+
+        assert response.status_code == 404
+        assert "currently serving" in response.json()["detail"]
+
+
+def test_openresponses_video_request_returns_download_url(
+    app: FastAPI,
+) -> None:
+    """Video requests should return a downloadable mp4 URL."""
+    app.state.handler = MockVideoPipelineHandler()
+
+    with TestClient(app) as client:
+        request_data = {
+            "model": "test-model",
+            "input": "Animate a red square becoming green.",
+            "provider_options": {
+                "video": {
+                    "width": 64,
+                    "height": 64,
+                    "num_frames": 2,
+                    "frames_per_second": 8,
+                    "steps": 2,
+                }
+            },
+        }
+        response = client.post("/v1/responses", json=request_data)
+
+        assert response.status_code == 200
+        content = response.json()["output"][0]["content"][0]
+        assert content["type"] == "output_video"
+        assert content["format"] == "mp4"
+        assert content["frames_per_second"] == 8
+        assert content["num_frames"] == 2
+
+        video_path = urlparse(content["video_url"]).path
+        video_response = client.get(video_path)
+        assert video_response.status_code == 200
+        assert video_response.headers["content-type"] == "video/mp4"
+
+
+def test_openresponses_video_request_returns_inline_base64_when_requested(
+    app: FastAPI,
+) -> None:
+    """Video requests should return inline base64 mp4 when b64_json is requested."""
+    app.state.handler = MockVideoPipelineHandler()
+
+    with TestClient(app) as client:
+        request_data = {
+            "model": "test-model",
+            "input": "Animate a red square becoming green.",
+            "provider_options": {
+                "video": {
+                    "width": 64,
+                    "height": 64,
+                    "num_frames": 2,
+                    "frames_per_second": 8,
+                    "steps": 2,
+                    "response_format": "b64_json",
+                }
+            },
+        }
+        response = client.post("/v1/responses", json=request_data)
+
+        assert response.status_code == 200
+        content = response.json()["output"][0]["content"][0]
+        assert content["type"] == "output_video"
+        assert content["format"] == "mp4"
+        assert content["frames_per_second"] == 8
+        assert content["num_frames"] == 2
+        assert content["video_data"]
+        assert "video_url" not in content

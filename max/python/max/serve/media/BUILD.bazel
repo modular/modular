@@ -1,0 +1,14 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "media",
+    srcs = glob(["*.py"]),
+    deps = [
+        "//max/python/max/interfaces",
+        requirement("av"),
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)

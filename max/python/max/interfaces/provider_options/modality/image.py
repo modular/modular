@@ -14,6 +14,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .common import GeneratedMediaResponseFormat
+
 
 class ImageProviderOptions(BaseModel):
     """Options specific to image generation pipelines."""
@@ -155,5 +157,13 @@ class ImageProviderOptions(BaseModel):
         description=(
             "The image format to use for encoding the output (e.g., 'jpeg', "
             "'png', 'webp'). Defaults to 'jpeg'."
+        ),
+    )
+
+    response_format: GeneratedMediaResponseFormat = Field(
+        GeneratedMediaResponseFormat.url,
+        description=(
+            "How generated images are returned. Use 'url' for file-backed "
+            "downloads or 'b64_json' for inline base64 image data."
         ),
     )
