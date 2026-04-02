@@ -1196,7 +1196,7 @@ def test_list_take_items() raises:
     # Collect elements from take_items iterator
     var collected = List[String]()
     for element in my_list.take_items():
-        collected.append(element[])
+        collected.append(element)
 
     # List should be empty after draining
     assert_equal(len(my_list), 0)
