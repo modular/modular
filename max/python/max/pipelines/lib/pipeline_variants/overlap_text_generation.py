@@ -1239,8 +1239,8 @@ class OverlapTextGenerationPipeline(
         """Returns extra KV cache managers (e.g. global attention for Diancie)."""
         return self._extra_kv_managers
 
-    def spec_decode_metrics(self) -> SpeculativeDecodingMetrics:
+    def spec_decode_metrics(self) -> SpeculativeDecodingMetrics | None:
         """Returns the draft token acceptance metrics for speculative decoding."""
         if self._spec_decode_state is None:
-            raise ValueError("Speculative decoding is disabled")
+            return None
         return self._spec_decode_state.metrics
