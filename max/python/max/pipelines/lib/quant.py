@@ -327,6 +327,75 @@ def _parse_fbgemm_fp8_config(
     )
 
 
+def _parse_tensorwise_fp8_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> QuantConfig:
+    """Parses a QuantConfig for AutoFP8 tensorwise (per-tensor) FP8 models.
+
+    These models have quant_method="fp8", activation_scheme="dynamic", and
+    per-tensor weight scales (no weight_block_size).
+    """
+    if dtype != DType.float8_e4m3fn:
+        raise TypeError(
+            "`_parse_tensorwise_fp8_config` only supports float8 dtype"
+        )
+
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    assert hf_quant_config and hf_quant_config.get("quant_method") == "fp8"
+
+    if hf_quant_config.get("activation_scheme") != "dynamic":
+        raise ValueError(
+            "tensorwise FP8 only supports dynamic activation_scheme"
+        )
+
+    # Determine weight scale dtype from checkpoint tensors.
+    # Accept scalar () or (1,) shapes — no rowwise shape check.
+    weight_scale_dtype: DType | None = None
+    for weight_name, weight in state_dict.items():
+        if "weight_scale" not in weight_name:
+            continue
+        weight_scale_dtype = weight.dtype
+    if not weight_scale_dtype:
+        raise ValueError(
+            "could not find weight scale dtype for tensorwise FP8 quantized"
+            " weights"
+        )
+
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=weight_scale_dtype,
+    )
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        dtype=weight_scale_dtype,
+    )
+
+    modules_to_not_convert = set(
+        hf_quant_config.get("modules_to_not_convert", [])
+    )
+
+    mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype = (
+        _quantized_layers_and_embedding_dtype(
+            huggingface_config, modules_to_not_convert, state_dict
+        )
+    )
+
+    bias_dtype = _bias_dtype(state_dict)
+
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=mlp_quantized_layers,
+        attn_quantized_layers=attn_quantized_layers,
+        embedding_output_dtype=embedding_output_dtype,
+        bias_dtype=bias_dtype,
+        format=QuantFormat.FBGEMM_FP8,
+    )
+
+
 def _parse_blockscaled_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -429,10 +498,15 @@ def _parse_fp8_config(
         )
     elif quant_method == "fbgemm_fp8":
         return _parse_fbgemm_fp8_config(huggingface_config, state_dict, dtype)
-    elif quant_method == "fp8":  # DeepSeekV3
-        return _parse_blockscaled_fp8_config(
-            huggingface_config, state_dict, dtype
-        )
+    elif quant_method == "fp8":
+        if hf_quant_config.get("weight_block_size"):
+            return _parse_blockscaled_fp8_config(
+                huggingface_config, state_dict, dtype
+            )
+        else:
+            return _parse_tensorwise_fp8_config(
+                huggingface_config, state_dict, dtype
+            )
 
     raise ValueError(
         "FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
