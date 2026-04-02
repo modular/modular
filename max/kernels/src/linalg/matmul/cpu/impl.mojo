@@ -108,12 +108,14 @@ def tiled_matmul_run[
     elementwise_epilogue_enabled: Bool,
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
+    ElementwiseEpilogueFnType: ImplicitlyCopyable
+    & def(GemmShape, GemmShape) unified -> None,
 ](
     alg: algorithm,
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    elementwise_epilogue_fn: def(GemmShape, GemmShape) escaping -> None,
+    elementwise_epilogue_fn: ElementwiseEpilogueFnType,
     global_tile_shape: GemmShape,
     global_tile_offset: GemmShape,
 ):
@@ -184,6 +186,8 @@ struct TiledMatmul[
     c_layout: TensorLayout,
     c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
+    ElementwiseEpilogueFnType: ImplicitlyCopyable
+    & def(GemmShape, GemmShape) unified -> None,
 ](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -216,7 +220,7 @@ struct TiledMatmul[
         Self.b_origin,
     ]
 
-    var elementwise_epilogue_fn: def(GemmShape, GemmShape) escaping -> None
+    var elementwise_epilogue_fn: Self.ElementwiseEpilogueFnType
 
     def _outer_m_loop[
         tile_kernel_cols: Int
@@ -650,7 +654,9 @@ def _submatmul_sequential_sync[
 ):
     comptime simd_size = config.simd_size
 
-    def elementwise_closure(offset: GemmShape, shape: GemmShape):
+    def elementwise_closure(
+        offset: GemmShape, shape: GemmShape
+    ) unified {read c}:
         comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
             elementwise_epilogue_c_tile[
