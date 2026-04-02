@@ -355,7 +355,7 @@ def run_im2col_test[
 
     ctx.enqueue_function_unchecked[kernel, dump_asm=False](
         act_tma,
-        output_device.unsafe_ptr(),
+        output_device,
         UInt(0),  # k_coord
         UInt(0),  # m_coord
         grid_dim=(1, 1, 1),

@@ -89,11 +89,12 @@ from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.fp8_quantization import (
+    batched_quantize_dynamic_scaled_fp8,
     convert_e4m3fn_to_e4m3fnuz,
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
-    batched_quantize_dynamic_scaled_fp8,
+    quantize_tensor_dynamic_scaled_fp8,
 )
 from linalg.fp4_quantization import (
     block_scaled_matmul,
@@ -10998,6 +10999,37 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
             input.to_tile_tensor[DType.int64](),
             scale_loaded,
             ctx.get_device_context(),
+        )
+
+
+@compiler.register("mo.quantize_tensor_dynamic_scaled_float8")
+struct QuantizeTensorDynamicScaledFloat8:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_type: DType,
+        output_type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        scale: OutputTensor[dtype=DType.float32, rank=1, ...],
+        input: InputTensor[dtype=input_type, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert output_type in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
+        var cuda_ctx = ctx.get_device_context()
+        quantize_tensor_dynamic_scaled_fp8[
+            output_type,
+            input_type,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            scale.to_tile_tensor[DType.int64](),
+            cuda_ctx,
         )
 
 

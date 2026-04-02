@@ -792,6 +792,36 @@ def main() raises:
             )
 
         # ============================================================
+        # FP8 M=256, N=256, Test K % BK != 0
+        # ============================================================
+
+        print("\nFP8 M=256, N=256, Test K % BK != 0")
+        print("  K = 128,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 128](
+            ctx, 256
+        )
+
+        print("  K = 192,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 192](
+            ctx, 256
+        )
+
+        print("  K = 256,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 256](
+            ctx, 256
+        )
+
+        print("  K = 320,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 320](
+            ctx, 256
+        )
+
+        print("  K = 384,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 384](
+            ctx, 256
+        )
+
+        # ============================================================
         # FP8 N=4096 K=4096 (covers standard GEMM, pingpong, skinny)
         # ============================================================
         print("\nFP8 - Various M values (N=4096, K=4096):")

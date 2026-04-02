@@ -16,7 +16,7 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from std.gpu.host import DeviceContext, Dim
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -98,8 +98,8 @@ def test_tma_mcast_load_kernel[
                 tile,
                 mbar[0],
                 (
-                    Int(block_idx.x) * tileN,
-                    Int(block_idx.y) * tileM,
+                    block_idx.x * tileN,
+                    block_idx.y * tileM,
                 ),
                 multicast_mask.cast[DType.uint16](),
             )
@@ -112,7 +112,7 @@ def test_tma_mcast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -257,7 +257,7 @@ def test_tma_sliced_multicast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 

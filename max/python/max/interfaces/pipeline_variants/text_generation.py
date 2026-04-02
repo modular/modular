@@ -33,6 +33,7 @@ from typing import (
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
+from max.interfaces.eos_tracking import EOSTracker
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import RequestID
@@ -416,12 +417,11 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def eos_token_ids(self) -> set[int]:
-        """The set of end-of-sequence token IDs that can terminate generation.
+    def eos_tracker(self) -> EOSTracker:
+        """Holds EOS-related settings for this sequence and performs EOS/stop checks.
 
         Returns:
-            A set of token IDs that, when generated, will signal the end of the
-            sequence and terminate the generation process.
+            The ``EOSTracker`` for this sequence.
         """
         ...
 

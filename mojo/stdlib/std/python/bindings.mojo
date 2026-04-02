@@ -23,6 +23,7 @@ and Python code.
 from std.ffi import _Global, c_int
 from std.sys.info import size_of
 
+from std.builtin._startup import _ensure_runtime_init
 from std.reflection import get_type_name
 from std.memory import OpaquePointer, stack_allocation
 from std.python import Python, PythonObject
@@ -483,6 +484,8 @@ struct PythonModuleBuilder:
         for ref builder in self.type_builders:
             builder.finalize(self.module)
         self.type_builders.clear()
+
+        _ensure_runtime_init()
 
         return self.module
 

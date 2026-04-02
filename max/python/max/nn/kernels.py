@@ -4020,6 +4020,56 @@ def quantize_static_scaled_float8(
     )[0].tensor
 
 
+def quantize_tensor_dynamic_scaled_float8(
+    x: TensorValue,
+    out_type: DType = DType.float8_e4m3fn,
+) -> tuple[TensorValue, TensorValue]:
+    """Quantizes a rank-2 tensor to float8 using a dynamic per-tensor scale.
+
+    The scale is computed as ``max(|x|) / max_finite(out_type)`` over the full
+    tensor, written to a length-1 float32 tensor on the same
+    device as ``x``, then used to quantize ``x`` to FP8.
+
+    Args:
+        x: Input tensor to quantize. Must be rank 2 with dtype ``float16``,
+            ``bfloat16``, or ``float32``. Must reside on a GPU device.
+        out_type: Output dtype. Defaults to ``DType.float8_e4m3fn``.
+
+    Returns:
+        A pair ``(quantized, scale)`` where ``quantized`` has the same shape as
+        ``x`` and dtype ``out_type``, and ``scale`` has shape ``[1]`` and dtype
+        ``float32`` on ``x.device`` holding the computed scale.
+
+    Raises:
+        ValueError: If ``x`` is not rank 2, ``x`` dtype is unsupported, or
+            ``out_type`` is not a supported float8 dtype.
+    """
+    if x.dtype not in [DType.float16, DType.bfloat16, DType.float32]:
+        raise ValueError(
+            f"expected input dtype to be float16, bfloat16, or float32, but got {x.dtype}"
+        )
+
+    if x.rank != 2:
+        raise ValueError(f"expected input rank to be 2, but got {x.rank}")
+
+    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        raise ValueError(
+            f"out_type must be float8_e4m3fn or float8_e4m3fnuz, but got {out_type}"
+        )
+
+    result = ops.custom(
+        "mo.quantize_tensor_dynamic_scaled_float8",
+        device=x.device,
+        values=[x],
+        out_types=[
+            TensorType(dtype=out_type, shape=x.shape, device=x.device),
+            TensorType(dtype=DType.float32, shape=[1], device=x.device),
+        ],
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
 def quantize_dynamic_scaled_float8(
     input: TensorValue,
     input_scale_spec: InputScaleSpec,

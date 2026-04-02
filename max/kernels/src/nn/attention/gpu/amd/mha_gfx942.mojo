@@ -40,6 +40,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
         Self.config.depth == 64
         or Self.config.depth == 128
         or Self.config.depth == 256
+        or Self.config.depth == 512
     )
 
     # share shared memory for k and v

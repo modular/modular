@@ -12,14 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import ufloordiv, umod
 from std.random import random_si64
 
-from std.gpu import (
-    WARP_SIZE,
-    barrier,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import ld_matrix, mma, st_matrix
 from layout import (
@@ -70,11 +66,11 @@ def test_stmatrix(
         address_space=AddressSpace.SHARED,
     ]()
 
-    for i in range(Int(tid), Int(mma_m * mma_k), WARP_SIZE):
+    for i in range(tid, Int(mma_m * mma_k), WARP_SIZE):
         a_shared[i] = a_ptr[i]
 
     # Transpose B to fit ld_matrix layout.
-    for i in range(Int(tid), Int(mma_k * mma_n), WARP_SIZE):
+    for i in range(tid, Int(mma_k * mma_n), WARP_SIZE):
         var y, x = divmod(i, Int(mma_n))
         b_shared[x * Int(mma_k) + y] = b_ptr[i]
 
@@ -82,12 +78,10 @@ def test_stmatrix(
 
     var lane = lane_id()
     var a_reg = ld_matrix[4](
-        a_shared
-        + Int((lane % UInt(m)) * UInt(k) + (lane // UInt(m)) * UInt(k) // 2)
+        a_shared + umod(lane, m) * k + ufloordiv(ufloordiv(lane, m) * k, 2)
     )
     var b_reg = ld_matrix[2](
-        b_shared
-        + Int((lane % UInt(k)) * UInt(n) + (lane // UInt(k)) * UInt(n) // 2)
+        b_shared + umod(lane, k) * n + ufloordiv(ufloordiv(lane, k) * n, 2)
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
@@ -95,9 +89,7 @@ def test_stmatrix(
         c_shared + thread_idx.x * 4, rebind[SIMD[DType.float32, 4]](d_reg)
     )
 
-    var grp, local = divmod(lane_id(), 16)
-
-    var base = tid * 4
+    var base = UInt(tid) * 4
     for i in range(4):
         var d = base + UInt(i)
         var r = d & 63
@@ -139,22 +131,20 @@ def test_stmatrix_gen[
         address_space=AddressSpace.SHARED,
     ]()
 
-    for i in range(Int(lane), M * K, WARP_SIZE):
+    for i in range(lane, M * K, WARP_SIZE):
         a_shared[i] = a_ptr[i]
 
     # Transpose B to fit ld_matrix layout.
-    for i in range(Int(lane), N * K, WARP_SIZE):
+    for i in range(lane, N * K, WARP_SIZE):
         b_shared[i] = b_ptr[i]
 
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared
-        + Int((lane % UInt(M)) * UInt(K) + (lane // UInt(M)) * UInt(K) // 2)
+        a_shared + umod(lane, M) * K + ufloordiv(ufloordiv(lane, M) * K, 2)
     )
     var b_reg = ld_matrix[b_frag_size, transpose=True](
-        b_shared
-        + Int((lane % UInt(K)) * UInt(N) + (lane // UInt(K)) * UInt(N) // 2)
+        b_shared + umod(lane, K) * N + ufloordiv(ufloordiv(lane, K) * N, 2)
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
@@ -162,9 +152,8 @@ def test_stmatrix_gen[
         c_shared + thread_idx.x * 4,
         rebind[SIMD[DType.float32, c_frag_size]](d_reg),
     )
-    var grp, local = divmod(lane_id(), 16)
 
-    var base = thread_idx.x * 4
+    var base = UInt(thread_idx.x) * 4
     for i in range(4):
         var d = base + UInt(i)
         var r = d & 63

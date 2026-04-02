@@ -13,6 +13,7 @@
 
 from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
+from std.os.atomic import Atomic
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of
 import std.gpu.primitives.block as block
@@ -25,7 +26,7 @@ from std.gpu import (
     thread_idx_uint as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
     Coord,
@@ -42,7 +43,7 @@ from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.algorithm import elementwise
 from std.utils.index import Index, IndexList, StaticTuple
-from std.utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type, max_finite
 
 from .matmul import matmul
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
@@ -106,12 +107,165 @@ def quantize_static_scaled_fp8[
         in_dtype, target=get_gpu_target()
     ]()
 
-    _elementwise_impl_gpu[
-        func=scaled_fp8_quant, simd_width=UInt(target_simd_width)
-    ](
+    _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
         shape=IndexList[2](Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
     )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+def max_reduction_scale_kernel[
+    in_dtype: DType,
+    out_dtype: DType,
+    input_layout: TensorLayout,
+    scale_layout: TensorLayout,
+    num_threads: Int,
+](
+    scale_global: TileTensor[
+        mut=True, DType.float32, scale_layout, MutAnyOrigin
+    ],
+    input_tensor: TileTensor[in_dtype, input_layout, MutAnyOrigin],
+):
+    """Per-row strided max-|x| reduction into a global FP8 scale.
+
+    One block scans one row: threads stride across the hidden dimension, reduce
+    to a row-wise max absolute value, then thread 0 atomically updates
+    ``scale_global`` with ``row_max / max_finite[out_dtype]``.
+
+    Args:
+        scale_global: Length-1 FP32 ``TileTensor``; must be zero before launch.
+        input_tensor: Rank-2 input.
+    """
+    comptime fp8_max = Float32(max_finite[out_dtype]())
+    var tid = Int(thread_idx.x)
+    var row = Int(block_idx.x)
+    var hidden_size = Int(input_tensor.dim[1]())
+
+    var thread_max = Float32(0)
+    with PDL():
+        for e in range(tid, hidden_size, num_threads):
+            var v = abs(
+                input_tensor.load_linear(Index(row, e)).cast[DType.float32]()
+            ).reduce_max()
+            thread_max = max(thread_max, v)
+
+        var row_max = block.max[block_size=num_threads, broadcast=True](
+            thread_max
+        )
+
+        if tid == 0:
+            _ = Atomic[DType.float32].max(scale_global.ptr, row_max / fp8_max)
+
+
+@always_inline
+def quantize_tensor_dynamic_scaled_fp8[
+    out_dtype: DType,
+    in_dtype: DType,
+    num_threads: Int = 256,
+    pdl_level: PDLLevel = PDLLevel(1),
+](
+    out_tensor: TileTensor[mut=True, out_dtype, ...],
+    in_tensor: TileTensor[in_dtype, ...],
+    scale_global: TileTensor[mut=True, dtype=DType.float32, ...],
+    ctx: DeviceContext,
+) raises:
+    """Per-tensor dynamic FP8 quantization.
+
+    First reduces ``max |x| / max_finite[out_dtype]`` over the entire tensor
+    (``max_reduction_scale_kernel``), then runs the same elementwise path as
+    ``quantize_static_scaled_fp8`` with the scale read from ``scale_global`` on
+    device (no D2H round trip).
+
+    Args:
+        out_tensor: FP8 output, same shape as ``in_tensor``.
+        in_tensor: BF16/FP16/FP32 input.
+        scale_global: Length-1 FP32 ``TileTensor`` holding the computed scale.
+        ctx: Device context.
+
+    Raises:
+        If buffer sizes or tensor ranks are inconsistent with the above.
+    """
+    comptime assert out_dtype in (
+        DType.float8_e4m3fn,
+        DType.float8_e4m3fnuz,
+    ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
+    comptime assert in_dtype in (
+        DType.float32,
+        DType.float16,
+        DType.bfloat16,
+    ), "input dtype should be float16, bfloat16 or float32"
+    comptime assert out_tensor.rank == 2, "expected rank-2 output"
+    comptime assert in_tensor.rank == 2, "expected rank-2 input"
+    comptime assert scale_global.rank == 1, "expected rank-1 scale buffer"
+
+    var num_tokens = Int(in_tensor.dim[0]())
+    if num_tokens == 0:
+        return
+
+    comptime _fp8_global_scale_layout = row_major[1]()
+
+    comptime kernel = max_reduction_scale_kernel[
+        in_dtype,
+        out_dtype,
+        type_of(in_tensor).LayoutType,
+        type_of(_fp8_global_scale_layout),
+        num_threads,
+    ]
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "quantize_tensor_dynamic_scaled_fp8",
+        task_id=Int(ctx.id()),
+    ):
+        var scale_as_buf = DeviceBuffer[DType.float32](
+            ctx,
+            scale_global.ptr,
+            1,
+            owning=False,
+        )
+        scale_as_buf.enqueue_fill(0)
+        ctx.enqueue_function[kernel, kernel](
+            scale_global,
+            in_tensor,
+            grid_dim=(num_tokens, 1, 1),
+            block_dim=(num_threads),
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+
+        @always_inline
+        @parameter
+        @__copy_capture(out_tensor, in_tensor, scale_global)
+        def scaled_fp8_quant[
+            width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            comptime assert rank == 2, "rank should be equal to 2"
+
+            var scale_s = scale_global.load_linear[1](IndexList[1](0))[0]
+            var scale = scale_s if scale_s > 0 else Float32(1.0)
+            var in_vec_f32 = in_tensor.load_linear[width](idx).cast[
+                DType.float32
+            ]()
+            var inversed_scale: Float32 = 1.0 / scale
+            out_tensor.store_linear(
+                idx,
+                fp8_quantize[out_dtype, use_clamp=True](
+                    in_vec_f32, inversed_scale
+                ),
+            )
+
+        comptime target_simd_width = simd_width_of[
+            in_dtype, target=get_gpu_target()
+        ]()
+
+        _elementwise_impl_gpu[
+            func=scaled_fp8_quant, simd_width=target_simd_width
+        ](
+            shape=IndexList[2](
+                Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())
+            ),
+            ctx=ctx,
+        )
 
 
 ########################################################
@@ -1243,9 +1397,7 @@ def convert_e4m3fn_to_e4m3fnuz(
         DType.float8_e4m3fn, target=get_gpu_target()
     ]()
 
-    _elementwise_impl_gpu[
-        func=convert_kernel, simd_width=UInt(target_simd_width)
-    ](
+    _elementwise_impl_gpu[func=convert_kernel, simd_width=target_simd_width](
         shape=IndexList[2](
             Int(input_buffer.dim[0]()), Int(input_buffer.dim[1]())
         ),

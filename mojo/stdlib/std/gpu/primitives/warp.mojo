@@ -46,7 +46,7 @@ from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 
 from std.bit import log2_floor
 from std.math.math import max as _max, min as _min
-from std.gpu import lane_id_uint as lane_id
+from std.gpu import lane_id
 from std.gpu.intrinsics import permlane_shuffle
 from std.gpu.globals import WARP_SIZE
 from std.memory import bitcast
@@ -1079,7 +1079,7 @@ def prefix_sum[
     comptime for i in range(log2_floor(WARP_SIZE)):
         comptime offset = 1 << i
         var n = shuffle_up(res, UInt32(offset))
-        if lane >= UInt(offset):
+        if lane >= offset:
             res += n
 
     comptime if exclusive:

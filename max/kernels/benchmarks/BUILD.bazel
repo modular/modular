@@ -37,10 +37,6 @@ _EXTRA_CONSTRAINTS = {
     "gpu/comm/bench_ep_dispatch.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
     "gpu/comm/bench_ep_combine.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
     "nn/bench_gather_reduce.mojo": ["@platforms//:incompatible"],  # TODO(KERN-464): re-enable and remove this tag
-    "gpu/linalg/bench_gemv.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2412
     "gpu/nn/bench_kv_cache_ragged_qkv_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -49,7 +45,8 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "gpu/nn/bench_topk.mojo": select({
+    "gpu/bench_matmul_mxfp4.mojo": ["//:amd_gpu"],
+    "gpu/bench_topk.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MSTDL-1880

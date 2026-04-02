@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 import pytest
 from max.interfaces import (
+    EOSTracker,
     GenerationStatus,
     ImageMetadata,
     PixelGenerationContext,
@@ -90,7 +91,7 @@ def test_context__get_min_token_logit_mask() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4},
+        eos_tracker=EOSTracker(eos_token_ids={4}),
         sampling_params=SamplingParams(min_new_tokens=3),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
@@ -118,7 +119,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids() -> (
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
         sampling_params=SamplingParams(min_new_tokens=3),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
@@ -145,7 +146,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
         sampling_params=SamplingParams(min_new_tokens=3),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(4)
     assert len(vocab_mask) == 4
@@ -192,7 +193,7 @@ def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
@@ -216,9 +217,9 @@ def test_context__eos() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4},
+        eos_tracker=EOSTracker(eos_token_ids={4}),
     )
-    assert context.eos_token_ids == {4}
+    assert context.eos_tracker.eos_token_ids == {4}
     assert context.is_initial_prompt
     context.update(4)
     assert not context.is_initial_prompt
@@ -413,7 +414,7 @@ def test_context_sampling_params_stop() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_sequences=[[1, 2]],
+        eos_tracker=EOSTracker(eos_sequences=[[1, 2]]),
         sampling_params=custom_params,
     )
 
@@ -427,7 +428,7 @@ def test_context_sampling_params_stop() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_sequences=[[2], [3, 1]],
+        eos_tracker=EOSTracker(eos_sequences=[[2], [3, 1]]),
         sampling_params=custom_params,
     )
     context.update(1)
@@ -445,7 +446,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_token_ids=set([5, 4, 2]),
+        eos_tracker=EOSTracker(eos_token_ids={5, 4, 2}),
         sampling_params=custom_params,
     )
     context.update(1)
@@ -458,7 +459,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_token_ids=set([5, 4, 2]),
+        eos_tracker=EOSTracker(eos_token_ids={5, 4, 2}),
         sampling_params=custom_params,
     )
     context.update(3)
@@ -667,7 +668,7 @@ def test_text_context_update_with_future_token() -> None:
     context = TextContext(
         max_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        eos_token_ids=set([42]),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
     )
 
     with pytest.raises(
@@ -708,7 +709,7 @@ def test_text_context_update_with_preemption_and_future_token() -> None:
     context = TextContext(
         max_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        eos_token_ids=set([42]),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
     )
     assert context.tokens.generated_length == 0
 

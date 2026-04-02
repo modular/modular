@@ -116,6 +116,34 @@ def test_bitset_toggle_all() raises:
     assert_equal(len(bs1), 56, msg="BitSet total popcount should be 56")
 
 
+def test_bitset_toggle_all_non_word_length() raises:
+    var bs1 = BitSet[57]()
+    var bs2 = BitSet[57]()
+
+    # set 7 bits
+    for idx in [0, 1, 10, 19, 22, 37, 56]:
+        bs1.set(idx)
+        bs2.set(idx)
+
+    # toggle all in one BitSet
+    bs1.toggle_all()
+
+    # assert that they differ in all idx
+    for idx in range(57):
+        assert_not_equal(
+            bs1.test(idx),
+            bs2.test(idx),
+            msg="Bit "
+            + String(idx)
+            + " should be "
+            + String(not bs2.test(idx))
+            + " after toggle",
+        )
+
+    # after toggling, 50/57 bits should be set
+    assert_equal(len(bs1), 50, msg="BitSet total popcount should be 50")
+
+
 def test_bitset_set_all() raises:
     var bs = BitSet[64]()
 
@@ -133,6 +161,21 @@ def test_bitset_set_all() raises:
         )
 
     assert_equal(len(bs), 64, msg="BitSet total popcount should be 64")
+
+
+def test_bitset_set_all_non_word_length() raises:
+    var bs = BitSet[27]()
+
+    bs.set_all()
+
+    # assert 1 in all idx
+    for idx in range(27):
+        assert_true(
+            bs.test(idx),
+            msg="Bit " + String(idx) + " should be True (1) after set all",
+        )
+
+    assert_equal(len(bs), 27, msg="BitSet total popcount should be 27")
 
 
 def test_bitset_count() raises:

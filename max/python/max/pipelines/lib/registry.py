@@ -935,6 +935,21 @@ class PipelineRegistry:
             if arch_name == architecture_name
         ]
         if len(matching_tasks) > 1:
+            if PipelineTask.TEXT_GENERATION in matching_tasks:
+                other_tasks = [
+                    t
+                    for t in matching_tasks
+                    if t != PipelineTask.TEXT_GENERATION
+                ]
+                other_task_list = ", ".join(t.value for t in other_tasks)
+                logger.warning(
+                    f"Architecture '{architecture_name}' supports multiple"
+                    f" pipeline tasks. Defaulting to"
+                    f" '{PipelineTask.TEXT_GENERATION.value}'. To use a"
+                    f" different task, specify --task with one of:"
+                    f" {other_task_list}"
+                )
+                return PipelineTask.TEXT_GENERATION
             task_list = ", ".join(t.value for t in matching_tasks)
             raise ValueError(
                 f"Architecture '{architecture_name}' supports multiple "

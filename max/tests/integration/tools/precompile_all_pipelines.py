@@ -198,12 +198,12 @@ def collect_precompile_jobs(
 
 
 def compile_models_in_parallel(
-    jobs: list[PrecompileJob], cores_per_worker: int
+    jobs: list[PrecompileJob], num_concurrent: int
 ) -> list[str]:
     """Execute precompile jobs in parallel, returning failed model paths."""
     total_cpus = os.cpu_count() or 1
-    cpus_per_worker = min(cores_per_worker, total_cpus)
-    workers = max(1, total_cpus // cpus_per_worker)
+    workers = min(num_concurrent, len(jobs)) if jobs else 1
+    cpus_per_worker = max(1, total_cpus // workers)
     multiprocessing.set_start_method("spawn", force=True)
     ctx = multiprocessing.get_context("spawn")
     counter = ctx.Value("i", 0)
@@ -275,10 +275,10 @@ def compile_models_in_parallel(
     help="Device spec (e.g. cpu, gpu, gpu:0,1).",
 )
 @click.option(
-    "--cores-per-worker",
+    "--num-concurrent",
     type=int,
-    default=32,
-    help="CPU cores allocated per parallel worker.",
+    default=4,
+    help="Number of concurrent compilation workers.",
 )
 @click.option(
     "--filter",
@@ -296,7 +296,7 @@ def main(
     target: str | None,
     tag_filter: TagFilter | None,
     devices: str,
-    cores_per_worker: int,
+    num_concurrent: int,
     name_filter: str | None,
     dry_run: bool,
 ) -> None:
@@ -330,7 +330,7 @@ def main(
         return
 
     logger.info("Starting parallel compilation of %d models", len(jobs))
-    failed_models = compile_models_in_parallel(jobs, cores_per_worker)
+    failed_models = compile_models_in_parallel(jobs, num_concurrent)
 
     ok = len(jobs) - len(failed_models)
     logger.info("=" * 44)

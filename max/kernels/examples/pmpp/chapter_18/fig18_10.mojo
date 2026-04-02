@@ -105,11 +105,11 @@ def main() raises:
         ctx.enqueue_copy(d_new_vertex_visited, h_flag)
 
         ctx.enqueue_function_experimental[bfs_kernel](
-            d_coo_src.unsafe_ptr(),
-            d_coo_dst.unsafe_ptr(),
+            d_coo_src,
+            d_coo_dst,
             num_edges,
-            d_level.unsafe_ptr(),
-            d_new_vertex_visited.unsafe_ptr(),
+            d_level,
+            d_new_vertex_visited,
             curr_level,
             grid_dim=(grid_size, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),

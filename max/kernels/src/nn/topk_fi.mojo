@@ -22,7 +22,11 @@ from std.gpu import (
     warp_id_uint as warp_id,
 )
 from std.gpu.primitives import block, warp
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    pdl_launch_attributes,
+    PDLLevel,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
@@ -41,6 +45,7 @@ from std.memory import stack_allocation
 from std.os import Atomic
 from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.utils.static_tuple import StaticTuple
 from .normalization import (
     _APPLE_STATIC_SHMEM_MAX_COUNT,
@@ -366,49 +371,65 @@ def topk_mask_logits[
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(masked_logits.layout.shape_coord())
-    if shape[0] != out_shape[0] or shape[1] != out_shape[1]:
-        raise Error("masked_logits shape must match logits shape")
-
-    # Use up to 16 elements per vector to minimize the number of chunks
-    # (and therefore the number of block-level reductions in inner loops).
-    # GPU vector loads handle wider-than-native SIMD efficiently, and the
-    # per-element idx < d guard handles non-aligned tails correctly.
-    var vec_size = gcd(8, d)
-
-    var top_k_buf: DeviceBuffer[out_idx_type]
-    if top_k_arr:
-        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-    else:
-        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-
     @parameter
-    def launch_kernel[vec_size: Int]() raises:
-        comptime kernel = TopKMaskLogitsKernel[
-            block_size,
-            vec_size,
-            dtype,
-            out_idx_type,
-            LogitsLayoutType=logits.LayoutType,
-            logits_origin=ImmutOrigin(logits.origin),
-            MaskedLogitsLayoutType=masked_logits.LayoutType,
-            masked_logits_origin=masked_logits.origin,
-        ]
-        ctx.enqueue_function[kernel, kernel](
-            logits.as_immut(),
-            masked_logits,
-            top_k_buf,
-            top_k_val,
-            d,
-            grid_dim=batch_size,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("logits", shape, dtype),
+                    "top_k_val=" + String(top_k_val),
+                ]
+            )
         )
 
-    # Runtime dispatch to compile-time parameter.
-    comptime for param_vec_size in [16, 8, 4, 2, 1]:
-        if vec_size == param_vec_size:
-            return launch_kernel[param_vec_size]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_mask_logits",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var out_shape = coord_to_index_list(masked_logits.layout.shape_coord())
+        if shape[0] != out_shape[0] or shape[1] != out_shape[1]:
+            raise Error("masked_logits shape must match logits shape")
+
+        # Use up to 16 elements per vector to minimize the number of chunks
+        # (and therefore the number of block-level reductions in inner loops).
+        # GPU vector loads handle wider-than-native SIMD efficiently, and the
+        # per-element idx < d guard handles non-aligned tails correctly.
+        var vec_size = gcd(8, d)
+
+        var top_k_buf: DeviceBuffer[out_idx_type]
+        if top_k_arr:
+            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+        else:
+            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+
+        @parameter
+        def launch_kernel[vec_size: Int]() raises:
+            comptime kernel = TopKMaskLogitsKernel[
+                block_size,
+                vec_size,
+                dtype,
+                out_idx_type,
+                LogitsLayoutType=logits.LayoutType,
+                logits_origin=ImmutOrigin(logits.origin),
+                MaskedLogitsLayoutType=masked_logits.LayoutType,
+                masked_logits_origin=masked_logits.origin,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                logits.as_immut(),
+                masked_logits,
+                top_k_buf,
+                top_k_val,
+                d,
+                grid_dim=batch_size,
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+        # Runtime dispatch to compile-time parameter.
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
+            if vec_size == param_vec_size:
+                return launch_kernel[param_vec_size]()
 
 
 @always_inline
@@ -907,66 +928,82 @@ def topk_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(output.layout.shape_coord())
-    if out_shape[0] != batch_size:
-        raise Error("output batch size must match probs batch size")
-
-    # Use up to 16 elements per vector to minimize the number of chunks
-    # (and therefore the number of block-level reductions in inner loops).
-    # GPU vector loads handle wider-than-native SIMD efficiently, and the
-    # per-element idx < d guard handles non-aligned tails correctly.
-    var vec_size = gcd(8, d)
-
-    var indices_buf: DeviceBuffer[out_idx_type]
-    if indices:
-        indices_buf = indices.value().to_device_buffer(ctx)
-    else:
-        indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-    var top_k_buf: DeviceBuffer[out_idx_type]
-    if top_k_arr:
-        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-    else:
-        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-
     @parameter
-    def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
-        comptime kernel = TopKSamplingFromProbKernel[
-            probs.LayoutType,
-            ImmutOrigin(probs.origin),
-            output.LayoutType,
-            output.origin,
-            block_size,
-            vec_size,
-            dtype,
-            out_idx_type,
-            deterministic,
-        ]
-        ctx.enqueue_function[kernel, kernel](
-            probs.as_immut(),
-            output,
-            indices_buf,
-            top_k_buf,
-            top_k_val,
-            d,
-            rng_seed,
-            rng_offset,
-            grid_dim=batch_size,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("probs", shape, dtype),
+                    "top_k_val=" + String(top_k_val),
+                ]
+            )
         )
 
-    # Runtime dispatch to compile-time parameter.
-    @parameter
-    def dispatch_vec_size[deterministic: Bool]() raises:
-        comptime for param_vec_size in [16, 8, 4, 2, 1]:
-            if vec_size == param_vec_size:
-                return launch_kernel[param_vec_size, deterministic]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_sampling_from_prob",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var out_shape = coord_to_index_list(output.layout.shape_coord())
+        if out_shape[0] != batch_size:
+            raise Error("output batch size must match probs batch size")
 
-    # Dispatch on deterministic flag.
-    if deterministic:
-        dispatch_vec_size[True]()
-    else:
-        dispatch_vec_size[False]()
+        # Use up to 16 elements per vector to minimize the number of chunks
+        # (and therefore the number of block-level reductions in inner loops).
+        # GPU vector loads handle wider-than-native SIMD efficiently, and the
+        # per-element idx < d guard handles non-aligned tails correctly.
+        var vec_size = gcd(8, d)
+
+        var indices_buf: DeviceBuffer[out_idx_type]
+        if indices:
+            indices_buf = indices.value().to_device_buffer(ctx)
+        else:
+            indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+        var top_k_buf: DeviceBuffer[out_idx_type]
+        if top_k_arr:
+            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+        else:
+            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+
+        @parameter
+        def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+            comptime kernel = TopKSamplingFromProbKernel[
+                probs.LayoutType,
+                ImmutOrigin(probs.origin),
+                output.LayoutType,
+                output.origin,
+                block_size,
+                vec_size,
+                dtype,
+                out_idx_type,
+                deterministic,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                probs.as_immut(),
+                output,
+                indices_buf,
+                top_k_buf,
+                top_k_val,
+                d,
+                rng_seed,
+                rng_offset,
+                grid_dim=batch_size,
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+        # Runtime dispatch to compile-time parameter.
+        @parameter
+        def dispatch_vec_size[deterministic: Bool]() raises:
+            comptime for param_vec_size in [16, 8, 4, 2, 1]:
+                if vec_size == param_vec_size:
+                    return launch_kernel[param_vec_size, deterministic]()
+
+        # Dispatch on deterministic flag.
+        if deterministic:
+            dispatch_vec_size[True]()
+        else:
+            dispatch_vec_size[False]()
 
 
 def TopKTopPSamplingFromProbKernel[
@@ -1264,76 +1301,93 @@ def topk_topp_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(output.layout.shape_coord())
-    if out_shape[0] != batch_size:
-        raise Error("output batch size must match probs batch size")
-
-    # Use up to 8 elements per vector to minimize the number of chunks
-    # (and therefore the number of block-level reductions in inner loops).
-    # GPU vector loads handle wider-than-native SIMD efficiently, and the
-    # per-element idx < d guard handles non-aligned tails correctly.
-    var vec_size = gcd(8, d)
-
-    var indices_buf: DeviceBuffer[out_idx_type]
-    if indices:
-        indices_buf = indices.value().to_device_buffer(ctx)
-    else:
-        indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-    var top_k_buf: DeviceBuffer[out_idx_type]
-    if top_k_arr:
-        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-    else:
-        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-    var top_p_buf: DeviceBuffer[DType.float32]
-    if top_p_arr:
-        top_p_buf = top_p_arr.value().to_device_buffer(ctx)
-    else:
-        top_p_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
-    var seed_buf: DeviceBuffer[DType.uint64]
-    if rng_seed:
-        seed_buf = rng_seed.value().to_device_buffer(ctx)
-    else:
-        seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
-
     @parameter
-    def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
-        comptime kernel = TopKTopPSamplingFromProbKernel[
-            probs.LayoutType,
-            ImmutOrigin(probs.origin),
-            output.LayoutType,
-            output.origin,
-            block_size,
-            vec_size,
-            dtype,
-            out_idx_type,
-            deterministic,
-        ]
-        ctx.enqueue_function[kernel, kernel](
-            probs.as_immut(),
-            output,
-            indices_buf,
-            top_k_buf,
-            top_k_val,
-            top_p_buf,
-            top_p_val,
-            d,
-            seed_buf,
-            rng_offset,
-            grid_dim=batch_size,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("probs", shape, dtype),
+                    "top_k_val=" + String(top_k_val),
+                    "top_p_val=" + String(top_p_val),
+                ]
+            )
         )
 
-    @parameter
-    def dispatch_vec_size[deterministic: Bool]() raises:
-        comptime for param_vec_size in [16, 8, 4, 2, 1]:
-            if vec_size == param_vec_size:
-                return launch_kernel[param_vec_size, deterministic]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_topp_sampling_from_prob",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var out_shape = coord_to_index_list(output.layout.shape_coord())
+        if out_shape[0] != batch_size:
+            raise Error("output batch size must match probs batch size")
 
-    if deterministic:
-        dispatch_vec_size[True]()
-    else:
-        dispatch_vec_size[False]()
+        # Use up to 8 elements per vector to minimize the number of chunks
+        # (and therefore the number of block-level reductions in inner loops).
+        # GPU vector loads handle wider-than-native SIMD efficiently, and the
+        # per-element idx < d guard handles non-aligned tails correctly.
+        var vec_size = gcd(8, d)
+
+        var indices_buf: DeviceBuffer[out_idx_type]
+        if indices:
+            indices_buf = indices.value().to_device_buffer(ctx)
+        else:
+            indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+        var top_k_buf: DeviceBuffer[out_idx_type]
+        if top_k_arr:
+            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+        else:
+            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+        var top_p_buf: DeviceBuffer[DType.float32]
+        if top_p_arr:
+            top_p_buf = top_p_arr.value().to_device_buffer(ctx)
+        else:
+            top_p_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+        var seed_buf: DeviceBuffer[DType.uint64]
+        if rng_seed:
+            seed_buf = rng_seed.value().to_device_buffer(ctx)
+        else:
+            seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+
+        @parameter
+        def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+            comptime kernel = TopKTopPSamplingFromProbKernel[
+                probs.LayoutType,
+                ImmutOrigin(probs.origin),
+                output.LayoutType,
+                output.origin,
+                block_size,
+                vec_size,
+                dtype,
+                out_idx_type,
+                deterministic,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                probs.as_immut(),
+                output,
+                indices_buf,
+                top_k_buf,
+                top_k_val,
+                top_p_buf,
+                top_p_val,
+                d,
+                seed_buf,
+                rng_offset,
+                grid_dim=batch_size,
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+        @parameter
+        def dispatch_vec_size[deterministic: Bool]() raises:
+            comptime for param_vec_size in [16, 8, 4, 2, 1]:
+                if vec_size == param_vec_size:
+                    return launch_kernel[param_vec_size, deterministic]()
+
+        if deterministic:
+            dispatch_vec_size[True]()
+        else:
+            dispatch_vec_size[False]()
 
 
 def topk_softmax_sample_kernel[
@@ -1627,73 +1681,92 @@ def topk_softmax_sample[
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(sampled_indices.layout.shape_coord())
-    if shape[0] != out_shape[0]:
-        raise Error("sampled_indices shape must be [batch_size]")
-
-    # Use up to 16 elements per vector to minimize the number of chunks
-    # (and therefore the number of block-level reductions in inner loops).
-    # GPU vector loads handle wider-than-native SIMD efficiently, and the
-    # per-element idx < d guard handles non-aligned tails correctly.
-    var vec_size = gcd(8, d)
-
-    var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
-    var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
-    comptime if has_apple_gpu_accelerator():
-        if shared_mem_bytes > _APPLE_STATIC_SHMEM_MAX_BYTES:
-            raise Error(
-                t"shared memory of {shared_mem_bytes} exceeds static allocation"
-                t" capacity of {_APPLE_STATIC_SHMEM_MAX_BYTES} when evaluating"
-                t" topk_softmax_sample with top_k_val={top_k_val} and"
-                t" vec_size={vec_size}. Consider reducing top_k_val or using a"
-                t" smaller block_size."
-            )
-
-    var top_k_buf: DeviceBuffer[out_idx_type]
-    if top_k_arr:
-        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-    else:
-        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-    var temp_buf: DeviceBuffer[DType.float32]
-    if temperature:
-        temp_buf = temperature.value().to_device_buffer(ctx)
-    else:
-        temp_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
-    var seed_buf: DeviceBuffer[DType.uint64]
-    if seed:
-        seed_buf = seed.value().to_device_buffer(ctx)
-    else:
-        seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
-
     @parameter
-    def launch_kernel[vec_size: Int]() raises:
-        comptime kernel = topk_softmax_sample_kernel[
-            block_size,
-            vec_size,
-            dtype,
-            out_idx_type,
-            LogitsLayoutType=logits.LayoutType,
-            logits_origin=ImmutOrigin(logits.origin),
-            SampledLayoutType=sampled_indices.LayoutType,
-            sampled_origin=sampled_indices.origin,
-        ]
-        ctx.enqueue_function[kernel, kernel](
-            logits.as_immut(),
-            sampled_indices,
-            top_k_buf,
-            top_k_val,
-            temperature_val,
-            temp_buf,
-            seed_val,
-            seed_buf,
-            d,
-            grid_dim=batch_size,
-            block_dim=block_size,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=pdl_launch_attributes(),
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("logits", shape, dtype),
+                    "top_k_val=" + String(top_k_val),
+                ]
+            )
         )
 
-    # Runtime dispatch to compile-time parameter.
-    comptime for param_vec_size in [16, 8, 4, 2, 1]:
-        if vec_size == param_vec_size:
-            return launch_kernel[param_vec_size]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_softmax_sample",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var out_shape = coord_to_index_list(
+            sampled_indices.layout.shape_coord()
+        )
+        if shape[0] != out_shape[0]:
+            raise Error("sampled_indices shape must be [batch_size]")
+
+        # Use up to 16 elements per vector to minimize the number of chunks
+        # (and therefore the number of block-level reductions in inner loops).
+        # GPU vector loads handle wider-than-native SIMD efficiently, and the
+        # per-element idx < d guard handles non-aligned tails correctly.
+        var vec_size = gcd(8, d)
+
+        var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
+        var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
+        comptime if has_apple_gpu_accelerator():
+            if shared_mem_bytes > _APPLE_STATIC_SHMEM_MAX_BYTES:
+                raise Error(
+                    t"shared memory of {shared_mem_bytes} exceeds static"
+                    t" allocation capacity of"
+                    t" {_APPLE_STATIC_SHMEM_MAX_BYTES} when evaluating"
+                    t" topk_softmax_sample with top_k_val={top_k_val}"
+                    t" and vec_size={vec_size}. Consider reducing"
+                    t" top_k_val or using a smaller block_size."
+                )
+
+        var top_k_buf: DeviceBuffer[out_idx_type]
+        if top_k_arr:
+            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+        else:
+            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+        var temp_buf: DeviceBuffer[DType.float32]
+        if temperature:
+            temp_buf = temperature.value().to_device_buffer(ctx)
+        else:
+            temp_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+        var seed_buf: DeviceBuffer[DType.uint64]
+        if seed:
+            seed_buf = seed.value().to_device_buffer(ctx)
+        else:
+            seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+
+        @parameter
+        def launch_kernel[vec_size: Int]() raises:
+            comptime kernel = topk_softmax_sample_kernel[
+                block_size,
+                vec_size,
+                dtype,
+                out_idx_type,
+                LogitsLayoutType=logits.LayoutType,
+                logits_origin=ImmutOrigin(logits.origin),
+                SampledLayoutType=sampled_indices.LayoutType,
+                sampled_origin=sampled_indices.origin,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                logits.as_immut(),
+                sampled_indices,
+                top_k_buf,
+                top_k_val,
+                temperature_val,
+                temp_buf,
+                seed_val,
+                seed_buf,
+                d,
+                grid_dim=batch_size,
+                block_dim=block_size,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+        # Runtime dispatch to compile-time parameter.
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
+            if vec_size == param_vec_size:
+                return launch_kernel[param_vec_size]()

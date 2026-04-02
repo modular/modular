@@ -789,7 +789,7 @@ def allreduce[
     in_origin: Origin,
     out_layout: TensorLayout,
     output_lambda: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
 ](

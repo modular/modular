@@ -33,7 +33,7 @@ import aiohttp
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from .config import BenchmarkTask
+from .config import PIXEL_GENERATION_TASKS, BenchmarkTask
 from .datasets.types import (
     OpenAIImage,
     PixelGenerationImageOptions,
@@ -925,10 +925,10 @@ async def async_request_lora_unload(
 
 def get_request_driver_class(
     api_url: str,
-    task: BenchmarkTask = BenchmarkTask.text_generation,
+    task: BenchmarkTask = "text-generation",
 ) -> type[RequestDriver]:
     """Return the request driver based on endpoint and optional task."""
-    if task in BenchmarkTask.pixel_generation_tasks():
+    if task in PIXEL_GENERATION_TASKS:
         if api_url.endswith("responses"):
             return OpenResponsesRequestDriver
         raise ValueError(

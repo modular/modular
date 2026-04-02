@@ -13,11 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import (
-    barrier,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.memory import stack_allocation
 from layout import TileTensor, Coord, Idx, row_major
@@ -33,7 +29,7 @@ def stencil1d(
     coeff1: Int,
     coeff2: Int,
 ):
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
 
     var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
     var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
@@ -55,7 +51,7 @@ def stencil1d_smem(
     coeff1: Int,
     coeff2: Int,
 ):
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     var lindex = thread_idx.x + 1
 
     var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))

@@ -1126,11 +1126,15 @@ class MAXModelConfig(MAXModelConfigBase):
                 else:
                     file_encoding = (
                         self.huggingface_weight_repo.encoding_for_file(
-                            self.weight_path[0]
+                            self.weight_path[0],
+                            preferred_encoding=self.quantization_encoding,
                         )
                     )
 
-            if file_encoding:
+            if file_encoding and (
+                file_encoding in _ALLOWED_CAST_ENCODINGS
+                and self.quantization_encoding in _ALLOWED_CAST_ENCODINGS
+            ):
                 self._validate_and_resolve_dtype_casting(
                     from_encoding=self.quantization_encoding,
                     to_encoding=file_encoding,

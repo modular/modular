@@ -28,6 +28,7 @@ from .kernels import (
     quantize_dynamic_block_scaled_fp4,
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
+    quantize_tensor_dynamic_scaled_float8,
 )
 from .kv_cache import KVCacheParams, PagedCacheValues
 from .quant_config import QuantConfig, QuantFormat
@@ -133,6 +134,26 @@ def _matmul_float8(
         x = quantize_static_scaled_float8(x, input_scale, out_type=weight.dtype)
 
         return matmul_static_scaled_float8(x, weight, input_scale, weight_scale)
+    elif (
+        quant_config.input_scale.is_tensor
+        and quant_config.weight_scale.is_tensor
+    ):
+        # Tensor+tensor dynamic (AutoFP8 per-tensor scaling).
+        x, x_scale = quantize_tensor_dynamic_scaled_float8(
+            x, out_type=weight.dtype
+        )
+        x_scale = x_scale.reshape([1, 1])
+        weight_scale = weight_scale.to(x.device).reshape([1, 1])
+
+        return dynamic_scaled_matmul(
+            x,
+            weight,
+            x_scale,
+            weight_scale,
+            quant_config.input_scale,
+            quant_config.weight_scale,
+            out_type=DType.bfloat16,
+        )
     else:
         x, x_scales = quantize_dynamic_scaled_float8(
             x,
@@ -297,6 +318,15 @@ def quantized_fused_qkv_matmul(
                     x, input_scale.to(DeviceRef.CPU())
                 )
                 x_scales = input_scale
+            elif (
+                quant_config.input_scale.is_tensor
+                and quant_config.weight_scale.is_tensor
+            ):
+                x, x_scales = quantize_tensor_dynamic_scaled_float8(
+                    x, out_type=wqkv.dtype
+                )
+                x_scales = x_scales.reshape([1, 1])
+                weight_scale = weight_scale.reshape([1, 1])
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
                     x,

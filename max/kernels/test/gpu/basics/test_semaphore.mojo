@@ -13,11 +13,7 @@
 
 from std.gpu import NamedBarrierSemaphore
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    block_idx_uint as block_idx,
-    grid_dim,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from std.testing import assert_equal
@@ -32,7 +28,7 @@ def test_named_barrier_semaphore_equal_kernel(
     shared_ptr: UnsafePointer[Int32, MutAnyOrigin],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
-        locks_ptr, Int(thread_idx.x)
+        locks_ptr, thread_idx.x
     )
 
     sema.wait_eq(0, Int32(block_idx.x))
@@ -79,7 +75,7 @@ def test_named_barrier_semaphore_less_than_kernel(
     shared_ptr: UnsafePointer[Int32, MutAnyOrigin],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
-        locks_ptr, Int(thread_idx.x)
+        locks_ptr, thread_idx.x
     )
 
     sema.wait_lt(0, Int32(block_idx.x))

@@ -285,7 +285,7 @@ def depth_supported_by_gpu[
         and is_sm90or100
         and config.algorithm == FlashAttentionAlgorithm(3)
     ) or (
-        is_sm100 and depth == 512
+        (is_sm100 or has_amd_gpu_accelerator()) and depth == 512
     )
     return head_depth_supported
 
@@ -726,9 +726,11 @@ def flash_attention_dispatch[
         # FA3 decoding impl only support half precision, while fp32 is supported
         # for fp32 as well.
         elif q_half_float_or_fp32 and is_token_generation:
-            comptime if depth < 512:
+            comptime if depth <= 512:
                 comptime BM = 16
-                comptime BN = depth
+                comptime BN = depth if has_nvidia_gpu_accelerator() else (
+                    min(depth, 256)
+                )
                 comptime BK = 32 if has_amd_gpu_accelerator() else (
                     16 if q.dtype == DType.float32 else 32
                 )
@@ -1130,6 +1132,9 @@ def flash_attention_dispatch[
                                 ),
                             )
 
+                        # AMD decoding kernels always use exp2 for softmax,
+                        # while NVIDIA uses exp2 only with FA3 kernels.
+                        comptime reduce_use_exp2 = use_fa3_kernel or has_amd_gpu_accelerator()
                         comptime kernel_reduce = mha_splitk_reduce[
                             intermediate_dtype,
                             output.dtype,
@@ -1137,7 +1142,7 @@ def flash_attention_dispatch[
                             num_heads=num_heads,
                             num_threads=UInt(WARP_SIZE),
                             group=group,
-                            use_exp2=use_fa3_kernel,
+                            use_exp2=reduce_use_exp2,
                         ]
 
                         ctx.enqueue_function[kernel_reduce, kernel_reduce](
@@ -1510,15 +1515,19 @@ def flash_attention_ragged[
     )
 
 
+def get_waves_per_eu(depth: Int) -> Int:
+    if depth in [64, 128]:
+        return 2
+    else:
+        return 1
+
+
 # ===-----------------------------------------------------------------------===#
 # Flash attention for context encoding
 # ===-----------------------------------------------------------------------===#
 
 
-# for depth = 128 we want waves_per_eu = 2 and for depth = 256 we want waves_per_eu = 1
-# for depth = 64 we want waves_per_eu = 2
-# this heuristic may not be valid for other depths
-@__llvm_metadata(`rocdl.waves_per_eu`=min(256 // Int(config.depth), 2))
+@__llvm_metadata(`rocdl.waves_per_eu`=get_waves_per_eu(Int(config.depth)))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())

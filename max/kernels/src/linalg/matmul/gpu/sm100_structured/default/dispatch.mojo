@@ -135,7 +135,7 @@ def matmul_dispatch_sm100[
             gemv_gpu[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
-                pdl_level=PDLLevel(1),
+                pdl_level=pdl_level,
             ](c, a, b, ctx)
             return
 
@@ -538,6 +538,13 @@ def matmul_dispatch_sm100_bf16[
         Index(4608, 1536),
         Index(1536, 1536),
         Index(8192, 1536),
+        Index(5376, 16384),
+        Index(5376, 21504),
+        Index(16384, 5376),
+        Index(20480, 5376),
+        Index(262144, 5376),
+        Index(43008, 5376),
+        Index(5376, 8192),
     ]
 
     comptime FLUX2_NK = [

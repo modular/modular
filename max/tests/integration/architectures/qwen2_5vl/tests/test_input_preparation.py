@@ -35,6 +35,7 @@ from unittest.mock import MagicMock, Mock, NonCallableMock
 import numpy as np
 import pytest
 from max.interfaces import (
+    EOSTracker,
     ImageContentPart,
     RequestID,
     SamplingParams,
@@ -814,7 +815,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
         request_id=RequestID("test-posid-increment"),
         tokens=TokenBuffer(tokens),
         max_length=L + 8,
-        eos_token_ids=set([2]),
+        eos_tracker=EOSTracker(eos_token_ids={2}),
         sampling_params=SamplingParams(max_new_tokens=2),
         images=[],  # text-only
         vision_token_ids=[],  # text-only

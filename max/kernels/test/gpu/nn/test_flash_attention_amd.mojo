@@ -583,8 +583,7 @@ def test_decoding[
 
 def main() raises:
     with DeviceContext() as ctx:
-        # experimental kernel only supports depth == 128
-        comptime depths = [64, 128, 256]
+        comptime depths = [64, 128, 256, 512]
 
         comptime for i in range(len(depths)):
             comptime depth = depths[i]

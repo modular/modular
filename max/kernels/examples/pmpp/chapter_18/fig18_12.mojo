@@ -130,13 +130,13 @@ def main() raises:
             grid_size = 1
 
         ctx.enqueue_function_experimental[bfs_kernel](
-            d_src_ptrs.unsafe_ptr(),
-            d_dst.unsafe_ptr(),
-            d_level.unsafe_ptr(),
-            d_prev_frontier.unsafe_ptr(),
-            d_curr_frontier.unsafe_ptr(),
+            d_src_ptrs,
+            d_dst,
+            d_level,
+            d_prev_frontier,
+            d_curr_frontier,
             num_prev_frontier,
-            d_num_curr_frontier.unsafe_ptr(),
+            d_num_curr_frontier,
             curr_level,
             grid_dim=(grid_size, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),
