@@ -947,7 +947,6 @@ modular_shared_library(
         "//KGEN/test/tracy:__pkg__",
     ],
     deps = [
-        "//Init",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//MLRT:AsyncRT/Support",

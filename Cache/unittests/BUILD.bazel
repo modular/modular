@@ -15,7 +15,6 @@ modular_cc_test(
     srcs = glob(["*.cpp"]),
     deps = [
         "//Cache",
-        "//Init",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//MLRT:AsyncRT/Support",

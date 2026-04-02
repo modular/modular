@@ -4,14 +4,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Init/Init.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "MLRT/AsyncRT/Runtime/TimerHeap.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "MLRT/Core/MojoValue.h"
+#include "Support/Context.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
@@ -159,8 +160,8 @@ KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
 /// Get or create the AsyncRT runtime and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime() {
-  auto runtime = Init::getOrCreateRuntime(
-      RuntimeSource::MojoStdlib, RuntimeOptions().withMainWillNotDonate());
+  auto runtime = getOrCreateRuntime(RuntimeSource::MojoStdlib,
+                                    RuntimeOptions().withMainWillNotDonate());
   return wrap(runtime.release());
 }
 

@@ -6,36 +6,18 @@
 
 #include "Init/Init.h"
 #include "Init/DevelopmentSignalHandler.h"
-#include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/Telemetry/Telemetry.h"
 
-#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Process.h"
 
 #include <cassert>
 
 using namespace M;
-
-AsyncRT::RuntimeRef
-Init::getOrCreateRuntime(AsyncRT::RuntimeSource source,
-                         const AsyncRT::RuntimeOptions &options) {
-  std::lock_guard<std::mutex> lock(AsyncRT::getGlobalRuntimeMutex());
-  AsyncRT::Runtime *existingRuntime = AsyncRT::getGlobalRuntimePointer();
-  if (existingRuntime) {
-    if (AsyncRT::getStoredGlobalRuntimeCreationOptions() != options)
-      llvm::report_fatal_error(
-          "Init::getOrCreateRuntime called requesting different options to "
-          "those used to create the existing Runtime.");
-    return AsyncRT::RuntimeRef::copy(existingRuntime);
-  }
-  AsyncRT::RuntimeRef newRuntime = AsyncRT::createRuntime(source, options);
-  AsyncRT::getStoredGlobalRuntimeCreationOptions() = options;
-  AsyncRT::setGlobalRuntimePointer(newRuntime.getPointer());
-  return newRuntime.copy();
-}
 
 static constexpr bool isProductionBuild() {
 #ifdef MODULAR_PRODUCTION
@@ -89,7 +71,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     if (!profileFilename.empty())
       opts.profileFilename = profileFilename;
     AsyncRT::RuntimeRef ref =
-        Init::getOrCreateRuntime(AsyncRT::RuntimeSource::MaxContext, opts);
+        AsyncRT::getOrCreateRuntime(AsyncRT::RuntimeSource::MaxContext, opts);
     ctx->setRuntime(GenericRCRef::fromRCRef(std::move(ref)));
   }
 
