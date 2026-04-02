@@ -87,7 +87,6 @@ class Eagle3KimiK25Unified(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
-        draft_signal_buffers: list[BufferValue] | None = None,
     ) -> tuple[TensorValue, ...]:
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
@@ -138,12 +137,6 @@ class Eagle3KimiK25Unified(Module):
             bonus.reshape((-1,)),
         )
 
-        _draft_signals = (
-            draft_signal_buffers
-            if draft_signal_buffers is not None
-            else signal_buffers
-        )
-
         assert draft_kv_collections is not None
         assert self.draft is not None
 
@@ -151,7 +144,7 @@ class Eagle3KimiK25Unified(Module):
         draft_outputs = self.draft(
             draft_input_tokens,
             hidden_states,
-            _draft_signals,
+            signal_buffers,
             draft_kv_collections,
             return_n_logits,
             merged_offsets,
@@ -192,7 +185,7 @@ class Eagle3KimiK25Unified(Module):
         self._increment_draft_cache(
             accepted_offsets,
             data_parallel_splits,
-            _draft_signals,
+            signal_buffers,
             draft_kv_collections,
         )
 
@@ -242,8 +235,7 @@ class Eagle3KimiK25Unified(Module):
         Order: tokens, device_offsets, host_offsets, draft_tokens,
                return_n_logits, data_parallel_splits, signal_buffers,
                target_kv_cache, draft_kv_blocks_per_device,
-               draft_signal_buffers, batch_context_lengths,
-               target_ep_inputs.
+               batch_context_lengths, target_ep_inputs.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -293,9 +285,6 @@ class Eagle3KimiK25Unified(Module):
             for sym in draft_kv_params.get_symbolic_inputs():
                 assert isinstance(sym, PagedCacheInputSymbols)
                 all_input_types.append(sym.kv_blocks)
-
-            draft_signals = Signals(devices=devices)
-            all_input_types.extend(draft_signals.input_types())
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
