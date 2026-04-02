@@ -561,7 +561,7 @@ def _matmul_gpu[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
+            pdl_level=PDLLevel(1),
         ](c, a, b, ctx)
 
     comptime if ctx.default_device_info == H100:
