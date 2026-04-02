@@ -18,6 +18,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields, replace
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 from max._core.driver import is_virtual_device_mode
@@ -260,14 +261,19 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         }
         self.state_dict.update(vision_sd)
 
-        with CompilationTimer("eagle3_vision_model") as timer:
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, vision_state_dict
-            )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=self.state_dict
-            )
+        # TODO: Add support for vision model in unified model
+        # with CompilationTimer("eagle3_vision_model") as timer:
+        #     vision_graph = self._build_vision_graph(
+        #         kimik2_5_config, vision_state_dict
+        #     )
+        #     timer.mark_build_complete()
+        #     vision_model = session.load(
+        #         vision_graph, weights_registry=self.state_dict
+        #     )
+        logger.warning(
+            "Skipping compilation of vision model. Vision support is not yet implemented for Kimi Eagle."
+        )
+        vision_model = MagicMock(spec=Model)
 
         with CompilationTimer("eagle3_language_model") as timer:
             with Graph(
