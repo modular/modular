@@ -16,10 +16,11 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from max.config import ConfigFileModel
 from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
-from pydantic import Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr, computed_field
 
 from .config.config_enums import PipelineRole
 
@@ -33,6 +34,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
     Contains batching, scheduling, and execution configuration that is
     independent of any particular model architecture.
     """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        serialize_by_alias=True,
+    )
+
+    def __init__(self, *, ep_size: int | None = None, **data: Any) -> None:
+        if "ep_size" not in data and ep_size is not None:
+            data["ep_size"] = ep_size
+        super().__init__(**data)
 
     pipeline_role: PipelineRole = Field(
         default="prefill_and_decode",
@@ -70,13 +81,25 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    ep_size: int = Field(
-        default=1,
+    ep_size_raw: int | None = Field(
+        default=None,
+        alias="ep_size",
         description=(
-            "The expert parallelism size. Needs to be 1 (no expert parallelism) "
-            "or the total number of GPUs across nodes."
+            "The expert parallelism size. Default is model-dependent and is "
+            "resolved to 1 unless the selected architecture opts into a "
+            "multi-GPU default."
         ),
     )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def ep_size(self) -> int:
+        """Return the resolved EP size, treating an unset value as 1."""
+        return 1 if self.ep_size_raw is None else self.ep_size_raw
+
+    @ep_size.setter
+    def ep_size(self, value: int | None) -> None:
+        self.ep_size_raw = value
 
     ce_delay_ms: float = Field(
         default=0.0,

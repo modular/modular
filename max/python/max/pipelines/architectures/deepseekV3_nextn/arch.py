@@ -36,6 +36,8 @@ deepseekV3_nextn_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     multi_gpu_supported=True,
+    default_ep_size_to_num_devices=True,
+    default_data_parallel_degree_to_num_devices=True,
     pipeline_model=DeepseekV3NextNModel,
     tokenizer=TextTokenizer,
     context_type=TextContext,

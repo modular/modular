@@ -20,7 +20,8 @@ from typing import Any
 import click
 from click.testing import CliRunner
 from max.config import ConfigFileModel
-from max.entrypoints.cli.config import config_to_flag
+from max.entrypoints.cli.config import config_to_flag, pipeline_config_options
+from max.pipelines.lib import MAXModelConfig, PipelineRuntimeConfig
 from pydantic import Field
 
 
@@ -35,6 +36,18 @@ def _make_cli() -> click.Command:
     def cli(**config_kwargs: Any) -> None:
         config = _TestConfig(**config_kwargs)
         click.echo(f"{config.model_path}|{config.device_graph_capture}")
+
+    return cli
+
+
+def _make_pipeline_parallelism_cli() -> click.Command:
+    @click.command()
+    @pipeline_config_options
+    def cli(**config_kwargs: Any) -> None:
+        click.echo(
+            f"{config_kwargs.get('ep_size')}|"
+            f"{config_kwargs.get('data_parallel_degree')}"
+        )
 
     return cli
 
@@ -80,3 +93,44 @@ def test_cli_args_override_config_file(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert result.output.strip() == "from-cli|True"
+
+
+def test_pipeline_config_options_preserves_none_defaults() -> None:
+    """Absent EP/DP flags remain unset until config resolution."""
+    result = CliRunner().invoke(_make_pipeline_parallelism_cli(), [])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "None|None"
+
+
+def test_pipeline_config_options_preserves_explicit_parallelism_flags() -> None:
+    """Explicit EP/DP flags are passed through as concrete values."""
+    result = CliRunner().invoke(
+        _make_pipeline_parallelism_cli(),
+        ["--ep-size", "1", "--data-parallel-degree", "1"],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "1|1"
+
+
+def test_parallelism_backing_fields_preserve_public_api() -> None:
+    runtime = PipelineRuntimeConfig(ep_size=8)
+    model = MAXModelConfig(data_parallel_degree=4)
+
+    assert runtime.ep_size_raw == 8
+    assert runtime.ep_size == 8
+    assert runtime.model_dump()["ep_size"] == 8
+    assert "ep_size_raw" not in runtime.model_dump()
+
+    runtime.ep_size = None
+    assert runtime.ep_size_raw is None
+    assert runtime.ep_size == 1
+
+    assert model.data_parallel_degree_raw == 4
+    assert model.data_parallel_degree == 4
+    model_dump = model.model_dump(include={"data_parallel_degree"})
+    assert model_dump["data_parallel_degree"] == 4
+    assert "data_parallel_degree_raw" not in model_dump
+
+    model.data_parallel_degree = None
+    assert model.data_parallel_degree_raw is None
+    assert model.data_parallel_degree == 1

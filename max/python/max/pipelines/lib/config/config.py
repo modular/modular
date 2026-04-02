@@ -190,7 +190,9 @@ class PipelineConfig(ConfigFileModel):
             field_name = key.replace(key_prefix, "") if strip_prefix else key
 
             # Check if this field exists in the config class (Pydantic model)
-            if field_name in config_class.model_fields:
+            if PipelineConfig._config_class_accepts_key(
+                config_class, field_name
+            ):
                 # Use original key or stripped key as specified
                 extracted_key = field_name if strip_prefix else key
                 extracted[extracted_key] = value
@@ -201,6 +203,18 @@ class PipelineConfig(ConfigFileModel):
             del kwargs[key]
 
         return extracted
+
+    @staticmethod
+    def _config_class_accepts_key(
+        config_class: type[ConfigFileModel], key: str
+    ) -> bool:
+        """Return whether ``key`` matches a field name or alias."""
+        for field_name, field_info in config_class.model_fields.items():
+            if key == field_name:
+                return True
+            if isinstance(field_info.alias, str) and key == field_info.alias:
+                return True
+        return False
 
     def _create_cache_config_if_needed(self, kwargs: dict[str, Any]) -> None:
         """Extract denoising cache kwargs and create DenoisingCacheConfig if any provided."""
@@ -310,7 +324,7 @@ class PipelineConfig(ConfigFileModel):
             kv_cache_kwargs = {}
 
             for key, value in unmatched_kwargs.items():
-                if key in config_class.model_fields:
+                if self._config_class_accepts_key(config_class, key):
                     matched_kwargs[key] = value
                 # Check if this is a KVCache config param
                 elif (
@@ -546,6 +560,72 @@ class PipelineConfig(ConfigFileModel):
                 # We should be able to override this value for all config objects.
                 continue
 
+    def _apply_multi_gpu_parallelism_defaults(
+        self,
+        architecture: SupportedArchitecture | None,
+        model_config: MAXModelConfig,
+        num_devices: int,
+    ) -> None:
+        """Resolve primary-model EP/DP defaults to concrete integers."""
+        old_ep = self.runtime.ep_size_raw
+        old_dp = model_config.data_parallel_degree_raw
+
+        if self.runtime.ep_size_raw is None:
+            if (
+                architecture is not None
+                and num_devices > 1
+                and architecture.default_ep_size_to_num_devices
+            ):
+                self.runtime.ep_size = num_devices
+            else:
+                self.runtime.ep_size = 1
+
+        if model_config.data_parallel_degree_raw is None:
+            if (
+                architecture is not None
+                and num_devices > 1
+                and architecture.default_data_parallel_degree_to_num_devices
+            ):
+                model_config.data_parallel_degree = num_devices
+            else:
+                model_config.data_parallel_degree = 1
+
+        if (
+            self.runtime.ep_size_raw != old_ep
+            or model_config.data_parallel_degree_raw != old_dp
+        ):
+            logger.info(
+                "Resolved %s parallelism defaults: "
+                "ep_size %s -> %s, data_parallel_degree %s -> %s",
+                architecture.name if architecture is not None else "default",
+                old_ep,
+                self.runtime.ep_size,
+                old_dp,
+                model_config.data_parallel_degree,
+            )
+
+    def _apply_draft_data_parallel_default(self) -> None:
+        """Inherit the resolved primary-model DP when draft DP is unset."""
+        if self.draft_model is None:
+            return
+
+        primary_dp = self.model.data_parallel_degree_raw
+        if primary_dp is None:
+            raise AssertionError(
+                "Primary model data_parallel_degree must be resolved before "
+                "draft model defaults are applied."
+            )
+
+        old_draft_dp = self.draft_model.data_parallel_degree_raw
+        if old_draft_dp is None:
+            self.draft_model.data_parallel_degree = primary_dp
+            logger.info(
+                "Resolved draft model data_parallel_degree %s -> %s "
+                "(inherited from primary model)",
+                old_draft_dp,
+                self.draft_model.data_parallel_degree,
+            )
+
     def resolve(self) -> None:
         """Validates and resolves the config.
 
@@ -556,6 +636,17 @@ class PipelineConfig(ConfigFileModel):
         self._import_custom_architectures()
 
         self.model.resolve()
+        primary_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            huggingface_repo=self.model.huggingface_model_repo,
+            prefer_module_v3=self.runtime.prefer_module_v3,
+        )
+        self._apply_multi_gpu_parallelism_defaults(
+            primary_arch,
+            self.model,
+            len(load_devices(self.model.device_specs)),
+        )
+        if self.draft_model is not None:
+            self._apply_draft_data_parallel_default()
 
         # Validation for max_length is handled in MAXModelConfig
 

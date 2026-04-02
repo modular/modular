@@ -78,11 +78,25 @@ class MAXModelConfigBase(ConfigFileModel):
     """
 
     # Allow arbitrary types (like DeviceRef, AutoConfig) to avoid schema generation errors.
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        populate_by_name=True,
+        serialize_by_alias=True,
+    )
 
 
 class MAXModelConfig(MAXModelConfigBase):
     """Configuration for a pipeline model."""
+
+    def __init__(
+        self, *, data_parallel_degree: int | None = None, **data: Any
+    ) -> None:
+        if (
+            "data_parallel_degree" not in data
+            and data_parallel_degree is not None
+        ):
+            data["data_parallel_degree"] = data_parallel_degree
+        super().__init__(**data)
 
     use_subgraphs: bool = Field(
         default=True,
@@ -94,14 +108,29 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Whether to use subgraphs for the model."""
 
-    data_parallel_degree: int = Field(
-        default=1,
+    data_parallel_degree_raw: int | None = Field(
+        default=None,
+        alias="data_parallel_degree",
         description=(
-            "Data-parallelism parameter. The degree to which the model is "
-            "replicated is dependent on the model type."
+            "Data-parallelism parameter. Default is model-dependent and is "
+            "resolved during pipeline configuration."
         ),
     )
-    """The degree of data parallelism for replicating the model."""
+    """The raw degree of data parallelism for replicating the model."""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def data_parallel_degree(self) -> int:
+        """Return the resolved DP degree, treating an unset value as 1."""
+        return (
+            1
+            if self.data_parallel_degree_raw is None
+            else self.data_parallel_degree_raw
+        )
+
+    @data_parallel_degree.setter
+    def data_parallel_degree(self, value: int | None) -> None:
+        self.data_parallel_degree_raw = value
 
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
