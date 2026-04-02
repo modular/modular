@@ -422,7 +422,7 @@ def broadcast[
     in_origin: Origin,
     //,
     ngpus: Int,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],

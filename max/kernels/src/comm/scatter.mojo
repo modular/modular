@@ -123,7 +123,7 @@ def scatter[
     dp_size: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: InlineArray[
         TileTensor[dtype, in_layout, in_origin], dp_size
