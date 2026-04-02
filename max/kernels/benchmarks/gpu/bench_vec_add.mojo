@@ -21,7 +21,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.builtin._closure import __ownership_keepalive
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from internal_utils import update_bench_config_args
 from std.testing import assert_equal
@@ -34,7 +34,7 @@ def vec_func(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid]
 

@@ -47,8 +47,8 @@ from std.benchmark import (
 )
 from comm.sync import enable_p2p
 from std.gpu import (
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    global_idx,
+    grid_dim,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -86,8 +86,8 @@ def p2p_copy_kernel[
     src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int,
 ):
-    var global_tid = Int(global_idx.x)
-    var stride = Int(grid_dim.x) * BLOCK_SIZE
+    var global_tid = global_idx.x
+    var stride = grid_dim.x * BLOCK_SIZE
     var num_vectors = num_elements // width
 
     comptime vec_align = width * size_of[dtype]()
