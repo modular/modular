@@ -53,6 +53,7 @@ from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
 from nn.topk_fi import topk_topp_sampling_from_prob
 from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList, product
 from std.utils.numerics import max_or_inf, min_or_neg_inf
@@ -173,44 +174,66 @@ def top_k[
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
 
-    var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
+    var input_shape = rebind[IndexList[input.rank]](
+        coord_to_index_list(input.layout.shape_coord())
+    )
 
-    # Clamp max_k
-    var bound_max_k = 255 if max_k == -1 else max_k
-
-    comptime if is_cpu[target]():
-        comptime assert (
-            out_idx_type == DType.int64
-        ), "out_idx_type must be int64 for cpu"
-
-        comptime grain_size = 1000
-        _top_k_cpu[largest=largest](
-            input,
-            bound_max_k,
-            Int(normalized_axis),
-            out_vals,
-            out_idxs,
-            grain_size,
-            sorted,
-            k=k,
-        )
-    else:
-        if normalized_axis != Scalar[DType.int](input.rank - 1):
-            raise Error("axis other than -1 not supported on GPU")
-        if not sorted:
-            print(
-                "Warning: Unsorted top-k is not supported on GPU. Falling"
-                " back to sorted top-k."
+    @parameter
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("input", input_shape, dtype),
+                    "max_k=" + String(max_k),
+                    "axis=" + String(axis),
+                    "largest=" + String(largest),
+                ]
             )
-        var cuda_ctx = ctx.get_device_context()
-        topk_gpu[sampling=False, largest=largest](
-            cuda_ctx,
-            bound_max_k,
-            input,
-            out_vals,
-            out_idxs,
-            k=k,
         )
+
+    with Trace[TraceLevel.OP, target=target](
+        "top_k",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.get_device_context().id()),
+    ):
+        var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
+
+        # Clamp max_k
+        var bound_max_k = 255 if max_k == -1 else max_k
+
+        comptime if is_cpu[target]():
+            comptime assert (
+                out_idx_type == DType.int64
+            ), "out_idx_type must be int64 for cpu"
+
+            comptime grain_size = 1000
+            _top_k_cpu[largest=largest](
+                input,
+                bound_max_k,
+                Int(normalized_axis),
+                out_vals,
+                out_idxs,
+                grain_size,
+                sorted,
+                k=k,
+            )
+        else:
+            if normalized_axis != Scalar[DType.int](input.rank - 1):
+                raise Error("axis other than -1 not supported on GPU")
+            if not sorted:
+                print(
+                    "Warning: Unsorted top-k is not supported on GPU. Falling"
+                    " back to sorted top-k."
+                )
+            var cuda_ctx = ctx.get_device_context()
+            topk_gpu[sampling=False, largest=largest](
+                cuda_ctx,
+                bound_max_k,
+                input,
+                out_vals,
+                out_idxs,
+                k=k,
+            )
 
 
 def _top_k_cpu[
@@ -382,28 +405,47 @@ def fused_token_sampling_cpu[
     ), "input.rank must match out_idx.rank"
     comptime assert out_idx_type == DType.int64, "out_idx_type must be int64"
 
-    bound_max_k = 255 if max_k == -1 else max_k
-
-    # materialize the out_vals which is of shape [input[:-1]] + [k]
-    var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-    out_vals_shape[input.rank - 1] = bound_max_k
-    var out_vals = TileTensor(
-        alloc[Scalar[dtype]](out_vals_shape.flattened_length()),
-        row_major(Coord(out_vals_shape)),
+    var input_shape = rebind[IndexList[input.rank]](
+        coord_to_index_list(input.layout.shape_coord())
     )
 
-    _top_k_sampling(
-        bound_max_k,
-        input,
-        out_vals,
-        TileTensor(out_idxs.ptr.bitcast[Int64](), out_idxs.layout),
-        k,
-        temperature,
-        top_p,
-        seed,
-    )
+    @parameter
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("input", input_shape, dtype),
+                    "max_k=" + String(max_k),
+                ]
+            )
+        )
 
-    out_vals.ptr.free()
+    with Trace[TraceLevel.OP, target=StaticString("cpu")](
+        "fused_token_sampling",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+    ):
+        bound_max_k = 255 if max_k == -1 else max_k
+
+        # materialize the out_vals which is of shape [input[:-1]] + [k]
+        var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
+        out_vals_shape[input.rank - 1] = bound_max_k
+        var out_vals = TileTensor(
+            alloc[Scalar[dtype]](out_vals_shape.flattened_length()),
+            row_major(Coord(out_vals_shape)),
+        )
+
+        _top_k_sampling(
+            bound_max_k,
+            input,
+            out_vals,
+            TileTensor(out_idxs.ptr.bitcast[Int64](), out_idxs.layout),
+            k,
+            temperature,
+            top_p,
+            seed,
+        )
+
+        out_vals.ptr.free()
 
 
 def _top_k_sampling[
@@ -1740,155 +1782,180 @@ def topk_gpu[
     var orig_in_shape = rebind[IndexList[input.rank]](
         coord_to_index_list(input.layout.shape_coord())
     )
-    var N = orig_in_shape[input.rank - 1]
-    var last_idx_dim = 1 if sampling else max_k
 
-    # Clamp max_k
-    bound_max_k = 255 if max_k == -1 else max_k
-
-    # heuristic to set block size
-    var block_size_: Int
-    if input.num_elements() <= 1024 * 64 * 3:
-        block_size_ = 256
-    elif input.num_elements() <= 32000 * 256:
-        block_size_ = 512
-    else:
-        block_size_ = 1024
-    block_size_ = block_size.value() if block_size else block_size_
-
-    # On Apple GPUs, the no-shmem kernel variants require single-warp
-    # blocks. Clamp block_size to WARP_SIZE.
-    comptime if has_apple_gpu_accelerator():
-        block_size_ = min(block_size_, WARP_SIZE)
-
-    # This section handles different input ranks by reshaping to a 2D tensor
-    var internal_bs: Int  # Internal batch size
-    comptime internal_rank = 2  # We always reshape to 2D for internal processing
-    var internal_input: TileTensor[
-        dtype,
-        Layout[
-            shape_types=DynamicCoord[DType.int64, 2].element_types,
-            stride_types=DynamicCoord[DType.int64, 2].element_types,
-        ],
-        input.origin,
-        address_space=input.address_space,
-    ]
-    var internal_out_idxs: TileTensor[
-        out_idx_type,
-        Layout[
-            shape_types=DynamicCoord[DType.int64, 2].element_types,
-            stride_types=DynamicCoord[DType.int64, 2].element_types,
-        ],
-        out_idxs.origin,
-        address_space=out_idxs.address_space,
-    ]
-    var internal_out_vals: TileTensor[
-        dtype,
-        Layout[
-            shape_types=DynamicCoord[DType.int64, 2].element_types,
-            stride_types=DynamicCoord[DType.int64, 2].element_types,
-        ],
-        out_vals.origin,
-        address_space=out_vals.address_space,
-    ]
-
-    comptime if input.rank == 1:
-        # Handle 1D input: treat it as a single batch with one element
-        internal_bs = 1
-        var internal_in_shape = IndexList[internal_rank](
-            1, input.num_elements()
-        )
-        var internal_out_vals_shape = IndexList[internal_rank](1, bound_max_k)
-        var internal_out_idxs_shape = IndexList[internal_rank](1, last_idx_dim)
-        # Reshape 1D inputs to 2D
-        internal_input = reshape(input, internal_in_shape)
-        internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-        internal_out_vals = reshape(out_vals, internal_out_vals_shape)
-    elif input.rank == internal_rank:
-        # Input is already 2D, no reshaping needed
-        internal_bs = orig_in_shape[0]
-        internal_input = rebind[type_of(internal_input)](
-            input.make_dynamic[DType.int64]()
-        )
-        internal_out_idxs = rebind[type_of(internal_out_idxs)](
-            out_idxs.make_dynamic[DType.int64]()
-        )
-        internal_out_vals = rebind[type_of(internal_out_vals)](
-            out_vals.make_dynamic[DType.int64]()
-        )
-    else:  # rank > 2
-        # Handle higher dimensional inputs by flattening all but the last dimension
-        var _last_dim = orig_in_shape[input.rank - 1]
-        internal_bs = Int(
-            Float64(orig_in_shape.flattened_length()) / Float64(_last_dim)
+    @parameter
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("input", orig_in_shape, dtype),
+                    "max_k=" + String(max_k),
+                    "sampling=" + String(sampling),
+                    "largest=" + String(largest),
+                ]
+            )
         )
 
-        var internal_in_shape = IndexList[internal_rank](internal_bs, _last_dim)
-        var internal_out_idxs_shape = IndexList[internal_rank](
-            internal_bs, last_idx_dim
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_gpu",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var N = orig_in_shape[input.rank - 1]
+        var last_idx_dim = 1 if sampling else max_k
+
+        # Clamp max_k
+        bound_max_k = 255 if max_k == -1 else max_k
+
+        # heuristic to set block size
+        var block_size_: Int
+        if input.num_elements() <= 1024 * 64 * 3:
+            block_size_ = 256
+        elif input.num_elements() <= 32000 * 256:
+            block_size_ = 512
+        else:
+            block_size_ = 1024
+        block_size_ = block_size.value() if block_size else block_size_
+
+        # On Apple GPUs, the no-shmem kernel variants require single-warp
+        # blocks. Clamp block_size to WARP_SIZE.
+        comptime if has_apple_gpu_accelerator():
+            block_size_ = min(block_size_, WARP_SIZE)
+
+        # This section handles different input ranks by reshaping to a 2D tensor
+        var internal_bs: Int  # Internal batch size
+        comptime internal_rank = 2  # We always reshape to 2D for internal processing
+        var internal_input: TileTensor[
+            dtype,
+            Layout[
+                shape_types=DynamicCoord[DType.int64, 2].element_types,
+                stride_types=DynamicCoord[DType.int64, 2].element_types,
+            ],
+            input.origin,
+            address_space=input.address_space,
+        ]
+        var internal_out_idxs: TileTensor[
+            out_idx_type,
+            Layout[
+                shape_types=DynamicCoord[DType.int64, 2].element_types,
+                stride_types=DynamicCoord[DType.int64, 2].element_types,
+            ],
+            out_idxs.origin,
+            address_space=out_idxs.address_space,
+        ]
+        var internal_out_vals: TileTensor[
+            dtype,
+            Layout[
+                shape_types=DynamicCoord[DType.int64, 2].element_types,
+                stride_types=DynamicCoord[DType.int64, 2].element_types,
+            ],
+            out_vals.origin,
+            address_space=out_vals.address_space,
+        ]
+
+        comptime if input.rank == 1:
+            # Handle 1D input: treat it as a single batch with one element
+            internal_bs = 1
+            var internal_in_shape = IndexList[internal_rank](
+                1, input.num_elements()
+            )
+            var internal_out_vals_shape = IndexList[internal_rank](
+                1, bound_max_k
+            )
+            var internal_out_idxs_shape = IndexList[internal_rank](
+                1, last_idx_dim
+            )
+            # Reshape 1D inputs to 2D
+            internal_input = reshape(input, internal_in_shape)
+            internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
+            internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+        elif input.rank == internal_rank:
+            # Input is already 2D, no reshaping needed
+            internal_bs = orig_in_shape[0]
+            internal_input = rebind[type_of(internal_input)](
+                input.make_dynamic[DType.int64]()
+            )
+            internal_out_idxs = rebind[type_of(internal_out_idxs)](
+                out_idxs.make_dynamic[DType.int64]()
+            )
+            internal_out_vals = rebind[type_of(internal_out_vals)](
+                out_vals.make_dynamic[DType.int64]()
+            )
+        else:  # rank > 2
+            # Handle higher dimensional inputs by flattening all but the last dimension
+            var _last_dim = orig_in_shape[input.rank - 1]
+            internal_bs = Int(
+                Float64(orig_in_shape.flattened_length()) / Float64(_last_dim)
+            )
+
+            var internal_in_shape = IndexList[internal_rank](
+                internal_bs, _last_dim
+            )
+            var internal_out_idxs_shape = IndexList[internal_rank](
+                internal_bs, last_idx_dim
+            )
+            var internal_out_vals_shape = IndexList[internal_rank](
+                internal_bs, bound_max_k
+            )
+
+            # Reshape higher dimensional inputs to 2D
+            internal_input = reshape(input, internal_in_shape)
+            internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
+            internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+
+        # Calculate the number of blocks per input
+        var num_blocks_per_input_ = min(
+            ceildiv(N, block_size_), 8
+        ) if not num_blocks_per_input else num_blocks_per_input.value()
+
+        # Define shape for the kernel's internal cache buffers
+        var internal_cache_shape = IndexList[2](
+            internal_bs, num_blocks_per_input_ * bound_max_k
         )
-        var internal_out_vals_shape = IndexList[internal_rank](
-            internal_bs, bound_max_k
+
+        # Create temporary buffer for local top-K values
+        var internal_vals_buf = ctx.enqueue_create_buffer[dtype](
+            product(internal_cache_shape)
+        )
+        var device_local_topk_vals = TileTensor(
+            internal_vals_buf.unsafe_ptr(),
+            row_major(Coord(internal_cache_shape)),
         )
 
-        # Reshape higher dimensional inputs to 2D
-        internal_input = reshape(input, internal_in_shape)
-        internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-        internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+        # Create temporary buffer for local top-K indices
+        var internal_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
+            product(internal_cache_shape)
+        )
+        var device_local_topk_idxs = TileTensor(
+            internal_idxs_buf.unsafe_ptr(),
+            row_major(Coord(internal_cache_shape)),
+        )
 
-    # Calculate the number of blocks per input
-    var num_blocks_per_input_ = min(
-        ceildiv(N, block_size_), 8
-    ) if not num_blocks_per_input else num_blocks_per_input.value()
+        _topk_gpu[
+            dtype=dtype,
+            out_idx_type=out_idx_type,
+            sampling=sampling,
+            largest=largest,
+            _force_old_impl=_force_old_impl,
+        ](
+            ctx,
+            bound_max_k,
+            internal_input,
+            device_local_topk_vals,
+            device_local_topk_idxs,
+            internal_out_vals,
+            internal_out_idxs,
+            k=k,
+            temperature=temperature,
+            block_size=block_size_,
+            num_blocks_per_input=num_blocks_per_input_,
+            top_p=top_p,
+            seed=seed,
+        )
 
-    # Define shape for the kernel's internal cache buffers
-    var internal_cache_shape = IndexList[2](
-        internal_bs, num_blocks_per_input_ * bound_max_k
-    )
-
-    # Create temporary buffer for local top-K values
-    var internal_vals_buf = ctx.enqueue_create_buffer[dtype](
-        product(internal_cache_shape)
-    )
-    var device_local_topk_vals = TileTensor(
-        internal_vals_buf.unsafe_ptr(),
-        row_major(Coord(internal_cache_shape)),
-    )
-
-    # Create temporary buffer for local top-K indices
-    var internal_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
-        product(internal_cache_shape)
-    )
-    var device_local_topk_idxs = TileTensor(
-        internal_idxs_buf.unsafe_ptr(),
-        row_major(Coord(internal_cache_shape)),
-    )
-
-    _topk_gpu[
-        dtype=dtype,
-        out_idx_type=out_idx_type,
-        sampling=sampling,
-        largest=largest,
-        _force_old_impl=_force_old_impl,
-    ](
-        ctx,
-        bound_max_k,
-        internal_input,
-        device_local_topk_vals,
-        device_local_topk_idxs,
-        internal_out_vals,
-        internal_out_idxs,
-        k=k,
-        temperature=temperature,
-        block_size=block_size_,
-        num_blocks_per_input=num_blocks_per_input_,
-        top_p=top_p,
-        seed=seed,
-    )
-
-    # Clean up buffers
-    _ = internal_vals_buf^
-    _ = internal_idxs_buf^
+        # Clean up buffers
+        _ = internal_vals_buf^
+        _ = internal_idxs_buf^
 
 
 def _topk_topp_sampling_fi[
@@ -1996,71 +2063,94 @@ def fused_token_sampling_gpu[
     dimension of the input tensor for each row/subvolume.
     """
 
-    # If all items in the batch, want to sample all tokens (top_k==-1, top_p=1)
-    # We can use gumbel sampling.
-    if max_k == -1 and min_top_p == 1.0:
-        gumbel_sampling_gpu(
-            ctx,
-            input,
-            out_idxs,
-            temperature,
-            seed,
+    var input_shape = rebind[IndexList[input.rank]](
+        coord_to_index_list(input.layout.shape_coord())
+    )
+
+    @parameter
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("input", input_shape, dtype),
+                    "max_k=" + String(max_k),
+                    "min_top_p=" + String(min_top_p),
+                ]
+            )
         )
-        return
 
-    comptime assert (
-        input.rank == out_idxs.rank
-    ), "input.rank must match out_idx.rank"
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "fused_token_sampling_gpu",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        # If all items in the batch, want to sample all tokens (top_k==-1, top_p=1)
+        # We can use gumbel sampling.
+        if max_k == -1 and min_top_p == 1.0:
+            gumbel_sampling_gpu(
+                ctx,
+                input,
+                out_idxs,
+                temperature,
+                seed,
+            )
+            return
 
-    comptime assert input.flat_rank == 2
+        comptime assert (
+            input.rank == out_idxs.rank
+        ), "input.rank must match out_idx.rank"
 
-    var vocab_size = input.layout.shape[1]().value()
-    var adjusted_max_k = vocab_size if max_k == -1 else max_k
+        comptime assert input.flat_rank == 2
 
-    # softmax with temperature, then top-k+top-p
-    # rejection sampling. Enabled via compile-time env var.
+        var vocab_size = input.layout.shape[1]().value()
+        var adjusted_max_k = vocab_size if max_k == -1 else max_k
 
-    if adjusted_max_k >= 75:
-        _topk_topp_sampling_fi[dtype, out_idx_type](
+        # softmax with temperature, then top-k+top-p
+        # rejection sampling. Enabled via compile-time env var.
+
+        if adjusted_max_k >= 75:
+            _topk_topp_sampling_fi[dtype, out_idx_type](
+                ctx,
+                adjusted_max_k,
+                min_top_p,
+                input,
+                out_idxs,
+                k=rebind[
+                    Optional[
+                        TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]
+                    ]
+                ](k),
+                temperature=temperature,
+                top_p=top_p,
+                rng_seed=seed,
+            )
+            return
+
+        var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
+        out_vals_shape[input.rank - 1] = adjusted_max_k
+        var out_vals_buf = ctx.enqueue_create_buffer[dtype](
+            out_vals_shape.flattened_length()
+        )
+        var out_vals = TileTensor(
+            out_vals_buf.unsafe_ptr(),
+            row_major(Coord(out_vals_shape)),
+        )
+
+        topk_gpu[sampling=True, largest=True](
             ctx,
             adjusted_max_k,
-            min_top_p,
             input,
+            out_vals,
             out_idxs,
-            k=rebind[
-                Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]]
-            ](k),
+            k=k,
             temperature=temperature,
             top_p=top_p,
-            rng_seed=seed,
+            block_size=block_size,
+            num_blocks_per_input=num_blocks_per_input,
+            seed=seed,
         )
-        return
 
-    var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-    out_vals_shape[input.rank - 1] = adjusted_max_k
-    var out_vals_buf = ctx.enqueue_create_buffer[dtype](
-        out_vals_shape.flattened_length()
-    )
-    var out_vals = TileTensor(
-        out_vals_buf.unsafe_ptr(),
-        row_major(Coord(out_vals_shape)),
-    )
-
-    topk_gpu[sampling=True, largest=True](
-        ctx,
-        adjusted_max_k,
-        input,
-        out_vals,
-        out_idxs,
-        k=k,
-        temperature=temperature,
-        top_p=top_p,
-        block_size=block_size,
-        num_blocks_per_input=num_blocks_per_input,
-        seed=seed,
-    )
-
-    _ = out_vals_buf^
+        _ = out_vals_buf^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2204,70 +2294,83 @@ def gumbel_sampling_gpu[
         seed: Optional per-token random seeds [batch] for reproducibility.
     """
 
-    # create a buffer to hold the Gumbel noise applied input
-    var noised_input_buf = ctx.enqueue_create_buffer[dtype](
-        input.num_elements()
+    var input_shape = rebind[IndexList[input.rank]](
+        coord_to_index_list(input.layout.shape_coord())
     )
-    var noised_input = TileTensor(noised_input_buf, input.layout)
 
-    # Handle optional temperature parameter
-    var temp_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
-    if temperature:
-        temp_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-            temperature.value().ptr
+    @parameter
+    def trace_information() -> String:
+        return trace_arg("input", input_shape, dtype)
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "gumbel_sampling_gpu",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        # create a buffer to hold the Gumbel noise applied input
+        var noised_input_buf = ctx.enqueue_create_buffer[dtype](
+            input.num_elements()
         )
-    else:
-        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
-    var temp_size = temperature.value().num_elements() if temperature else 0
+        var noised_input = TileTensor(noised_input_buf, input.layout)
 
-    # Handle optional seed parameter
-    var seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin]
-    if seed:
-        seed_ptr = rebind[UnsafePointer[UInt64, ImmutAnyOrigin]](
-            seed.value().ptr
+        # Handle optional temperature parameter
+        var temp_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
+        if temperature:
+            temp_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
+                temperature.value().ptr
+            )
+        else:
+            temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
+        var temp_size = temperature.value().num_elements() if temperature else 0
+
+        # Handle optional seed parameter
+        var seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin]
+        if seed:
+            seed_ptr = rebind[UnsafePointer[UInt64, ImmutAnyOrigin]](
+                seed.value().ptr
+            )
+        else:
+            seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
+        var seed_size = seed.value().num_elements() if seed else 0
+
+        comptime hw_info = ctx.default_device_info
+        comptime gumbel_kernel = apply_gumbel_noise_kernel[
+            dtype,
+            noised_input.LayoutType,
+            input.LayoutType,
+            hw_info.sm_count,
+            hw_info.max_thread_block_size,
+        ]
+
+        ctx.enqueue_function[gumbel_kernel, gumbel_kernel](
+            noised_input,
+            input.as_immut(),
+            temperature.value().to_device_buffer(ctx),
+            seed.value().to_device_buffer(ctx),
+            grid_dim=hw_info.sm_count,
+            block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )
-    else:
-        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
-    var seed_size = seed.value().num_elements() if seed else 0
 
-    comptime hw_info = ctx.default_device_info
-    comptime gumbel_kernel = apply_gumbel_noise_kernel[
-        dtype,
-        noised_input.LayoutType,
-        input.LayoutType,
-        hw_info.sm_count,
-        hw_info.max_thread_block_size,
-    ]
+        # Extract argmax after Gumbel noise application.
+        var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
+        out_vals_shape[input.rank - 1] = 1
+        var out_vals_buf = ctx.enqueue_create_buffer[dtype](
+            out_vals_shape.flattened_length()
+        )
+        var out_vals = TileTensor(
+            out_vals_buf.unsafe_ptr(),
+            row_major(Coord(out_vals_shape)),
+        )
 
-    ctx.enqueue_function[gumbel_kernel, gumbel_kernel](
-        noised_input,
-        input.as_immut(),
-        temperature.value().to_device_buffer(ctx),
-        seed.value().to_device_buffer(ctx),
-        grid_dim=hw_info.sm_count,
-        block_dim=hw_info.max_thread_block_size,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
-    )
+        # The old implementation of topk_gpu is correct when top_k = 1.
+        topk_gpu[sampling=False, _force_old_impl=True](
+            ctx,
+            1,
+            noised_input,
+            out_vals,
+            out_idxs,
+        )
 
-    # Extract argmax after Gumbel noise application.
-    var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-    out_vals_shape[input.rank - 1] = 1
-    var out_vals_buf = ctx.enqueue_create_buffer[dtype](
-        out_vals_shape.flattened_length()
-    )
-    var out_vals = TileTensor(
-        out_vals_buf.unsafe_ptr(),
-        row_major(Coord(out_vals_shape)),
-    )
-
-    # The old implementation of topk_gpu is correct when top_k = 1.
-    topk_gpu[sampling=False, _force_old_impl=True](
-        ctx,
-        1,
-        noised_input,
-        out_vals,
-        out_idxs,
-    )
-
-    _ = noised_input_buf^
-    _ = out_vals_buf^
+        _ = noised_input_buf^
+        _ = out_vals_buf^
