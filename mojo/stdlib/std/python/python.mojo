@@ -139,7 +139,10 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
         ref cpy = Self().cpython()
 
-        var mod = PythonObject(from_borrowed=cpy.PyImport_AddModule(name))
+        var mod_ptr = cpy.PyImport_AddModule(name)
+        if not mod_ptr:
+            raise cpy.unsafe_get_error()
+        var mod = PythonObject(from_borrowed=mod_ptr)
         var dict_ptr = cpy.PyModule_GetDict(mod._as_py_object_ptr())
         if file:
             # We compile the code as provided and execute in the module

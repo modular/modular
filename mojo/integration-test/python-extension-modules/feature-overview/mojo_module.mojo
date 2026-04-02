@@ -71,26 +71,26 @@ def case_return_arg_tuple(
     return args
 
 
-def case_raise_empty_error() -> PythonObject:
+def case_raise_empty_error() raises -> PythonObject:
     ref cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
-
     cpython.PyErr_SetNone(error_type)
 
-    return PythonObject(from_owned=PyObjectPtr())
+    # Raise to unwind; the wrapper preserves the already-set ValueError.
+    raise Error()
 
 
-def case_raise_string_error() -> PythonObject:
+def case_raise_string_error() raises -> PythonObject:
     ref cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
-
     cpython.PyErr_SetString(
         error_type, "sample value error".as_c_string_slice().unsafe_ptr()
     )
 
-    return PythonObject(from_owned=PyObjectPtr())
+    # Raise to unwind; the wrapper preserves the already-set ValueError.
+    raise Error()
 
 
 # Returning New Mojo Values

@@ -990,10 +990,13 @@ def _py_init_function_wrapper[
     Python.
     """
 
-    var kwargs = PythonObject(from_borrowed=kwargs_ptr)
-    var args = PythonObject(from_borrowed=args_ptr)
-
     ref cpython = Python().cpython()
+
+    var args = PythonObject(from_borrowed=args_ptr)
+    # CPython passes NULL kwargs_ptr when no keyword arguments are given.
+    var kwargs = PythonObject(
+        from_borrowed=kwargs_ptr if Bool(kwargs_ptr) else cpython.Py_None()
+    )
 
     try:
         var value = init_func(args, kwargs)
@@ -1055,31 +1058,48 @@ def _py_c_function_wrapper[
     # We turn these into owned references, knowing that their destructors will
     # appropriately decrement the reference count.
 
-    var py_self = PythonObject(from_borrowed=py_self_ptr)
-    var args = PythonObject(from_borrowed=args_ptr)
-
     # SAFETY:
     #   Call the user provided function, and take ownership of the
     #   PyObjectPtr of the returned PythonObject.
 
     ref cpython = Python().cpython()
 
+    # CPython passes NULL py_self_ptr for METH_STATIC, and NULL kwargs_ptr
+    # when no keyword arguments are given. Substitute Py_None at the boundary.
+    var py_self = PythonObject(
+        from_borrowed=py_self_ptr if Bool(py_self_ptr) else cpython.Py_None()
+    )
+    var args = PythonObject(from_borrowed=args_ptr)
+
     with GILAcquired(Python(cpython)):
+        # Clear any stale Python error state so that PyErr_Occurred() in the
+        # except handler reliably reflects errors set by *this* call.
+        cpython.PyErr_Clear()
+
         try:
             if user_func.isa[PyFunctionRaising]():
                 return user_func[PyFunctionRaising](py_self, args).steal_data()
             else:
-                var kwargs = PythonObject(from_borrowed=kwargs_ptr)
+                var kwargs = PythonObject(
+                    from_borrowed=kwargs_ptr if Bool(
+                        kwargs_ptr
+                    ) else cpython.Py_None()
+                )
                 return user_func[PyFunctionWithKeywordsRaising](
                     py_self, args, kwargs
                 ).steal_data()
         except e:
-            var error_message = String(e)
-            var error_type = cpython.get_error_global("PyExc_Exception")
+            # If the user function set a specific Python error (e.g. via
+            # PyErr_SetString), preserve it. Only set a generic Exception
+            # if no error is pending.
+            if not cpython.PyErr_Occurred():
+                var error_message = String(e)
+                var error_type = cpython.get_error_global("PyExc_Exception")
 
-            cpython.PyErr_SetString(
-                error_type, error_message.as_c_string_slice().unsafe_ptr()
-            )
+                cpython.PyErr_SetString(
+                    error_type,
+                    error_message.as_c_string_slice().unsafe_ptr(),
+                )
 
             # Return a NULL `PyObject*`.
             return PyObjectPtr()
@@ -1313,9 +1333,10 @@ def _get_type_name(obj: PythonObject) raises -> String:
     ref cpython = Python().cpython()
 
     var actual_type = cpython.Py_TYPE(obj._as_py_object_ptr())
-    var actual_type_name = PythonObject(
-        from_owned=cpython.PyType_GetName(actual_type)
-    )
+    var name_ptr = cpython.PyType_GetName(actual_type)
+    if not name_ptr:
+        raise cpython.unsafe_get_error()
+    var actual_type_name = PythonObject(from_owned=name_ptr)
 
     return String(actual_type_name)
 

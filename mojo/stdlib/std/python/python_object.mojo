@@ -148,10 +148,8 @@ struct PythonObject(
         References:
         - https://docs.python.org/3/glossary.html#term-strong-reference
         """
-        debug_assert(
-            Bool(from_owned),
-            "PythonObject(from_owned=) received NULL PyObjectPtr",
-        )
+        if not from_owned:
+            abort("PythonObject(from_owned=) received NULL PyObjectPtr")
         self._obj_ptr = from_owned._unsized_obj_ptr.value()
 
     def __init__(out self, *, from_borrowed: PyObjectPtr):
@@ -168,10 +166,8 @@ struct PythonObject(
         References:
         - https://docs.python.org/3/glossary.html#term-borrowed-reference
         """
-        debug_assert(
-            Bool(from_borrowed),
-            "PythonObject(from_borrowed=) received NULL PyObjectPtr",
-        )
+        if not from_borrowed:
+            abort("PythonObject(from_borrowed=) received NULL PyObjectPtr")
         ref cpy = Python().cpython()
         # SAFETY:
         #   We were passed a Python "borrowed reference", so for it to be

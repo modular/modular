@@ -855,10 +855,11 @@ def test_nonnull_obj_ptr() raises:
 
 
 def test_steal_data_leaves_valid_object() raises:
-    """Test that steal_data() leaves the PythonObject in a valid state.
+    """Test that steal_data() returns a valid owned pointer.
 
-    After stealing, the object should hold Py_None so that its destructor
-    can safely call Py_DecRef.
+    steal_data(var self) takes self by value, so the caller's object is
+    unchanged. The returned pointer is an owned reference that the caller
+    must DecRef.
     """
     ref cpy = Python().cpython()
 
@@ -869,9 +870,8 @@ def test_steal_data_leaves_valid_object() raises:
     # The stolen pointer should be non-null.
     assert_true(Bool(stolen_ptr), "steal_data() returned a NULL pointer")
 
-    # The object should now hold Py_None (safe to destroy).
-    # We verify by checking that the object is None after stealing.
-    assert_true(obj is None)
+    # The original object is unchanged (steal_data takes self by value).
+    assert_true(obj == PythonObject(42))
 
     # Clean up the stolen pointer — we own it now.
     cpy.Py_DecRef(stolen_ptr)
