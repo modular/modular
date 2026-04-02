@@ -1540,6 +1540,35 @@ struct Dict[
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
 
+    def reserve(mut self, min_capacity: Int):
+        """Reserve capacity for at least `min_capacity` entries without resizing.
+
+        If the current capacity already accommodates `min_capacity` entries,
+        this is a no-op. Otherwise, the internal table is grown to the next
+        power of two that can hold `min_capacity` entries (at 87.5% load).
+
+        Args:
+            min_capacity: The minimum number of entries to reserve space for.
+
+        Example:
+
+        ```mojo
+        var d = Dict[String, Int]()
+        d.reserve(1000)
+        for i in range(1000):
+            d[String(i)] = i  # No rehashing occurs
+        ```
+        """
+        # The table holds at most capacity * 7 // 8 entries before resizing,
+        # so we need capacity >= ceil(min_capacity * 8 / 7).
+        # The table holds at most capacity * 7 // 8 entries before resizing,
+        # so we need capacity >= ceil(min_capacity * 8 / 7).
+        var needed = max(
+            next_power_of_two((min_capacity * 8 + 6) // 7), _INITIAL_CAPACITY
+        )
+        if needed > self._capacity:
+            self._resize_to(needed)
+
     def setdefault(
         mut self, key: Self.K, var default: Self.V
     ) -> ref[self] Self.V:
@@ -1696,6 +1725,41 @@ struct Dict[
                 return (pos + bit) & (self._capacity - 1)
             pos = (pos + _GROUP_WIDTH) & (self._capacity - 1)
 
+    def _resize_to(mut self, new_capacity: Int):
+        """Reallocate the table to `new_capacity` and rehash all entries.
+
+        Args:
+            new_capacity: The new capacity (must be a power of two >= _INITIAL_CAPACITY
+                and > current capacity).
+        """
+        var old_ctrl = self._ctrl
+        var old_slots = self._slots
+        var old_order = self._order^
+
+        self._ctrl = alloc[UInt8](new_capacity + _GROUP_WIDTH)
+        memset(self._ctrl, _CTRL_EMPTY, new_capacity + _GROUP_WIDTH)
+        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](new_capacity)
+        self._capacity = new_capacity
+        self._growth_left = new_capacity * 7 // 8 - self._len
+        self._order = List[Int32](capacity=self._len)
+
+        for i in range(len(old_order)):
+            var old_slot = Int(old_order[i])
+            if _is_occupied(old_ctrl[old_slot]):
+                var entry = (old_slots + old_slot).take_pointee()
+                var h2_val = _h2(entry.hash)
+                var new_slot = self._find_empty_slot(entry.hash)
+                self._set_ctrl(new_slot, h2_val)
+                (self._slots + new_slot).init_pointee_move(entry^)
+                self._order.append(Int32(new_slot))
+
+        assert (
+            len(self._order) == self._len
+        ), "order length doesn't match _len after resize"
+
+        old_ctrl.free()
+        old_slots.free()
+
     def _maybe_resize(mut self):
         """Resize the table if growth_left has been exhausted."""
         if self._growth_left > 0:
@@ -1710,39 +1774,7 @@ struct Dict[
             return
 
         # Double capacity and rehash
-        var new_capacity = self._capacity * 2
-        var old_ctrl = self._ctrl
-        var old_slots = self._slots
-        var old_order = self._order^
-
-        # Allocate new storage
-        self._ctrl = alloc[UInt8](new_capacity + _GROUP_WIDTH)
-        memset(self._ctrl, _CTRL_EMPTY, new_capacity + _GROUP_WIDTH)
-        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](new_capacity)
-        self._capacity = new_capacity
-        self._growth_left = new_capacity * 7 // 8 - self._len
-
-        # Rebuild order (compacted) by walking old order
-        self._order = List[Int32](capacity=self._len)
-
-        for i in range(len(old_order)):
-            var old_slot = Int(old_order[i])
-            if _is_occupied(old_ctrl[old_slot]):
-                # Move entry from old table to new table
-                var entry = (old_slots + old_slot).take_pointee()
-                var h2_val = _h2(entry.hash)
-                var new_slot = self._find_empty_slot(entry.hash)
-                self._set_ctrl(new_slot, h2_val)
-                (self._slots + new_slot).init_pointee_move(entry^)
-                self._order.append(Int32(new_slot))
-
-        assert (
-            len(self._order) == self._len
-        ), "order length doesn't match _len after resize"
-
-        # Free old storage
-        old_ctrl.free()
-        old_slots.free()
+        self._resize_to(self._capacity * 2)
 
     def _rehash_in_place(mut self):
         """Rehash the table in place without changing capacity.

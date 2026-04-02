@@ -157,6 +157,10 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
+- Added `Dict.reserve()` and `Set.reserve()` methods for pre-allocating capacity
+  after construction, avoiding repeated rehashing when the number of elements is
+  known in advance.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
