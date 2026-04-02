@@ -2367,3 +2367,71 @@ kgen.generator @test_data_to_str_concat_scalar_index() {
   // CHECK-NEXT: kgen.return
   kgen.return
 }
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// Export name tests
+//===----------------------------------------------------------------------===//
+
+// COM: Static linkage name on a non-parametric generator.  The elaborator
+// COM: resolves the linkage name and renames the function.
+
+// CHECK-LABEL: kgen.func export @my_static_export()
+// CHECK-NOT: linkageName
+kgen.generator export @static_export_test() attributes {linkageName = "my_static_export" : !kgen.string} {
+  kgen.return
+}
+
+// -----
+
+// COM: get_linkage_name on a generator with a static linkageName.
+
+kgen.generator @static_ln_gen() attributes {linkageName = "my_export" : !kgen.string} {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @test_get_static_linkage_name
+kgen.generator export @test_get_static_linkage_name() {
+  // CHECK-NEXT: constant: string = <"my_export">
+  kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@static_ln_gen> : !kgen.generator<() -> ()>>>
+  kgen.return
+}
+
+// -----
+
+// COM: A call reference is updated when the callee generator has a linkage name.
+
+// CHECK-LABEL: kgen.func @callee_linkage()
+kgen.generator @"callee::mangled"() attributes {linkageName = "callee_linkage" : !kgen.string} {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @caller_of_linkage
+kgen.generator @caller_of_linkage() {
+  // CHECK-NEXT: kgen.call @callee_linkage()
+  kgen.call @"callee::mangled"() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// COM: A non-C-exported generator with a non-identifier linkage name is fine
+// COM: (no C identifier validation).
+
+// CHECK-LABEL: kgen.func @"has-dashes"()
+// CHECK-NOT: linkageName
+kgen.generator @"non_c_export::ok"() attributes {linkageName = "has-dashes" : !kgen.string} {
+  kgen.return
+}
+
+// -----
+
+// COM: A C-exported generator with underscores and digits (valid C identifier)
+// COM: is accepted.
+
+// CHECK-LABEL: kgen.func export C @_leading_underscore_123()
+// CHECK-NOT: linkageName
+kgen.generator export C @"c_export::underscores"() attributes {linkageName = "_leading_underscore_123" : !kgen.string} {
+  kgen.return
+}

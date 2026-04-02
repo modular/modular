@@ -96,6 +96,13 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   }
 
   sliced.setNotExported();
+  // Save and remove the linkage name from the original before cloning. Only
+  // the wrapper should carry the linkage name so that the elaborator's
+  // linkage name resolution doesn't create duplicate names when both the
+  // stub and wrapper exist.
+  auto linkageNameAttr = sliced.getLinkageNameAttr();
+  if (linkageNameAttr)
+    sliced.removeLinkageNameAttr();
   sliced.setInlineLevel(InlineLevel::Always);
   if (symtab) {
     sliced = sliced.clone();
@@ -107,6 +114,10 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
 
   auto wrapper = GeneratorOp::create(b, name, sigGen);
   wrapper.setExported();
+
+  // Transfer the sliced function's linkage name onto the wrapper.
+  if (linkageNameAttr)
+    wrapper.setLinkageNameAttr(linkageNameAttr);
 
   SmallVector<Attribute> metadataArray =
       llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());

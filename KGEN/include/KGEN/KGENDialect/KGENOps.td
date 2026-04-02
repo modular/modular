@@ -89,7 +89,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     DefaultValuedAttr<DictionaryAttr, "{}">:$LLVMMetadata,
     DefaultValuedAttr<DictArrayAttr, "{}">:$LLVMArgMetadata,
     DefaultValuedAttr<StringArrayAttr, "ArrayRef<StringAttr>{}">:$crossDeviceCaptures,
-    OptionalAttr<TypeAttr>:$coroutineType
+    OptionalAttr<TypeAttr>:$coroutineType,
+    OptionalAttr<AttrOfType<KGEN_StringType>>:$linkageName
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -126,6 +127,7 @@ def KGEN_FuncOp : KGENOp<"func", [
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
                    CArg<"bool", "false">:$external,
                    CArg<"bool", "false">:$convergent,
+                   CArg<"TypedAttr", "{}">:$linkageName,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
                    CArg<"DictionaryAttr", "{}">:$llvmMetadata,
                    CArg<"ArrayAttr", "{}">:$llvmArgMetadata), [{
@@ -136,7 +138,7 @@ def KGEN_FuncOp : KGENOp<"func", [
       auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
       build($_builder, $_state, name, sigGen, decorators, inlineLevel,
             exportKind, external, convergent, llvmMetadata, llvmArgMetadata,
-            /*crossDeviceCaptures=*/{}, /*coroutineType=*/{});
+            /*crossDeviceCaptures=*/{}, /*coroutineType=*/{}, linkageName);
     }]>,
   ];
 
@@ -186,6 +188,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // means to get a normalized form, the calls (POC::Apply) to the generators
     // which have the `inlinedForm` must further inlined in the same way.
     OptionalAttr<TypedAttrInterface>:$inlinedForm,
+    OptionalAttr<AttrOfType<KGEN_StringType>>:$linkageName,
     // To be able to store pre-elaborated names of the `llvm_metadata`,
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
@@ -222,6 +225,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"TypedAttr", "{}">:$inlinedForm,
+                   CArg<"TypedAttr", "{}">:$linkageNameAttr,
                    CArg<"ArrayAttr", "{}">:$llvmMetadataArray,
                    CArg<"ArrayAttr", "{}">:$llvmArgMetadataArray), [{
       if (!llvmMetadataArray)
@@ -231,7 +235,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
       build($_builder, $_state,
             symName, sourceName, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
-            /*external=*/false, inlinedForm, llvmMetadataArray,
+            /*external=*/false, inlinedForm, linkageNameAttr, llvmMetadataArray,
             llvmArgMetadataArray);
     }]>,
     OpBuilder<(ins "StringAttr":$symName, "FuncTypeGeneratorType":$type), [{
