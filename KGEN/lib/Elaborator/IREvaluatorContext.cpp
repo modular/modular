@@ -77,10 +77,19 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
 
   // If the generator has an explicit linkage name, return the resolved name.
   if (Attribute linkageNameAttr = generator.getLinkageNameAttr()) {
+    // Sanitize linkage names for GPU targets, as getExpectedMangledname does
+    // above.
+    auto maybeSanitize = [target](StringAttr str) {
+      if (target.isGPU())
+        str = KGEN::sanitizeSymbolToAlnum(str);
+      return str;
+    };
+
     // Constant linkage name — return directly.
-    if (auto linkageName = dyn_cast<StringAttr>(linkageNameAttr))
-      return {StringAttr::get(linkageName.getValue(),
+    if (auto linkageName = dyn_cast<StringAttr>(linkageNameAttr)) {
+      return {StringAttr::get(maybeSanitize(linkageName).getValue(),
                               getLinkageNameAttr.getType())};
+    }
 
     // Parametric linkage name — resolve via the evaluator.
     if (auto symbol =
@@ -90,7 +99,7 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
         if (!*result)
           return TypedAttr(); // Not ready yet — signal retry.
         if (auto resolved = dyn_cast<StringAttr>(*result)) {
-          return {StringAttr::get(resolved.getValue(),
+          return {StringAttr::get(maybeSanitize(resolved).getValue(),
                                   getLinkageNameAttr.getType())};
         }
       }
