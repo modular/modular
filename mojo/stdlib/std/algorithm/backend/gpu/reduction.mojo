@@ -334,13 +334,21 @@ def row_reduce[
         comptime for i in range(num_reductions):
             accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
 
+    var scalar_vals = StaticTuple[SIMD[accum_type, 1], num_reductions]()
+    var scalar_init = StaticTuple[Scalar[accum_type], num_reductions]()
+    comptime for i in range(num_reductions):
+        var lane_accum = accum[i][0]
+        comptime for lane in range(1, simd_width):
+            lane_accum = reduce_fn[accum_type, 1, i](lane_accum, accum[i][lane])
+        scalar_vals[i] = lane_accum
+        scalar_init[i] = init_cast[i]
     var scalar_accum = block_reduce[
         BLOCK_SIZE,
         num_reductions,
         reduce_fn,
         accum_type,
-        simd_width,
-    ](accum, init_cast)
+        1,
+    ](scalar_vals, scalar_init)
 
     # handle trailing values
     for idx_in_padded_row in range(rounded_row_size, row_size):
@@ -551,6 +559,113 @@ def small_reduce_kernel[
                 comptime for i in range(num_reductions):
                     row_accum_cast[i] = result[i][0].cast[dtype]()
 
+                row_coords[axis] = 0
+                output_fn[dtype, 1, rank](row_coords, row_accum_cast)
+
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
+)
+def warp_reduce_kernel[
+    rank: Int,
+    axis: Int,
+    num_reductions: Int,
+    BLOCK_SIZE: Int,
+    input_fn: def[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: def[dtype: DType, width: Int, rank: Int](
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing[_] -> None,
+    reduce_fn: def[ty: DType, width: Int, reduction_idx: Int](
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing[_] -> SIMD[ty, width],
+    dtype: DType,
+    simd_width: Int = 1,
+    accum_type: DType = get_accum_type[dtype](),
+    pdl_level: PDLLevel = PDLLevel(),
+](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
+    var row_size = shape[axis]
+    var num_rows = shape.flattened_length() // row_size
+
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
+
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    comptime warps_per_block = BLOCK_SIZE // WARP_SIZE
+    comptime VEC_STRIDE = WARP_SIZE * simd_width
+
+    for row_idx in range(
+        block_idx.x * UInt(warps_per_block),
+        UInt(num_rows),
+        grid_dim.x * UInt(warps_per_block),
+    ):
+        var my_row = Int(row_idx) + Int(warp_id())
+        if UInt(my_row) >= UInt(num_rows):
+            continue
+
+        var row_coords = _get_nd_indices_from_flat_index(my_row, shape, axis)
+
+        if warp_id() < UInt(warps_per_block):
+            var accum = InlineArray[SIMD[accum_type, simd_width], num_reductions](
+                uninitialized=True
+            )
+            comptime for i in range(num_reductions):
+                accum[i] = SIMD[accum_type, simd_width](init[i].cast[accum_type]())
+
+            var lid = Int(lane_id())
+            var vec_col = lid * simd_width
+            var vec_limit = row_size - (simd_width - 1)
+            while vec_col < vec_limit:
+                row_coords[axis] = vec_col
+                var v = input_fn[dtype, simd_width, rank](row_coords).cast[accum_type]()
+                comptime for i in range(num_reductions):
+                    accum[i] = reduce_fn[accum_type, simd_width, i](accum[i], v)
+                vec_col += VEC_STRIDE
+
+            var scalar_accum = InlineArray[Scalar[accum_type], num_reductions](
+                uninitialized=True
+            )
+            comptime for i in range(num_reductions):
+                var s = accum[i][0]
+                comptime for lane in range(1, simd_width):
+                    s = reduce_fn[accum_type, 1, i](s, accum[i][lane])
+                scalar_accum[i] = s
+
+            var tail_col = (row_size // VEC_STRIDE) * VEC_STRIDE + lid
+            while tail_col < row_size:
+                row_coords[axis] = tail_col
+                var v = input_fn[dtype, 1, rank](row_coords).cast[accum_type]()
+                comptime for i in range(num_reductions):
+                    scalar_accum[i] = reduce_fn[accum_type, 1, i](scalar_accum[i], v)
+                tail_col += WARP_SIZE
+
+            comptime for i in range(num_reductions):
+
+                @always_inline
+                @parameter
+                def reduce_wrapper[
+                    _dtype: DType, width: Int
+                ](
+                    x: SIMD[_dtype, width], y: SIMD[_dtype, width]
+                ) capturing -> SIMD[_dtype, width]:
+                    return reduce_fn[_dtype, width, i](x, y)
+
+                scalar_accum[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](
+                    scalar_accum[i]
+                )
+
+            if lane_id() == 0:
+                var row_accum_cast = StaticTuple[
+                    Scalar[dtype], num_reductions
+                ]()
+                comptime for i in range(num_reductions):
+                    row_accum_cast[i] = scalar_accum[i].cast[dtype]()
                 row_coords[axis] = 0
                 output_fn[dtype, 1, rank](row_coords, row_accum_cast)
 
@@ -998,9 +1113,35 @@ def reduce_launch[
                         block_dim=BLOCK_SIZE,
                         attributes=pdl_launch_attributes(pdl_level),
                     )
-        else:
+        elif reduce_contig_dim and shape[axis] >= WARP_SIZE and thread_saturated:
             comptime for ax in range(rank):
                 if axis == ax:
+                    comptime warp_vec_width = simd_width_of[dtype, get_gpu_target()]()
+                    comptime kernel = warp_reduce_kernel[
+                        rank,
+                        ax,
+                        num_reductions,
+                        BLOCK_SIZE,
+                        input_fn,
+                        output_fn,
+                        reduce_fn,
+                        dtype,
+                        warp_vec_width,
+                        pdl_level=pdl_level,
+                    ]
+                    ctx.enqueue_function[kernel, kernel](
+                        shape,
+                        init,
+                        grid_dim=num_blocks,
+                        block_dim=BLOCK_SIZE,
+                        attributes=pdl_launch_attributes(pdl_level),
+                    )
+        else:
+            comptime contig_simd = simd_width_of[dtype, get_gpu_target()]()
+            comptime for ax in range(rank):
+                if axis == ax:
+                    comptime is_contig = (ax == rank - 1)
+                    comptime reduce_simd = contig_simd if is_contig else packing_factor
                     comptime kernel = reduce_kernel[
                         rank,
                         ax,
@@ -1010,7 +1151,7 @@ def reduce_launch[
                         output_fn,
                         reduce_fn,
                         dtype,
-                        packing_factor,
+                        reduce_simd,
                         pdl_level=pdl_level,
                     ]
                     ctx.enqueue_function[kernel, kernel](

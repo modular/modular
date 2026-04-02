@@ -65,7 +65,7 @@ def run_reduce[
     var expected_vals = alloc[Scalar[dtype]](out_size, alignment=align)
 
     var in_host = alloc[Scalar[dtype]](cb_in.alloc_size())
-    var res_host = alloc[Scalar[dtype]](out_size)
+    var res_host = alloc[Scalar[dtype]](in_size)
 
     for i in range(cb_in.alloc_size()):
         in_host[i] = 1
