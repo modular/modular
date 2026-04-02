@@ -568,7 +568,8 @@ struct VBufferTransposeLoads[
             64,
             128,
             256,
-        ), "depth must be 64, 128, or 256"
+            512,
+        ), "depth must be 64, 128, 256, or 512"
         comptime assert (
             Self.tensor_core_mma.shape[2] * Self.tensor_core_mma.group_size
             == 16

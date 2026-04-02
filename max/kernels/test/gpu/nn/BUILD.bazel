@@ -261,10 +261,12 @@ _MHA_CAUSAL_MASK_DEPTHS = {
     "256": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
+        "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "512": select({
         "//:b200_gpu": [],
+        "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 }

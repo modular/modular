@@ -370,8 +370,7 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        # experimental kernel only supports depth == 128
-        comptime depths = [64, 128, 256]
+        comptime depths = [64, 128, 256, 512]
 
         comptime for depth in depths:
             test_helper[depth](ctx)

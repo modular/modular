@@ -329,7 +329,9 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         else:
             # BN
             self.num_keys_per_block = num_keys_per_block.or_else(
-                64 if has_amd_gpu_accelerator() else depth
+                (
+                    UInt(32 if depth == 512 else 64)
+                ) if has_amd_gpu_accelerator() else depth
             )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(

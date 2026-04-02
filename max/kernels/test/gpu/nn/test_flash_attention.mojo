@@ -17,7 +17,14 @@ from std.sys import argv
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, H100, GPUInfo, Vendor, _is_sm10x_gpu
+from std.sys import has_amd_gpu_accelerator
+from std.gpu.host.info import (
+    A100,
+    H100,
+    GPUInfo,
+    Vendor,
+    _is_sm10x_gpu,
+)
 from layout import (
     Idx,
     Layout,
@@ -271,6 +278,8 @@ def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
 
     if info == materialize[H100]() or _is_sm10x_gpu(info):
         depths.append(80)
+    if has_amd_gpu_accelerator():
+        depths.append(512)
     return depths^
 
 

@@ -915,8 +915,11 @@ __extension Attention:
         """
         comptime assert Self.BK == 32, "BK must be 32"
         comptime assert (
-            Self.depth == 64 or Self.depth == 128 or Self.depth == 256
-        ), "depth must be 64, 128, or 256"
+            Self.depth == 64
+            or Self.depth == 128
+            or Self.depth == 256
+            or Self.depth == 512
+        ), "depth must be 64, 128, 256, or 512"
         # Pre-scale Q by default for depth<=128 to eliminate per-element
         # scale multiply from the softmax hot loop. Disabled for depth>128
         # to work around LLVM Machine Instruction Scheduler crash (isReg
