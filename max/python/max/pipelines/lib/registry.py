@@ -209,7 +209,7 @@ class SupportedArchitecture:
     default_encoding: SupportedEncoding
     """The default quantization encoding to use when no specific encoding is requested."""
 
-    # TODO: This should be a set[SupportedEncoding] once we remove the sentinel None value.
+    # TODO: This should be a set[SupportedEncoding] once we remove the sentinal None value.
     supported_encodings: set[SupportedEncoding]
     """A dictionary of supported quantization encodings."""
 
@@ -832,12 +832,10 @@ class PipelineRegistry:
 
             tokenizer = arch.tokenizer(**tokenizer_kwargs)
 
-            # Pixel generation pipeline needs pipeline_config, pipeline_model,
-            # and cache_config for FBCache/TaylorSeer optimizations.
+            # Pixel generation pipeline only needs pipeline_config and pipeline_model
             pixel_factory_kwargs: dict[str, Any] = {
                 "pipeline_config": pipeline_config,
                 "pipeline_model": arch.pipeline_model,
-                "cache_config": pipeline_config.cache,
             }
 
             pipeline_factory = cast(

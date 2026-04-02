@@ -142,6 +142,7 @@ class DiffusionPipeline(ABC):
         self.pipeline_config = pipeline_config
         self.session = session
         self.devices = devices
+        self._weight_paths = weight_paths
 
         for name, model in self._load_sub_models(weight_paths).items():
             setattr(self, name, model)
