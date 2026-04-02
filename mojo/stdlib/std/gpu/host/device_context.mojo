@@ -1462,7 +1462,7 @@ struct DeviceBuffer[dtype: DType](
             abort(t"failed to write DeviceBuffer:{e}")
 
 
-# @doc_hidden does not work on structs - see MOTO-992.
+@doc_hidden
 struct DeviceStream(ImplicitlyCopyable):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
