@@ -68,11 +68,8 @@ const maxSidebars = {
       type : "category",
       collapsed : false,
       items : [
-        {
-          type: 'doc',
-          id: 'max/develop/index',
-          label: 'Overview',
-        },
+        "max/develop/index",
+        "max/develop/eager-execution",
         "max/develop/tensors",
         "max/develop/dtypes",
         "max/develop/basic-ops",
