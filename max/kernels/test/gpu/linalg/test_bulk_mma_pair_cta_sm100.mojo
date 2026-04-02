@@ -18,6 +18,7 @@ cta_group::2 and 8-element mask produces correct results.
 """
 
 from std.math import align_up
+from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -31,9 +32,9 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
+    block_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -94,7 +95,7 @@ def bulk_mma_pair_cta_kernel[
     a_tma_op: TMATensorTile[ab_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[ab_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     comptime cta_group = 2
     comptime BM = block_tile_shape[0]
@@ -224,12 +225,12 @@ def bulk_mma_pair_cta_kernel[
         cta_group=cta_group,
     ]
 
-    var rank_m = block_id_in_cluster.x
-    var rank_n = block_id_in_cluster.y
+    var rank_m = Int(block_id_in_cluster.x)
+    var rank_n = Int(block_id_in_cluster.y)
 
     var peer_cta_coord = (
-        rank_m % UInt(cta_group),
-        rank_m // UInt(cta_group),
+        umod(rank_m, cta_group),
+        ufloordiv(rank_m, cta_group),
         rank_n,
     )
 
@@ -247,7 +248,7 @@ def bulk_mma_pair_cta_kernel[
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
-    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
+    b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
     var a_mma_mask = a_multicast_mask >> UInt16(peer_cta_coord[0])
     var b_mma_mask = b_multicast_mask >> UInt16(peer_cta_coord[0])
@@ -255,18 +256,18 @@ def bulk_mma_pair_cta_kernel[
         b_mma_mask | b_mma_mask << 1
     )
 
-    for i in range(Int(num_iters)):
+    for i in range(num_iters):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = (
-                Int(peer_cta_coord[2]) * a_tma_rows + Int(block_idx.x) * BM
+                peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
             )
             var b_gmem_slice_coord = (
-                Int(peer_cta_coord[1]) * b_tma_rows
-                + Int(peer_cta_coord[0]) * BN
-                + Int(block_idx.y) * MMA_N
+                peer_cta_coord[1] * b_tma_rows
+                + peer_cta_coord[0] * BN
+                + block_idx.y * MMA_N
             )
 
             var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
@@ -316,17 +317,15 @@ def bulk_mma_pair_cta_kernel[
     comptime num_ld_iters = total_repeat // ld_repeat
     comptime ld_width = c_frag_size // num_ld_iters
 
-    var cluster_idx_m = block_idx.x // UInt(CLUSTER_M)
-    var cluster_idx_n = block_idx.y // UInt(CLUSTER_N)
+    var cluster_idx_m = ufloordiv(block_idx.x, CLUSTER_M)
+    var cluster_idx_n = ufloordiv(block_idx.y, CLUSTER_N)
     var global_mma_m = (
-        cluster_idx_m * UInt(CLUSTER_M // cta_group) + peer_cta_coord[1]
+        cluster_idx_m * (CLUSTER_M // cta_group) + peer_cta_coord[1]
     )
-    var global_mma_n = cluster_idx_n * UInt(CLUSTER_N) + peer_cta_coord[2]
+    var global_mma_n = cluster_idx_n * CLUSTER_N + peer_cta_coord[2]
 
-    var c_gmem_block = c.tile[MMA_M, MMA_N](
-        Int(global_mma_m), Int(global_mma_n)
-    )
-    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](Int(peer_cta_coord[0]), 0)
+    var c_gmem_block = c.tile[MMA_M, MMA_N](global_mma_m, global_mma_n)
+    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](peer_cta_coord[0], 0)
 
     comptime for ld_i in range(num_ld_iters):
         var c_frag = tcgen05_ld[
@@ -346,7 +345,7 @@ def bulk_mma_pair_cta_kernel[
 
         comptime if MMA_M == 128:
             var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
-                Int(warp_id() % 2), Int(warp_id() // 2)
+                umod(warp_id(), 2), ufloordiv(warp_id(), 2)
             ).vectorize[1, 2]()
 
             comptime for i in range(ld_width // 2):
@@ -358,7 +357,7 @@ def bulk_mma_pair_cta_kernel[
                 )
         else:
             var c_gmem_frag = c_gmem_slice.tile[BM // 4, ld_repeat](
-                Int(warp_id()), ld_i
+                warp_id(), ld_i
             ).vectorize[1, 2]()
 
             comptime for i in range(ld_width // 2):
@@ -474,7 +473,7 @@ def test_bulk_mma_pair_cta[
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        UInt(K // BK),
+        K // BK,
         grid_dim=(
             align_up(M // BM, Int(cluster_shape[0])),
             align_up(N // BN // cta_group, Int(cluster_shape[1])),

@@ -3,6 +3,10 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    "test_mma_ws_ts.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     "test_conv2d_sm100.mojo": select({
@@ -159,10 +163,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Apple GPU shared memory limit (32768) exceeded by second stage top-k kernel
-    "test_toppminp_gpu.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # NaN in BFloat16 top-p sampling on Apple GPU
 }
 
 _FILECHECK_TESTS = [
@@ -261,10 +261,12 @@ _MHA_CAUSAL_MASK_DEPTHS = {
     "256": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
+        "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "512": select({
         "//:b200_gpu": [],
+        "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 }

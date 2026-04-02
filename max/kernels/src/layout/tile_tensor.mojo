@@ -63,6 +63,11 @@ from .coord import (
 )
 
 
+@always_inline
+def _default_invariant[mut: Bool]() -> Bool:
+    return is_gpu() and mut == False
+
+
 @fieldwise_init
 struct TileTensor[
     mut: Bool,
@@ -586,7 +591,7 @@ struct TileTensor[
     def load[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
-        invariant: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width]:
         """Load elements from the tensor at the specified coordinates.
@@ -677,7 +682,7 @@ struct TileTensor[
     def load_linear[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
-        invariant: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
     ](self, idx: IndexList[_, ...]) -> SIMD[Self.dtype, width]:
         """Load elements using an IndexList index (for flat layouts).
 

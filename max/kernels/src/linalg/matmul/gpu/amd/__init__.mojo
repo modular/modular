@@ -14,3 +14,4 @@
 
 from .matmul import gemm_kernel_amd
 from .pingpong_kernel import AMDPingPongMatmul, KernelConfig
+from .mxfp4_matmul_amd import mxfp4_matmul_amd

@@ -12,10 +12,13 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = [
+            "mojo_runtime_background_thread_subprocess_asyncio.py",
+            "mojo_runtime_background_thread_subprocess_thread.py",
             "test_flashinfer_cubin.py",
             "test_interpreter.py",
             "test_interpreter_ops.py",
             "test_interpreter_ops_gpu.py",
+            "test_mojo_runtime_background_thread_import.py",
         ],
     ),
     args = [
@@ -39,8 +42,33 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/interfaces",
         "//max/python/max/mlir",
         requirement("pytest-xdist"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mojo_runtime_background_thread_import",
+    srcs = [
+        "mojo_runtime_background_thread_subprocess_asyncio.py",
+        "mojo_runtime_background_thread_subprocess_thread.py",
+        "test_mojo_runtime_background_thread_import.py",
+    ],
+    ignore_extra_deps = [
+        "//max/python/max:_core",
+        requirement("numpy"),
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
         requirement("numpy"),
     ],
 )
@@ -105,6 +133,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        requirement("numpy"),
         requirement("torch"),
     ],
 )
@@ -117,6 +146,7 @@ test_suite(
         ":max_tests",
         ":test_interpreter",
         ":test_interpreter_ops",
+        ":test_mojo_runtime_background_thread_import",
         "//max/tests/tests/_core_mojo:tests",
         "//max/tests/tests/benchmark:tests",
         "//max/tests/tests/driver:tests",

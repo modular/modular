@@ -87,6 +87,7 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     BatchType,
+    EOSTracker,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
@@ -394,6 +395,7 @@ class OverlapTextGenerationPipeline(
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
+        disable_overlap: bool = False,
     ) -> None:
         """Initialize a text generation pipeline instance.
 
@@ -407,6 +409,9 @@ class OverlapTextGenerationPipeline(
                 one or to seed the EOS set.
             weight_adapters: Mapping from weights format to adapter implementation.
             tokenizer: Tokenizer implementation used to build contexts and decode.
+            disable_overlap: When this flag is set, the overlap scheduler will
+                immediately synchronize after model execution. This removes any
+                potential cpu / gpu overlap.
 
         Raises:
             ValueError: If ``quantization_encoding`` is not configured in
@@ -513,6 +518,8 @@ class OverlapTextGenerationPipeline(
         # set a default graph capture size, 128
         self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
 
+        self._disable_overlap = disable_overlap
+
     @property
     def pipeline_config(self) -> PipelineConfig:
         """Return the pipeline configuration."""
@@ -553,7 +560,7 @@ class OverlapTextGenerationPipeline(
                         tokens=TokenBuffer(
                             np.zeros(q_max_seq_len, dtype=np.int64)
                         ),
-                        eos_token_ids=self._eos_token_id,
+                        eos_tracker=EOSTracker(),
                         model_name=self._pipeline_config.model.model_name,
                     )
                     for idx in range(batch_size)
@@ -842,6 +849,9 @@ class OverlapTextGenerationPipeline(
             curr_batch = None
 
         if self._prev_batch is not None:
+            assert not self._disable_overlap, (
+                "Cannot have a previous batch when overlap is disabled"
+            )
             outputs: PipelineOutputsDict[TextGenerationOutput] = (
                 self._prev_batch.sync_and_process_outputs()
             )
@@ -859,7 +869,16 @@ class OverlapTextGenerationPipeline(
         self._kv_manager.step(inputs.batches)
 
         if curr_batch is not None:
-            self._prev_batch = curr_batch
+            if self._disable_overlap:
+                assert not outputs, (
+                    "Cannot have prev outputs when overlap is disabled"
+                )
+                # Immediately synchronize after gpu execution and return the
+                # results of the current batch.
+                outputs = curr_batch.sync_and_process_outputs()
+            else:
+                # Otherwise, delay the synchronization until the next step.
+                self._prev_batch = curr_batch
 
         return outputs
 

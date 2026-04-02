@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import WARP_SIZE, lane_id_int as lane_id
+from std.gpu import WARP_SIZE, lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI300X, MI355X
 from layout import Layout, LayoutTensor

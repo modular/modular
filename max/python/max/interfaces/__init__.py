@@ -21,6 +21,7 @@ from .context import (
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
 )
+from .eos_tracking import EOSTracker
 from .generation import GenerationOutput
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
@@ -117,6 +118,7 @@ __all__ = [
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
     "BatchType",
+    "EOSTracker",
     "EmbeddingsContext",
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",

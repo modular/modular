@@ -91,8 +91,14 @@ def test[
 
     # Q, K, V are randomly initialized.
     rand[qkv_type](q_ptr, q_size)
-    rand[qkv_type](k_ptr, k_size)
-    rand[qkv_type](v_ptr, v_size)
+    # rand[qkv_type](k_ptr, k_size)
+    # rand[qkv_type](v_ptr, v_size)
+    for i in range(v_size):
+        v_ptr[i] = 0.5
+    # for i in range(q_size):
+    #     q_ptr[i] = 1.0
+    for i in range(k_size):
+        k_ptr[i] = 0.25
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
@@ -409,109 +415,107 @@ def main() raises:
         ](201, 600, CausalMask(), ctx)
 
         # BF16 token gen
-        comptime if depth != 512:
-            # we currently only have depth=512 prefill support
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+        ](1, 512, CausalMask(), ctx, is_benchmark=is_benchmark())
+
+        test[
+            DType.bfloat16,
+            depth,
+            11,
+        ](1, 256, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            1,
+        ](1, 11, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            1,
+        ](1, 11, CausalMask(), ctx, num_partitions=Optional[Int](2))
+
+        test[
+            DType.bfloat16,
+            depth,
+            2,
+        ](1, 523, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            24,
+            group=3,
+        ](1, 29, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            3,
+            group=3,
+        ](1, 156, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            3,
+            group=3,
+        ](1, 208, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 1208, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 2008, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 2008, SlidingWindowCausalMask[77](), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 5000, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 5000, SlidingWindowCausalMask[89](), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 600, CausalMask(), ctx)
+
+        comptime if (
+            ctx.default_device_info == A100
+            or ctx.default_device_info == H100
+            or _is_sm10x_gpu(ctx.default_device_info)
+        ):
             test[
                 DType.bfloat16,
                 depth,
                 32,
-            ](1, 512, CausalMask(), ctx, is_benchmark=is_benchmark())
-
-            test[
-                DType.bfloat16,
-                depth,
-                11,
-            ](1, 256, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                1,
-            ](1, 11, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                1,
-            ](1, 11, CausalMask(), ctx, num_partitions=Optional[Int](2))
-
-            test[
-                DType.bfloat16,
-                depth,
-                2,
-            ](1, 523, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                24,
-                group=3,
-            ](1, 29, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                3,
-                group=3,
-            ](1, 156, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                3,
-                group=3,
-            ](1, 208, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 1208, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
+                group=16,
             ](1, 2008, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 2008, SlidingWindowCausalMask[77](), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 5000, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 5000, SlidingWindowCausalMask[89](), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 600, CausalMask(), ctx)
-
-            comptime if (
-                ctx.default_device_info == A100
-                or ctx.default_device_info == H100
-                or _is_sm10x_gpu(ctx.default_device_info)
-            ):
-                test[
-                    DType.bfloat16,
-                    depth,
-                    32,
-                    group=16,
-                ](1, 2008, CausalMask(), ctx)

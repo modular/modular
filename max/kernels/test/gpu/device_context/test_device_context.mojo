@@ -13,7 +13,7 @@
 
 from std.math import iota
 
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal
 
@@ -27,7 +27,7 @@ def vec_func(
     supplement: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
@@ -179,7 +179,7 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
         var supplement, var in0, var in1, var output
     }:
         var tid = global_idx.x
-        if tid >= UInt(length):
+        if tid >= length:
             return
         output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 

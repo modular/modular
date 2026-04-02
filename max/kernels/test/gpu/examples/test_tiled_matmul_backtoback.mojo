@@ -22,10 +22,10 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_int as block_idx,
-    grid_dim_uint as grid_dim,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
+    block_idx,
+    grid_dim,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import external_memory
@@ -219,7 +219,7 @@ def b2b_gemm[
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
         (block_idx.x, block_idx.y),
-        (Int(grid_dim.x), Int(grid_dim.y)),
+        (grid_dim.x, grid_dim.y),
     ) if swizzle_block else Index(block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.

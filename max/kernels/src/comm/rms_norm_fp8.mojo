@@ -449,7 +449,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 scale_ub.cast[scales_dtype](),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(),
             )
     else:
         comptime kernel = _rms_norm_fused_fp8_kernel_block[
@@ -478,7 +478,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 scale_ub.cast[scales_dtype](),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(),
             )
 
 

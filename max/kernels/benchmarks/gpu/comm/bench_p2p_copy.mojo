@@ -227,15 +227,15 @@ def bench_p2p[
         comptime if is_push:
             # GPU 0: buf0_read(10) -> buf1_write, GPU 1: buf1_read(20) -> buf0_write
             ctx0.enqueue_function[copy_kernel, copy_kernel](
-                buf1_write.unsafe_ptr(),
-                buf0_read.unsafe_ptr(),
+                buf1_write,
+                buf0_read,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
             ctx1.enqueue_function[copy_kernel, copy_kernel](
-                buf0_write.unsafe_ptr(),
-                buf1_read.unsafe_ptr(),
+                buf0_write,
+                buf1_read,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
@@ -243,15 +243,15 @@ def bench_p2p[
         else:
             # GPU 0: buf1_read(20) -> buf0_write, GPU 1: buf0_read(10) -> buf1_write
             ctx0.enqueue_function[copy_kernel, copy_kernel](
-                buf0_write.unsafe_ptr(),
-                buf1_read.unsafe_ptr(),
+                buf0_write,
+                buf1_read,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
             ctx1.enqueue_function[copy_kernel, copy_kernel](
-                buf1_write.unsafe_ptr(),
-                buf0_read.unsafe_ptr(),
+                buf1_write,
+                buf0_read,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
@@ -282,8 +282,8 @@ def bench_p2p[
             ctx1.enqueue_memset(buf1_write, Scalar[dtype](0))
             ctx1.synchronize()
             ctx0.enqueue_function[copy_kernel, copy_kernel](
-                buf1_write.unsafe_ptr(),
-                buf0_write.unsafe_ptr(),
+                buf1_write,
+                buf0_write,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
@@ -299,8 +299,8 @@ def bench_p2p[
             ctx0.enqueue_memset(buf0_write, Scalar[dtype](0))
             ctx0.synchronize()
             ctx0.enqueue_function[copy_kernel, copy_kernel](
-                buf0_write.unsafe_ptr(),
-                buf1_write.unsafe_ptr(),
+                buf0_write,
+                buf1_write,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,

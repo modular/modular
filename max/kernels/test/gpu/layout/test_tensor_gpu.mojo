@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx_uint as block_idx, grid_dim
+from std.gpu import block_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import (
     AddressSpace,
@@ -38,7 +38,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
         dram_tensor: LayoutTensor[DType.float32, layout, ImmutAnyOrigin],
         flag: UnsafePointer[Scalar[DType.bool], MutAnyOrigin],
     ):
-        var dram_tile = dram_tensor.tile[4, 4](0, Int(block_idx.x))
+        var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
         var sram_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(4, 4),
@@ -54,7 +54,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
 
         for r in range(4):
             for c in range(4):
-                if sram_tensor[r, c] != Float32(r * 16 + Int(col_offset) + c):
+                if sram_tensor[r, c] != Float32(r * 16 + col_offset + c):
                     flag[] = False
 
     comptime kernel = copy_to_sram_test_kernel[tensor_layout]

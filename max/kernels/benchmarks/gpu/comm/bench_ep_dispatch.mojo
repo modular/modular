@@ -254,7 +254,7 @@ def bench_dispatch[
                 send_buf,
                 recv_buf_ptrs,
                 recv_count_ptrs,
-                EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+                EPLocalSyncCounters[n_experts](atomic_counter),
                 Int32(my_rank),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -271,7 +271,7 @@ def bench_dispatch[
                 src_token_info_tensor,
                 recv_buf,
                 recv_count,
-                EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+                EPLocalSyncCounters[n_experts](atomic_counter),
                 Int32(my_rank),
                 OptionalReg[
                     TileTensor[

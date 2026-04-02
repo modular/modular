@@ -21,7 +21,7 @@ non-null, a boolean check is meaningless).
 from std.builtin.format_int import _write_int
 from std.compile import get_type_name
 from std.format._utils import FormatStruct, Named, TypeNames
-from std.sys import align_of, size_of
+from std.sys import align_of, is_gpu, size_of
 from std.utils._nicheable import UnsafeSingleNicheable
 
 
@@ -45,6 +45,11 @@ struct _Null[address_space: AddressSpace = AddressSpace.GENERIC](
     @always_inline("nodebug")
     def __int__(self) -> Int:
         return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
+
+
+@always_inline
+def _default_invariant[mut: Bool]() -> Bool:
+    return is_gpu() and mut == False
 
 
 struct NonNullUnsafePointer[
@@ -714,6 +719,378 @@ struct NonNullUnsafePointer[
             unsafe_from_nullable = self._as_unsafe_pointer().as_noalias_ptr()
         }
 
+    @always_inline("nodebug")
+    def load[
+        dtype: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
+    ](self: NonNullUnsafePointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
+        """Loads `width` elements from the value the pointer points to.
+
+        Constraints:
+            The width and alignment must be positive integer values.
+
+        Parameters:
+            dtype: The data type of the SIMD vector.
+            width: The number of elements to load.
+            alignment: The minimal alignment (bytes) of the address.
+            volatile: Whether the operation is volatile.
+            invariant: Whether the load is from invariant memory.
+            non_temporal: Whether the load has no temporal locality (streaming).
+
+        Returns:
+            The loaded SIMD vector.
+        """
+        return self._as_unsafe_pointer().load[
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ]()
+
+    @always_inline("nodebug")
+    def load[
+        dtype: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
+    ](
+        self: NonNullUnsafePointer[Scalar[dtype], ...],
+        offset: Scalar,
+    ) -> SIMD[
+        dtype, width
+    ]:
+        """Loads the value the pointer points to with the given offset.
+
+        Constraints:
+            The width and alignment must be positive integer values.
+            The offset must be an integer.
+
+        Parameters:
+            dtype: The data type of SIMD vector elements.
+            width: The size of the SIMD vector.
+            alignment: The minimal alignment of the address.
+            volatile: Whether the operation is volatile or not.
+            invariant: Whether the memory is load invariant.
+            non_temporal: Whether the load has no temporal locality (streaming).
+
+        Args:
+            offset: The offset to load from.
+
+        Returns:
+            The loaded value.
+        """
+        return self._as_unsafe_pointer().load[
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ](offset)
+
+    @always_inline("nodebug")
+    def load[
+        I: Indexer,
+        dtype: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
+    ](
+        self: NonNullUnsafePointer[Scalar[dtype], ...],
+        offset: I,
+    ) -> SIMD[
+        dtype, width
+    ]:
+        """Loads the value the pointer points to with the given offset.
+
+        Constraints:
+            The width and alignment must be positive integer values.
+
+        Parameters:
+            I: A type that can be used as an index.
+            dtype: The data type of SIMD vector elements.
+            width: The size of the SIMD vector.
+            alignment: The minimal alignment of the address.
+            volatile: Whether the operation is volatile or not.
+            invariant: Whether the memory is load invariant.
+            non_temporal: Whether the load has no temporal locality (streaming).
+
+        Args:
+            offset: The offset to load from.
+
+        Returns:
+            The loaded value.
+        """
+        return self._as_unsafe_pointer().load[
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ](offset)
+
+    @always_inline("nodebug")
+    def store[
+        I: Indexer,
+        dtype: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        self: NonNullUnsafePointer[mut=True, Scalar[dtype], ...],
+        offset: I,
+        val: SIMD[dtype, width],
+    ):
+        """Stores a single element value at the given offset.
+
+        Constraints:
+            The width and alignment must be positive integer values.
+            The offset must be integer.
+
+        Parameters:
+            I: A type that can be used as an index.
+            dtype: The data type of SIMD vector elements.
+            width: The size of the SIMD vector.
+            alignment: The minimal alignment of the address.
+            volatile: Whether the operation is volatile or not.
+            non_temporal: Whether the store has no temporal locality (streaming).
+
+        Args:
+            offset: The offset to store to.
+            val: The value to store.
+        """
+        self._as_unsafe_pointer().store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](offset, val)
+
+    @always_inline("nodebug")
+    def store[
+        dtype: DType,
+        offset_type: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        self: NonNullUnsafePointer[mut=True, Scalar[dtype], ...],
+        offset: Scalar[offset_type],
+        val: SIMD[dtype, width],
+    ):
+        """Stores a single element value at the given offset.
+
+        Constraints:
+            The width and alignment must be positive integer values.
+
+        Parameters:
+            dtype: The data type of SIMD vector elements.
+            offset_type: The data type of the offset value.
+            width: The size of the SIMD vector.
+            alignment: The minimal alignment of the address.
+            volatile: Whether the operation is volatile or not.
+            non_temporal: Whether the store has no temporal locality (streaming).
+
+        Args:
+            offset: The offset to store to.
+            val: The value to store.
+        """
+        self._as_unsafe_pointer().store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](offset, val)
+
+    @always_inline("nodebug")
+    def store[
+        dtype: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        self: NonNullUnsafePointer[mut=True, Scalar[dtype], ...],
+        val: SIMD[dtype, width],
+    ):
+        """Stores a single element value `val` at element offset 0.
+
+        Constraints:
+            The width and alignment must be positive integer values.
+
+        Parameters:
+            dtype: The data type of SIMD vector elements.
+            width: The number of elements to store.
+            alignment: The minimal alignment (bytes) of the address.
+            volatile: Whether the operation is volatile.
+            non_temporal: Whether the store has no temporal locality (streaming).
+
+        Args:
+            val: The SIMD value to store.
+        """
+        self._as_unsafe_pointer().store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](val)
+
+    @always_inline("nodebug")
+    def strided_load[
+        dtype: DType, T: Intable, //, width: Int
+    ](
+        self: NonNullUnsafePointer[Scalar[dtype], ...],
+        stride: T,
+    ) -> SIMD[
+        dtype, width
+    ]:
+        """Performs a strided load of the SIMD vector.
+
+        Parameters:
+            dtype: DType of returned SIMD value.
+            T: The Intable type of the stride.
+            width: The SIMD width.
+
+        Args:
+            stride: The stride between loads.
+
+        Returns:
+            A vector which is stride loaded.
+        """
+        return self._as_unsafe_pointer().strided_load[width=width](stride)
+
+    @always_inline("nodebug")
+    def strided_store[
+        dtype: DType,
+        T: Intable,
+        //,
+        width: Int = 1,
+    ](
+        self: NonNullUnsafePointer[mut=True, Scalar[dtype], ...],
+        val: SIMD[dtype, width],
+        stride: T,
+    ):
+        """Performs a strided store of the SIMD vector.
+
+        Parameters:
+            dtype: DType of `val`, the SIMD value to store.
+            T: The Intable type of the stride.
+            width: The SIMD width.
+
+        Args:
+            val: The SIMD value to store.
+            stride: The stride between stores.
+        """
+        self._as_unsafe_pointer().strided_store(val, stride)
+
+    @always_inline("nodebug")
+    def gather[
+        dtype: DType,
+        //,
+        *,
+        width: Int = 1,
+        alignment: Int = align_of[dtype](),
+    ](
+        self: NonNullUnsafePointer[Scalar[dtype], ...],
+        offset: SIMD[_, width],
+        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
+        default: SIMD[dtype, width] = 0,
+    ) -> SIMD[dtype, width]:
+        """Gathers a SIMD vector from offsets of the current pointer.
+
+        This method loads from memory addresses calculated by appropriately
+        shifting the current pointer according to the `offset` SIMD vector,
+        or takes from the `default` SIMD vector, depending on the values of
+        the `mask` SIMD vector.
+
+        If a mask element is `True`, the respective result element is given
+        by the current pointer and the `offset` SIMD vector; otherwise, the
+        result element is taken from the `default` SIMD vector.
+
+        Constraints:
+            The offset type must be an integral type.
+            The alignment must be a power of two integer value.
+
+        Parameters:
+            dtype: DType of the return SIMD.
+            width: The SIMD width.
+            alignment: The minimal alignment of the address.
+
+        Args:
+            offset: The SIMD vector of offsets to gather from.
+            mask: The SIMD vector of boolean values, indicating for each
+                element whether to load from memory or to take from the
+                `default` SIMD vector.
+            default: The SIMD vector providing default values to be taken
+                where the `mask` SIMD vector is `False`.
+
+        Returns:
+            The SIMD vector containing the gathered values.
+        """
+        return self._as_unsafe_pointer().gather[alignment=alignment](
+            offset, mask, default
+        )
+
+    @always_inline("nodebug")
+    def scatter[
+        dtype: DType,
+        //,
+        *,
+        width: Int = 1,
+        alignment: Int = align_of[dtype](),
+    ](
+        self: NonNullUnsafePointer[mut=True, Scalar[dtype], ...],
+        offset: SIMD[_, width],
+        val: SIMD[dtype, width],
+        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
+    ):
+        """Scatters a SIMD vector into offsets of the current pointer.
+
+        This method stores at memory addresses calculated by appropriately
+        shifting the current pointer according to the `offset` SIMD vector,
+        depending on the values of the `mask` SIMD vector.
+
+        If a mask element is `True`, the respective element in the `val` SIMD
+        vector is stored at the memory address defined by the current pointer
+        and the `offset` SIMD vector; otherwise, no action is taken for that
+        element in `val`.
+
+        If the same offset is targeted multiple times, the values are stored
+        in the order they appear in the `val` SIMD vector, from the first to
+        the last element.
+
+        Constraints:
+            The offset type must be an integral type.
+            The alignment must be a power of two integer value.
+
+        Parameters:
+            dtype: DType of `value`, the result SIMD buffer.
+            width: The SIMD width.
+            alignment: The minimal alignment of the address.
+
+        Args:
+            offset: The SIMD vector of offsets to scatter into.
+            val: The SIMD vector containing the values to be scattered.
+            mask: The SIMD vector of boolean values, indicating for each
+                element whether to store at memory or not.
+        """
+        self._as_unsafe_pointer().scatter[alignment=alignment](
+            offset, val, mask
+        )
+
     @always_inline("builtin")
     def bitcast[
         T: AnyType
@@ -732,6 +1109,28 @@ struct NonNullUnsafePointer[
             address, mutability, and origin as the original pointer.
         """
         return {unsafe_from_nullable = self._as_unsafe_pointer().bitcast[T]()}
+
+    @always_inline("nodebug")
+    def mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
+        """Changes the mutability of a pointer.
+
+        This is a safe way to change the mutability of a pointer with an
+        unbounded mutability. This function will emit a compile time error if
+        you try to cast an immutable pointer to mutable.
+
+        Parameters:
+            target_mut: Mutability of the destination pointer.
+
+        Returns:
+            A pointer with the same type, origin and address space as the
+            original pointer, but with the newly specified mutability.
+        """
+        comptime assert (
+            target_mut == False or target_mut == Self.mut
+        ), "Cannot safely cast an immutable pointer to mutable"
+        return self.unsafe_mut_cast[target_mut]()
 
     @always_inline("builtin")
     def unsafe_mut_cast[

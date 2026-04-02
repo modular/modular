@@ -14,11 +14,7 @@
 from std.math import align_down, ceildiv
 
 from std.algorithm.functional import tile_and_unswitch
-from std.gpu import (
-    barrier,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import TileTensor, Coord, Idx, row_major
 from std.memory import stack_allocation
@@ -48,9 +44,9 @@ def matmul_sram(
     access.
     """
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K)))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(K)), Idx(Int(N)))))
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(N)))))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(M), Idx(K))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(K), Idx(N))))
+    var c = TileTensor(c_ptr, row_major(Coord(Idx(M), Idx(N))))
 
     # Allocate A, B tile in shared memory.
     var a_shared = stack_allocation[
@@ -94,46 +90,42 @@ def matmul_sram(
 
         comptime if not full_tile:
             a_val = a.load[width=1](
-                Coord(Idx(Int(row)), Idx(offset + Int(localCol)))
-            ) if (row < UInt(M) and offset + Int(localCol) < K) else 0.0
+                Coord(Idx(row), Idx(offset + localCol))
+            ) if (row < M and offset + localCol < K) else 0.0
         else:
             a_val = (
-                a.load[width=1](
-                    Coord(Idx(Int(row)), Idx(offset + Int(localCol)))
-                ) if row
-                < UInt(M) else 0.0
+                a.load[width=1](Coord(Idx(row), Idx(offset + localCol))) if row
+                < M else 0.0
             )
-        a_shared[localRow * UInt(tile_size) + localCol] = a_val
+        a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Float32
 
         comptime if not full_tile:
             b_val = b.load[width=1](
-                Coord(Idx(offset + Int(localRow)), Idx(Int(col)))
-            ) if (col < UInt(N) and offset + Int(localRow) < K) else 0.0
+                Coord(Idx(offset + localRow), Idx(col))
+            ) if (col < N and offset + localRow < K) else 0.0
         else:
             b_val = (
-                b.load[width=1](
-                    Coord(Idx(offset + Int(localRow)), Idx(Int(col)))
-                ) if col
-                < UInt(N) else 0.0
+                b.load[width=1](Coord(Idx(offset + localRow), Idx(col))) if col
+                < N else 0.0
             )
-        b_shared[localRow * UInt(tile_size) + localCol] = b_val
+        b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
 
         for k in range(tile_size):
-            result += a_shared.load(
-                localRow * UInt(tile_size) + UInt(k)
-            ) * b_shared.load(k * tile_size + Int(localCol))
+            result += a_shared.load(localRow * tile_size + k) * b_shared.load(
+                k * tile_size + localCol
+            )
 
         barrier()
 
     tile_and_unswitch[update_tile](0, K, tile_size, K_remainder)
 
-    if row < UInt(M) and col < UInt(N):
-        c.store(Coord(Idx(Int(row)), Idx(Int(col))), result)
+    if row < M and col < N:
+        c.store(Coord(Idx(row), Idx(col)), result)
 
 
 def run_matmul(ctx: DeviceContext) raises:

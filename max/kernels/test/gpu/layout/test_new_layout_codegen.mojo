@@ -14,7 +14,7 @@
 
 import std.sys
 
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.host.compile import _compile_code, get_gpu_target
 from layout.tile_layout import Layout
 from layout import Coord, Idx
@@ -59,9 +59,7 @@ def kernel_thread_idx(ptr: UnsafePointer[Int32, MutAnyOrigin]):
     comptime layout = Layout(
         shape=(Idx[8](), Idx[2]()), stride=(Idx[1](), Idx[1]())
     )
-    ptr[0] = Int32(
-        layout(Coord(Idx(Int(thread_idx.x)), Idx(Int(thread_idx.y))))
-    )
+    ptr[0] = Int32(layout(Coord(Idx(thread_idx.x), Idx(thread_idx.y))))
 
 
 def main() raises:

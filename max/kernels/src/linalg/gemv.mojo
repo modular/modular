@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
 from std.math import align_down, align_up, ceildiv
+from std.math.uutils import umod, ufloordiv
 from std.sys import (
     has_amd_gpu_accelerator,
     is_amd_gpu,
@@ -171,6 +172,7 @@ def gemv_kernel_vector[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
+    check_bounds: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin],  # m
@@ -187,10 +189,6 @@ def gemv_kernel_vector[
     var tid = global_idx.x
     var global_warp_id = Int(warp.broadcast(tid // UInt(WARP_SIZE)))
     var lane_id = lane_id()
-    comptime step = WARP_SIZE * Int(simd_width)
-
-    var idx = lane_id * simd_width
-
     if global_warp_id >= m:
         return
 
@@ -202,27 +200,49 @@ def gemv_kernel_vector[
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    for i in range(ceildiv(k // Int(simd_width), WARP_SIZE)):
+    var num_iters = (
+        ceildiv(k // Int(simd_width), WARP_SIZE) if comptime (
+            check_bounds
+        ) else ufloordiv(k, WARP_SIZE * Int(simd_width))
+        + 1
+    )
+
+    # Main loop: all lanes are in bounds, no check needed.
+    for i in range(num_iters - 1):
         var a_tile = a.tile[1, WARP_SIZE * Int(simd_width)](global_warp_id, i)
         var b_tile = b.tile[1, WARP_SIZE * Int(simd_width)](0, i)
-
-        if idx >= UInt(k):
-            continue
-
         var a_vec = a_tile.vectorize[1, Int(simd_width)]()[0, Int(lane_id)]
         var b_vec = b_tile.vectorize[1, Int(simd_width)]()[0, Int(lane_id)]
         local_accum += rebind[local_accum_type](
-            a_vec.cast[accum_type]()
-        ) * rebind[local_accum_type](b_vec.cast[accum_type]())
+            a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
+        )
 
-        idx += UInt(step)
+    # Last iteration: only lanes with valid K indices participate and
+    # only if check_bounds is True.
+    comptime if check_bounds:
+        if num_iters > 0:
+            var last = num_iters - 1
+            var a_tile = a.tile[1, WARP_SIZE * Int(simd_width)](
+                global_warp_id, last
+            )
+            var b_tile = b.tile[1, WARP_SIZE * Int(simd_width)](0, last)
+            if (lane_id + UInt(last * WARP_SIZE)) * simd_width < UInt(k):
+                var a_vec = a_tile.vectorize[1, Int(simd_width)]()[
+                    0, Int(lane_id)
+                ]
+                var b_vec = b_tile.vectorize[1, Int(simd_width)]()[
+                    0, Int(lane_id)
+                ]
+                local_accum += rebind[local_accum_type](
+                    a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
+                )
 
     var accum = warp.sum(local_accum)
 
     if lane_id == 0:
         comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](
+            elementwise_lambda(
                 reverse_idx[transpose_b](global_warp_id, 0),
                 accum.cast[c_type](),
             )
@@ -287,24 +307,14 @@ def _dot_accum[
     elif is_amd_gpu():
         # AMD non-BF16 (e.g. FP8): vector multiply + horizontal reduce.
         result += (a.cast[accum_type]() * b.cast[accum_type]()).reduce_add()
-    elif is_nvidia_gpu() and in_type.is_float8() and width >= 2:
-        # NVIDIA FP8: paired bitcast emits cvt.rn.f16x2.e4m3x2, eliminating
-        # PRMT byte-shuffle instructions. Multiply in f32 to avoid overflow
-        # (FP8 max=480, 480²=230400 > f16 max 65504).
-        comptime half_width = width // 2
-        var a_u16 = bitcast[DType.uint16, half_width](a)
-        var b_u16 = bitcast[DType.uint16, half_width](b)
-        comptime for l in range(half_width):
-            var a_f16 = bitcast[in_type, 2](a_u16[l]).cast[DType.float16]()
-            var b_f16 = bitcast[in_type, 2](b_u16[l]).cast[DType.float16]()
-            result += a_f16[0].cast[accum_type]() * b_f16[0].cast[accum_type]()
-            result += a_f16[1].cast[accum_type]() * b_f16[1].cast[accum_type]()
     else:
         # NVIDIA/generic: scalar element-wise loop. reduce_add() generates
         # wider intermediates that increase NVIDIA register pressure vs
         # sequential FMA chains (13% regression on small-K shapes).
+        var ac = a.cast[accum_type]()
+        var bc = b.cast[accum_type]()
         comptime for l in range(width):
-            result += a[l].cast[accum_type]() * b[l].cast[accum_type]()
+            result += ac[l] * bc[l]
 
     return result
 
@@ -463,27 +473,38 @@ def gemv_split_k[
             if lane_id == 0:
                 shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
     barrier()
-    # Sum across warps' results in shared memory then output.
-    # TODO: should be able to vectorize and maybe use larger tile_n.
-    for ii in range(tid, tile_m * tile_n, num_threads):
-        var mid, nid = divmod(ii, tile_n)
-        var val = Scalar[accum_type]()
-        comptime ValType = type_of(val)
+    # Sum across warps' results in shared memory then output (vectorized in N).
+    for mid in range(tid, tile_m, num_threads):
+        var vals = SIMD[accum_type, tile_n]()
 
         comptime for jj in range(k_warp_num):
-            val += rebind[ValType](shmem[0, jj * tile_m * tile_n + ii])
+            comptime for ni in range(tile_n):
+                vals[ni] += rebind[Scalar[accum_type]](
+                    shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
+                )
 
-        var idx = output_idx + mid * n + nid
+        var base_idx = output_idx + mid * n
 
         comptime if check_bounds:
-            if idx >= n:
-                continue
-
-        comptime if elementwise_lambda_fn:
-            comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda(Index(0, idx), val.cast[c_type]())
+            comptime for ni in range(tile_n):
+                if base_idx + ni < n:
+                    comptime if elementwise_lambda_fn:
+                        comptime elementwise_lambda = (
+                            elementwise_lambda_fn.value()
+                        )
+                        elementwise_lambda(
+                            Index(0, base_idx + ni),
+                            vals[ni].cast[c_type](),
+                        )
+                    else:
+                        output[0, base_idx + ni] = vals[ni].cast[c_type]()
         else:
-            output[0, idx] = val.cast[c_type]()
+            comptime if elementwise_lambda_fn:
+                comptime elementwise_lambda = elementwise_lambda_fn.value()
+                elementwise_lambda(Index(0, base_idx), vals.cast[c_type]())
+            else:
+                comptime for ni in range(tile_n):
+                    output[0, base_idx + ni] = vals[ni].cast[c_type]()
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -801,6 +822,7 @@ def gemv_gpu_dispatch[
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
         logger.info("Executing: GEMV_KERNEL_VECTOR kernel")
 
+        comptime check_bounds_k = static_K % (WARP_SIZE * simd_width) != 0
         var block_dim = min(
             align_up(k // simd_width, WARP_SIZE),
             WARP_SIZE * WARPS_PER_BLOCK,
@@ -817,6 +839,7 @@ def gemv_gpu_dispatch[
                     simd_width=UInt(simd_width),
                     transpose_b=False,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    check_bounds=check_bounds_k,
                     pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel, kernel](
@@ -852,6 +875,7 @@ def gemv_gpu_dispatch[
                     simd_width=UInt(simd_width),
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    check_bounds=check_bounds_k,
                     pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel, kernel](
@@ -876,6 +900,7 @@ def gemv_gpu_dispatch[
                 simd_width=UInt(simd_width),
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                check_bounds=check_bounds_k,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel, kernel](

@@ -42,6 +42,7 @@ from . import allreduce, bundled_allreduce, random, reducescatter
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
+from .bottom_k import bottom_k
 from .broadcast import distributed_broadcast
 from .broadcast_to import broadcast_to
 from .buffer import buffer_create, buffer_load, buffer_store, buffer_store_slice
@@ -82,8 +83,14 @@ from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave
 from .reshape import reshape
-from .resize import InterpolationMode, resize
-from .scatter import masked_scatter, scatter, scatter_nd
+from .resize import InterpolationMode, resize, resize_linear
+from .scatter import (
+    masked_scatter,
+    scatter,
+    scatter_add,
+    scatter_nd,
+    scatter_nd_add,
+)
 from .shape_to_tensor import shape_to_tensor
 from .shard_and_stack import shard_and_stack
 from .slice_tensor import slice_tensor

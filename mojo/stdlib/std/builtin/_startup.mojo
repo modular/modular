@@ -29,7 +29,7 @@ def _destroy_global_runtime(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
 
 
 @always_inline
-def _ensure_current_or_global_runtime_init():
+def _ensure_runtime_init():
     var current_runtime = external_call[
         "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime",
         _CPointer[NoneType, ExternalOrigin[mut=True]],
@@ -48,7 +48,7 @@ def __wrap_and_execute_main[
     """Define a C-ABI compatible entry point for non-raising main function."""
 
     # Initialize the global runtime.
-    _ensure_current_or_global_runtime_init()
+    _ensure_runtime_init()
 
     comptime if SanitizeAddress:
         external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
@@ -82,7 +82,7 @@ def __wrap_and_execute_raising_main[
     """Define a C-ABI compatible entry point for a raising main function."""
 
     # Initialize the global runtime.
-    _ensure_current_or_global_runtime_init()
+    _ensure_runtime_init()
 
     comptime if SanitizeAddress:
         external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()

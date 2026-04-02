@@ -23,6 +23,32 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_model_config_encoding_resolution",
+    size = "small",
+    srcs = ["test_model_config_encoding_resolution.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_pipeline_config_resolve",
+    size = "small",
+    srcs = ["test_pipeline_config_resolve.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:pipeline_model_dummy",
+        "//max/tests/integration/test_common:registry",
+    ],
+)
+
+modular_py_test(
     name = "test_model_manifest",
     srcs = ["test_model_manifest.py"],
     deps = [
@@ -56,7 +82,9 @@ modular_py_test(
         exclude = [
             "**/*_gpu.py",
             "test_device_graph_capture_release.py",
+            "test_model_config_encoding_resolution.py",
             "test_model_config_subfolder.py",
+            "test_pipeline_config_resolve.py",
             "test_model_manifest.py",
             "test_model_manifest_hf.py",
         ],
