@@ -155,17 +155,12 @@ def bench_reduce[
         )
 
     # Create and initialize input and output buffers.
-    comptime InTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[dtype], ImmutAnyOrigin](),
-            row_major(Idx(length)),
-        )
-    )
-    comptime OutTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[dtype], MutAnyOrigin](), row_major(Idx(length))
-        )
-    )
+    comptime InTensorType = TileTensor[
+        dtype, type_of(row_major(Idx(length))), ImmutAnyOrigin
+    ]
+    comptime OutTensorType = TileTensor[
+        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+    ]
     var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
 
@@ -210,11 +205,7 @@ def bench_reduce[
         list_of_ctx[i].enqueue_memset(out_dev[i], 0)
 
     # Copy-capture in registers since the lambda will be used on GPU.
-    var out_tensors_capture = StaticTuple[OutTensorType, ngpus](
-        TileTensor(
-            UnsafePointer[Scalar[dtype], MutAnyOrigin](), row_major(Idx(length))
-        )
-    )
+    var out_tensors_capture = StaticTuple[OutTensorType, ngpus]()
 
     comptime for i in range(ngpus):
         out_tensors_capture[i] = TileTensor(
