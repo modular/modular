@@ -6,23 +6,15 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
-struct StringNoCopy:
-    var size: __mlir_type.index
+# expected-error @+1 {{the 'escaping' function effect is no longer supported; use 'unified' closures instead}}
+def escaping_effect_is_rejected(closure: def () escaping -> None):
+    pass
 
-    def __init__(out self):
+
+def escaping_on_nested_decl_is_rejected():
+    # expected-error @below {{the 'escaping' function effect is no longer supported; use 'unified' closures instead}}
+    def myclosure() escaping:
         pass
-
-    def __del__(deinit self):
-        pass
-
-
-def makes_escaping_closurenocopy(m: StringNoCopy):
-    # expected-error @below {{cannot synthesize fieldwise init because field 'field0' has non-copyable and non-movable type 'StringNoCopy'}}
-    def myclosure() -> StringNoCopy:
-        # expected-error @below {{value of type 'StringNoCopy' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
-        return m
-
-    var y: def () escaping -> None = myclosure
 
 
 # COM: https://github.com/modular/mojo/issues/1223

@@ -1246,7 +1246,9 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 
       // Otherwise maybe it was misspelled, just eat it.
       p.emitError(loc, "unknown function effect '")
-          << spelling << "', expected 'raises', 'capturing', or 'escaping'";
+          << spelling
+          << "', expected 'raises', 'capturing', 'unified', or "
+             "'register_passable'";
     } else if (spelling == "raises") {
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
       p.consumeIdentifier();
@@ -1266,7 +1268,10 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     } else if (spelling == "capturing") {
       handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
     } else if (spelling == "escaping") {
-      handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
+      p.emitError(loc,
+                  "the 'escaping' function effect is no longer supported; use "
+                  "'unified' closures instead");
+      return failure();
     } else if (spelling == "unified") {
       handleEffect(&FnEffects::isUnified, &FnEffects::setUnified);
     } else if (spelling == "register_passable") {
