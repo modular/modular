@@ -19,6 +19,8 @@ from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, Weight, ops
 from max.graph.type import FilterLayout
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu
 from max.nn.layer import LayerList, Module
 
 from .model_config import AutoencoderKLWanConfig
@@ -446,18 +448,12 @@ class ResidualBlock(Module):
 
 
 class AttentionBlock(Module):
-    """Per-frame windowed self-attention used in Wan decoder mid block.
+    """Per-frame self-attention used in Wan decoder/encoder mid block.
 
-    Uses window attention instead of full (H*W)^2 attention to avoid OOM
-    at high resolutions. The spatial dimensions are partitioned into
-    non-overlapping windows of size ws*ws, and attention is computed
-    independently per window.
-
-    Memory: O(b*t * num_windows * ws^2 * ws^2) instead of O(b*t * (H*W)^2).
-    At 720p latent (90x160) with ws=8: ~158MB vs ~2.5GB+ per chunk.
+    Uses flash_attention_gpu for memory-efficient full spatial attention.
     """
 
-    _WINDOW_SIZE: int = 8
+    _HEAD_DIM: int = 64
 
     def __init__(
         self,
@@ -467,6 +463,8 @@ class AttentionBlock(Module):
     ) -> None:
         super().__init__()
         self.dim = dim
+        self.num_heads = dim // self._HEAD_DIM
+        self.scale = 1.0 / (self._HEAD_DIM**0.5)
         self.norm = RMSNorm(
             dim,
             images=True,
@@ -501,7 +499,7 @@ class AttentionBlock(Module):
         h = x.shape[3]
         w = x.shape[4]
         c = self.dim
-        ws = self._WINDOW_SIZE
+        seq_len = h * w
 
         # [b, c, t, h, w] -> [b*t, c, h, w]
         x2d = ops.permute(x, [0, 2, 1, 3, 4])
@@ -511,52 +509,28 @@ class AttentionBlock(Module):
         x2d_nhwc = ops.permute(x2d, [0, 2, 3, 1])  # [bt, h, w, c]
         qkv = self.to_qkv(x2d_nhwc)  # [bt, h, w, 3c]
 
-        # Pad H and W up to the next multiple of ws.
-        # Use concat with zero tensors — always applied (no Python branching
-        # on symbolic dims). If already aligned, pad dims are 0-sized.
-        h_p = ((h + ws - 1) // ws) * ws
-        w_p = ((w + ws - 1) // ws) * ws
-        pad_w = w_p - w
-        pad_h = h_p - h
-        zero_w = ops.constant(
-            0.0, dtype=qkv.dtype, device=qkv.device
-        ).broadcast_to([b * t, h, pad_w, 3 * c])
-        qkv = ops.concat([qkv, zero_w], axis=2)
-        zero_h = ops.constant(
-            0.0, dtype=qkv.dtype, device=qkv.device
-        ).broadcast_to([b * t, pad_h, w_p, 3 * c])
-        qkv = ops.concat([qkv, zero_h], axis=1)
+        # Flatten spatial -> sequence: [bt, seq_len, 3c]
+        qkv = ops.reshape(qkv, [b * t, seq_len, 3 * c])
+        q = qkv[:, :, :c]
+        k = qkv[:, :, c : 2 * c]
+        v = qkv[:, :, 2 * c : 3 * c]
 
-        hws = h_p // ws
-        wws = w_p // ws
-        nwin = hws * wws
-        tok = ws * ws
+        # Reshape for flash attention: [bt, seq_len, num_heads, head_dim]
+        q = ops.reshape(q, [b * t, seq_len, self.num_heads, self._HEAD_DIM])
+        k = ops.reshape(k, [b * t, seq_len, self.num_heads, self._HEAD_DIM])
+        v = ops.reshape(v, [b * t, seq_len, self.num_heads, self._HEAD_DIM])
 
-        q = qkv[:, :, :, :c]
-        k = qkv[:, :, :, c : 2 * c]
-        v = qkv[:, :, :, 2 * c : 3 * c]
-
-        def to_windows(y: TensorValue) -> TensorValue:
-            y = ops.reshape(y, [b * t, hws, ws, wws, ws, c])
-            y = ops.permute(y, [0, 1, 3, 2, 4, 5])
-            return ops.reshape(y, [b * t, nwin, tok, c])
-
-        q_w = to_windows(q)
-        k_w = to_windows(k)
-        v_w = to_windows(v)
-
-        attn_scores = ops.matmul(
-            q_w * (float(c) ** -0.5), ops.permute(k_w, [0, 1, 3, 2])
+        out = flash_attention_gpu(
+            q,
+            k,
+            v,
+            mask_variant=MHAMaskVariant.NULL_MASK,
+            scale=self.scale,
         )
-        attn = ops.softmax(attn_scores, axis=-1)
-        out = ops.matmul(attn, v_w)  # [bt, nwin, tok, c]
 
-        out = ops.reshape(out, [b * t, hws, wws, ws, ws, c])
-        out = ops.permute(out, [0, 1, 3, 2, 4, 5])
-        out = ops.reshape(out, [b * t, h_p, w_p, c])
-
-        # Slice back to original spatial dims (remove padding).
-        out = out[:, :h, :w, :]
+        # [bt, seq_len, num_heads, head_dim] -> [bt, h, w, c]
+        out = ops.reshape(out, [b * t, seq_len, c])
+        out = ops.reshape(out, [b * t, h, w, c])
 
         out = self.proj(out)  # [bt, h, w, c]
         out = ops.permute(out, [0, 3, 1, 2])  # [bt, c, h, w]
