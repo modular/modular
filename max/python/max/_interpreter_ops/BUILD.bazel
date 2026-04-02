@@ -44,6 +44,7 @@ mojo_library(
         "tile_ops",
         "topk_ops",
         "pad_ops",
+        "resize_ops",
     ]
 ]
 
@@ -66,6 +67,7 @@ _SHARED_LIBS = [
     ":pad_ops",
     ":pooling_ops",
     ":reduce_ops",
+    ":resize_ops",
     ":softmax_ops",
     ":split_ops",
     ":tile_ops",

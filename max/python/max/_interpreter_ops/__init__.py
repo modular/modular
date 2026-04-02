@@ -44,6 +44,7 @@ from . import (  # type: ignore[attr-defined]
     pad_ops,
     pooling_ops,
     reduce_ops,
+    resize_ops,
     softmax_ops,
     split_ops,
     tile_ops,

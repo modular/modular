@@ -5743,3 +5743,268 @@ class TestPadRepeatOp:
         np.testing.assert_array_equal(
             np.from_dlpack(out), self._ref(x_np, [1, 1, 2, 0])
         )
+
+
+class TestResizeLinearOp:
+    """Tests for linear (bilinear) resize interpreter op (mo.resize.linear).
+
+    Routes through F.resize_linear -> ops.resize_linear ->
+    rmo.MoResizeLinearOp -> mo.ResizeLinearOp -> _handle_resize_linear ->
+    resize_ops.ResizeLinear.  CPU-only (MO_HostOnly).
+
+    The reference is a pure-numpy separable 1-D linear interpolation along
+    each spatial dimension (dimensions 2 and beyond).  Four coordinate
+    transformation modes are supported -- see ``_resize_linear_ref``.
+    For ``antialias=True``, a tent-filtered reference is computed by
+    widening the linear kernel support by ``1/scale`` when downscaling.
+    """
+
+    @staticmethod
+    def _coord(
+        x_out: int,
+        in_size: int,
+        out_size: int,
+        mode: int,
+    ) -> float:
+        """Map output coordinate to input coordinate.
+
+        Args:
+            x_out: Output pixel index.
+            in_size: Input dimension size.
+            out_size: Output dimension size.
+            mode: 0=half_pixel, 1=align_corners, 2=asymmetric, 3=half_pixel_1D.
+
+        Returns:
+            Corresponding input coordinate (may be fractional).
+        """
+        scale = in_size / out_size
+        if mode == 1:  # align_corners
+            return (
+                float(x_out) * (in_size - 1) / (out_size - 1)
+                if out_size > 1
+                else 0.0
+            )
+        if mode == 2:  # asymmetric
+            return float(x_out) * scale
+        # half_pixel (0) and half_pixel_1D (3)
+        return (float(x_out) + 0.5) * scale - 0.5
+
+    @staticmethod
+    def _resize_1d(
+        arr: np.ndarray,
+        out_size: int,
+        dim: int,
+        mode: int,
+        antialias: bool,
+    ) -> np.ndarray:
+        """Resize ``arr`` along a single spatial axis using linear interpolation.
+
+        Args:
+            arr: Input array (float64 working precision).
+            out_size: Desired output size along ``dim``.
+            dim: The axis to resize.
+            mode: Coordinate transformation mode (0-3).
+            antialias: Widen the tent filter by ``1/scale`` when downscaling.
+
+        Returns:
+            Array with ``arr.shape[dim]`` replaced by ``out_size``.
+        """
+        in_size = arr.shape[dim]
+        if in_size == out_size:
+            return arr
+
+        rank = arr.ndim
+        new_shape = list(arr.shape)
+        new_shape[dim] = out_size
+        out = np.zeros(new_shape, dtype=np.float64)
+        scale = in_size / out_size
+
+        for x_out in range(out_size):
+            x_in = TestResizeLinearOp._coord(x_out, in_size, out_size, mode)
+
+            if antialias and scale > 1.0:
+                # Widened tent filter: sample in [x_in - r, x_in + r], r = scale
+                r = scale
+                x0 = int(np.floor(x_in - r + 1e-6))
+                x1 = int(np.ceil(x_in + r - 1e-6))
+                total_w = 0.0
+                acc_idx: list[Any] = [slice(None)] * rank
+                out_idx: list[Any] = [slice(None)] * rank
+                out_idx[dim] = x_out
+                out[tuple(out_idx)] = 0.0
+                for xi in range(max(0, x0), min(in_size, x1 + 1)):
+                    w = max(0.0, 1.0 - abs((xi - x_in) / r))
+                    acc_idx[dim] = xi
+                    out[tuple(out_idx)] += w * arr[tuple(acc_idx)]
+                    total_w += w
+                if total_w > 0.0:
+                    out[tuple(out_idx)] /= total_w
+            else:
+                x_in_c = float(np.clip(x_in, 0.0, in_size - 1))
+                x0_i = int(np.floor(x_in_c))
+                x1_i = min(x0_i + 1, in_size - 1)
+                w = x_in_c - x0_i
+                idx0: list[Any] = [slice(None)] * rank
+                idx1: list[Any] = [slice(None)] * rank
+                idx_out: list[Any] = [slice(None)] * rank
+                idx0[dim] = x0_i
+                idx1[dim] = x1_i
+                idx_out[dim] = x_out
+                out[tuple(idx_out)] = (1.0 - w) * arr[tuple(idx0)] + w * arr[
+                    tuple(idx1)
+                ]
+
+        return out
+
+    @staticmethod
+    def _resize_linear_ref(
+        x_np: np.ndarray,
+        out_shape: list[int],
+        coordinate_transform_mode: int = 0,
+        antialias: bool = False,
+    ) -> np.ndarray:
+        """Separable numpy reference for linear (bilinear) resize.
+
+        Applies ``_resize_1d`` sequentially along each spatial dimension
+        (dims 2 and beyond) in float64 working precision.
+
+        Args:
+            x_np: Input array.
+            out_shape: Full output shape (same rank as ``x_np``).
+            coordinate_transform_mode: 0=half_pixel (default),
+                1=align_corners, 2=asymmetric, 3=half_pixel_1D.
+            antialias: Widen tent filter when downscaling.
+
+        Returns:
+            Output array cast back to ``x_np.dtype``.
+        """
+        out = x_np.astype(np.float64)
+        rank = x_np.ndim
+        for dim in range(2, rank):
+            out = TestResizeLinearOp._resize_1d(
+                out, out_shape[dim], dim, coordinate_transform_mode, antialias
+            )
+        return out.astype(x_np.dtype)
+
+    def test_2d_upsample(self) -> None:
+        """Upsample 4x4 spatial to 8x8 with half_pixel (coord_mode=0)."""
+        rng = np.random.default_rng(0)
+        x_np = rng.standard_normal((1, 1, 4, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 8, 8]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
+
+        ref = self._resize_linear_ref(
+            x_np, out_shape, coordinate_transform_mode=0
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(out), ref, rtol=1e-4, atol=1e-4
+        )
+
+    def test_2d_downscale(self) -> None:
+        """Downscale 8x8 spatial to 4x4 with half_pixel (coord_mode=0)."""
+        rng = np.random.default_rng(1)
+        x_np = rng.standard_normal((1, 3, 8, 8)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 3, 4, 4]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
+
+        ref = self._resize_linear_ref(
+            x_np, out_shape, coordinate_transform_mode=0
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(out), ref, rtol=1e-4, atol=1e-4
+        )
+
+    def test_align_corners(self) -> None:
+        """Resize with align_corners coordinate mode (coord_mode=1)."""
+        rng = np.random.default_rng(2)
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 7, 7]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_linear(x, out_shape, coordinate_transform_mode=1)
+
+        ref = self._resize_linear_ref(
+            x_np, out_shape, coordinate_transform_mode=1
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(out), ref, rtol=1e-4, atol=1e-4
+        )
+
+    def test_antialias_downscale(self) -> None:
+        """Downscaling with antialias=True produces finite values."""
+        rng = np.random.default_rng(3)
+        x_np = rng.standard_normal((1, 1, 8, 8)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 3, 3]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_linear(
+                x, out_shape, coordinate_transform_mode=0, antialias=True
+            )
+
+        out_np = np.from_dlpack(out)
+        assert out_np.shape == tuple(out_shape)
+        assert np.all(np.isfinite(out_np)), (
+            "antialias output contains NaN or Inf"
+        )
+
+        ref = self._resize_linear_ref(
+            x_np, out_shape, coordinate_transform_mode=0, antialias=True
+        )
+        np.testing.assert_allclose(out_np, ref, rtol=1e-3, atol=1e-3)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_dtypes(self, dtype: DType) -> None:
+        """Resize works for float32 and float16 inputs."""
+        rng = np.random.default_rng(4)
+        np_dtype = dtype.to_numpy()
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np_dtype)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 6, 6]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_linear(x, out_shape)
+
+        ref = self._resize_linear_ref(x_np, out_shape)
+        tol = 1e-2 if dtype == DType.float16 else 1e-4
+        np.testing.assert_allclose(np.from_dlpack(out), ref, rtol=tol, atol=tol)
+
+    def test_3d_input(self) -> None:
+        """Resize a rank-3 (NCW) input using 1-D linear interpolation."""
+        rng = np.random.default_rng(5)
+        x_np = rng.standard_normal((1, 4, 8)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 4, 16]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_linear(x, out_shape)
+
+        ref = self._resize_linear_ref(x_np, out_shape)
+        np.testing.assert_allclose(
+            np.from_dlpack(out), ref, rtol=1e-4, atol=1e-4
+        )

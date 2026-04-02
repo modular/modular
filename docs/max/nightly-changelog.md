@@ -104,12 +104,13 @@ This version is still a work in progress.
 - Added `pad` op handlers (`pad.constant`, `pad.reflect`, `pad.repeat`) to
   the experimental eager interpreter. `pad.constant` supports CPU and GPU;
   `pad.reflect` and `pad.repeat` (edge padding) run on CPU.
-- Added `ops.resize_linear` to `max.graph.ops` for linear (bilinear)
-  interpolation resizing with configurable `coordinate_transform_mode`
-  (half_pixel, align_corners, asymmetric, half_pixel_1D) and optional
-  `antialias` downscaling support. Also added the `InterpolationMode` enum
-  (`NEAREST`, `BILINEAR`, `BICUBIC`) and updated `ops.resize` to default to
-  `InterpolationMode.BILINEAR`.
+- Added `max.graph.ops.resize_linear` for linear (bilinear) interpolation
+  resizing with configurable `coordinate_transform_mode` (half_pixel,
+  align_corners, asymmetric, half_pixel_1D) and optional `antialias`
+  downscaling support; `max.graph.ops.resize` now supports
+  `InterpolationMode.BILINEAR` by delegating to `resize_linear`.
+- Added `resize_linear` op handler to the experimental eager interpreter
+  (CPU) via `max.experimental.functional.resize_linear`.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

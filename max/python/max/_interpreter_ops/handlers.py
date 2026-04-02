@@ -886,7 +886,7 @@ def _handle_slice(
     steps_buffer = inputs[3]
 
     # Read starts/stops/steps to compute output shape
-    # .to_numpy() handles GPU→CPU transfer transparently
+    # .to_numpy() handles GPU->CPU transfer transparently
     start_np = starts_buffer.to_numpy().astype(np.int64)
     stop_np = stops_buffer.to_numpy().astype(np.int64)
     step_np = steps_buffer.to_numpy().astype(np.int64)
@@ -2975,4 +2975,57 @@ def _handle_pad_repeat(
         None,
     )
 
+    return [output]
+
+
+@register_op_handler(mo.ResizeLinearOp)
+def _handle_resize_linear(
+    op: mo.ResizeLinearOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.resize.linear via Mojo separable linear-filter resize (CPU-only).
+
+    Operands (MO_HostOnly):
+      inputs[0]: input data tensor (host)
+      inputs[1]: size -- 1-D int64 tensor whose values give the full output
+                 shape (one value per input rank dimension).
+
+    Attributes on ``op``:
+      ``coordinate_transform_mode`` -- int 0-3 (half_pixel / align_corners /
+          asymmetric / half_pixel_1D).
+      ``antialias`` -- bool; widens the tent-filter kernel when downscaling.
+
+    Args:
+        op: The resize-linear operation.
+        inputs: Two buffers -- input data and size.
+
+    Returns:
+        List containing a single output buffer with shape given by ``size``
+        and the same dtype as ``input``.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # size (int64 output-shape vector)
+
+    input_buffer = inputs[0]
+    size_buffer = inputs[1]
+
+    coord_mode = int(op.coordinate_transform_mode.value)
+    antialias = bool(op.antialias)
+
+    in_shape = list(input_buffer.shape)
+    rank = len(in_shape)
+    out_shape = size_buffer.to_numpy().astype(int).flatten().tolist()
+
+    assert len(out_shape) == rank, (
+        f"resize_linear: size rank {len(out_shape)} != input rank {rank}"
+    )
+
+    output = Buffer(shape=out_shape, dtype=input_buffer.dtype, device=CPU())
+    ops.resize_ops.ResizeLinear(
+        output,
+        input_buffer,
+        (coord_mode, antialias, rank, in_shape, out_shape),
+        target_device._device_context_ptr(),
+    )
     return [output]
