@@ -187,7 +187,7 @@ struct _ListTakeIter[
         var element = (self._list[].unsafe_ptr() + self._index).take_pointee()
         self._index += 1
         self._list[]._len -= 1
-        return element
+        return element^
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
