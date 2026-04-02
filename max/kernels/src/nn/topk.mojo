@@ -645,6 +645,105 @@ struct TopK_2[T: DType, largest: Bool = True](
                 self.p = elem_id
 
 
+struct TopKHeap[T: DType, largest: Bool, M: Int]:
+    """Fixed-capacity register heap for per-thread top-M tracking.
+
+    Stores up to M (value, index) pairs in registers. During the scan
+    phase, a cached threshold provides O(1) rejection of non-competitive
+    elements. All internal loops are compile-time unrolled to keep data
+    in registers on GPU. Indices are stored as Int32 to reduce register
+    pressure for large block sizes.
+    """
+
+    var vals: InlineArray[Scalar[Self.T], Self.M]
+    var idxs: InlineArray[Int32, Self.M]
+    var threshold: Scalar[Self.T]
+
+    @always_inline
+    def __init__(out self):
+        self.vals = InlineArray[Scalar[Self.T], Self.M](
+            fill=_topk_dead_val[Self.T, Self.largest]()
+        )
+        self.idxs = InlineArray[Int32, Self.M](fill=Int32(-1))
+        self.threshold = _topk_dead_val[Self.T, Self.largest]()
+
+    @always_inline
+    def insert(mut self, val: Scalar[Self.T], idx: Int):
+        """Insert an element, evicting the worst if full."""
+        # Fast reject against threshold. When the heap has empty slots
+        # the threshold equals dead_val, so the check naturally fails
+        # for all real values and we fall through to the empty-slot path.
+        comptime if Self.largest:
+            if val <= self.threshold:
+                return
+        else:
+            if val >= self.threshold:
+                return
+
+        var idx32 = Int32(idx)
+
+        # Try to place in an empty slot.
+        var inserted = False
+        comptime for i in range(Self.M):
+            if not inserted and self.idxs[i] == -1:
+                self.vals[i] = val
+                self.idxs[i] = idx32
+                inserted = True
+
+        if not inserted:
+            # All slots full — replace the first element at threshold.
+            comptime for i in range(Self.M):
+                if not inserted and self.vals[i] == self.threshold:
+                    self.vals[i] = val
+                    self.idxs[i] = idx32
+                    inserted = True
+        self._update_threshold()
+
+    @always_inline
+    def _update_threshold(mut self):
+        """Recompute eviction threshold (worst value in the heap)."""
+        self.threshold = self.vals[0]
+        comptime for i in range(1, Self.M):
+            comptime if Self.largest:
+                if self.vals[i] < self.threshold:
+                    self.threshold = self.vals[i]
+            else:
+                if self.vals[i] > self.threshold:
+                    self.threshold = self.vals[i]
+
+    @always_inline
+    def best(self) -> TopK_2[Self.T, Self.largest]:
+        """Return the best element, ties broken by smallest index.
+
+        Returns a dead TopK_2 (p=-1) when all entries are exhausted.
+        """
+        var best_u = self.vals[0]
+        var best_p = self.idxs[0]
+        comptime for i in range(1, Self.M):
+            comptime if Self.largest:
+                if self.vals[i] > best_u or (
+                    self.vals[i] == best_u and self.idxs[i] < best_p
+                ):
+                    best_u = self.vals[i]
+                    best_p = self.idxs[i]
+            else:
+                if self.vals[i] < best_u or (
+                    self.vals[i] == best_u and self.idxs[i] < best_p
+                ):
+                    best_u = self.vals[i]
+                    best_p = self.idxs[i]
+        return TopK_2[Self.T, Self.largest](p=Int(best_p), u=best_u)
+
+    @always_inline
+    def remove(mut self, idx: Int):
+        """Remove element by global index, replacing with dead value."""
+        var idx32 = Int32(idx)
+        comptime for i in range(Self.M):
+            if self.idxs[i] == idx32:
+                self.vals[i] = _topk_dead_val[Self.T, Self.largest]()
+                self.idxs[i] = Int32(-1)
+
+
 # Function to perform warp-level reduction to find the maximum TopK_2
 @always_inline
 @parameter
@@ -1033,6 +1132,10 @@ def _topk_stage1_no_shmem[
 
     _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
 
+    # Hoist per-block output base pointers out of the k loop.
+    var out_vals = local_topk_vals + bid * UInt(max_k)
+    var out_idxs = local_topk_idxs + bid * UInt(max_k)
+
     var k_batch = max_k
     if K:
         var k_raw = Int(K[batch_id])
@@ -1042,40 +1145,63 @@ def _topk_stage1_no_shmem[
     if k_batch > num_elements:
         k_batch = num_elements
 
-    with PDL():
-        for k in range(k_batch):
-            var partial = TopK_2[T, largest]()
+    comptime HEAP_SIZE = 8
 
-            for i in range(Int(tid + block_offset), num_elements, Int(stride)):
-                var val = _in_buffer_tmp[i]
-                partial.insert(val, i)
+    with PDL():
+        # Phase 1: Single scan to build per-thread register heap.
+        var heap = TopKHeap[T, largest, HEAP_SIZE]()
+        for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+            heap.insert(_in_buffer_tmp[i], i)
+
+        # Phase 2: Extract winners from heaps without re-scanning.
+        # Threads whose heap is exhausted fall back to a global-memory
+        # re-scan so that non-top-M elements are still discoverable.
+        var heap_iters = min(k_batch, HEAP_SIZE)
+        for k in range(heap_iters):
+            # Use heap if it has valid entries, else fall back to re-scan.
+            var partial = heap.best()
+            if partial.p < 0:
+                partial = TopK_2[T, largest]()
+                for i in range(
+                    Int(tid + block_offset), num_elements, Int(stride)
+                ):
+                    partial.insert(_in_buffer_tmp[i], i)
 
             var total = _warp_reduce_topk[T, largest](partial)
 
-            # Broadcast winner index so the owning thread can write
-            # the dead value to its own global memory element.
             var winner_p = warp.broadcast(total.p)
 
             if tid == 0:
-                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
-                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
-                    DType.int
-                ](total.p).cast[out_idx_type]()
+                out_vals[k] = total.u
+                out_idxs[k] = Scalar[DType.int](total.p).cast[out_idx_type]()
 
-            # Each thread that owned the winner writes the dead value
-            # to global memory for its own element.
+            if partial.p == winner_p and winner_p >= 0:
+                heap.remove(winner_p)
+                _in_buffer_tmp[winner_p] = _topk_dead_val[T, largest]()
+
+        # Phase 3: Fallback to global-memory re-scan for remaining k.
+        for k in range(heap_iters, k_batch):
+            var partial = TopK_2[T, largest]()
+
+            for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+                partial.insert(_in_buffer_tmp[i], i)
+
+            var total = _warp_reduce_topk[T, largest](partial)
+
+            var winner_p = warp.broadcast(total.p)
+
+            if tid == 0:
+                out_vals[k] = total.u
+                out_idxs[k] = Scalar[DType.int](total.p).cast[out_idx_type]()
+
             if partial.p == winner_p and winner_p >= 0:
                 _in_buffer_tmp[winner_p] = _topk_dead_val[T, largest]()
 
         # Fill remaining positions with sentinel values.
         if tid == 0:
             for remaining_k in range(k_batch, max_k):
-                local_topk_vals[
-                    bid * UInt(max_k) + UInt(remaining_k)
-                ] = _topk_dead_val[T, largest]()
-                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
-                    out_idx_type
-                ](-1)
+                out_vals[remaining_k] = _topk_dead_val[T, largest]()
+                out_idxs[remaining_k] = Scalar[out_idx_type](-1)
 
 
 def _topk_stage1[
@@ -1153,8 +1279,43 @@ def _topk_stage1[
         1, Int, address_space=AddressSpace.SHARED
     ]()
 
+    comptime HEAP_SIZE = 8
+
     with PDL():
-        for k in range(k_batch):
+        # Phase 1: Single scan to build per-thread register heap.
+        var heap = TopKHeap[T, largest, HEAP_SIZE]()
+        for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+            heap.insert(_in_buffer_tmp[i], i)
+
+        # Phase 2: Extract winners from heaps without re-scanning.
+        # Threads whose heap is exhausted fall back to a global-memory
+        # re-scan so that non-top-M elements are still discoverable.
+        var heap_iters = min(k_batch, HEAP_SIZE)
+        for k in range(heap_iters):
+            # Use heap if it has valid entries, else fall back to re-scan.
+            var partial = heap.best()
+            if partial.p < 0:
+                partial = TopK_2[T, largest]()
+                for i in range(
+                    Int(tid + block_offset), num_elements, Int(stride)
+                ):
+                    partial.insert(_in_buffer_tmp[i], i)
+
+            var total = _block_reduce_topk[ascending=largest](partial)
+
+            if tid == 0:
+                out_vals[k] = total.u
+                out_idxs[k] = Scalar[DType.int](total.p).cast[out_idx_type]()
+                winner_sram[0] = total.p
+            barrier()
+
+            var winner_p = winner_sram[0]
+            if partial.p == winner_p and winner_p >= 0:
+                heap.remove(winner_p)
+                _in_buffer_tmp[winner_p] = _topk_dead_val[T, largest]()
+
+        # Phase 3: Fallback to global-memory re-scan for remaining k.
+        for k in range(heap_iters, k_batch):
             var partial = TopK_2[T, largest]()
 
             for i in range(Int(tid + block_offset), num_elements, Int(stride)):
@@ -1169,11 +1330,6 @@ def _topk_stage1[
                 winner_sram[0] = total.p
             barrier()
 
-            # Distributed dead-value write: the owning thread writes
-            # the dead value to its own global memory element.  Each
-            # thread's stride is disjoint, so no further barrier is
-            # required — the owning thread sees its own write on the
-            # next iteration.
             var winner_p = winner_sram[0]
             if partial.p == winner_p and winner_p >= 0:
                 _in_buffer_tmp[winner_p] = _topk_dead_val[T, largest]()

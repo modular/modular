@@ -154,6 +154,9 @@ This version is still a work in progress.
 - Optimized GPU `concat` with a flat-indexing kernel that avoids
   multi-dimensional index decomposition, using 128-bit vectorized loads with
   automatic fallback for unaligned shapes.
+- Optimized GPU `topk` stage-1 kernel with a per-thread register heap that
+  caches the top-8 elements during a single scan pass, eliminating redundant
+  global memory re-reads for the first 8 extraction iterations.
 
 ## Mojo language {#26-3-mojo}
 
