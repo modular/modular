@@ -61,6 +61,16 @@ def test_get_linkage_name_on_itself() raises:
     assert_equal(name, "std::sys::info::_current_target()")
 
 
+@export("export_as_other_name")
+def export_func():
+    pass
+
+
+def test_get_linkage_name_export() raises:
+    var name = get_linkage_name[export_func]()
+    assert_equal(name, "export_as_other_name")
+
+
 def test_get_function_name() raises:
     var name = get_function_name[my_func]()
     assert_equal(name, "my_func")
@@ -80,6 +90,11 @@ def test_get_function_name_parameterized() raises:
 
     var name2 = get_function_name[your_func[7]]()
     assert_equal(name2, "your_func")
+
+
+def test_get_function_name_export() raises:
+    var name = get_function_name[export_func]()
+    assert_equal(name, "export_func")
 
 
 struct WhatsMyName:

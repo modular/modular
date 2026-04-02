@@ -27,7 +27,7 @@ def kernel[
     size: Int,
 ):
     var global_tid = global_idx.x
-    if global_tid >= UInt(size):
+    if global_tid >= size:
         return
     shared_data[global_tid] = input[global_tid]
 

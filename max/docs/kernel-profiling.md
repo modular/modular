@@ -30,7 +30,6 @@ At time of writing, those steps were:
     ```
 
 4. In your remote environment (the one connected to the NVIDIA GPU), run the
-
    following command:
 
     ```bash

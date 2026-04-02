@@ -39,14 +39,10 @@ from structured_kernels.kernel_common import _to_batched_3d
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
-from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
-)
+from linalg.utils import elementwise_compute_lambda_type
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.profiler import MatmulWarpSpecializationWorkSpaceManager
 from linalg.fp4_utils import (
-    MXFP8_SF_DTYPE,
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
@@ -145,7 +141,7 @@ def _create_tma_and_launch[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     a_3d: TileTensor,
@@ -359,7 +355,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,
@@ -446,7 +442,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,

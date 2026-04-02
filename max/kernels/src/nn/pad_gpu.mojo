@@ -13,13 +13,13 @@
 
 from std.algorithm.functional import vectorize
 from std.gpu import (
-    block_dim,
+    block_dim_uint as block_dim,
     block_idx_int as block_idx,
     grid_dim,
     thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout import Coord, Idx, TensorLayout, TileTensor
+from layout import Coord, TensorLayout, TileTensor
 from layout.tile_layout import Layout
 from std.math import align_down, ceildiv
 from std.sys.info import align_of
@@ -186,7 +186,7 @@ def _pad_constant_impl[
         simd_width=simd_width,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel, kernel](
         input_tensor.as_immut(),
         output_tensor,
         rows_per_block,

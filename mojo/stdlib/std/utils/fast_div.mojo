@@ -50,30 +50,39 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
         """Initializes FastDiv with the divisor.
 
         Constraints:
-            ConstraintError: If the bitwidth of the type is > 32.
+            ConstraintError: If the bitwidth of the type is > 64.
 
         Args:
             divisor: The divisor to use for fast division.
                 Defaults to 1.
         """
         comptime assert (
-            bit_width_of[Self.dtype]() <= 32
+            bit_width_of[Self.dtype]() <= 64
         ), "larger types are not currently supported"
         self._div = Scalar[Self.uint_type](divisor)
 
         self._is_pow2 = divisor.is_power_of_two()
-        self._log2_shift = log2_ceil(Int32(divisor)).cast[DType.uint8]()
+        self._log2_shift = UInt8(log2_ceil(divisor))
 
         # Only compute magic number parameters if not power of 2
         if not self._is_pow2:
+            comptime wide_type = _uint_type_of_width[
+                bit_width_of[Self.dtype]() * 2
+            ]()
             self._mprime = (
                 (
-                    (UInt64(1) << UInt64(bit_width_of[Self.dtype]()))
-                    * (
-                        (1 << self._log2_shift.cast[DType.uint64]())
-                        - UInt64(divisor)
+                    (
+                        Scalar[wide_type](1)
+                        << Scalar[wide_type](bit_width_of[Self.dtype]())
                     )
-                    / UInt64(divisor)
+                    * (
+                        (
+                            Scalar[wide_type](1)
+                            << self._log2_shift.cast[wide_type]()
+                        )
+                        - Scalar[wide_type](divisor)
+                    )
+                    / Scalar[wide_type](divisor)
                 )
             ).cast[Self.uint_type]() + 1
             self._sh1 = min(self._log2_shift, 1)
@@ -114,9 +123,18 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
             return other >> self._log2_shift.cast[Self.uint_type]()
         else:
             # FastDiv algorithm for non-power-of-2 divisors.
-            var t = mulhi(
-                self._mprime.cast[DType.uint32](), other.cast[DType.uint32]()
-            ).cast[Self.uint_type]()
+            var t: Scalar[Self.uint_type]
+
+            comptime if bit_width_of[Self.dtype]() <= 32:
+                t = mulhi(
+                    self._mprime.cast[DType.uint32](),
+                    other.cast[DType.uint32](),
+                ).cast[Self.uint_type]()
+            else:
+                t = mulhi(
+                    self._mprime.cast[DType.uint64](),
+                    other.cast[DType.uint64](),
+                ).cast[Self.uint_type]()
             return (
                 t + ((other - t) >> self._sh1.cast[Self.uint_type]())
             ) >> self._sh2.cast[Self.uint_type]()

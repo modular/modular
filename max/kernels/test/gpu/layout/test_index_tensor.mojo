@@ -14,7 +14,7 @@
 from std.random import random_ui64
 
 from std.gpu.host import DeviceContext, DeviceBuffer
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import Idx, TileTensor, coord_to_index_list, row_major
 from nn.index_tensor import _index_tensor_impl
 from std.testing import assert_equal, assert_true
 
@@ -95,7 +95,7 @@ def test_index_tensor_DLRM(ctx: DeviceContext) raises:
             input_host[i] = Int32(i)
 
     # We have a 2D tensor of shape (index_len, 2).
-    comptime indices_layout = row_major((Idx[index_len](), Idx[2]()))
+    comptime indices_layout = row_major(Idx[index_len](), Idx[2]())
     var indices = ctx.enqueue_create_buffer[DType.uint64](index_len * 2)
     with indices.map_to_host() as indices_host:
         var indices_host_tensor = TileTensor(indices_host, indices_layout)
@@ -110,7 +110,7 @@ def test_index_tensor_DLRM(ctx: DeviceContext) raises:
     # where x = [0, input.dim(0)), n = [0, indices.dim(0))
 
     # Reference output of shape dim_0 x index_len.
-    comptime output_layout = row_major((Idx[dim_0](), Idx[index_len]()))
+    comptime output_layout = row_major(Idx[dim_0](), Idx[index_len]())
     var ref_output = ctx.enqueue_create_buffer[input_type](dim_0 * index_len)
     with ref_output.map_to_host() as ref_output_host:
         with input.map_to_host() as input_host:
@@ -167,7 +167,7 @@ def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
             input_host[i] = Int32(i)
 
     # We have a 2D tensor of shape (index_len, 2).
-    comptime indices_layout = row_major((Idx[index_len](), Idx[2]()))
+    comptime indices_layout = row_major(Idx[index_len](), Idx[2]())
     var indices = ctx.enqueue_create_buffer[DType.uint64](index_len * 2)
     with indices.map_to_host() as indices_host:
         var indices_host_tensor = TileTensor(indices_host, indices_layout)

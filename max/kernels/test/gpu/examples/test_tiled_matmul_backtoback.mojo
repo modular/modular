@@ -12,22 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.io.io import _printf
 from std.math import ceildiv
 from std.math.uutils import udivmod, ufloordiv
 from std.os import abort
 from std.sys import size_of
 from std.sys.info import align_of, simd_width_of
 
-from buffer.dimlist import Dim
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_int as block_idx,
+    block_idx,
     grid_dim,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import external_memory
@@ -221,7 +219,7 @@ def b2b_gemm[
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
         (block_idx.x, block_idx.y),
-        (Int(grid_dim.x), Int(grid_dim.y)),
+        (grid_dim.x, grid_dim.y),
     ) if swizzle_block else Index(block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
@@ -418,7 +416,7 @@ def b2b_gemm[
             next_op_b_iter_masked=False,
             b_next_smem_layout=b_smem_layout,
             prefetch_init=False,
-            static_num_iters=Dim(BN // BK),
+            static_num_iters=BN // BK,
         ](
             d_reg_tile,
             ab_iter,

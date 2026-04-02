@@ -33,6 +33,7 @@ from typing import (
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
+from max.interfaces.eos_tracking import EOSTracker
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import RequestID
@@ -416,12 +417,11 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def eos_token_ids(self) -> set[int]:
-        """The set of end-of-sequence token IDs that can terminate generation.
+    def eos_tracker(self) -> EOSTracker:
+        """Holds EOS-related settings for this sequence and performs EOS/stop checks.
 
         Returns:
-            A set of token IDs that, when generated, will signal the end of the
-            sequence and terminate the generation process.
+            The ``EOSTracker`` for this sequence.
         """
         ...
 
@@ -658,7 +658,6 @@ class TextGenerationContext(BaseContext, Protocol):
 class SpecDecodingState:
     """Per-request state for speculative decoding."""
 
-    draft_kv_start_idx: int = 0
     saved_draft_tokens: list[int] = field(default_factory=list)
 
     @property
@@ -823,6 +822,16 @@ class VLMTextGenerationContext(TextGenerationContext, Protocol):
         """Whether vision encoding is needed for this context."""
         ...
 
+    @property
+    def image_token_indices(self) -> npt.NDArray[np.int32]:
+        """Positions of image-placeholder tokens within this context's token buffer.
+
+        Offsets are relative to the start of the full token sequence (not the
+        active window).  Used by ``compute_multimodal_merge_indices`` to build
+        batch-level scatter indices that account for ``processed_length``.
+        """
+        ...
+
     def compute_image_aligned_idx(self, idx: int) -> int:
         """Aligns an index downward to avoid splitting an image token span.
 
@@ -838,3 +847,11 @@ class VLMTextGenerationContext(TextGenerationContext, Protocol):
             The adjusted index, guaranteed not to split an image token span.
         """
         ...
+
+
+VLMContextType = TypeVar("VLMContextType", bound=VLMTextGenerationContext)
+"""Type variable for VLM context types, constrained to VLMTextGenerationContext.
+
+This allows generic typing of VLM pipeline components to accept any
+context type that implements the VLMTextGenerationContext protocol.
+"""

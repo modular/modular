@@ -29,7 +29,7 @@ def incorrect_barrier(n: Int):
     Args:
         n: Parameter (unused in this snippet).
     """
-    if Int(thread_idx.x) % 2 == 0:
+    if thread_idx.x % 2 == 0:
         # Even threads do some work...
         barrier()
     else:

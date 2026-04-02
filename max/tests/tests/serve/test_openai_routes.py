@@ -13,11 +13,10 @@
 
 
 import asyncio
-import contextlib
 import json
 import logging
+import sys
 from collections.abc import Generator
-from contextlib import contextmanager
 from threading import Thread
 from types import SimpleNamespace
 from typing import Any
@@ -27,7 +26,12 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient as SyncTestClient
-from max.interfaces import GenerationStatus, PipelineTask, RequestID
+from max.interfaces import (
+    BaseContext,
+    GenerationStatus,
+    PipelineTask,
+    RequestID,
+)
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
@@ -40,8 +44,6 @@ from max.serve.pipelines.echo_gen import (
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.router.openai_routes import (
     OpenAIChatResponseGenerator,
-    _await_or_cancel_on_disconnect,
-    _ClientDisconnectedError,
     _process_chat_log_probabilities,
     openai_create_chat_completion,
 )
@@ -53,6 +55,12 @@ from max.serve.schemas.openai import (
     CreateChatCompletionStreamResponse,
     Logprobs2,
 )
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
+
+if sys.version_info >= (3, 11):
+    from asyncio import TaskGroup
+else:
+    from taskgroup import TaskGroup
 
 logger = logging.getLogger(__name__)
 
@@ -475,8 +483,8 @@ def _make_mock_request() -> Mock:
     return mock_request
 
 
-@contextmanager
-def _patch_openai_metrics() -> Generator[None, None, None]:
+@pytest.fixture
+def patch_openai_metrics() -> Generator[None, None, None]:
     """Patch metrics so unit tests can exercise route helpers in isolation."""
     with (
         patch("max.serve.router.openai_routes.METRICS", MagicMock()),
@@ -522,24 +530,26 @@ def _make_disconnect_request(
 @pytest.mark.asyncio
 async def test_openai_chat_completion_cancels_disconnected_request(
     mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
 ) -> None:
     """Regression test for the zombie-request bug in chat completions."""
 
     request_started = asyncio.Event()
 
-    model_worker = Mock()
-    model_worker.cancel = Mock()
+    request_queue = asyncio.Queue[BaseContext]()
+    response_queue = asyncio.Queue[Any]()  # not used here
+    cancel_queue = asyncio.Queue[list[RequestID]]()
+    model_worker = ZmqModelWorkerProxy(
+        request_queue=request_queue,
+        response_queue=response_queue,
+        cancel_queue=cancel_queue,
+    )
 
     pipeline = TokenGeneratorPipeline(
         model_name="echo",
         tokenizer=EchoPipelineTokenizer(),
         model_worker=model_worker,
     )
-
-    async def mock_all_tokens(_: Any) -> list[TokenGeneratorOutput]:
-        request_started.set()
-        await asyncio.Event().wait()
-        raise AssertionError("unreachable")
 
     request_body = json.dumps(
         simple_openai_request(model_name="echo", content="test data")
@@ -551,55 +561,19 @@ async def test_openai_chat_completion_cancels_disconnected_request(
         body=request_body,
     )
 
-    with (
-        _patch_openai_metrics(),
-        patch.object(pipeline, "all_tokens", side_effect=mock_all_tokens),
-    ):
-        task = asyncio.create_task(openai_create_chat_completion(mock_request))
-        try:
-            await asyncio.wait_for(request_started.wait(), timeout=1.0)
-            await asyncio.sleep(0.2)
+    async with TaskGroup() as tg:
+        session = tg.create_task(openai_create_chat_completion(mock_request))
+        # wait for request to reach backend
+        req = await asyncio.wait_for(request_queue.get(), timeout=1.0)
+        assert req.request_id == RequestID("disconnect-test")
+        request_started.set()
 
-            model_worker.cancel.assert_called_once_with(
-                RequestID("disconnect-test")
-            )
-        finally:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        # simulate disconnection
+        session.cancel()
 
-
-@pytest.mark.asyncio
-async def test_disconnect_wins_if_generation_finishes_cancelled() -> None:
-    """Disconnect wins if the request wrapper already observed the disconnect."""
-
-    request = Mock()
-    request._is_disconnected = True
-
-    async def mock_receive() -> dict[str, str]:
-        return {"type": "http.disconnect"}
-
-    request.receive = mock_receive
-
-    async def operation() -> list[TokenGeneratorOutput]:
-        return [
-            TokenGeneratorOutput(
-                status=GenerationStatus.CANCELLED,
-                token_count=0,
-            )
-        ]
-
-    cancel_request = Mock()
-
-    with pytest.raises(_ClientDisconnectedError):
-        await _await_or_cancel_on_disconnect(
-            request,
-            [RequestID("disconnect-test")],
-            operation(),
-            cancel_request,
-        )
-
-    cancel_request.assert_called_once_with(RequestID("disconnect-test"))
+        # expect cancellation request to backend
+        cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+        assert cancel == [RequestID("disconnect-test")]
 
 
 @pytest.mark.asyncio
@@ -741,6 +715,7 @@ async def test_openai_chat_completion_reasoning(
     expected_reasoning: str | None,
     expected_content: str,
     expected_completion_tokens: int,
+    patch_openai_metrics: None,
 ) -> None:
     """Test non-streaming response with various reasoning scenarios."""
     mock_pipeline = Mock()
@@ -749,9 +724,8 @@ async def test_openai_chat_completion_reasoning(
 
     mock_request = _make_mock_request()
 
-    with _patch_openai_metrics():
-        generator = OpenAIChatResponseGenerator(mock_pipeline)
-        response = await generator.complete([mock_request])
+    generator = OpenAIChatResponseGenerator(mock_pipeline)
+    response = await generator.complete([mock_request])
 
     assert response.choices[0].message.reasoning == expected_reasoning
     assert response.choices[0].message.content == expected_content
@@ -775,19 +749,13 @@ async def _run_stream(
     mock_pipeline.next_token_chunk = mock_next_token_chunk
     mock_request = _make_mock_request()
 
-    with _patch_openai_metrics():
-        generator = OpenAIChatResponseGenerator(
-            mock_pipeline, stream_options=stream_options
-        )
-        payloads = [
-            p
-            async for p in generator.stream(mock_request)
-            if isinstance(p, str) and p != "[DONE]"
-        ]
-
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, stream_options=stream_options
+    )
     return [
         CreateChatCompletionStreamResponse.model_validate_json(p)
-        for p in payloads
+        async for p in generator.stream(mock_request)
+        if isinstance(p, str) and p != "[DONE]"
     ]
 
 
@@ -812,7 +780,9 @@ _STREAM_REASONING_CHUNKS = [
 
 
 @pytest.mark.asyncio
-async def test_openai_chat_stream_reasoning_in_delta() -> None:
+async def test_openai_chat_stream_reasoning_in_delta(
+    patch_openai_metrics: None,
+) -> None:
     """Test that streaming response includes reasoning in delta."""
     responses = await _run_stream(_STREAM_REASONING_CHUNKS)
     assert len(responses) == 2
@@ -823,7 +793,9 @@ async def test_openai_chat_stream_reasoning_in_delta() -> None:
 
 
 @pytest.mark.asyncio
-async def test_openai_chat_stream_usage_includes_reasoning_tokens() -> None:
+async def test_openai_chat_stream_usage_includes_reasoning_tokens(
+    patch_openai_metrics: None,
+) -> None:
     """Test streaming usage with stream_options.include_usage=True."""
     responses = await _run_stream(
         _STREAM_REASONING_CHUNKS,
@@ -837,7 +809,9 @@ async def test_openai_chat_stream_usage_includes_reasoning_tokens() -> None:
 
 
 @pytest.mark.asyncio
-async def test_openai_chat_stream_reasoning_finish_reason() -> None:
+async def test_openai_chat_stream_reasoning_finish_reason(
+    patch_openai_metrics: None,
+) -> None:
     """Test that intermediate chunks have finish_reason=None and final has 'stop'."""
     chunks = [
         TokenGeneratorOutput(

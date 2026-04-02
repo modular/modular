@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor, TileTensor
+from layout import Layout, LayoutTensor
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
 from linalg.transpose import (
@@ -46,7 +46,7 @@ def test_transpose_4x4_tiletensor():
     matrix[3, 2] = 14
     matrix[3, 3] = 15
 
-    transpose_inplace[4, 4, DType.int](matrix._to_ndbuffer())
+    transpose_inplace[4, 4, DType.int](matrix)
 
     # CHECK: 0
     print(matrix[0, 0])
@@ -113,7 +113,7 @@ def test_transpose_8x8_tiletensor():
             var val = i * num_cols + j
             matrix[i, j] = Scalar[DType.int](val)
 
-    transpose_inplace[num_rows, num_cols, DType.int](matrix._to_ndbuffer())
+    transpose_inplace[num_rows, num_cols, DType.int](matrix)
 
     for i in range(num_rows):
         for j in range(num_cols):
@@ -140,7 +140,7 @@ def test_transpose_16x16_tiletensor():
             var val = i * num_cols + j
             matrix[i, j] = Scalar[DType.int](val)
 
-    transpose_inplace[num_rows, num_cols, DType.int](matrix._to_ndbuffer())
+    transpose_inplace[num_rows, num_cols, DType.int](matrix)
 
     for i in range(num_rows):
         for j in range(num_cols):
@@ -171,7 +171,7 @@ def test_transpose_2d_identity_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0])
@@ -213,7 +213,7 @@ def test_transpose_2d_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0])
@@ -258,7 +258,7 @@ def test_transpose_3d_identity_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0, 0])
@@ -309,7 +309,7 @@ def test_transpose_3d_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int](row_major[3, 2, 2]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0, 0])
@@ -360,7 +360,7 @@ def test_transpose_si64_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int64](row_major[3, 2, 2]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0, 0])

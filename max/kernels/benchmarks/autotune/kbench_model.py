@@ -81,7 +81,7 @@ ScalarValue = str | int | float | bool
 
 _WRAPPER_SOURCE = """\
 from {module_name} import main as _bench_main
-from std.builtin._startup import _ensure_current_or_global_runtime_init
+from std.builtin._startup import _ensure_runtime_init
 
 
 @export
@@ -91,7 +91,7 @@ def benchmark_entry() -> Int32:
     # never registered.  Benchmarks that use CPU parallelism
     # (e.g. elementwise) will abort on a null Runtime* without
     # this.  The call is idempotent — a no-op after the first.
-    _ensure_current_or_global_runtime_init()
+    _ensure_runtime_init()
     try:
         _bench_main()
         return 0
@@ -610,7 +610,7 @@ class Spec:
                 f'Unable to find the spec file at "{file}".'
             )
         try:
-            logging.info(f"Loading yaml [{file}]" + utils.LINE)
+            logging.debug(f"Loading yaml [{file}]" + utils.LINE)
             return Spec.loads(file.read_text())
         except Exception as e:
             raise ValueError(f"Could not load spec from {file}\nException: {e}")  # noqa: B904
@@ -661,21 +661,32 @@ class Spec:
             d[name].extend(vals)
         return d
 
+    @staticmethod
+    def _param_names_match(a: str, b: str) -> bool:
+        """Check whether two param names refer to the same parameter.
+
+        Names are considered equal when they match after stripping any
+        leading ``$`` prefix, so ``$batch_size`` matches ``batch_size``
+        and vice-versa.
+        """
+        return a.lstrip("$") == b.lstrip("$")
+
     def extend_params(self, param_list: Sequence[str]) -> None:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
-        # For all params in each config either, update the existing `value_set`
-        # with the new param value(s).
+        # For all params in each config, if a matching param exists
+        # (with or without the '$' prefix), *replace* its value_set
+        # with the CLI-provided values so that ``--param batch_size:"[1]"``
+        # restricts the sweep to only that value.  When no match is found
+        # a brand-new ParamSpace is appended.
         for cfg in self.params:
             for k, v in extra_params.items():
                 found = False
                 for ps in cfg:
-                    if ps.name == k:
-                        ps.value_set.extend(v)
-                        ps.value_set = list(
-                            dict.fromkeys(utils.flatten(ps.value_set))
-                        )
+                    if self._param_names_match(ps.name, k):
+                        ps.value_set = list(dict.fromkeys(utils.flatten(v)))
+                        ps.length = len(ps.value_set)
                         found = True
                         break
                 if not found:
@@ -853,7 +864,10 @@ class Spec:
         for k_filter, v_filter in filters.items():
             for i, s in enumerate(self.mesh):
                 for p in s.params:
-                    if p.name == k_filter and str(p.value) in v_filter:
+                    if (
+                        self._param_names_match(p.name, k_filter)
+                        and str(p.value) in v_filter
+                    ):
                         valid_cnt[i] += 1
 
         for i, idx in enumerate(valid_cnt):
@@ -1394,8 +1408,9 @@ class Scheduler:
         )
         if not args.run_only:
             if path_exists:
-                logging.warning(
-                    f"Following output dir already exists and will be overwritten!\n[{str(args.output_dir)}]\n"
+                logging.debug(
+                    f"Output dir already exists, will be overwritten:"
+                    f" [{args.output_dir}]"
                 )
                 # Check for existing output files and remove them (if any):
                 existing_csv = _get_similar_files(
@@ -2077,7 +2092,7 @@ class Scheduler:
             with open(failures_json_path, "w") as f:
                 json.dump(failures_data, f, indent=2, default=str)
 
-            logging.info(f"wrote results to [{txt_path}]")
-            logging.info(f"wrote results to [{csv_path}]")
-            logging.info(f"wrote results to [{pkl_path}]")
-            logging.info(f"wrote results to [{failures_json_path}]")
+            logging.info(
+                f"wrote results to [{output_path}]"
+                " (.txt, .csv, .pkl, .failures.json)"
+            )

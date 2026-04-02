@@ -23,15 +23,15 @@ def spmv_csr_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
-    if Int(row) < csrMatrix.numRows:
+    if row < csrMatrix.numRows:
         var sum: Float32 = 0.0
-        var start = csrMatrix.rowPtrs[Int(row)]
-        var end = csrMatrix.rowPtrs[Int(row) + 1]
+        var start = csrMatrix.rowPtrs[row]
+        var end = csrMatrix.rowPtrs[row + 1]
         for i in range(Int(start), Int(end)):
             var col = csrMatrix.colIdx[i]
             var val = csrMatrix.value[i]
             sum += x[Int(col)] * val
-        y[Int(row)] += sum
+        y[row] += sum
 
 
 def main() raises:
@@ -123,8 +123,8 @@ def main() raises:
 
     ctx.enqueue_function_experimental[spmv_csr_kernel](
         d_csrMatrix,
-        d_x_buf.unsafe_ptr(),
-        d_y_buf.unsafe_ptr(),
+        d_x_buf,
+        d_y_buf,
         grid_dim=numBlocks,
         block_dim=blockSize,
     )

@@ -71,5 +71,5 @@ def vector_addition(
 ):
     """The calculation to perform across the vector on the GPU."""
     var global_tid = global_idx.x
-    if global_tid < UInt(size):
+    if global_tid < size:
         out_tensor[global_tid] = lhs_tensor[global_tid] + rhs_tensor[global_tid]

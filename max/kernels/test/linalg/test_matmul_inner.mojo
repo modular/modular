@@ -13,9 +13,9 @@
 
 from std.math import align_up
 from std.sys import align_of
-from std.sys.info import CompilationTarget
 
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Idx, TileTensor
+from layout.tile_layout import row_major
 from linalg.matmul.cpu.default import Inner_matmul_default
 from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
 from linalg.matmul.cpu.neon import Inner_matmul_neon
@@ -46,9 +46,9 @@ def _matmul_inner_loop[
     simd_size: Int,
     saturated_vnni: Bool,
 ](
-    c: LayoutTensor[mut=True, ...],
-    a: LayoutTensor,
-    b_packed: LayoutTensor,
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b_packed: TileTensor,
     global_offset: GemmShape,
     global_bound: GemmShape,
     tile_n_k: IndexList[2],
@@ -111,9 +111,9 @@ def _matmul_inner_loop[
 def matmul_inner_loop[
     config: KernelConfig,
 ](
-    c: LayoutTensor[mut=True, ...],
-    a: LayoutTensor,
-    b_packed: LayoutTensor,
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b_packed: TileTensor,
     m: Int,
     n: Int,
     k: Int,
@@ -140,11 +140,6 @@ def test_micro_kernel[
     a_type: DType, b_type: DType, c_type: DType, saturated_vnni: Bool = False
 ](m: Int, n: Int, k: Int) raises:
     print("== test_micro_kernel")
-    comptime a_layout = Layout.row_major[2]()
-    # TODO(jtodd): Make `get_kernel_config` return an IndexList instead
-    # config.packed_shape is always rank 3 unknown
-    comptime b_packed_layout = Layout.row_major[3]()
-    comptime c_layout = Layout.row_major[2]()
 
     comptime config = get_kernel_config[a_type, b_type, c_type]()
     comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
@@ -163,24 +158,16 @@ def test_micro_kernel[
         alignment=alignment,
     )
     var c_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
-    var a = LayoutTensor[a_type, a_layout](
-        a_ptr, RuntimeLayout[a_layout].row_major(Index(m, k))
-    )
-
-    var b_packed_runtime_layout = RuntimeLayout[b_packed_layout].row_major(
-        Index(
-            np // config.kernel_cols,
-            kh // factor,
-            factor * config.kernel_cols,
+    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+    var b_packed = TileTensor(
+        b_packed_ptr,
+        row_major(
+            Idx(np // config.kernel_cols),
+            Idx(kh // factor),
+            Idx(factor * config.kernel_cols),
         ),
     )
-
-    var b_packed = LayoutTensor[b_type, b_packed_layout](
-        b_packed_ptr, b_packed_runtime_layout
-    )
-    var c = LayoutTensor[c_type, c_layout](
-        c_ptr, RuntimeLayout[c_layout].row_major(Index(m, n))
-    )
+    var c = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
 
     _ = a.fill(1)
     _ = b_packed.fill(1)

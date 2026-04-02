@@ -177,7 +177,8 @@ infrastructure is provisioned and configured to prepare for serving requests:
   - **GPU compute instance setup**: A GPU-enabled VM is created to handle model
   inference efficiently. This instance includes:
     - **GPU drivers/runtime installation**: Necessary GPU drivers and runtime
-libraries are installed to enable hardware acceleration for model processing.
+      libraries are installed to enable hardware acceleration for model
+      processing.
     - **Docker container initialization**: A Docker container is launched on the
     VM, where it pulls the necessary images from the Docker Container Registry.
       This registry serves as a central repository for storing Docker images,
@@ -227,12 +228,12 @@ with the following specifications:
   - **Supported GPU types**: [See our compatible
     GPUs](/max/packages#gpu-compatibility)
 
-This tutorial has been tested on the following NVIDIA instances: `g5.4xlarge`
-(A10G) on AWS, `g2-standard-8` (L4) on GCP, and `Standard_NV36ads_A10_v5` (A10G)
-on Azure. It has also been tested on the AMD `Standard_ND96isr_MI300X_v5`
-(MI300X) Azure instance. You can alter the provided cloud config files to deploy
-MAX on any
-[compatible cloud instance or virtual machine](/max/container#recommended-cloud-instances).
+- This tutorial has been tested on the following NVIDIA instances: `g5.4xlarge`
+  (A10G) on AWS, `g2-standard-8` (L4) on GCP, and `Standard_NV36ads_A10_v5`
+  (A10G) on Azure. It has also been tested on the AMD
+  `Standard_ND96isr_MI300X_v5` (MI300X) Azure instance. You can alter the
+  provided cloud config files to deploy MAX on any
+  [compatible cloud instance or virtual machine](/max/container#recommended-cloud-instances).
 
 - **A Hugging Face user access token**: A valid Hugging Face token is required
 to access the model. To create a Hugging Face user access token, see
@@ -852,7 +853,7 @@ echo "Public IP: ${PUBLIC_IP}"
    For Azure, you can monitor the Docker container status (running on port
    `8000`) using one of the following methods:
 
-#### Option 1: Use the monitoring script
+   **Option 1: Use the monitoring script:**
 
     1. Install the required dependencies for the monitoring script:
        - Install
@@ -861,26 +862,30 @@ echo "Public IP: ${PUBLIC_IP}"
 
     2. Set up and run the monitoring script:
 
-      ```bash
-      bash notify.sh ${RESOURCE_GROUP_NAME} ${VM_PASSWORD} ${PUBLIC_IP}
-      ```
+       ```bash
+       bash notify.sh ${RESOURCE_GROUP_NAME} ${VM_PASSWORD} ${PUBLIC_IP}
+       ```
 
-#### Option 2: Manual SSH access
+    **Option 2: Manual SSH access:**
 
     1. Connect to the VM:
-      ```bash
-      ssh azureuser@$PUBLIC_IP
-      ```
-      > **Note:** Use the password you set previously when creating the deployment.
+
+       ```bash
+       ssh azureuser@$PUBLIC_IP
+       ```
+
+       > **Note:** Use the password you set previously when creating the deployment.
 
     2. View the startup logs:
-      ```bash
-      sudo cat /var/log/azure/custom-script/handler.log
-      sudo cat /var/lib/waagent/custom-script/download/0/stdout
-      sudo cat /var/lib/waagent/custom-script/download/0/stderr
-      sudo docker logs $(docker ps -q -f ancestor=modular/max-nvidia-full:latest)
-      ```
-      > **Note:** Use the container name `modular/max-amd:latest` if you deployed MAX on an AMD instance.
+
+       ```bash
+       sudo cat /var/log/azure/custom-script/handler.log
+       sudo cat /var/lib/waagent/custom-script/download/0/stdout
+       sudo cat /var/lib/waagent/custom-script/download/0/stderr
+       sudo docker logs $(docker ps -q -f ancestor=modular/max-nvidia-full:latest)
+       ```
+
+       > **Note:** Use the container name `modular/max-amd:latest` if you deployed MAX on an AMD instance.
 
     Both methods will help you confirm that the server is running correctly. The
     logs will show the startup progress and any potential issues that need to be
@@ -894,9 +899,9 @@ the previous step to test the endpoint with the following `curl` request:
 
     :::tip
 
-After the server starts, there may be a brief delay before the cloud provider
-exposes the public IP address. If you receive an error, please wait
-approximately one minute and try again.
+    After the server starts, there may be a brief delay before the cloud
+    provider exposes the public IP address. If you receive an error, please
+    wait approximately one minute and try again.
 
     :::
 
@@ -919,7 +924,7 @@ You can also use the public IP address of your deployed MAX endpoint to
 benchmark the performance of Llama 3.1. MAX includes a benchmarking script that
 allows you to evaluate throughput, latency, and GPU utilization metrics. For
 more detailed instructions on benchmarking, see the
-[`max benchamrk` docs](/max/cli/benchmark).
+[`max benchmark` docs](/max/cli/benchmark).
 
 :::
 

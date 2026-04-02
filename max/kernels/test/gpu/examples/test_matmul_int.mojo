@@ -13,22 +13,13 @@
 
 from std.math import ceildiv
 
-from buffer import DimList, NDBuffer
-from std.gpu import (
-    AddressSpace,
-    barrier,
-    block_dim,
-    block_idx,
-    global_idx,
-    thread_idx,
-)
+from std.gpu import AddressSpace, barrier, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.memory import (
     memset_zero,
     stack_allocation,
 )
-
-from std.utils.index import Index
+from layout import Coord, Idx, TileTensor, row_major
 
 comptime TILE_SZ_A = 128
 comptime TILE_SZ_B = 16
@@ -43,9 +34,9 @@ def matmul(
     n: Int,
     k: Int,
 ):
-    var a = NDBuffer[rank=2, DType.int](a_ptr, Index(m, k))
-    var b = NDBuffer[rank=2, DType.int](b_ptr, Index(k, n))
-    var c = NDBuffer[rank=2, DType.int](c_ptr, Index(m, n))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(m)), Idx(Int(k)))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(k)), Idx(Int(n)))))
+    var c = TileTensor(c_ptr, row_major(Coord(Idx(Int(m)), Idx(Int(n)))))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -64,8 +55,8 @@ def matmul(
     ]()
 
     # Thread indexing offsets.
-    var row = Int(global_idx.x)
-    var col = Int(block_idx.y * TILE_SZ_B)
+    var row = global_idx.x
+    var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.int]()
@@ -74,7 +65,7 @@ def matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i, j = divmod(thread_idx.x, TILE_SZ_B)
+        var i, j = divmod(UInt(thread_idx.x), TILE_SZ_B)
 
         # Load the B matrix into shared memory.
         var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), col + Int(j)])
@@ -102,7 +93,7 @@ def matmul(
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
         if row < m and col + out_idx < n:
-            c[Index(row, col + out_idx)] = c_reg.load(out_idx)
+            c[row, col + out_idx] = c_reg.load(out_idx)
 
 
 def run_matmul(ctx: DeviceContext) raises:
@@ -116,9 +107,9 @@ def run_matmul(ctx: DeviceContext) raises:
     var b_host_ptr = alloc[Scalar[DType.int]](k * n)
     var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
-    var a_host = NDBuffer[rank=2, DType.int, _, DimList[m, k]()](a_host_ptr)
-    var b_host = NDBuffer[rank=2, DType.int, _, DimList[k, n]()](b_host_ptr)
-    var c_host = NDBuffer[rank=2, DType.int, _, DimList[m, n]()](c_host_ptr)
+    var a_host = TileTensor(a_host_ptr, row_major[m, k]())
+    var b_host = TileTensor(b_host_ptr, row_major[k, n]())
+    var c_host = TileTensor(c_host_ptr, row_major[m, n]())
 
     for i in range(m):
         for j in range(k):
@@ -156,14 +147,6 @@ def run_matmul(ctx: DeviceContext) raises:
     for i in range(10):
         for j in range(10):
             print("at index = [", i, ",", j, "]the value is", c_host[i, j])
-
-    _ = a_device
-    _ = b_device
-    _ = c_device
-
-    _ = a_host
-    _ = b_host
-    _ = c_host
 
 
 def main() raises:

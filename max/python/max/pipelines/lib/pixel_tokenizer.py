@@ -311,7 +311,10 @@ class PixelGenerationTokenizer(
 
         # Store static model dimensions
         self._default_sample_size = 128
-        self._num_channels_latents = transformer_config["in_channels"] // 4
+        if self._pipeline_class_name == PipelineClassName.ZIMAGE:
+            self._num_channels_latents = transformer_config["in_channels"]
+        else:
+            self._num_channels_latents = transformer_config["in_channels"] // 4
 
         # Create scheduler
         scheduler_class_name = components.get("scheduler", {}).get(
@@ -326,6 +329,7 @@ class PixelGenerationTokenizer(
             class_name=scheduler_class_name,
             config_dict=scheduler_cfg,
         )
+        self._scheduler_shift = float(scheduler_cfg.get("shift", 1.0))
 
         self._max_pixel_size = None
         if self._pipeline_class_name in (
@@ -427,8 +431,10 @@ class PixelGenerationTokenizer(
     def _preprocess_input_image(
         self,
         image: PIL.Image.Image | npt.NDArray[np.uint8],
+        *,
         target_height: int | None = None,
         target_width: int | None = None,
+        preserve_aspect_ratio: bool = True,
     ) -> PIL.Image.Image:
         """Preprocess input image for image-to-image generation.
 
@@ -439,8 +445,10 @@ class PixelGenerationTokenizer(
 
         Args:
             image: PIL Image or numpy array (uint8) to preprocess.
-            target_height: Target height for the image. If None, uses image's height.
-            target_width: Target width for the image. If None, uses image's width.
+            target_height: Optional requested output height before latent prep.
+            target_width: Optional requested output width before latent prep.
+            preserve_aspect_ratio: Whether to keep the source aspect ratio when
+                resizing. When false, resize directly to the target dimensions.
 
         Returns:
             Preprocessed PIL Image with adjusted dimensions.
@@ -464,16 +472,34 @@ class PixelGenerationTokenizer(
                 image = image.resize(
                     (new_width, new_height), PIL.Image.Resampling.LANCZOS
                 )
-                image_width, image_height = image.size
+            image_width, image_height = image.size
 
-        if target_height is None:
-            image_height = max(
-                (image_height // multiple_of) * multiple_of, multiple_of
+        image_width = max(
+            (image_width // multiple_of) * multiple_of, multiple_of
+        )
+        image_height = max(
+            (image_height // multiple_of) * multiple_of, multiple_of
+        )
+
+        if target_width is not None:
+            image_width = max(
+                (int(target_width) // multiple_of) * multiple_of, multiple_of
             )
-        else:
+        if target_height is not None:
             image_height = max(
-                (target_height // multiple_of) * multiple_of, multiple_of
+                (int(target_height) // multiple_of) * multiple_of, multiple_of
             )
+
+        if image.size != (image_width, image_height):
+            if preserve_aspect_ratio:
+                image = self._resize_with_center_crop(
+                    image, image_width, image_height
+                )
+            else:
+                image = image.resize(
+                    (image_width, image_height),
+                    resample=PIL.Image.Resampling.LANCZOS,
+                )
 
         if target_width is None:
             image_width = max(
@@ -820,7 +846,42 @@ class PixelGenerationTokenizer(
                     truncation=True,
                     add_special_tokens=add_special_tokens,
                 )
+            elif self._pipeline_class_name == PipelineClassName.ZIMAGE:
+                # For Z-Image, use Qwen chat-template formatting.
+                messages = [{"role": "user", "content": prompt_str}]
+                if not hasattr(delegate, "apply_chat_template"):
+                    raise ValueError(
+                        "Z-Image requires tokenizer.apply_chat_template, "
+                        "but the loaded tokenizer does not provide it."
+                    )
+                return delegate.apply_chat_template(
+                    messages,
+                    enable_thinking=True,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=max_sequence_length,
+                    return_length=False,
+                    return_overflowing_tokens=False,
+                )
             else:
+                # Validate prompt length before truncation.
+                # The tokenizer's truncation=True silently drops
+                # tokens beyond max_sequence_length; error early
+                # instead.
+                raw_ids = delegate.encode(
+                    prompt_str,
+                    add_special_tokens=add_special_tokens,
+                )
+                if max_sequence_length and len(raw_ids) > max_sequence_length:
+                    raise ValueError(
+                        f"Prompt is too long for this model's text"
+                        f" encoder: {len(raw_ids)} tokens exceeds"
+                        f" the maximum of {max_sequence_length}"
+                        " tokens. Please shorten your prompt."
+                    )
                 return delegate(
                     prompt_str,
                     padding="max_length",
@@ -831,40 +892,73 @@ class PixelGenerationTokenizer(
 
         tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
-        # Extract input_ids and attention_mask
-        if isinstance(tokenizer_output, dict):
-            # apply_chat_template returns a dict
+        # Extract input_ids and attention_mask from both dict-like and object-like
+        # tokenizer outputs (e.g. BatchEncoding).
+        input_ids: Any
+        attention_mask: Any | None
+        if hasattr(tokenizer_output, "__getitem__") and (
+            hasattr(tokenizer_output, "keys")
+            and "input_ids" in tokenizer_output
+        ):
             input_ids = tokenizer_output["input_ids"]
             attention_mask = tokenizer_output.get("attention_mask", None)
-            if attention_mask is None:
-                attention_mask = [1] * len(input_ids)
-
-            # Extract real tokens only (using attention mask) for Flux2
-            if self._pipeline_class_name == PipelineClassName.FLUX2:
-                # Filter to keep only real tokens (where mask == 1)
-                real_token_ids = [
-                    token_id
-                    for token_id, mask in zip(
-                        input_ids[0], attention_mask[0], strict=False
-                    )
-                    if mask == 1
-                ]
-                input_ids = [real_token_ids]
-                attention_mask = [[1] * len(real_token_ids)]
-        else:
-            # Standard tokenizer output
+        elif hasattr(tokenizer_output, "input_ids"):
             input_ids = tokenizer_output.input_ids
-            attention_mask = tokenizer_output.attention_mask
-
-        if max_sequence_length and len(input_ids) > max_sequence_length:
+            attention_mask = getattr(tokenizer_output, "attention_mask", None)
+        else:
             raise ValueError(
-                f"Input string is larger than tokenizer's max length ({len(input_ids)} > {max_sequence_length})."
+                "Tokenizer output does not contain `input_ids`; cannot build PixelContext."
             )
 
-        encoded_prompt = np.array(input_ids)
-        attention_mask_array = np.array(attention_mask).astype(np.bool_)
+        input_ids_array = np.asarray(input_ids, dtype=np.int64)
+        if input_ids_array.ndim == 1:
+            input_ids_array = input_ids_array[None, :]
 
-        return encoded_prompt, attention_mask_array
+        if attention_mask is None:
+            attention_mask_array = np.ones_like(input_ids_array, dtype=np.bool_)
+        else:
+            attention_mask_array = np.asarray(attention_mask, dtype=np.bool_)
+            if attention_mask_array.ndim == 1:
+                attention_mask_array = attention_mask_array[None, :]
+
+        if input_ids_array.shape != attention_mask_array.shape:
+            raise ValueError(
+                "Tokenizer produced mismatched `input_ids` and `attention_mask` shapes: "
+                f"{input_ids_array.shape} vs {attention_mask_array.shape}."
+            )
+
+        # Flux2 text encoder path currently does not consume an explicit
+        # attention mask. Strip padded tokens here and keep a dense mask.
+        # FLUX2_KLEIN/Z-Image consume attention_mask directly.
+        if self._pipeline_class_name == PipelineClassName.FLUX2:
+            token_row = input_ids_array[0]
+            mask_row = attention_mask_array[0]
+            real_token_ids = token_row[mask_row]
+            if real_token_ids.size == 0:
+                raise ValueError(
+                    f"{self._pipeline_class_name.value} tokenization produced "
+                    "an empty effective prompt after attention masking."
+                )
+            input_ids_array = np.expand_dims(
+                real_token_ids.astype(np.int64, copy=False), axis=0
+            )
+            attention_mask_array = np.ones_like(input_ids_array, dtype=np.bool_)
+
+        if (
+            max_sequence_length is not None
+            and input_ids_array.shape[1] > max_sequence_length
+        ):
+            raise ValueError(
+                "Input string is larger than tokenizer's max length "
+                f"({input_ids_array.shape[1]} > {max_sequence_length})."
+            )
+
+        encoded_prompt = input_ids_array[0].astype(np.int64, copy=False)
+        attention_mask_flat = attention_mask_array[0].astype(
+            np.bool_, copy=False
+        )
+
+        return encoded_prompt, attention_mask_flat
 
     async def decode(
         self,
@@ -1037,6 +1131,10 @@ class PixelGenerationTokenizer(
                 "falling back to standard generation."
             )
 
+        do_zimage_cfg = (
+            self._pipeline_class_name == PipelineClassName.ZIMAGE
+            and image_options.guidance_scale > 0.0
+        )
         if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
             is_distilled_klein = bool(
                 self.diffusers_config.get("is_distilled", False)
@@ -1069,13 +1167,14 @@ class PixelGenerationTokenizer(
             attn_mask,
             token_ids_2,
             negative_token_ids,
+            negative_attn_mask,
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
             prompt,
             image_options.secondary_prompt,
             image_options.negative_prompt,
             image_options.secondary_negative_prompt,
-            do_true_cfg,
+            do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
         )
 
@@ -1162,6 +1261,33 @@ class PixelGenerationTokenizer(
                 array=negative_token_ids_2.astype(np.int64, copy=False),
             )
 
+        default_sample_size = self._default_sample_size
+        vae_scale_factor = self._vae_scale_factor
+
+        # 2. Preprocess input image if provided
+        preprocessed_image_array = None
+        if input_image is not None:
+            preprocessed_image = self._preprocess_input_image(
+                input_image,
+                target_height=image_options.height,
+                target_width=image_options.width,
+                preserve_aspect_ratio=(
+                    self._pipeline_class_name != PipelineClassName.ZIMAGE
+                ),
+            )
+            height = image_options.height or preprocessed_image.height
+            width = image_options.width or preprocessed_image.width
+            preprocessed_image_array = np.array(
+                preprocessed_image, dtype=np.uint8
+            ).copy()
+        else:
+            height = (
+                image_options.height or default_sample_size * vae_scale_factor
+            )
+            width = (
+                image_options.width or default_sample_size * vae_scale_factor
+            )
+
         # 3. Resolve image dimensions using cached static values
         latent_height = 2 * (int(height) // (self._vae_scale_factor * 2))
         latent_width = 2 * (int(width) // (self._vae_scale_factor * 2))
@@ -1172,9 +1298,42 @@ class PixelGenerationTokenizer(
             if "steps" in image_options.model_fields_set
             else self._default_num_inference_steps
         )
-        timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
-            image_seq_len, num_inference_steps
+        sigma_min = (
+            0.0
+            if self._pipeline_class_name == PipelineClassName.ZIMAGE
+            else None
         )
+        timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
+            image_seq_len, num_inference_steps, sigma_min=sigma_min
+        )
+        if (
+            self._pipeline_class_name == PipelineClassName.ZIMAGE
+            and self._scheduler_shift != 1.0
+        ):
+            # Match diffusers FlowMatchEulerDiscreteScheduler static shift behavior.
+            # Z-Image scheduler config uses shift=6.0.
+            shifted_timesteps = (
+                self._scheduler_shift
+                * timesteps
+                / (1.0 + (self._scheduler_shift - 1.0) * timesteps)
+            ).astype(np.float32)
+            timesteps = shifted_timesteps
+            sigmas = np.append(shifted_timesteps, np.float32(0.0))
+
+        # Z-Image img2img follows diffusers strength behavior by starting
+        # denoising from a later timestep.
+        if (
+            self._pipeline_class_name == PipelineClassName.ZIMAGE
+            and input_image is not None
+        ):
+            init_timestep = min(
+                num_inference_steps * image_options.strength,
+                float(num_inference_steps),
+            )
+            t_start = int(max(num_inference_steps - init_timestep, 0.0))
+            timesteps = timesteps[t_start:]
+            sigmas = sigmas[t_start:]
+            num_inference_steps = int(timesteps.shape[0])
 
         num_warmup_steps: int = max(
             len(timesteps) - num_inference_steps * self._scheduler.order, 0
@@ -1195,7 +1354,9 @@ class PixelGenerationTokenizer(
             mask=attn_mask,
             tokens_2=token_buffer_2,
             negative_tokens=negative_token_buffer,
+            negative_mask=negative_attn_mask,
             negative_tokens_2=negative_token_buffer_2,
+            explicit_negative_prompt=image_options.negative_prompt is not None,
             timesteps=timesteps,
             sigmas=sigmas,
             latents=latents,
@@ -1206,6 +1367,9 @@ class PixelGenerationTokenizer(
             guidance_scale=image_options.guidance_scale,
             num_images_per_prompt=image_options.num_images,
             true_cfg_scale=image_options.true_cfg_scale,
+            strength=image_options.strength,
+            cfg_normalization=image_options.cfg_normalization,
+            cfg_truncation=image_options.cfg_truncation,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
             input_image=preprocessed_image_arrays[0]
@@ -1215,6 +1379,7 @@ class PixelGenerationTokenizer(
             prompt_images=prompt_images,
             vae_condition_images=vae_condition_images,
             output_format=image_options.output_format,
+            residual_threshold=image_options.residual_threshold,
         )
 
         for validator in self._context_validators:

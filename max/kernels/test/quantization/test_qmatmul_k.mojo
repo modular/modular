@@ -24,6 +24,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
@@ -36,7 +37,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
@@ -163,7 +164,9 @@ struct qgemm_Q4_0(QuantizedGemm):
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
     ) raises:
-        matmul_qint4_pack_b[_block_Q4_0.group_size](b, b_packed)
+        matmul_qint4_pack_b[_block_Q4_0.group_size](
+            lt_to_tt(b), lt_to_tt(b_packed)
+        )
 
     @staticmethod
     def kernel(
@@ -171,7 +174,9 @@ struct qgemm_Q4_0(QuantizedGemm):
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
         c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
-        matmul_qint4[_block_Q4_0.group_size](a, b, c)
+        matmul_qint4[_block_Q4_0.group_size](
+            lt_to_tt(a), lt_to_tt(b), lt_to_tt(c)
+        )
 
     @staticmethod
     def dot_product(
@@ -259,7 +264,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
     ) raises:
-        matmul_Q4_K_pack_b(b, b_packed)
+        matmul_Q4_K_pack_b(lt_to_tt(b), lt_to_tt(b_packed))
 
     @staticmethod
     def kernel(
@@ -267,7 +272,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
         c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
-        matmul_Q4_K(a, b, c)
+        matmul_Q4_K(lt_to_tt(a), lt_to_tt(b), lt_to_tt(c))
 
     @staticmethod
     def dot_product(
@@ -390,7 +395,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
     ) raises:
-        matmul_Q6_K_pack_b(b, b_packed)
+        matmul_Q6_K_pack_b(lt_to_tt(b), lt_to_tt(b_packed))
 
     @staticmethod
     def kernel(
@@ -398,7 +403,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
         c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
-        matmul_Q6_K(a, b, c)
+        matmul_Q6_K(lt_to_tt(a), lt_to_tt(b), lt_to_tt(c))
 
     @staticmethod
     def dot_product(
@@ -484,8 +489,7 @@ def reference_gemm[
         var task_count = min(total_work - task_start, grain_size)
 
         for i in range(task_start, task_start + task_count):
-            var n = i % N
-            var m = i // N
+            var m, n = divmod(i, N)
 
             var result: Float32 = 0
 

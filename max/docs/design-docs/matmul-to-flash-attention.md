@@ -27,8 +27,12 @@ the column-major matrix `B` by a tile size until the final matrix `C` is fully
 calculated.
 
 ![Baseline implementation of shared memory matmul](img/matmul-to-flash-attention/img01.png)
-/// caption Baseline implementation of shared memory `matmul`. Source
-[Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM). ///
+<!-- rumdl-disable MD013 -->
+/// caption
+Baseline implementation of shared memory `matmul`. Source
+[Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM).
+///
+<!-- rumdl-enable MD013 -->
 
 Each thread block loads tiles from `A` and `B` into shared memory and
 multiplies the sub-matrices.
@@ -135,7 +139,11 @@ for k in range(0, K, tile_size):
 Example of 3 pipeline stages:
 
 ![Pre-fetching data concurrently with accumulation operation.](img/matmul-to-flash-attention/img03.png)
-/// caption Pre-fetching data concurrently with accumulation operation. ///
+<!-- rumdl-disable MD013 -->
+/// caption
+Pre-fetching data concurrently with accumulation operation.
+///
+<!-- rumdl-enable MD013 -->
 
 ## Overlap computation and shared memory access
 
@@ -147,7 +155,11 @@ are typically good enough in practice.
 3-stages pipeline for global memory transfer and computation.
 
 ![Pipelines for global and shared memory transfer and computation.](img/matmul-to-flash-attention/img04.png)
-/// caption Pipelines for global and shared memory transfer and computation. ///
+<!-- rumdl-disable MD013 -->
+/// caption
+Pipelines for global and shared memory transfer and computation.
+///
+<!-- rumdl-enable MD013 -->
 
 Note how within both 2-stage and 3-stage pipelines, the global memory transfer
 to shared memory (`LDGSTS`) for future computation happens concurrently with
@@ -156,16 +168,24 @@ The following figure illustrates the pipeline execution with matrix tiling and
 architecture hierarchy.
 
 ![Matrix view of fast multiplication](img/matmul-to-flash-attention/img05.png)
-///caption Matrix view of fast multiplication. Source
-[cutlass](https://github.com/NVIDIA/cutlass). ///
+<!-- rumdl-disable MD013 -->
+///caption
+Matrix view of fast multiplication. Source
+[cutlass](https://github.com/NVIDIA/cutlass).
+///
+<!-- rumdl-enable MD013 -->
 
 ### Split-K
 
 Recap: we partition M and N dimension to create sub-matrices for thread blocks.
 
 ![Recap - baseline implementation of shared memory `matmul`](img/matmul-to-flash-attention/img01.png)
-/// caption Recap - baseline implementation of shared memory `matmul`. Source
-[Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM). ///
+<!-- rumdl-disable MD013 -->
+/// caption
+Recap - baseline implementation of shared memory `matmul`. Source
+[Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM).
+///
+<!-- rumdl-enable MD013 -->
 
 What happens when M and N are small? E.g. M = 64, N = 3072, K = 3072, and
 tile_size = 128 ==> 24 thread blocks. We are using < 25% SMs on A100 (108 in
@@ -221,7 +241,11 @@ batch_matmul(output, P, V)
 ```
 
 ![Multi-head attention block](img/matmul-to-flash-attention/img06.png){width="300"}
-/// caption Multi-head attention block ///
+<!-- rumdl-disable MD013 -->
+/// caption
+Multi-head attention block
+///
+<!-- rumdl-enable MD013 -->
 
 For example, with Replit-3B, assuming an input sequence `length = 1000`.
 

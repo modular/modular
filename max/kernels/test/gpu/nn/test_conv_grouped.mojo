@@ -19,9 +19,9 @@ iteration to group-local channels when num_groups > 1.
 from std.random import rand
 from std.testing import assert_false
 
-from layout import Layout, LayoutTensor
+from layout import Idx, TileTensor, row_major
 from std.gpu.host import DeviceContext
-from nn.conv import Naive2dConvolution, conv_gpu
+from nn.conv.conv import Naive2dConvolution, conv_gpu
 from std.utils.index import Index, IndexList
 
 
@@ -43,12 +43,6 @@ def test_grouped_conv2d[
     comptime W_out = W + 2 * pad - S + 1
 
     comptime dtype = DType.float32
-
-    # NHWC layout for input/output, RSCF for filter
-    # For grouped conv, filter C dim = C_in / num_groups
-    comptime input_layout = Layout.row_major(N, H, W, C_in)
-    comptime filter_layout = Layout.row_major(R, S, C_per_group, C_out)
-    comptime output_layout = Layout.row_major(N, H_out, W_out, C_out)
 
     comptime in_size = N * H * W * C_in
     comptime filter_size = R * S * C_per_group * C_out
@@ -112,22 +106,28 @@ def test_grouped_conv2d[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
-    var out_lt = LayoutTensor[dtype, output_layout](out_dev.unsafe_ptr())
+    comptime input_tt_layout = row_major(
+        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
+    )
+    comptime filter_tt_layout = row_major(
+        (Idx[R](), Idx[S](), Idx[C_per_group](), Idx[C_out]())
+    )
+    comptime output_tt_layout = row_major(
+        (Idx[N](), Idx[H_out](), Idx[W_out](), Idx[C_out]())
+    )
+    var input_tt = TileTensor(input_dev, input_tt_layout)
+    var filter_tt = TileTensor(filter_dev, filter_tt_layout)
+    var out_tt = TileTensor(out_dev, output_tt_layout)
 
     # Run GPU conv with groups
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
     ](
-        input_lt.as_any_origin(),
-        filter_lt.as_any_origin(),
-        out_lt.as_any_origin(),
+        input_tt,
+        filter_tt,
+        out_tt,
         IndexList[2](1, 1),  # stride
         IndexList[2](1, 1),  # dilation
         IndexList[4](pad, pad, pad, pad),

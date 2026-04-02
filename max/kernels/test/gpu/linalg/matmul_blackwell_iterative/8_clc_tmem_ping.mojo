@@ -17,8 +17,7 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.bit import prev_power_of_two
-from std.gpu import WARP_SIZE, barrier, block_idx
+from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -28,7 +27,7 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from std.gpu import block_id_in_cluster, lane_id, thread_idx
+from std.gpu import block_id_in_cluster, lane_id
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
@@ -46,27 +45,24 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
-from std.random import rand
-from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    lt_to_tt,
+)
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_core_async import (
-    st_matrix_n_layout,
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_to_descriptor,
-)
+from layout.swizzle import Swizzle, make_swizzle
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
 )
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler, WorkInfo
+from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -90,7 +86,7 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
@@ -102,7 +98,7 @@ struct WarpRole(TrivialRegisterPassable):
         return self._role != other._role
 
     @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
@@ -301,8 +297,8 @@ def consumer_main_loop[
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
         mma_op.mma(
-            a_smem_tile,
-            b_smem_tile,
+            lt_to_tt(a_smem_tile),
+            lt_to_tt(b_smem_tile),
             tmem_addr,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
@@ -331,12 +327,12 @@ def stsm_helper[
     comptime shape0 = dst.layout.shape[1].value()
 
     var lane = lane_id()
-    var stsm_lane_offset = (lane & 15) * UInt(stride0) + (lane >> 4) * 8
+    var stsm_lane_offset = (lane & 15) * stride0 + (lane >> 4) * 8
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_row_size
-        var offset = swizzle(Int(stsm_lane_offset + UInt(n_offset)))
+        var offset = swizzle(stsm_lane_offset + n_offset)
         var v = SIMD[dst.dtype, stsmx4_lane_size]()
 
         comptime for k in range(stsmx4_lane_size // 2):
@@ -461,7 +457,7 @@ def multi_stage_store_C[
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
-        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
+        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
 
         # Pack the upper frag to shared memory
         comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE

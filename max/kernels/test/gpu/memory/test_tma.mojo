@@ -48,8 +48,8 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
     _printf[
         "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
     ](
-        block_idx.x,
-        block_idx.y,
+        UInt(block_idx.x),
+        UInt(block_idx.y),
         shmem[0].cast[DType.float64](),
         shmem[1].cast[DType.float64](),
         shmem[2].cast[DType.float64](),

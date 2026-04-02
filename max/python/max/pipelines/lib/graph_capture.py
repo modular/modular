@@ -177,6 +177,7 @@ def _create_model_inputs_with_dispatch_metadata(
     source_ragged: Sequence[KVCacheInputsPerDevice],
     dispatch_metadata: Buffer,
     max_cache_valid_length: int,
+    is_mla: bool = False,
 ) -> ModelInputs:
     """Returns a copy of *model_inputs* with capture dispatch metadata."""
     max_cache_u32 = np.uint32(max_cache_valid_length)
@@ -185,9 +186,9 @@ def _create_model_inputs_with_dispatch_metadata(
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
         metadata = (
-            dispatch_metadata
-            if dispatch_metadata.device.is_host
-            else dispatch_metadata.to(kv.blocks.device)
+            dispatch_metadata.to(kv.blocks.device)
+            if is_mla
+            else dispatch_metadata
         )
         capture_ragged.append(
             replace(
@@ -225,7 +226,7 @@ class ServeGraphCaptureRunner:
             )
         self._max_cache_length_upper_bound = max_cache_length_upper_bound
         self._resolver = AttentionDispatchResolver(
-            device=kv_params.devices[0],
+            devices=kv_params.devices,
             is_mla=kv_params.is_mla,
             n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
             num_q_heads_per_device=kv_params.num_q_heads_per_device,
@@ -310,6 +311,7 @@ class ServeGraphCaptureRunner:
                             source_ragged,
                             dispatch_metadata,
                             max_cache_valid_length,
+                            is_mla=self._is_mla,
                         )
                     )
 
@@ -371,7 +373,8 @@ class ServeGraphCaptureRunner:
         final_np = self._bucket_num_partitions(
             batch_token_count, synced_np, q_max_seq_len
         )
-        self._broadcast_num_partitions(ragged_inputs, final_np)
+        if any(np != final_np for np, _ in all_metadata):
+            self._broadcast_num_partitions(ragged_inputs, final_np)
         return (batch_token_count, final_np, q_max_seq_len)
 
     def _bucket_num_partitions(

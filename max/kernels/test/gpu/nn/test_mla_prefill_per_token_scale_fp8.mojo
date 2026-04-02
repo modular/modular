@@ -15,21 +15,14 @@
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.random import randn
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major
-from layout.coord import Idx, coord, Coord
-from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
-from nn.mha_mask import CausalMask, MaterializedMask
-from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mla import flare_mla_prefill
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
+from layout.coord import Idx, Coord
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200, GPUInfo
-
-from std.utils.index import Index
-from std.utils.numerics import get_accum_type
 
 
 def test_prefill[
@@ -408,18 +401,18 @@ def test_prefill[
     ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
-    flare_mla_prefill[rank=q_nope.rank](
+    flare_mla_prefill[rank=3](
         output_device,
         q_nope_device,
-        q_rope_device.to_layout_tensor(),
-        q_scale_device.to_layout_tensor(),
-        k_device.to_layout_tensor(),
-        k_scale_device.to_layout_tensor(),
-        v_device.to_layout_tensor(),
-        cache_device.to_layout_tensor(),
+        q_rope_device,
+        q_scale_device,
+        k_device,
+        k_scale_device,
+        v_device,
+        cache_device,
         CausalMask(),
         input_row_offsets_device,
-        cache_row_offsets_device.to_layout_tensor(),
+        cache_row_offsets_device,
         scale,
         ctx,
         q_max_seq_len=seq_len,

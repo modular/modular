@@ -125,6 +125,7 @@ def create_paged_scheduler(
     dp: int = 1,
     device: Device = CPU(),
     kvcache_ce_watermark: float = 1.0,
+    num_speculative_tokens: int = 0,
 ) -> tuple[
     TokenGenerationScheduler,
     MAXPushQueue[TextContext],
@@ -151,9 +152,14 @@ def create_paged_scheduler(
         enable_in_flight_batching=enable_in_flight_batching,
         max_batch_total_tokens=max_batch_total_tokens,
         data_parallel_degree=dp,
+        num_speculative_tokens=num_speculative_tokens,
         kvcache_ce_watermark=kvcache_ce_watermark,
     )
-    token_pipeline = FakeTokenGeneratorPipeline(kv_cache, max_seq_len)
+    token_pipeline = FakeTokenGeneratorPipeline(
+        kv_manager=kv_cache,
+        max_seq_len=max_seq_len,
+        num_speculative_tokens=num_speculative_tokens,
+    )
     request_queue: queue.Queue[TextContext] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
@@ -179,10 +185,12 @@ class FakeTokenGeneratorPipeline(
         kv_manager: PagedKVCacheManager,
         max_seq_len: int,
         start_token_id: int = 42,
+        num_speculative_tokens: int = 0,
     ) -> None:
         self.kv_manager = kv_manager
         self.token_id = start_token_id
         self.max_seq_len = max_seq_len
+        self.num_speculative_tokens = num_speculative_tokens
 
     def execute(
         self, inputs: TextGenerationInputs[TextContext]
@@ -235,6 +243,13 @@ class FakeTokenGeneratorPipeline(
         # Step the kv cache manager
         self.kv_manager.step(inputs.batches)
 
+        # If num spec tokens, populate the draft tokens for the reqs
+        if self.num_speculative_tokens > 0:
+            for context in inputs.flat_batch:
+                context.spec_decoding_state.saved_draft_tokens = [
+                    123
+                ] * self.num_speculative_tokens
+
         return responses
 
     def release(self, request_id: RequestID) -> None:
@@ -272,12 +287,16 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
     ) -> dict[RequestID, TextGenerationOutput]:
         # Return the previous batch's real outputs (one-batch lag) and resolve
         # their FUTURE_TOKEN placeholders, matching sync_and_process_outputs.
-        outputs = self._pending_outputs or {}
-        for context in self._pending_contexts:
-            if context.request_id in outputs:
-                context.realize_future_token(
-                    outputs[context.request_id].tokens[0]
-                )
+        outputs: dict[RequestID, TextGenerationOutput] = {}
+        if self._pending_outputs:
+            for context in self._pending_contexts:
+                req_id = context.request_id
+                if req_id in self._pending_outputs:
+                    real_token = self._pending_outputs[req_id].tokens[0]
+                    context.realize_future_token(real_token)
+                    output = context.to_generation_output()
+                    if output.tokens:
+                        outputs[req_id] = output
         self._pending_outputs = None
         self._pending_contexts = []
 

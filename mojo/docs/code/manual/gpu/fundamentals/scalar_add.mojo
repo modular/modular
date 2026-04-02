@@ -47,7 +47,7 @@ def scalar_add(
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
     # size.
-    if idx < UInt(size):
+    if idx < size:
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
         vector[idx] += scalar

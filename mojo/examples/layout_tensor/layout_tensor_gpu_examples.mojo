@@ -17,10 +17,8 @@ from std.gpu import (
     thread_idx,
     block_idx,
     global_idx,
-    block_dim,
-    grid_dim,
     barrier,
-    lane_id_int as lane_id,
+    lane_id,
     WARP_SIZE,
 )
 from std.gpu.memory import async_copy_wait_all
@@ -52,8 +50,9 @@ def initialize_tensor_from_cpu_example() raises:
     comptime size: Int = rows * cols
 
     def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
-        if global_idx.y < UInt(tensor.shape[0]()) and global_idx.x < UInt(
-            tensor.shape[1]()
+        if (
+            global_idx.y < tensor.shape[0]()
+            and global_idx.x < tensor.shape[1]()
         ):
             tensor[global_idx.y, global_idx.x] = (
                 tensor[global_idx.y, global_idx.x] + 1
@@ -105,7 +104,7 @@ def shared_memory_alloc_example() raises:
     def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         # start-shared-memory-alloc-example
         comptime tile_layout = Layout.row_major(block_size, block_size)
@@ -234,7 +233,7 @@ def simple_copy_example():
     def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         comptime tile_layout = Layout.row_major(block_size, block_size)
         var shared_tile = LayoutTensor[
@@ -304,7 +303,7 @@ def copy_from_async_example():
         def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
             # extract a tile from the input tensor.
             var global_tile = tensor.tile[block_size, block_size](
-                Int(block_idx.y), Int(block_idx.x)
+                block_idx.y, block_idx.x
             )
             comptime tile_layout = Layout.row_major(block_size, block_size)
             var shared_tile = LayoutTensor[

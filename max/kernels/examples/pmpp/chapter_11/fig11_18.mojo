@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
+from std.gpu import barrier, thread_idx, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -71,25 +71,25 @@ def block_scan(val: Float32) -> Float32:
     ]()
 
     # Step 2: Collect warp sums
-    if lane_id() == UInt(WARP_SIZE - 1):
-        warp_sums_s[Int(warp_id())] = result
+    if lane_id() == WARP_SIZE - 1:
+        warp_sums_s[warp_id()] = result
 
     barrier()
 
     # Step 3: Scan warp sums (only first warp participates)
     if warp_id() == 0:
         var warp_sum = Float32(0.0)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sum = warp_sums_s[Int(thread_idx.x)]
+        if thread_idx.x < NUM_WARPS:
+            warp_sum = warp_sums_s[thread_idx.x]
         warp_sum = warp_scan(warp_sum)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sums_s[Int(thread_idx.x)] = warp_sum
+        if thread_idx.x < NUM_WARPS:
+            warp_sums_s[thread_idx.x] = warp_sum
 
     barrier()
 
     # Step 4: Add previous warp's scanned sum
     if warp_id() > 0:
-        result += warp_sums_s[Int(warp_id()) - 1]
+        result += warp_sums_s[warp_id() - 1]
 
     return result
 
@@ -181,14 +181,14 @@ def scan_kernel(
 
     # Load data to shared memory
     for c in range(COARSE_FACTOR):
-        var idx = block_segment + c * BLOCK_DIM + Int(thread_idx.x)
+        var idx = block_segment + c * BLOCK_DIM + thread_idx.x
         var val = Float32(0.0) if idx >= Int(N) else input[idx]
-        buffer_s[c * BLOCK_DIM + Int(thread_idx.x)] = Scalar[DType.float32](val)
+        buffer_s[c * BLOCK_DIM + thread_idx.x] = Scalar[DType.float32](val)
 
     barrier()
 
     # Scan thread subsegment using registers
-    var thread_segment = Int(thread_idx.x) * COARSE_FACTOR
+    var thread_segment = thread_idx.x * COARSE_FACTOR
     var buffer_r = StaticTuple[Float32, COARSE_FACTOR]()
     buffer_r[0] = Float32(buffer_s[thread_segment])
 
@@ -205,14 +205,14 @@ def scan_kernel(
         Float32,
         address_space=AddressSpace.SHARED,
     ]()
-    thread_sums[Int(thread_idx.x)] = thread_sum
+    thread_sums[thread_idx.x] = thread_sum
 
     barrier()
 
     # Add previous thread's partial sums
     var prev_partial_sum = Float32(0.0)
     if thread_idx.x > 0:
-        prev_partial_sum = thread_sums[Int(thread_idx.x) - 1]
+        prev_partial_sum = thread_sums[thread_idx.x - 1]
 
     comptime for c in range(COARSE_FACTOR):
         buffer_r[c] += prev_partial_sum
@@ -232,9 +232,9 @@ def scan_kernel(
 
     # Write output
     for c in range(COARSE_FACTOR):
-        var idx = block_segment + c * BLOCK_DIM + Int(thread_idx.x)
+        var idx = block_segment + c * BLOCK_DIM + thread_idx.x
         if idx < Int(N):
-            output[idx] = Float32(buffer_s[c * BLOCK_DIM + Int(thread_idx.x)])
+            output[idx] = Float32(buffer_s[c * BLOCK_DIM + thread_idx.x])
 
 
 # ========================== TEST CODE ==========================

@@ -15,7 +15,7 @@ from std.random import random_si64
 from std.sys import simd_width_of, size_of
 
 from std.benchmark import Bench, Bencher, BenchId
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import gather_reduce
 
 from std.utils import IndexList

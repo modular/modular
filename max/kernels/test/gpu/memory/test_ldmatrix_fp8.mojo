@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import umod, ufloordiv
 
 from std.gpu import WARP_SIZE, barrier, lane_id
 from std.gpu.host import DeviceContext
@@ -20,11 +21,7 @@ from std.gpu.compute.mma_util import store_matrix_d
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.tensor_core import get_fragment_size, get_mma_shape
@@ -70,11 +67,11 @@ def test_ldmatrix_fp8[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + Int((lane_id() % 16) * 32 + (lane_id() // 16) * 16)
+        a_shared + umod(lane_id(), 16) * 32 + ufloordiv(lane_id(), 16) * 16
     )
 
     var b_reg = ld_matrix[b_frag_size](
-        b_shared + Int((lane_id() % 8) * 32 + (lane_id() // 8) * 16)
+        b_shared + umod(lane_id(), 8) * 32 + ufloordiv(lane_id(), 8) * 16
     )
 
     mma(d, a_reg, b_reg, d)

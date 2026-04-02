@@ -20,10 +20,8 @@ from std.complex import ComplexSIMD
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import (
-    ComptimeInt,
     Coord,
     CoordLike,
-    Idx,
     RowMajorLayout,
     RuntimeInt,
     TensorLayout,
@@ -94,13 +92,10 @@ def apply_rope[
 
     comptime if interleaved:
         var coord = Coord(idx)
-        comptime assert x.flat_rank >= coord.flat_rank
         val = x.load[width=width, alignment=1](coord)
     else:
         var re_coord = Coord(pos_re)
-        comptime assert x.flat_rank >= re_coord.flat_rank
         var im_coord = Coord(pos_im)
-        comptime assert x.flat_rank >= im_coord.flat_rank
         val = rebind[SIMD[dtype, width]](
             x.load[width=width_2, alignment=1](re_coord).interleave(
                 x.load[width=width_2, alignment=1](im_coord)

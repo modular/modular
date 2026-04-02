@@ -12,28 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp
-from std.sys.info import simd_width_of
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
     Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from layout.int_tuple import fill_like
 from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def main() raises:
@@ -92,12 +88,17 @@ def run_causal_conv1d[
 
     # Create TileTensor versions for kernel call
     var input_tt = TileTensor(
-        input_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        input_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
-    var weight_tt = TileTensor(weight_heap, row_major((Idx(dim), Idx(width))))
-    var bias_tt = TileTensor(bias_heap, row_major((Idx(dim),)))
+    var weight_tt = TileTensor(weight_heap, row_major(Idx(dim), Idx(width)))
+    var bias_tt = TileTensor(
+        bias_heap,
+        row_major(
+            Idx(dim),
+        ),
+    )
     var result_fused_tt = TileTensor(
-        result_fused_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        result_fused_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
 
     var input_buf = input_h

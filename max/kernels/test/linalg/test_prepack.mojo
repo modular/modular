@@ -13,11 +13,10 @@
 
 from std.math import ceildiv
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from layout import Idx, TileTensor
+from layout.tile_layout import row_major
 from linalg.packing import pack_b
-
-from std.utils.index import IndexList
+from std.memory import memset_zero, stack_allocation
 
 
 # CHECK-LABEL: test_prepack
@@ -35,29 +34,16 @@ def test_prepack():
     comptime k_padded = ceildiv(k, tile_k) * tile_k
     comptime n_padded = ceildiv(n, tile_n) * tile_n
 
-    comptime src_shape_dyn = DimList.create_unknown[2]()
-    comptime dst_shape_dyn = DimList.create_unknown[2]()
-    comptime src_shape_static = IndexList[2](k, n)
-    comptime dst_shape_static = IndexList[2](k_padded, n_padded)
+    var src_ptr = stack_allocation[n * k, type, alignment=64]()
+    memset_zero(src_ptr, n * k)
+    var dst_ptr = stack_allocation[n_padded * k_padded, type, alignment=64]()
+    memset_zero(dst_ptr, n_padded * k_padded)
 
-    var src_storage = NDBuffer[
-        rank=1, type, MutAnyOrigin, DimList[n * k]()
-    ].stack_allocation[alignment=64]()
-    src_storage.fill(0)
-    var dst_storage = NDBuffer[
-        rank=1, type, MutAnyOrigin, DimList[n_padded * k_padded]()
-    ].stack_allocation[alignment=64]()
-    dst_storage.fill(0)
+    for i in range(n * k):
+        src_ptr[i] = Float32(i)
 
-    var src_buf = NDBuffer[rank=2, type, MutAnyOrigin, src_shape_dyn](
-        src_storage.data, src_shape_static
-    )
-    var dst_buf = NDBuffer[rank=2, type, MutAnyOrigin, dst_shape_dyn](
-        dst_storage.data, dst_shape_static
-    )
-
-    for i in range(len(src_storage)):
-        src_storage[i] = Float32(i)
+    var src_tt = TileTensor(src_ptr, row_major(Idx(k), Idx(n)))
+    var dst_tt = TileTensor(dst_ptr, row_major(Idx(k_padded), Idx(n_padded)))
 
     pack_b[
         False,
@@ -66,11 +52,9 @@ def test_prepack():
         type,
         type,
         type,
-        src_shape_dyn,
-        dst_shape_dyn,
     ](
-        dst_buf,
-        src_buf,
+        dst_tt,
+        src_tt,
         tile_n,
         tile_k,
     )
@@ -267,9 +251,9 @@ def test_prepack():
     # CHECK-NEXT: 0.0
     # CHECK-NEXT: 0.0
 
-    for i in range(dst_buf.dim[0]()):
-        for j in range(dst_buf.dim[1]()):
-            print(dst_buf[IndexList[2](i, j)])
+    for i in range(k_padded):
+        for j in range(n_padded):
+            print(dst_ptr[i * n_padded + j])
 
 
 def main():

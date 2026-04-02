@@ -11,14 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.io.io import _printf
 from std.random import randint, randn, seed
-from std.sys import (
-    align_of,
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-    simd_width_of,
-)
+from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
 from std.algorithm import sync_parallelize
 from std.benchmark import (
@@ -58,7 +52,7 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     get_scale_factor,
 )
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.gpu.host.info import _is_sm10x_gpu
 
 
 def legalize_topk_ids[
@@ -724,7 +718,7 @@ def test_dispatch_common[
         device_src_token_info_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * max_recv_num_tokens * 2))
     # fmt: on
 
-    var topk_ids_layout = row_major((Idx(n_tokens_per_rank), Idx[top_k]()))
+    var topk_ids_layout = row_major(Idx(n_tokens_per_rank), Idx[top_k]())
     var input_tokens_layout = row_major(
         (Idx(n_tokens_per_rank), Idx[hidden_size]())
     )

@@ -14,13 +14,12 @@
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
 import argparse
-import enum
 import logging
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 import yaml
 from pydantic import Field
@@ -31,38 +30,43 @@ logger = logging.getLogger(__name__)
 
 from max.config import ConfigFileModel, MAXConfig, deep_merge_max_configs
 
+Backend = Literal[
+    "modular",
+    "modular-chat",
+    "sglang",
+    "sglang-chat",
+    "trtllm",
+    "trtllm-chat",
+    "vllm",
+    "vllm-chat",
+]
 
-class Backend(str, enum.Enum):
-    modular = "modular"
-    modular_chat = "modular-chat"
-    sglang = "sglang"
-    sglang_chat = "sglang-chat"
-    trtllm = "trtllm"
-    trtllm_chat = "trtllm-chat"
-    vllm = "vllm"
-    vllm_chat = "vllm-chat"
-
-
-class Endpoint(str, enum.Enum):
-    completions = "/v1/completions"
-    chat_completions = "/v1/chat/completions"
-    ensemble_generate_stream = "/v2/models/ensemble/generate_stream"
-    responses = "/v1/responses"
-
+Endpoint = Literal[
+    "/v1/completions",
+    "/v1/chat/completions",
+    "/v2/models/ensemble/generate_stream",
+    "/v1/responses",
+]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
-    Backend.modular: "/reset_prefix_cache",
-    Backend.modular_chat: "/reset_prefix_cache",
-    Backend.vllm: "/reset_prefix_cache",
-    Backend.vllm_chat: "/reset_prefix_cache",
-    Backend.sglang: "/flush_cache",
-    Backend.sglang_chat: "/flush_cache",
+    "modular": "/reset_prefix_cache",
+    "modular-chat": "/reset_prefix_cache",
+    "vllm": "/reset_prefix_cache",
+    "vllm-chat": "/reset_prefix_cache",
+    "sglang": "/flush_cache",
+    "sglang-chat": "/flush_cache",
 }
 
+BenchmarkTask = Literal[
+    "text-generation",
+    "text-to-image",
+    "image-to-image",
+]
 
-class BenchmarkTask(str, enum.Enum):
-    text_generation = "text-generation"
-    text_to_image = "text-to-image"
+PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
+    "text-to-image",
+    "image-to-image",
+)
 
 
 def _add_config_file_arg_to_parser(
@@ -140,7 +144,7 @@ class BenchmarkCommonConfig(ConfigFileModel):
     dataset_path: str | None = None
     """Path to the dataset."""
 
-    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+    dataset_mode: DatasetMode = "huggingface"
     """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
 
     # Basic workload parameters
@@ -200,7 +204,7 @@ class BaseBenchmarkConfig(MAXConfig):
     dataset_path: str | None = None
     """Path to the dataset."""
 
-    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+    dataset_mode: DatasetMode = "huggingface"
     """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
 
     # Basic workload parameters
@@ -250,12 +254,11 @@ class BaseBenchmarkConfig(MAXConfig):
             Dictionary mapping field names to their valid choices.
         """
         return {
-            # TODO: Propagate proper enum choices here than just the string values
-            "backend": [backend.value for backend in Backend],
-            "endpoint": [endpoint.value for endpoint in Endpoint],
-            "benchmark_task": [task.value for task in BenchmarkTask],
+            "backend": list(get_args(Backend)),
+            "endpoint": list(get_args(Endpoint)),
+            "benchmark_task": list(get_args(BenchmarkTask)),
             "dataset_name": list(DATASET_REGISTRY.keys()),
-            "dataset_mode": [mode.value for mode in DatasetMode],
+            "dataset_mode": list(get_args(DatasetMode)),
         }
 
     @classmethod
@@ -278,9 +281,8 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """
 
     # Backend and API configuration (serving-specific)
-    # TODO: Propagate proper enum choices here than just the string values
-    backend: str = field(
-        default=Backend.modular.value,
+    backend: Backend = field(
+        default="modular",
         metadata={
             "group": "Backend and API Configuration",
             "group_description": "Configuration for backend selection and API endpoints",
@@ -303,17 +305,17 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Server port."""
 
-    endpoint: str = field(
-        default=Endpoint.chat_completions.value,
+    endpoint: Endpoint = field(
+        default="/v1/chat/completions",
         metadata={"group": "Backend and API Configuration"},
     )
     """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream"""
 
-    benchmark_task: str = field(
-        default=BenchmarkTask.text_generation.value,
+    benchmark_task: BenchmarkTask = field(
+        default="text-generation",
         metadata={"group": "Backend and API Configuration"},
     )
-    """Benchmark task type. Choices: text-generation, text-to-image"""
+    """Benchmark task type. Choices: text-generation, text-to-image, image-to-image"""
 
     # Request configuration (serving-specific)
     max_concurrency: str | None = field(
@@ -386,31 +388,35 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Top-k for sampling."""
 
     # Image generation options (serving-specific)
-    image_width: int = field(default=1024, metadata={"group": "Output Control"})
-    """Output image width in output pixels."""
-
-    image_height: int = field(
-        default=1024, metadata={"group": "Output Control"}
+    image_width: int | None = field(
+        default=None, metadata={"group": "Output Control"}
     )
-    """Output image height in output pixels."""
+    """Output image width in pixels for pixel generation."""
 
-    image_steps: int = field(default=24, metadata={"group": "Output Control"})
+    image_height: int | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
+    """Output image height in pixels for pixel generation."""
+
+    image_steps: int | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
     """Number of denoising steps for pixel generation."""
 
-    image_guidance_scale: float = field(
-        default=3.5, metadata={"group": "Output Control"}
+    image_guidance_scale: float | None = field(
+        default=None, metadata={"group": "Output Control"}
     )
     """Guidance scale for pixel generation."""
 
     image_negative_prompt: str | None = field(
         default=None, metadata={"group": "Output Control"}
     )
-    """Optional negative prompt for pixel generation."""
+    """Negative prompt for pixel generation."""
 
     image_seed: int | None = field(
         default=None, metadata={"group": "Output Control"}
     )
-    """Optional deterministic seed for pixel generation."""
+    """Deterministic seed for pixel generation."""
 
     # Traffic control (serving-specific)
     request_rate: str = field(
@@ -476,6 +482,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     obfuscated_conversations_shuffle: bool = field(
         default=False, metadata={"group": "Dataset-Specific Parameters"}
+    )
+    tool_calls: bool = field(
+        default=True, metadata={"group": "Dataset-Specific Parameters"}
     )
     random_image_count: int = field(
         default=0, metadata={"group": "Dataset-Specific Parameters"}
@@ -601,7 +610,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "host": "Server host.",
             "port": "Server port.",
             "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream",
-            "benchmark_task": "Benchmark task type. Choices: text-generation, text-to-image",
+            "benchmark_task": "Benchmark task type. Choices: text-generation, text-to-image, image-to-image",
             "max_concurrency": "Maximum concurrent requests (optimized for serving benchmarks).",
             "lora": "Optional LoRA name.",
             "max_benchmark_duration_s": "Maximum benchmark duration in seconds.",
@@ -629,6 +638,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "obfuscated_conversations_average_output_len": "Average output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_shuffle": "Shuffle the obfuscated-conversations dataset.",
+            "tool_calls": "Include turns with tool calls for datasets that support it. When disabled, only system+user turns are used.",
             "random_image_size": "Size of random images to generate.",
             "random_input_len": "Number of input tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
             "random_max_num_unique_sys_prompt": "Maximum number of unique system prompts, used only for random sampling.",
@@ -759,6 +769,21 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
         },
     )
     """Flush the prefix cache between iterations"""
+
+    num_prompts_multiplier: int | None = field(
+        default=None,
+        metadata={
+            "group": "Sweep Configuration",
+            "cli_flag": "--num-prompts-multiplier",
+            "help": (
+                "When set, num_prompts is computed as"
+                " num_prompts_multiplier * max_concurrency for each"
+                " concurrency level, replacing the default 300s duration"
+                " timeout."
+            ),
+        },
+    )
+    """Multiplier to compute num_prompts from max_concurrency."""
 
     @classmethod
     def get_default_required_fields(cls) -> set[str]:

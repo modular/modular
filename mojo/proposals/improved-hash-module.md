@@ -72,7 +72,7 @@ trait Hasher:
         """Expects a no argument instantiation."""
         ...
     fn _update_with_bytes(mut self, bytes: DTypePointer[DType.uint8], n: Int):
-        """Conribute to the hash value based on a sequence of bytes. Use only for complex types which are not just a composition of Hashable types."""
+        """Contribute to the hash value based on a sequence of bytes. Use only for complex types which are not just a composition of Hashable types."""
         ...
     fn _update_with_simd[dt: DType, size: Int](mut self, value: SIMD[dt, size]):
         """Contribute to the hash value with a compile time know fix size value. Used inside of std lib to avoid runtime branching."""
@@ -170,7 +170,7 @@ trait Hasher:
         """Expects a no argument instantiation."""
         ...
     fn _update_with_bytes(mut self, bytes: DTypePointer[DType.uint8], n: Int):
-        """Conribute to the hash value based on a sequence of bytes. Use only for complex types which are not just a composition of Hashable types."""
+        """Contribute to the hash value based on a sequence of bytes. Use only for complex types which are not just a composition of Hashable types."""
         ...
     fn _update_with_simd[dt: DType, size: Int](mut self, value: SIMD[dt, size]):
         """Contribute to the hash value with a compile time know fix size value. Used inside of std lib to avoid runtime branching."""

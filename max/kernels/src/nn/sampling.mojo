@@ -16,7 +16,7 @@ from std.sys.info import simd_width_of
 
 import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -230,7 +230,7 @@ def update_frequency_data[
             token_type=token_type,
             block_size=block_size,
         ]
-        dev_ctx.enqueue_function_experimental[kernel](
+        dev_ctx.enqueue_function[kernel, kernel](
             compressed_frequency_data,
             frequency_offsets.as_immut(),
             new_tokens.as_immut(),

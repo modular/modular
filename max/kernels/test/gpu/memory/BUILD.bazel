@@ -20,13 +20,10 @@ _OTHER_TESTS = [
     "test_tma.mojo",
     "test_tcgen05.mojo",
     "test_tma_block_reduce.mojo",
+    "test_tma_gather4.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
-    "test_external_and_static_shared_mem.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
 }
 
 mojo_filecheck_test(
@@ -128,6 +125,20 @@ mojo_test(
     deps = [
         "//max:layout",
         "//max:linalg",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_tma_gather4.mojo.test",
+    srcs = ["test_tma_gather4.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
         "@mojo//:std",
     ],
 )

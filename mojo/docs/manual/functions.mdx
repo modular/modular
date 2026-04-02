@@ -363,13 +363,13 @@ arguments. To define a function that takes a variadic keyword argument, use the
 variadic keyword argument syntax <code>**<var>kw_argument_name</var></code>:
 
 ```mojo
-def print_nicely(**kwargs: Int):
-  for key in kwargs.keys():
-      print(key, "=", kwargs[key])
+def print_nicely(**kwargs: Int) raises:
+    for item in kwargs.items():
+        print(item.key, "=", item.value)
 
- # prints:
- # `a = 7`
- # `y = 8`
+# prints:
+# `a = 7`
+# `y = 8`
 print_nicely(a=7, y=8)
 ```
 

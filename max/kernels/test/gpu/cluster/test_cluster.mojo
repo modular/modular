@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import size_of
+from std.math.uutils import ufloordiv
 
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.primitives.cluster import (
@@ -137,7 +138,7 @@ def pipeline_test_kernel[
     var is_first_block_in_cluster = (
         block_id_in_cluster.x == 0 and block_id_in_cluster.y == 0
     )
-    var wid = thread_idx.x // 32
+    var wid = ufloordiv(thread_idx.x, 32)
 
     var pipeline_state = PipelineState[num_stages]()
     var pipeline_state_write = PipelineState[num_stages](0, 1, 0)
@@ -158,9 +159,7 @@ def pipeline_test_kernel[
         if is_producer:
             var write_idx = pipeline_state_write.index()
             empty_mbar[write_idx].wait(pipeline_state_write.phase())
-            var pred: UInt32 = UInt32(
-                1 if lane_id() < UInt(CLUSTER_SIZE) else 0
-            )
+            var pred: UInt32 = UInt32(1 if lane_id() < Int(CLUSTER_SIZE) else 0)
             full_mbar[write_idx].arrive_and_expect_bytes(
                 Int32(2 * size_of[UInt64]()), UInt32(lane_id()), pred
             )

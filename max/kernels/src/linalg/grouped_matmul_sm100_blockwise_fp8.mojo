@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
-from std.math import align_up, ceildiv, gcd
+from std.math import ceildiv, gcd
 from std.sys import align_of, size_of, simd_width_of
 from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -25,8 +25,13 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import (
+    block_id_in_cluster,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
+    thread_idx_uint as thread_idx,
+)
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -55,7 +60,7 @@ from layout import (
 from layout.layout import zipped_divide
 from layout.layout_tensor import upcast
 from layout.swizzle import make_swizzle
-from layout.runtime_tuple import idx2crd, crd2idx
+from layout.runtime_tuple import idx2crd
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
@@ -77,16 +82,13 @@ from std.utils.static_tuple import StaticTuple
 
 from .arch.sm100 import MmaOpSM100_SS
 from .matmul.gpu.sm100.config import MatmulConfig
-from .matmul.gpu.sm100.blockwise_fp8 import (
-    matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
-)
 from .matmul.gpu.sm100.matmul import WarpRole, consumer_main_loop, stsm_helper
 from .matmul.gpu.sm100.pipeline import ProducerConsumerPipeline
 from structured_kernels.tile_types import (
     SMemTileArray2D,
     swizzle_mode_to_bytes,
 )
-from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
+from .grouped_matmul_tile_scheduler import TileScheduler
 from .utils import elementwise_epilogue_type
 
 comptime logger = Logger()
@@ -364,8 +366,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
         if elect_one_thread:
             mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
+                lt_to_tt(a_smem_tile),
+                lt_to_tt(b_smem_tile),
                 tmem_addr,
                 init_c=(True),  # Initialize C on first iteration
             )

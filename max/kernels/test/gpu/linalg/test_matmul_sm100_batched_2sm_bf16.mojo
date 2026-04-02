@@ -23,9 +23,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -37,7 +34,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 
@@ -155,39 +151,18 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     ](c_tensor, a_tensor, b_tensor, ctx)
 
     # Reference: per-batch vendor_blas.matmul
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_lt = c_ref_tensor.to_layout_tensor()
-
-    @parameter
-    def _reshape_to_2d[layout: Layout]() -> Layout:
-        return Layout.row_major(
-            layout.shape[1].value(),
-            layout.shape[2].value(),
-        )
-
     for b in range(B):
-        comptime a_2d_layout = _reshape_to_2d[a_lt.layout]()
-        comptime b_2d_layout = _reshape_to_2d[b_lt.layout]()
-        comptime c_2d_layout = _reshape_to_2d[c_ref_lt.layout]()
-
-        var a_2d = LayoutTensor[
-            a_type, a_2d_layout, address_space=a_lt.address_space
-        ](
-            a_lt.ptr + b * M * K,
-            RuntimeLayout[a_2d_layout].row_major(IndexList[2](M, K)),
+        var a_2d = TileTensor(
+            a_tensor.ptr + b * M * K,
+            row_major((Idx(M), Idx(K))),
         )
-        var b_2d = LayoutTensor[
-            b_type, b_2d_layout, address_space=b_lt.address_space
-        ](
-            b_lt.ptr + b * N * K,
-            RuntimeLayout[b_2d_layout].row_major(IndexList[2](N, K)),
+        var b_2d = TileTensor(
+            b_tensor.ptr + b * N * K,
+            row_major((Idx(N), Idx(K))),
         )
-        var c_ref_2d = LayoutTensor[
-            c_type, c_2d_layout, address_space=c_ref_lt.address_space
-        ](
-            c_ref_lt.ptr + b * M * N,
-            RuntimeLayout[c_2d_layout].row_major(IndexList[2](M, N)),
+        var c_ref_2d = TileTensor(
+            c_ref_tensor.ptr + b * M * N,
+            row_major((Idx(M), Idx(N))),
         )
 
         vendor_blas.matmul(

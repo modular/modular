@@ -306,6 +306,15 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         return Self._is_arch["apple-m4"]()
 
     @staticmethod
+    def is_apple_m5() -> Bool:
+        """Check if the target is an Apple M5 system.
+
+        Returns:
+            True if the host system is an Apple M5, False otherwise.
+        """
+        return Self._is_arch["apple-m5"]()
+
+    @staticmethod
     def is_apple_silicon() -> Bool:
         """Check if the host system is an Apple Silicon with AMX support.
 
@@ -318,6 +327,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             or Self.is_apple_m2()
             or Self.is_apple_m3()
             or Self.is_apple_m4()
+            or Self.is_apple_m5()
         )
 
     @staticmethod
@@ -680,6 +690,11 @@ def _is_amd_rdna2_or_earlier() -> Bool:
 
 
 @always_inline("nodebug")
+def _is_amd_mi250x() -> Bool:
+    return is_amd_gpu["gfx90a"]()
+
+
+@always_inline("nodebug")
 def _is_amd_mi300x() -> Bool:
     return is_amd_gpu["gfx942"]()
 
@@ -692,10 +707,12 @@ def _is_amd_mi355x() -> Bool:
 @always_inline("nodebug")
 def _cdna_version() -> Int:
     comptime assert (
-        _is_amd_mi300x() or _is_amd_mi355x()
+        _is_amd_mi250x() or _is_amd_mi300x() or _is_amd_mi355x()
     ), "querying the cdna version is only supported on AMD hardware"
 
-    comptime if _is_amd_mi300x():
+    comptime if _is_amd_mi250x():
+        return 2
+    elif _is_amd_mi300x():
         return 3
     else:
         return 4
@@ -717,7 +734,7 @@ def _cdna_4_or_newer() -> Bool:
 
 @always_inline("nodebug")
 def _is_amd_cdna() -> Bool:
-    return _is_amd_mi300x() or _is_amd_mi355x()
+    return _is_amd_mi250x() or _is_amd_mi300x() or _is_amd_mi355x()
 
 
 @always_inline("nodebug")

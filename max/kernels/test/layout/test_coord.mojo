@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the unified LayoutLike system."""
 
-from buffer import Dim, DimList
 from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq
 
@@ -22,7 +21,6 @@ from layout import ComptimeInt, Coord, CoordLike, Idx, RuntimeInt, coord
 from layout.coord import (
     coord_to_int_tuple,
     idx2crd,
-    _DimsToCoordLike,
     _Idx2CrdResultTypes,
 )
 from std.testing import assert_equal, assert_true, TestSuite
@@ -113,21 +111,6 @@ def test_default_init_nested() raises:
     assert_equal(c[1][0].value(), 0)
     assert_equal(c[1][1].value(), 3)
     assert_equal(c[2].value(), 0)
-
-
-def test_from_dimlist_empty() raises:
-    comptime dims = DimList[]()
-    comptime coord = _DimsToCoordLike[DType.int32, dims]
-    assert_equal(Variadic.size(coord), 0)
-
-
-def test_from_dimlist() raises:
-    comptime dims = DimList[Dim(5), Dim(), Dim(3)]()
-    comptime coord = _DimsToCoordLike[DType.int32, dims]
-    assert_equal(Variadic.size(coord), 3)
-    assert_true(_type_is_eq[coord[0], ComptimeInt[5]]())
-    assert_true(_type_is_eq[coord[1], RuntimeInt[DType.int32]]())
-    assert_true(_type_is_eq[coord[2], ComptimeInt[3]]())
 
 
 def test_idx2crd_basic() raises:

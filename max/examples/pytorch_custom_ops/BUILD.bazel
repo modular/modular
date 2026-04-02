@@ -14,11 +14,6 @@ custom_op_example_py_binary(
     extra_data = [
         ":operations",
     ],
-    # TODO(GEX-3155): Investigate and enable on macOS
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//max/python/max/experimental/torch",
         requirement("torch"),

@@ -18,7 +18,6 @@ from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.itertools import product
-from std.testing import assert_equal
 
 # ========================== KERNEL CODE ==========================
 
@@ -37,8 +36,8 @@ def matrix_mul_kernel(
         P: Output matrix P = M * N (device).
         Width: Matrix dimension (Width x Width matrices).
     """
-    var row = Int(global_idx.y)
-    var col = Int(global_idx.x)
+    var row = global_idx.y
+    var col = global_idx.x
 
     if row < Width and col < Width:
         var Pvalue = Float32(0)

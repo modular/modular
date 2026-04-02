@@ -157,7 +157,7 @@ def softmax_op[
 
                 var output_tensor = TileTensor(
                     out_ptr,
-                    row_major((Idx(batch_dim), Idx(axis_dim))),
+                    row_major(Idx(batch_dim), Idx(axis_dim)),
                 )
 
                 var device_ctx = DeviceContextPtr(ctx)
@@ -179,8 +179,6 @@ def softmax_op[
                         target="gpu",
                     ](shape, output_tensor, 1, device_ctx)
 
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for softmax with dtype "

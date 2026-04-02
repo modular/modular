@@ -20,7 +20,6 @@ its unvisited neighbors.
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim
 from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.os import Atomic
 from std.collections import List
 
@@ -56,7 +55,7 @@ def bfs_kernel(
         new_vertex_visited: Flag indicating if any new vertex was visited.
         curr_level: Current BFS level being processed.
     """
-    var vertex = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var vertex = block_idx.x * block_dim.x + thread_idx.x
 
     if vertex < num_vertices:
         if level[vertex] == curr_level - 1:
@@ -123,11 +122,11 @@ def main() raises:
         ctx.enqueue_copy(d_new_vertex_visited, h_flag)
 
         ctx.enqueue_function_experimental[bfs_kernel](
-            d_src_ptrs.unsafe_ptr(),
-            d_dst.unsafe_ptr(),
+            d_src_ptrs,
+            d_dst,
             NUM_VERTICES,
-            d_level.unsafe_ptr(),
-            d_new_vertex_visited.unsafe_ptr(),
+            d_level,
+            d_new_vertex_visited,
             curr_level,
             grid_dim=(grid_size, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),

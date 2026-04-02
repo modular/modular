@@ -16,7 +16,10 @@ from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 from std.gpu.primitives.warp import shuffle_down
-from std.gpu.primitives.id import lane_id, warp_id
+from std.gpu.primitives.id import (
+    lane_id,
+    warp_id,
+)
 from std.random import random_float64
 from std.math import abs
 from std.bit import log2_floor
@@ -78,14 +81,14 @@ def coarsened_sum_reduction_kernel(
 
     # Store warp results to shared memory
     if lane_id() == 0:
-        partial_sums_s[Int(warp_id())] = partial_sum
+        partial_sums_s[warp_id()] = partial_sum
 
     barrier()
 
     # Final warp reduces across warp sums
     var warp_idx = warp_id()
     if warp_idx == 0:
-        partial_sum = partial_sums_s[Int(thread_idx.x)]
+        partial_sum = partial_sums_s[thread_idx.x]
         partial_sum = warp_reduce(partial_sum)
         if thread_idx.x == 0:
             output[0] = partial_sum

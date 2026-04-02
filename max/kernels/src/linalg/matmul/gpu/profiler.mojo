@@ -13,7 +13,11 @@
 
 
 from std.time.time import global_perf_counter_ns
-from std.gpu import block_idx, thread_idx, WARP_SIZE
+from std.gpu import (
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+    WARP_SIZE,
+)
 from std.gpu.host import DeviceContext
 from std.gpu import sm_id
 
@@ -152,7 +156,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     ) raises:
         var length = Int(Self._calculate_buffer_length())
         var host_buffer = ctx.enqueue_create_host_buffer[DType.uint64](length)
-        ctx.enqueue_copy(host_buffer, workspace.unsafe_ptr())
+        ctx.enqueue_copy(host_buffer, workspace)
         ctx.synchronize()
 
         var host_span = host_buffer.as_span()

@@ -296,8 +296,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             Time Complexity: O(1).
         """
         var raw = alloc[Node[Self.ElementType]](1)
-        if not raw:
-            abort("Out of memory")
         var addr = NonNullUnsafePointer(unsafe_from_nullable=raw)
         var value_ptr = UnsafePointer(to=addr[].value)
         value_ptr.init_pointee_move(value^)
@@ -321,8 +319,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         var node = _make_node[Self.ElementType](value^, None, self._head)
         var raw = alloc[Node[Self.ElementType]](1)
-        if not raw:
-            abort("Out of memory")
         var addr = NonNullUnsafePointer(unsafe_from_nullable=raw)
         addr.init_pointee_move(node^)
         if self:
@@ -510,14 +506,14 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             Time Complexity: O(n) in len(self).
         """
 
-        # TODO: use normalize_index
+        # `insert` follows Python's list.insert() semantics: out-of-range
+        # negative indices clamp to 0 (head) rather than raising, so
+        # normalize_index (which asserts bounds) cannot be used here.
         var i = index(idx)
         i = max(i if i >= 0 else i + len(self), 0)
 
         if i == 0:
             var raw = alloc[Node[Self.ElementType]](1)
-            if not raw:
-                abort("Out of memory")
             var node = NonNullUnsafePointer(unsafe_from_nullable=raw)
             node.init_pointee_move(
                 _make_node[Self.ElementType](
@@ -544,8 +540,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             var curr_nn = current.value()
             var next = curr_nn[].next()
             var raw = alloc[Node[Self.ElementType]](1)
-            if not raw:
-                abort("Out of memory")
             var node = NonNullUnsafePointer(unsafe_from_nullable=raw)
             var data = UnsafePointer(to=node[].value)
             data[] = elem^

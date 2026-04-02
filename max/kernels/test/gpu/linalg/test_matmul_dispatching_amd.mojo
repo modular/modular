@@ -18,28 +18,22 @@ Covers the same shapes as test_ping_pong_shapes.mojo but goes through
 the production dispatch path instead of calling ping_pong_matmul directly.
 """
 
-from std.sys import align_of, simd_width_of, get_defined_bool
+from std.sys import align_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
-    CoordLike,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
-from linalg.utils_gpu import MatmulConfig
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 
 from std.testing import assert_true
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 
 def test_dispatch_dynamic_m[
@@ -65,13 +59,10 @@ def test_dispatch_dynamic_m[
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
 
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    var a_runtime_layout = RuntimeLayout[a_layout].row_major(IndexList[2](m, K))
-    var a_host = LayoutTensor[a_type, a_layout](a_host_ptr, a_runtime_layout)
+    var a_host = TileTensor(a_host_ptr, row_major(Coord(Idx(m), Idx[K]())))
     random(a_host)
 
-    comptime b_layout = Layout.row_major(N, K)
-    var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
+    var b_host = TileTensor(b_host_ptr, row_major[N, K]())
     random(b_host)
 
     for i in range(c_size):
@@ -195,15 +186,13 @@ def test_oob_diagnostic[
     var c_ref_host_ptr = alloc[Scalar[c_type]](c_valid_size)
 
     # Initialize A: random for rows [0, M), poison for rows [M, alloc_M)
-    comptime a_layout = Layout.row_major(alloc_M, K)
-    var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
+    var a_host = TileTensor(a_host_ptr, row_major[alloc_M, K]())
     random(a_host)
     for i in range(M * K, alloc_M * K):
         a_host_ptr[i] = Scalar[a_type](poison)
 
     # Initialize B: random
-    comptime b_layout = Layout.row_major(N, K)
-    var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
+    var b_host = TileTensor(b_host_ptr, row_major[N, K]())
     random(b_host)
 
     # Initialize C: zero for rows [0, M), sentinel for rows [M, alloc_M)
@@ -404,16 +393,14 @@ def test_oob_epilogue[
     var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
 
     # A: random for [0, M), poison for [M, alloc_M)
-    comptime a_layout = Layout.row_major(alloc_M, K)
-    var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
+    var a_host = TileTensor(a_host_ptr, row_major[alloc_M, K]())
     random(a_host)
 
     for i in range(M * K, alloc_M * K):
         a_host_ptr[i] = Scalar[a_type](poison)
 
     # B: random for [0, N), poison for [N, alloc_N) (transpose_b layout)
-    comptime b_alloc_layout = Layout.row_major(alloc_N, K)
-    var b_host = LayoutTensor[b_type, b_alloc_layout](b_host_ptr)
+    var b_host = TileTensor(b_host_ptr, row_major[alloc_N, K]())
 
     random(b_host)
 
@@ -634,19 +621,16 @@ def test_oob_epilogue_dynamic_m[
     var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
 
     # A: random for [0, M), poison for [M, alloc_m)
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    var a_runtime_layout = RuntimeLayout[a_layout].row_major(
-        IndexList[2](alloc_m, K)
+    var a_host = TileTensor(
+        a_host_ptr, row_major(Coord(Idx(alloc_m), Idx[K]()))
     )
-    var a_host = LayoutTensor[a_type, a_layout](a_host_ptr, a_runtime_layout)
     random(a_host)
 
     for i in range(m * K, alloc_m * K):
         a_host_ptr[i] = Scalar[a_type](poison)
 
     # B: random
-    comptime b_layout = Layout.row_major(N, K)
-    var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
+    var b_host = TileTensor(b_host_ptr, row_major[N, K]())
     random(b_host)
 
     for i in range(c_size):
@@ -806,6 +790,36 @@ def main() raises:
             test_dispatch_dynamic_m[DType.bfloat16, DType.bfloat16, 4096, 4096](
                 ctx, bf16_m[i]
             )
+
+        # ============================================================
+        # FP8 M=256, N=256, Test K % BK != 0
+        # ============================================================
+
+        print("\nFP8 M=256, N=256, Test K % BK != 0")
+        print("  K = 128,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 128](
+            ctx, 256
+        )
+
+        print("  K = 192,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 192](
+            ctx, 256
+        )
+
+        print("  K = 256,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 256](
+            ctx, 256
+        )
+
+        print("  K = 320,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 320](
+            ctx, 256
+        )
+
+        print("  K = 384,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 384](
+            ctx, 256
+        )
 
         # ============================================================
         # FP8 N=4096 K=4096 (covers standard GEMM, pingpong, skinny)

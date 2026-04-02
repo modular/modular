@@ -185,15 +185,16 @@ adapters.
 
    Copy the location of the downloaded snapshot.
 
-3. Serve a model with a LoRA adapter available
+/* unsure why the disable below is necessary */
 
-   Change the `--lora-paths` path to the location of the downloaded LoRA adapter
-   snapshot.
+<!-- rumdl-disable-next-line MD013 -->
+3. Serve a model with a LoRA adapter available Change the `--lora-paths` path to
+   the location of the downloaded LoRA adapter snapshot.
+
    :::note
    You can change `--max-num-loras` based on your available GPU memory and the
    number of LoRA adapters you want to enable.
    :::
-<!-- rumdl-disable MD013 -->
 
     ```bash
     max serve \
@@ -204,15 +205,14 @@ adapters.
       --lora-paths finance=$HOME/.cache/huggingface/hub/models--FinGPT--fingpt-mt_llama3-8b_lora/snapshots/5b5850574ec13e4ce7c102e24f763205992711b7
     ```
 
-<!-- rumdl-enable MD013 -->
    This command serves the base model and statically loads a LoRA adapter named
    `finance`.
    :::note
-You can optionally
-[dynamically load and unload LoRA adapters](/max/serve/lora-adapters#dynamic-serving).
+   You can optionally
+   [dynamically load and unload LoRA adapters](/max/serve/lora-adapters#dynamic-serving).
    :::
 
-1. Run inference using a specific adapter
+4. Run inference using a specific adapter
 
     When sending an inference request, specify the name of the adapter to apply.
     For example:

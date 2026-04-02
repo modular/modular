@@ -517,6 +517,65 @@ class ExportKindAttr(max._core.Attribute):
     @property
     def value(self) -> ExportKind: ...
 
+class FuncLiteralAttr(max._core.Attribute):
+    """
+    The `#kgen.func.literal` attribute represent a instance of a function
+    literal: It is conceptually an empty struct and its type contains all the
+    static information about the function it refers to.
+
+    Example:
+
+    ```mlir
+    #kgen.func.literal : !kgen.func.literal<@foo() -> ()>
+    ```
+    """
+
+    @overload
+    def __init__(self, type: FuncLiteralType) -> None: ...
+    @overload
+    def __init__(self, type: FuncLiteralType) -> None: ...
+    @property
+    def type(self) -> FuncLiteralType: ...
+
+class FuncSymbolAttr(max._core.Attribute):
+    """
+    This is a value of FuncType, which refers to a func, the `type` must
+    match with the FuncType of the given `symbol` after instantiated with the
+    `paramValues`.
+
+    TODO: Delete SymbolConstantAttr after fully migrate to FnLiteralType.
+    """
+
+    @overload
+    def __init__(
+        self,
+        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        type: FuncType,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr] = [],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        type: FuncType,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr] = [],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
+        type: FuncType,
+    ) -> None: ...
+    @property
+    def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
+    @property
+    def param_values(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+    @property
+    def type(self) -> FuncType: ...
+
 class GeneratorAttr(max._core.Attribute):
     """
     This is a generator constant attribute that represents a generator whose
@@ -854,17 +913,17 @@ class MemSymbolTripleAttr(max._core.Attribute):
 
     def __init__(
         self,
-        copy: SymbolConstantAttr,
-        move: SymbolConstantAttr,
-        del_: SymbolConstantAttr,
+        copy: max._core.dialects.builtin.TypedAttr,
+        move: max._core.dialects.builtin.TypedAttr,
+        del_: max._core.dialects.builtin.TypedAttr,
         is_move: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
     @property
-    def copy(self) -> SymbolConstantAttr: ...
+    def copy(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def move(self) -> SymbolConstantAttr: ...
+    def move(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def del_(self) -> SymbolConstantAttr: ...
+    def del_(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def is_move(self) -> max._core.dialects.builtin.UnitAttr: ...
 
@@ -1522,30 +1581,34 @@ class ToStringDeferredAttr(max._core.Attribute):
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
     This represents a flag to indicate the type, specified by `typeValue`,
-    conforms to specific traits, specified by a list of trait names.
+    conforms to specific traits, specified by a list of trait symbol references.
 
-    FIXME: The only reason that we uses a list of string to represent trait in
-    this attr is because trait types are not preserved after lower-lit, meaning
-    that the only way to refer to a specific trait during elaboration time is
-    through symbol names.
+    Example:
+
+    ```mlir
+    #kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type,
+                                 [@Movable, @Copyable]>
+    ```
     """
 
     @overload
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_names: VariadicAttr,
+        trait_symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
     ) -> None: ...
     @overload
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_names: VariadicAttr,
+        trait_symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def trait_names(self) -> VariadicAttr: ...
+    def trait_symbols(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
 
 class TypeGeneratorRefAttr(max._core.Attribute):
     """
@@ -2353,6 +2416,8 @@ class ClosureInitOp(max._core.Operation):
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
         nested_fn_scope: max._core.Attribute,
+        _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
+        _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2401,6 +2466,20 @@ class ClosureInitOp(max._core.Operation):
     def nested_fn_scope(self) -> max._core.Attribute | None: ...
     @nested_fn_scope.setter
     def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
+    @property
+    def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @_llvm_metadata_array.setter
+    def _llvm_metadata_array(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def _llvm_arg_metadata_array(
+        self,
+    ) -> max._core.dialects.builtin.ArrayAttr: ...
+    @_llvm_arg_metadata_array.setter
+    def _llvm_arg_metadata_array(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
 
 class CodegenReachableOp(max._core.Operation):
     """
@@ -2437,6 +2516,10 @@ class CompileOffloadOp(max._core.Operation):
     `emission_option` is for extra compilation options for compiling
     this offload function.
 
+    `emission_link_option` is for extra options passed through to the
+    linker for compiling this offload function. The string will be passed
+    as-is to the linker if a linker is involved in compiling the offload.
+
     `func` is the offload function.
 
     `kernelID` is an integer number to identify this op from compiled results
@@ -2458,6 +2541,7 @@ class CompileOffloadOp(max._core.Operation):
         target_type: max._core.dialects.builtin.TypedAttr,
         emission_kind: max._core.dialects.builtin.TypedAttr,
         emission_option: max._core.dialects.builtin.TypedAttr,
+        emission_link_option: max._core.dialects.builtin.TypedAttr,
         func: max._core.dialects.builtin.TypedAttr,
         kernel_id: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
@@ -2477,6 +2561,12 @@ class CompileOffloadOp(max._core.Operation):
     def emission_option(self) -> max._core.dialects.builtin.TypedAttr: ...
     @emission_option.setter
     def emission_option(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
+    @property
+    def emission_link_option(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @emission_link_option.setter
+    def emission_link_option(
         self, arg: max._core.dialects.builtin.TypedAttr, /
     ) -> None: ...
     @property
@@ -4398,6 +4488,23 @@ class DeferredType(max._core.Type):
 
     def __init__(self) -> None: ...
 
+class FuncLiteralType(max._core.Type):
+    """
+    This type describes the type of a literal function in KGEN, in additional to
+    the FuncType, it uniquely identifies the function by storing its name.
+    """
+
+    @overload
+    def __init__(
+        self, func_literal: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, func_literal: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @property
+    def func_literal(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class FuncType(max._core.Type):
     """
     This type describes the type of a function KGEN, which can have input/output
@@ -4650,7 +4757,7 @@ class StructInstanceType(max._core.Type):
         param_names: Sequence[max._core.dialects.builtin.StringAttr],
         param_values: Sequence[max._core.dialects.builtin.TypedAttr],
         fields: Sequence[StructDefFieldAttr],
-        is_memory_only: bool,
+        is_memory_only: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -4660,6 +4767,15 @@ class StructInstanceType(max._core.Type):
         param_values: Sequence[max._core.dialects.builtin.TypedAttr],
         fields: Sequence[StructDefFieldAttr],
         is_memory_only: bool,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        param_names: Sequence[max._core.dialects.builtin.StringAttr],
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
+        fields: Sequence[StructDefFieldAttr],
+        is_memory_only: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
@@ -4674,7 +4790,7 @@ class StructInstanceType(max._core.Type):
     @property
     def fields(self) -> Sequence[StructDefFieldAttr]: ...
     @property
-    def is_memory_only(self) -> bool: ...
+    def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class StructType(max._core.Type):
     """
@@ -4732,7 +4848,14 @@ class StructType(max._core.Type):
     def __init__(
         self,
         variadic: max._core.dialects.builtin.TypedAttr,
-        is_memory_only: bool = False,
+        is_memory_only: max._core.dialects.builtin.TypedAttr = ...,
+        min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
     ) -> None: ...
     @property
@@ -4740,7 +4863,7 @@ class StructType(max._core.Type):
         self,
     ) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def is_memory_only(self) -> bool: ...
+    def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
 

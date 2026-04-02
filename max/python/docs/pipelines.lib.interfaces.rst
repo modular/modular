@@ -33,4 +33,3 @@ Diffusion
 
    ComponentModel
    DiffusionPipeline
-   PixelModelInputs

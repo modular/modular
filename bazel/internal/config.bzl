@@ -126,7 +126,7 @@ def get_default_test_env(exec_properties):
         A dictionary that should be added to the test target's 'env'
     """
 
-    # TODO(MOTO-1278): 0.6 accounts for unknown overhead
+    # TODO(MOTO-1512): 0.6 accounts for unknown overhead
     gpu_memory_limit = float(exec_properties.get("test.resources:gpu-memory", DEFAULT_GPU_MEMORY))
     adjusted_gpu_memory_limit = gpu_memory_limit - 0.6
     if adjusted_gpu_memory_limit < 0.0:
@@ -134,8 +134,17 @@ def get_default_test_env(exec_properties):
 
     return select({
         "@//:has_gpu": {
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
+        },
+        "//conditions:default": {},
+    }) | select({
+        # On macOS, the Metal memory manager is disabled on BuildBuddy remote
+        # workers (max_cache_size=0), so MEMORY_MANAGER_ONLY must be false to
+        # allow fallthrough to direct device allocation.
+        "@platforms//os:macos": {
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
         },
         "//conditions:default": {},
     })

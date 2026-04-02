@@ -1,5 +1,5 @@
 This directory contains code examples for the
-[types](../../../../../docs/manual/types.mdx)
+[types](../../../manual/types.mdx)
 section of the Mojo Manual.
 
 Contents:

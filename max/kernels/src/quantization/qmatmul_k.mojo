@@ -16,7 +16,7 @@ from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 from std.sys.intrinsics import llvm_intrinsic
 
 from std.algorithm import sync_parallelize, tile
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import LayoutTensor, TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
 from linalg.arch.cpu.vnni_intrinsics import (
@@ -491,8 +491,7 @@ def _pack_block_Q4_K[
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
             elif CompilationTarget.has_neon():
                 comptime split_width = simd_width_of[DType.int32]()
-                var n_idx_hi = n // split_width
-                var n_idx_lo = n % split_width
+                var n_idx_hi, n_idx_lo = divmod(n, split_width)
                 var reorder_idx = (
                     g * block_n + n_idx_hi * split_width * 2 + n_idx_lo
                 )
@@ -549,13 +548,15 @@ def _pack_block_Q6_K[
 
 
 def matmul_Q4_K_pack_b(
-    b: LayoutTensor[
+    b_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
-    b_packed: LayoutTensor[
+    b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    var b = b_tt.to_layout_tensor()
+    var b_packed = b_packed_tt.to_layout_tensor()
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     var N = b.dim[0]()
@@ -581,13 +582,15 @@ def matmul_Q4_K_pack_b(
 
 
 def matmul_Q6_K_pack_b(
-    b: LayoutTensor[
+    b_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
-    b_packed: LayoutTensor[
+    b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    var b = b_tt.to_layout_tensor()
+    var b_packed = b_packed_tt.to_layout_tensor()
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     var N = b.dim[0]()
@@ -1510,12 +1513,15 @@ def _matmul_Qb_K[
 def matmul_Q4_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
-    c: LayoutTensor[
+    a_tt: TileTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
+    var c = c_tt.to_layout_tensor()
     comptime assert a.rank == 2
     comptime assert b.rank == 2
     comptime assert c.rank == 2
@@ -1532,12 +1538,15 @@ def matmul_Q4_K[
 def matmul_Q6_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
-    c: LayoutTensor[
+    a_tt: TileTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
+    var c = c_tt.to_layout_tensor()
     comptime assert a.rank == 2
     comptime assert b.rank == 2
     comptime assert c.rank == 2

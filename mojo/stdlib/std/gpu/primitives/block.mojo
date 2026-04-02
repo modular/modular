@@ -32,6 +32,7 @@ order: `linear_id = x + y * dim_x + z * dim_x * dim_y`.
 """
 
 from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv
 
 from std.memory import stack_allocation
 from std.utils.static_tuple import StaticTuple
@@ -68,7 +69,7 @@ def _block_reduce_with_padding[
         num_reductions * smem_stride, dtype, address_space=AddressSpace.SHARED
     ]()
 
-    var lid = Int(lane_id())
+    var lid = lane_id()
 
     # Step 1: Perform warp-level reduction for each reduction.
     var warp_results = StaticTuple[Scalar[dtype], num_reductions]()
@@ -80,7 +81,7 @@ def _block_reduce_with_padding[
         """Computes the offset with the padding if needed."""
 
         comptime if padding > 0:
-            return offset + Int(UInt(offset) // UInt(WARP_SIZE))
+            return offset + ufloordiv(offset, WARP_SIZE)
         else:
             return offset
 
@@ -188,10 +189,10 @@ def _block_reduce[
     # thread_idx.x // WARP_SIZE, matching the original warp_id() behaviour.
     var linear_tid = (
         thread_idx.x
-        + thread_idx.y * UInt(block_dim_x)
-        + thread_idx.z * UInt(block_dim_x * block_dim_y)
+        + thread_idx.y * block_dim_x
+        + thread_idx.z * block_dim_x * block_dim_y
     )
-    var wid = Int(linear_tid // UInt(WARP_SIZE))
+    var wid = ufloordiv(linear_tid, WARP_SIZE)
 
     # Allocate shared memory for inter-warp communication.
     comptime n_warps = block_size // WARP_SIZE
@@ -573,7 +574,7 @@ def broadcast[
     ]()
 
     # Source thread writes its value to shared memory
-    if thread_idx.x == src_thread:
+    if thread_idx.x == Int(src_thread):
         shared_mem.store(val)
 
     barrier()
@@ -630,10 +631,10 @@ def broadcast[
 
     var linear_tid = (
         thread_idx.x
-        + thread_idx.y * UInt(block_dim_x)
-        + thread_idx.z * UInt(block_dim_x * block_dim_y)
+        + thread_idx.y * block_dim_x
+        + thread_idx.z * block_dim_x * block_dim_y
     )
-    if linear_tid == src_thread:
+    if linear_tid == Int(src_thread):
         shared_mem.store(val)
 
     barrier()
@@ -653,7 +654,7 @@ def _prefix_sum[
     *,
     block_size: Int,
     exclusive: Bool = False,
-](val: Scalar[dtype], *, wid: UInt) -> Scalar[dtype]:
+](val: Scalar[dtype], *, wid: Int) -> Scalar[dtype]:
     """Performs a prefix sum (scan) operation across all threads in a block."""
     comptime assert (
         block_size % WARP_SIZE == 0
@@ -669,7 +670,7 @@ def _prefix_sum[
     var thread_result = warp.prefix_sum[exclusive=exclusive](val)
 
     # Step 2: Store last value from each warp to shared memory
-    if lane_id() == UInt(WARP_SIZE - 1):
+    if lane_id() == WARP_SIZE - 1:
         var inclusive_warp_sum: Scalar[dtype] = thread_result
 
         comptime if exclusive:
@@ -688,7 +689,7 @@ def _prefix_sum[
         var previous_warps_prefix = warp.prefix_sum[exclusive=False](
             warp_mem[lid]
         )
-        if lid < UInt(n_warps):
+        if lid < n_warps:
             warp_mem[lid] = previous_warps_prefix
     barrier()
 
@@ -763,9 +764,9 @@ def prefix_sum[
     comptime block_size = block_dim_x * block_dim_y * block_dim_z
     var linear_tid = (
         thread_idx.x
-        + thread_idx.y * UInt(block_dim_x)
-        + thread_idx.z * UInt(block_dim_x * block_dim_y)
+        + thread_idx.y * block_dim_x
+        + thread_idx.z * block_dim_x * block_dim_y
     )
     return _prefix_sum[block_size=block_size, exclusive=exclusive](
-        val, wid=linear_tid // UInt(WARP_SIZE)
+        val, wid=ufloordiv(linear_tid, WARP_SIZE)
     )

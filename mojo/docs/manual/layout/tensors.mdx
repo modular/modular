@@ -519,7 +519,9 @@ The [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
 method creates a new view of the tensor where each element of the tensor is a
 vector of values.
 
-    var vectorized_tensor = tensor.vectorize[1, 4]()
+```mojo
+var vectorized_tensor = tensor.vectorize[1, 4]()
+```
 
 The vectorized tensor is a view of the original tensor, pointing to the same
 data. The underlying number of scalar values remains the same, but the tensor

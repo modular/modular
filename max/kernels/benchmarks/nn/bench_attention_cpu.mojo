@@ -15,7 +15,7 @@ from std.random import rand
 
 from std.benchmark import *
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.flash_attention import flash_attention
+from nn.attention.cpu.mha import flash_attention
 
 from std.utils import IndexList
 from std.utils.index import Index

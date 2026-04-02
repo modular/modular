@@ -13,6 +13,7 @@ dependencies = [
   "boto3",
   "botocore",
   "click>=8.1",
+  "cachetools",
   "clickhouse-connect",
   "codeowners",
   "cyclopts",
@@ -161,10 +162,10 @@ dependencies = [
 
 [dependency-groups]
 amd = [
-  "torch==2.9.0",
-  "torchaudio",
-  "torchvision==0.24.0",
-  "triton==3.5.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torch==2.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.25.0",
+  "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
@@ -176,15 +177,15 @@ amd = [
   "timm",
   "torchmetrics",
   "qwen-vl-utils",
-  "lmcache>=0.3.10; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
+  "lmcache>=0.4.2; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
 ]
 
 cpu = [
-  "torch==2.9.1",
+  "torch==2.10.0",
   "torchaudio",
-  "torchvision==0.24.1+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "torchvision==0.24.1; platform_machine != 'x86_64'",
-  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.25.0+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.25.0; platform_machine != 'x86_64'",
+  "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]>=0.4.11",
@@ -197,18 +198,18 @@ cpu = [
 ]
 
 nvidia = [
-  "torch==2.9.1",
+  "torch==2.10.0; sys_platform == 'linux'",
   "torchaudio",
-  "torchvision==0.24.1",
-  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.25.0",
+  "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "vllm==0.16.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "vllm==0.17.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
 
   "accelerate",
   "flashinfer-cubin",
-  "flashinfer-python",
+  "flashinfer-python>=0.6.4; sys_platform == 'linux'",
   "lm-eval[api,ifeval,math]>=0.4.11",
   "mteb",
   "optimum",
@@ -218,8 +219,8 @@ nvidia = [
   "qwen-vl-utils",
 
   "nvidia-cudnn-frontend>=1.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "nvidia-cutlass-dsl>=4.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "lmcache>=0.3.10; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
+  "nvidia-cutlass-dsl>=4.4.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "lmcache>=0.4.2; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
 ]
 
 [tool.uv]
@@ -246,31 +247,26 @@ override-dependencies = [
   # overwrites the ByteLevel decoder from tokenizer.json with Metaspace,
   # breaking decode for Llama/DeepSeek models (huggingface/transformers#44462).
   "transformers>=5.0.0,<5.3.0",
-  # Pin packages to avoid duplicates after vllm 0.16.0 update
-  "aiohttp==3.13.3",
-  "apache-tvm-ffi==0.1.9",
-  "flashinfer-python==0.6.3",
-  "nvidia-cutlass-dsl==4.4.1",
 ]
 
 [tool.uv.sources]
 torch = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torch-2.9.1.dev20251204%2Brocm7.0.2.lw.git351ff442-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torch-2.10.0%2Brocm7.1.1.lw.gitd9556b05-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchvision = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchvision-0.24.0%2Brocm7.0.2.gitb919bd0c-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchvision-0.25.0%2Brocm7.1.1.git82df5f59-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchaudio = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchaudio-2.9.0%2Brocm7.0.2.gite3c6ee2b-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchaudio-2.10.0%2Brocm7.1.1.git5047768f-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 triton = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/triton-3.5.1%2Brocm7.0.2.gita272dfa8-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/triton-3.6.0%2Brocm7.1.1.gitba5c1517-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
@@ -280,7 +276,7 @@ gptqmodel = [
 
 [[tool.uv.index]]
 name = "pytorch-amd"
-url = "https://download.pytorch.org/whl/rocm6.3"
+url = "https://download.pytorch.org/whl/rocm7.1"
 explicit = true
 
 [[tool.uv.index]]

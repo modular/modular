@@ -80,12 +80,12 @@ def conv_layer_mm_kernel(
         address_space=AddressSpace.SHARED,
     ]()
 
-    var bx = Int(block_idx.x)
-    var by = Int(block_idx.y)
-    var bz = Int(block_idx.z)  # Batch index
+    var bx = block_idx.x
+    var by = block_idx.y
+    var bz = block_idx.z  # Batch index
 
-    var tx = Int(thread_idx.x)
-    var ty = Int(thread_idx.y)
+    var tx = thread_idx.x
+    var ty = thread_idx.y
 
     # Identify row/column of Y element
     # Row corresponds to Output Channel m
@@ -221,9 +221,9 @@ def main() raises:
         W,
         K,
         N,
-        d_F.unsafe_ptr(),
-        d_X.unsafe_ptr(),
-        d_Y.unsafe_ptr(),
+        d_F,
+        d_X,
+        d_Y,
         grid_dim=(grid_x, grid_y, N),
         block_dim=(TILE_WIDTH, TILE_WIDTH, 1),
     )

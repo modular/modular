@@ -20,7 +20,7 @@ import logging
 import queue
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -124,71 +124,6 @@ _CLIENT_DISCONNECTED_STATUS_CODE = 499
 
 class _ClientDisconnectedError(RuntimeError):
     """Raised when a non-streaming request disconnects before completion."""
-
-
-async def _await_or_cancel_on_disconnect(
-    request: Request,
-    request_ids: Sequence[RequestID],
-    awaitable: Coroutine[Any, Any, _T],
-    cancel_request: Callable[[RequestID], None],
-) -> _T:
-    """Returns the operation result unless the client disconnects first.
-
-    These routes read the whole HTTP request body before generating a response,
-    so the next raw ASGI receive either blocks until disconnect or returns
-    `http.disconnect` immediately.
-    """
-
-    loop = asyncio.get_running_loop()
-    current_task = asyncio.current_task(loop=loop)
-    if current_task is None:
-        raise RuntimeError("disconnect guard requires a running task")
-
-    if getattr(request, "_is_disconnected", False):
-        awaitable.close()
-        for request_id in request_ids:
-            cancel_request(request_id)
-        raise _ClientDisconnectedError
-
-    client_disconnected = False
-
-    async def cancel_on_disconnect() -> None:
-        nonlocal client_disconnected
-        if (await request.receive())["type"] != "http.disconnect":
-            raise AssertionError(
-                "request.receive() returned after request body"
-            )
-
-        client_disconnected = True
-        for request_id in request_ids:
-            cancel_request(request_id)
-        current_task.cancel()
-
-    task_factory = cast(Callable[..., asyncio.Task[None]], asyncio.Task)
-    disconnect_task: asyncio.Task[None] = task_factory(
-        cancel_on_disconnect(),
-        loop=loop,
-        eager_start=True,
-    )
-
-    if disconnect_task.done():
-        disconnect_task.result()
-    try:
-        result = await awaitable
-        if client_disconnected:
-            raise _ClientDisconnectedError
-
-        if disconnect_task.done():
-            disconnect_task.result()
-        return result
-    except asyncio.CancelledError as err:
-        if client_disconnected:
-            awaitable.close()
-            raise _ClientDisconnectedError from err
-        raise
-    finally:
-        if not disconnect_task.done():
-            disconnect_task.cancel()
 
 
 def record_request_start() -> None:
@@ -979,12 +914,7 @@ async def openai_create_chat_completion(
                 response_generator.stream(token_request), ping=100000, sep="\n"
             )
 
-        response = await _await_or_cancel_on_disconnect(
-            request,
-            [token_request.request_id],
-            response_generator.complete([token_request]),
-            pipeline.model_worker.cancel,
-        )
+        response = await response_generator.complete([token_request])
         return response
     except _ClientDisconnectedError:
         logger.info("Client disconnected for request %s", request_id)
@@ -1111,15 +1041,7 @@ async def openai_create_embeddings(
             for idx, input_text in enumerate(embedding_inputs)
         ]
 
-        response = await _await_or_cancel_on_disconnect(
-            request,
-            [
-                embedding_request.request_id
-                for embedding_request in embedding_requests
-            ],
-            response_generator.encode(embedding_requests),
-            pipeline.model_worker.cancel,
-        )
+        response = await response_generator.encode(embedding_requests)
         return response
     except _ClientDisconnectedError:
         logger.info("Client disconnected for request %s", request_id)
@@ -1547,12 +1469,7 @@ async def openai_create_completion(
                 sep="\n",
             )
 
-        resp = await _await_or_cancel_on_disconnect(
-            request,
-            [token_request.request_id for token_request in token_requests],
-            response_generator.complete(token_requests),
-            pipeline.model_worker.cancel,
-        )
+        resp = await response_generator.complete(token_requests)
         # ICK: The token generator doesn't know about http requests, so sets
         # the wrong id.  Overwrite with the http id.
         resp.id = http_req_id
@@ -1651,12 +1568,7 @@ async def create_streaming_audio_speech(
         )
 
         response_generator = OpenAISpeechResponseGenerator(pipeline)
-        response = await _await_or_cancel_on_disconnect(
-            request,
-            [audio_request.request_id],
-            response_generator.synthesize_speech(audio_request),
-            pipeline.model_worker.cancel,
-        )
+        response = await response_generator.synthesize_speech(audio_request)
         return response
 
     except _ClientDisconnectedError:

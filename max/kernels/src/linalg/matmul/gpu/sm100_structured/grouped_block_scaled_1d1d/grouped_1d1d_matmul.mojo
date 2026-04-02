@@ -16,7 +16,7 @@ This module provides the public API for launching the grouped 1D-1D matmul
 kernel for Mixture of Experts (MoE) layers.
 
 Usage:
-    grouped_matmul_nvfp4[transpose_b=True, config=config](
+    grouped_matmul_block_scaled[transpose_b=True, config=config](
         c_tensor,  # Output: TileTensor (total_tokens, N)
         a_tensor,  # Input A: TileTensor (total_tokens, K)
         a_offsets,  # Per-expert offsets: TileTensor 1D
@@ -31,19 +31,17 @@ Usage:
     )
 """
 
-from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Coord, Idx, RuntimeInt, RuntimeLayout, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import WarpRole1D1D
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
@@ -51,15 +49,14 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
     NVFP4_SF_DTYPE,
-    NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
 
 
-def grouped_matmul_nvfp4[
+def grouped_matmul_block_scaled[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -107,9 +104,13 @@ def grouped_matmul_nvfp4[
         sfa_dtype == sfb_dtype
     ), "Only support same scales dtype for A and B"
     comptime assert sfa_dtype in (
-        MXFP8_SF_DTYPE,
         NVFP4_SF_DTYPE,
-    ), "Only support MXFP8_SF_DTYPE or NVFP4_SF_DTYPE for scales"
+        MXFP4_SF_DTYPE,
+        MXFP8_SF_DTYPE,
+    ), (
+        "Only support NVFP4_SF_DTYPE, MXFP4_SF_DTYPE, or MXFP8_SF_DTYPE for"
+        " scales"
+    )
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -284,7 +285,7 @@ def grouped_matmul_nvfp4[
 
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
-    # LayoutType (from _DimsToCoordLike) than the kernel's GMEMLayout1D.
+    # LayoutType (from _IntTupleToCoordLike) than the kernel's GMEMLayout1D.
     from std.memory import UnsafePointer as Ptr
     from structured_kernels.tile_types import GMEMLayout1D
 

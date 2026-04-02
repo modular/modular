@@ -16,7 +16,7 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import warp_id, block_idx, lane_id_int as lane_id, thread_idx
+from std.gpu import warp_id, block_idx, lane_id, thread_idx
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -26,8 +26,7 @@ from std.gpu.compute.arch.tcgen05 import *
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from layout._fillers import arange
+from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -38,7 +37,6 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
     create_tensor_tile,
-    create_tma_tile,
 )
 
 from std.utils.index import Index, IndexList
@@ -260,7 +258,7 @@ def kernel_3[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (i * BK + k, Int(block_idx.y) * BM),
+                    (i * BK + k, block_idx.y * BM),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
@@ -268,9 +266,9 @@ def kernel_3[
                     tma_mbar[0],
                     (
                         i * BK + k,
-                        Int(block_idx.x) * BN,
+                        block_idx.x * BN,
                     ) if transpose_b else (
-                        Int(block_idx.x) * BN,
+                        block_idx.x * BN,
                         i * BK + k,
                     ),
                 )
@@ -322,14 +320,14 @@ def kernel_3[
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
 
-    ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
-                4 * m_mma + Int(warp_id()), n_mma
+                4 * m_mma + warp_id(), n_mma
             )
 
             c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[

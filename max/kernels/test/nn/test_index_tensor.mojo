@@ -28,7 +28,7 @@ from std.runtime.asyncrt import DeviceContextPtr
 from std.sys import simd_width_of
 from std.testing import assert_equal
 
-from std.utils import IndexList, StaticTuple
+from std.utils import IndexList
 
 
 # TODO: It is like example 5 ONNX.

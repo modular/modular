@@ -22,9 +22,7 @@ from std.builtin.variadics import (
     _ReduceVariadicAndIdxToVariadic,
     _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
-    _MapVariadicAndIdxToType,
 )
-from buffer.dimlist import Dim, DimList
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 
@@ -43,7 +41,7 @@ trait CoordLike(
     """True if the value is known at compile time."""
 
     comptime is_tuple = False
-    """True if this is a tuple type (Coord), False for scalar values."""
+    """True if this is a tuple type (`Coord`), False for scalar values."""
 
     comptime is_value = not Self.is_tuple
     """True if this is a scalar value, False for tuple types."""
@@ -72,12 +70,12 @@ trait CoordLike(
         ...
 
     def tuple(var self) -> Coord[*Self.VariadicType]:
-        """Get this coordinate as a Coord tuple.
+        """Get this coordinate as a `Coord` tuple.
 
         Only valid for tuple types.
 
         Returns:
-            The coordinate as a Coord tuple.
+            The coordinate as a `Coord` tuple.
         """
         ...
 
@@ -178,7 +176,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
 
     @always_inline("nodebug")
     def tuple(var self) -> Coord[*Self.VariadicType]:
-        """Get as a tuple (not valid for ComptimeInt).
+        """Get as a tuple (not valid for `ComptimeInt`).
 
         Returns:
             Never returns; aborts at compile time.
@@ -274,7 +272,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
 
     @always_inline("nodebug")
     def tuple(var self) -> Coord[*Self.VariadicType]:
-        """Get as a tuple (not valid for RuntimeInt).
+        """Get as a tuple (not valid for `RuntimeInt`).
 
         Returns:
             Never returns; aborts at compile time.
@@ -291,7 +289,7 @@ def Idx(value: Int) -> RuntimeInt[DType.int]:
     Returns:
         A `RuntimeInt` instance with the specified value.
 
-    Usage: Idx(5) creates a RuntimeInt with value 5.
+    Usage: `Idx(5)` creates a `RuntimeInt` with value 5.
     """
     return RuntimeInt[DType.int](Scalar[DType.int](value))
 
@@ -305,7 +303,7 @@ def Idx[value: Int]() -> ComptimeInt[value]:
     Returns:
         A `ComptimeInt` instance with the specified compile-time value.
 
-    Usage: Idx[5]() creates a ComptimeInt with value 5.
+    Usage: `Idx[5]()` creates a `ComptimeInt` with value 5.
     """
     return ComptimeInt[value]()
 
@@ -329,7 +327,7 @@ def Idx(
     Returns:
         A `ComptimeInt` instance with the specified compile-time value.
 
-    Usage: Idx[5]() creates a ComptimeInt with value 5.
+    Usage: `Idx[5]()` creates a `ComptimeInt` with value 5.
     """
     return {}
 
@@ -375,7 +373,7 @@ struct _All(CoordLike, TrivialRegisterPassable):
     ].element_types
 
     comptime static_value: Int = -2
-    """Sentinel value distinguishing _All from RuntimeInt (-1) and ComptimeInt (>=0)."""
+    """Sentinel value distinguishing `_All` from `RuntimeInt` (-1) and `ComptimeInt` (>=0)."""
 
     comptime DTYPE = DType.invalid
 
@@ -425,7 +423,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     """
 
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Self.element_types
-    """The variadic element types of this Coord."""
+    """The variadic element types of this `Coord`."""
 
     comptime static_value: Int = -1
     """Always -1 for tuple types (value not applicable)."""
@@ -440,18 +438,18 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     """The product of all static dimensions, or -1 if any are dynamic."""
 
     comptime rank = Variadic.size(Self.element_types)
-    """The number of top-level elements in this Coord."""
+    """The number of top-level elements in this `Coord`."""
 
     comptime flat_rank = Variadic.size(_Flattened[*Self.element_types])
-    """The total number of leaf elements after flattening nested Coords."""
+    """The total number of leaf elements after flattening nested `Coord`s."""
 
     comptime is_flat = Self.rank == Self.flat_rank
-    """If the Coord contains nested items."""
+    """If the `Coord` contains nested items."""
 
     comptime contains_slices = Variadic.contains[
         Trait=CoordLike, type_of(All), Self.element_types
     ]
-    """If the Coord contains the All symbol."""
+    """If the `Coord` contains the `All` symbol."""
 
     var _storage: _RegTuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
@@ -473,14 +471,14 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         ],
         index_list: IndexList[rank, element_type=dtype],
     ):
-        """Construct a Coord from an IndexList.
+        """Construct a `Coord` from an `IndexList`.
 
         Parameters:
             rank: The number of elements in the index list.
             dtype: The data type of the index list elements.
 
         Args:
-            index_list: The IndexList to convert to a Coord.
+            index_list: The `IndexList` to convert to a `Coord`.
         """
         self = type_of(self)()
 
@@ -519,7 +517,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return result
 
     def write_repr_to(self, mut writer: Some[Writer]):
-        """Write the repr of this Coord to a writer.
+        """Write the repr of this `Coord` to a writer.
 
         Args:
             writer: The writer to write the representation to.
@@ -600,7 +598,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         """Calculate the product of all elements recursively.
 
         Returns:
-            The product of all leaf values in the Coord.
+            The product of all leaf values in the `Coord`.
         """
         var result = 1
 
@@ -614,7 +612,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         """Calculate the sum of all elements recursively.
 
         Returns:
-            The sum of all leaf values in the Coord.
+            The sum of all leaf values in the `Coord`.
         """
         var result = 0
 
@@ -625,7 +623,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     def value(self) -> Int:
-        """Get the value (not valid for Coord tuples).
+        """Get the value (not valid for `Coord` tuples).
 
         Returns:
             Never returns; aborts at compile time.
@@ -634,7 +632,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     def inner_product(self, t: IntTuple) -> Int:
-        """Calculate the inner product with an IntTuple.
+        """Calculate the inner product with an `IntTuple`.
 
         Args:
             t: The other value to compute inner product with.
@@ -720,13 +718,13 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     def __eq__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
-        """Check if this Coord equals another.
+        """Check if this `Coord` equals another.
 
         Parameters:
-            other_types: The element types of the other Coord.
+            other_types: The element types of the other `Coord`.
 
         Args:
-            other: The Coord to compare with.
+            other: The `Coord` to compare with.
 
         Returns:
             True if all elements are equal, False otherwise.
@@ -764,13 +762,13 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     def __ne__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
-        """Check if this Coord is not equal to another.
+        """Check if this `Coord` is not equal to another.
 
         Parameters:
-            other_types: The element types of the other Coord.
+            other_types: The element types of the other `Coord`.
 
         Args:
-            other: The Coord to compare with.
+            other: The `Coord` to compare with.
 
         Returns:
             True if any elements differ, False if all are equal.
@@ -779,19 +777,19 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     def tuple(var self) -> Coord[*Self.VariadicType]:
-        """Get this Coord as a tuple.
+        """Get this `Coord` as a tuple.
 
         Returns:
-            This Coord (identity operation for tuple types).
+            This `Coord` (identity operation for tuple types).
         """
         return rebind[Coord[*Self.VariadicType]](self)
 
     @always_inline("nodebug")
     def reverse(var self) -> Coord[*Variadic.reverse[*Self.element_types]]:
-        """Reverse the order of elements in this Coord.
+        """Reverse the order of elements in this `Coord`.
 
         Returns:
-            A new Coord with elements in reverse order.
+            A new `Coord` with elements in reverse order.
         """
         return Coord[*Variadic.reverse[*Self.element_types]](
             rebind[_RegTuple[*Variadic.reverse[*Self.element_types]]](
@@ -805,16 +803,16 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     ](var self, var other: Coord[*other_element_types]) -> Coord[
         *Variadic.concat_types[Self.element_types, other_element_types]
     ]:
-        """Concatenate this Coord with another.
+        """Concatenate this `Coord` with another.
 
         Parameters:
-            other_element_types: The element types of the other Coord.
+            other_element_types: The element types of the other `Coord`.
 
         Args:
-            other: The Coord to append.
+            other: The `Coord` to append.
 
         Returns:
-            A new Coord containing elements from both Coords.
+            A new `Coord` containing elements from both `Coord`s.
         """
         return Coord[
             *Variadic.concat_types[Self.element_types, other_element_types]
@@ -830,11 +828,11 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     def flatten(var self) -> Coord[*_Flattened[*Self.element_types]]:
-        """Convert a nested Coord to a flattened Coord.
+        """Convert a nested `Coord` to a flattened `Coord`.
 
 
         Returns:
-            A flattened Coord containing all leaf values in order.
+            A flattened `Coord` containing all leaf values in order.
 
         Examples:
             ```mojo
@@ -882,13 +880,13 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     def make_dynamic[
         dtype: DType
     ](self) -> Coord[*_CoordToDynamic[dtype, *Self.element_types]]:
-        """Convert all elements to RuntimeInt[dtype].
+        """Convert all elements to `RuntimeInt[dtype]`.
 
         Parameters:
-            dtype: The data type for the resulting RuntimeInt values.
+            dtype: The data type for the resulting `RuntimeInt` values.
 
         Returns:
-            A new Coord where all elements are converted to RuntimeInt[dtype].
+            A new `Coord` where all elements are converted to `RuntimeInt[dtype]`.
 
         Examples:
             ```mojo
@@ -915,7 +913,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return result
 
     def write_to(self, mut w: Some[Writer]):
-        """Write this Coord to a Writer.
+        """Write this `Coord` to a `Writer`.
 
         Args:
             w: The writer to output to.
@@ -1060,8 +1058,8 @@ def idx2crd[
     ``coord[i] = (idx // stride[i]) % shape[i]``.
 
     When a shape dimension is statically known to be 1, the corresponding
-    output coordinate is a ComptimeInt[0]. Otherwise, coordinates are
-    RuntimeInt[out_dtype].
+    output coordinate is a `ComptimeInt[0]`. Otherwise, coordinates are
+    `RuntimeInt[out_dtype]`.
 
     The idx, and all components of shape and stride must be non-negative.
 
@@ -1076,9 +1074,9 @@ def idx2crd[
         stride: The stride of the tensor.
 
     Returns:
-        A Coord containing the coordinate values for each dimension.
-        Dimensions with static shape 1 produce ComptimeInt[0], others
-        produce RuntimeInt[out_dtype].
+        A `Coord` containing the coordinate values for each dimension.
+        Dimensions with static shape 1 produce `ComptimeInt[0]`, others
+        produce `RuntimeInt[out_dtype]`.
 
     Examples:
         For a 2D tensor with shape (3, 4) and row-major strides (4, 1):
@@ -1181,9 +1179,9 @@ def idx2crd[
         stride: The stride of the tensor.
 
     Returns:
-        A Coord containing the coordinate values for each dimension.
+        A `Coord` containing the coordinate values for each dimension.
         When idx, shape, and stride are all compile-time known, produces
-        ComptimeInt results. Otherwise produces RuntimeInt[out_dtype].
+        `ComptimeInt` results. Otherwise produces `RuntimeInt[out_dtype]`.
     """
     comptime shape_len = Shape.__len__()
     comptime stride_len = Stride.__len__()
@@ -1264,20 +1262,20 @@ def idx2crd[
 def coord_to_int_tuple[
     *element_types: CoordLike
 ](value: Coord[*element_types]) -> IntTuple:
-    """Convert a Coord to an IntTuple, preserving the nested structure.
+    """Convert a `Coord` to an `IntTuple`, preserving the nested structure.
 
-    This function recursively traverses the Coord and converts each element:
-    - Value elements (ComptimeInt, RuntimeInt) become integer values in the IntTuple
-    - Tuple elements (nested Coord) become nested IntTuples
+    This function recursively traverses the `Coord` and converts each element:
+    - Value elements (`ComptimeInt`, `RuntimeInt`) become integer values in the `IntTuple`
+    - Tuple elements (nested `Coord`) become nested `IntTuple`s
 
     Parameters:
-        element_types: The variadic pack of element types in the Coord.
+        element_types: The variadic pack of element types in the `Coord`.
 
     Args:
-        value: The Coord to convert.
+        value: The `Coord` to convert.
 
     Returns:
-        An IntTuple with the same structure and values as the input Coord.
+        An `IntTuple` with the same structure and values as the input `Coord`.
     """
     var result = IntTuple()
 
@@ -1298,16 +1296,16 @@ def coord_to_int_tuple[
 def coord_to_index_list[
     *element_types: CoordLike
 ](value: Coord[*element_types]) -> IndexList[value.rank]:
-    """Convert a flat Coord to an IndexList.
+    """Convert a flat `Coord` to an `IndexList`.
 
     Parameters:
-        element_types: The variadic pack of element types in the Coord.
+        element_types: The variadic pack of element types in the `Coord`.
 
     Args:
-        value: The Coord to convert.
+        value: The `Coord` to convert.
 
     Returns:
-        An IndexList with the same rank and values as the input Coord.
+        An `IndexList` with the same rank and values as the input `Coord`.
     """
     var result = IndexList[value.rank]()
 
@@ -1318,17 +1316,17 @@ def coord_to_index_list[
 
 
 def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
-    """Convert a Coord to an IntTuple, preserving the nested structure.
+    """Convert a `Coord` to an `IntTuple`, preserving the nested structure.
 
-    This function recursively traverses the Coord and converts each element:
-    - Value elements (ComptimeInt, RuntimeInt) become integer values in the IntTuple
-    - Tuple elements (nested Coord) become nested IntTuples
+    This function recursively traverses the `Coord` and converts each element:
+    - Value elements (`ComptimeInt`, `RuntimeInt`) become integer values in the `IntTuple`
+    - Tuple elements (nested `Coord`) become nested `IntTuple`s
 
     Parameters:
-        element_types: The variadic pack of element types in the Coord.
+        element_types: The variadic pack of element types in the `Coord`.
 
     Returns:
-        An IntTuple with the same structure and values as the input Coord.
+        An `IntTuple` with the same structure and values as the input `Coord`.
     """
     var result = IntTuple()
 
@@ -1357,7 +1355,7 @@ def coord[
         ]
     ],
 ) where _AllEqual[Int, *element_types]:
-    """Create a Coord from a tuple of integers with specified dtype.
+    """Create a `Coord` from a tuple of integers with specified dtype.
 
     Parameters:
         dtype: The data type for the runtime integer values.
@@ -1367,7 +1365,7 @@ def coord[
         values: The runtime integer values.
 
     Returns:
-        A Coord instance containing RuntimeInt elements for each value.
+        A `Coord` instance containing `RuntimeInt` elements for each value.
     """
     result = {}
 
@@ -1380,13 +1378,13 @@ def coord[
 
 
 def coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
-    """Create a Coord from compile-time integer values.
+    """Create a `Coord` from compile-time integer values.
 
     Parameters:
         values: The compile-time integer values.
 
     Returns:
-        A Coord instance containing ComptimeInt elements for each value.
+        A `Coord` instance containing `ComptimeInt` elements for each value.
     """
     # values is a ZST since all elements are comptime
     var tuple = Coord[*_IntToComptimeInt[*values]]()
@@ -1537,24 +1535,24 @@ def _get_flattened_helper[
 def _get_flattened[
     flat_idx: Int, *element_types: CoordLike
 ](tuple: Coord[*element_types]) -> Int:
-    """Access an element from a nested Coord using a flat index.
+    """Access an element from a nested `Coord` using a flat index.
 
     Parameters:
         flat_idx: The index into the flattened representation.
         element_types: The variadic element types of the tuple.
 
     Args:
-        tuple: The nested Coord to access.
+        tuple: The nested `Coord` to access.
 
     Returns:
         The value at the given flat index.
 
     Examples:
-        For tuple = Coord(Idx[5](), Coord(Idx[3](), Idx[2]()), Idx(7)):
-        - get_flattened[0](tuple) returns 5  (first element)
-        - get_flattened[1](tuple) returns 3  (first element of nested tuple)
-        - get_flattened[2](tuple) returns 2  (second element of nested tuple)
-        - get_flattened[3](tuple) returns 7  (third top-level element)
+        For `tuple = Coord(Idx[5](), Coord(Idx[3](), Idx[2]()), Idx(7))`:
+        - `get_flattened[0](tuple)` returns 5  (first element)
+        - `get_flattened[1](tuple)` returns 3  (first element of nested tuple)
+        - `get_flattened[2](tuple)` returns 2  (second element of nested tuple)
+        - `get_flattened[3](tuple)` returns 7  (third top-level element)
     """
     return _get_flattened_helper[flat_idx, 0, 0](tuple)
 
@@ -1624,64 +1622,6 @@ comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
     Reducer=_IntToComptimeIntMapper,
 ]
 
-# ===-----------------------------------------------------------------------===#
-# Dim to CoordLike conversion
-# ===-----------------------------------------------------------------------===#
-
-
-comptime _DimToCoordLikeMapper[
-    dtype: DType,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.ValuesOfType[Dim],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike, ComptimeInt[From[idx]._value_or_missing]
-    ] if From[idx]._value_or_missing
-    != Dim._sentinel else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
-]
-"""Maps a single Dim value to a CoordLike type.
-
-If the Dim has a static value, produces ComptimeInt[value].
-If the Dim is dynamic, produces RuntimeInt.
-
-Uses direct field access rather than methods for compile-time evaluation.
-"""
-
-
-comptime _DimsToCoordLike[
-    dtype: DType, dims: DimList
-] = _ReduceValueAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=dims.values,
-    Reducer=_DimToCoordLikeMapper[dtype, ...],
-]
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
-
-Note:
-    This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
-
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
-
-Example:
-    ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _DimsToCoordLike, Coord
-
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
-    comptime coord_types = _DimsToCoordLike[DType.int32, dims]
-    # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
-
-    # Can be used to create a Coord type
-    comptime my_coords = Coord[*coord_types]
-    ```
-"""
-
 comptime _IntTupleToCoordLikeMapper[
     dtype: DType,
     tuple: IntTuple,
@@ -1693,12 +1633,10 @@ comptime _IntTupleToCoordLikeMapper[
     Variadic.types[T=CoordLike, ComptimeInt[Int(tuple[idx])]] if Int(tuple[idx])
     != layout.UNKNOWN_VALUE else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
 ]
-"""Maps a single Dim value to a CoordLike type.
+"""Maps a single IntTuple element to a CoordLike type.
 
-If the Dim has a static value, produces ComptimeInt[value].
-If the Dim is dynamic, produces RuntimeInt.
-
-Uses direct field access rather than methods for compile-time evaluation.
+If the value is known, produces ComptimeInt[value].
+If UNKNOWN_VALUE, produces RuntimeInt.
 """
 
 comptime _IntTupleToCoordLike[
@@ -1711,76 +1649,31 @@ comptime _IntTupleToCoordLike[
     ],
     Reducer=_IntTupleToCoordLikeMapper[dtype, tuple, ...],
 ]
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
+"""Converts an IntTuple to a variadic of CoordLike types.
 
 Note:
     This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
+    used in the parameter domain.
 
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
+For each element in the IntTuple:
+- If the value is known (not UNKNOWN_VALUE), produces `ComptimeInt[value]`
+- If the value is UNKNOWN_VALUE, produces `RuntimeInt`
 
 Example:
     ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _DimsToCoordLike, Coord
+    from layout import IntTuple
+    from layout.coord import _IntTupleToCoordLike, Coord
 
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
-    comptime coord_types = _DimsToCoordLike[DType.int32, dims]
-    # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
+    # Known values become ComptimeInt, UNKNOWN_VALUE becomes RuntimeInt
+    comptime shape = IntTuple(3, -1, 5)
+    comptime coord_types = _IntTupleToCoordLike[DType.int32, shape]
+    # coord_types is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
 
     # Can be used to create a Coord type
     comptime my_coords = Coord[*coord_types]
     ```
 """
 
-
-comptime _CoordToDimMapper[
-    Prev: Variadic.ValuesOfType[Dim],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_values[
-    Prev,
-    Variadic.values[
-        Dim(From[idx].static_value) if From[idx].is_static_value else Dim(),
-    ],
-]
-"""Maps a Coord to a DimList.
-
-Uses direct field access rather than methods for compile-time evaluation.
-"""
-
-
-comptime _CoordToDimList[*dims: CoordLike] = DimList[
-    *_ReduceVariadicAndIdxToValue[
-        BaseVal=Variadic.empty_of_type[Dim],
-        VariadicType=dims,
-        Reducer=_CoordToDimMapper,
-    ]
-]()
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
-
-Note:
-    This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
-
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
-
-Example:
-    ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _CoordToDimList, Coord, Idx
-
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    var coords = Coord(Idx(3), Idx[5]())
-    comptime dimlist = _CoordToDimList[*coords.element_types]
-    # dims is equivalent to DimList[Dim(), 5]()
-    ```
-"""
 
 # ===-----------------------------------------------------------------------===#
 # CoordLike to Dynamic conversion

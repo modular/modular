@@ -34,6 +34,7 @@ from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import Index, IndexList, StaticTuple
+from std.sys.info import has_apple_gpu_accelerator
 
 # Import CPU implementations.
 from .backend.cpu.reduction import _reduce_generator_cpu
@@ -80,8 +81,10 @@ def _get_nd_indices_from_flat_index(
         else:
             return {0, flat_index}
 
+    comptime IntType = type_of(shape)._int_type
+
     res = {}
-    var curr_index = flat_index
+    var curr_index = IntType(flat_index)
 
     comptime for i in reversed(range(shape.size)):
         # There is one dimension we skip, this represents the inner loop that
@@ -89,8 +92,9 @@ def _get_nd_indices_from_flat_index(
         if i == skip_dim:
             res[i] = 0
         else:
-            res[i] = curr_index._positive_rem(shape[i])
-            curr_index = curr_index / shape[i]
+            curr_index, res.data[i] = divmod(
+                curr_index, IntType(shape.get[i]())
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -663,7 +667,10 @@ def mean[
         # For floats apply the reciprocal as a multiply.
         comptime if dtype.is_floating_point():
             # Apply mean division before storing to the output lambda.
-            var reciprocal = 1.0 / Float64(input_shape[reduce_dim])
+            comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+            var reciprocal = Scalar[float_type](1.0) / Scalar[float_type](
+                input_shape[reduce_dim]
+            )
 
             @always_inline
             @__copy_capture(reciprocal)

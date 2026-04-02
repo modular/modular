@@ -18,7 +18,14 @@ These are Mojo built-ins, so you don't need to import them.
 from std.collections.string.string_slice import get_static_string
 from std.format._utils import _WriteBufferHeap, _WriteBufferStack
 from std.sys import _libc as libc
-from std.ffi import c_char, external_call
+from std.ffi import (
+    c_char,
+    c_size_t,
+    c_ssize_t,
+    external_call,
+    _CPointer,
+)
+from std.memory._nonnull import NonNullUnsafePointer, bitcast
 from std.sys import (
     is_amd_gpu,
     is_gpu,
@@ -45,7 +52,7 @@ from .file_descriptor import FileDescriptor
 
 
 @fieldwise_init
-struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
+struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
     var handle: FILE_ptr
 
     def __init__(out self, stream_id: FileDescriptor):
@@ -57,8 +64,7 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
 
         self.handle = fdopen(
             dup(Int32(stream_id.value)),
-            # Guarantee this is nul terminated.
-            get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
+            Self.mode.as_c_string_slice().unsafe_ptr(),
         )
 
     def __enter__(self) -> Self:
@@ -126,11 +132,11 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
-        var n = UInt64(0)
+        var buffer = _CPointer[UInt8, MutExternalOrigin]()
+        var n = c_size_t(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
-        var bytes_read = external_call["getdelim", Int](
+        var bytes_read = external_call["getdelim", c_ssize_t](
             UnsafePointer(to=buffer),
             UnsafePointer(to=n),
             ord(delimiter),
@@ -141,17 +147,18 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            if buffer:
-                libc.free(buffer.bitcast[NoneType]())
+            libc.free(bitcast[NoneType](buffer))
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[buffer.origin](ptr=buffer, length=bytes_read - 1)
+            StringSlice[MutExternalOrigin](
+                ptr=buffer.unsafe_value(), length=bytes_read - 1
+            )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
-        libc.free(buffer.bitcast[NoneType]())
-        return s
+        libc.free(bitcast[NoneType](buffer))
+        return s^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -172,7 +179,7 @@ def _flush(file: FileDescriptor = stdout):
 
 def _printf_cpu[
     fmt: StaticString, *types: AnyType
-](args: VariadicPack[_, AnyType, *types], file: FileDescriptor = stdout):
+](*args: *types, file: FileDescriptor = stdout):
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
@@ -201,7 +208,7 @@ def _printf[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
     if __is_run_in_comptime_interpreter:
-        _printf_cpu[fmt](args, file)
+        _printf_cpu[fmt](*args, file=file)
     else:
         comptime if is_nvidia_gpu():
             # The argument pack will contain references for each value in the pack,
@@ -281,7 +288,7 @@ def _printf[
                 )
 
         elif not is_gpu():
-            _printf_cpu[fmt](args, file)
+            _printf_cpu[fmt](*args, file=file)
         else:
             # If we aren't targeting either a known GPU vendor, or CPU, issue
             # a target error.

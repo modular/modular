@@ -50,7 +50,7 @@ def radix_sort_iter(
         iter: Current bit position.
         block_dim_x: Block dimension.
     """
-    var i = Int(block_idx.x) * block_dim_x + Int(thread_idx.x)
+    var i = block_idx.x * block_dim_x + thread_idx.x
 
     if i < N:
         var key = input[i]
@@ -78,7 +78,7 @@ def radix_scatter(
         iter: Current bit position.
         block_dim_x: Block dimension.
     """
-    var i = Int(block_idx.x) * block_dim_x + Int(thread_idx.x)
+    var i = block_idx.x * block_dim_x + thread_idx.x
 
     if i < N:
         var key = input[i]

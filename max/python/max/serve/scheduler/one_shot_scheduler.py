@@ -133,7 +133,7 @@ class OneShotScheduler(
                     for request_id, response in responses.items()
                 }
             )
-        except Exception as exc:
+        except Exception:
             logger.exception(
                 f"OneShotScheduler: Exception during pipeline execution for request {context.request_id}"
             )

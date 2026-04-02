@@ -124,7 +124,8 @@ Follow these steps to create and run your own benchmarks.
 Your Mojo benchmarking file contains the actual Mojo code with parameterized
 kernel logic and defines how to benchmark.
 
-See [`sample.mojo`](sample.mojo) for a complete example template.
+See [`sample.mojo`](../kernels/benchmarks/autotune/sample.mojo) for a complete
+example template.
 
 Within the Mojo file, you'll need to import the Mojo
 [`benchmark`](https://docs.modular.com/mojo/std/benchmark/) package.
@@ -161,7 +162,8 @@ Take care that your parameters are captured properly.
 Your configuration YAML file defines what values to pass to your benchmark and
 which parameter combinations to test.
 
-See [`test.yaml`](test.yaml) for an example template.
+See [`test.yaml`](../kernels/benchmarks/autotune/test.yaml) for an example
+template.
 
 The following is an example of the parameter grid:
 
@@ -226,11 +228,20 @@ This deletes the `kbench_cache.pkl` file.
 
 ### 5. Override parameters from the command line
 
-To override or add parameters without modifying your YAML file, use `--param`:
+To override or add parameters without modifying your YAML file, use `--param`.
+When a `--param` name matches an existing YAML parameter (with or without the
+`$` prefix), the YAML values are **replaced** by the CLI values. This lets you
+restrict a sweep to a specific subset without editing the YAML file. When the
+name does not match any existing parameter, a new parameter is appended.
 
 ```bash
+# Override dtype across all specs
 ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
   max/kernels/benchmarks/autotune/test.yaml --param dtype:DType.bfloat16
+
+# Override a $-prefixed YAML param — the $ prefix is optional on the CLI
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  config.yaml --param batch_size:"[1]" --param cache_len:"[32768]"
 ```
 
 ### 6. Filter specific parameter values
@@ -259,7 +270,7 @@ To build and run separately, use the cache to store compiled binaries:
 
 ## Design
 
-![`kbench` toolkit](data/kbench_toolkit.png)
+![`kbench` toolkit](../kernels/benchmarks/autotune/data/kbench_toolkit.png)
 
 ### `kbench` YAML format
 
@@ -273,7 +284,8 @@ params:
         param_name: value | [value1, value2]
 ```
 
-See [`test.yaml`](test.yaml) and [`test_python.yaml`](test_python.yaml) for
+See [`test.yaml`](../kernels/benchmarks/autotune/test.yaml) and
+[`test_python.yaml`](../kernels/benchmarks/autotune/test_python.yaml) for
 examples.
 
 ### Expanding specs into instances
@@ -360,11 +372,11 @@ To run all configurations and save the results, use the following command:
 
 This creates an intermediate `output-file-name.pkl` file.
 
-See [README_kprofile.md](README_kprofile.md) for details on analyzing the `.pkl`
-files.
+See [README_kprofile.md](../kernels/benchmarks/autotune/README_kprofile.md) for
+details on analyzing the `.pkl` files.
 
-See [README_kplot.md](README_kplot.md) to plot `kbench` results for
-visualization.
+See [README_kplot.md](../kernels/benchmarks/autotune/README_kplot.md) to plot
+`kbench` results for visualization.
 
 > [!NOTE]
 > **Be mindful when moving machines**
@@ -409,11 +421,13 @@ params:
 To run Python benchmarks with `kbench`:
 
 1. Create a YAML config file with a `.py` file in the `file` path. See
-    [`test_python.yaml`](test_python.yaml) for an example template.
+   [`test_python.yaml`](../kernels/benchmarks/autotune/test_python.yaml) for an
+   example template.
 
-1. Create a Python script. See [`sample.py`](sample.py) for an example. In your
-    Python script, import the required functions from
-    [`bencher_utils`](bencher_utils.py):
+1. Create a Python script. See
+   [`sample.py`](../kernels/benchmarks/autotune/sample.py) for an example. In
+   your Python script, import the required functions from
+   [`bencher_utils`](../kernels/benchmarks/autotune/bencher_utils.py):
 
     ```python
        from bencher_utils import Bench, ThroughputMeasure, arg_parse

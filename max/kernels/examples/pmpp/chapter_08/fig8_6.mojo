@@ -50,9 +50,9 @@ def stencil_kernel(
         c6: Coefficient for i+1 neighbor.
     """
     comptime BLOCK_DIM = 8
-    var i = Int(block_idx.z) * BLOCK_DIM + Int(thread_idx.z)
-    var j = Int(block_idx.y) * BLOCK_DIM + Int(thread_idx.y)
-    var k = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
+    var i = block_idx.z * BLOCK_DIM + thread_idx.z
+    var j = block_idx.y * BLOCK_DIM + thread_idx.y
+    var k = block_idx.x * BLOCK_DIM + thread_idx.x
 
     if i >= N or j >= N or k >= N:
         return

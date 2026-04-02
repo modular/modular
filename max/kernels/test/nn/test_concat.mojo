@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import Coord, CoordLike, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from nn.concat import _concat_parallel, _concat_serial, concat
 
-from std.utils import Index, IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 def _tuple_to_list[

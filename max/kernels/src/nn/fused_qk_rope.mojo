@@ -22,7 +22,6 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
 from layout import (
-    ComptimeInt,
     Coord,
     CoordLike,
     Idx,
@@ -30,10 +29,7 @@ from layout import (
     RuntimeInt,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
-    row_major,
 )
-from layout.tile_layout import Layout
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from std.utils import IndexList
@@ -104,10 +100,6 @@ def rope_q_proj[
 
     var coord_re = Coord(pos_re)
     var coord_im = Coord(pos_im)
-    comptime assert q_proj.flat_rank >= coord_re.flat_rank
-    comptime assert q_proj.flat_rank >= coord_im.flat_rank
-    comptime assert output.flat_rank >= coord_re.flat_rank
-    comptime assert output.flat_rank >= coord_im.flat_rank
 
     var val: SIMD[dtype, width]
 

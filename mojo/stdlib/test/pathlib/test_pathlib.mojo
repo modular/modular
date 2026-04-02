@@ -47,7 +47,7 @@ def test_path() raises:
 
 def test_path_exists() raises:
     assert_true(
-        Path(source_location().file_name).exists(), msg="does not exist"
+        Path(source_location().file_name()).exists(), msg="does not exist"
     )
 
     assert_false(
@@ -61,7 +61,7 @@ def test_path_isdir() raises:
 
 
 def test_path_isfile() raises:
-    assert_true(Path(source_location().file_name).is_file())
+    assert_true(Path(source_location().file_name()).is_file())
     assert_false(Path("this/file/does/not/exist").is_file())
 
 
@@ -144,7 +144,7 @@ def test_home() raises:
 
 
 def test_stat() raises:
-    var path = Path(source_location().file_name)
+    var path = Path(source_location().file_name())
     var stat = path.stat()
     assert_equal(
         String(stat),
@@ -216,6 +216,39 @@ def test_parts() raises:
 
     var root_path = Path("/")
     assert_equal(root_path.parts(), root_path.path.split("/"))
+
+
+def test_path_comparable() raises:
+    assert_true(Path("a") < Path("b"))
+    assert_true(Path("b") > Path("a"))
+    assert_true(Path("a") <= Path("a"))
+    assert_true(Path("a") >= Path("a"))
+    assert_false(Path("a") < Path("a"))
+    assert_false(Path("b") < Path("a"))
+    assert_false(Path("a") > Path("a"))
+    assert_false(Path("a") > Path("b"))
+
+    # Sorting
+    var paths = List[Path]([Path("c"), Path("a"), Path("b")])
+    sort(paths)
+    assert_equal(paths[0], Path("a"))
+    assert_equal(paths[1], Path("b"))
+    assert_equal(paths[2], Path("c"))
+
+    # Path separators: ordering works with directory components
+    assert_true(Path("a/b") < Path("a/c"))
+    assert_true(Path("a/c") > Path("a/b"))
+
+    # Empty paths: boundary case
+    assert_true(Path("") < Path("a"))
+    assert_false(Path("a") < Path(""))
+
+    # Case sensitivity: case-sensitive since it's byte-order
+    assert_true(Path("A") < Path("a"))
+    assert_false(Path("a") < Path("A"))
+
+    # Unicode: "café" > "cafe" because 'é' > 'e' in lexicographic byte order
+    assert_true(Path("café") > Path("cafe"))
 
 
 def test_write_to() raises:

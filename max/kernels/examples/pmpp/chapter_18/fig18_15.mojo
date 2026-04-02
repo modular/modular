@@ -62,7 +62,7 @@ def bfs_kernel(
 
     barrier()
 
-    var i = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var i = block_idx.x * block_dim.x + thread_idx.x
 
     if i < num_prev_frontier:
         var vertex = Int(prev_frontier[i])
@@ -111,10 +111,10 @@ def bfs_kernel(
     var curr_frontier_start_idx = Int(start_idx_ptr[0])
     var local_frontier_size = Int(num_curr_frontier_s[0])
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     while tid < local_frontier_size:
         curr_frontier[curr_frontier_start_idx + tid] = curr_frontier_s[tid]
-        tid += Int(block_dim.x)
+        tid += block_dim.x
 
 
 def main() raises:
@@ -179,13 +179,13 @@ def main() raises:
             grid_size = 1
 
         ctx.enqueue_function_experimental[bfs_kernel](
-            d_src_ptrs.unsafe_ptr(),
-            d_dst.unsafe_ptr(),
-            d_level.unsafe_ptr(),
-            d_prev_frontier.unsafe_ptr(),
-            d_curr_frontier.unsafe_ptr(),
+            d_src_ptrs,
+            d_dst,
+            d_level,
+            d_prev_frontier,
+            d_curr_frontier,
             num_prev_frontier,
-            d_num_curr_frontier.unsafe_ptr(),
+            d_num_curr_frontier,
             curr_level,
             grid_dim=(grid_size, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
-from std.random import random_si64, shuffle, seed
+from std.random import shuffle, seed
 from std.sys import align_of, size_of, argv
 
 import linalg.matmul.vendor.blas as vendor_blas

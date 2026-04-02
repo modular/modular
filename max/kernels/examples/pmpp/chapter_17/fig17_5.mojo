@@ -24,10 +24,10 @@ def spmv_coo_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var i = block_idx.x * block_dim.x + thread_idx.x
-    if Int(i) < cooMatrix.numNonzeros:
-        var row = Int(cooMatrix.rowIdx[Int(i)])
-        var col = Int(cooMatrix.colIdx[Int(i)])
-        var val = cooMatrix.value[Int(i)]
+    if i < cooMatrix.numNonzeros:
+        var row = Int(cooMatrix.rowIdx[i])
+        var col = Int(cooMatrix.colIdx[i])
+        var val = cooMatrix.value[i]
 
         # Atomic add to y[row]
         _ = Atomic.fetch_add(y + row, x[col] * val)
@@ -111,8 +111,8 @@ def main() raises:
 
     ctx.enqueue_function_experimental[spmv_coo_kernel](
         d_cooMatrix,
-        d_x_buf.unsafe_ptr(),
-        d_y_buf.unsafe_ptr(),
+        d_x_buf,
+        d_y_buf,
         grid_dim=numBlocks,
         block_dim=blockSize,
     )

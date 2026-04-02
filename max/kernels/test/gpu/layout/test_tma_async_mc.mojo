@@ -30,7 +30,7 @@ from layout.tma_async import (
 )
 from std.memory import stack_allocation
 from std.testing import assert_equal
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 
 # Test loading a single 2d tile.
@@ -98,8 +98,8 @@ def test_tma_mcast_load_kernel[
                 tile,
                 mbar[0],
                 (
-                    Int(block_idx.x) * tileN,
-                    Int(block_idx.y) * tileM,
+                    block_idx.x * tileN,
+                    block_idx.y * tileM,
                 ),
                 multicast_mask.cast[DType.uint16](),
             )
@@ -112,7 +112,7 @@ def test_tma_mcast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -257,7 +257,7 @@ def test_tma_sliced_multicast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 

@@ -15,7 +15,7 @@ from std.ffi import external_call
 
 from std.gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from std.gpu.host.device_context import (
-    _ConstCharPtr,
+    _CString,
     _checked,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
@@ -48,12 +48,7 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
     var result = hipDevice_t()
     # const char *AsyncRT_DeviceContext_hip_device(hipDevice_t *result, const DeviceContext *ctx)
     _checked(
-        external_call[
-            "AsyncRT_DeviceContext_hip_device",
-            _ConstCharPtr,
-            UnsafePointer[hipDevice_t, origin_of(result)],
-            _DeviceContextPtr,
-        ](
+        external_call["AsyncRT_DeviceContext_hip_device", _CString[]](
             UnsafePointer(to=result),
             ctx._handle,
         )
@@ -70,9 +65,7 @@ def HIP(stream: DeviceStream) raises -> hipStream_t:
     _checked(
         external_call[
             "AsyncRT_DeviceStream_hip_stream",
-            _ConstCharPtr,
-            UnsafePointer[hipStream_t, origin_of(result)],
-            _DeviceStreamPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             stream._handle,
@@ -89,9 +82,7 @@ def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
     _checked(
         external_call[
             "AsyncRT_DeviceFunction_hip_module",
-            _ConstCharPtr,
-            UnsafePointer[hipModule_t, origin_of(result)],
-            _DeviceFunctionPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             func._handle,

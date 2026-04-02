@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.os.atomic import Atomic, Consistency
 
-from std.gpu import *
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 from std.sys import is_apple_gpu, has_apple_gpu_accelerator
@@ -39,13 +39,12 @@ def reduce_add(
     vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
-    comptime ord = Consistency.RELEASE if is_apple_gpu() else Consistency.SEQUENTIAL
     var tid = global_idx.x
 
-    if tid >= UInt(len):
+    if tid >= len:
         return
 
-    _ = Atomic.fetch_add[ordering=ord](res_add, vec[tid])
+    _ = Atomic.fetch_add(res_add, vec[tid])
 
 
 def reduce_min_max(
@@ -54,14 +53,13 @@ def reduce_min_max(
     vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
-    comptime ord = Consistency.RELEASE if is_apple_gpu() else Consistency.SEQUENTIAL
     var tid = global_idx.x
 
-    if tid >= UInt(len):
+    if tid >= len:
         return
 
-    Atomic.min[ordering=ord](res_min, vec[tid])
-    Atomic.max[ordering=ord](res_max, vec[tid])
+    Atomic.min(res_min, vec[tid])
+    Atomic.max(res_max, vec[tid])
 
 
 def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
@@ -89,7 +87,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
             vec_host[i] = 1
 
     var vec_device = ctx.enqueue_create_buffer[F32](n)
-    vec_device.enqueue_copy_from(vec_host.unsafe_ptr())
+    vec_device.enqueue_copy_from(vec_host)
 
     var res_add_device = ctx.enqueue_create_buffer[F32](1)
     res_add_device.enqueue_fill(0)

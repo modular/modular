@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.gpu.primitives.warp as warp
-from std.gpu import barrier, global_idx, lane_id
+from std.gpu import global_idx, lane_id
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
@@ -23,7 +23,7 @@ def kernel(
     size: Int,
 ):
     var global_tid = global_idx.x
-    if global_tid >= UInt(size):
+    if global_tid >= size:
         return
     output[global_tid] = Float32(lane_id())
 

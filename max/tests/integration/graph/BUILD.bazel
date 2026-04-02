@@ -18,6 +18,7 @@ _AMD_ONLY_TESTS = [
 
 # CPU-only tests that don't require GPU
 _CPU_ONLY_TESTS = [
+    "test_bf16_cpu_error.py",
     "test_is_inf.py",
     "test_is_nan.py",
     "test_matmul_packed.py",
@@ -58,7 +59,10 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + ["modular_graph_test.py"],
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+            "modular_graph_test.py",
+            "test_nan_check.py",
+        ],
     ),
     data = [
         "//max/tests/integration/Inputs:inputs",
@@ -169,11 +173,6 @@ modular_py_test(
     tags = [
         "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
     ],
-    target_compatible_with = select({
-        # TODO(GEX-3155): Investigate and enable on macOS
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":modular_graph_test",
         "//max/python/max/driver",
@@ -192,6 +191,7 @@ modular_py_test(
     size = "medium",
     srcs = [
         "conftest.py",
+        "test_bf16_cpu_error.py",
         "test_is_inf.py",
         "test_is_nan.py",
     ],
@@ -260,7 +260,8 @@ modular_py_test(
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
     ignore_extra_deps = [
-        # FIXME: GEX-1846
+        # max.graph.weights -> buffer_utils imports max.engine; test sources do
+        # not reference engine directly, so pydeps treats this dep as extra.
         "//max/python/max/engine",
     ],
     deps = [
@@ -331,6 +332,24 @@ modular_py_test(
     env = {
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_nan_check",
+    size = "large",
+    srcs = ["test_nan_check.py"],
+    data = glob(["nan_check_scripts/*.py"]),
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

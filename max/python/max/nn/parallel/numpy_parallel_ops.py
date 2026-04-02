@@ -36,9 +36,10 @@ class ParallelArrayOps:
     Thread pool cleanup is handled automatically via __del__ and weakref.finalize,
     providing defense-in-depth for resource cleanup.
 
-    Example:
-        >>> ops = ParallelArrayOps(max_workers=20)
-        >>> result = ops.concatenate([arr1, arr2, arr3], axis=0)
+    .. code-block:: python
+
+        ops = ParallelArrayOps(max_workers=20)
+        result = ops.concatenate([arr1, arr2, arr3], axis=0)
     """
 
     def __init__(

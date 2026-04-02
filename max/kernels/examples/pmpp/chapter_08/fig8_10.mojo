@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
 from std.random import random_float64
 from std.itertools import product
 
@@ -64,13 +63,13 @@ def stencil_kernel(
     ]()
 
     # Get thread and block indices (only x and y, no z)
-    var tx = Int(thread_idx.x)
-    var ty = Int(thread_idx.y)
+    var tx = thread_idx.x
+    var ty = thread_idx.y
 
     # Calculate global row and column indices
-    var in_col = Int(block_idx.x) * OUT_TILE_DIM + tx - 1
-    var in_row = Int(block_idx.y) * OUT_TILE_DIM + ty - 1
-    var i_start = Int(block_idx.z) * OUT_TILE_DIM
+    var in_col = block_idx.x * OUT_TILE_DIM + tx - 1
+    var in_row = block_idx.y * OUT_TILE_DIM + ty - 1
+    var i_start = block_idx.z * OUT_TILE_DIM
     var i_prev = i_start - 1
 
     # Shared memory index for this thread

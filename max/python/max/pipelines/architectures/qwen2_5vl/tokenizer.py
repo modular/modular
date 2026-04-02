@@ -22,6 +22,7 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    EOSTracker,
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
@@ -338,8 +339,12 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             # when launching the model worker, and the executor is not pickle-safe
             self.executor = ThreadPoolExecutor(max_workers=2)
 
+        eos_tracker = await self.create_eos_tracker(request)
         return await asyncio.get_running_loop().run_in_executor(
-            self.executor, self.new_context_blocking, request
+            self.executor,
+            self.new_context_blocking,
+            request,
+            eos_tracker,
         )
 
     def _retrieve_prompt(self, request: TextGenerationRequest) -> str:
@@ -504,6 +509,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         image_grid_thw: npt.NDArray[np.int32] | None,
         images: list[ImageMetadata],
         vision_data: VisionEncodingData | None,
+        eos_tracker: EOSTracker,
     ) -> Qwen2_5VLTextAndVisionContext:
         """Create a Qwen2_5VLTextAndVisionContext with common fields."""
         # Calculate image token indices from input_ids
@@ -526,15 +532,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         # Calculate max_length using common logic
         max_length = self._max_length_of_request(input_ids.shape[0], request)
 
-        # Determine EOS token IDs
-        if request.sampling_params.ignore_eos:
-            eos_token_ids = set()
-        else:
-            eos_token_ids = self._default_eos_token_ids
-
         return Qwen2_5VLTextAndVisionContext(
             request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
+            eos_tracker=eos_tracker,
             tokens=TokenBuffer(input_ids),
             max_length=max_length,
             json_schema=json_schema,
@@ -553,7 +553,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         )
 
     def new_context_blocking(
-        self, request: TextGenerationRequest
+        self,
+        request: TextGenerationRequest,
+        eos_tracker: EOSTracker,
     ) -> Qwen2_5VLTextAndVisionContext:
         # Exit early, if no images are provided.
         if not request.images:
@@ -566,6 +568,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 image_grid_thw=None,
                 images=[],
                 vision_data=None,
+                eos_tracker=eos_tracker,
             )
 
         # Get Image Inputs (already processed by img_processor inside _process_images)
@@ -656,4 +659,5 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             image_grid_thw=image_grid_thw,
             images=images,
             vision_data=vision_data,
+            eos_tracker=eos_tracker,
         )

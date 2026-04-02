@@ -256,6 +256,11 @@ class QuantConfig:
         """Returns ``True`` if this config represents MXFP4 quantization."""
         return self.format == QuantFormat.MXFP4
 
+    @property
+    def is_fp4(self) -> bool:
+        """``True`` if this config represents any FP4 variant (NVFP4 or MXFP4)."""
+        return self.is_nvfp4 or self.is_mxfp4
+
     def quantized_scales_type(
         self, quantized_shape: Shape, device_ref: DeviceRef
     ) -> TensorType:
@@ -271,11 +276,11 @@ class QuantConfig:
             raise ValueError("Can not determine the quantized scales type")
 
 
-def nvfp4_packed_k(in_dim: int, quant_config: QuantConfig | None) -> int:
-    """Returns packed K dimension for NVFP4 weights, else returns in_dim."""
+def fp4_packed_k(in_dim: int, quant_config: QuantConfig | None) -> int:
+    """Returns packed K dimension for FP4 weights, else returns in_dim."""
     return (
         in_dim // 2
-        if quant_config is not None and quant_config.is_nvfp4
+        if quant_config is not None and quant_config.is_fp4
         else in_dim
     )
 

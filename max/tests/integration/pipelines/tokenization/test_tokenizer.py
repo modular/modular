@@ -429,9 +429,9 @@ def test_tokenizer_encode_stop_criteria(
 
     context = asyncio.run(tokenizer.new_context(request))
     # encoded stop criteria should equal [0]
-    assert len(context.eos_sequences) == 1
-    assert len(context.eos_sequences[0]) == 1
-    assert np.array_equal(context.eos_sequences[0], [0])
+    assert len(context.eos_tracker.eos_sequences) == 1
+    assert len(context.eos_tracker.eos_sequences[0]) == 1
+    assert np.array_equal(context.eos_tracker.eos_sequences[0], [0])
 
 
 @pytest.mark.skip("TODO: test fails on 4xH100 CI")

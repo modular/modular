@@ -47,8 +47,8 @@ def scan_kernel(
         address_space=AddressSpace.SHARED,
     ]()
 
-    var tx = Int(thread_idx.x)
-    var idx = Int(block_idx.x) * SEG_SIZE + tx
+    var tx = thread_idx.x
+    var idx = block_idx.x * SEG_SIZE + tx
 
     # Read input into first buffer
     bufferA[tx] = Scalar[DType.float32](input[idx])

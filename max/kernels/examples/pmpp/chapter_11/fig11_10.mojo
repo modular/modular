@@ -68,25 +68,25 @@ def block_scan(val: Float32) -> Float32:
     ]()
 
     # Step 2: Collect warp sums
-    if lane_id() == UInt(WARP_SIZE - 1):
-        warp_sums_s[Int(warp_id())] = result
+    if lane_id() == WARP_SIZE - 1:
+        warp_sums_s[warp_id()] = result
 
     barrier()
 
     # Step 3: Scan warp sums (only first warp participates)
     if warp_id() == 0:
         var warp_sum = Float32(0.0)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sum = warp_sums_s[Int(thread_idx.x)]
+        if thread_idx.x < NUM_WARPS:
+            warp_sum = warp_sums_s[thread_idx.x]
         warp_sum = warp_scan(warp_sum)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sums_s[Int(thread_idx.x)] = warp_sum
+        if thread_idx.x < NUM_WARPS:
+            warp_sums_s[thread_idx.x] = warp_sum
 
     barrier()
 
     # Step 4: Add previous warp's scanned sum
     if warp_id() > 0:
-        result += warp_sums_s[Int(warp_id()) - 1]
+        result += warp_sums_s[warp_id() - 1]
 
     return result
 
@@ -104,7 +104,7 @@ def scan_kernel(
         output: Output array for scan result.
         N: Number of elements.
     """
-    var i = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
+    var i = block_idx.x * BLOCK_DIM + thread_idx.x
     var val = Float32(0.0) if i >= Int(N) else input[i]
     val = block_scan(val)
     if i < Int(N):

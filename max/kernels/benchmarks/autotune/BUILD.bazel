@@ -40,6 +40,11 @@ modular_py_binary(
         "@mojo//:std",
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    target_compatible_with = select({
+        # FIXME: PAQ-2245
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         requirement("click"),
         requirement("numpy"),
@@ -53,8 +58,10 @@ modular_py_binary(
         requirement("torch"),
         requirement("packaging"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
-        "//max/kernels/benchmarks/misc/comparison:bench_baseline_lib",
-    ],
+    ] + select({
+        "//:nvidia_gpu": ["//max/kernels/benchmarks/misc/comparison:bench_baseline_lib"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_binary(

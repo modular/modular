@@ -44,7 +44,7 @@ def test_spatial_merge(ctx: DeviceContext) raises:
     with input_device.map_to_host() as input_host:
         var input_host_tensor = TileTensor(
             input_host,
-            row_major((Idx(total_input_patches), Idx(hidden_size))),
+            row_major(Idx(total_input_patches), Idx(hidden_size)),
         )
         for patch_idx in range(total_input_patches):
             for feat_idx in range(hidden_size):
@@ -65,11 +65,11 @@ def test_spatial_merge(ctx: DeviceContext) raises:
     # Create TileTensors for GPU operations
     var input_tensor = TileTensor(
         input_device.unsafe_ptr(),
-        row_major((Idx(total_input_patches), Idx(hidden_size))),
+        row_major(Idx(total_input_patches), Idx(hidden_size)),
     )
     var output_tensor = TileTensor(
         output_device.unsafe_ptr(),
-        row_major((Idx(total_output_patches), Idx(C_out))),
+        row_major(Idx(total_output_patches), Idx(C_out)),
     )
     var grid_thw_tensor = TileTensor(
         grid_thw_device.unsafe_ptr(),

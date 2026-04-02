@@ -50,8 +50,6 @@ class LinearLoRA(Module, SupportsLoRA):
         :math:`y_l = (xA^T) @ B^T`.
         :math:`y = (xW^T + b) + y_l`
 
-        Example:
-
         .. code-block:: python
 
             linear_layer = LinearLoRA(

@@ -27,9 +27,9 @@ FLUX VAE decoder uses block_out_channels=[128, 256, 512, 512] with:
 from std.random import rand
 from std.testing import assert_false
 
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Idx, TileTensor, row_major
 from std.gpu.host import DeviceContext
-from nn.conv import conv_gpu, conv_cudnn
+from nn.conv.conv import conv_gpu, conv_cudnn
 
 from std.utils.index import IndexList
 
@@ -57,11 +57,6 @@ def test_flux_conv_layer[
     comptime Wout = W + 2 * pad - S + 1
 
     comptime dtype = DType.bfloat16
-
-    comptime input_layout = Layout.row_major(N, H, W, C_in)
-    comptime filter_rscf_layout = Layout.row_major(R, S, C_in, C_out)
-    comptime filter_fcrs_layout = Layout.row_major(C_out, C_in, R, S)
-    comptime output_layout = Layout.row_major(N, Hout, Wout, C_out)
 
     comptime in_size = N * H * W * C_in
     comptime filter_size = R * S * C_in * C_out
@@ -121,25 +116,27 @@ def test_flux_conv_layer[
     ctx.enqueue_copy(filter_fcrs_dev, filter_nchw_host_ptr)
 
     # SM100 path: conv_gpu with RSCF filter (dispatches to SM100 on B200)
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_rscf_lt = LayoutTensor[dtype, filter_rscf_layout](
-        filter_rscf_dev.unsafe_ptr()
+    comptime input_tt_layout = row_major(
+        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
     )
-    var out_sm100_lt = LayoutTensor[dtype, output_layout](
-        out_sm100_dev.unsafe_ptr()
+    comptime filter_rscf_tt_layout = row_major(
+        (Idx[R](), Idx[S](), Idx[C_in](), Idx[C_out]())
     )
+    comptime output_tt_layout = row_major(
+        (Idx[N](), Idx[Hout](), Idx[Wout](), Idx[C_out]())
+    )
+    var input_tt = TileTensor(input_dev, input_tt_layout)
+    var filter_rscf_tt = TileTensor(filter_rscf_dev, filter_rscf_tt_layout)
+    var out_sm100_tt = TileTensor(out_sm100_dev, output_tt_layout)
 
     conv_gpu[
-        input_layout,
-        filter_rscf_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
     ](
-        input_lt.as_any_origin(),
-        filter_rscf_lt.as_any_origin(),
-        out_sm100_lt.as_any_origin(),
+        input_tt,
+        filter_rscf_tt,
+        out_sm100_tt,
         IndexList[2](1, 1),  # stride
         IndexList[2](1, 1),  # dilation
         IndexList[4](pad, pad, pad, pad),  # symmetric padding
@@ -148,29 +145,17 @@ def test_flux_conv_layer[
     )
 
     # cuDNN reference
-    var input_lt_ref = LayoutTensor[dtype, Layout.row_major[4]()](
-        input_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            IndexList[4](N, H, W, C_in),
-        ),
+    comptime filter_fcrs_tt_layout = row_major(
+        (Idx[C_out](), Idx[C_in](), Idx[R](), Idx[S]())
     )
-    var filter_fcrs_lt = LayoutTensor[dtype, Layout.row_major[4]()](
-        filter_fcrs_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            IndexList[4](C_out, C_in, R, S),
-        ),
-    )
-    var out_cudnn_lt = LayoutTensor[dtype, Layout.row_major[4]()](
-        out_cudnn_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            IndexList[4](N, Hout, Wout, C_out),
-        ),
-    )
+    var input_tt_ref = TileTensor(input_dev, input_tt_layout)
+    var filter_fcrs_tt = TileTensor(filter_fcrs_dev, filter_fcrs_tt_layout)
+    var out_cudnn_tt = TileTensor(out_cudnn_dev, output_tt_layout)
 
     conv_cudnn[dtype, dtype, dtype](
-        input_lt_ref,
-        filter_fcrs_lt,
-        out_cudnn_lt,
+        input_tt_ref,
+        filter_fcrs_tt,
+        out_cudnn_tt,
         IndexList[2](1, 1),  # stride
         IndexList[2](1, 1),  # dilation
         IndexList[2](pad, pad),  # padding

@@ -44,8 +44,8 @@ def convolution_2D_const_mem_kernel(
         height: Input height.
     """
     comptime BLOCK_DIM = 16
-    var outCol = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
-    var outRow = Int(block_idx.y) * BLOCK_DIM + Int(thread_idx.y)
+    var outCol = block_idx.x * BLOCK_DIM + thread_idx.x
+    var outRow = block_idx.y * BLOCK_DIM + thread_idx.y
 
     if outRow >= height or outCol >= width:
         return

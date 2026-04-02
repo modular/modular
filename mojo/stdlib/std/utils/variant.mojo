@@ -21,9 +21,13 @@ from std.format._utils import (
 )
 from std.memory import UnsafeMaybeUninit
 from std.hashlib.hasher import Hasher
+from std.reflection import call_location
 from std.reflection.traits import (
+    AllCopyable,
     AllEquatable,
     AllHashable,
+    AllImplicitlyCopyable,
+    AllRegisterPassable,
     AllWritable,
 )
 from ._nicheable import UnsafeNicheable, NicheIndex
@@ -81,6 +85,7 @@ struct _NichedOptionalStorage[
     T: UnsafeNicheable, EmptyType: TrivialRegisterPassable
 ](
     Copyable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
     _VariantStorage,
 ):
     """Optimized storage for two-type variants where one type is `UnsafeNicheable`
@@ -170,7 +175,11 @@ struct _NichedOptionalStorage[
         )
 
 
-struct _DefaultVariantStorage[*Ts: AnyType](Copyable, _VariantStorage):
+struct _DefaultVariantStorage[*Ts: AnyType](
+    Copyable,
+    RegisterPassable where AllRegisterPassable[*Ts],
+    _VariantStorage,
+):
     """General-purpose discriminated-union storage for `Variant`.
 
     Stores all possible types in a single MLIR `kgen.variant` allocation and
@@ -306,13 +315,17 @@ when eligible, falling back to the general discriminant-tagged storage."""
 
 
 struct Variant[*Ts: Movable](
+    Copyable where AllCopyable[*Ts],
     Equatable where AllEquatable[*Ts],
     Hashable where AllHashable[*Ts],
-    # TODO(MOCO-3365): Copyable and ImplicitlyCopyable should be conditional,
-    # but conditional ImplicitlyDestructible is not yet supported by the
-    # compiler, and making Copyable conditional cascades into Optional and
-    # other types that embed Variant.
-    ImplicitlyCopyable,
+    # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
+    # ImplicitlyCopyable refines Copyable, but the compiler can't infer
+    # parent trait constraints from derived ones yet. Remove AllCopyable
+    # from this where clause once that's fixed.
+    ImplicitlyCopyable where AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts],
+    ImplicitlyDestructible,
+    Movable,
+    RegisterPassable where AllRegisterPassable[*Ts],
     Writable where AllWritable[*Ts],
 ):
     """A union that can hold a runtime-variant value from a set of predefined
@@ -423,8 +436,8 @@ struct Variant[*Ts: Movable](
     `align_of`, but treat the results as non-stable implementation details.
 
     Parameters:
-        Ts: The possible types that this variant can hold. All types must
-            implement `Copyable`.
+        Ts: The possible types that this variant can hold. Types that
+            implement `Copyable` enable copy semantics for the variant.
     """
 
     comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
@@ -467,9 +480,14 @@ struct Variant[*Ts: Movable](
         Args:
             copy: The variant to copy from.
         """
-        comptime assert _all_copyable[
+        # TODO(MOCO-3640): This should be a `where AllCopyable[*Self.Ts]`
+        # constraint, but the compiler can't propagate evidence through
+        # variadic conformance checks (e.g. Optional calling this with
+        # Variant[_NoneType, T] can't prove AllCopyable from conforms_to(T,
+        # Copyable)). Using comptime assert as a workaround.
+        comptime assert AllCopyable[
             *Self.Ts
-        ](), "Cannot copy Variant with non-copyable types"
+        ], "Cannot copy Variant with non-copyable types"
         self._storage = Self._Storage(copy=copy._storage)
 
     def __init__(out self, *, deinit take: Self):
@@ -498,6 +516,7 @@ struct Variant[*Ts: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @always_inline
     def __getitem_param__[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
@@ -515,7 +534,7 @@ struct Variant[*Ts: Movable](
             A reference to the internal data.
         """
         if not self.isa[T]():
-            abort("get: wrong variant type")
+            abort("get: wrong variant type", location=call_location())
 
         return self.unsafe_get[T]()
 
@@ -851,14 +870,6 @@ def _all_movable[*Ts: AnyType]() -> Bool:
     comptime for i in range(Variadic.size(Ts)):
         comptime T = Ts[i]
         if not conforms_to(T, Movable):
-            return False
-    return True
-
-
-def _all_copyable[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size(Ts)):
-        comptime T = Ts[i]
-        if not conforms_to(T, Copyable):
             return False
     return True
 

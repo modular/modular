@@ -15,16 +15,12 @@ from std.sys.info import simd_width_of
 
 from layout._fillers import arange
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    Idx,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.softmax import logsoftmax, softmax_2_pass
 
-from std.testing import assert_equal
 
 from std.utils import IndexList
 
@@ -36,39 +32,38 @@ def test_logsoftmax() raises:
     comptime simd_width = simd_width_of[type]()
 
     def logsoftmax_test_nd[rank: Int, shape: IndexList[rank]]() raises:
-        comptime layout = Layout.row_major(shape)
-        var in_stack = InlineArray[Scalar[type], layout.size()](
-            uninitialized=True
-        )
-        var in_buf = LayoutTensor[type, layout](in_stack)
-        var out_stack = InlineArray[Scalar[type], layout.size()](
-            uninitialized=True
-        )
-        arange(in_buf)
-        var out_buf = LayoutTensor[type, layout](out_stack).fill(0)
-
         comptime if rank == 1:
-            var in_tt = TileTensor(in_buf.ptr, row_major[shape[0]]())
-            var out_tt = TileTensor(out_buf.ptr, row_major[shape[0]]())
+            var in_stack = InlineArray[Scalar[type], shape[0]](
+                uninitialized=True
+            )
+            var in_tt = TileTensor(in_stack, row_major[shape[0]]())
+            var out_stack = InlineArray[Scalar[type], shape[0]](
+                uninitialized=True
+            )
+            arange(in_tt)
+            var out_tt = TileTensor(out_stack, row_major[shape[0]]()).fill(0)
             logsoftmax[type, simd_width, rank](in_tt, out_tt, rank - 1)
+            for i in range(out_tt.num_elements()):
+                print(out_tt[i])
         else:
             comptime if rank == 2:
+                comptime sz = shape[0] * shape[1]
+                var in_stack = InlineArray[Scalar[type], sz](uninitialized=True)
                 var in_tt = TileTensor(
-                    in_buf.ptr, row_major[shape[0], shape[1]]()
+                    in_stack, row_major[shape[0], shape[1]]()
                 )
+                var out_stack = InlineArray[Scalar[type], sz](
+                    uninitialized=True
+                )
+                arange(in_tt)
                 var out_tt = TileTensor(
-                    out_buf.ptr, row_major[shape[0], shape[1]]()
-                )
+                    out_stack, row_major[shape[0], shape[1]]()
+                ).fill(0)
                 logsoftmax[type, simd_width, rank](in_tt, out_tt, rank - 1)
-
-        var out_buf_flat = LayoutTensor[type, Layout.row_major(UNKNOWN_VALUE)](
-            out_buf.ptr,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                IndexList[1](out_buf.size())
-            ),
-        )
-        for i in range(out_buf.size()):
-            print(out_buf_flat.load[width=1](IndexList[1](i)))
+                # Print as flat 1D
+                var out_flat = TileTensor(out_tt.ptr, row_major[sz]())
+                for i in range(out_flat.num_elements()):
+                    print(out_flat[i])
 
     logsoftmax_test_nd[1, IndexList[1](5)]()
 
@@ -102,18 +97,16 @@ def test_softmax_2pass():
     comptime sz = 5
 
     var in_stack = InlineArray[Scalar[type], sz](uninitialized=True)
-    var in_buf = LayoutTensor[type, Layout.row_major(sz)](in_stack)
+    var in_tt = TileTensor(in_stack, row_major[sz]())
     for i in range(sz):
-        in_buf[i] = Float32(i)
+        in_tt[i] = Float32(i)
     var out_stack = InlineArray[Scalar[type], sz](uninitialized=True)
-    var out_buf = LayoutTensor[type, Layout.row_major(sz)](out_stack).fill(0)
+    var out_tt = TileTensor(out_stack, row_major[sz]()).fill(0)
 
-    var in_tt = TileTensor(in_buf.ptr, row_major[sz]())
-    var out_tt = TileTensor(out_buf.ptr, row_major[sz]())
     softmax_2_pass[simd_width, type](out_tt, in_tt)
 
     for i in range(sz):
-        print(out_buf[i])
+        print(out_tt[i])
 
     # CHECK: 0.01165{{[0-9]+}}
     # CHECK-NEXT: 0.03168{{[0-9]+}}

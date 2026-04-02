@@ -16,12 +16,12 @@ from std.math import exp
 from std.gpu import (
     AMDScheduleBarrierMask,
     barrier,
+    thread_idx,
     block_dim,
     grid_dim,
     lane_id,
     schedule_barrier,
     schedule_group_barrier,
-    thread_idx,
     s_waitcnt,
     s_waitcnt_barrier,
 )
@@ -50,11 +50,11 @@ comptime FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
 def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
-    x[0] = Int(thread_idx.x)
+    x[0] = thread_idx.x
 
 
 def kernel_laneid(x: UnsafePointer[Int, MutAnyOrigin]):
-    x[0] = Int(lane_id())
+    x[0] = lane_id()
 
 
 def kernel_exp[
@@ -152,7 +152,7 @@ def test_shuffle_compile() raises:
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = sub i32 %5, %3
-    # CHECK: %7 = and i32 %5, -64
+    # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = icmp slt i32 %6, %7
     # CHECK: %9 = select i1 %8, i32 %5, i32 %6
     # CHECK: %10 = shl i32 %9, 2
@@ -167,8 +167,8 @@ def test_shuffle_compile() raises:
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = xor i32 %5, %3
-    # CHECK: %7 = and i32 %5, -64
-    # CHECK: %8 = add i32 %7, 64
+    # CHECK: %7 = and i32 %5, 64
+    # CHECK: %8 = add nuw nsw i32 %7, 64
     # CHECK: %9 = icmp ult i32 %6, %8
     # CHECK: %10 = select i1 %9, i32 %6, i32 %5
     # CHECK: %11 = shl i32 %10, 2
@@ -182,7 +182,7 @@ def test_shuffle_compile() raises:
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
-    # CHECK: %6 = and i32 %5, 1073741760
+    # CHECK: %6 = and i32 %5, 64
     # CHECK: %7 = or i32 %6, %3
     # CHECK: %8 = shl i32 %7, 2
     # CHECK: %9 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %8, i32 %3)
@@ -514,7 +514,7 @@ def test_nt_load_compile() raises:
     print("== test_nt_load_compile")
 
     def kernel(x: UnsafePointer[Float32, ImmutAnyOrigin]):
-        var ptr = x + Int(thread_idx.x) * 4
+        var ptr = x + thread_idx.x * 4
         var val = ptr.load[width=4, non_temporal=True]()
         keep(val)
 
@@ -530,8 +530,8 @@ def test_nt_store_compile() raises:
         x: UnsafePointer[Float32, ImmutAnyOrigin],
         y: UnsafePointer[Float32, MutAnyOrigin],
     ):
-        var ptr_in = x + Int(thread_idx.x) * 4
-        var ptr_out = y + Int(thread_idx.x) * 4
+        var ptr_in = x + thread_idx.x * 4
+        var ptr_out = y + thread_idx.x * 4
         var val = ptr_in.load[width=4]()
         ptr_out.store[non_temporal=True](val)
 

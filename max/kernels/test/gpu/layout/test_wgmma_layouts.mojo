@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx, warp_id, lane_id_int as lane_id
+from std.gpu import barrier, thread_idx, warp_id, lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import (
     WGMMADescriptor,
@@ -105,7 +105,7 @@ def wgmma_tf32_tf32_f32_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -405,7 +405,7 @@ def wgmma_bf16_bf16_f32_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -697,7 +697,7 @@ def wgmma_f16_f16_f32_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -990,7 +990,7 @@ def wgmma_f16_f16_f16_kernel[
     # is as follows:
     c0 = bitcast[DType.float16, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -1295,7 +1295,7 @@ def wgmma_kernel[
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, 8](Int(warp_id()), 0)
+        c_gmem.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )

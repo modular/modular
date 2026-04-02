@@ -21,7 +21,7 @@ from std.memory import stack_allocation
 
 
 def kernel(x: Int) -> Int:
-    return Int(thread_idx.x)
+    return thread_idx.x
 
 
 def parametric[f: def(Int) -> Int]() -> Int:
@@ -48,7 +48,7 @@ def test_compile_function() raises:
     print("== test_compile_function")
 
     def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
-        x[0] = Int(thread_idx.x)
+        x[0] = thread_idx.x
 
     # CHECK: tid.x
 

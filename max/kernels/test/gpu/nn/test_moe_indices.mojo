@@ -13,13 +13,10 @@
 
 
 from std.gpu.host import DeviceContext, HostBuffer
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from nn.moe import moe_create_indices
-from std.random import rand
 from std.testing import assert_equal
-
-from std.utils import IndexList
 
 
 def get_expert_dictionary(

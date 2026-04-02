@@ -17,7 +17,7 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import warp_id, block_idx, lane_id, thread_idx
+from std.gpu import warp_id, block_idx, thread_idx
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -36,9 +36,8 @@ from layout import (
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
-from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
+from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
     tile_layout_k_major,
@@ -51,7 +50,6 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile,
 )
-from std.bit import log2_floor
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -275,7 +273,7 @@ def kernel_4[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (i * BK + k, Int(block_idx.y) * BM),
+                    (i * BK + k, block_idx.y * BM),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
@@ -283,9 +281,9 @@ def kernel_4[
                     tma_mbar[0],
                     (
                         i * BK + k,
-                        Int(block_idx.x) * BN,
+                        block_idx.x * BN,
                     ) if transpose_b else (
-                        Int(block_idx.x) * BN,
+                        block_idx.x * BN,
                         i * BK + k,
                     ),
                 )
@@ -366,7 +364,7 @@ def kernel_4[
                             UNKNOWN_VALUE,
                         ),
                     )
-                ](Int(thread_idx.x), i, m_mma, 0)
+                ](thread_idx.x, i, m_mma, 0)
                 var offset = (
                     c_smem_tile.ptr
                     + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
@@ -382,10 +380,10 @@ def kernel_4[
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
 
-    if elect_one_warp and thread_idx.x < UInt(BN // TMA_BN):
+    if elect_one_warp and thread_idx.x < BN // TMA_BN:
         fence_async_view_proxy()
 
-        var smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
+        var smem_offset = c_smem_tile.ptr + BM * TMA_BN * thread_idx.x
 
         c_tma_tile = LayoutTensor[
             c_type,
@@ -398,8 +396,8 @@ def kernel_4[
         c_tma_op.async_store(
             c_tma_tile,
             (
-                Int(block_idx.x) * BN + Int(thread_idx.x) * TMA_BN,
-                Int(block_idx.y) * BM,
+                block_idx.x * BN + thread_idx.x * TMA_BN,
+                block_idx.y * BM,
             ),
         )
         c_tma_op.commit_group()

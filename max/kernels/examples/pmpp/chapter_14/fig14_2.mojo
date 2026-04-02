@@ -34,7 +34,7 @@ def sort_kernel(
         isOddStep: 1 for odd phase, 0 for even phase.
         block_dim_x: Block dimension.
     """
-    var i = 2 * (Int(block_idx.x) * block_dim_x + Int(thread_idx.x)) + (
+    var i = 2 * (block_idx.x * block_dim_x + thread_idx.x) + (
         1 if isOddStep == 1 else 0
     )
 

@@ -6,8 +6,8 @@ threads in the same block diverge at a barrier.
 
 ## Files
 
-| File | Description |
-|------|-------------|
+| File          | Description                                                                                                                        |
+|---------------|------------------------------------------------------------------------------------------------------------------------------------|
 | `fig4_4.mojo` | **Incorrect** barrier usage: a conditional `barrier()` that causes deadlock when threads in the same block take different branches |
 
 ## Note

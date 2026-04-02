@@ -262,9 +262,8 @@ def max_pool_cpu[
     } -> SIMD[
         dtype, simd_width
     ]:
-        var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
-            input.ptr.load[width=simd_width](i)
+            input.load[width=simd_width](Coord(point))
         )
 
     @always_inline
@@ -452,9 +451,8 @@ def max_pool_gpu[
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) -> SIMD[dtype, simd_width]:
-        var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
-            input.ptr.load[width=simd_width](i)
+            input.load[width=simd_width](Coord(point))
         )
 
     @always_inline

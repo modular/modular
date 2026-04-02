@@ -21,6 +21,7 @@ from .context import (
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
 )
+from .eos_tracking import EOSTracker
 from .generation import GenerationOutput
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
@@ -55,7 +56,6 @@ from .pipeline_variants import (
     PixelGenerationContext,
     PixelGenerationContextType,
     PixelGenerationInputs,
-    PixelGenerationOutput,
     SpecDecodingState,
     TextContentPart,
     TextGenerationContext,
@@ -118,6 +118,7 @@ __all__ = [
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
     "BatchType",
+    "EOSTracker",
     "EmbeddingsContext",
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
@@ -149,7 +150,6 @@ __all__ = [
     "PixelGenerationContext",
     "PixelGenerationContextType",
     "PixelGenerationInputs",
-    "PixelGenerationOutput",
     "ProcessorInputs",
     "ReasoningParser",
     "ReasoningSpan",

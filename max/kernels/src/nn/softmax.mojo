@@ -32,11 +32,11 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
-    thread_idx,
-    warp_id,
+    thread_idx_uint as thread_idx,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceAttribute, DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
@@ -729,79 +729,80 @@ def softmax_kernel[
 
     var tid = thread_idx.x
 
-    # grid stride loop over rows
-    # each block reduces a row, which is convenient because it requires no partial
-    # reductions across blocks
-    for row_idx in range(block_idx.x, num_rows, grid_dim.x):
-        var sink_val = Scalar[accum_type].MIN
+    with PDL():
+        # grid stride loop over rows
+        # each block reduces a row, which is convenient because it requires no partial
+        # reductions across blocks
+        for row_idx in range(block_idx.x, num_rows, grid_dim.x):
+            var sink_val = Scalar[accum_type].MIN
 
-        comptime if sink:
-            sink_val = sink_weights[row_idx % UInt(sink_weights.dim[0]())][
-                0
-            ].cast[accum_type]()
+            comptime if sink:
+                sink_val = sink_weights[row_idx % UInt(sink_weights.dim[0]())][
+                    0
+                ].cast[accum_type]()
 
-        # Step 1: compute max in row
-        var row_coords = _get_nd_indices_from_flat_index(
-            Int(row_idx), shape, axis
-        )
-        var row_max = row_reduce[
-            BLOCK_SIZE,
-            input_fn,
-            _max,
-            dtype,
-            1,
-            rank,
-            accum_type=accum_type,
-        ](row_coords, axis, Scalar[dtype].MIN, Int(row_size))
-
-        comptime if sink:
-            row_max = max(row_max, sink_val)
-
-        if tid == 0:
-            max_buf[0] = row_max
-        barrier()
-
-        row_max = max_buf[0][0]
-
-        # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
-        var exp_sum = Scalar[accum_type](0)
-
-        for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
-            row_coords[axis] = Int(row_offset)
-
-            # loads from input_fn twice
-            var val = exp(
-                input_fn[dtype, 1, rank](row_coords).cast[accum_type]()
-                - row_max
+            # Step 1: compute max in row
+            var row_coords = _get_nd_indices_from_flat_index(
+                Int(row_idx), shape, axis
             )
+            var row_max = row_reduce[
+                BLOCK_SIZE,
+                input_fn,
+                _max,
+                dtype,
+                1,
+                rank,
+                accum_type=accum_type,
+            ](row_coords, axis, Scalar[dtype].MIN, Int(row_size))
 
-            # TODO we're writing to and reading from global memory twice
-            # we can reduce the amount of reads by keeping values local here.
-            output.store_linear(row_coords, val.cast[dtype]())
-            exp_sum += val
+            comptime if sink:
+                row_max = max(row_max, sink_val)
 
-        var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
+            if tid == 0:
+                max_buf[0] = row_max
+            barrier()
 
-        if tid == 0:
-            exp_sum_buf[0] = block_exp_sum
-        barrier()
+            row_max = max_buf[0][0]
 
-        comptime if sink:
-            block_exp_sum += exp(sink_val - row_max)
+            # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
+            var exp_sum = Scalar[accum_type](0)
 
-        # Step 3: Normalize output (and apply log for logsoftmax)
-        var block_exp_sum_recip = 1 / exp_sum_buf[0]
-        for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
-            row_coords[axis] = Int(row_offset)
-            var normalized = (
-                output.load_linear[width=1](row_coords)
-                * block_exp_sum_recip.cast[dtype]()
-            )
+            for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
+                row_coords[axis] = Int(row_offset)
 
-            comptime if logsoftmax:
-                normalized = log(normalized)
+                # loads from input_fn twice
+                var val = exp(
+                    input_fn[dtype, 1, rank](row_coords).cast[accum_type]()
+                    - row_max
+                )
 
-            output.store_linear(row_coords, normalized)
+                # TODO we're writing to and reading from global memory twice
+                # we can reduce the amount of reads by keeping values local here.
+                output.store_linear(row_coords, val.cast[dtype]())
+                exp_sum += val
+
+            var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
+
+            if tid == 0:
+                exp_sum_buf[0] = block_exp_sum
+            barrier()
+
+            comptime if sink:
+                block_exp_sum += exp(sink_val - row_max)
+
+            # Step 3: Normalize output (and apply log for logsoftmax)
+            var block_exp_sum_recip = 1 / exp_sum_buf[0]
+            for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
+                row_coords[axis] = Int(row_offset)
+                var normalized = (
+                    output.load_linear[width=1](row_coords)
+                    * block_exp_sum_recip.cast[dtype]()
+                )
+
+                comptime if logsoftmax:
+                    normalized = log(normalized)
+
+                output.store_linear(row_coords, normalized)
 
 
 def _softmax_gpu[
@@ -856,6 +857,7 @@ def _softmax_gpu[
         sink_weights.value(),
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 
@@ -999,7 +1001,7 @@ def _softmax_temperature_kernel[
 
                         vectorize[VEC_WIDTH](lane_count, online_max_sum)
             else:
-                for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+                for col in range(tid, row_size, BLOCK_SIZE):
                     var v = input.load_linear[width=1](
                         IndexList[2](row_idx, Int(col))
                     ).cast[accum_type]()
@@ -1053,7 +1055,6 @@ def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
     TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],
@@ -1073,7 +1074,6 @@ def softmax_with_temperature[
         dtype: The data type of the input and output tensors.
         temp_dtype: The data type for temperature values (default float32).
         TempLayoutType: The layout type for the optional temperature array.
-        pdl_level: The PDL level for kernel launch attributes.
 
     Args:
         ctx: Device context for kernel execution.
@@ -1117,7 +1117,7 @@ def softmax_with_temperature[
         temp_ptr,
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
-        attributes=pdl_launch_attributes(pdl_level),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 

@@ -37,7 +37,6 @@ from std.testing import assert_equal
 from std.utils.index import Index, IndexList
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.swizzle import make_swizzle
-from layout.int_tuple import product
 
 
 @__llvm_arg_metadata(ragged_tensor_map, `nvvm.grid_constant`)
@@ -70,7 +69,7 @@ def tma_ragged_store_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var seq_idx = block_idx.x
+    var seq_idx = UInt(block_idx.x)
     var sequence_length = sequence_lengths[seq_idx]
 
     if thread_idx.x == 0:
@@ -144,13 +143,13 @@ def test_tma_load_kernel[
         tma_tile.async_copy(
             tile,
             mbar[0],
-            (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM),
+            (block_idx.x * tileN, block_idx.y * tileM),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -202,14 +201,14 @@ def test_tma_multiple_loads_kernel[
             tma_tile.async_copy(
                 tile,
                 mbar[0],
-                (i * tileN, Int(block_idx.y) * tileM),
+                (i * tileN, block_idx.y * tileM),
             )
         # Ensure all threads sees initialized mbarrier
         barrier()
         mbar[0].wait(phase)
         phase ^= 1
 
-        dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), i)
+        dst_tile = dst.tile[tileM, tileN](block_idx.y, i)
         copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -418,16 +417,14 @@ def test_tma_async_store_kernel[
         alignment=128,
     ].stack_allocation[]()
 
-    src_tile = src.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    src_tile = src.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
     fence_async_view_proxy()
 
     if thread_idx.x == 0:
-        tma_tile.async_store(
-            tile, (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM)
-        )
+        tma_tile.async_store(tile, (block_idx.x * tileN, block_idx.y * tileM))
         cp_async_bulk_commit_group()
 
     cp_async_bulk_wait_group[0]()
@@ -459,14 +456,14 @@ def test_tma_async_multiple_store_kernel[
     comptime num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
-        src_tile = src.tile[tileM, tileN](Int(block_idx.y), i)
+        src_tile = src.tile[tileM, tileN](block_idx.y, i)
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
         fence_async_view_proxy()
 
         if thread_idx.x == 0:
-            tma_tile.async_store(tile, (i * tileN, Int(block_idx.y) * tileM))
+            tma_tile.async_store(tile, (i * tileN, block_idx.y * tileM))
             cp_async_bulk_commit_group()
             # Wait for the TMA store to finish reading from shared memory
             # before the next iteration overwrites it.
@@ -568,7 +565,7 @@ def test_tma_async_reduce_kernel[
         alignment=128,
     ].stack_allocation[]()
 
-    src_tile = src.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    src_tile = src.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
@@ -576,7 +573,7 @@ def test_tma_async_reduce_kernel[
 
     if thread_idx.x == 0:
         tma_tile.async_reduce[reduction_kind=ReduceOp.ADD](
-            tile, (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM)
+            tile, (block_idx.x * tileN, block_idx.y * tileM)
         )
         cp_async_bulk_commit_group()
 
@@ -609,7 +606,7 @@ def test_tma_async_multiple_reduce_kernel[
     comptime num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
-        src_tile = src.tile[tileM, tileN](Int(block_idx.y), i)
+        src_tile = src.tile[tileM, tileN](block_idx.y, i)
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
@@ -617,7 +614,7 @@ def test_tma_async_multiple_reduce_kernel[
 
         if thread_idx.x == 0:
             tma_tile.async_reduce[reduction_kind=ReduceOp.ADD](
-                tile, (i * tileN, Int(block_idx.y) * tileM)
+                tile, (i * tileN, block_idx.y * tileM)
             )
             cp_async_bulk_commit_group()
 
@@ -765,12 +762,12 @@ def test_tma_loads_two_buffers_kernel[
             a_tma_tile.async_copy(
                 a_tile,
                 mbar[0],
-                (i * tileN, Int(block_idx.y) * tileM),
+                (i * tileN, block_idx.y * tileM),
             )
             b_tma_tile.async_copy(
                 b_tile,
                 mbar[0],
-                (i * tileN, Int(block_idx.y) * tileM),
+                (i * tileN, block_idx.y * tileM),
             )
 
         # Ensure all threads sees initialized mbarrier
@@ -779,8 +776,8 @@ def test_tma_loads_two_buffers_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        a_dst_tile = a_dst.tile[tileM, tileN](Int(block_idx.y), i)
-        b_dst_tile = b_dst.tile[tileM, tileN](Int(block_idx.y), i)
+        a_dst_tile = a_dst.tile[tileM, tileN](block_idx.y, i)
+        b_dst_tile = b_dst.tile[tileM, tileN](block_idx.y, i)
         copy_sram_to_dram[a_thread_layout](a_dst_tile, a_tile)
         copy_sram_to_dram[b_thread_layout](b_dst_tile, b_tile)
 
@@ -946,12 +943,12 @@ def test_tma_loads_and_store_two_buffers_kernel[
             a_tma_src_tile.async_copy(
                 a_tile,
                 mbar[0],
-                (i * tileN, Int(block_idx.y) * tileM),
+                (i * tileN, block_idx.y * tileM),
             )
             b_tma_src_tile.async_copy(
                 b_tile,
                 mbar[0],
-                (i * tileN, Int(block_idx.y) * tileM),
+                (i * tileN, block_idx.y * tileM),
             )
 
         # Ensure all threads sees initialized mbarrier
@@ -963,12 +960,8 @@ def test_tma_loads_and_store_two_buffers_kernel[
         fence_async_view_proxy()
 
         if thread_idx.x == 0:
-            a_tma_dst_tile.async_store(
-                a_tile, (i * tileN, Int(block_idx.y) * tileM)
-            )
-            b_tma_dst_tile.async_store(
-                b_tile, (i * tileN, Int(block_idx.y) * tileM)
-            )
+            a_tma_dst_tile.async_store(a_tile, (i * tileN, block_idx.y * tileM))
+            b_tma_dst_tile.async_store(b_tile, (i * tileN, block_idx.y * tileM))
             cp_async_bulk_commit_group()
 
         cp_async_bulk_wait_group[0]()

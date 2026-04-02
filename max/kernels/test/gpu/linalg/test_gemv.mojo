@@ -15,16 +15,17 @@ from std.math import ceildiv
 from std.random import randn, seed, random_float64
 
 import std.gpu.primitives.warp as warp
-from buffer import NDBuffer
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
 import linalg.matmul.vendor.blas as vendor_blas
 
-from std.utils import Index, IndexList
-from std.utils.numerics import isnan
+from std.utils import IndexList
 from internal_utils import assert_almost_equal
+
+from layout import TileTensor, Coord, Idx, row_major
+from layout.tile_layout import Layout
 
 
 def run_matvec[
@@ -134,18 +135,12 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    # Create NDBuffers for vendor_blas
+    # Create tensors for vendor_blas
     # For GEMV (N=1): A is MxK, B is Kx1, C is Mx1
     # For GEVM (M=1): A is 1xK, B is KxN, C is 1xN
-    var a_nd = NDBuffer[rank=2, a_type](
-        a_device.unsafe_ptr(), IndexList[2](M, K)
-    )
-    var b_nd = NDBuffer[rank=2, b_type](
-        b_device.unsafe_ptr(), IndexList[2](K, N)
-    )
-    var c_ref_nd = NDBuffer[rank=2, accum_type](
-        c_device_naive.unsafe_ptr(), IndexList[2](M, N)
-    )
+    var a_nd = TileTensor(a_device, row_major(Idx(M), Idx(K)))
+    var b_nd = TileTensor(b_device, row_major(Idx(K), Idx(N)))
+    var c_ref_nd = TileTensor(c_device_naive, row_major(Idx(M), Idx(N)))
 
     vendor_blas.matmul(
         ctx,
@@ -181,19 +176,6 @@ def run_matvec[
         rtol=errorTolerance,
     )
 
-    _ = c_host_f32
-    _ = c_host_blas_f32
-
-    _ = a_device
-    _ = b_device
-    _ = c_device
-    _ = c_device_naive
-
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_blas
-
 
 def run_matvec_with_epilogue_fn(
     M: Int, N: Int, K: Int, *, ctx: DeviceContext
@@ -224,8 +206,8 @@ def run_matvec_with_epilogue_fn(
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
 
-    var c_device_nd = NDBuffer[rank=2, DType.float32](
-        c_device.unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)
+    var c_device_nd = TileTensor(
+        c_device, Layout((Idx(M), Idx(N)), (Idx(N * c_stride), Idx(c_stride)))
     )
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -239,7 +221,7 @@ def run_matvec_with_epilogue_fn(
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
-            idx,
+            Coord(idx),
             rebind[SIMD[DType.float32, width]](
                 val + SIMD[dtype, width](const_val)
             ),
@@ -294,7 +276,6 @@ def run_matvec_with_epilogue_fn(
 
     ctx.enqueue_copy(c_device, c_host)
 
-    var nstime = 0.0
     var kernelType: StaticString
     if N == 1:
         run_func_gemv(ctx)
@@ -367,15 +348,6 @@ def run_matvec_with_epilogue_fn(
         atol=1e-4,
         rtol=errorTolerance,
     )
-
-    _ = a_device
-    _ = b_device
-    _ = c_device
-
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_naive
 
 
 def main() raises:

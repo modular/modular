@@ -47,7 +47,7 @@ class Diagnostic:
         """Returns the message text of the diagnostic."""
 
     @property
-    def notes(self) -> tuple:
+    def notes(self) -> tuple[Diagnostic]:
         """Returns a tuple of attached note diagnostics."""
 
     def __str__(self) -> str:
@@ -461,7 +461,7 @@ class Operation(_OperationBase):
         name: str,
         results: Sequence[Type] | None = None,
         operands: Sequence[Value] | None = None,
-        attributes: dict | None = None,
+        attributes: dict[str, Attribute] | None = None,
         successors: Sequence[Block] | None = None,
         regions: int = 0,
         loc: Location | None = None,
@@ -533,9 +533,9 @@ class OpView(_OperationBase):
         opRegionSpec: tuple[int, bool],
         operandSegmentSpecObj: object | None = None,
         resultSegmentSpecObj: object | None = None,
-        results: list | None = None,
-        operands: list | None = None,
-        attributes: dict | None = None,
+        results: Sequence | None = None,
+        operands: Sequence | None = None,
+        attributes: dict[str, Attribute] | None = None,
         successors: Sequence[Block] | None = None,
         regions: int | None = None,
         loc: Location | None = None,
@@ -553,7 +553,7 @@ class OpView(_OperationBase):
     @classmethod
     def build_generic(*args, **kwargs):
         """
-        (cls: object, results: list | None = None, operands: list | None = None, attributes: dict | None = None, successors: collections.abc.Sequence[max._mlir._mlir_libs._mlir.ir.Block] | None = None, regions: int | None = None, loc: max._mlir._mlir_libs._mlir.ir.Location | None = None, ip: object | None = None) -> object
+        build_generic(cls, results: Sequence[Type] | None = None, operands: Sequence[Value] | None = None, attributes: dict[str, Attribute] | None = None, successors: Sequence[Block] | None = None, regions: int | None = None, loc: Location | None = None, ip: InsertionPoint | None = None) -> typing.Self
 
         Builds a specific, generated OpView based on class level attributes.
         """
@@ -561,18 +561,28 @@ class OpView(_OperationBase):
     @classmethod
     def parse(*args, **kwargs):
         r"""
-        (cls: object, source: str, *, source_name: str = \'\', context: _mlir.ir.Context | None = None) -> max._mlir._mlir_libs._mlir.ir.OpView
+        parse(cls, source: str, *, source_name: str = \'\', context: Context | None = None) -> typing.Self
 
         Parses a specific, generated OpView based on class level attributes.
         """
 
+    @classmethod
+    def has_trait(*args, **kwargs):
+        """
+        (cls: object, trait_cls: type, context: _mlir.ir.Context | None = None) -> bool
+
+        Checks if the operation has a given trait.
+        """
+
 class OpAdaptor:
     @overload
-    def __init__(self, operands: list, attributes: OpAttributeMap) -> None:
+    def __init__(
+        self, operands: list[Value], attributes: OpAttributeMap
+    ) -> None:
         """Creates an OpAdaptor with the given operands and attributes."""
 
     @overload
-    def __init__(self, operands: list, opview: OpView) -> None:
+    def __init__(self, operands: list[Value], opview: OpView) -> None:
         """Creates an OpAdaptor with the given operands and operation view."""
 
     @property
@@ -643,8 +653,8 @@ class Block:
     @staticmethod
     def create_at_start(
         parent: Region,
-        arg_types: Sequence = [],
-        arg_locs: Sequence | None = None,
+        arg_types: Sequence[Type] = [],
+        arg_locs: Sequence[Location] | None = None,
     ) -> Block:
         """
         Creates and returns a new Block at the beginning of the given region (with given argument types and locations).
@@ -661,14 +671,14 @@ class Block:
         """
 
     def create_before(
-        self, *arg_types, arg_locs: Sequence | None = None
+        self, *arg_types, arg_locs: Sequence[Location] | None = None
     ) -> Block:
         """
         Creates and returns a new Block before this block (with given argument types and locations).
         """
 
     def create_after(
-        self, *arg_types, arg_locs: Sequence | None = None
+        self, *arg_types, arg_locs: Sequence[Location] | None = None
     ) -> Block:
         """
         Creates and returns a new Block after this block (with given argument types and locations).
@@ -983,7 +993,7 @@ class Value(Generic[_T]):
         """Returns the string form of value as an operand (i.e., the ValueID)."""
 
     @property
-    def type(self) -> Type:
+    def type(self) -> _T:
         """Returns the type of the value."""
 
     def set_type(self, type: _T):
@@ -1262,16 +1272,16 @@ class OpAttributeMap:
     def get(self, key: str, default: object | None = None) -> Attribute | None:
         """Gets an attribute by name or the default value, if it does not exist."""
 
-    def __iter__(self) -> Iterator:
+    def __iter__(self) -> Iterator[str]:
         """Iterates over attribute names."""
 
-    def keys(self) -> list:
+    def keys(self) -> list[str]:
         """Returns a list of attribute names."""
 
-    def values(self) -> list:
+    def values(self) -> list[Attribute]:
         """Returns a list of attribute values."""
 
-    def items(self) -> list:
+    def items(self) -> list[tuple[str, Attribute]]:
         """Returns a list of `(name, attribute)` tuples."""
 
 class OpOperandIterator:
@@ -1328,13 +1338,6 @@ class OpSuccessors(Sequence[Block]):
     def __setitem__(self, index: int, block: Block) -> None:
         """Sets the successor block at the specified index."""
 
-class RegionIterator:
-    def __iter__(self) -> RegionIterator:
-        """Returns an iterator over the regions in the operation."""
-
-    def __next__(self) -> Region:
-        """Returns the next region in the iteration."""
-
 class RegionSequence(Sequence[Region]):
     def __getitem__(self, key, /):
         """Return self[key]."""
@@ -1343,8 +1346,6 @@ class RegionSequence(Sequence[Region]):
         """Return len(self)."""
 
     def __add__(self, arg: RegionSequence, /) -> list[Region]: ...
-    def __iter__(self) -> RegionIterator:
-        """Returns an iterator over the regions in the sequence."""
 
 class AttrBuilder:
     @staticmethod
@@ -1359,7 +1360,10 @@ class AttrBuilder:
 
     @staticmethod
     def insert(
-        attribute_kind: str, attr_builder: Callable, replace: bool = False
+        attribute_kind: str,
+        attr_builder: Callable,
+        replace: bool = False,
+        allow_existing: bool = False,
     ) -> None:
         """
         Register an attribute builder for building MLIR attributes from Python values.
@@ -1639,7 +1643,7 @@ class AffineMap:
     def __hash__(self) -> int: ...
     @staticmethod
     def compress_unused_symbols(
-        arg0: list, arg1: _mlir.ir.Context, /
+        arg0: Sequence[AffineMap], arg1: _mlir.ir.Context, /
     ) -> list[AffineMap]: ...
     @property
     def context(self) -> Context:
@@ -1652,7 +1656,7 @@ class AffineMap:
     def get(
         dim_count: int,
         symbol_count: int,
-        exprs: list,
+        exprs: Sequence[AffineExpr],
         context: _mlir.ir.Context | None = None,
     ) -> AffineMap:
         """Gets a map with the given expressions as results."""
@@ -1736,7 +1740,7 @@ class IntegerSet:
     def get(
         num_dims: int,
         num_symbols: int,
-        exprs: list,
+        exprs: Sequence[AffineExpr],
         eq_flags: Sequence[bool],
         context: _mlir.ir.Context | None = None,
     ) -> IntegerSet: ...
@@ -1746,8 +1750,8 @@ class IntegerSet:
     ) -> IntegerSet: ...
     def get_replaced(
         self,
-        dim_exprs: list,
-        symbol_exprs: list,
+        dim_exprs: Sequence[AffineExpr],
+        symbol_exprs: Sequence[AffineExpr],
         num_result_dims: int,
         num_result_symbols: int,
     ) -> IntegerSet: ...
@@ -1826,7 +1830,7 @@ class DenseBoolArrayAttr(Attribute):
     def __getitem__(self, arg: int, /) -> bool: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> DenseBoolArrayIterator: ...
-    def __add__(self, arg: list, /) -> DenseBoolArrayAttr: ...
+    def __add__(self, arg: Sequence, /) -> DenseBoolArrayAttr: ...
 
 class DenseBoolArrayIterator:
     def __iter__(self) -> DenseBoolArrayIterator: ...
@@ -1852,7 +1856,7 @@ class DenseI8ArrayAttr(Attribute):
     def __getitem__(self, arg: int, /) -> int: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> DenseI8ArrayIterator: ...
-    def __add__(self, arg: list, /) -> DenseI8ArrayAttr: ...
+    def __add__(self, arg: Sequence, /) -> DenseI8ArrayAttr: ...
 
 class DenseI8ArrayIterator:
     def __iter__(self) -> DenseI8ArrayIterator: ...
@@ -1878,7 +1882,7 @@ class DenseI16ArrayAttr(Attribute):
     def __getitem__(self, arg: int, /) -> int: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> DenseI16ArrayIterator: ...
-    def __add__(self, arg: list, /) -> DenseI16ArrayAttr: ...
+    def __add__(self, arg: Sequence, /) -> DenseI16ArrayAttr: ...
 
 class DenseI16ArrayIterator:
     def __iter__(self) -> DenseI16ArrayIterator: ...
@@ -1904,7 +1908,7 @@ class DenseI32ArrayAttr(Attribute):
     def __getitem__(self, arg: int, /) -> int: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> DenseI32ArrayIterator: ...
-    def __add__(self, arg: list, /) -> DenseI32ArrayAttr: ...
+    def __add__(self, arg: Sequence, /) -> DenseI32ArrayAttr: ...
 
 class DenseI32ArrayIterator:
     def __iter__(self) -> DenseI32ArrayIterator: ...
@@ -1930,7 +1934,7 @@ class DenseI64ArrayAttr(Attribute):
     def __getitem__(self, arg: int, /) -> int: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> DenseI64ArrayIterator: ...
-    def __add__(self, arg: list, /) -> DenseI64ArrayAttr: ...
+    def __add__(self, arg: Sequence, /) -> DenseI64ArrayAttr: ...
 
 class DenseI64ArrayIterator:
     def __iter__(self) -> DenseI64ArrayIterator: ...
@@ -1956,7 +1960,7 @@ class DenseF32ArrayAttr(Attribute):
     def __getitem__(self, arg: int, /) -> float: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> DenseF32ArrayIterator: ...
-    def __add__(self, arg: list, /) -> DenseF32ArrayAttr: ...
+    def __add__(self, arg: Sequence, /) -> DenseF32ArrayAttr: ...
 
 class DenseF32ArrayIterator:
     def __iter__(self) -> DenseF32ArrayIterator: ...
@@ -1982,7 +1986,7 @@ class DenseF64ArrayAttr(Attribute):
     def __getitem__(self, arg: int, /) -> float: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> DenseF64ArrayIterator: ...
-    def __add__(self, arg: list, /) -> DenseF64ArrayAttr: ...
+    def __add__(self, arg: Sequence, /) -> DenseF64ArrayAttr: ...
 
 class DenseF64ArrayIterator:
     def __iter__(self) -> DenseF64ArrayIterator: ...
@@ -2005,14 +2009,14 @@ class ArrayAttr(Attribute):
 
     @staticmethod
     def get(
-        attributes: list, context: _mlir.ir.Context | None = None
+        attributes: Sequence[Attribute], context: _mlir.ir.Context | None = None
     ) -> ArrayAttr:
         """Gets a uniqued Array attribute"""
 
     def __getitem__(self, arg: int, /) -> Attribute: ...
     def __len__(self) -> int: ...
     def __iter__(self) -> ArrayAttributeIterator: ...
-    def __add__(self, arg: list, /) -> ArrayAttr: ...
+    def __add__(self, arg: Sequence[Attribute], /) -> ArrayAttr: ...
 
 class ArrayAttributeIterator:
     def __iter__(self) -> ArrayAttributeIterator: ...
@@ -2401,7 +2405,8 @@ class DictAttr(Attribute):
     def __len__(self) -> int: ...
     @staticmethod
     def get(
-        value: dict = {}, context: _mlir.ir.Context | None = None
+        value: dict[str, Attribute] = {},
+        context: _mlir.ir.Context | None = None,
     ) -> DictAttr:
         """Gets an uniqued dict attribute"""
 
@@ -2558,10 +2563,10 @@ class IntegerAttr(Attribute):
         """Gets an uniqued integer attribute associated to a type"""
 
     @property
-    def value(self) -> object:
+    def value(self) -> int:
         """Returns the value of the integer attribute"""
 
-    def __int__(self) -> object:
+    def __int__(self) -> int:
         """Converts the value of the integer attribute to a Python int"""
 
 class IntegerSetAttr(Attribute):
@@ -2756,7 +2761,7 @@ class InferShapedTypeOpInterface:
 
     def inferReturnTypeComponents(
         self,
-        operands: list | None = None,
+        operands: Sequence | None = None,
         attributes: Attribute | None = None,
         regions: types.CapsuleType | None = None,
         properties: Sequence[Region] | None = None,
@@ -2788,7 +2793,7 @@ class InferTypeOpInterface:
 
     def inferReturnTypes(
         self,
-        operands: list | None = None,
+        operands: Sequence | None = None,
         attributes: Attribute | None = None,
         properties: types.CapsuleType | None = None,
         regions: Sequence[Region] | None = None,
@@ -2838,13 +2843,13 @@ class ShapedTypeComponents:
 
     @overload
     @staticmethod
-    def get(shape: list, element_type: Type) -> ShapedTypeComponents:
+    def get(shape: list[int], element_type: Type) -> ShapedTypeComponents:
         """Create a ranked shaped type components object."""
 
     @overload
     @staticmethod
     def get(
-        shape: list, element_type: Type, attribute: Attribute
+        shape: list[int], element_type: Type, attribute: Attribute
     ) -> ShapedTypeComponents:
         """Create a ranked shaped type components object with attribute."""
 
@@ -3364,7 +3369,7 @@ class VectorType(ShapedType):
         shape: Sequence[int],
         element_type: Type,
         *,
-        scalable: list | None = None,
+        scalable: Sequence | None = None,
         scalable_dims: Sequence[int] | None = None,
         loc: _mlir.ir.Location | None = None,
     ) -> VectorType:
@@ -3375,7 +3380,7 @@ class VectorType(ShapedType):
         shape: Sequence[int],
         element_type: Type,
         *,
-        scalable: list | None = None,
+        scalable: Sequence | None = None,
         scalable_dims: Sequence[int] | None = None,
         context: _mlir.ir.Context | None = None,
     ) -> VectorType:
@@ -3574,11 +3579,11 @@ class FunctionType(Type):
         """Gets a FunctionType from a list of input and result types"""
 
     @property
-    def inputs(self) -> list:
+    def inputs(self) -> list[Type]:
         """Returns the list of input types in the FunctionType."""
 
     @property
-    def results(self) -> list:
+    def results(self) -> list[Type]:
         """Returns the list of result types in the FunctionType."""
 
 class OpaqueType(Type):

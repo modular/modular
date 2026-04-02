@@ -22,19 +22,17 @@ Test cases from CUTLASS (simplest first):
 """
 
 from std.sys import size_of
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from std.gpu import barrier, thread_idx, block_idx
+from layout import Layout, LayoutTensor
+from std.gpu import barrier, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.testing import assert_false
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory
 from layout import Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTileIm2col,
-    _idx_product,
     create_tensor_tile_im2col,
 )
 from std.memory import alloc
@@ -130,7 +128,7 @@ def im2col_reference[
     dtype: DType,
 ](
     output: UnsafePointer[mut=True, Scalar[dtype], _],
-    input: NDBuffer[rank=4, dtype],  # NHWC
+    input: UnsafePointer[Scalar[dtype], _],  # NHWC (flat pointer)
     batch: Int,
     in_height: Int,
     in_width: Int,
@@ -197,7 +195,7 @@ def im2col_reference[
                     + iw * in_channels
                     + c
                 )
-                val = input.data.load(input_idx)
+                val = input.load(input_idx)
 
             output[m_local * BK + k_local] = val
 
@@ -273,14 +271,13 @@ def run_im2col_test[
     var input_device = ctx.enqueue_create_buffer[dtype](input_size)
     ctx.enqueue_copy(input_device, input_host)
 
-    # Create NDBuffer view with compile-time static shape
-    # Note: For runtime dynamic shapes, we would need to use RuntimeLayout
-    # to properly compute strides. For now, we use comptime known shapes.
-    comptime static_shape = DimList[batch, in_height, in_width, in_channels]()
-    var input_nd = NDBuffer[rank=4, dtype, _, static_shape](
-        input_device.unsafe_ptr(), static_shape
+    # Create LayoutTensor view with compile-time static shape for TMA
+    comptime input_layout = Layout.row_major(
+        batch, in_height, in_width, in_channels
     )
-    var input_tensor = from_ndbuffer_row_major(input_nd)
+    var input_tensor = LayoutTensor[dtype, input_layout, MutAnyOrigin](
+        input_device.unsafe_ptr()
+    )
 
     # Create im2col TMA descriptor
     # Corner offsets for TMA (CUTLASS Fprop convention with dilation=1)
@@ -323,12 +320,9 @@ def run_im2col_test[
     var ref_host = alloc[Scalar[dtype]](tile_size)
 
     # Compute reference on CPU for tile at (k=0, m=0)
-    var input_nd_host = NDBuffer[rank=4, dtype, _, static_shape](
-        input_host, static_shape
-    )
     im2col_reference[dtype](
         ref_host,
-        input_nd_host,
+        input_host,
         batch,
         in_height,
         in_width,
@@ -361,7 +355,7 @@ def run_im2col_test[
 
     ctx.enqueue_function_unchecked[kernel, dump_asm=False](
         act_tma,
-        output_device.unsafe_ptr(),
+        output_device,
         UInt(0),  # k_coord
         UInt(0),  # m_coord
         grid_dim=(1, 1, 1),

@@ -25,18 +25,25 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product
 from std.memory import stack_allocation
-from nn.mha_operand import (
+from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
     LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
-from nn.mha_fa3_utils import kv_coord
+from nn.attention.gpu.nvidia.sm90.attention import kv_coord
 from std.testing import assert_equal
 
 from std.utils import IndexList
@@ -587,52 +594,66 @@ def test_layout_tensor[
     print(msg)
 
     # Create source and destination buffers with BSHD layout
-    var dyn_shape = IndexList[4](
-        batch_size,
-        max_seq_len,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
-    )
-
-    comptime tensor_layout = Layout.row_major[4]()
-    var tensor_runtime_layout = RuntimeLayout[tensor_layout].row_major(
-        dyn_shape
-    )
+    comptime num_heads = Int(kv_params.num_heads)
+    comptime head_size = Int(kv_params.head_size)
+    total_elems = batch_size * max_seq_len * num_heads * head_size
 
     # Create device buffer for source
-    var src_device = ctx.enqueue_create_buffer[dtype](
-        dyn_shape.flattened_length()
-    )
+    var src_device = ctx.enqueue_create_buffer[dtype](total_elems)
 
     # Initialize with random data
     with src_device.map_to_host() as src_host:
-        var src_host_tensor = LayoutTensor[dtype, tensor_layout](
-            src_host, tensor_runtime_layout
+        var src_host_tt = TileTensor(
+            src_host,
+            row_major(
+                (
+                    Idx(batch_size),
+                    Idx(max_seq_len),
+                    Idx[num_heads](),
+                    Idx[head_size](),
+                )
+            ),
         )
-        random(src_host_tensor)
+        random(src_host_tt)
 
     # Create MHAOperand for source
+    var src_tt = TileTensor(
+        src_device,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(max_seq_len),
+                Idx[num_heads](),
+                Idx[head_size](),
+            )
+        ),
+    )
     src_operand = LayoutTensorMHAOperand(
-        LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-            src_device, tensor_runtime_layout
-        )
+        src_tt.to_layout_tensor().as_any_origin()
     )
 
     for is_k_major in range(2):
         # Create destination buffer
-        var dst_device = ctx.enqueue_create_buffer[dtype](
-            dyn_shape.flattened_length()
-        )
+        var dst_device = ctx.enqueue_create_buffer[dtype](total_elems)
 
         # Initialize destination with zeros
         with dst_device.map_to_host() as dst_host:
             for i in range(len(dst_host)):
                 dst_host[i] = 0
 
+        var dst_tt = TileTensor(
+            dst_device,
+            row_major(
+                (
+                    Idx(batch_size),
+                    Idx(max_seq_len),
+                    Idx[num_heads](),
+                    Idx[head_size](),
+                )
+            ),
+        )
         dst_operand = LayoutTensorMHAOperand(
-            LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                dst_device, tensor_runtime_layout
-            )
+            dst_tt.to_layout_tensor().as_any_origin()
         )
 
         mha_operand_copy[tile_m, kv_params](
@@ -646,18 +667,34 @@ def test_layout_tensor[
         # Verify results by comparing on host
         with src_device.map_to_host() as src_host:
             with dst_device.map_to_host() as dst_host:
-                var src_host_tensor = LayoutTensor[dtype, tensor_layout](
-                    src_host, tensor_runtime_layout
+                var src_host_tt = TileTensor(
+                    src_host,
+                    row_major(
+                        (
+                            Idx(batch_size),
+                            Idx(max_seq_len),
+                            Idx[num_heads](),
+                            Idx[head_size](),
+                        )
+                    ),
                 )
-                var dst_host_tensor = LayoutTensor[dtype, tensor_layout](
-                    dst_host, tensor_runtime_layout
+                var dst_host_tt = TileTensor(
+                    dst_host,
+                    row_major(
+                        (
+                            Idx(batch_size),
+                            Idx(max_seq_len),
+                            Idx[num_heads](),
+                            Idx[head_size](),
+                        )
+                    ),
                 )
 
                 src_host_operand = LayoutTensorMHAOperand(
-                    src_host_tensor.as_any_origin()
+                    src_host_tt.to_layout_tensor().as_any_origin()
                 )
                 dst_host_operand = LayoutTensorMHAOperand(
-                    dst_host_tensor.as_any_origin()
+                    dst_host_tt.to_layout_tensor().as_any_origin()
                 )
 
                 test_mha_host_operand[tile_m, kv_params](
@@ -705,32 +742,40 @@ def test_ragged[
         offsets_host[batch_size] = UInt32(offset)
 
     # Create ragged buffers
-    var dyn_shape = IndexList[3](
-        total_tokens, Int(kv_params.num_heads), Int(kv_params.head_size)
-    )
-
-    comptime tensor_layout = Layout.row_major[3]()
-    var tensor_runtime_layout = RuntimeLayout[tensor_layout].row_major(
-        dyn_shape
-    )
+    comptime num_heads = Int(kv_params.num_heads)
+    comptime head_size = Int(kv_params.head_size)
+    total_elems = total_tokens * num_heads * head_size
 
     # Create device buffer for source
-    var src_device = ctx.enqueue_create_buffer[dtype](
-        dyn_shape.flattened_length()
-    )
+    var src_device = ctx.enqueue_create_buffer[dtype](total_elems)
 
     # Initialize with random data
     with src_device.map_to_host() as src_host:
-        var src_host_tensor = LayoutTensor[dtype, tensor_layout](
-            src_host, tensor_runtime_layout
+        var src_host_tt = TileTensor(
+            src_host,
+            row_major(
+                (
+                    Idx(total_tokens),
+                    Idx[num_heads](),
+                    Idx[head_size](),
+                )
+            ),
         )
-        random(src_host_tensor)
+        random(src_host_tt)
 
     # Create MHAOperand for source
-    src_operand = RaggedMHAOperand(
-        LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-            src_device, tensor_runtime_layout
+    var src_tt = TileTensor(
+        src_device,
+        row_major(
+            (
+                Idx(total_tokens),
+                Idx[num_heads](),
+                Idx[head_size](),
+            )
         ),
+    )
+    src_operand = RaggedMHAOperand(
+        src_tt.to_layout_tensor().as_any_origin(),
         LayoutTensor[DType.uint32, offsets_layout, MutAnyOrigin](
             cache_row_offsets_device, offsets_runtime_layout
         ),
@@ -742,19 +787,25 @@ def test_ragged[
         max_seq_len = max(max_seq_len, seq_lens[i])
 
     # Create destination buffer
-    var dst_device = ctx.enqueue_create_buffer[dtype](
-        dyn_shape.flattened_length()
-    )
+    var dst_device = ctx.enqueue_create_buffer[dtype](total_elems)
 
     # Initialize destination with zeros
     with dst_device.map_to_host() as dst_host:
         for i in range(len(dst_host)):
             dst_host[i] = 0
 
-    dst_operand = RaggedMHAOperand(
-        LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-            dst_device, tensor_runtime_layout
+    var dst_tt = TileTensor(
+        dst_device,
+        row_major(
+            (
+                Idx(total_tokens),
+                Idx[num_heads](),
+                Idx[head_size](),
+            )
         ),
+    )
+    dst_operand = RaggedMHAOperand(
+        dst_tt.to_layout_tensor().as_any_origin(),
         LayoutTensor[DType.uint32, offsets_layout, MutAnyOrigin](
             cache_row_offsets_device, offsets_runtime_layout
         ),
@@ -772,22 +823,36 @@ def test_ragged[
     with src_device.map_to_host() as src_host:
         with dst_device.map_to_host() as dst_host:
             with cache_row_offsets_device.map_to_host() as offsets_host:
-                var src_host_tensor = LayoutTensor[dtype, tensor_layout](
-                    src_host, tensor_runtime_layout
+                var src_host_tt = TileTensor(
+                    src_host,
+                    row_major(
+                        (
+                            Idx(total_tokens),
+                            Idx[num_heads](),
+                            Idx[head_size](),
+                        )
+                    ),
                 )
-                var dst_host_tensor = LayoutTensor[dtype, tensor_layout](
-                    dst_host, tensor_runtime_layout
+                var dst_host_tt = TileTensor(
+                    dst_host,
+                    row_major(
+                        (
+                            Idx(total_tokens),
+                            Idx[num_heads](),
+                            Idx[head_size](),
+                        )
+                    ),
                 )
                 var offsets_host_tensor = LayoutTensor[
                     DType.uint32, offsets_layout
                 ](offsets_host, offsets_runtime_layout)
 
                 src_host_operand = RaggedMHAOperand(
-                    src_host_tensor.as_any_origin(),
+                    src_host_tt.to_layout_tensor().as_any_origin(),
                     offsets_host_tensor.as_any_origin(),
                 )
                 dst_host_operand = RaggedMHAOperand(
-                    dst_host_tensor.as_any_origin(),
+                    dst_host_tt.to_layout_tensor().as_any_origin(),
                     offsets_host_tensor.as_any_origin(),
                 )
 

@@ -26,16 +26,29 @@ from max._core.driver import Buffer
 
 # Import op bindings from categorized Mojo modules
 from . import (  # type: ignore[attr-defined]
+    argmax_ops,
+    argnonzero_ops,
+    avg_pool_ops,
+    band_part_ops,
+    bottomk_ops,
+    conv_ops,
     data_movement_ops,
     elementwise_binary_ops,
     elementwise_cast_ops,
     elementwise_comparison_ops,
     elementwise_unary_ops,
+    gather_scatter_ops,
     layer_norm_ops,
     matmul_ops,
     misc_ops,
+    pad_ops,
+    pooling_ops,
     reduce_ops,
+    resize_ops,
     softmax_ops,
+    split_ops,
+    tile_ops,
+    topk_ops,
 )
 
 # Arithmetic binary ops: output dtype matches input dtype

@@ -18,7 +18,6 @@ from std.sys.info import CompilationTarget, simd_width_of, size_of
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from buffer.buffer import partial_simd_load, partial_simd_store
-from buffer.dimlist import DimList
 from layout.layout import *
 from layout import LayoutTensor, TileTensor
 
@@ -32,12 +31,8 @@ comptime elementwise_compute_lambda_type = def[
 
 
 @fieldwise_init
-struct KernelConfig[packed_shape: DimList]:
-    """Static configuration of the matmul inner kernel.
-
-    Parameters:
-        packed_shape: The shape of the packed buffer.
-    """
+struct KernelConfig:
+    """Static configuration of the matmul inner kernel."""
 
     # Static number of rows of the micro kernel.
     var kernel_rows: Int
@@ -564,7 +559,7 @@ def get_kernel_config[
     c_type: DType,
     *,
     kernel_type: Bool = False,
-]() -> KernelConfig[DimList.create_unknown[3]()]:
+]() -> KernelConfig:
     """Utility function to extract matmul configuration parameters for exported
     Functions.
         TODO: Add target dependent configuration parameters.

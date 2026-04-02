@@ -19,7 +19,7 @@ from std.testing import assert_equal
 
 def test_function_attributes() raises:
     def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
-        x[0] = Int(thread_idx.x)
+        x[0] = thread_idx.x
 
     with DeviceContext() as ctx:
         var func = ctx.compile_function_experimental[kernel]()

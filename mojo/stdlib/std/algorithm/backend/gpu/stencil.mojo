@@ -15,6 +15,7 @@
 from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.math import ceildiv
+from std.math.uutils import udivmod
 from std.utils.index import IndexList
 
 
@@ -102,15 +103,15 @@ def _stencil_impl_gpu[
         var y = bid_y * block_dim.y + tid_y
 
         # Calculate batch and channel from bid_z
-        var batch_idx, channel = divmod(bid_z, UInt(shape[3]))
+        var batch_idx, channel = udivmod(bid_z, shape[3])
 
         # Early exit if outside bounds
-        if x >= UInt(shape[2]) or y >= UInt(shape[1]):
+        if x >= shape[2] or y >= shape[1]:
             return
 
         # Create output point indices with computed batch and channel
         var indices = IndexList[rank, element_type=shape_element_type](
-            Int(batch_idx), Int(y), Int(x), Int(channel)
+            batch_idx, y, x, channel
         )
 
         # Process stencil for this point

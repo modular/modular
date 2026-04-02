@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.sys.intrinsics import _type_is_eq
 
 from std.algorithm.functional import unswitch
 from std.gpu.host import DeviceContext, DeviceBuffer
@@ -30,17 +29,17 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
-    row_major,
+    lt_to_tt,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
-from nn.flash_attention import (
+from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope
-from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import MHAMask
-from nn.mha_utils import (
+from nn.attention.gpu.mha import flash_attention as gpu_flash_attention
+from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_utils import (
     dispatch_mask,
     dispatch_materialized_mask,
 )
@@ -429,7 +428,7 @@ def _matmul_common[
         transpose_b=True,
         target=target,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state_2d, weight, context)
+    ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
     comptime if is_cpu[target]():
         c_nd.ptr.free()
@@ -1190,52 +1189,38 @@ def print_kv_cache_cont_batch_generic_gpu[
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ) raises:
-    var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
-    var blocks_host_nd = LayoutTensor[
-        type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
-    ](
-        blocks_ptr,
-        RuntimeLayout[Layout.row_major[6]()].row_major(
-            kv_collection.blocks.runtime_layout.shape.value.canonicalize()
-        ),
-    )
+    # Create host TileTensor copies of device data.
     var dev_ctx = context.get_device_context()
-    dev_ctx.enqueue_copy(
-        blocks_host_nd.ptr,
-        kv_collection.blocks.ptr,
-        kv_collection.blocks.size(),
+
+    var n_blocks = kv_collection.blocks.num_elements()
+    var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
+    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
+    var blocks_host = type_of(kv_collection.blocks)(
+        ptr=blocks_ptr, layout=kv_collection.blocks.layout
     )
 
-    var cache_lengths_ptr = alloc[UInt32](kv_collection.cache_lengths.size())
-    var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
-        cache_lengths_ptr,
-        RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
-            kv_collection.cache_lengths.runtime_layout.shape.value.canonicalize(),
-        ),
-    )
+    var n_cache_lengths = kv_collection.cache_lengths.num_elements()
+    var cache_lengths_ptr = alloc[UInt32](n_cache_lengths)
     dev_ctx.enqueue_copy(
-        cache_lengths_host_nd.ptr,
-        kv_collection.cache_lengths.ptr,
-        kv_collection.cache_lengths.size(),
+        cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
+    )
+    var cache_lengths_host = type_of(kv_collection.cache_lengths)(
+        ptr=cache_lengths_ptr, layout=kv_collection.cache_lengths.layout
     )
 
-    var lookup_table_ptr = alloc[UInt32](kv_collection.lookup_table.size())
-    var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
-        lookup_table_ptr,
-        RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
-            kv_collection.lookup_table.runtime_layout.shape.value.canonicalize(),
-        ),
-    )
+    var n_lookup_table = kv_collection.lookup_table.num_elements()
+    var lookup_table_ptr = alloc[UInt32](n_lookup_table)
     dev_ctx.enqueue_copy(
-        lookup_table_host_nd.ptr,
-        kv_collection.lookup_table.ptr,
-        kv_collection.lookup_table.size(),
+        lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
+    )
+    var lookup_table_host = type_of(kv_collection.lookup_table)(
+        ptr=lookup_table_ptr, layout=kv_collection.lookup_table.layout
     )
 
     var host_kv_collection = type_of(kv_collection)(
-        blocks_host_nd,
-        cache_lengths_host_nd,
-        lookup_table_host_nd,
+        blocks_host,
+        cache_lengths_host,
+        lookup_table_host,
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
     )
@@ -1297,49 +1282,38 @@ def print_kv_cache_paged_generic_gpu[
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ) raises:
-    var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
-    var blocks_host_nd = LayoutTensor[
-        type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
-    ](
-        blocks_ptr,
-        RuntimeLayout[Layout.row_major[6]()].row_major(
-            kv_collection.blocks.runtime_layout.shape.value.canonicalize(),
-        ),
-    )
+    # Create host TileTensor copies of device data.
     var dev_ctx = context.get_device_context()
+
+    var n_blocks = kv_collection.blocks.num_elements()
+    var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
+    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
+    var blocks_host = type_of(kv_collection.blocks)(
+        ptr=blocks_ptr, layout=kv_collection.blocks.layout
+    )
+
+    var n_cache_lengths = kv_collection.cache_lengths.num_elements()
+    var cache_lengths_ptr = alloc[UInt32](n_cache_lengths)
     dev_ctx.enqueue_copy(
-        blocks_host_nd.ptr,
-        kv_collection.blocks.ptr,
-        kv_collection.blocks.size(),
+        cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
     )
-    var cache_lengths_ptr = alloc[UInt32](kv_collection.cache_lengths.size())
-    var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
-        cache_lengths_ptr,
-        RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
-            kv_collection.cache_lengths.runtime_layout.shape.value.canonicalize(),
-        ),
+    var cache_lengths_host = type_of(kv_collection.cache_lengths)(
+        ptr=cache_lengths_ptr, layout=kv_collection.cache_lengths.layout
     )
+
+    var n_lookup_table = kv_collection.lookup_table.num_elements()
+    var lookup_table_ptr = alloc[UInt32](n_lookup_table)
     dev_ctx.enqueue_copy(
-        cache_lengths_host_nd.ptr,
-        kv_collection.cache_lengths.ptr,
-        kv_collection.cache_lengths.size(),
+        lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
     )
-    var lookup_table_ptr = alloc[UInt32](kv_collection.lookup_table.size())
-    var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
-        lookup_table_ptr,
-        RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
-            kv_collection.lookup_table.runtime_layout.shape.value.canonicalize(),
-        ),
+    var lookup_table_host = type_of(kv_collection.lookup_table)(
+        ptr=lookup_table_ptr, layout=kv_collection.lookup_table.layout
     )
-    dev_ctx.enqueue_copy(
-        lookup_table_host_nd.ptr,
-        kv_collection.lookup_table.ptr,
-        kv_collection.lookup_table.size(),
-    )
+
     var host_kv_collection = type_of(kv_collection)(
-        blocks_host_nd,
-        cache_lengths_host_nd,
-        lookup_table_host_nd,
+        blocks_host,
+        cache_lengths_host,
+        lookup_table_host,
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
     )
@@ -1435,17 +1409,17 @@ def generic_get_paged_cache[
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
-            UInt(blocks.static_spec.shape.get[4]()),
-            UInt(blocks.static_spec.shape.get[5]()),
-            blocks.static_spec.shape.get[1]() == 1,
+            UInt(Int(blocks.static_spec.shape_tuple[4])),
+            UInt(Int(blocks.static_spec.shape_tuple[5])),
+            Int(blocks.static_spec.shape_tuple[1]) == 1,
         ),
-        blocks.static_spec.shape.get[3](),
+        Int(blocks.static_spec.shape_tuple[3]),
     ],
 ):
-    comptime page_size = blocks.static_spec.shape.get[3]()
-    comptime head_dim = blocks.static_spec.shape.get[5]()
-    comptime num_heads = blocks.static_spec.shape.get[4]()
-    comptime is_mla = blocks.static_spec.shape.get[1]() == 1
+    comptime page_size = Int(blocks.static_spec.shape_tuple[3])
+    comptime head_dim = Int(blocks.static_spec.shape_tuple[5])
+    comptime num_heads = Int(blocks.static_spec.shape_tuple[4])
+    comptime is_mla = Int(blocks.static_spec.shape_tuple[1]) == 1
     return generic_get_paged_cache[
         dtype,
         KVCacheStaticParams(UInt(num_heads), UInt(head_dim), is_mla),

@@ -58,7 +58,7 @@ def loadTile(
     var num_rows_per_tile = NUM_THREADS_PER_BLOCK // width
     var num_subtiles = height // num_rows_per_tile
 
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     for subtile in range(num_subtiles):
         var row, col = divmod(tx, width)
@@ -91,9 +91,9 @@ def mm_tiled_kernel_double_buffer(
         N: Number of columns in B and C.
         K: Number of columns in A and rows in B.
     """
-    var bx = Int(block_idx.x)
-    var by = Int(block_idx.y)
-    var tx = Int(thread_idx.x)
+    var bx = block_idx.x
+    var by = block_idx.y
+    var tx = thread_idx.x
 
     var tiles_across_x = bN // tN
     var tile_x, tile_y = divmod(tx, tiles_across_x)
@@ -309,9 +309,9 @@ def main() raises:
         )
 
         ctx.enqueue_function_experimental[mm_tiled_kernel_double_buffer](
-            d_A.unsafe_ptr(),
-            d_B.unsafe_ptr(),
-            d_C.unsafe_ptr(),
+            d_A,
+            d_B,
+            d_C,
             UInt32(M),
             UInt32(N),
             UInt32(K),

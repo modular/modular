@@ -23,12 +23,11 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
-from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, MaterializedMask
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
-
+from std.sys import has_amd_gpu_accelerator
 from std.utils import Index, IndexList
-from std.utils.numerics import min_or_neg_inf
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24
@@ -95,30 +94,6 @@ def execute_flash_attention[
     for i in range(batch_size):
         valid_lengths_host[i] = valid_length[i]
 
-    # Define layouts for mask tensor
-    comptime mask_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
-    var mask_shape = IndexList[4](
-        batch_size, num_q_heads, max_prompt_len, max_context_len
-    )
-    var mask_runtime_layout = RuntimeLayout[mask_static_layout].row_major(
-        mask_shape
-    )
-
-    var mask = ManagedLayoutTensor[dtype, mask_static_layout](
-        mask_runtime_layout, ctx
-    )
-    var mask_host_tensor = mask.tensor[update=False]()
-    for b in range(batch_size):
-        for h in range(num_q_heads):
-            for q_idx in range(max_prompt_len):
-                for k_idx in range(max_context_len):
-                    mask_host_tensor[b, h, q_idx, k_idx] = (
-                        0 if q_idx + Int(cache_valid_length[b])
-                        >= k_idx else min_or_neg_inf[dtype]()
-                    )
-
     # Define layouts for output tensors
     comptime output_static_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
@@ -144,21 +119,9 @@ def execute_flash_attention[
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
     )
-    var cache_lengths_for_mask = ManagedLayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
-        ctx,
-    )
     var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
-    var cache_lengths_for_mask_host = cache_lengths_for_mask.tensor[
-        update=False
-    ]()
     for i in range(batch_size):
         cache_lengths_host[i] = cache_valid_length[i]
-        cache_lengths_for_mask_host[i] = cache_valid_length[i]
 
     var cache_lengths_device = cache_lengths_managed.device_tensor()
 
@@ -206,7 +169,6 @@ def execute_flash_attention[
     # Create layout tensors for GPU operations
     var q_tensor = q.device_tensor()
     var valid_lengths_tensor = valid_lengths.device_tensor()
-    var mask_tensor = mask.device_tensor()
     var ref_output_tensor = ref_output.device_tensor()
     var test_output_tensor = test_output.device_tensor()
     var kv_block_tensor = kv_block.device_tensor()
@@ -234,26 +196,25 @@ def execute_flash_attention[
         ctx,
     )
 
-    flash_attention(
-        ref_output_tensor,
+    mha_gpu_naive(
         q_tensor,
         k_cache_device,
         v_cache_device,
-        MaterializedMask(
-            mask_tensor,
-            start_pos=LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                cache_lengths_for_mask.device_tensor().ptr,
-                cache_lengths_for_mask.device_tensor().runtime_layout,
-            ),
-        ),
+        CausalMask(),
+        ref_output_tensor,
         valid_lengths_tensor,
         rsqrt(Float32(kv_params.head_size)),
+        batch_size,
+        max_prompt_len,
+        max_context_len,
+        num_q_heads,
+        Int(kv_params.head_size),
+        num_q_heads // Int(kv_params.num_heads),
         ctx,
     )
 
     # Verify results
+    var rtol = 1e-2 if has_amd_gpu_accelerator() else 8e-3
     var test_out_tensor = test_output.tensor()
     var ref_out_tensor = ref_output.tensor()
     for bs in range(batch_size):
@@ -264,7 +225,7 @@ def execute_flash_attention[
                         ref_out_tensor[bs, s, h, Int(hd)],
                         test_out_tensor[bs, s, h, Int(hd)],
                         atol=1e-5,
-                        rtol=8e-3,
+                        rtol=rtol,
                     )
 
 

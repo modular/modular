@@ -25,6 +25,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Generator, Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, TypeGuard, TypeVar, cast
 
@@ -148,15 +149,9 @@ class KernelLibrary:
     _analysis: _graph.Analysis
 
     def __init__(self, paths: Iterable[Path] = ()) -> None:
-        # TODO(GEX-1846): This is a terrible workaround to initialize M::Context on the Graph API.
-        # Get rid of this and properly setup the context instead.
-        from max.driver import CPU
-        from max.engine import InferenceSession  # type: ignore
-
         context = default_mlir_context()
+        _graph._init_and_register_max_context(context)
         paths_list = list(paths)
-        mock_session = InferenceSession(devices=[CPU()])
-        mock_session._impl.register_runtime_context(context)
         self._analysis = _graph.Analysis(context, paths_list)
 
     def library_paths(self) -> list[Path]:
@@ -223,6 +218,26 @@ class KernelLibrary:
                 current kernel library analysis.
         """
         self._analysis.verify_custom_op(custom_op)
+
+
+class DevicePlacementPolicy(Enum):
+    """Controls behavior when an op implicitly transfers a tensor to CPU.
+
+    Ops that only have CPU kernels must transfer non-CPU tensors before
+    executing. This policy controls how that situation is reported:
+
+    - ``Ignore``: transfer silently, no message.
+    - ``Warn`` (default): emit a ``UserWarning`` naming the op and the
+      tracking ticket for GPU support.
+    - ``Error``: raise ``ValueError``, making the implicit transfer a hard
+      build-time failure.
+
+    Pass via ``Graph(..., strict_device_placement=DevicePlacementPolicy.Error)``.
+    """
+
+    Ignore = "ignore"
+    Warn = "warn"
+    Error = "error"
 
 
 # From https://stackoverflow.com/a/76301341
@@ -405,9 +420,11 @@ class Graph:
         custom_extensions: Iterable[Path] = [],
         kernel_library: KernelLibrary | None = None,
         module: mlir.Module | None = None,
+        strict_device_placement: DevicePlacementPolicy = DevicePlacementPolicy.Warn,
         **kwargs,
     ) -> None:
         self.name = name
+        self.strict_device_placement = strict_device_placement
         if path is not None:
             self._load_mlir(path)
             return
@@ -1090,7 +1107,7 @@ class Graph:
         self._context_state = []
         with open(path) as f:
             context = default_mlir_context()
-            with _location() as loc:
+            with _location():
                 # Create the top level module op.
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):

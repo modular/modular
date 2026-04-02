@@ -39,8 +39,8 @@ from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
-from ..quant_config import QuantConfig, nvfp4_packed_k
-from ..quant_ops import quantized_fused_qkv_matmul, quantized_matmul
+from ..quant_config import QuantConfig, fp4_packed_k
+from ..quant_ops import quantized_matmul
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
 from .multi_latent_attention import MLAPrefillMetadata
@@ -253,7 +253,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
         o_proj_quant_config = quant_config
-        o_proj_in_dim = nvfp4_packed_k(
+        o_proj_in_dim = fp4_packed_k(
             self.n_heads * self.v_head_dim, quant_config
         )
         self.o_proj = linear_cls(
@@ -594,6 +594,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
     def _mla_impl(
         self,
         xq: TensorValue,
+        kv: TensorValue,
         kv_collection: PagedCacheValues,
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
@@ -604,6 +605,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         # Prepare the inputs and weights for the prefill and decode branches.
         attn_kwargs: dict[str, Any] = {
             "q": xq,
+            "kv": kv,
             "input_row_offsets": input_row_offsets,
             "freqs_cis": freqs_cis,
             "kv_norm_gamma": kv_a_proj_layernorm,
@@ -666,22 +668,18 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
-        # Get attributes from input.
-        total_seq_len = x.shape[0]
-
         # First FP8 matmul: x @ q_a_proj.T, fused with x @ kv_a_proj_with_mqa.T
         wqkv, wqkv_scale = self.wqkv
-        q_a_out = quantized_fused_qkv_matmul(
-            kv_params=self.kv_params,
+        qkv = quantized_matmul(
             x=x,
-            wqkv=wqkv,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            input_row_offsets=input_row_offsets,
-            n_heads=self.n_heads,
-            quant_config=self.quant_config,
+            weight=wqkv,
             weight_scale=wqkv_scale,
-            _output_dim=self.q_lora_rank,
+            input_scale=None,  # Dynamic scaling
+            quant_config=self.quant_config,
+        )
+
+        q_a_out, kv = ops.split(
+            qkv, [self.q_lora_rank, self.cache_head_dim], axis=1
         )
 
         # Apply layer norm
@@ -703,6 +701,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         attn_out = self._mla_impl(
             xq,
+            kv,
             kv_collection,
             layer_idx,
             input_row_offsets,

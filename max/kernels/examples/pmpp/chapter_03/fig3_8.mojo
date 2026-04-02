@@ -18,7 +18,6 @@ from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.itertools import product
-from std.testing import assert_equal
 
 # ========================== KERNEL CODE ==========================
 
@@ -39,8 +38,8 @@ def blur_kernel(
     """
     comptime BLUR_SIZE = 3
 
-    var row = Int(global_idx.y)
-    var col = Int(global_idx.x)
+    var row = global_idx.y
+    var col = global_idx.x
     var idx = row * n + col
 
     if row < m and col < n:

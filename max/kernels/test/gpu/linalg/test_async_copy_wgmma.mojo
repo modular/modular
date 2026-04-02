@@ -97,17 +97,14 @@ def cpasync_wgmma_kernel[
     comptime num_m_mmas = BM // wgmma_shape[0]
     comptime num_n_mmas = BN // wgmma_shape[1]
 
-    a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](Int(block_idx.y), 0)
+    a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx.y, 0)
 
     comptime b_dim0 = BN if transpose_b else BK
     comptime b_dim1 = BK if transpose_b else BN
     comptime b_tile_axis = 1 if transpose_b else 0
-    var b_tile_coords = (block_idx.x, UInt(0)) if transpose_b else (
-        UInt(0),
-        block_idx.y,
-    )
+    var b_tile_coords = (block_idx.x, 0) if transpose_b else (0, block_idx.y)
     var b_gmem_iter = b.tiled_iterator[b_dim0, b_dim1, axis=b_tile_axis](
-        Int(b_tile_coords[0]), Int(b_tile_coords[1])
+        b_tile_coords[0], b_tile_coords[1]
     )
 
     comptime c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
@@ -141,7 +138,7 @@ def cpasync_wgmma_kernel[
         a_gmem_iter._incr()
         b_gmem_iter._incr()
 
-    c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
     comptime c_layouts = wgmma_c_layout[
         wgmma_shape[0], wgmma_shape[1], c_gmem_tile.layout
     ]()
@@ -151,7 +148,7 @@ def cpasync_wgmma_kernel[
     comptime t_to_idx_const = tv_to_idx[0]
     comptime v_to_idx = tv_to_idx[1]
     t_to_idx = RuntimeLayout[t_to_idx_const]()
-    t_idx = t_to_idx(Int(thread_idx.x))
+    t_idx = t_to_idx(thread_idx.x)
 
     c_reg_tile_vec2 = c_reg_tile.vectorize[1, 2]()
     comptime T = c_reg_tile_vec2.element_type

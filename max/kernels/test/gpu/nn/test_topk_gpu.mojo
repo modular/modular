@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, iota
-from std.random import random_float64, seed
+from std.random import random_float64
 
 from std.algorithm.reduction import max as reduce_max
 from std.benchmark import (
@@ -22,7 +22,6 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
@@ -137,9 +136,9 @@ def test_case_batched[
 
     # Create tile tensors for kernel calls
 
-    var in_runtime_layout = row_major((Idx(batch_size), Idx(N)))
-    var out_vals_runtime_layout = row_major((Idx(batch_size), Idx(K)))
-    var out_idxs_runtime_layout = row_major((Idx(batch_size), Idx(out_idx_len)))
+    var in_runtime_layout = row_major(Idx(batch_size), Idx(N))
+    var out_vals_runtime_layout = row_major(Idx(batch_size), Idx(K))
+    var out_idxs_runtime_layout = row_major(Idx(batch_size), Idx(out_idx_len))
     var local_topk_runtime_layout = row_major(
         (Idx(batch_size), Idx(num_blocks_per_input_ * K))
     )

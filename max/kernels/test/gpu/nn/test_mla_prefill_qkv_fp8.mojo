@@ -14,18 +14,22 @@
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.random import randn
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
-from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
-from nn.mha_mask import CausalMask, MaterializedMask
-from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mla import flare_mla_prefill
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200, GPUInfo
 
 from std.utils.index import Index
-from std.utils.numerics import get_accum_type
 
 
 def test_prefill[
@@ -125,34 +129,37 @@ def test_prefill[
     cache_row_offsets[batch_size] = UInt32(batch_size * num_keys)
 
     # ragged inputs
-    var q = LayoutTensor[DType.bfloat16, Layout.row_major[3]()](
+    var q = TileTensor(
         q_bf16_ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * seq_len, num_heads, depth)
-        ),
+        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
     )
-    var k = LayoutTensor[DType.bfloat16, Layout.row_major[3]()](
+    var k = TileTensor(
         k_bf16_ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * num_keys, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    var v = LayoutTensor[DType.bfloat16, Layout.row_major[3]()](
+    var v = TileTensor(
         v_bf16_ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * num_keys, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    var cache = LayoutTensor[DType.bfloat16, Layout.row_major[4]()](
+    var cache = TileTensor(
         cache_bf16_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, cache_num_heads, cache_depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[cache_num_heads](),
+                Idx[cache_depth](),
+            )
         ),
     )
-    var output = LayoutTensor[output_type, Layout.row_major[3]()](
+    var output = TileTensor(
         output_ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * seq_len, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
 
@@ -178,60 +185,46 @@ def test_prefill[
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
     # construct device buffers
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
-    var q_device = LayoutTensor[qkv_type, q_layout](
+    var q_device = TileTensor(
         q_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout].row_major(
-            Index(batch_size * seq_len, num_heads, depth)
-        ),
+        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
     )
-    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
-    var k_device = LayoutTensor[qkv_type, k_layout](
+    var k_device = TileTensor(
         k_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size * num_keys, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    comptime v_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
-    var v_device = LayoutTensor[qkv_type, v_layout](
+    var v_device = TileTensor(
         v_device_ptr.unsafe_ptr(),
-        RuntimeLayout[v_layout].row_major(
-            Index(batch_size * num_keys, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    comptime cache_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, cache_num_heads, cache_depth
-    )
-    var cache_device = LayoutTensor[k_rope_type, cache_layout](
+    var cache_device = TileTensor(
         cache_device_ptr.unsafe_ptr(),
-        RuntimeLayout[cache_layout].row_major(
-            Index(batch_size, num_keys, cache_num_heads, cache_depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[cache_num_heads](),
+                Idx[cache_depth](),
+            )
         ),
     )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_heads, kv_depth
-    )
-    var output_device = LayoutTensor[output_type, output_layout](
+    var output_device = TileTensor(
         output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size * seq_len, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    var input_row_offsets_device = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
+    var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size + 1),
-        ),
+        row_major(Idx(batch_size + 1)),
     )
-    var cache_row_offsets_device = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
+    var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size + 1),
-        ),
+        row_major(Idx(batch_size + 1)),
     )
 
     @parameter
@@ -246,14 +239,14 @@ def test_prefill[
         output_device,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank=q.rank](
-            lt_to_tt(output_device),
-            lt_to_tt(q_device),
+        flare_mla_prefill[rank=3](
+            output_device,
+            q_device,
             k_device,
             v_device,
             cache_device,
             CausalMask(),
-            lt_to_tt(input_row_offsets_device),
+            input_row_offsets_device,
             cache_row_offsets_device,
             scale,
             ctx,

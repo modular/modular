@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, Idx, TensorLayout, TileTensor, coord, row_major
+from layout import TensorLayout, TileTensor, coord
 
 from std.utils.index import IndexList
 
@@ -207,14 +207,9 @@ struct ImageData[
         @parameter
         def _compute_index_nchw() -> IndexList[4]:
             # Index [N,C,H,W]
-            var lidx = idx
-            var w_idx = lidx % image_shape.W
-            lidx = lidx // image_shape.W
-            var h_idx = lidx % image_shape.H
-            lidx = lidx // image_shape.H
-            var c_idx = lidx % image_shape.C
-            lidx = lidx // image_shape.C
-            var n_idx = lidx
+            var lidx, w_idx = divmod(idx, image_shape.W)
+            var lidx2, h_idx = divmod(lidx, image_shape.H)
+            var n_idx, c_idx = divmod(lidx2, image_shape.C)
             return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
         @always_inline
@@ -222,14 +217,9 @@ struct ImageData[
         @parameter
         def _compute_index_nhwc() -> IndexList[4]:
             # Index [N,H,W,C]
-            var lidx = idx
-            var c_idx = lidx % image_shape.C
-            lidx = lidx // image_shape.C
-            var w_idx = lidx % image_shape.W
-            lidx = lidx // image_shape.W
-            var h_idx = lidx % image_shape.H
-            lidx = lidx // image_shape.H
-            var n_idx = lidx
+            var lidx, c_idx = divmod(idx, image_shape.C)
+            var lidx2, w_idx = divmod(lidx, image_shape.W)
+            var n_idx, h_idx = divmod(lidx2, image_shape.H)
             return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
         comptime if Self.static_image_layout == Image2DLayout.NCHW:

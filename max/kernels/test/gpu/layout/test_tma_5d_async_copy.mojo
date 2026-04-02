@@ -26,7 +26,6 @@ from layout.tma_async import (
     TMATensorTile,
     _idx_product,
     create_tensor_tile,
-    create_tma_tile,
 )
 from std.memory import stack_allocation
 from std.testing import assert_equal
@@ -84,11 +83,10 @@ def test_tma_5d_load_kernel[
         address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
-    idx0 = Int(block_idx.z) // (grid_dim1 * grid_dim2)
-    idx1 = (Int(block_idx.z) // grid_dim2) % grid_dim1
-    idx2 = Int(block_idx.z) % grid_dim2
-    idx3 = Int(block_idx.y)
-    idx4 = Int(block_idx.x)
+    idx0, rem = divmod(block_idx.z, grid_dim1 * grid_dim2)
+    idx1, idx2 = divmod(rem, grid_dim2)
+    idx3 = block_idx.y
+    idx4 = block_idx.x
 
     if thread_idx.x == 0:
         mbar[0].init()
@@ -124,7 +122,7 @@ def test_tma_5d_load_kernel[
     comptime DstTileType = LayoutTensor[dtype, dst_tile_layout, MutAnyOrigin]
     comptime cta_tile_size = _idx_product[tile_rank, cta_tile_shape]()
 
-    local_dst_ptr = dst.ptr + idx * UInt(cta_tile_size)
+    local_dst_ptr = dst.ptr + idx * cta_tile_size
 
     for i in range(cta_tile_dim0):
         smem_tile_i = smem_tile.tile[

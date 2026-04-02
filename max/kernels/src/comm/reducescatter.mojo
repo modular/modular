@@ -22,18 +22,17 @@ from layout.tile_layout import Layout
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    global_idx,
-    grid_dim,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
-    pdl_launch_attributes,
     wait_on_dependent_grids,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
 from std.gpu.intrinsics import (
@@ -701,9 +700,7 @@ def reducescatter[
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        output_buffer.flat_rank >= coords.flat_rank
-    ):
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
         output_buffer.store[width=_width, alignment=_alignment](
             coords, val.cast[dtype]()
         )

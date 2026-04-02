@@ -41,7 +41,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
     @parameter
     @__copy_capture(thing)
     def kernel_fn():
-        var idx = Int(thread_idx.x)
+        var idx = thread_idx.x
         print(thing.get_val(idx) * 2)
 
     comptime kernel = kernel_fn

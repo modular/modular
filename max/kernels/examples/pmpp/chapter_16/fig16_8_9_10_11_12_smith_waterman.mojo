@@ -85,18 +85,18 @@ def sw_kernel_square(
     var numTiles_x = ceildiv(L - 1, tile_width)
 
     # Tile indices
-    var tile_row = Int(block_idx.x)
-    var tile_col = d - Int(block_idx.x)
+    var tile_row = block_idx.x
+    var tile_col = d - block_idx.x
 
     if tile_col >= 0 and tile_col < numTiles_x:
         # Iterate over anti-diagonals of the tile
         for d_tile in range(2 * tile_width - 1):
             # Row indices in tile and global memory
-            var r_tile = Int(thread_idx.x)
+            var r_tile = thread_idx.x
             var r = tile_width * tile_row + r_tile + 1
 
             # Column indices in tile and global memory
-            var q_tile = d_tile - Int(thread_idx.x)
+            var q_tile = d_tile - thread_idx.x
             var q = tile_width * tile_col + q_tile + 1
 
             # Bound checking
@@ -146,11 +146,9 @@ def sw_kernel_square(
         # Figure 16.12: Store the tile in global memory
         for row in range(tile_width):
             var r = tile_width * tile_row + row + 1
-            var q = tile_width * tile_col + Int(thread_idx.x) + 1
+            var q = tile_width * tile_col + thread_idx.x + 1
             if r < L and q < L:
-                sw[r * L + q] = Int32(
-                    swTile[row * tile_width + Int(thread_idx.x)]
-                )
+                sw[r * L + q] = Int32(swTile[row * tile_width + thread_idx.x])
 
 
 # ========================== CPU REFERENCE ==========================

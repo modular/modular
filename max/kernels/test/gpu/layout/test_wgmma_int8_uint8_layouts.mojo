@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, warp_id, lane_id_int as lane_id
+from std.gpu import barrier, warp_id, lane_id
 from std.gpu.host import DeviceContext
 from std.gpu import thread_idx
 from std.gpu.intrinsics import threadfence
@@ -22,7 +22,7 @@ from std.gpu.compute.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import IntTuple, Layout, LayoutTensor, print_layout
+from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from std.memory import bitcast
@@ -96,7 +96,7 @@ def wgmma_kernel[
     # is as follows:
     c0 = bitcast[DType.int32, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )

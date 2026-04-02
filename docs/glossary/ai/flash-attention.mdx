@@ -32,7 +32,6 @@ Flash attention optimizes the classic [attention](attention.mdx) mechanism by:
   smaller blocks that fit in GPU shared memory, which is much faster than
   global memory.
 2. **Fusing operations**: Combining softmax normalization with matrix
-
    multiplication for each tile into a single kernel.
 
 These help maximize the locality and reduce DRAM (global memory) traffic.

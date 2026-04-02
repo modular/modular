@@ -20,32 +20,24 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim,
-    block_idx,
-    thread_idx,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_gpu
 from std.gpu.memory import external_memory
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from layout import (
-    Coord,
-    CoordLike,
-    Idx,
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeTuple,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout import TensorLayout, TileTensor
 from std.random import Random
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
 from nn.normalization import _rms_norm_gpu_block_subkernel, _sum_to_mean
@@ -72,7 +64,7 @@ def _rms_norm_fused_residual_cpu_2d[
     residual_read_fn: def[width: Int](Int, Int) capturing -> SIMD[dtype, width],
     multiply_before_cast: Bool = True,
 ](
-    gamma: LayoutTensor[dtype, ...],
+    gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
@@ -83,7 +75,7 @@ def _rms_norm_fused_residual_cpu_2d[
 
     Uses simple (row, col) indexing to avoid compile-time evaluation issues.
     """
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     var num_rows = out_shape[0]
     var num_cols = out_shape[1]
@@ -166,10 +158,7 @@ def _rms_norm_fused_residual_cpu_2d[
                 intermediate_type
             ]()
 
-            var gamma_col = gamma.runtime_layout(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](col)
-            )
-            var gamma_val = gamma.ptr.load[width=sw](gamma_col)
+            var gamma_val = gamma.ptr.load[width=sw](col)
             var norm_val: SIMD[dtype, sw]
 
             if multiply_before_cast:
@@ -208,7 +197,7 @@ def rms_norm_fused_residual_cpu[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, ...],
+    gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -219,7 +208,7 @@ def rms_norm_fused_residual_cpu[
     Creates 2D wrapper lambdas that translate (row, col) to IndexList[rank]
     at runtime, avoiding compile-time evaluation issues with _lambda_load.
     """
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
@@ -292,10 +281,8 @@ def rms_norm_fused_residual_cpu[
 
 
 def rms_norm_fused_residual_gpu_block[
-    mut: Bool,
-    origin: Origin[mut=mut],
-    layout: Layout,
     dtype: DType,
+    GammaLayout: TensorLayout,
     //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -313,14 +300,14 @@ def rms_norm_fused_residual_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: LayoutTensor[dtype, layout, origin],
+    gamma: TileTensor[dtype, GammaLayout, MutAnyOrigin],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ):
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     var shared_mem = external_memory[
         Scalar[dtype],
@@ -392,16 +379,13 @@ def rms_norm_fused_residual_gpu_block[
         ](row: Int, col: Int) -> SIMD[dtype, width]:
             return shared_mem.load[width=width](col)
 
-        # Construct a TileTensor from the LayoutTensor's pointer for the subkernel
-        var gamma_tile = TileTensor(gamma.ptr, row_major(Coord(Idx(num_cols))))
-
         _rms_norm_gpu_block_subkernel[
             simd_width,
             max_warps_per_block,
             shared_mem_input_fn,
             output_fn,
             multiply_before_cast,
-        ](gamma_tile, epsilon, weight_offset, num_cols)
+        ](gamma, epsilon, weight_offset, num_cols)
 
 
 def rms_norm_fused_residual_gpu[
@@ -423,14 +407,14 @@ def rms_norm_fused_residual_gpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank, ...],
-    gamma: LayoutTensor[dtype, ...],
+    gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     if rank == 0:
         return
@@ -493,9 +477,7 @@ def rms_norm_fused_residual_gpu[
     )
 
     comptime kernel = rms_norm_fused_residual_gpu_block[
-        mut=gamma.mut,
-        origin=gamma.origin,
-        layout=gamma.layout,
+        GammaLayout=type_of(gamma).LayoutType,
         simd_width,
         max_warps_per_block,
         input_fn_2d,
@@ -513,7 +495,7 @@ def rms_norm_fused_residual_gpu[
         seed,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
         shared_mem_bytes=shared_mem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(
@@ -543,20 +525,20 @@ def _rms_norm_fused_residual_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, ...],
+    gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     # Note: we only support reduction along the last dimension
-    if gamma.runtime_layout.shape.value[0] != shape[rank - 1]:
+    if Int(gamma.dim[0]()) != shape[rank - 1]:
         raise Error(
             "Gamma size "
-            + String(gamma.runtime_layout.shape.value[0])
+            + String(gamma.dim[0]())
             + " does not match dimension of reduction "
             + String(shape[rank - 1])
             + "."
@@ -661,14 +643,14 @@ def rms_norm_fused_residual[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, ...],
+    gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     @always_inline
     @parameter

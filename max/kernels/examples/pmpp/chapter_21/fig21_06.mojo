@@ -51,8 +51,8 @@ def cenergy_gather_kernel(
         z: Z-coordinate of the grid slice.
         numatoms: Number of atoms.
     """
-    var i = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
-    var j = Int(block_idx.y) * Int(block_dim.y) + Int(thread_idx.y)
+    var i = block_idx.x * block_dim.x + thread_idx.x
+    var j = block_idx.y * block_dim.y + thread_idx.y
 
     if i < grid_x and j < grid_y:
         var atomarrdim = numatoms * 4
@@ -139,8 +139,8 @@ def main() raises:
     var grid_dim_y = (vol_dim.y + BLOCK_DIM_Y - 1) // BLOCK_DIM_Y
 
     ctx.enqueue_function[cenergy_gather_kernel, cenergy_gather_kernel](
-        d_energygrid.unsafe_ptr(),
-        d_atoms.unsafe_ptr(),
+        d_energygrid,
+        d_atoms,
         vol_dim.x,
         vol_dim.y,
         gridspacing,

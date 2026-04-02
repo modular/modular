@@ -36,7 +36,6 @@ def bench_elementwise[n: Int](mut b: Bencher) raises:
         ](idx: IndexList[rank]):
             vector[idx[0]] = 42
 
-        elementwise[func, 1](Index(n))
         elementwise[func=func, simd_width=simd_width_of[DType.int]()](Index(n))
 
     b.iter[call_fn]()

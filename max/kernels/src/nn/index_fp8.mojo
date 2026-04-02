@@ -18,18 +18,15 @@ from layout import (
     RuntimeLayout,
     TensorLayout,
     TileTensor,
-    lt_to_tt,
     UNKNOWN_VALUE,
 )
 from layout.layout_tensor import ThreadScope, copy_dram_to_sram
-from layout.tma_async import TMATensorTile, create_tensor_tile, SharedMemBarrier
-from std.gpu import block_idx, thread_idx, MAX_THREADS_PER_BLOCK_METADATA
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
-from nn.mha_operand import RaggedMHAOperand, MHAOperand
-from nn.mha_fa3_utils import q_tma
+from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
+from nn.attention.gpu.nvidia.sm90.attention import q_tma
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -277,83 +274,52 @@ def fp8_index_kernel[
 @always_inline
 def fp8_index[
     dtype: DType,
-    output_layout: Layout,
-    q_layout: Layout,
-    qs_layout: Layout,
-    k_layout: Layout,
-    ks_layout: Layout,
     //,
     num_heads: Int,
     depth: Int,
 ](
-    output: LayoutTensor[
-        mut=True,
-        DType.float32,
-        output_layout,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
-    q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    k: LayoutTensor[
-        mut=False, dtype, k_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    k_s: LayoutTensor[
-        DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[DType.float32, ...],
+    q: TileTensor[dtype, ...],
+    q_s: TileTensor[DType.float32, ...],
+    k: TileTensor[dtype, ...],
+    k_s: TileTensor[DType.float32, ...],
+    valid_length: TileTensor[DType.uint32, ...],
+    cache_row_offsets: TileTensor[DType.uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
-    # Create RaggedMHAOperand wrappers for K and K_s
-    # These allow accessing ragged data via cache_row_offsets indirection
-    var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, k.origin](
-            k.ptr,
-            RuntimeLayout[k.layout].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[
-            cache_row_offsets.dtype,
-            cache_row_offsets.layout,
-            cache_row_offsets.origin,
-        ](
-            cache_row_offsets.ptr,
-            RuntimeLayout[cache_row_offsets.layout].row_major(
-                cache_row_offsets.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    # Construct LayoutTensors from TileTensor ptr + dimensions for
+    # RaggedMHAOperand, which requires LayoutTensor with Layout.row_major().
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
+    comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime cro_layout = Layout.row_major(UNKNOWN_VALUE)
+
+    var total_keys = Int(k.dim[0]())
+    var cro_size = Int(cache_row_offsets.dim[0]())
+
+    var k_lt = LayoutTensor[dtype, k_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
+        RuntimeLayout[k_layout].row_major(Index(total_keys, 1, depth)),
     )
+    var cache_row_offsets_lt = LayoutTensor[
+        DType.uint32, cro_layout, ImmutAnyOrigin
+    ](
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
+        RuntimeLayout[cro_layout].row_major(Index(cro_size)),
+    )
+
+    var k_operand = RaggedMHAOperand(k_lt, cache_row_offsets_lt)
 
     # K_s is 1D [total_keys], reshape to 3D [total_keys, 1, 1] for MHAOperand interface
     comptime ks_3d_layout = Layout.row_major(UNKNOWN_VALUE, 1, 1)
     var ks_operand = RaggedMHAOperand(
-        LayoutTensor[k_s.dtype, ks_3d_layout, ImmutAnyOrigin](
-            k_s.ptr,
-            RuntimeLayout[ks_3d_layout].row_major(
-                Index(k_s.runtime_layout.shape.value[0], 1, 1)
-            ),
+        LayoutTensor[DType.float32, ks_3d_layout, ImmutAnyOrigin](
+            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](k_s.ptr),
+            RuntimeLayout[ks_3d_layout].row_major(Index(total_keys, 1, 1)),
         ),
-        LayoutTensor[
-            cache_row_offsets.dtype,
-            cache_row_offsets.layout,
-            ImmutAnyOrigin,
-        ](
-            cache_row_offsets.ptr,
-            RuntimeLayout[cache_row_offsets.layout].row_major(
-                cache_row_offsets.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+        cache_row_offsets_lt,
     )
 
     comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
@@ -364,35 +330,29 @@ def fp8_index[
 
     comptime assert num_heads % 8 == 0, "num_heads must be a multiple of 8"
 
-    # Convert LayoutTensors to TileTensors for fp8_index_kernel.
-    var output_tt = lt_to_tt(output)
-    var q_tt = lt_to_tt(q)
-    var q_s_tt = lt_to_tt(q_s)
-    var valid_length_tt = lt_to_tt(valid_length)
-
     # RaggedMHAOperand.cache_length() returns full key length directly,
     # so _is_cache_length_accurate=True skips adding seq_len in the kernel.
     comptime kernel = fp8_index_kernel[
         dtype,
-        type_of(output_tt).LayoutType,
-        type_of(q_tt).LayoutType,
-        type_of(q_s_tt).LayoutType,
+        type_of(output).LayoutType,
+        type_of(q).LayoutType,
+        type_of(q_s).LayoutType,
         type_of(k_operand),
         type_of(ks_operand),
         block_tile_shape,
-        type_of(valid_length_tt).LayoutType,
+        type_of(valid_length).LayoutType,
         num_heads,
         depth,
         _is_cache_length_accurate=True,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        output_tt,
-        q_tt,
-        q_s_tt,
+        output,
+        q.as_immut(),
+        q_s,
         k_operand,
         ks_operand,
-        valid_length_tt,
+        valid_length.as_immut(),
         grid_dim=(
             batch_size,
             max_seq_len,
@@ -427,8 +387,7 @@ def _index_matmul_max[
     comptime num_heads = q_layout.shape[1].value()
     comptime depth = q_layout.shape[2].value()
 
-    var batch_idx = block_idx.z // UInt(num_heads)
-    var head_idx = block_idx.z % UInt(num_heads)
+    var batch_idx, head_idx = divmod(block_idx.z, UInt(num_heads))
     var seq_idx = block_idx.x * 16 + thread_idx.x
     var key_idx = block_idx.y * 16 + thread_idx.y
 
@@ -536,61 +495,75 @@ def _reduce_logits[
 @always_inline
 def fp8_index_naive[
     dtype: DType,
-    output_layout: Layout,
-    q_layout: Layout,
-    qs_layout: Layout,
-    k_layout: Layout,
-    ks_layout: Layout,
     //,
     num_heads: Int,
     depth: Int,
 ](
-    output: LayoutTensor[
-        mut=True,
-        DType.float32,
-        output_layout,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
-    q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    k: LayoutTensor[
-        mut=False, dtype, k_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    k_s: LayoutTensor[
-        DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[DType.float32, ...],
+    q: TileTensor[dtype, ...],
+    q_s: TileTensor[DType.float32, ...],
+    k: TileTensor[dtype, ...],
+    k_s: TileTensor[DType.float32, ...],
+    valid_length: TileTensor[DType.uint32, ...],
+    cache_row_offsets: TileTensor[DType.uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
-    var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, k.origin](
-            k.ptr,
-            RuntimeLayout[k.layout].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[
-            cache_row_offsets.dtype,
-            cache_row_offsets.layout,
-            cache_row_offsets.origin,
-        ](
-            cache_row_offsets.ptr,
-            RuntimeLayout[cache_row_offsets.layout].row_major(
-                cache_row_offsets.runtime_layout.shape.value.canonicalize()
-            ),
+    # Construct LayoutTensors from TileTensor ptr + dimensions for the
+    # internal GPU kernels (_index_matmul_max, _reduce_logits) and
+    # RaggedMHAOperand, which all require LayoutTensor with specific
+    # Layout.row_major() representations.
+    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
+    comptime qs_layout = Layout.row_major(UNKNOWN_VALUE, num_heads)
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
+    comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime output_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime vl_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime cro_layout = Layout.row_major(UNKNOWN_VALUE)
+
+    var total_seq_len = Int(q.dim[0]())
+    var total_keys = Int(k.dim[0]())
+    var vl_size = Int(valid_length.dim[0]())
+    var cro_size = Int(cache_row_offsets.dim[0]())
+
+    var q_lt = LayoutTensor[dtype, q_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr),
+        RuntimeLayout[q_layout].row_major(
+            Index(total_seq_len, num_heads, depth)
         ),
     )
+    var q_s_lt = LayoutTensor[DType.float32, qs_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Float32, MutAnyOrigin]](q_s.ptr),
+        RuntimeLayout[qs_layout].row_major(Index(total_seq_len, num_heads)),
+    )
+    var k_lt = LayoutTensor[dtype, k_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
+        RuntimeLayout[k_layout].row_major(Index(total_keys, 1, depth)),
+    )
+    var k_s_lt = LayoutTensor[DType.float32, ks_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Float32, MutAnyOrigin]](k_s.ptr),
+        RuntimeLayout[ks_layout].row_major(Index(total_keys)),
+    )
+    var output_lt = LayoutTensor[DType.float32, output_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Float32, MutAnyOrigin]](output.ptr),
+        RuntimeLayout[output_layout].row_major(
+            Index(total_seq_len, max_num_keys)
+        ),
+    )
+    var valid_length_lt = LayoutTensor[DType.uint32, vl_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr),
+        RuntimeLayout[vl_layout].row_major(Index(vl_size)),
+    )
+    var cache_row_offsets_lt = LayoutTensor[
+        DType.uint32, cro_layout, ImmutAnyOrigin
+    ](
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
+        RuntimeLayout[cro_layout].row_major(Index(cro_size)),
+    )
+
+    var k_operand = RaggedMHAOperand(k_lt, cache_row_offsets_lt)
 
     var logits_size = batch_size * max_seq_len * max_num_keys * num_heads
 
@@ -613,16 +586,16 @@ def fp8_index_naive[
         logits_layout,
         q_layout,
         qs_layout,
-        k.layout,
+        k_layout,
         type_of(k_operand),
     ]
 
     ctx.enqueue_function[mm, mm](
         logits_tensor,
-        q,
-        q_s,
-        k,
-        valid_length,
+        q_lt,
+        q_s_lt,
+        k_lt,
+        valid_length_lt,
         k_operand,
         max_seq_len,
         grid_dim=(
@@ -642,9 +615,9 @@ def fp8_index_naive[
 
     ctx.enqueue_function[reduce_logits, reduce_logits](
         logits_tensor,
-        output,
-        k_s,
-        valid_length,
+        output_lt,
+        k_s_lt,
+        valid_length_lt,
         k_operand,
         grid_dim=(
             ceildiv(max_seq_len, 16),

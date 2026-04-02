@@ -10,22 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections.string import atol
 from std.collections.string.string_slice import get_static_string
 from std.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import hipStream_t, HIP
-from std.gpu.host._nvidia_cuda import CUmodule, CUstream
 from std.os import abort, getenv
 from std.pathlib import Path
-from std.sys import argv, size_of, has_amd_gpu_accelerator
+from std.sys import size_of
 from std.sys.info import CompilationTarget, is_nvidia_gpu, is_amd_gpu
 from std.ffi import (
-    _find_dylib,
     _get_dylib_function,
     _Global,
     c_int,
     c_size_t,
-    c_uint,
     CStringSlice,
     external_call,
     OwnedDLHandle,
@@ -217,7 +213,7 @@ def _dtype_to_rocshmem_type[
     unsigned long        ulong         64
     unsigned long long   ulonglong     64
 
-    Unsuported:
+    Unsupported:
     int8_t               int8          8
     int16_t              int16         16
     int32_t              int32         32

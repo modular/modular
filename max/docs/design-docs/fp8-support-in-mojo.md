@@ -114,8 +114,11 @@ to enable us to plumb this functionality into Mojo kernels.
 
 The Mojo stack requires one to implement the following specification:
 
-![image.png](./img/fp8-support-in-mojo/img02-fp8-requirements.png) /// caption
+![image.png](./img/fp8-support-in-mojo/img02-fp8-requirements.png)
+
+/// caption
 Cross reference:
+<!-- rumdl-disable-next-line MD013 -->
 [OpenVINO Toolkit](https://github.com/pavel-esir/openvino/blob/c0d02e9188e3fc40a28a0552890b3e0fe01f687a/src/core/src/type/float8_e4m3.cpp#L54)
 ///
 

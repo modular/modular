@@ -11,10 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from std.utils.index import IndexList
-from std.memory import UnsafePointer
 from std.algorithm import sync_parallelize
 import std.math
 from std.math import ceildiv, exp, exp2, rsqrt
@@ -114,8 +117,7 @@ def selective_scan_fwd_gpu[
     if thread_id_int >= total_batch_dim:
         return
 
-    var b = thread_id_int // dim
-    var d = thread_id_int % dim
+    var b, d = divmod(thread_id_int, dim)
 
     # Additional bounds checking
     if b >= batch or d >= dim:
@@ -464,8 +466,7 @@ def selective_scan_fwd_gpu_minimal[
     if thread_id_int >= total_batch_dim:
         return
 
-    var b = thread_id_int // dim
-    var d = thread_id_int % dim
+    var b, d = divmod(thread_id_int, dim)
 
     if b >= batch or d >= dim:
         return
@@ -643,8 +644,7 @@ def selective_scan_update_gpu[
     if thread_id_int >= total_batch_dim:
         return
 
-    var b = thread_id_int // dim
-    var d = thread_id_int % dim
+    var b, d = divmod(thread_id_int, dim)
 
     # Additional bounds checking
     if b >= batch or d >= dim:
@@ -797,8 +797,7 @@ def selective_scan_update_cpu[
 
     @parameter
     def worker(idx: Int):
-        var b = idx // dim
-        var d = idx % dim
+        var b, d = divmod(idx, dim)
 
         # Compute group_id for this dimension
         var group_id = d // group_size
@@ -953,8 +952,7 @@ def selective_scan_fwd_cpu[
 
     @parameter
     def worker(idx: Int):
-        var b = idx // dim
-        var d = idx % dim
+        var b, d = divmod(idx, dim)
 
         # Bounds checking
         if b >= batch or d >= dim:
@@ -1258,8 +1256,7 @@ def selective_scan_fwd_cpu_minimal[
 
     @parameter
     def worker(idx: Int):
-        var b = idx // dim
-        var d = idx % dim
+        var b, d = divmod(idx, dim)
 
         if b >= batch or d >= dim:
             return
@@ -1472,8 +1469,7 @@ def ssd_combined_gpu[
     if thread_id_int >= total_batch_dim:
         return
 
-    var b = thread_id_int // dim
-    var d = thread_id_int % dim
+    var b, d = divmod(thread_id_int, dim)
 
     if b >= batch or d >= dim:
         return
@@ -1883,8 +1879,7 @@ def ssd_combined_cpu[
 
     @parameter
     def worker(idx: Int):
-        var b = idx // dim
-        var d = idx % dim
+        var b, d = divmod(idx, dim)
 
         var group_id = d // group_size
 
@@ -2366,10 +2361,8 @@ def mamba_split_conv1d_scan_combined_cpu[
 
     @parameter
     def worker(idx: Int) raises:
-        var b = idx // dim
-        var d = idx % dim
-        var h = d // headdim
-        var p = d % headdim
+        var b, d = divmod(idx, dim)
+        var h, p = divmod(d, headdim)
         var group_id = h // ngroups if ngroups > 1 else 0
 
         # Initialize state for selective scan
@@ -2834,14 +2827,12 @@ def mamba_split_conv1d_scan_combined_gpu[
     if thread_id_int >= total_batch_dim:
         return
 
-    var b = thread_id_int // dim
-    var d = thread_id_int % dim
+    var b, d = divmod(thread_id_int, dim)
 
     if b >= batch or d >= dim:
         return
 
-    var h = d // headdim
-    var p = d % headdim
+    var h, p = divmod(d, headdim)
     var group_id = h // ngroups if ngroups > 1 else 0
     var width_minus_1 = width - 1
     var z_start = 0

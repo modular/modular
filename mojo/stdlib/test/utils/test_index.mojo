@@ -58,9 +58,25 @@ def test_cast() raises:
 
 
 def test_index() raises:
+    # 0-D
+    assert_equal(String(Index()), "()")
+
+    # 1-D
+    assert_equal(String(Index(42)), "(42,)")
+
+    # 2-D
+    assert_equal(String(Index(1, 2)), "(1, 2)")
+
+    # 3-D with explicit dtype
     assert_equal(String(Index[dtype=DType.int64](1, 2, 3)), "(1, 2, 3)")
     assert_equal(String(Index[dtype=DType.int32](1, 2, 3)), "(1, 2, 3)")
     assert_equal(String(Index[dtype=DType.uint32](1, 2, 3)), "(1, 2, 3)")
+
+    # 4-D
+    assert_equal(String(Index(1, 2, 3, 4)), "(1, 2, 3, 4)")
+
+    # 5-D
+    assert_equal(String(Index(1, 2, 3, 4, 5)), "(1, 2, 3, 4, 5)")
 
 
 def test_list_literal() raises:

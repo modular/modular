@@ -103,9 +103,7 @@ def _build_compiled_transformer(
     set_gpu_profiling_state("detailed")
 
     cache_config = (
-        DenoisingCacheConfig(first_block_caching=True, residual_threshold=0.05)
-        if step_cache
-        else None
+        DenoisingCacheConfig(first_block_caching=True) if step_cache else None
     )
 
     t0 = time.perf_counter()
@@ -214,7 +212,8 @@ def _make_inputs(
     prev_output = _bf16(
         rng.standard_normal((batch, image_seq_len, out_dim)).astype(dt),
     )
-    return (*base_args, prev_residual, prev_output)
+    residual_threshold = Tensor(np.array(0.05, dtype=np.float32), device=dev)
+    return (*base_args, prev_residual, prev_output, residual_threshold)
 
 
 # --------------------------------------------------------------------------- #

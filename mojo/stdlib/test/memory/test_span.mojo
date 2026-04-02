@@ -15,6 +15,7 @@ from std.testing import TestSuite
 from std.testing import assert_equal, assert_raises, assert_true, assert_false
 from test_utils import MoveOnly, check_write_to
 from std.math import iota
+from std.hashlib import Hasher
 from std.memory import ImmutSpan, MutSpan
 
 
@@ -162,6 +163,15 @@ def test_contains() raises:
     assert_true(16 not in span)
     for item in items:
         assert_true(item in span)
+
+
+def test_contains_non_scalar() raises:
+    var items = ["a", "b", "c", "d"]
+    var span = Span(items)
+    assert_true("a" in span)
+    assert_true("d" in span)
+    assert_true("e" not in span)
+    assert_true("" not in span)
 
 
 def test_equality() raises:
@@ -415,7 +425,7 @@ def test_binary_search() raises:
     _test[DType.int16]()
 
 
-def test_binary_sarch_by() raises:
+def test_binary_search_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
@@ -544,6 +554,47 @@ def test_span_write_repr_to() raises:
     check_write_to(
         Span([42]), expected="Span[mut=False, Int]([Int(42)])", is_repr=True
     )
+
+
+def test_span_hashable() raises:
+    var a = [1, 2, 3]
+    var b = [1, 2, 3]
+    var c = [3, 2, 1]
+
+    # Same contents should produce same hash.
+    assert_equal(hash(Span(a)), hash(Span(b)))
+
+    # Different contents should (almost certainly) produce different hashes.
+    assert_true(hash(Span(a)) != hash(Span(c)))
+
+    # Different lengths with shared prefix should produce different hashes
+    # (prefix-freedom).
+    var d = [1, 2]
+    assert_true(hash(Span(a)) != hash(Span(d)))
+
+    # Empty spans should hash equally.
+    var empty1 = List[Int]()
+    var empty2 = List[Int]()
+    assert_equal(hash(Span(empty1)), hash(Span(empty2)))
+
+
+@fieldwise_init
+struct HashableOnly(Hashable, ImplicitlyDestructible, Movable):
+    var value: Int
+
+    def __hash__(self, mut hasher: Some[Hasher]):
+        hasher.update(self.value)
+
+
+def test_span_hashable_non_copyable() raises:
+    var ptr = alloc[HashableOnly](2)
+    ptr.init_pointee_move(HashableOnly(1))
+    (ptr + 1).init_pointee_move(HashableOnly(2))
+    var span = Span(ptr=ptr, length=2)
+    _ = hash(span)
+    (ptr + 1).destroy_pointee()
+    ptr.destroy_pointee()
+    ptr.free()
 
 
 def test_span_with_move_only_type() raises:

@@ -47,6 +47,34 @@ def sync_parallelize[
     Args:
         num_work_items: Number of parallel tasks.
     """
+
+    # The try/except here is required to satisfy the non-raising
+    # `unified register_passable -> None` signature. The unified overload's
+    # inner `func_wrapped` has its own try/except for the same reason, but
+    # that outer catch is unreachable since abort() here terminates first.
+    def func_unified(i: Int) unified register_passable {}:
+        try:
+            func(i)
+        except e:
+            abort(String(e))
+
+    sync_parallelize(func_unified, num_work_items)
+
+
+@always_inline
+def sync_parallelize[
+    FuncType: def(Int) unified register_passable -> None,
+](func: FuncType, num_work_items: Int):
+    """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
+    and returns when all are complete.
+
+    Parameters:
+        FuncType: The body function type.
+
+    Args:
+        func: The closure carrying the captured state of the body function.
+        num_work_items: Number of parallel tasks.
+    """
     # We have no tasks, so do nothing.
     if num_work_items <= 0:
         # No-op
@@ -119,7 +147,10 @@ def parallelize[
         num_work_items: Number of parallel tasks.
     """
 
-    _parallelize_impl[func](num_work_items, parallelism_level())
+    def func_unified(i: Int) unified register_passable {}:
+        func(i)
+
+    _parallelize_impl(func_unified, num_work_items, parallelism_level())
 
 
 @always_inline
@@ -138,21 +169,59 @@ def parallelize[
         num_workers: The number of workers to use for execution.
     """
 
-    _parallelize_impl[func](num_work_items, num_workers)
+    def func_unified(i: Int) unified register_passable {}:
+        func(i)
+
+    _parallelize_impl(func_unified, num_work_items, num_workers)
+
+
+@always_inline
+def parallelize[
+    FuncType: def(Int) unified register_passable -> None,
+](func: FuncType, num_work_items: Int):
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
+    returns when all are complete.
+
+    Parameters:
+        FuncType: The body function type.
+
+    Args:
+        func: The closure carrying the captured state of the body function.
+        num_work_items: Number of parallel tasks.
+    """
+    _parallelize_impl(func, num_work_items, parallelism_level())
+
+
+@always_inline
+def parallelize[
+    FuncType: def(Int) unified register_passable -> None,
+](func: FuncType, num_work_items: Int, num_workers: Int):
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
+    returns when all are complete.
+
+    Parameters:
+        FuncType: The body function type.
+
+    Args:
+        func: The closure carrying the captured state of the body function.
+        num_work_items: Number of parallel tasks.
+        num_workers: The number of workers to use for execution.
+    """
+    _parallelize_impl(func, num_work_items, num_workers)
 
 
 @always_inline
 def _parallelize_impl[
-    origins: OriginSet, //, func: def(Int) capturing[origins] -> None
-](num_work_items: Int, num_workers: Int):
+    FuncType: def(Int) unified register_passable -> None,
+](func: FuncType, num_work_items: Int, num_workers: Int):
     """Distributes work items across workers by coalescing consecutive items
     into chunks and executing them in parallel via `sync_parallelize`.
 
     Parameters:
-        origins: The capture origins.
-        func: The function to invoke for each work item.
+        FuncType: The body function type.
 
     Args:
+        func: The closure carrying the captured state of the body function.
         num_work_items: Number of parallel tasks.
         num_workers: The number of workers to use for execution.
     """
@@ -163,15 +232,16 @@ def _parallelize_impl[
     # We coalesce consecutive groups of work items into a single dispatch by
     # using the coarse_grained_func below.
     @always_inline
-    @parameter
-    def coarse_grained_func(thread_idx: Int):
+    def coarse_grained_func(
+        thread_idx: Int,
+    ) unified {read func, read chunk_size, read extra_items,}:
         # Calculate the consecutive range of work items this invocation is
         # responsible for.
         var start_idx = thread_idx * chunk_size + min(thread_idx, extra_items)
         for i in range(chunk_size + Int(thread_idx < extra_items)):
             func(start_idx + i)
 
-    sync_parallelize[coarse_grained_func](num_workers)
+    sync_parallelize(coarse_grained_func, num_workers)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -214,6 +284,27 @@ def parallelize_over_rows[
         axis: Rows are slices along the axis dimension of shape.
         grain_size: The minimum number of elements to warrant using an additional thread.
     """
+
+    def func_unified(start: Int, end: Int) unified register_passable {}:
+        func(start, end)
+
+    parallelize_over_rows(func_unified, shape, axis, grain_size)
+
+
+def parallelize_over_rows[
+    FuncType: def(Int, Int) unified register_passable -> None,
+](func: FuncType, shape: IndexList, axis: Int, grain_size: Int):
+    """Parallelize func over non-axis dims of shape.
+
+    Parameters:
+        FuncType: The body function type.
+
+    Args:
+        func: The closure carrying the captured state of the body function.
+        shape: Shape to parallelize over.
+        axis: Rows are slices along the axis dimension of shape.
+        grain_size: The minimum number of elements to warrant using an additional thread.
+    """
     # If we know we will have no work, return early
     if shape[axis] == 0:
         return
@@ -228,11 +319,12 @@ def parallelize_over_rows[
     var chunk_size = ceildiv(num_rows, num_workers)
 
     @always_inline
-    @parameter
-    def task_func(task_id: Int):
+    def task_func(
+        task_id: Int,
+    ) unified {read func, read chunk_size, read num_rows,}:
         var start_row = task_id * chunk_size
         var end_row = min((task_id + 1) * chunk_size, num_rows)
 
         func(start_row, end_row)
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize(task_func, num_workers)

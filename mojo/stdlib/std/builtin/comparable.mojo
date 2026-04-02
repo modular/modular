@@ -103,7 +103,7 @@ trait Comparable(Equatable):
     Implementers of this trait must define the `__lt__` and `__eq__` methods.
 
     The default implementations of the default comparison methods can be
-    potentially inefficent for types where comparison is expensive. For such
+    potentially inefficient for types where comparison is expensive. For such
     types, it is recommended to override all the default implementations.
     """
 

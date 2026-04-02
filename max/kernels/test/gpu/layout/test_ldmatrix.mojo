@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import umod, ufloordiv
 from std.random import random_si64
 
 from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx
@@ -35,20 +36,20 @@ def test_ldmatrix_fp32(
     n: Int,
     k: Int,
 ):
-    comptime mma_m: UInt = 16
-    comptime mma_n: UInt = 8
-    comptime mma_k: UInt = 8
+    comptime mma_m: Int = 16
+    comptime mma_n: Int = 8
+    comptime mma_k: Int = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = stack_allocation[
-        Int(mma_m * mma_k),
+        mma_m * mma_k,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
-        Int(mma_n * mma_k),
+        mma_n * mma_k,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
@@ -59,20 +60,20 @@ def test_ldmatrix_fp32(
 
     # Transpose B to fit ld_matrix layout.
     for i in range(tid, mma_k * mma_n, WARP_SIZE):
-        var y, x = divmod(i, Int(mma_n))
-        b_shared[x * Int(mma_k) + y] = b_ptr[i]
+        var y, x = divmod(i, mma_n)
+        b_shared[x * mma_k + y] = b_ptr[i]
 
     barrier()
 
     var a_reg = ld_matrix[4](
-        a_shared + Int((lane_id() % 16) * 8 + (lane_id() // 16) * 4)
+        a_shared + umod(lane_id(), 16) * 8 + ufloordiv(lane_id(), 16) * 4
     )
     var b_reg = ld_matrix[2](
-        b_shared + Int((lane_id() % 8) * 8 + (lane_id() // 8) * 4)
+        b_shared + umod(lane_id(), 8) * 8 + ufloordiv(lane_id(), 8) * 4
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
-    store_matrix_d[Int(mma_m), Int(mma_n), Int(mma_k)](c_ptr, d_reg, 0, 0, n)
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, 0, 0, n)
 
 
 def test_ldmatrix_transposed[
@@ -112,12 +113,10 @@ def test_ldmatrix_transposed[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared
-        + Int((lane % UInt(M)) * UInt(K) + (lane // UInt(M)) * UInt(K) // 2)
+        a_shared + umod(lane, M) * K + ufloordiv(ufloordiv(lane, M) * K, 2)
     )
     var b_reg = ld_matrix[b_frag_size, transpose=True](
-        b_shared
-        + Int((lane % UInt(K)) * UInt(N) + (lane // UInt(K)) * UInt(N) // 2)
+        b_shared + umod(lane, K) * N + ufloordiv(ufloordiv(lane, K) * N, 2)
     )
 
     mma(d, a_reg, b_reg, d)

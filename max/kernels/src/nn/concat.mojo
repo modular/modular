@@ -19,16 +19,15 @@ from std.sys.info import simd_width_of, size_of
 
 from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
-    _get_start_indices_of_nth_subvolume_uint,
+    _get_start_indices_of_nth_subvolume,
     elementwise,
     sync_parallelize,
 )
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Coord,
-    Idx,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
@@ -498,7 +497,6 @@ def _concat_small[
                 var in_index = out_index
                 in_index[axis] = target_dim
                 var coord = Coord(in_index)
-                comptime assert input.flat_rank >= coord.flat_rank
                 var load = input.load[width=simd_width, alignment=1](coord)
 
                 comptime if epilogue_fn:
@@ -506,7 +504,6 @@ def _concat_small[
                     func[dtype, rank, simd_width](out_index, load)
                 else:
                     var coord = Coord(out_index)
-                    comptime assert output.flat_rank >= coord.flat_rank
                     output.store[width=simd_width, alignment=1](coord, load)
                 return
             else:
@@ -780,18 +777,15 @@ def _concat_inner_most_single_dim[
     if idx >= UInt(output.num_elements()):
         return
 
-    var index = _get_start_indices_of_nth_subvolume_uint[1](
-        idx, coord_to_index_list(output.layout.shape_coord())
+    var index = _get_start_indices_of_nth_subvolume[1](
+        Int(idx), coord_to_index_list(output.layout.shape_coord())
     )
     var in_coord = Coord(index)
-    comptime assert inputs.element_type.flat_rank >= in_coord.flat_rank
-    comptime assert output.flat_rank >= in_coord.flat_rank
 
     comptime for i in range(num_inputs):
         var out_index = rebind[IndexList[output.rank]](index.canonicalize())
         out_index[output.rank - 1] = i
         var out_coord = Coord(out_index)
-        comptime assert output.flat_rank >= out_coord.flat_rank
 
         comptime if epilogue_fn:
             comptime func = epilogue_fn.value()
@@ -930,7 +924,6 @@ def _concat_gpu_elementwise[
 
             if in_index[axis] < input_shape[axis]:
                 var in_coord = Coord(in_index)
-                comptime assert input.flat_rank >= in_coord.flat_rank
 
                 comptime if epilogue_fn:
                     comptime func = epilogue_fn.value()
@@ -1117,8 +1110,8 @@ def _fused_concat_inner_most_single_dim[
     if idx >= UInt(product(input_shapes[0], rank)):
         return
 
-    var index = _get_start_indices_of_nth_subvolume_uint[1](
-        idx, coord_to_index_list(output.layout.shape_coord())
+    var index = _get_start_indices_of_nth_subvolume[1](
+        Int(idx), coord_to_index_list(output.layout.shape_coord())
     )
 
     comptime for i in range(num_inputs):

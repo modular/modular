@@ -21,18 +21,30 @@ from pathlib import Path
 import jinja2
 
 
-def addStableDecorator(mojo_json) -> None:  # noqa: ANN001
-    """Build the stableDecorator display string from the isStable/sinceVersion
-    fields emitted by the C++ doc generator. Sets stableDecorator to
-    '@stable' or '@stable(since="version")' on each decorated decl so that
-    templates can render it uniformly."""
+def addStabilityMarker(mojo_json, mode: str) -> None:  # noqa: ANN001
+    """Set stabilityMarker/stabilityMarkerVersion on each API declaration.
+
+    Args:
+        mojo_json: Module-level JSON declaration to annotate.
+        mode: One of "all", "stable", or "none".
+            - "none": no markers are set.
+            - "stable": only stable APIs get a marker.
+            - "all": stable APIs get "Stable"; everything else gets "Unstable".
+    """
+    if mode == "none":
+        return
 
     def _apply(decl) -> None:  # noqa: ANN001
         if decl.get("isStable"):
-            since = decl.get("sinceVersion", "")
-            decl["stableDecorator"] = (
-                f'@stable(since="{since}")' if since else "@stable"
-            )
+            decl["showStabilityMarker"] = True
+            since = decl.get("sinceVersion")
+            # normalize version to three digits
+            digits = since.split(".")
+            for _ in range(3 - len(digits)):
+                digits.append("0")
+            decl["sinceVersion"] = ".".join(digits)
+        elif mode == "all":
+            decl["showStabilityMarker"] = True
 
     # Top-level aliases and functions
     for alias in mojo_json.get("aliases", []):
@@ -209,6 +221,7 @@ def generateMarkdown(
     parent_json=None,  # noqa: ANN001
     is_nested=False,  # noqa: ANN001
     namespace=None,  # noqa: ANN001
+    show_stability_markers: str = "none",
 ) -> None:
     """Generate markdown docs from `mojo doc` JSON data.
 
@@ -263,6 +276,7 @@ def generateMarkdown(
                 parent_json=mojo_json,
                 is_nested=True,
                 namespace=namespace,
+                show_stability_markers=show_stability_markers,
             )
         return
     else:
@@ -272,8 +286,8 @@ def generateMarkdown(
 
     # If its a module, we apply separate templates for struct/trait or function
     if mojo_json["kind"] == "module":
+        addStabilityMarker(mojo_json, show_stability_markers)
         for transformation in [
-            addStableDecorator,
             addImplicitConversionDecorator,
             copyFieldTypesToValue,
             processTraitMethods,
@@ -309,6 +323,7 @@ def generateMarkdown(
                 parent_json=mojo_json,
                 is_nested=True,
                 namespace=namespace,
+                show_stability_markers=show_stability_markers,
             )
 
         for trait in mojo_json["traits"]:
@@ -321,6 +336,7 @@ def generateMarkdown(
                 parent_json=mojo_json,
                 is_nested=True,
                 namespace=namespace,
+                show_stability_markers=show_stability_markers,
             )
 
         for function in mojo_json["functions"]:
@@ -344,6 +360,7 @@ def generateMarkdown(
                 parent_json=mojo_json,
                 is_nested=True,
                 namespace=namespace,
+                show_stability_markers=show_stability_markers,
             )
 
         # Handle the init module.
@@ -389,10 +406,10 @@ def generateMarkdown(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w") as output_file:
-        # The first line must start with front matter, not mdlint comment
+        # The first line must start with front matter, not a lint comment
         markdown = template.render(decls=[mojo_json])
         lines = markdown.splitlines()
-        if lines and "markdownlint-disable" in lines[0]:
+        if lines and "rumdl-disable" in lines[0]:
             lines.pop(0)
         output_file.write("\n".join(lines))
 
@@ -413,6 +430,13 @@ def main() -> None:
         "filename", help="the input Mojo documentation json file name"
     )
     parser.add_argument("-o", "--output", type=Path, help="the output path")
+    parser.add_argument(
+        "--show-stability-markers",
+        choices=["all", "stable", "none"],
+        default="none",
+        help="Show stability markers: 'all' marks every API, "
+        "'stable' marks only stable APIs, 'none' hides markers.",
+    )
     args = parser.parse_args()
 
     with open(args.filename) as jsonFile:
@@ -430,7 +454,14 @@ def main() -> None:
 
         version = docJson["version"]
         decl = docJson["decl"]
-        generateMarkdown(decl, version, args.output, environment, template)
+        generateMarkdown(
+            decl,
+            version,
+            args.output,
+            environment,
+            template,
+            show_stability_markers=args.show_stability_markers,
+        )
         # os.remove(args.filename)
 
 

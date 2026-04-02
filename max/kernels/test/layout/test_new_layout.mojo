@@ -15,7 +15,6 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    IntTuple,
     RuntimeInt,
     TileTensor,
     col_major,
@@ -26,6 +25,7 @@ from layout.tile_layout import (
     ZippedDivideLayout,
     BlockedProductLayout,
     UpcastLayout,
+    WeaklyCompatible,
     blocked_product,
     upcast,
 )
@@ -318,28 +318,27 @@ def test_blocked_product_basic() raises:
     Example from legacy layout docs:
     - block = 2x2 row-major: shape (2,2), stride (2,1)
     - tiler = 2x3 row-major: shape (2,3), stride (3,1)
-    - result: shape ((2,2), (2,3)), stride ((2,1), (12,4))
+    - result: shape ((2,2), (2,3)), stride ((2,12), (1,4))
+    Each mode i zips block[i] with tiler[i].
     """
     var block = row_major[2, 2]()
     var tiler = row_major[2, 3]()
     var blocked = blocked_product(block, tiler)
 
-    # Check inner shape (block shape)
+    # Mode 0: (block_shape[0], tiler_shape[0]) = (2, 2)
     assert_equal(blocked.shape[0]()[0].value(), 2)
     assert_equal(blocked.shape[0]()[1].value(), 2)
 
-    # Check outer shape (tiler shape)
+    # Mode 1: (block_shape[1], tiler_shape[1]) = (2, 3)
     assert_equal(blocked.shape[1]()[0].value(), 2)
     assert_equal(blocked.shape[1]()[1].value(), 3)
 
-    # Check inner stride (block stride)
+    # Mode 0 stride: (block_stride[0], cosize * tiler_stride[0]) = (2, 12)
     assert_equal(blocked.stride[0]()[0].value(), 2)
-    assert_equal(blocked.stride[0]()[1].value(), 1)
+    assert_equal(blocked.stride[0]()[1].value(), 12)
 
-    # Check outer stride = block.cosize * tiler.stride
-    # block.cosize = 4 (2x2), tiler.stride = (3, 1)
-    # outer_stride = (4*3, 4*1) = (12, 4)
-    assert_equal(blocked.stride[1]()[0].value(), 12)
+    # Mode 1 stride: (block_stride[1], cosize * tiler_stride[1]) = (1, 4)
+    assert_equal(blocked.stride[1]()[0].value(), 1)
     assert_equal(blocked.stride[1]()[1].value(), 4)
 
 
@@ -349,28 +348,22 @@ def test_blocked_product_type_alias() raises:
     comptime tiler = row_major[2, 3]()
     comptime layout = BlockedProductLayout[type_of(block), type_of(tiler)]
 
-    # inner_shape types should be (ComptimeInt[2], ComptimeInt[2])
+    # Mode 0: (block_shape[0], tiler_shape[0]) = (2, 2)
     assert_equal(layout._shape_types[0].VariadicType[0].static_value, 2)
     assert_equal(layout._shape_types[0].VariadicType[1].static_value, 2)
 
-    # outer_shape types should be (ComptimeInt[2], ComptimeInt[3])
+    # Mode 1: (block_shape[1], tiler_shape[1]) = (2, 3)
     assert_equal(layout._shape_types[1].VariadicType[0].static_value, 2)
     assert_equal(layout._shape_types[1].VariadicType[1].static_value, 3)
 
-    # inner_stride types should be (ComptimeInt[2], ComptimeInt[1])
+    # Mode 0 stride: (block_stride[0], cosize * tiler_stride[0]) = (2, 12)
+    # block = row_major[2, 2](): stride = (2, 1), cosize = 4
+    # tiler = row_major[2, 3](): stride = (3, 1)
     assert_equal(layout._stride_types[0].VariadicType[0].static_value, 2)
-    assert_equal(layout._stride_types[0].VariadicType[1].static_value, 1)
+    assert_equal(layout._stride_types[0].VariadicType[1].static_value, 12)
 
-    # outer_stride types should be (ComptimeInt[12], ComptimeInt[4])
-    # = tiler.stride * block.row_major_strides
-    # = (3, 1) * (2*2, 2) ... wait, that's not right
-    # Let me recalculate: outer_stride = tiler.stride * row_major_strides_of_block_shape
-    # row_major_strides of (2, 2) = (2, 1)
-    # So outer_stride = (3 * 2, 1 * ... hmm
-    # Actually the formula is: outer_stride[i] = tiler.stride[i] * block.cosize
-    # For row-major block, cosize = 4
-    # So outer_stride = (3*4, 1*4) = (12, 4)
-    assert_equal(layout._stride_types[1].VariadicType[0].static_value, 12)
+    # Mode 1 stride: (block_stride[1], cosize * tiler_stride[1]) = (1, 4)
+    assert_equal(layout._stride_types[1].VariadicType[0].static_value, 1)
     assert_equal(layout._stride_types[1].VariadicType[1].static_value, 4)
 
 
@@ -617,14 +610,14 @@ def test_coord_flatten_blocked_product_stride() raises:
     var tiler = row_major[2, 3]()
     var blocked = blocked_product(block, tiler)
 
-    # blocked.stride is Coord(Coord(2, 1), Coord(12, 4))
+    # blocked.stride is Coord(Coord(2, 12), Coord(1, 4))
     var flat_stride = blocked.stride_coord().flatten()
 
-    # Should flatten to (2, 1, 12, 4)
+    # Should flatten to (2, 12, 1, 4)
     assert_equal(len(flat_stride), 4)
     assert_equal(flat_stride[0].value(), 2)
-    assert_equal(flat_stride[1].value(), 1)
-    assert_equal(flat_stride[2].value(), 12)
+    assert_equal(flat_stride[1].value(), 12)
+    assert_equal(flat_stride[2].value(), 1)
     assert_equal(flat_stride[3].value(), 4)
 
 
@@ -802,8 +795,8 @@ def test_tile_tensor_transpose_is_view() raises:
     assert_equal(tensor[0, 1], 42.0)
 
 
-def test_tile_tensor_flat_indexing_with_coord() raises:
-    """Test flat indexing using Coord on nested layout."""
+def test_tile_tensor_hierarchical_indexing_with_coord() raises:
+    """Test hierarchical indexing using nested Coord on nested layout."""
     var block = row_major[2, 2]()
     var tiler = row_major[2, 3]()
     var blocked_layout = blocked_product(block, tiler)
@@ -811,9 +804,9 @@ def test_tile_tensor_flat_indexing_with_coord() raises:
     var storage = InlineArray[Float32, 24](fill=0.0)
     var tensor = TileTensor(storage, blocked_layout)
 
-    # Use flat Coord for indexing
-    var flat_coord = Coord(Idx[1](), Idx[0](), Idx[1](), Idx[2]())
-    tensor[flat_coord] = 42.0
+    # Use nested Coord matching layout shape ((2,2),(2,3))
+    var coord = Coord(Coord(Idx[1](), Idx[0]()), Coord(Idx[1](), Idx[2]()))
+    tensor[coord] = 42.0
 
     # Read back with flat indices
     assert_equal(tensor[1, 0, 1, 2], 42.0)
@@ -1166,7 +1159,7 @@ def test_upcast_factor1_identity() raises:
 
 def test_upcast_runtime_dims() raises:
     """Upcast with runtime dimensions produces RuntimeInt results."""
-    var layout = row_major((Idx(Int(4)), Idx[8]()))
+    var layout = row_major(Idx(Int(4)), Idx[8]())
     var up = upcast[factor=2](layout)
 
     assert_equal(up.shape[0]().value(), 4)
@@ -1387,10 +1380,148 @@ def test_coalesced_blocked_product_partial() raises:
 
 
 def test_write_to_static() raises:
-    var layout = row_major((Idx(3), Idx(4)))
+    var layout = row_major(Idx(3), Idx(4))
     check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)
 
 
 def test_write_to_dynamic() raises:
-    var layout = row_major((Idx(Int(3)), Idx(4)))
+    var layout = row_major(Idx(Int(3)), Idx(4))
     check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)
+
+
+def test_weakly_compatible_scalar_coord() raises:
+    """Scalar coord elements are always compatible with any layout."""
+    comptime L = type_of(row_major[3, 4]())
+    comptime assert WeaklyCompatible[
+        L, Coord[ComptimeInt[5], ComptimeInt[7]].element_types
+    ]
+    comptime assert WeaklyCompatible[
+        L,
+        Coord[RuntimeInt[DType.int32], RuntimeInt[DType.int32]].element_types,
+    ]
+
+
+def test_weakly_compatible_flat_match() raises:
+    """Flat coord types with matching rank is compatible."""
+    comptime L = type_of(row_major[3, 4]())
+    comptime assert WeaklyCompatible[
+        L, Coord[ComptimeInt[2], ComptimeInt[3]].element_types
+    ]
+
+
+def test_weakly_compatible_flat_mismatch() raises:
+    """Flat coord types with wrong rank is incompatible."""
+    comptime L = type_of(row_major[3, 4]())
+    comptime assert not WeaklyCompatible[
+        L,
+        Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]].element_types,
+    ]
+
+
+def test_weakly_compatible_1d_layout() raises:
+    """1D layout vs 1-element and 2-element coord types."""
+    comptime L = type_of(row_major[8]())
+    comptime assert WeaklyCompatible[L, Coord[ComptimeInt[4]].element_types]
+    comptime assert not WeaklyCompatible[
+        L, Coord[ComptimeInt[2], ComptimeInt[4]].element_types
+    ]
+
+
+def test_weakly_compatible_nested_depth2() raises:
+    """Depth-2 nesting: nested coord types match nested layout shape."""
+    # blocked_product produces nested shapes like ((2, 3), (4, 2))
+    comptime Block = type_of(row_major[2, 4]())
+    comptime Tiler = type_of(row_major[3, 2]())
+    comptime L = BlockedProductLayout[Block, Tiler]
+
+    # Matching nested structure: ((_, _), (_, _))
+    comptime assert WeaklyCompatible[
+        L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+        ].element_types,
+    ]
+
+    # Wrong inner rank in first mode: ((_, _, _), (_, _))
+    comptime assert not WeaklyCompatible[
+        L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+        ].element_types,
+    ]
+
+
+def test_weakly_compatible_mixed_scalar_and_tuple() raises:
+    """Scalar sub-coord types are always compatible, even when layout has tuples.
+    """
+    comptime Block = type_of(row_major[2, 4]())
+    comptime Tiler = type_of(row_major[3, 2]())
+    comptime L = BlockedProductLayout[Block, Tiler]
+
+    # Outer rank matches (2 modes), but sub-coords are scalar — compatible.
+    comptime assert WeaklyCompatible[
+        L, Coord[ComptimeInt[5], ComptimeInt[7]].element_types
+    ]
+
+
+def test_weakly_compatible_nested_inner_mismatch() raises:
+    """Inner rank mismatch at depth 2 is caught."""
+    comptime Block = type_of(row_major[2, 4]())
+    comptime Tiler = type_of(row_major[3, 2]())
+    comptime L = BlockedProductLayout[Block, Tiler]
+
+    # First mode matches (2 elements), second mode wrong inner rank (3 vs 2)
+    comptime assert not WeaklyCompatible[
+        L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+            Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
+        ].element_types,
+    ]
+
+
+def test_weakly_compatible_coord_tuple_vs_layout_scalar() raises:
+    """Tuple coord type against a scalar layout shape element is incompatible.
+    """
+    comptime L = type_of(row_major[3, 4]())
+
+    # Layout shape is (3, 4) — flat scalars. Coord has a nested tuple in
+    # first position — incompatible because scalar 3 can't match a tuple.
+    comptime assert not WeaklyCompatible[
+        L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]
+        ].element_types,
+    ]
+
+
+def test_weakly_compatible_not_symmetric() raises:
+    """WeaklyCompatible is not symmetric: swapping layout and coord can flip
+    the result.
+
+    Coord ((1, 1), 1) is NOT compatible with flat layout (1, 1):(1, 1),
+    because the nested tuple in the coord can't match a scalar shape element.
+
+    But coord (1, 1) IS compatible with nested layout ((1, 1), 1):((1, 1), 1),
+    because scalar coord elements are always compatible with any layout mode.
+    """
+    comptime flat_L = type_of(row_major[1, 1]())
+    comptime nested_L = type_of(
+        row_major(Coord(Coord(Idx[1](), Idx[1]()), Idx[1]()))
+    )
+
+    # Nested coord vs flat layout — incompatible.
+    comptime assert not WeaklyCompatible[
+        flat_L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[1]], ComptimeInt[1]
+        ].element_types,
+    ]
+
+    # Flat coord vs nested layout — compatible (scalars match anything).
+    comptime assert WeaklyCompatible[
+        nested_L,
+        Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
+    ]

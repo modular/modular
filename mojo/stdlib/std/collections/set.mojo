@@ -473,9 +473,22 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Args:
             other: Another Set instance to intersect with this one.
         """
-        # Possible to do this without an extra allocation, but need to be
-        # careful about concurrent iteration + mutation
-        self.difference_update(self - other)
+        # When self is larger, it is cheaper to build the intersection
+        # from other's side — iterate the smaller collection and do
+        # lookups into the larger one.
+        if len(self) > len(other):
+            var keep = Self()
+            for e in other:
+                if e in self:
+                    keep.add(e)
+            self = keep^
+        else:
+            var to_remove = List[Self.T](capacity=len(self))
+            for e in self:
+                if e not in other:
+                    to_remove.append(e.copy())
+            for e in to_remove:
+                self.discard(e)
 
     def difference_update(mut self, other: Self):
         """In-place set subtraction.

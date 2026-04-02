@@ -26,17 +26,11 @@ from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
     RuntimeInt,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._utils import ManagedLayoutTensor
 from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
@@ -107,18 +101,6 @@ def test_blockwise_fp8_1d2d_structured[
         num_experts,
     )
 
-    # Define layouts
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    comptime b_layout = Layout.row_major(num_experts, N, K)
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    comptime a_scales_layout = Layout.row_major(
-        K // BLOCK_SCALE_K, UNKNOWN_VALUE
-    )
-    comptime b_scales_layout = Layout.row_major(
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
-    comptime expert_scales_layout = Layout.row_major(num_experts)
-
     # Sizes
     var a_size = total_num_tokens * K
     var b_size = num_experts * N * K
@@ -131,51 +113,48 @@ def test_blockwise_fp8_1d2d_structured[
     # Host allocations
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_managed = ManagedLayoutTensor[c_type, c_layout](
-        RuntimeLayout[c_layout].row_major(IndexList[2](total_num_tokens, N)),
-        ctx,
-    )
-    var c_host_ref_managed = ManagedLayoutTensor[c_type, c_layout](
-        RuntimeLayout[c_layout].row_major(IndexList[2](total_num_tokens, N)),
-        ctx,
-    )
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
     var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
     var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
     var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
     var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
     var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
 
-    var dynamic_a_shape = IndexList[2](total_num_tokens, K)
-    var dynamic_c_shape = IndexList[2](total_num_tokens, N)
-    var dynamic_a_scales_shape = IndexList[2](
-        K // BLOCK_SCALE_K, total_num_tokens
-    )
-
-    var a_host = LayoutTensor[a_type, a_layout](
+    var a_host = TileTensor(
         a_host_ptr,
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
-    )
-    var b_host = LayoutTensor[b_type, b_layout](
-        b_host_ptr,
-        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
-    )
-    var c_host = LayoutTensor[c_type, c_layout](
-        c_host_managed.tensor[update=False]().ptr,
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-    )
-    var c_host_ref = LayoutTensor[c_type, c_layout](
-        c_host_ref_managed.tensor[update=False]().ptr,
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-    )
-    var a_scales_host = LayoutTensor[DType.float32, a_scales_layout](
-        a_scales_host_ptr,
-        RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
-    )
-    var b_scales_host = LayoutTensor[DType.float32, b_scales_layout](
-        b_scales_host_ptr,
-        RuntimeLayout[b_scales_layout].row_major(
-            IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
+        row_major(
+            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[K]())
         ),
+    )
+    var b_host = TileTensor(
+        b_host_ptr,
+        row_major[num_experts, N, K](),
+    )
+    var c_host = TileTensor(
+        c_host_ptr,
+        row_major(
+            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
+        ),
+    )
+    var c_host_ref = TileTensor(
+        c_host_ref_ptr,
+        row_major(
+            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
+        ),
+    )
+    var a_scales_host = TileTensor(
+        a_scales_host_ptr,
+        row_major(
+            Coord(
+                Idx[K // BLOCK_SCALE_K](),
+                RuntimeInt[DType.int64](Int64(total_num_tokens)),
+            )
+        ),
+    )
+    var b_scales_host = TileTensor(
+        b_scales_host_ptr,
+        row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
     )
 
     # Setup offsets and expert ids
@@ -222,60 +201,15 @@ def test_blockwise_fp8_1d2d_structured[
     # Copy to device
     ctx.enqueue_copy(a_device_buffer, a_host_ptr)
     ctx.enqueue_copy(b_device_buffer, b_host_ptr)
-    ctx.enqueue_copy(c_device_buffer, c_host.ptr)
-    ctx.enqueue_copy(c_device_ref_buffer, c_host_ref.ptr)
+    ctx.enqueue_copy(c_device_buffer, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
     ctx.enqueue_copy(a_offsets_device_buffer, a_offsets_host_ptr)
     ctx.enqueue_copy(expert_ids_device_buffer, expert_ids_host_ptr)
     ctx.enqueue_copy(a_scales_device_buffer, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device_buffer, b_scales_host_ptr)
     ctx.enqueue_copy(expert_scales_device_buffer, expert_scales_host_ptr)
 
-    # Create LayoutTensors for device data
-    var a = LayoutTensor[a_type, a_layout](
-        a_device_buffer.unsafe_ptr().bitcast[Scalar[a_type]](),
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
-    )
-    var b = LayoutTensor[b_type, b_layout](
-        b_device_buffer.unsafe_ptr().bitcast[Scalar[b_type]](),
-        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
-    )
-    var c = LayoutTensor[c_type, c_layout](
-        c_device_buffer.unsafe_ptr().bitcast[Scalar[c_type]](),
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-    )
-    var c_ref = LayoutTensor[c_type, c_layout](
-        c_device_ref_buffer.unsafe_ptr().bitcast[Scalar[c_type]](),
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-    )
-    var a_scales = LayoutTensor[DType.float32, a_scales_layout](
-        a_scales_device_buffer.unsafe_ptr().bitcast[Scalar[DType.float32]](),
-        RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
-    )
-    var b_scales = LayoutTensor[DType.float32, b_scales_layout](
-        b_scales_device_buffer.unsafe_ptr().bitcast[Scalar[DType.float32]](),
-        RuntimeLayout[b_scales_layout].row_major(
-            IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
-        ),
-    )
-    var a_offsets = LayoutTensor[DType.uint32, Layout.row_major(UNKNOWN_VALUE)](
-        a_offsets_device_buffer.unsafe_ptr().bitcast[Scalar[DType.uint32]](),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](num_active_experts + 1)
-        ),
-    )
-    var expert_ids = LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
-        expert_ids_device_buffer.unsafe_ptr().bitcast[Scalar[DType.int32]](),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](num_active_experts)
-        ),
-    )
-    var expert_scales = LayoutTensor[DType.float32, expert_scales_layout](
-        expert_scales_device_buffer.unsafe_ptr().bitcast[
-            Scalar[DType.float32]
-        ](),
-    )
-
-    # TileTensors for the kernel under test (constructed from raw pointers)
+    # Create TileTensors for device data
     var a_tt = TileTensor(
         a_device_buffer.unsafe_ptr().bitcast[Scalar[a_type]](),
         row_major(
@@ -288,6 +222,12 @@ def test_blockwise_fp8_1d2d_structured[
     )
     var c_tt = TileTensor(
         c_device_buffer.unsafe_ptr().bitcast[Scalar[c_type]](),
+        row_major(
+            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
+        ),
+    )
+    var c_ref_tt = TileTensor(
+        c_device_ref_buffer.unsafe_ptr().bitcast[Scalar[c_type]](),
         row_major(
             Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
         ),
@@ -337,6 +277,15 @@ def test_blockwise_fp8_1d2d_structured[
         ),
     )
 
+    # Bridge to LayoutTensor for reference kernel
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
+    var c_ref = c_ref_tt.to_layout_tensor()
+    var a_scales = a_scales_tt.to_layout_tensor()
+    var b_scales = b_scales_tt.to_layout_tensor()
+    var a_offsets = a_offsets_tt.to_layout_tensor()
+    var expert_ids = expert_ids_tt.to_layout_tensor()
+
     # ===== Reference: naive blockwise FP8 grouped matmul =====
     naive_blockwise_scaled_fp8_grouped_matmul[
         BLOCK_DIM_M=16,
@@ -377,8 +326,8 @@ def test_blockwise_fp8_1d2d_structured[
     ctx.synchronize()
 
     # ===== Compare results =====
-    ctx.enqueue_copy(c_host.ptr, c_device_buffer)
-    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref_buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device_buffer)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref_buffer)
     ctx.synchronize()
 
     var rtol = 1e-2
@@ -386,8 +335,8 @@ def test_blockwise_fp8_1d2d_structured[
     for mi in range(total_num_tokens):
         for ni in range(N):
             assert_almost_equal(
-                c_host[mi, ni][0],
-                c_host_ref[mi, ni][0],
+                c_host_ptr[mi * N + ni],
+                c_host_ref_ptr[mi * N + ni],
                 msg=String(t"m: {mi} n: {ni}"),
                 rtol=rtol,
                 atol=atol,
@@ -398,6 +347,8 @@ def test_blockwise_fp8_1d2d_structured[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
     a_offsets_host_ptr.free()
     expert_ids_host_ptr.free()
     a_scales_host_ptr.free()

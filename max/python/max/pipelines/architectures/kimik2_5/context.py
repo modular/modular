@@ -20,7 +20,7 @@ import numpy.typing as npt
 from max.pipelines.core.context import TextAndVisionContext
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, slots=True)
 class KimiK2_5TextAndVisionContext(TextAndVisionContext):
     """Context for Kimi K2.5 multimodal model processing.
 

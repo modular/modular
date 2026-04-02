@@ -23,14 +23,14 @@ def spmv_ell_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
-    if Int(row) < ellMatrix.numRows:
+    if row < ellMatrix.numRows:
         var sum: Float32 = 0.0
         for t in range(ellMatrix.nnzPerRow):
-            var i = t * ellMatrix.numRows + Int(row)
+            var i = t * ellMatrix.numRows + row
             var col = ellMatrix.colIdx[i]
             var val = ellMatrix.value[i]
             sum += x[Int(col)] * val
-        y[Int(row)] = sum
+        y[row] = sum
 
 
 def main() raises:
@@ -137,8 +137,8 @@ def main() raises:
 
     ctx.enqueue_function_experimental[spmv_ell_kernel](
         d_ellMatrix,
-        d_x_buf.unsafe_ptr(),
-        d_y_buf.unsafe_ptr(),
+        d_x_buf,
+        d_y_buf,
         grid_dim=numBlocks,
         block_dim=blockSize,
     )

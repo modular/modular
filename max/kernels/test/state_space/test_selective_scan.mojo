@@ -11,22 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import exp, exp2, log, rsqrt
-from std.sys.info import simd_width_of
+from std.math import exp, exp2, log
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
     Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from layout.int_tuple import fill_like
 from std.memory import alloc
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
@@ -38,7 +34,7 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 # LOG2E constant for converting exp to exp2
@@ -223,31 +219,34 @@ def run_selective_scan_fwd[
 
     # Create TileTensor versions for kernel call
     var output_tt = TileTensor(
-        output_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        output_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
     var x_tt = TileTensor(
         x_heap,
-        row_major((Idx(batch), Idx(dim), Idx(n_chunks), Idx(2 * dstate))),
+        row_major(Idx(batch), Idx(dim), Idx(n_chunks), Idx(2 * dstate)),
     )
     var out_z_tt = TileTensor(
-        out_z_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        out_z_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
-    var u_tt = TileTensor(
-        u_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
-    )
+    var u_tt = TileTensor(u_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen)))
     var delta_tt = TileTensor(
-        delta_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        delta_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
-    var A_tt = TileTensor(A_heap, row_major((Idx(dim), Idx(dstate))))
+    var A_tt = TileTensor(A_heap, row_major(Idx(dim), Idx(dstate)))
     var B_tt = TileTensor(
         B_heap,
-        row_major((Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen))),
+        row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
     )
     var C_tt = TileTensor(
         C_heap,
-        row_major((Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen))),
+        row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
     )
-    var D_tt = TileTensor(D_heap, row_major((Idx(D_size),)))
+    var D_tt = TileTensor(
+        D_heap,
+        row_major(
+            Idx(D_size),
+        ),
+    )
     var z_tt = TileTensor(
         z_heap,
         row_major(
@@ -259,7 +258,10 @@ def run_selective_scan_fwd[
         ),
     )
     var delta_bias_tt = TileTensor(
-        delta_bias_heap, row_major((Idx(delta_bias_size),))
+        delta_bias_heap,
+        row_major(
+            Idx(delta_bias_size),
+        ),
     )
 
     var output_buf = output_h
@@ -492,27 +494,37 @@ def run_selective_scan_update[
 
     # Create TileTensor versions for kernel call
     var state_in_tt = TileTensor(
-        state_in_heap, row_major((Idx(batch), Idx(dim), Idx(dstate)))
+        state_in_heap, row_major(Idx(batch), Idx(dim), Idx(dstate))
     )
     var state_out_tt = TileTensor(
-        state_out_heap, row_major((Idx(batch), Idx(dim), Idx(dstate)))
+        state_out_heap, row_major(Idx(batch), Idx(dim), Idx(dstate))
     )
-    var output_tt2 = TileTensor(output_heap, row_major((Idx(batch), Idx(dim))))
-    var x_tt2 = TileTensor(x_heap, row_major((Idx(batch), Idx(dim))))
-    var dt_tt = TileTensor(dt_heap, row_major((Idx(batch), Idx(dim))))
-    var A_tt2 = TileTensor(A_heap, row_major((Idx(dim), Idx(dstate))))
+    var output_tt2 = TileTensor(output_heap, row_major(Idx(batch), Idx(dim)))
+    var x_tt2 = TileTensor(x_heap, row_major(Idx(batch), Idx(dim)))
+    var dt_tt = TileTensor(dt_heap, row_major(Idx(batch), Idx(dim)))
+    var A_tt2 = TileTensor(A_heap, row_major(Idx(dim), Idx(dstate)))
     var B_tt2 = TileTensor(
-        B_heap, row_major((Idx(batch), Idx(n_groups), Idx(dstate)))
+        B_heap, row_major(Idx(batch), Idx(n_groups), Idx(dstate))
     )
     var C_tt2 = TileTensor(
-        C_heap, row_major((Idx(batch), Idx(n_groups), Idx(dstate)))
+        C_heap, row_major(Idx(batch), Idx(n_groups), Idx(dstate))
     )
-    var D_tt2 = TileTensor(D_heap, row_major((Idx(D_size),)))
+    var D_tt2 = TileTensor(
+        D_heap,
+        row_major(
+            Idx(D_size),
+        ),
+    )
     var z_tt2 = TileTensor(
         z_heap,
-        row_major((Idx(batch if has_z else 0), Idx(dim if has_z else 0))),
+        row_major(Idx(batch if has_z else 0), Idx(dim if has_z else 0)),
     )
-    var dt_bias_tt = TileTensor(dt_bias_heap, row_major((Idx(dt_bias_size),)))
+    var dt_bias_tt = TileTensor(
+        dt_bias_heap,
+        row_major(
+            Idx(dt_bias_size),
+        ),
+    )
 
     var state_in_buf = state_in_h
     var state_out_buf = state_out_h

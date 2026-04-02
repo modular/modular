@@ -11,933 +11,2122 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import dataclass
-from typing import Optional
+from __future__ import annotations
 
-import numpy as np
+from itertools import pairwise
+
+from max.driver import accelerator_api
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.nn import Conv2d, GroupNorm, Module, ModuleList
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef, Dim, TensorValue, Weight, ops
+from max.graph.type import FilterLayout
+from max.nn.layer import LayerList, Module
 
-from .layers import Downsample2D, ResnetBlock2D, Upsample2D, VAEAttention
+from .model_config import AutoencoderKLWanConfig
+
+CACHE_T = 2
+WAN_DECODER_CACHE_SLOTS = 32
+WAN_ENCODER_CHUNK_SIZE = 4  # Frames per encoder chunk (matching diffusers)
 
 
-class DownEncoderBlock2D(Module[[Tensor], Tensor]):
-    """Downsampling encoder block for 2D VAE.
+def _use_nvidia_fcrs_conv3d(device: DeviceRef | None) -> bool:
+    return (
+        device is not None and device.is_gpu() and accelerator_api() == "cuda"
+    )
 
-    This module consists of multiple ResNet blocks followed by an optional
-    downsampling layer. It progressively decreases spatial resolution while
-    processing features through residual connections.
+
+def _zero_cache_for(x: TensorValue) -> TensorValue:
+    """Create a zero cache tensor shaped for a causal conv input."""
+    shape: list[int | str | Dim] = [
+        x.shape[0],
+        x.shape[1],
+        CACHE_T,
+        x.shape[3],
+        x.shape[4],
+    ]
+    return ops.constant(0.0, dtype=x.dtype, device=x.device).broadcast_to(shape)
+
+
+class RMSNorm(Module):
+    """RMS norm used by Wan VAE blocks."""
+
+    def __init__(
+        self,
+        dim: int,
+        channel_first: bool = True,
+        images: bool = False,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.channel_first = channel_first
+
+        broadcastable_dims = (1, 1) if images else (1, 1, 1)
+        shape = [dim, *broadcastable_dims] if channel_first else [dim]
+        dev_ref = device if device is not None else DeviceRef.CPU()
+        self.gamma = Weight(
+            "gamma",
+            dtype or DType.float32,
+            shape,
+            dev_ref,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        axis = 1 if self.channel_first else x.rank - 1
+        rms = ops.mean(x * x, axis=axis)
+        inv = ops.rsqrt(rms + 1e-12)
+        gamma = ops.transfer_to(self.gamma, x.device)
+        return x * inv * gamma
+
+
+class CausalConv3d(Module):
+    """3D causal convolution for Wan VAE.
+
+    Temporal causality is implemented via asymmetric padding: the front
+    (temporal) dimension is padded on the left only, which the conv3d
+    padding parameter supports directly.
+
+    Input is permuted from NCDHW to NDHWC before conv, and back after.
+    On NVIDIA GPUs, weights stay in PyTorch FCQRS layout to use the cuDNN
+    3D conv dispatch path. Other backends use MAX's native QRSCF layout.
     """
 
     def __init__(
         self,
         in_channels: int,
         out_channels: int,
-        dropout: float = 0.0,
-        num_layers: int = 1,
-        resnet_eps: float = 1e-6,
-        resnet_time_scale_shift: str = "default",
-        resnet_act_fn: str = "swish",
-        resnet_groups: int = 32,
-        resnet_pre_norm: bool = True,
-        output_scale_factor: float = 1.0,
-        add_downsample: bool = True,
-        downsample_padding: int = 1,
-        device: DeviceRef | None = None,
+        kernel_size: int | tuple[int, int, int],
+        stride: int | tuple[int, int, int] = 1,
+        padding: int | tuple[int, int, int] = 0,
         dtype: DType | None = None,
-    ) -> None:
-        """Initialize DownEncoderBlock2D module.
-
-        Args:
-            in_channels: Number of input channels.
-            out_channels: Number of output channels.
-            dropout: Dropout rate (currently unused).
-            num_layers: Number of ResNet blocks in this encoder block.
-            resnet_eps: Epsilon value for ResNet GroupNorm layers.
-            resnet_time_scale_shift: Time embedding scale/shift mode (not used in encoder, temb=None).
-            resnet_act_fn: Activation function for ResNet blocks.
-            resnet_groups: Number of groups for ResNet GroupNorm.
-            resnet_pre_norm: Whether to apply normalization before ResNet.
-            output_scale_factor: Scaling factor for output (currently unused).
-            add_downsample: Whether to add downsampling layer after ResNet blocks.
-            downsample_padding: Padding for the downsampling layer.
-            device: Device reference for module placement.
-            dtype: Data type for module parameters.
-        """
-        super().__init__()
-        resnets_list = []
-
-        for i in range(num_layers):
-            input_channels = in_channels if i == 0 else out_channels
-
-            if resnet_time_scale_shift == "spatial":
-                raise NotImplementedError(
-                    "resnet_time_scale_shift='spatial' is not supported in Max encoder. "
-                    "Encoder uses temb=None, so only 'default' is supported."
-                )
-
-            resnet = ResnetBlock2D(
-                in_channels=input_channels,
-                out_channels=out_channels,
-                temb_channels=None,
-                groups=resnet_groups,
-                groups_out=resnet_groups,
-                eps=resnet_eps,
-                non_linearity=resnet_act_fn,
-                use_conv_shortcut=False,
-                conv_shortcut_bias=True,
-                device=device,
-                dtype=dtype,
-            )
-            resnets_list.append(resnet)
-
-        self.resnets = ModuleList(resnets_list)
-
-        self.downsamplers: ModuleList[Downsample2D] | None = None
-        if add_downsample:
-            downsampler = Downsample2D(
-                channels=out_channels,
-                use_conv=True,
-                out_channels=out_channels,
-                padding=downsample_padding,
-                name="op",
-                kernel_size=3,
-                norm_type=None,
-                bias=True,
-                device=device,
-                dtype=dtype,
-            )
-            self.downsamplers = ModuleList([downsampler])
-
-    def forward(self, hidden_states: Tensor) -> Tensor:
-        """Apply DownEncoderBlock2D forward pass.
-
-        Args:
-            hidden_states: Input tensor of shape [N, C_in, H, W].
-
-        Returns:
-            Output tensor of shape [N, C_out, H//2, W//2] (if downsampling) or
-            [N, C_out, H, W] (if no downsampling).
-        """
-        for resnet in self.resnets:
-            hidden_states = resnet(hidden_states, None)
-
-        if self.downsamplers is not None:
-            hidden_states = self.downsamplers[0](hidden_states)
-
-        return hidden_states
-
-
-class UpDecoderBlock2D(Module[[Tensor, Tensor | None], Tensor]):
-    """Upsampling decoder block for 2D VAE.
-
-    This module consists of multiple ResNet blocks followed by an optional
-    upsampling layer. It progressively increases spatial resolution while
-    processing features through residual connections.
-    """
-
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        resolution_idx: int | None = None,
-        dropout: float = 0.0,
-        num_layers: int = 1,
-        resnet_eps: float = 1e-6,
-        resnet_time_scale_shift: str = "default",
-        resnet_act_fn: str = "swish",
-        resnet_groups: int = 32,
-        resnet_pre_norm: bool = True,
-        output_scale_factor: float = 1.0,
-        add_upsample: bool = True,
-        temb_channels: int | None = None,
         device: DeviceRef | None = None,
-        dtype: DType | None = None,
+        has_bias: bool = True,
+        prefer_nvidia_fcrs: bool = True,
     ) -> None:
-        """Initialize UpDecoderBlock2D module.
-
-        Args:
-            in_channels: Number of input channels.
-            out_channels: Number of output channels.
-            resolution_idx: Optional resolution index for tracking.
-            dropout: Dropout rate (currently unused).
-            num_layers: Number of ResNet blocks in this decoder block.
-            resnet_eps: Epsilon value for ResNet GroupNorm layers.
-            resnet_time_scale_shift: Time embedding scale/shift mode.
-            resnet_act_fn: Activation function for ResNet blocks.
-            resnet_groups: Number of groups for ResNet GroupNorm.
-            resnet_pre_norm: Whether to apply normalization before ResNet.
-            output_scale_factor: Scaling factor for output (currently unused).
-            add_upsample: Whether to add upsampling layer after ResNet blocks.
-            temb_channels: Number of time embedding channels (None if not used).
-            device: Device reference for module placement.
-            dtype: Data type for module parameters.
-        """
         super().__init__()
-        resnets_list = []
-        for i in range(num_layers):
-            input_channels = in_channels if i == 0 else out_channels
-
-            resnet = ResnetBlock2D(
-                in_channels=input_channels,
-                out_channels=out_channels,
-                temb_channels=temb_channels,
-                groups=resnet_groups,
-                groups_out=resnet_groups,
-                eps=resnet_eps,
-                non_linearity=resnet_act_fn,
-                use_conv_shortcut=False,
-                conv_shortcut_bias=True,
-                device=device,
-                dtype=dtype,
-            )
-            resnets_list.append(resnet)
-        self.resnets = ModuleList(resnets_list)
-
-        if add_upsample:
-            upsampler = Upsample2D(
-                channels=out_channels,
-                use_conv=True,
-                out_channels=out_channels,
-                name="conv",
-                kernel_size=3,
-                padding=1,
-                bias=True,
-                interpolate=True,
-                device=device,
-                dtype=dtype,
-            )
-            self.upsamplers: ModuleList[Upsample2D] | None = ModuleList(
-                [upsampler]
-            )
+        if isinstance(kernel_size, int):
+            kernel_size = (kernel_size, kernel_size, kernel_size)
+        if isinstance(stride, int):
+            stride = (stride, stride, stride)
+        if isinstance(padding, int):
+            pad_t = pad_h = pad_w = padding
         else:
-            self.upsamplers = None
+            pad_t, pad_h, pad_w = padding
 
-    def forward(
-        self, hidden_states: Tensor, temb: Tensor | None = None
-    ) -> Tensor:
-        """Apply UpDecoderBlock2D forward pass.
-
-        Args:
-            hidden_states: Input tensor of shape [N, C_in, H, W].
-            temb: Optional time embedding tensor.
-
-        Returns:
-            Output tensor of shape [N, C_out, H*2, W*2] (if upsampling) or
-            [N, C_out, H, W] (if no upsampling).
-        """
-        # Process through all resnet blocks
-        for resnet in self.resnets:
-            hidden_states = resnet(hidden_states, temb)
-
-        # Apply upsampling if configured (compile-time decision)
-        if self.upsamplers is not None:
-            hidden_states = self.upsamplers[0](hidden_states)
-
-        return hidden_states
-
-
-class MidBlock2D(Module[[Tensor, Tensor | None], Tensor]):
-    """Middle block for 2D VAE.
-
-    This module processes features at the middle of the VAE architecture,
-    applying ResNet blocks with optional spatial attention mechanisms.
-    It maintains spatial dimensions while processing features through
-    residual connections and self-attention.
-    """
-
-    def __init__(
-        self,
-        in_channels: int,
-        temb_channels: int | None,
-        dropout: float = 0.0,
-        num_layers: int = 1,
-        resnet_eps: float = 1e-6,
-        resnet_time_scale_shift: str = "default",
-        resnet_act_fn: str = "swish",
-        resnet_groups: int = 32,
-        resnet_pre_norm: bool = True,
-        add_attention: bool = True,
-        attention_head_dim: int = 1,
-        output_scale_factor: float = 1.0,
-        device: DeviceRef | None = None,
-        dtype: DType | None = None,
-    ) -> None:
-        """Initialize MidBlock2D module.
-
-        Args:
-            in_channels: Number of input channels.
-            temb_channels: Number of time embedding channels (None if not used).
-            dropout: Dropout rate (currently unused).
-            num_layers: Number of ResNet/attention layer pairs.
-            resnet_eps: Epsilon value for ResNet GroupNorm layers.
-            resnet_time_scale_shift: Time embedding scale/shift mode.
-            resnet_act_fn: Activation function for ResNet blocks.
-            resnet_groups: Number of groups for ResNet GroupNorm.
-            resnet_pre_norm: Whether to apply normalization before ResNet.
-            add_attention: Whether to add attention layers between ResNet blocks.
-            attention_head_dim: Dimension of each attention head.
-            output_scale_factor: Scaling factor for output (currently unused).
-            device: Device reference for module placement.
-            dtype: Data type for module parameters.
-        """
-        super().__init__()
-        resnets_list = []
-        attentions_list: list[VAEAttention | None] = []
-
-        resnet = ResnetBlock2D(
-            in_channels=in_channels,
-            out_channels=in_channels,
-            temb_channels=temb_channels,
-            groups=resnet_groups,
-            groups_out=resnet_groups,
-            eps=resnet_eps,
-            non_linearity=resnet_act_fn,
-            use_conv_shortcut=False,
-            conv_shortcut_bias=True,
-            device=device,
-            dtype=dtype,
-        )
-        resnets_list.append(resnet)
-
-        for _i in range(num_layers):
-            if add_attention:
-                attn = VAEAttention(
-                    query_dim=in_channels,
-                    heads=in_channels // attention_head_dim,
-                    dim_head=attention_head_dim,
-                    num_groups=resnet_groups,
-                    eps=resnet_eps,
-                    device=device,
-                    dtype=dtype,
-                )
-                attentions_list.append(attn)
-            else:
-                attentions_list.append(None)
-
-            resnet = ResnetBlock2D(
-                in_channels=in_channels,
-                out_channels=in_channels,
-                temb_channels=temb_channels,
-                groups=resnet_groups,
-                groups_out=resnet_groups,
-                eps=resnet_eps,
-                non_linearity=resnet_act_fn,
-                use_conv_shortcut=False,
-                conv_shortcut_bias=True,
-                device=device,
-                dtype=dtype,
-            )
-            resnets_list.append(resnet)
-
-        self.resnets = ModuleList(resnets_list)
-
-        if attentions_list:
-            non_none_attentions = [
-                attn for attn in attentions_list if attn is not None
-            ]
-            if non_none_attentions:
-                self.attentions: ModuleList[VAEAttention] | None = ModuleList(
-                    non_none_attentions
-                )
-                self.attention_indices = {
-                    i
-                    for i, attn in enumerate(attentions_list)
-                    if attn is not None
-                }
-            else:
-                self.attentions = None
-                self.attention_indices = set()
-        else:
-            self.attentions = None
-            self.attention_indices = set()
-
-    def forward(
-        self, hidden_states: Tensor, temb: Tensor | None = None
-    ) -> Tensor:
-        """Apply MidBlock2D forward pass.
-
-        Args:
-            hidden_states: Input tensor of shape [N, C, H, W].
-            temb: Optional time embedding tensor.
-
-        Returns:
-            Output tensor of shape [N, C, H, W] with same spatial dimensions.
-        """
-        hidden_states = self.resnets[0](hidden_states, temb)
-
-        attention_idx = 0
-        for i in range(len(self.resnets) - 1):
-            if self.attentions is not None and i in self.attention_indices:
-                hidden_states = self.attentions[attention_idx](hidden_states)
-                attention_idx += 1
-            hidden_states = self.resnets[i + 1](hidden_states, temb)
-
-        return hidden_states
-
-
-@dataclass
-class DecoderOutput:
-    r"""Output of decoding method.
-
-    Args:
-        sample (`Tensor` of shape `(batch_size, num_channels, height, width)`):
-            The decoded output sample from the last layer of the model.
-    """
-
-    sample: Tensor
-    commit_loss: Tensor | None = None
-
-
-class Encoder(Module[[Tensor], Tensor]):
-    r"""The `Encoder` layer of a variational autoencoder that encodes its input into a latent representation.
-
-    This module progressively downsamples the input through multiple encoder blocks,
-    applies a middle block for feature processing, and outputs encoded latents.
-
-    Args:
-        in_channels: The number of input channels.
-        out_channels: The number of output channels.
-        down_block_types: The types of down blocks to use. Currently only supports "DownEncoderBlock2D".
-        block_out_channels: The number of output channels for each block.
-        layers_per_block: The number of layers per block.
-        norm_num_groups: The number of groups for normalization.
-        act_fn: The activation function to use (e.g., "silu").
-        double_z: Whether to double the number of output channels for the last block.
-        mid_block_add_attention: Whether to add attention in the middle block.
-        device: Device reference for module placement.
-        dtype: Data type for module parameters.
-    """
-
-    def __init__(
-        self,
-        in_channels: int = 3,
-        out_channels: int = 3,
-        down_block_types: tuple[str, ...] = ("DownEncoderBlock2D",),
-        block_out_channels: tuple[int, ...] = (64,),
-        layers_per_block: int = 2,
-        norm_num_groups: int = 32,
-        act_fn: str = "silu",
-        double_z: bool = True,
-        mid_block_add_attention: bool = True,
-        use_quant_conv: bool = False,
-        device: DeviceRef | None = None,
-        dtype: DType | None = None,
-    ) -> None:
-        """Initialize Encoder module.
-
-        Args:
-            in_channels: Number of input channels.
-            out_channels: Number of output channels.
-            down_block_types: Tuple of down block types (currently only "DownEncoderBlock2D").
-            block_out_channels: Tuple of block output channels.
-            layers_per_block: Number of layers per block.
-            norm_num_groups: Number of groups for normalization.
-            act_fn: Activation function name (e.g., "silu").
-            double_z: Whether to double output channels for the last block.
-            mid_block_add_attention: Whether to add attention in the middle block.
-            use_quant_conv: Whether to add 1x1 conv after conv_out (encoder output -> latent moments).
-            device: Device reference for module placement.
-            dtype: Data type for module parameters.
-        """
-        super().__init__()
-        self.layers_per_block = layers_per_block
         self.in_channels = in_channels
-        self.device = device
-        self.dtype = dtype
+        self.out_channels = out_channels
+        self._stride = stride
+        # Causal: pad only the front of the temporal axis (left=2*pad_t, right=0).
+        self._padding = (2 * pad_t, 0, pad_h, pad_h, pad_w, pad_w)
 
-        self.conv_in = Conv2d(
-            kernel_size=3,
-            in_channels=in_channels,
-            out_channels=block_out_channels[0],
-            dtype=dtype,
-            stride=1,
-            padding=1,
-            dilation=1,
-            num_groups=1,
-            has_bias=True,
-            device=device,
-            permute=True,
+        dev_ref = device if device is not None else DeviceRef.CPU()
+        dt = dtype or DType.float32
+        d, h, w = kernel_size
+        self._use_nvidia_fcrs = prefer_nvidia_fcrs and _use_nvidia_fcrs_conv3d(
+            dev_ref
         )
-
-        self.down_blocks = ModuleList([])
-
-        output_channel = block_out_channels[0]
-        for i, down_block_type in enumerate(down_block_types):
-            input_channel = output_channel
-            output_channel = block_out_channels[i]
-            is_final_block = i == len(block_out_channels) - 1
-
-            if down_block_type != "DownEncoderBlock2D":
-                raise ValueError(
-                    f"Unsupported down_block_type: {down_block_type}. "
-                    "Currently only 'DownEncoderBlock2D' is supported."
-                )
-
-            down_block = DownEncoderBlock2D(
-                in_channels=input_channel,
-                out_channels=output_channel,
-                dropout=0.0,
-                num_layers=self.layers_per_block,
-                resnet_eps=1e-6,
-                resnet_time_scale_shift="default",
-                resnet_act_fn=act_fn,
-                resnet_groups=norm_num_groups,
-                resnet_pre_norm=True,
-                output_scale_factor=1.0,
-                add_downsample=not is_final_block,
-                downsample_padding=0,
-                device=device,
-                dtype=dtype,
-            )
-            self.down_blocks.append(down_block)
-
-        self.mid_block = MidBlock2D(
-            in_channels=block_out_channels[-1],
-            temb_channels=None,
-            dropout=0.0,
-            num_layers=1,
-            resnet_eps=1e-6,
-            resnet_time_scale_shift="default",
-            resnet_act_fn=act_fn,
-            resnet_groups=norm_num_groups,
-            resnet_pre_norm=True,
-            add_attention=mid_block_add_attention,
-            attention_head_dim=block_out_channels[-1],
-            output_scale_factor=1.0,
-            device=device,
-            dtype=dtype,
+        filter_shape = (
+            [out_channels, in_channels, d, h, w]
+            if self._use_nvidia_fcrs
+            else [d, h, w, in_channels, out_channels]
         )
+        self.filter = Weight("weight", dt, filter_shape, dev_ref)
+        self._has_bias = has_bias
+        if has_bias:
+            self.bias = Weight("bias", dt, [out_channels], dev_ref)
 
-        self.conv_norm_out = GroupNorm(
-            num_groups=norm_num_groups,
-            num_channels=block_out_channels[-1],
-            eps=1e-6,
-            affine=True,
-        )
-
-        conv_out_channels = 2 * out_channels if double_z else out_channels
-        self.conv_out = Conv2d(
-            kernel_size=3,
-            in_channels=block_out_channels[-1],
-            out_channels=conv_out_channels,
-            dtype=dtype,
-            stride=1,
-            padding=1,
-            dilation=1,
-            num_groups=1,
-            has_bias=True,
-            device=device,
-            permute=True,
-        )
-
-        self.quant_conv: Conv2d | None = None
-        if use_quant_conv:
-            self.quant_conv = Conv2d(
-                kernel_size=1,
-                in_channels=conv_out_channels,
-                out_channels=conv_out_channels,
-                dtype=dtype,
-                stride=1,
-                padding=0,
-                dilation=1,
-                num_groups=1,
-                has_bias=True,
-                device=device,
-                permute=True,
-            )
-
-    def forward(self, sample: Tensor) -> Tensor:
-        r"""The forward method of the `Encoder` class.
-
-        Args:
-            sample: Input tensor of shape [N, C_in, H, W].
-
-        Returns:
-            Output tensor of shape [N, C_out, H_latent, W_latent] (downsampled).
-        """
-        sample = self.conv_in(sample)
-
-        for down_block in self.down_blocks:
-            sample = down_block(sample)
-
-        sample = self.mid_block(sample, None)
-
-        sample = self.conv_norm_out(sample)
-        sample = F.silu(sample)
-        sample = self.conv_out(sample)
-
-        if self.quant_conv is not None:
-            sample = self.quant_conv(sample)
-
-        return sample
-
-    def input_types(self) -> tuple[TensorType, ...]:
-        """Define input tensor types for the encoder model.
-
-        Returns:
-            Tuple of TensorType specifications for encoder input.
-        """
-        if self.dtype is None:
-            raise ValueError("dtype must be set for input_types")
-        if self.device is None:
-            raise ValueError("device must be set for input_types")
-        image_type = TensorType(
-            self.dtype,
-            shape=[
-                "batch_size",
-                self.in_channels,
-                "image_height",
-                "image_width",
-            ],
-            device=self.device,
-        )
-
-        return (image_type,)
-
-
-class Decoder(Module[[Tensor, Tensor | None], Tensor]):
-    """VAE decoder for generating images from latent representations.
-
-    This decoder progressively upsamples latent features through multiple
-    decoder blocks, applying ResNet layers and attention mechanisms to
-    reconstruct high-resolution images from compressed latent codes.
-    """
-
-    def __init__(
-        self,
-        in_channels: int = 3,
-        out_channels: int = 3,
-        up_block_types: tuple[str, ...] = ("UpDecoderBlock2D",),
-        block_out_channels: tuple[int, ...] = (64,),
-        layers_per_block: int = 2,
-        norm_num_groups: int = 32,
-        act_fn: str = "silu",
-        norm_type: str = "group",
-        mid_block_add_attention: bool = True,
-        use_post_quant_conv: bool = True,
-        device: DeviceRef | None = None,
-        dtype: DType | None = None,
-    ) -> None:
-        """Initialize Decoder module.
-
-        Args:
-            in_channels: Number of input channels (latent channels).
-            out_channels: Number of output channels (image channels).
-            up_block_types: Tuple of upsampling block types.
-            block_out_channels: Tuple of channel counts for each decoder block.
-            layers_per_block: Number of ResNet layers per decoder block.
-            norm_num_groups: Number of groups for GroupNorm layers.
-            act_fn: Activation function name (e.g., "silu").
-            norm_type: Normalization type ("group" or "spatial").
-            mid_block_add_attention: Whether to add attention in middle block.
-            use_post_quant_conv: Whether to use post-quantization convolution.
-            device: Device reference for module placement.
-            dtype: Data type for module parameters.
-        """
-        super().__init__()
-        self.layers_per_block = layers_per_block
-        self.session = None
-        self.in_channels = in_channels
-        self.device = device
-        self.dtype = dtype
-
-        self.post_quant_conv: Conv2d | None = None
-        if use_post_quant_conv:
-            self.post_quant_conv = Conv2d(
-                kernel_size=1,
-                in_channels=in_channels,
-                out_channels=in_channels,
-                dtype=dtype,
-                stride=1,
-                padding=0,
-                dilation=1,
-                num_groups=1,
-                has_bias=True,
-                device=device,
-                permute=True,
-            )
-
-        self.conv_in = Conv2d(
-            kernel_size=3,
-            in_channels=in_channels,
-            out_channels=block_out_channels[-1],
-            dtype=dtype,
-            stride=1,
-            padding=1,
-            dilation=1,
-            num_groups=1,
-            has_bias=True,
-            device=device,
-            permute=True,
-        )
-
-        temb_channels = in_channels if norm_type == "spatial" else None
-        self.mid_block = MidBlock2D(
-            in_channels=block_out_channels[-1],
-            temb_channels=temb_channels,
-            dropout=0.0,
-            num_layers=1,
-            resnet_eps=1e-6,
-            resnet_time_scale_shift=(
-                "default" if norm_type == "group" else norm_type
+    def __call__(self, x: TensorValue) -> TensorValue:
+        # NCDHW -> NDHWC
+        x_ndhwc = ops.permute(x, [0, 2, 3, 4, 1])
+        out = ops.conv3d(
+            x_ndhwc,
+            self.filter,
+            stride=self._stride,
+            padding=self._padding,
+            filter_layout=(
+                FilterLayout.FCRS
+                if self._use_nvidia_fcrs
+                else FilterLayout.QRSCF
             ),
-            resnet_act_fn=act_fn,
-            resnet_groups=norm_num_groups,
-            resnet_pre_norm=True,
-            add_attention=mid_block_add_attention,
-            attention_head_dim=block_out_channels[-1],
-            output_scale_factor=1.0,
-            device=device,
-            dtype=dtype,
         )
-
-        up_blocks_list = []
-        reversed_block_out_channels = list(reversed(block_out_channels))
-        output_channel = reversed_block_out_channels[0]
-        for i, up_block_type in enumerate(up_block_types):
-            prev_output_channel = output_channel
-            output_channel = reversed_block_out_channels[i]
-            is_final_block = i == len(block_out_channels) - 1
-
-            if up_block_type == "UpDecoderBlock2D":
-                up_block = UpDecoderBlock2D(
-                    in_channels=prev_output_channel,
-                    out_channels=output_channel,
-                    resolution_idx=i,
-                    dropout=0.0,
-                    num_layers=self.layers_per_block + 1,
-                    resnet_eps=1e-6,
-                    resnet_time_scale_shift=norm_type,
-                    resnet_act_fn=act_fn,
-                    resnet_groups=norm_num_groups,
-                    resnet_pre_norm=True,
-                    output_scale_factor=1.0,
-                    add_upsample=not is_final_block,
-                    temb_channels=temb_channels,
-                    device=device,
-                    dtype=dtype,
-                )
-                up_blocks_list.append(up_block)
-            else:
-                raise ValueError(f"Unsupported up_block_type: {up_block_type}")
-
-            prev_output_channel = output_channel
-
-        self.up_blocks = ModuleList(up_blocks_list)
-
-        if norm_type == "spatial":
-            raise NotImplementedError("SpatialNorm not implemented in MAX VAE")
-        else:
-            self.conv_norm_out = GroupNorm(
-                num_groups=norm_num_groups,
-                num_channels=block_out_channels[0],
-                eps=1e-6,
-                affine=True,
-            )
-
-        self.conv_out = Conv2d(
-            kernel_size=3,
-            in_channels=block_out_channels[0],
-            out_channels=out_channels,
-            dtype=dtype,
-            stride=1,
-            padding=1,
-            dilation=1,
-            num_groups=1,
-            has_bias=True,
-            device=device,
-            permute=True,
-        )
-
-    def forward(self, z: Tensor, temb: Tensor | None = None) -> Tensor:
-        """Apply Decoder forward pass.
-
-        Args:
-            z: Input latent tensor of shape [N, C_latent, H_latent, W_latent].
-            temb: Optional time embedding tensor.
-
-        Returns:
-            Decoded image tensor of shape [N, C_out, H, W] where H and W are
-            upsampled from H_latent and W_latent.
-        """
-        if self.post_quant_conv is not None:
-            z = self.post_quant_conv(z)
-        sample = self.conv_in(z)
-        sample = self.mid_block(sample, temb)
-
-        for up_block in self.up_blocks:
-            sample = up_block(sample, temb)
-
-        sample = self.conv_norm_out(sample)
-        sample = F.silu(sample)
-        sample = self.conv_out(sample)
-
-        return sample
-
-    def input_types(self) -> tuple[TensorType, ...]:
-        """Define input tensor types for the decoder model.
-
-        Returns:
-            Tuple of TensorType specifications for decoder input.
-        """
-        if self.dtype is None:
-            raise ValueError("dtype must be set for input_types")
-        if self.device is None:
-            raise ValueError("device must be set for input_types")
-        latent_type = TensorType(
-            self.dtype,
-            shape=[
-                "batch_size",
-                self.in_channels,
-                "latent_height",
-                "latent_width",
-            ],
-            device=self.device,
-        )
-
-        return (latent_type,)
+        # NDHWC -> NCDHW
+        out = ops.permute(out, [0, 4, 1, 2, 3])
+        if self._has_bias:
+            bias_5d = ops.reshape(self.bias, [1, self.out_channels, 1, 1, 1])
+            out = out + bias_5d
+        return out
 
 
-class DiagonalGaussianDistribution:
-    r"""Represents a diagonal Gaussian distribution for VAE latent space.
+class CausalConv3dCached(Module):
+    """3D causal convolution with explicit cache tensor I/O.
 
-    This class represents a multivariate Gaussian distribution with diagonal
-    covariance matrix, commonly used in Variational Autoencoders (VAEs) to
-    model the latent space. It provides methods for sampling, computing KL
-    divergence, and extracting the mode (mean) of the distribution.
-
-    Args:
-        parameters: Tensor of shape [N, 2*C, H, W] containing mean and logvar
-            concatenated along the channel dimension. The first C channels are
-            the mean, and the last C channels are the log variance.
-        deterministic: If True, the distribution is deterministic (std=0).
-            Defaults to False.
+    Handles temporal causal padding separately via concat/pad before
+    calling the conv, while spatial padding is handled by conv3d.
     """
 
-    def __init__(self, parameters: Tensor, deterministic: bool = False) -> None:
-        """Initialize DiagonalGaussianDistribution.
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int | tuple[int, int, int],
+        stride: int | tuple[int, int, int] = 1,
+        padding: int | tuple[int, int, int] = 0,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+        has_bias: bool = True,
+    ) -> None:
+        super().__init__()
+        if isinstance(kernel_size, int):
+            kernel_size = (kernel_size, kernel_size, kernel_size)
+        if isinstance(stride, int):
+            stride = (stride, stride, stride)
+        if isinstance(padding, int):
+            pad_t = pad_h = pad_w = padding
+        else:
+            pad_t, pad_h, pad_w = padding
 
-        Args:
-            parameters: Tensor of shape [N, 2*C, H, W] containing mean and logvar.
-            deterministic: Whether the distribution is deterministic.
-        """
-        self.parameters = parameters
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self._stride = stride
+        # Temporal causal padding: left=2*pad_t, right=0
+        self._temporal_pad_left = 2 * pad_t
+        # Let conv3d handle spatial padding. Temporal padding = 0 here.
+        self._padding = (0, 0, pad_h, pad_h, pad_w, pad_w)
 
-        chunks = F.chunk(parameters, 2, axis=1)
-        self.mean = chunks[0]
-        self.logvar = chunks[1]
+        dev_ref = device if device is not None else DeviceRef.CPU()
+        dt = dtype or DType.float32
+        d, h, w = kernel_size
+        self._use_nvidia_fcrs = _use_nvidia_fcrs_conv3d(dev_ref)
+        filter_shape = (
+            [out_channels, in_channels, d, h, w]
+            if self._use_nvidia_fcrs
+            else [d, h, w, in_channels, out_channels]
+        )
+        self.filter = Weight("weight", dt, filter_shape, dev_ref)
+        self._has_bias = has_bias
+        if has_bias:
+            self.bias = Weight("bias", dt, [out_channels], dev_ref)
 
-        self.logvar = F.clip(self.logvar, -30.0, 20.0)
+    def _apply_temporal_pad(self, x: TensorValue, pad_left: int) -> TensorValue:
+        """Zero-pad the temporal dimension (axis=2) on the left only."""
+        if pad_left <= 0:
+            return x
+        # ops.pad expects 2*rank values: [d0_before, d0_after, d1_before, d1_after, ...]
+        # For 5D [B, C, T, H, W]: pad only dim 2 (T) on the left.
+        pad_vals = [0, 0, 0, 0, pad_left, 0, 0, 0, 0, 0]
+        return ops.pad(x, pad_vals)
 
-        self.deterministic = deterministic
+    def _forward_conv(self, x: TensorValue) -> TensorValue:
+        # NCDHW -> NDHWC
+        x_ndhwc = ops.permute(x, [0, 2, 3, 4, 1])
+        out = ops.conv3d(
+            x_ndhwc,
+            self.filter,
+            stride=self._stride,
+            padding=self._padding,
+            filter_layout=(
+                FilterLayout.FCRS
+                if self._use_nvidia_fcrs
+                else FilterLayout.QRSCF
+            ),
+        )
+        # NDHWC -> NCDHW
+        out = ops.permute(out, [0, 4, 1, 2, 3])
+        if self._has_bias:
+            bias_5d = ops.reshape(self.bias, [1, self.out_channels, 1, 1, 1])
+            out = out + bias_5d
+        return out
 
-        self.std = F.exp(0.5 * self.logvar)
-        self.var = F.exp(self.logvar)
+    def __call__(self, x: TensorValue) -> TensorValue:
+        x = self._apply_temporal_pad(x, self._temporal_pad_left)
+        return self._forward_conv(x)
 
-        if self.deterministic:
-            self.var = Tensor.zeros_like(self.mean)
-            self.std = Tensor.zeros_like(self.mean)
+    def forward_cached(
+        self, x: TensorValue, cache_in: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        # Rebind cache spatial dims to match x so concat sees matching dims.
+        cache_in = ops.rebind(
+            cache_in,
+            shape=[
+                cache_in.shape[0],
+                cache_in.shape[1],
+                cache_in.shape[2],
+                x.shape[3],
+                x.shape[4],
+            ],
+        )
+        x = ops.concat([cache_in, x], axis=2)
+        cache_out = x[:, :, -CACHE_T:, :, :]
+        effective_pad = max(self._temporal_pad_left - CACHE_T, 0)
+        x = self._apply_temporal_pad(x, effective_pad)
+        return self._forward_conv(x), cache_out
 
-    def sample(self, generator: object | None = None) -> Tensor:
-        """Sample from the distribution using reparameterization trick.
 
-        Generates a random sample from the distribution by sampling from a
-        standard normal distribution and transforming it using the mean and
-        standard deviation.
+class Conv2dPermuted(Module):
+    """2D convolution with NCHW input and FCRS weights (permute=True equivalent).
 
-        Args:
-            generator: Random number generator (currently unused in Max,
-                kept for compatibility with diffusers API).
+    Input is permuted from NCHW to NHWC before conv, and back after.
+    Weights stay in FCRS (PyTorch) layout.
+    """
 
-        Returns:
-            Sampled tensor of shape [N, C, H, W] with same shape as mean.
-        """
-        sample = random.normal(
-            shape=self.mean.shape,
-            device=self.parameters.device,
-            dtype=self.parameters.dtype,
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+        has_bias: bool = True,
+    ) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        if isinstance(stride, int):
+            self._stride = (stride, stride)
+        else:
+            self._stride = stride
+        if isinstance(padding, int):
+            self._padding = (padding, padding, padding, padding)
+        else:
+            self._padding = padding
+
+        dev_ref = device if device is not None else DeviceRef.CPU()
+        dt = dtype or DType.float32
+        self.filter = Weight(
+            "weight",
+            dt,
+            [out_channels, in_channels, kernel_size, kernel_size],
+            dev_ref,
+        )
+        self._has_bias = has_bias
+        if has_bias:
+            self.bias = Weight("bias", dt, [out_channels], dev_ref)
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        # NCHW -> NHWC
+        x_nhwc = ops.permute(x, [0, 2, 3, 1])
+        out = ops.conv2d(
+            x_nhwc,
+            self.filter,
+            stride=self._stride,
+            padding=self._padding,
+            filter_layout=FilterLayout.FCRS,
+        )
+        # NHWC -> NCHW
+        out = ops.permute(out, [0, 3, 1, 2])
+        if self._has_bias:
+            bias_4d = ops.reshape(self.bias, [1, self.out_channels, 1, 1])
+            out = out + bias_4d
+        return out
+
+
+class Conv2d(Module):
+    """2D convolution with NHWC input and RSCF weights (permute=False equivalent).
+
+    Input is already in NHWC layout. Weights are in RSCF layout
+    [H, W, in_channels, out_channels].
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+        has_bias: bool = True,
+    ) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        if isinstance(stride, int):
+            self._stride = (stride, stride)
+        else:
+            self._stride = stride
+        if isinstance(padding, int):
+            self._padding = (padding, padding, padding, padding)
+        else:
+            self._padding = padding
+
+        dev_ref = device if device is not None else DeviceRef.CPU()
+        dt = dtype or DType.float32
+        self.filter = Weight(
+            "weight",
+            dt,
+            [kernel_size, kernel_size, in_channels, out_channels],
+            dev_ref,
+        )
+        self._has_bias = has_bias
+        if has_bias:
+            self.bias = Weight("bias", dt, [out_channels], dev_ref)
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        out = ops.conv2d(
+            x,
+            self.filter,
+            stride=self._stride,
+            padding=self._padding,
+            filter_layout=FilterLayout.RSCF,
+            bias=self.bias if self._has_bias else None,
+        )
+        return out
+
+
+class ResidualBlock(Module):
+    """Residual block used in Wan VAE decoder."""
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+        prefer_nvidia_fcrs: bool = True,
+    ) -> None:
+        super().__init__()
+        self.norm1 = RMSNorm(
+            in_dim,
+            images=False,
+            dtype=dtype,
+            device=device,
+        )
+        self.conv1 = CausalConv3d(
+            in_dim,
+            out_dim,
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+            prefer_nvidia_fcrs=prefer_nvidia_fcrs,
+        )
+        self.norm2 = RMSNorm(
+            out_dim,
+            images=False,
+            dtype=dtype,
+            device=device,
+        )
+        self.conv2 = CausalConv3d(
+            out_dim,
+            out_dim,
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+            prefer_nvidia_fcrs=prefer_nvidia_fcrs,
+        )
+        self.conv_shortcut = (
+            CausalConv3d(
+                in_dim,
+                out_dim,
+                1,
+                padding=0,
+                dtype=dtype,
+                device=device,
+                has_bias=True,
+                prefer_nvidia_fcrs=prefer_nvidia_fcrs,
+            )
+            if in_dim != out_dim
+            else None
         )
 
-        x = self.mean + F.mul(self.std, sample)
+    def __call__(self, x: TensorValue) -> TensorValue:
+        residual = (
+            self.conv_shortcut(x) if self.conv_shortcut is not None else x
+        )
+        x = ops.silu(self.norm1(x))
+        x = self.conv1(x)
+        x = ops.silu(self.norm2(x))
+        x = self.conv2(x)
+        return x + residual
+
+
+class AttentionBlock(Module):
+    """Per-frame windowed self-attention used in Wan decoder mid block.
+
+    Uses window attention instead of full (H*W)^2 attention to avoid OOM
+    at high resolutions. The spatial dimensions are partitioned into
+    non-overlapping windows of size ws*ws, and attention is computed
+    independently per window.
+
+    Memory: O(b*t * num_windows * ws^2 * ws^2) instead of O(b*t * (H*W)^2).
+    At 720p latent (90x160) with ws=8: ~158MB vs ~2.5GB+ per chunk.
+    """
+
+    _WINDOW_SIZE: int = 8
+
+    def __init__(
+        self,
+        dim: int,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.dim = dim
+        self.norm = RMSNorm(
+            dim,
+            images=True,
+            dtype=dtype,
+            device=device,
+        )
+        self.to_qkv = Conv2d(
+            in_channels=dim,
+            out_channels=dim * 3,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+        self.proj = Conv2d(
+            in_channels=dim,
+            out_channels=dim,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        identity = x
+        b = x.shape[0]
+        t = x.shape[2]
+        h = x.shape[3]
+        w = x.shape[4]
+        c = self.dim
+        ws = self._WINDOW_SIZE
+
+        # [b, c, t, h, w] -> [b*t, c, h, w]
+        x2d = ops.permute(x, [0, 2, 1, 3, 4])
+        x2d = ops.reshape(x2d, [b * t, c, h, w])
+        x2d = self.norm(x2d)
+
+        x2d_nhwc = ops.permute(x2d, [0, 2, 3, 1])  # [bt, h, w, c]
+        qkv = self.to_qkv(x2d_nhwc)  # [bt, h, w, 3c]
+
+        # Pad H and W up to the next multiple of ws.
+        # Use concat with zero tensors — always applied (no Python branching
+        # on symbolic dims). If already aligned, pad dims are 0-sized.
+        h_p = ((h + ws - 1) // ws) * ws
+        w_p = ((w + ws - 1) // ws) * ws
+        pad_w = w_p - w
+        pad_h = h_p - h
+        zero_w = ops.constant(
+            0.0, dtype=qkv.dtype, device=qkv.device
+        ).broadcast_to([b * t, h, pad_w, 3 * c])
+        qkv = ops.concat([qkv, zero_w], axis=2)
+        zero_h = ops.constant(
+            0.0, dtype=qkv.dtype, device=qkv.device
+        ).broadcast_to([b * t, pad_h, w_p, 3 * c])
+        qkv = ops.concat([qkv, zero_h], axis=1)
+
+        hws = h_p // ws
+        wws = w_p // ws
+        nwin = hws * wws
+        tok = ws * ws
+
+        q = qkv[:, :, :, :c]
+        k = qkv[:, :, :, c : 2 * c]
+        v = qkv[:, :, :, 2 * c : 3 * c]
+
+        def to_windows(y: TensorValue) -> TensorValue:
+            y = ops.reshape(y, [b * t, hws, ws, wws, ws, c])
+            y = ops.permute(y, [0, 1, 3, 2, 4, 5])
+            return ops.reshape(y, [b * t, nwin, tok, c])
+
+        q_w = to_windows(q)
+        k_w = to_windows(k)
+        v_w = to_windows(v)
+
+        attn_scores = ops.matmul(
+            q_w * (float(c) ** -0.5), ops.permute(k_w, [0, 1, 3, 2])
+        )
+        attn = ops.softmax(attn_scores, axis=-1)
+        out = ops.matmul(attn, v_w)  # [bt, nwin, tok, c]
+
+        out = ops.reshape(out, [b * t, hws, wws, ws, ws, c])
+        out = ops.permute(out, [0, 1, 3, 2, 4, 5])
+        out = ops.reshape(out, [b * t, h_p, w_p, c])
+
+        # Slice back to original spatial dims (remove padding).
+        out = out[:, :h, :w, :]
+
+        out = self.proj(out)  # [bt, h, w, c]
+        out = ops.permute(out, [0, 3, 1, 2])  # [bt, c, h, w]
+        out = ops.reshape(out, [b, t, c, h, w])
+        out = ops.permute(out, [0, 2, 1, 3, 4])
+        return out + identity
+
+
+class MidBlock(Module):
+    """Middle decoder block with residual-attention-residual."""
+
+    def __init__(
+        self,
+        dim: int,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+        prefer_nvidia_fcrs: bool = True,
+    ) -> None:
+        super().__init__()
+        self.resnets = LayerList(
+            [
+                ResidualBlock(
+                    dim,
+                    dim,
+                    dtype=dtype,
+                    device=device,
+                    prefer_nvidia_fcrs=prefer_nvidia_fcrs,
+                ),
+                ResidualBlock(
+                    dim,
+                    dim,
+                    dtype=dtype,
+                    device=device,
+                    prefer_nvidia_fcrs=prefer_nvidia_fcrs,
+                ),
+            ]
+        )
+        self.attentions = LayerList(
+            [AttentionBlock(dim, dtype=dtype, device=device)]
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        x = self.resnets[0](x)
+        x = self.attentions[0](x)
+        x = self.resnets[1](x)
         return x
 
-    def kl(
-        self, other: Optional["DiagonalGaussianDistribution"] = None
-    ) -> Tensor:
-        """Compute KL divergence with another distribution or standard normal.
 
-        Computes the Kullback-Leibler divergence between this distribution and
-        either a standard normal distribution (if other is None) or another
-        DiagonalGaussianDistribution.
+class Upsample2d(Module):
+    """Nearest-neighbor 2D upsample by factor 2."""
 
-        Args:
-            other: Optional other DiagonalGaussianDistribution to compute KL
-                divergence with. If None, computes KL divergence with standard
-                normal distribution.
+    def __init__(self) -> None:
+        super().__init__()
 
-        Returns:
-            Tensor containing KL divergence values.
-        """
-        if self.deterministic:
-            return Tensor([0.0], dtype=DType.float32)
+    def __call__(self, x: TensorValue) -> TensorValue:
+        n = x.shape[0]
+        c = x.shape[1]
+        h = x.shape[2]
+        w = x.shape[3]
+        # Nearest-neighbor 2x upsample: [N,C,H,W] → [N,C,H*2,W*2]
+        x = ops.reshape(x, [n, c, h, 1, w, 1])
+        x = ops.concat([x, x], axis=3)  # [N, C, H, 2, W, 1]
+        x = ops.concat([x, x], axis=5)  # [N, C, H, 2, W, 2]
+        return ops.reshape(x, [n, c, h * 2, w * 2])
 
-        if other is None:
-            kl_term = F.pow(self.mean, 2) + self.var - 1.0 - self.logvar
-            kl_term = F.sum(kl_term, axis=3)
-            kl_term = F.sum(kl_term, axis=2)
-            kl_term = F.sum(kl_term, axis=1)
-            return 0.5 * kl_term
-        else:
-            kl_term = (
-                F.pow(self.mean - other.mean, 2) / other.var
-                + self.var / other.var
-                - 1.0
-                - self.logvar
-                + other.logvar
-            )
-            kl_term = F.sum(kl_term, axis=3)
-            kl_term = F.sum(kl_term, axis=2)
-            kl_term = F.sum(kl_term, axis=1)
-            return 0.5 * kl_term
 
-    def nll(self, sample: Tensor, dims: tuple[int, ...] = (1, 2, 3)) -> Tensor:
-        """Compute negative log-likelihood of a sample.
+class Resample(Module):
+    """Wan decoder upsampling module."""
 
-        Computes the negative log-likelihood of a given sample under this
-        distribution.
+    def __init__(
+        self,
+        dim: int,
+        mode: str,
+        upsample_out_dim: int | None = None,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.dim = dim
+        self.mode = mode
 
-        Args:
-            sample: Sample tensor to compute NLL for.
-            dims: Dimensions to sum over. Defaults to (1, 2, 3) for spatial dims.
+        if upsample_out_dim is None:
+            upsample_out_dim = dim // 2
+        self._out_c = upsample_out_dim
 
-        Returns:
-            Tensor containing negative log-likelihood values.
-        """
-        if self.deterministic:
-            return Tensor([0.0], dtype=DType.float32)
-
-        logtwopi = np.log(2.0 * np.pi)
-        nll_term = (
-            logtwopi + self.logvar + F.pow(sample - self.mean, 2) / self.var
+        self.time_conv: CausalConv3d | None = None
+        self.resample = LayerList(
+            [
+                Upsample2d(),
+                Conv2dPermuted(
+                    in_channels=dim,
+                    out_channels=upsample_out_dim,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    dtype=dtype,
+                    device=device,
+                    has_bias=True,
+                ),
+            ]
         )
 
-        sorted_dims = sorted(dims, reverse=True)
-        for dim in sorted_dims:
-            nll_term = F.sum(nll_term, axis=dim)
+        if mode == "upsample3d":
+            self.time_conv = CausalConv3d(
+                in_channels=dim,
+                out_channels=dim * 2,
+                kernel_size=(3, 1, 1),
+                stride=1,
+                padding=(1, 0, 0),
+                dtype=dtype,
+                device=device,
+                has_bias=True,
+            )
+        elif mode != "upsample2d":
+            raise ValueError(f"Unsupported Resample mode: {mode}")
 
-        return 0.5 * nll_term
+    def __call__(self, x: TensorValue) -> TensorValue:
+        b = x.shape[0]
+        t = x.shape[2]
+        h = x.shape[3]
+        w = x.shape[4]
 
-    def mode(self) -> Tensor:
-        """Return the mode (mean) of the distribution.
+        if self.mode == "upsample3d":
+            if self.time_conv is None:
+                raise ValueError("time_conv is required for upsample3d mode")
+            x = self.time_conv(x)
+            # x: [b, 2*dim, t, h, w] -> interleave temporal frames
+            x = ops.reshape(x, [b, 2, self.dim, t, h, w])
+            x = ops.permute(x, [0, 2, 3, 1, 4, 5])  # [b, dim, t, 2, h, w]
+            t = t * 2
+            x = ops.reshape(x, [b, self.dim, t, h, w])
 
-        For a Gaussian distribution, the mode is equal to the mean.
+        # Per-frame 2D upsample + conv
+        x = ops.permute(x, [0, 2, 1, 3, 4])  # [b, t, c, h, w]
+        x = ops.reshape(x, [b * t, self.dim, h, w])
+        x = self.resample[0](x)  # Upsample2d: [b*t, dim, h*2, w*2]
+        # Conv2dPermuted handles NCHW->NHWC->conv->NCHW internally.
+        x = self.resample[1](x)  # [b*t, out_c, h*2, w*2]
 
-        Returns:
-            Mean tensor of shape [N, C, H, W].
+        x = ops.reshape(x, [b, t, self._out_c, h * 2, w * 2])
+        x = ops.permute(x, [0, 2, 1, 3, 4])  # [b, out_c, t, h*2, w*2]
+        return x
+
+
+class UpBlock(Module):
+    """Wan decoder up block composed of residual blocks and optional upsample."""
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        num_res_blocks: int,
+        upsample_mode: str | None,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        resnets: list[ResidualBlock] = []
+        current_dim = in_dim
+        for _ in range(num_res_blocks + 1):
+            resnets.append(
+                ResidualBlock(
+                    current_dim,
+                    out_dim,
+                    dtype=dtype,
+                    device=device,
+                )
+            )
+            current_dim = out_dim
+        self.resnets = LayerList(resnets)
+
+        self.upsamplers: LayerList | None = None
+        if upsample_mode is not None:
+            self.upsamplers = LayerList(
+                [
+                    Resample(
+                        out_dim,
+                        mode=upsample_mode,
+                        upsample_out_dim=None,
+                        dtype=dtype,
+                        device=device,
+                    )
+                ]
+            )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        for resnet in self.resnets:
+            x = resnet(x)
+
+        if self.upsamplers is not None:
+            x = self.upsamplers[0](x)
+
+        return x
+
+
+class Decoder3d(Module):
+    """Wan 3D decoder module."""
+
+    def __init__(
+        self,
+        dim: int = 96,
+        z_dim: int = 16,
+        dim_mult: tuple[int, ...] = (1, 2, 4, 4),
+        num_res_blocks: int = 2,
+        temporal_upsample: tuple[bool, ...] = (False, True, True),
+        out_channels: int = 3,
+        is_residual: bool = False,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        del is_residual
+
+        dims = [dim * u for u in [dim_mult[-1], *dim_mult[::-1]]]
+
+        self.conv_in = CausalConv3d(
+            z_dim,
+            dims[0],
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+        self.mid_block = MidBlock(dims[0], dtype=dtype, device=device)
+
+        up_blocks: list[UpBlock] = []
+        final_out_dim = dims[-1]
+        for i, (in_dim, out_dim) in enumerate(pairwise(dims)):
+            if i > 0:
+                in_dim = in_dim // 2
+
+            up_flag = i != len(dim_mult) - 1
+            upsample_mode: str | None = None
+            if up_flag and temporal_upsample[i]:
+                upsample_mode = "upsample3d"
+            elif up_flag:
+                upsample_mode = "upsample2d"
+
+            up_blocks.append(
+                UpBlock(
+                    in_dim=in_dim,
+                    out_dim=out_dim,
+                    num_res_blocks=num_res_blocks,
+                    upsample_mode=upsample_mode,
+                    dtype=dtype,
+                    device=device,
+                )
+            )
+            final_out_dim = out_dim
+
+        self.up_blocks = LayerList(up_blocks)
+
+        self.norm_out = RMSNorm(
+            final_out_dim,
+            images=False,
+            dtype=dtype,
+            device=device,
+        )
+        self.conv_out = CausalConv3d(
+            final_out_dim,
+            out_channels,
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        x = self.conv_in(x)
+        x = self.mid_block(x)
+
+        for up_block in self.up_blocks:
+            x = up_block(x)
+
+        x = self.norm_out(x)
+        x = ops.silu(x)
+        x = self.conv_out(x)
+        return x
+
+
+class ResidualBlockCached(Module):
+    """Wan residual block with explicit cache I/O for conv1/conv2."""
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.norm1 = RMSNorm(
+            in_dim,
+            images=False,
+            dtype=dtype,
+            device=device,
+        )
+        self.conv1 = CausalConv3dCached(
+            in_dim,
+            out_dim,
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+        self.norm2 = RMSNorm(
+            out_dim,
+            images=False,
+            dtype=dtype,
+            device=device,
+        )
+        self.conv2 = CausalConv3dCached(
+            out_dim,
+            out_dim,
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+        self.conv_shortcut = (
+            CausalConv3d(
+                in_dim,
+                out_dim,
+                1,
+                padding=0,
+                dtype=dtype,
+                device=device,
+                has_bias=True,
+            )
+            if in_dim != out_dim
+            else None
+        )
+
+    def __call__(
+        self,
+        x: TensorValue,
+        cache1_in: TensorValue | None = None,
+        cache2_in: TensorValue | None = None,
+    ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        residual = (
+            self.conv_shortcut(x) if self.conv_shortcut is not None else x
+        )
+
+        x = ops.silu(self.norm1(x))
+        if cache1_in is None:
+            cache1_in = _zero_cache_for(x)
+        x, cache1_out = self.conv1.forward_cached(x, cache1_in)
+
+        x = ops.silu(self.norm2(x))
+        if cache2_in is None:
+            cache2_in = _zero_cache_for(x)
+        x, cache2_out = self.conv2.forward_cached(x, cache2_in)
+        return x + residual, cache1_out, cache2_out
+
+
+class MidBlockCached(Module):
+    """Middle decoder block with cache threading."""
+
+    def __init__(
+        self,
+        dim: int,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.resnets = LayerList(
+            [
+                ResidualBlockCached(dim, dim, dtype=dtype, device=device),
+                ResidualBlockCached(dim, dim, dtype=dtype, device=device),
+            ]
+        )
+        self.attentions = LayerList(
+            [AttentionBlock(dim, dtype=dtype, device=device)]
+        )
+
+    def __call__(
+        self, x: TensorValue, *cache_inputs: TensorValue
+    ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+        if len(cache_inputs) not in (0, 4):
+            raise ValueError(
+                f"MidBlockCached expected 0 or 4 cache tensors, got {len(cache_inputs)}"
+            )
+
+        cache1_in = cache_inputs[0] if len(cache_inputs) == 4 else None
+        cache2_in = cache_inputs[1] if len(cache_inputs) == 4 else None
+        x, cache1_out, cache2_out = self.resnets[0](x, cache1_in, cache2_in)
+        x = self.attentions[0](x)
+
+        cache3_in = cache_inputs[2] if len(cache_inputs) == 4 else None
+        cache4_in = cache_inputs[3] if len(cache_inputs) == 4 else None
+        x, cache3_out, cache4_out = self.resnets[1](x, cache3_in, cache4_in)
+        return x, cache1_out, cache2_out, cache3_out, cache4_out
+
+
+class ResampleCached(Module):
+    """Wan upsample3d module with explicit cache I/O."""
+
+    def __init__(
+        self,
+        dim: int,
+        mode: str,
+        upsample_out_dim: int | None = None,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        if mode != "upsample3d":
+            raise ValueError("ResampleCached only supports mode='upsample3d'")
+
+        self.dim = dim
+        self.mode = mode
+
+        if upsample_out_dim is None:
+            upsample_out_dim = dim // 2
+        self._out_c = upsample_out_dim
+
+        self.time_conv = CausalConv3dCached(
+            in_channels=dim,
+            out_channels=dim * 2,
+            kernel_size=(3, 1, 1),
+            stride=1,
+            padding=(1, 0, 0),
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+        self.resample = LayerList(
+            [
+                Upsample2d(),
+                Conv2dPermuted(
+                    in_channels=dim,
+                    out_channels=upsample_out_dim,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    dtype=dtype,
+                    device=device,
+                    has_bias=True,
+                ),
+            ]
+        )
+
+    def __call__(
+        self,
+        x: TensorValue,
+        cache_in: TensorValue | None = None,
+        first_chunk: bool = False,
+    ) -> tuple[TensorValue, TensorValue]:
+        b = x.shape[0]
+        t = x.shape[2]
+        h = x.shape[3]
+        w = x.shape[4]
+
+        if cache_in is None:
+            cache_in = _zero_cache_for(x)
+
+        if first_chunk:
+            cache_out = cache_in
+        else:
+            x, cache_out = self.time_conv.forward_cached(x, cache_in)
+            x = ops.reshape(x, [b, 2, self.dim, t, h, w])
+            x = ops.permute(x, [0, 2, 3, 1, 4, 5])
+            t = t * 2
+            x = ops.reshape(x, [b, self.dim, t, h, w])
+
+        x = ops.permute(x, [0, 2, 1, 3, 4])
+        x = ops.reshape(x, [b * t, self.dim, h, w])
+        x = self.resample[0](x)
+        x = self.resample[1](x)
+        x = ops.reshape(x, [b, t, self._out_c, h * 2, w * 2])
+        x = ops.permute(x, [0, 2, 1, 3, 4])
+        return x, cache_out
+
+
+class UpBlockCached(Module):
+    """Wan decoder up block with explicit cache threading."""
+
+    cache_slots: int
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        num_res_blocks: int,
+        upsample_mode: str | None,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        resnets: list[ResidualBlockCached] = []
+        current_dim = in_dim
+        for _ in range(num_res_blocks + 1):
+            resnets.append(
+                ResidualBlockCached(
+                    current_dim,
+                    out_dim,
+                    dtype=dtype,
+                    device=device,
+                )
+            )
+            current_dim = out_dim
+        self.resnets = LayerList(resnets)
+
+        self._has_temporal_upsample = upsample_mode == "upsample3d"
+        self.cache_slots = len(resnets) * 2 + (
+            1 if self._has_temporal_upsample else 0
+        )
+
+        self.upsamplers: LayerList | None = None
+        if upsample_mode is not None:
+            if upsample_mode == "upsample3d":
+                upsampler: Module = ResampleCached(
+                    out_dim,
+                    mode=upsample_mode,
+                    upsample_out_dim=None,
+                    dtype=dtype,
+                    device=device,
+                )
+            elif upsample_mode == "upsample2d":
+                upsampler = Resample(
+                    out_dim,
+                    mode=upsample_mode,
+                    upsample_out_dim=None,
+                    dtype=dtype,
+                    device=device,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported UpBlockCached upsample mode: {upsample_mode}"
+                )
+
+            self.upsamplers = LayerList([upsampler])
+
+    def __call__(
+        self,
+        x: TensorValue,
+        *cache_inputs: TensorValue,
+        first_chunk: bool = False,
+    ) -> tuple[TensorValue, ...]:
+        if len(cache_inputs) not in (0, self.cache_slots):
+            raise ValueError(
+                f"UpBlockCached expected 0 or {self.cache_slots} cache tensors, got {len(cache_inputs)}"
+            )
+
+        use_cache_inputs = len(cache_inputs) == self.cache_slots
+        cache_outputs: list[TensorValue] = []
+        cache_idx = 0
+
+        for resnet in self.resnets:
+            cache1_in = cache_inputs[cache_idx] if use_cache_inputs else None
+            cache2_in = (
+                cache_inputs[cache_idx + 1] if use_cache_inputs else None
+            )
+            x, cache1_out, cache2_out = resnet(x, cache1_in, cache2_in)
+            cache_outputs.extend([cache1_out, cache2_out])
+            cache_idx += 2
+
+        if self.upsamplers is not None:
+            upsampler = self.upsamplers[0]
+            if self._has_temporal_upsample:
+                cache_in = cache_inputs[cache_idx] if use_cache_inputs else None
+                if not isinstance(upsampler, ResampleCached):
+                    raise TypeError(
+                        "Expected ResampleCached for temporal upsample"
+                    )
+                x, cache_out = upsampler(
+                    x,
+                    cache_in,
+                    first_chunk=first_chunk,
+                )
+                cache_outputs.append(cache_out)
+            else:
+                x = upsampler(x)
+
+        return (x, *cache_outputs)
+
+
+class Decoder3dCached(Module):
+    """Wan 3D decoder with explicit cache tensor I/O."""
+
+    def __init__(
+        self,
+        dim: int = 96,
+        z_dim: int = 16,
+        dim_mult: tuple[int, ...] = (1, 2, 4, 4),
+        num_res_blocks: int = 2,
+        temporal_upsample: tuple[bool, ...] = (False, True, True),
+        out_channels: int = 3,
+        is_residual: bool = False,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        del is_residual
+
+        dims = [dim * u for u in [dim_mult[-1], *dim_mult[::-1]]]
+
+        self.conv_in = CausalConv3dCached(
+            z_dim,
+            dims[0],
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+        self.mid_block = MidBlockCached(dims[0], dtype=dtype, device=device)
+
+        up_blocks: list[UpBlockCached] = []
+        final_out_dim = dims[-1]
+        for i, (in_dim, out_dim) in enumerate(pairwise(dims)):
+            if i > 0:
+                in_dim = in_dim // 2
+
+            up_flag = i != len(dim_mult) - 1
+            upsample_mode: str | None = None
+            if up_flag and temporal_upsample[i]:
+                upsample_mode = "upsample3d"
+            elif up_flag:
+                upsample_mode = "upsample2d"
+
+            up_blocks.append(
+                UpBlockCached(
+                    in_dim=in_dim,
+                    out_dim=out_dim,
+                    num_res_blocks=num_res_blocks,
+                    upsample_mode=upsample_mode,
+                    dtype=dtype,
+                    device=device,
+                )
+            )
+            final_out_dim = out_dim
+
+        self.up_blocks = LayerList(up_blocks)
+        self.norm_out = RMSNorm(
+            final_out_dim,
+            images=False,
+            dtype=dtype,
+            device=device,
+        )
+        self.conv_out = CausalConv3dCached(
+            final_out_dim,
+            out_channels,
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+    def __call__(
+        self,
+        x: TensorValue,
+        *cache_inputs: TensorValue,
+        first_chunk: bool = False,
+    ) -> tuple[TensorValue, ...]:
+        if len(cache_inputs) not in (0, WAN_DECODER_CACHE_SLOTS):
+            raise ValueError(
+                "Decoder3dCached expected 0 or "
+                f"{WAN_DECODER_CACHE_SLOTS} cache tensors, got {len(cache_inputs)}"
+            )
+
+        use_cache_inputs = len(cache_inputs) == WAN_DECODER_CACHE_SLOTS
+        cache_outputs: list[TensorValue] = []
+        cache_idx = 0
+
+        conv_in_cache = cache_inputs[cache_idx] if use_cache_inputs else None
+        if conv_in_cache is None:
+            conv_in_cache = _zero_cache_for(x)
+        x, cache_out = self.conv_in.forward_cached(x, conv_in_cache)
+        cache_outputs.append(cache_out)
+        cache_idx += 1
+
+        mid_cache_inputs: tuple[TensorValue, ...] = (
+            tuple(cache_inputs[cache_idx : cache_idx + 4])
+            if use_cache_inputs
+            else ()
+        )
+        mid_outputs = self.mid_block(x, *mid_cache_inputs)
+        x = mid_outputs[0]
+        cache_outputs.extend(mid_outputs[1:])
+        cache_idx += 4
+
+        for up_block in self.up_blocks:
+            block_cache_inputs: tuple[TensorValue, ...] = (
+                tuple(
+                    cache_inputs[cache_idx : cache_idx + up_block.cache_slots]
+                )
+                if use_cache_inputs
+                else ()
+            )
+            block_outputs = up_block(
+                x,
+                *block_cache_inputs,
+                first_chunk=first_chunk,
+            )
+            x = block_outputs[0]
+            cache_outputs.extend(block_outputs[1:])
+            cache_idx += up_block.cache_slots
+
+        x = self.norm_out(x)
+        x = ops.silu(x)
+        conv_out_cache = cache_inputs[cache_idx] if use_cache_inputs else None
+        if conv_out_cache is None:
+            conv_out_cache = _zero_cache_for(x)
+        x, cache_out = self.conv_out.forward_cached(x, conv_out_cache)
+        cache_outputs.append(cache_out)
+
+        if len(cache_outputs) != WAN_DECODER_CACHE_SLOTS:
+            raise ValueError(
+                "Decoder3dCached produced "
+                f"{len(cache_outputs)} cache tensors, expected {WAN_DECODER_CACHE_SLOTS}"
+            )
+        return (x, *cache_outputs)
+
+    def cache_shapes(
+        self,
+        batch_size: int,
+        latent_height: int,
+        latent_width: int,
+    ) -> list[list[int]]:
+        h = latent_height
+        w = latent_width
+        shapes: list[list[int]] = [
+            [batch_size, self.conv_in.in_channels, CACHE_T, h, w]
+        ]
+
+        for resnet in self.mid_block.resnets:
+            shapes.append([batch_size, resnet.conv1.in_channels, CACHE_T, h, w])
+            shapes.append([batch_size, resnet.conv2.in_channels, CACHE_T, h, w])
+
+        for up_block in self.up_blocks:
+            for resnet in up_block.resnets:
+                shapes.append(
+                    [batch_size, resnet.conv1.in_channels, CACHE_T, h, w]
+                )
+                shapes.append(
+                    [batch_size, resnet.conv2.in_channels, CACHE_T, h, w]
+                )
+
+            if up_block.upsamplers is not None:
+                if up_block._has_temporal_upsample:
+                    upsampler = up_block.upsamplers[0]
+                    if not isinstance(upsampler, ResampleCached):
+                        raise TypeError(
+                            "Expected ResampleCached for temporal upsample"
+                        )
+                    shapes.append(
+                        [
+                            batch_size,
+                            upsampler.time_conv.in_channels,
+                            CACHE_T,
+                            h,
+                            w,
+                        ]
+                    )
+                h *= 2
+                w *= 2
+
+        shapes.append([batch_size, self.conv_out.in_channels, CACHE_T, h, w])
+        if len(shapes) != WAN_DECODER_CACHE_SLOTS:
+            raise ValueError(
+                f"Expected {WAN_DECODER_CACHE_SLOTS} cache shapes, got {len(shapes)}"
+            )
+        return shapes
+
+
+class VAEPostQuantConv(Module):
+    """Standalone post-quant conv graph (k=1, frame-independent)."""
+
+    def __init__(self, config: AutoencoderKLWanConfig) -> None:
+        super().__init__()
+        self.post_quant_conv = CausalConv3d(
+            in_channels=config.z_dim,
+            out_channels=config.z_dim,
+            kernel_size=1,
+            padding=0,
+            dtype=config.dtype,
+            device=config.device,
+            has_bias=True,
+        )
+
+    def __call__(self, z: TensorValue) -> TensorValue:
+        return self.post_quant_conv(z)
+
+
+class VAEDecoderFirstFrameCached(Module):
+    """First-frame decoder graph returning pixels + initialized caches."""
+
+    def __init__(self, config: AutoencoderKLWanConfig) -> None:
+        super().__init__()
+        self.decoder = Decoder3dCached(
+            dim=config.base_dim,
+            z_dim=config.z_dim,
+            dim_mult=tuple(config.dim_mult),
+            num_res_blocks=config.num_res_blocks,
+            temporal_upsample=tuple(reversed(config.temporal_downsample)),
+            out_channels=config.out_channels,
+            is_residual=config.is_residual,
+            dtype=config.dtype,
+            device=config.device,
+        )
+
+    def __call__(self, z: TensorValue) -> tuple[TensorValue, ...]:
+        outputs = self.decoder(z, first_chunk=True)
+        x = outputs[0]
+        x = ops.max(x, -1.0)
+        x = ops.min(x, 1.0)
+        return (x, *outputs[1:])
+
+
+class VAEDecoderRestFrameCached(Module):
+    """Per-frame decoder graph with cache feedback for frames 1..T-1."""
+
+    def __init__(self, config: AutoencoderKLWanConfig) -> None:
+        super().__init__()
+        self.decoder = Decoder3dCached(
+            dim=config.base_dim,
+            z_dim=config.z_dim,
+            dim_mult=tuple(config.dim_mult),
+            num_res_blocks=config.num_res_blocks,
+            temporal_upsample=tuple(reversed(config.temporal_downsample)),
+            out_channels=config.out_channels,
+            is_residual=config.is_residual,
+            dtype=config.dtype,
+            device=config.device,
+        )
+
+    def __call__(
+        self, z: TensorValue, *cache_inputs: TensorValue
+    ) -> tuple[TensorValue, ...]:
+        outputs = self.decoder(z, *cache_inputs, first_chunk=False)
+        x = outputs[0]
+        x = ops.max(x, -1.0)
+        x = ops.min(x, 1.0)
+        return (x, *outputs[1:])
+
+
+class VAEDecoder(Module):
+    """Wan VAE decoder graph used by AutoencoderKLWanModel."""
+
+    def __init__(self, config: AutoencoderKLWanConfig) -> None:
+        super().__init__()
+        self._config = config
+        self.post_quant_conv = CausalConv3d(
+            in_channels=config.z_dim,
+            out_channels=config.z_dim,
+            kernel_size=1,
+            padding=0,
+            dtype=config.dtype,
+            device=config.device,
+            has_bias=True,
+        )
+        self.decoder = Decoder3d(
+            dim=config.base_dim,
+            z_dim=config.z_dim,
+            dim_mult=tuple(config.dim_mult),
+            num_res_blocks=config.num_res_blocks,
+            temporal_upsample=tuple(reversed(config.temporal_downsample)),
+            out_channels=config.out_channels,
+            is_residual=config.is_residual,
+            dtype=config.dtype,
+            device=config.device,
+        )
+
+    def __call__(self, z: TensorValue) -> TensorValue:
+        x = self.post_quant_conv(z)
+        x = self.decoder(x)
+        x = ops.max(x, -1.0)
+        x = ops.min(x, 1.0)
+        return x
+
+
+class VAEDecoderFirstFrame(Module):
+    """Wan VAE decoder for the FIRST latent frame.
+
+    Identical to VAEDecoder but ALL temporal upsamples are replaced
+    with spatial-only upsample2d (time_conv is omitted).  This means
+    T=1 in -> T=1 out, matching the diffusers feat_cache behavior where
+    the first frame skips temporal upsampling.
+    """
+
+    def __init__(self, config: AutoencoderKLWanConfig) -> None:
+        super().__init__()
+        self._config = config
+        self.post_quant_conv = CausalConv3d(
+            in_channels=config.z_dim,
+            out_channels=config.z_dim,
+            kernel_size=1,
+            padding=0,
+            dtype=config.dtype,
+            device=config.device,
+            has_bias=True,
+        )
+        # Force all temporal upsamples to spatial-only.
+        self.decoder = Decoder3d(
+            dim=config.base_dim,
+            z_dim=config.z_dim,
+            dim_mult=tuple(config.dim_mult),
+            num_res_blocks=config.num_res_blocks,
+            temporal_upsample=(False,) * len(config.temporal_downsample),
+            out_channels=config.out_channels,
+            is_residual=config.is_residual,
+            dtype=config.dtype,
+            device=config.device,
+        )
+
+    def __call__(self, z: TensorValue) -> TensorValue:
+        x = self.post_quant_conv(z)
+        x = self.decoder(x)
+        x = ops.max(x, -1.0)
+        x = ops.min(x, 1.0)
+        return x
+
+
+class DownResample(Module):
+    """Wan encoder downsampling module.
+
+    Matches diffusers Resample downsample modes:
+    - downsample2d: ZeroPad2d + Conv2d(stride=2) per frame
+    - downsample3d: same spatial + CausalConv3d(stride=(2,1,1)) temporal
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        mode: str,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+        prefer_nvidia_fcrs: bool = True,
+    ) -> None:
+        super().__init__()
+        self.dim = dim
+        self.mode = mode
+
+        # Spatial: ZeroPad2d(0,1,0,1) + Conv2d(stride=2, padding=0)
+        # Asymmetric padding: right=1, bottom=1 only.
+        # Use index [1] to match state_dict key "resample.1".
+        self.resample = LayerList(
+            [
+                Upsample2d(),  # Dummy at index 0 (no weights, not called)
+                Conv2dPermuted(
+                    in_channels=dim,
+                    out_channels=dim,
+                    kernel_size=3,
+                    stride=2,
+                    padding=0,  # We do manual asymmetric pad in __call__
+                    dtype=dtype,
+                    device=device,
+                    has_bias=True,
+                ),
+            ]
+        )
+
+        self.time_conv: CausalConv3d | None = None
+        if mode == "downsample3d":
+            self.time_conv = CausalConv3d(
+                in_channels=dim,
+                out_channels=dim,
+                kernel_size=(3, 1, 1),
+                stride=(2, 1, 1),
+                padding=(0, 0, 0),
+                dtype=dtype,
+                device=device,
+                has_bias=True,
+                # Encoder temporal downsample is the only conv pattern that
+                # currently reproduces cuDNN aborts in VAE encode.
+                prefer_nvidia_fcrs=False,
+            )
+        elif mode != "downsample2d":
+            raise ValueError(f"Unsupported DownResample mode: {mode}")
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        b = x.shape[0]
+        t = x.shape[2]
+        h = x.shape[3]
+        w = x.shape[4]
+
+        if self.mode == "downsample3d":
+            if self.time_conv is None:
+                raise ValueError("time_conv is required for downsample3d mode")
+            # Temporal downsample via strided causal conv
+            x = self.time_conv(x)
+            t = x.shape[2]
+
+        # Per-frame spatial downsample: ZeroPad2d(0,1,0,1) + Conv2d(stride=2)
+        x = ops.permute(x, [0, 2, 1, 3, 4])  # [b, t, c, h, w]
+        x = ops.reshape(x, [b * t, self.dim, h, w])
+        # ZeroPad2d(left=0, right=1, top=0, bottom=1) on NCHW
+        # paddings format: [N_before, N_after, C_before, C_after, H_before, H_after, W_before, W_after]
+        x = ops.pad(x, [0, 0, 0, 0, 0, 1, 0, 1])
+        x = self.resample[1](x)  # Conv2d stride=2, padding=0
+        new_h = (h + 1) // 2
+        new_w = (w + 1) // 2
+        # Rebind so the compiler sees conv output shape matches our computation.
+        x = ops.rebind(x, shape=[b * t, self.dim, new_h, new_w])
+        x = ops.reshape(x, [b, t, self.dim, new_h, new_w])
+        x = ops.permute(x, [0, 2, 1, 3, 4])  # [b, dim, t, h/2, w/2]
+
+        return x
+
+
+class DownResampleCached(Module):
+    """Encoder downsample with temporal cache for chunked encoding.
+
+    Matches diffusers' Resample cache behavior for the encoder:
+    - downsample2d: spatial only, no temporal cache
+    - downsample3d first chunk: spatial downsample, skip time_conv, cache last frame
+    - downsample3d rest chunk: spatial downsample, prepend cached frame, apply time_conv
+
+    Spatial downsample is done FIRST (matching diffusers order), then temporal.
+    """
+
+    cache_slots: int
+
+    def __init__(
+        self,
+        dim: int,
+        mode: str,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.dim = dim
+        self.mode = mode
+        self._has_temporal = mode == "downsample3d"
+        self.cache_slots = 1 if self._has_temporal else 0
+
+        self.resample = LayerList(
+            [
+                Upsample2d(),  # Dummy at index 0 (match weight naming)
+                Conv2dPermuted(
+                    in_channels=dim,
+                    out_channels=dim,
+                    kernel_size=3,
+                    stride=2,
+                    padding=0,
+                    dtype=dtype,
+                    device=device,
+                    has_bias=True,
+                ),
+            ]
+        )
+
+        self.time_conv: CausalConv3d | None = None
+        if self._has_temporal:
+            self.time_conv = CausalConv3d(
+                in_channels=dim,
+                out_channels=dim,
+                kernel_size=(3, 1, 1),
+                stride=(2, 1, 1),
+                padding=(0, 0, 0),
+                dtype=dtype,
+                device=device,
+                has_bias=True,
+                prefer_nvidia_fcrs=False,
+            )
+        elif mode != "downsample2d":
+            raise ValueError(f"Unsupported DownResampleCached mode: {mode}")
+
+    def __call__(
+        self,
+        x: TensorValue,
+        *,
+        cache_in: TensorValue | None = None,
+        first_chunk: bool = False,
+    ) -> tuple[TensorValue, ...]:
+        b = x.shape[0]
+        t = x.shape[2]
+        h = x.shape[3]
+        w = x.shape[4]
+
+        # Spatial downsample first (matching diffusers order)
+        x = ops.permute(x, [0, 2, 1, 3, 4])  # [b, t, c, h, w]
+        x = ops.reshape(x, [b * t, self.dim, h, w])
+        x = ops.pad(x, [0, 0, 0, 0, 0, 1, 0, 1])  # ZeroPad2d(0,1,0,1)
+        x = self.resample[1](x)  # Conv2d stride=2
+        new_h = (h + 1) // 2
+        new_w = (w + 1) // 2
+        # Rebind so the compiler sees conv output shape matches our computation.
+        x = ops.rebind(x, shape=[b * t, self.dim, new_h, new_w])
+        x = ops.reshape(x, [b, t, self.dim, new_h, new_w])
+        x = ops.permute(x, [0, 2, 1, 3, 4])  # [b, c, t, h', w']
+
+        if self._has_temporal:
+            assert self.time_conv is not None
+            cache_out = x[:, :, -1:, :, :]  # Last frame after spatial
+            if first_chunk:
+                # Skip time_conv, return spatial output + cache
+                return x, cache_out
+            else:
+                assert cache_in is not None
+                # Rebind cache spatial dims to match x after spatial downsample.
+                cache_in = ops.rebind(
+                    cache_in,
+                    shape=[
+                        cache_in.shape[0],
+                        cache_in.shape[1],
+                        cache_in.shape[2],
+                        x.shape[3],
+                        x.shape[4],
+                    ],
+                )
+                # Prepend cached last frame, apply time_conv
+                x_cat = ops.concat([cache_in, x], axis=2)
+                x = self.time_conv(x_cat)
+                return x, cache_out
+
+        return (x,)
+
+
+class DownBlock(Module):
+    """Wan encoder down block (mirror of UpBlock)."""
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        num_res_blocks: int,
+        downsample_mode: str | None,
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        resnets: list[ResidualBlock] = []
+        current_dim = in_dim
+        for _ in range(num_res_blocks + 1):
+            resnets.append(
+                ResidualBlock(
+                    current_dim,
+                    out_dim,
+                    dtype=dtype,
+                    device=device,
+                )
+            )
+            current_dim = out_dim
+        self.resnets = LayerList(resnets)
+
+        self.downsamplers: LayerList | None = None
+        if downsample_mode is not None:
+            self.downsamplers = LayerList(
+                [
+                    DownResample(
+                        out_dim,
+                        mode=downsample_mode,
+                        dtype=dtype,
+                        device=device,
+                    )
+                ]
+            )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        for resnet in self.resnets:
+            x = resnet(x)
+
+        if self.downsamplers is not None:
+            x = self.downsamplers[0](x)
+
+        return x
+
+
+class Encoder3d(Module):
+    """Wan 3D encoder module (mirror of Decoder3d).
+
+    Uses a flat ModuleList for down_blocks to match the diffusers
+    safetensors key naming (encoder.down_blocks.{i}.{conv1,norm1,...}).
+    """
+
+    def __init__(
+        self,
+        dim: int = 96,
+        z_dim: int = 16,
+        in_channels: int = 3,
+        dim_mult: tuple[int, ...] = (1, 2, 4, 4),
+        num_res_blocks: int = 2,
+        temporal_downsample: tuple[bool, ...] = (False, True, True),
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+
+        dims = [dim * u for u in [1, *list(dim_mult)]]
+
+        self.conv_in = CausalConv3d(
+            in_channels,
+            dims[0],
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+            prefer_nvidia_fcrs=False,
+        )
+
+        # Flat ModuleList matching diffusers weight naming:
+        # down_blocks.{0,1} = ResidualBlock (first level, 2 blocks)
+        # down_blocks.2 = Resample (downsample)
+        # down_blocks.{3,4} = ResidualBlock (second level)
+        # down_blocks.5 = Resample ...etc
+        down_blocks: list[Module] = []
+        for i, (in_dim, out_dim) in enumerate(pairwise(dims)):
+            for j in range(num_res_blocks):
+                down_blocks.append(
+                    ResidualBlock(
+                        in_dim if j == 0 else out_dim,
+                        out_dim,
+                        dtype=dtype,
+                        device=device,
+                        prefer_nvidia_fcrs=False,
+                    )
+                )
+            down_flag = i != len(dim_mult) - 1
+            if down_flag:
+                mode = (
+                    "downsample3d" if temporal_downsample[i] else "downsample2d"
+                )
+                down_blocks.append(
+                    DownResample(
+                        out_dim,
+                        mode=mode,
+                        dtype=dtype,
+                        device=device,
+                        prefer_nvidia_fcrs=False,
+                    )
+                )
+
+        self.down_blocks = LayerList(down_blocks)
+
+        final_dim = dims[-1]
+        self.mid_block = MidBlock(
+            final_dim,
+            dtype=dtype,
+            device=device,
+            prefer_nvidia_fcrs=False,
+        )
+
+        self.norm_out = RMSNorm(
+            final_dim,
+            images=False,
+            dtype=dtype,
+            device=device,
+        )
+        # Output 2*z_dim for mean + logvar
+        self.conv_out = CausalConv3d(
+            final_dim,
+            z_dim * 2,
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+            prefer_nvidia_fcrs=False,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        x = self.conv_in(x)
+
+        for down_block in self.down_blocks:
+            x = down_block(x)
+
+        x = self.mid_block(x)
+        x = self.norm_out(x)
+        x = ops.silu(x)
+        x = self.conv_out(x)
+        return x
+
+
+class Encoder3dCached(Module):
+    """Chunked encoder with explicit cache I/O for temporal context.
+
+    Uses a flat ModuleList for down_blocks (matching Encoder3d weight naming).
+    Each chunk processes either 1 frame (first) or CHUNK_SIZE frames (rest).
+    Temporal context is maintained via cache tensors passed between chunks.
+    """
+
+    def __init__(
+        self,
+        dim: int = 96,
+        z_dim: int = 16,
+        in_channels: int = 3,
+        dim_mult: tuple[int, ...] = (1, 2, 4, 4),
+        num_res_blocks: int = 2,
+        temporal_downsample: tuple[bool, ...] = (False, True, True),
+        dtype: DType | None = None,
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self._dim = dim
+        self._in_channels = in_channels
+        self._dim_mult = dim_mult
+        self._num_res_blocks = num_res_blocks
+        self._temporal_downsample = temporal_downsample
+
+        dims = [dim * u for u in [1, *list(dim_mult)]]
+
+        self.conv_in = CausalConv3dCached(
+            in_channels,
+            dims[0],
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+        # Flat list matching diffusers weight naming
+        down_blocks: list[Module] = []
+        self._block_cache_slots: list[int] = []
+        for i, (in_dim, out_dim) in enumerate(pairwise(dims)):
+            for j in range(num_res_blocks):
+                down_blocks.append(
+                    ResidualBlockCached(
+                        in_dim if j == 0 else out_dim,
+                        out_dim,
+                        dtype=dtype,
+                        device=device,
+                    )
+                )
+                self._block_cache_slots.append(2)
+            down_flag = i != len(dim_mult) - 1
+            if down_flag:
+                mode = (
+                    "downsample3d" if temporal_downsample[i] else "downsample2d"
+                )
+                ds = DownResampleCached(
+                    out_dim,
+                    mode=mode,
+                    dtype=dtype,
+                    device=device,
+                )
+                down_blocks.append(ds)
+                self._block_cache_slots.append(ds.cache_slots)
+
+        self.down_blocks = LayerList(down_blocks)
+
+        final_dim = dims[-1]
+        self.mid_block = MidBlockCached(final_dim, dtype=dtype, device=device)
+
+        self.norm_out = RMSNorm(
+            final_dim,
+            images=False,
+            dtype=dtype,
+            device=device,
+        )
+        self.conv_out = CausalConv3dCached(
+            final_dim,
+            z_dim * 2,
+            3,
+            padding=1,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+    @property
+    def total_cache_slots(self) -> int:
+        return 1 + sum(self._block_cache_slots) + 4 + 1
+
+    def cache_shapes(
+        self,
+        batch_size: int,
+        height: int | None = None,
+        width: int | None = None,
+    ) -> list[list[int | None]]:
+        """Compute cache shapes for this encoder configuration.
+
+        If height/width are None, those dimensions are dynamic.
         """
-        return self.mean
+        dims = [self._dim * u for u in [1, *list(self._dim_mult)]]
+        h: int | None = height
+        w: int | None = width
+        shapes: list[list[int | None]] = []
+
+        # conv_in cache
+        shapes.append([batch_size, self._in_channels, CACHE_T, h, w])
+
+        for i, (in_dim, out_dim) in enumerate(pairwise(dims)):
+            for j in range(self._num_res_blocks):
+                block_in = in_dim if j == 0 else out_dim
+                shapes.append([batch_size, block_in, CACHE_T, h, w])
+                shapes.append([batch_size, out_dim, CACHE_T, h, w])
+
+            down_flag = i != len(self._dim_mult) - 1
+            if down_flag:
+                new_h = (h + 1) // 2 if h is not None else None
+                new_w = (w + 1) // 2 if w is not None else None
+                if self._temporal_downsample[i]:
+                    shapes.append([batch_size, out_dim, 1, new_h, new_w])
+                h, w = new_h, new_w
+
+        final_dim = dims[-1]
+        for _ in range(4):
+            shapes.append([batch_size, final_dim, CACHE_T, h, w])
+
+        shapes.append([batch_size, final_dim, CACHE_T, h, w])
+
+        assert len(shapes) == self.total_cache_slots, (
+            f"cache_shapes produced {len(shapes)}, "
+            f"expected {self.total_cache_slots}"
+        )
+        return shapes
+
+    def __call__(
+        self,
+        x: TensorValue,
+        *cache_inputs: TensorValue,
+        first_chunk: bool = False,
+    ) -> tuple[TensorValue, ...]:
+        use_cache = len(cache_inputs) == self.total_cache_slots
+        if len(cache_inputs) not in (0, self.total_cache_slots):
+            raise ValueError(
+                f"Encoder3dCached expected 0 or {self.total_cache_slots} "
+                f"cache tensors, got {len(cache_inputs)}"
+            )
+
+        cache_outputs: list[TensorValue] = []
+        idx = 0
+
+        # conv_in
+        c_in = cache_inputs[idx] if use_cache else _zero_cache_for(x)
+        x, c_out = self.conv_in.forward_cached(x, c_in)
+        cache_outputs.append(c_out)
+        idx += 1
+
+        # down_blocks (flat list of ResidualBlockCached and DownResampleCached)
+        for block in self.down_blocks:
+            if isinstance(block, ResidualBlockCached):
+                c1 = cache_inputs[idx] if use_cache else None
+                c2 = cache_inputs[idx + 1] if use_cache else None
+                x, co1, co2 = block(x, c1, c2)
+                cache_outputs.extend([co1, co2])
+                idx += 2
+            elif isinstance(block, DownResampleCached):
+                if block._has_temporal:
+                    c = cache_inputs[idx] if use_cache else None
+                    x, co = block(x, cache_in=c, first_chunk=first_chunk)
+                    cache_outputs.append(co)
+                    idx += 1
+                else:
+                    (x,) = block(x)
+
+        # mid_block
+        mid_caches: tuple[TensorValue, ...] = (
+            tuple(cache_inputs[idx : idx + 4]) if use_cache else ()
+        )
+        mid_out = self.mid_block(x, *mid_caches)
+        x = mid_out[0]
+        cache_outputs.extend(mid_out[1:])
+        idx += 4
+
+        # norm + silu + conv_out
+        x = ops.silu(self.norm_out(x))
+        c_in = cache_inputs[idx] if use_cache else _zero_cache_for(x)
+        x, c_out = self.conv_out.forward_cached(x, c_in)
+        cache_outputs.append(c_out)
+
+        assert len(cache_outputs) == self.total_cache_slots, (
+            f"Produced {len(cache_outputs)} caches, "
+            f"expected {self.total_cache_slots}"
+        )
+        return (x, *cache_outputs)
+
+
+class VAEEncoder(Module):
+    """Wrapper for VAE encoder graph compilation.
+
+    Includes quant_conv (1x1 conv applied after encoder output).
+    """
+
+    def __init__(self, config: AutoencoderKLWanConfig) -> None:
+        super().__init__()
+        self.encoder = Encoder3d(
+            dim=config.base_dim,
+            z_dim=config.z_dim,
+            in_channels=3,
+            dim_mult=config.dim_mult,
+            num_res_blocks=config.num_res_blocks,
+            temporal_downsample=config.temporal_downsample,
+            dtype=config.dtype,
+            device=config.device,
+        )
+        z2 = config.z_dim * 2
+        self.quant_conv = CausalConv3d(
+            z2,
+            z2,
+            1,
+            padding=0,
+            dtype=config.dtype,
+            device=config.device,
+            has_bias=True,
+            prefer_nvidia_fcrs=False,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        h = self.encoder(x)
+        return self.quant_conv(h)
+
+
+class VAEEncoderFirstChunk(Module):
+    """First-chunk encoder graph: 1 frame in, mean latent + caches out."""
+
+    def __init__(self, config: AutoencoderKLWanConfig) -> None:
+        super().__init__()
+        self._z_dim = config.z_dim
+        self.encoder = Encoder3dCached(
+            dim=config.base_dim,
+            z_dim=config.z_dim,
+            in_channels=3,
+            dim_mult=config.dim_mult,
+            num_res_blocks=config.num_res_blocks,
+            temporal_downsample=config.temporal_downsample,
+            dtype=config.dtype,
+            device=config.device,
+        )
+        z2 = config.z_dim * 2
+        self.quant_conv = CausalConv3d(
+            z2,
+            z2,
+            1,
+            padding=0,
+            dtype=config.dtype,
+            device=config.device,
+            has_bias=True,
+        )
+
+    def __call__(self, x: TensorValue) -> tuple[TensorValue, ...]:
+        outputs = self.encoder(x, first_chunk=True)
+        moments = self.quant_conv(outputs[0])
+        # Extract mean in-graph to avoid GPU->CPU transfer of full moments
+        mean = moments[:, : self._z_dim, :, :, :]
+        return (mean, *outputs[1:])
+
+
+class VAEEncoderRestChunk(Module):
+    """Rest-chunk encoder graph: CHUNK_SIZE frames + caches in, mean latent + caches out."""
+
+    def __init__(self, config: AutoencoderKLWanConfig) -> None:
+        super().__init__()
+        self._z_dim = config.z_dim
+        self.encoder = Encoder3dCached(
+            dim=config.base_dim,
+            z_dim=config.z_dim,
+            in_channels=3,
+            dim_mult=config.dim_mult,
+            num_res_blocks=config.num_res_blocks,
+            temporal_downsample=config.temporal_downsample,
+            dtype=config.dtype,
+            device=config.device,
+        )
+        z2 = config.z_dim * 2
+        self.quant_conv = CausalConv3d(
+            z2,
+            z2,
+            1,
+            padding=0,
+            dtype=config.dtype,
+            device=config.device,
+            has_bias=True,
+        )
+
+    def __call__(
+        self, x: TensorValue, *cache_inputs: TensorValue
+    ) -> tuple[TensorValue, ...]:
+        outputs = self.encoder(x, *cache_inputs, first_chunk=False)
+        moments = self.quant_conv(outputs[0])
+        mean = moments[:, : self._z_dim, :, :, :]
+        return (mean, *outputs[1:])

@@ -21,13 +21,13 @@ from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import _type_is_eq, strided_load, strided_store
 
 import std.algorithm
-from buffer.dimlist import DimList, Dim, _make_partially_static_index_list
+from layout import CoordLike, IntTuple
 from std.builtin.device_passable import DevicePassable
 from compiler_internal.directives import (
     StaticTensorSpec,
     __mogg_intrinsic_attr,
     StaticTensorSpecInternal,
-    get_row_major_tensor_spec,
+    get_row_major_tensor_spec_static,
     InputFusion,
     OutputFusion,
     ComputeOutputFusion,
@@ -35,13 +35,13 @@ from compiler_internal.directives import (
     _NoFusionIn,
     _NoFusionOut,
     _NoComputeFusion,
+    _IndexListToTileLayout,
 )
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from std.gpu.host.info import is_gpu as _is_gpu
 from layout import Coord, LayoutTensor, TileTensor
-from layout.coord import _DimsToCoordLike
-from layout.tile_layout import Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout, TensorLayout
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import trace_arg
@@ -100,7 +100,12 @@ def simd_store_into_managed_tensor_slice[
         tensor.alignment, element_alignment * align_of[dtype]()
     ]()
 
-    comptime static_stride = tensor._static_strides.at[rank - 1]()
+    comptime _last_stride_is_static = tensor.static_spec.static_layout._stride_types[
+        rank - 1
+    ].is_static_value
+    comptime _last_stride_value = tensor.static_spec.static_layout._stride_types[
+        rank - 1
+    ].static_value
 
     # Stride = 1
     @parameter
@@ -126,7 +131,7 @@ def simd_store_into_managed_tensor_slice[
         else:
             return strided_store(value, tensor._ptr + flat_index, stride)
 
-    comptime if static_stride.is_dynamic():
+    comptime if not _last_stride_is_static:
         var stride = tensor._runtime_strides[rank - 1]
         # Dynamic stride
         if stride == 0:
@@ -137,12 +142,12 @@ def simd_store_into_managed_tensor_slice[
             store_strided(stride)
     else:
         # static stride
-        comptime if static_stride.get() == 0:
+        comptime if _last_stride_value == 0:
             tensor._ptr.store[alignment=max_alignment](0, value)
-        elif static_stride.get() == 1:
+        elif _last_stride_value == 1:
             store_stride1()
         else:
-            store_strided(static_stride.get())
+            store_strided(_last_stride_value)
 
 
 @doc_hidden
@@ -256,7 +261,12 @@ def simd_load_from_managed_tensor_slice[
     indices: IndexList[rank],
 ) -> SIMD[dtype, simd_width]:
     var flat_index = tensor._compute_offset(indices)
-    comptime static_stride = tensor._static_strides.at[rank - 1]()
+    comptime _last_stride_is_static = tensor.static_spec.static_layout._stride_types[
+        rank - 1
+    ].is_static_value
+    comptime _last_stride_value = tensor.static_spec.static_layout._stride_types[
+        rank - 1
+    ].static_value
 
     # Load alignment cannot exceed the data type's alignment.
     comptime max_alignment = _gcd_pow2[
@@ -294,7 +304,7 @@ def simd_load_from_managed_tensor_slice[
                 tensor._ptr + flat_index, stride
             )
 
-    comptime if static_stride.is_dynamic():
+    comptime if not _last_stride_is_static:
         var stride = tensor._runtime_strides[rank - 1]
         # Dynamic stride
         if stride == 0:
@@ -305,12 +315,12 @@ def simd_load_from_managed_tensor_slice[
             return load_strided(stride)
     else:
         # Static stride
-        comptime if static_stride.get() == 0:
+        comptime if _last_stride_value == 0:
             return tensor._ptr.load[invariant=invariant](flat_index)
-        elif static_stride.get() == 1:
+        elif _last_stride_value == 1:
             return load_stride1()
         else:
-            return load_strided(static_stride.get())
+            return load_strided(_last_stride_value)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -347,7 +357,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
+        dtype, rank, _, InFusion, OutFusion, ComputeFusion
     ],
 ](DevicePassable, TrivialRegisterPassable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
@@ -386,8 +396,9 @@ struct ManagedTensorSlice[
     comptime address_space = Self.static_spec.address_space
     comptime alignment = Self.static_spec.alignment
     comptime exclusive = Self.static_spec.exclusive
-    comptime _static_shape = Self.static_spec.shape
-    comptime _static_strides = Self.static_spec.strides
+    # IntTuple aliases for static shape/strides.
+    comptime _static_shape_tuple = Self.static_spec.shape_tuple
+    comptime _static_strides_tuple = Self.static_spec.strides_tuple
 
     # Fusion query aliases.
     # _is_unfused and _has_input_fusion are derived purely from IOSpec.
@@ -651,9 +662,19 @@ struct ManagedTensorSlice[
         Returns:
             The shape of this tensor slice.
         """
-        return _make_partially_static_index_list[Self.rank, Self._static_shape](
-            self._spec.shape
-        )
+        var result = IndexList[Self.rank]()
+
+        comptime for i in range(Self.rank):
+            comptime if Self.static_spec.static_layout._shape_types[
+                i
+            ].is_static_value:
+                result[i] = Self.static_spec.static_layout._shape_types[
+                    i
+                ].static_value
+            else:
+                result[i] = self._spec.shape[i]
+
+        return result
 
     @always_inline
     def dim_size(self, index: Int) -> Int:
@@ -680,10 +701,14 @@ struct ManagedTensorSlice[
             The size of the tensor slice in the given dimension.
         """
 
-        comptime if Self._static_shape.at[index]().is_dynamic():
+        comptime if not Self.static_spec.static_layout._shape_types[
+            index
+        ].is_static_value:
             return self._spec.shape[index]
         else:
-            return Self._static_shape.get[index]()
+            return Self.static_spec.static_layout._shape_types[
+                index
+            ].static_value
 
     @always_inline
     def strides(self) -> IndexList[Self.rank]:
@@ -692,9 +717,19 @@ struct ManagedTensorSlice[
         Returns:
             The strides of this tensor slice.
         """
-        return _make_partially_static_index_list[
-            Self.rank, Self._static_strides
-        ](self._runtime_strides)
+        var result = IndexList[Self.rank]()
+
+        comptime for i in range(Self.rank):
+            comptime if Self.static_spec.static_layout._stride_types[
+                i
+            ].is_static_value:
+                result[i] = Self.static_spec.static_layout._stride_types[
+                    i
+                ].static_value
+            else:
+                result[i] = self._runtime_strides[i]
+
+        return result
 
     @always_inline
     def stride_length(self, index: Int) -> Int:
@@ -721,10 +756,14 @@ struct ManagedTensorSlice[
             The size of the tensor slice in the given dimension.
         """
 
-        comptime if Self._static_strides.at[index]().is_dynamic():
+        comptime if not Self.static_spec.static_layout._stride_types[
+            index
+        ].is_static_value:
             return self._runtime_strides[index]
         else:
-            return Self._static_strides.get[index]()
+            return Self.static_spec.static_layout._stride_types[
+                index
+            ].static_value
 
     @always_inline
     def size(self) -> Int:
@@ -739,6 +778,15 @@ struct ManagedTensorSlice[
             product *= self.dim_size[i]()
 
         return product
+
+    @always_inline
+    def bytecount(self) -> Int:
+        """Returns the size of the tensor slice in bytes.
+
+        Returns:
+            The total number of bytes in the tensor slice.
+        """
+        return self.size() * size_of[Self.dtype]()
 
     @always_inline
     def unsafe_ptr[
@@ -839,14 +887,20 @@ struct ManagedTensorSlice[
             var offset: Int32 = 0
 
             comptime for i in range(Self.rank):
-                comptime if Self._static_strides.at[i]().is_dynamic():
+                comptime if not Self.static_spec.static_layout._stride_types[
+                    i
+                ].is_static_value:
                     offset = fma(
                         Int32(index[i]), Int32(self._runtime_strides[i]), offset
                     )
                 else:
                     offset = fma(
                         Int32(index[i]),
-                        Int32(Self._static_strides.get[i]()),
+                        Int32(
+                            Self.static_spec.static_layout._stride_types[
+                                i
+                            ].static_value
+                        ),
                         offset,
                     )
             return Int(offset)
@@ -854,10 +908,18 @@ struct ManagedTensorSlice[
         var offset = 0
 
         comptime for i in range(Self.rank):
-            comptime if Self._static_strides.at[i]().is_dynamic():
+            comptime if not Self.static_spec.static_layout._stride_types[
+                i
+            ].is_static_value:
                 offset = fma(index[i], self._runtime_strides[i], offset)
             else:
-                offset = fma(index[i], Self._static_strides.get[i](), offset)
+                offset = fma(
+                    index[i],
+                    Self.static_spec.static_layout._stride_types[
+                        i
+                    ].static_value,
+                    offset,
+                )
 
         return offset
 
@@ -961,36 +1023,21 @@ struct ManagedTensorSlice[
             return val
 
     @always_inline
-    def with_layout[
-        new_rank: Int,
-        //,
-        new_static_shape: DimList,
-        new_static_strides: DimList,
+    def with_tile_layout[
+        new_layout: TensorLayout,
     ](
         self,
-        new_runtime_shape: IndexList[new_rank],
-        new_runtime_strides: IndexList[new_rank],
+        new_runtime_shape: IndexList[new_layout.rank],
+        new_runtime_strides: IndexList[new_layout.rank],
         offset_ptr: Optional[
             UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
         ] = None,
         out result: ManagedTensorSlice[
-            rank=new_rank,
+            rank=new_layout.rank,
             io_spec=Self.io_spec,
-            static_spec=Self.static_spec.with_layout[
-                new_rank, new_static_shape, new_static_strides
-            ](),
+            static_spec=Self.static_spec.with_tile_layout[new_layout](),
         ],
     ):
-        comptime assert (
-            len(new_static_shape) == new_rank
-        ), "static shape has incorrect rank"
-        comptime assert (
-            len(new_static_strides) == new_rank
-        ), "static strides has incorrect rank"
-        assert _is_consistent[new_static_shape](
-            new_runtime_shape
-        ) and _is_consistent[new_static_strides](new_runtime_strides)
-
         return type_of(result)(
             offset_ptr.or_else(self._ptr),
             new_runtime_shape,
@@ -1142,27 +1189,21 @@ struct ManagedTensorSlice[
 
     @always_inline
     def to_tile_tensor[
-        coord_dtype: DType
+        coord_dtype: DType = DType.int64
     ](
         self,
         out result: TileTensor[
             dtype=Self.dtype,
             origin=MutExternalOrigin,
             LayoutType=TileLayout[
-                shape_types=_DimsToCoordLike[
-                    coord_dtype, Self.static_spec.shape
-                ],
-                stride_types=_DimsToCoordLike[
-                    coord_dtype, Self.static_spec.strides
-                ],
+                shape_types=Self.static_spec.static_layout._shape_types,
+                stride_types=Self.static_spec.static_layout._stride_types,
             ],
         ],
     ):
-        var shape_tuple = Coord[
-            *_DimsToCoordLike[coord_dtype, Self.static_spec.shape]
-        ]()
+        var shape_tuple = Coord[*Self.static_spec.static_layout._shape_types]()
         var stride_tuple = Coord[
-            *_DimsToCoordLike[coord_dtype, Self.static_spec.strides]
+            *Self.static_spec.static_layout._stride_types
         ]()
         var shape = self.shape()
         var stride = self.strides()
@@ -1170,12 +1211,12 @@ struct ManagedTensorSlice[
         comptime for i in range(Self.rank):
             comptime if not shape_tuple.element_types[i].is_static_value:
                 shape_tuple[i] = rebind[shape_tuple.element_types[i]](
-                    Scalar[coord_dtype](shape[i])
+                    Scalar[shape_tuple.element_types[i].DTYPE](shape[i])
                 )
 
             comptime if not stride_tuple.element_types[i].is_static_value:
                 stride_tuple[i] = rebind[stride_tuple.element_types[i]](
-                    Scalar[coord_dtype](stride[i])
+                    Scalar[stride_tuple.element_types[i].DTYPE](stride[i])
                 )
 
         return {
@@ -1206,8 +1247,8 @@ struct ManagedTensorSlice[
         )
 
         writer.write("){")
-        writer.write("static_shape = ", self._static_shape)
-        writer.write(", static_strides = ", self._static_strides)
+        writer.write("static_shape = ", self._static_shape_tuple)
+        writer.write(", static_strides = ", self._static_strides_tuple)
         writer.write(", dynamic_shape = ", self.shape())
         writer.write(", dynamic_strides = ", self.strides())
         writer.write(", alignment = ", self.alignment)
@@ -1222,20 +1263,6 @@ struct ManagedTensorSlice[
             writer: The object to write to.
         """
         self.write_to(writer)
-
-
-def _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
-    comptime if len(static_info) != runtime_info.size:
-        return False
-
-    comptime for i in range(runtime_info.size):
-        comptime if not static_info.has_value[i]():
-            continue
-
-        if static_info.at[i]() != runtime_info[i]:
-            return False
-
-    return True
 
 
 # TODO: Move to oss/modular/mojo/stdlib/stdlib/runtime/tracing.mojo and
@@ -1289,8 +1316,10 @@ struct StaticTensorSpecList[
         out result: StaticTensorSpec[
             Self.dtype,
             Self.rank,
-            DimList.from_index_list[Self.shapes_list[index]](),
-            DimList.from_index_list[Self.strides_list[index]](),
+            static_layout=_IndexListToTileLayout[
+                Self.shapes_list[index],
+                Self.strides_list[index],
+            ],
         ],
     ):
         return {Self.internals_list[index]}
@@ -1826,9 +1855,7 @@ def view_copy_impl[
     InFusion: InputFusion,
     OutFusion: OutputFusion,
     ComputeFusion: ComputeOutputFusion,
-    spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
-    ],
+    spec: StaticTensorSpec[dtype, rank, _, InFusion, OutFusion, ComputeFusion],
     //,
     *,
     target: StaticString,
@@ -1839,8 +1866,10 @@ def view_copy_impl[
     x: ManagedTensorSlice[static_spec=spec, ...],
     ctx: DeviceContextPtr,
 ) raises:
-    comptime assert _compatible_with[
-        x._static_shape, z._static_shape
+    comptime assert _shape_types_compatible[
+        x.static_spec.static_layout._shape_types,
+        z.static_spec.static_layout._shape_types,
+        rank,
     ](), "static shapes not compatible"
     assert x.shape() == z.shape(), "runtime shapes not compatible"
 
@@ -1861,12 +1890,13 @@ def view_copy_impl[
     ](z, ctx)
 
 
-def _compatible_with[x: DimList, y: DimList]() -> Bool:
-    comptime if len(x) != len(y):
-        return False
-
-    comptime for i in range(len(x)):
-        if x.has_value[i]() and y.has_value[i]() and x.at[i]() != y.at[i]():
-            return False
-
+def _shape_types_compatible[
+    x_types: Variadic.TypesOfTrait[CoordLike],
+    y_types: Variadic.TypesOfTrait[CoordLike],
+    rank: Int,
+]() -> Bool:
+    comptime for i in range(rank):
+        comptime if x_types[i].is_static_value and y_types[i].is_static_value:
+            comptime if x_types[i].static_value != y_types[i].static_value:
+                return False
     return True

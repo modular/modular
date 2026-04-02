@@ -15,14 +15,13 @@ from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
-from buffer import NDBuffer
 from std.complex import ComplexSIMD
-from std.gpu import *
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 
-from std.utils.index import Index
 from std.sys import has_apple_gpu_accelerator
+from layout import TileTensor, Idx, row_major
 
 comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime int_type = DType.int
@@ -64,7 +63,7 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     if row >= height:
         return
 
-    var out = NDBuffer[rank=2, int_type](out_ptr, Index(height, width))
+    var out = TileTensor(out_ptr, row_major(Idx(height), Idx(width)))
 
     comptime scale_x = (max_x - min_x) / width
     comptime scale_y = (max_y - min_y) / height
@@ -84,7 +83,7 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
         ](scale_y)
         var c = ComplexSIMD[float_type, simd_width](cx, cy)
         out.store[width=simd_width](
-            Index(row, col), mandelbrot_kernel[simd_width](c)
+            (Idx(row), Idx(col)), mandelbrot_kernel[simd_width](c)
         )
 
     # We vectorize the call to compute_vector where call gets a chunk of
@@ -123,10 +122,6 @@ def run_mandelbrot(ctx: DeviceContext) raises:
 
     comptime ref_result = 4687767697 if float_type == DType.float64 else 4687810683
     assert_equal(Scalar[int_type](ref_result), accum)
-
-    _ = out_device
-
-    _ = out_host
 
 
 def main() raises:

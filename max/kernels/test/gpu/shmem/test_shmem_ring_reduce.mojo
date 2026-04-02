@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
-from std.algorithm import parallelize
 from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from std.math import iota
 from std.os import abort
@@ -59,13 +58,13 @@ def ring_reduce(
     var num_threads = block_dim.x
     var num_blocks = grid_dim.x
     var block_idx = block_idx.x
-    var elems_per_block = nreduce // Int(num_blocks)
+    var elems_per_block = nreduce // num_blocks
 
-    if elems_per_block * Int(block_idx + 1) > nreduce:
+    if elems_per_block * (block_idx + 1) > nreduce:
         return
 
-    var src = src_ptr + block_idx * UInt(elems_per_block)
-    var dst = dst_ptr + block_idx * UInt(elems_per_block)
+    var src = src_ptr + block_idx * elems_per_block
+    var dst = dst_ptr + block_idx * elems_per_block
     var signal = signal_ptr + block_idx
 
     var chunk_elems = chunk_size // size_of[DType.int32]()
@@ -76,12 +75,12 @@ def ring_reduce(
         # Wait for data from previous PE (except PE 0 which starts)
         if mype != 0:
             if thread_id == 0:
-                shmem_signal_wait_until(signal, SHMEM_CMP_GE, chunk + 1)
+                shmem_signal_wait_until(signal, SHMEM_CMP_GE, UInt64(chunk + 1))
 
             barrier()
 
             var i = thread_id
-            while i < UInt(chunk_elems):
+            while i < chunk_elems:
                 dst[i] = dst[i] + src[i]
                 i += num_threads
             barrier()
@@ -107,7 +106,7 @@ def ring_reduce(
                 shmem_signal_wait_until(
                     signal,
                     SHMEM_CMP_GE,
-                    chunk + 1 if mype == 0 else num_chunks + chunk + 1,
+                    UInt64(chunk + 1 if mype == 0 else num_chunks + chunk + 1),
                 )
             if mype < npes - 2:
                 shmem_put_signal_nbi(
@@ -180,7 +179,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.barrier_all()
 
         var elapsed_ns = dev_ctx.execution_time[benchmark](iters) / iters
-        var elapsed_ms = elapsed_ns / 1e6
+        var elapsed_ms = Float64(elapsed_ns) / 1e6
 
         ctx.synchronize()
 
@@ -190,7 +189,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
         # Each element should be i * npes after allreduce
         for i in range(num_ints):
-            var expected = Int32(i * npes)
+            var expected = Int32(Int32(i) * npes)
             if data_h[i] != expected:
                 # Avoid assert_equal overhead on these large buffers
                 abort(

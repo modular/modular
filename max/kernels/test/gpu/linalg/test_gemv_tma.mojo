@@ -17,8 +17,6 @@ from std.random import rand
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
@@ -29,16 +27,19 @@ from std.gpu.memory import (
     external_memory,
 )
 from internal_utils import assert_almost_equal
-from std.random import rand
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._utils import ManagedLayoutTensor
+from layout import (
+    CoordLike,
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    row_major,
+)
 from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import PipelineState, SharedMemBarrier
 
-from std.utils import StaticTuple
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
@@ -70,11 +71,10 @@ def gemv_tma_kernel[
     N: UInt,
     K: UInt,
 ):
-    var tid = thread_idx.x
-    var bidx = block_idx.x
+    var bidx = UInt(block_idx.x)
     var block_row = bidx * BLOCK_SIZE_M
 
-    var warp_row_offset = warp_id() * ROWS_PER_WARP
+    var warp_row_offset = UInt(warp_id()) * ROWS_PER_WARP
     var global_row_idx = block_row + warp_row_offset
 
     comptime accum_type = get_accum_type[dtype]()
@@ -154,7 +154,7 @@ def gemv_tma_kernel[
     var consumer_phase = PipelineState[Int(NUM_PIPELINE_STAGES)]()
     var producer_phase = PipelineState[Int(NUM_PIPELINE_STAGES)](0, 1, 0)
 
-    for col_offset in range(0, K, BLOCK_SIZE_K):
+    for col_offset in range(0, Int(K), Int(BLOCK_SIZE_K)):
         var current_block_size = min(BLOCK_SIZE_K, K - UInt(col_offset))
 
         # Producer: Thread 0 loads data.
@@ -203,8 +203,8 @@ def gemv_tma_kernel[
             b_smem.linear_uint_type(Int(stage))
         )[]
 
-        for k_idx in range(0, current_block_size, WARP_SIZE):
-            var col_idx = k_idx + Int(lane_id())
+        for k_idx in range(0, Int(current_block_size), WARP_SIZE):
+            var col_idx = k_idx + lane_id()
             if col_idx < Int(current_block_size):
                 var b_val = current_b_tile[col_idx]
 
@@ -228,16 +228,13 @@ def gemv_tma_kernel[
 
 def gemv_tma[
     dtype: DType,
-    c_shape: DimList,
-    a_shape: DimList,
-    b_shape: DimList,
 ](
     c_device: DeviceBuffer[dtype],
-    c_device_nd: NDBuffer[rank=2, dtype, _, c_shape],
+    c_tt: TileTensor[mut=True, dtype, ...],
     a_device: DeviceBuffer[dtype],
-    a_device_nd: NDBuffer[rank=2, dtype, _, a_shape],
+    a_tt: TileTensor[dtype, ...],
     b_device: DeviceBuffer[dtype],
-    b_device_nd: NDBuffer[rank=1, dtype, _, b_shape],
+    b_tt: TileTensor[dtype, ...],
     M: Int,
     N: Int,
     K: Int,
@@ -252,9 +249,9 @@ def gemv_tma[
     comptime ROWS_PER_WARP = UInt(BLOCK_SIZE_M // WARPS_PER_BLOCK)
     comptime NUM_PIPELINE_STAGES = 1
 
-    var a = from_ndbuffer_row_major(a_device_nd)
-    var b = from_ndbuffer_row_major(b_device_nd)
-    var c = from_ndbuffer_row_major(c_device_nd)
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
+    var c = c_tt.to_layout_tensor()
 
     comptime assert c.rank == 2
     comptime assert a.rank == 2
@@ -313,74 +310,49 @@ def gemv_tma[
 
 
 def test_gemv_tma[
-    dtype: DType
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
+    dtype: DType,
 ](
     ctx: DeviceContext,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
     benchmark: Bool = False,
 ) raises:
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
-    comptime static_a_shape = DimList[m.dim, k.dim]()
-    comptime static_b_shape = DimList[k.dim]()
-    comptime static_c_shape = DimList[m.dim, n.dim]()
-    var dynamic_a_shape = IndexList[2](m.value, k.value)
-    var dynamic_b_shape = IndexList[1](k.value)
-    var dynamic_c_shape = IndexList[2](m.value, n.value)
-    var a_size = m.value * k.value
-    var b_size = k.value
-    var c_size = m.value * n.value
+    var a_shape = Coord(m, k)
+    var b_shape = Coord(k)
+    var c_shape = Coord(m, n)
+
+    var a_size = M * K
+    var b_size = K
+    var c_size = M * N
 
     var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var a_host = NDBuffer[rank=2, dtype, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
     var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var b_host = NDBuffer[rank=1, dtype, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
-    var c_host_managed = ManagedLayoutTensor[dtype, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
-    )
-    var c_host_ptr = c_host_managed.tensor[update=False]().ptr
-    var c_host = NDBuffer[rank=2, dtype, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
-    var c_host_ref_managed = ManagedLayoutTensor[dtype, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
-    )
-    var c_host_ref_ptr = c_host_ref_managed.tensor[update=False]().ptr
-    var c_host_ref = NDBuffer[rank=2, dtype, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
-
-    var a_device = ctx.enqueue_create_buffer[dtype](a_size)
-    var a_device_nd = NDBuffer[rank=2, dtype, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
-    var b_device = ctx.enqueue_create_buffer[dtype](b_size)
-    var b_device_nd = NDBuffer[rank=1, dtype, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
-    var c_device = ctx.enqueue_create_buffer[dtype](c_size)
-    var c_device_nd = NDBuffer[rank=2, dtype, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
-    var c_device_ref = ctx.enqueue_create_buffer[dtype](c_size)
-    var c_device_ref_nd = NDBuffer[rank=2, dtype, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_host_ptr = alloc[Scalar[dtype]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
 
     rand[dtype](a_host_ptr, M * K)
     rand[dtype](b_host_ptr, K * N)
-    c_host.zero()
-    c_host_ref.zero()
+    for i in range(c_size):
+        c_host_ptr[i] = 0
+        c_host_ref_ptr[i] = 0
+
+    var a_device = ctx.enqueue_create_buffer[dtype](a_size)
+    var b_device = ctx.enqueue_create_buffer[dtype](b_size)
+    var c_device = ctx.enqueue_create_buffer[dtype](c_size)
+    var c_device_ref = ctx.enqueue_create_buffer[dtype](c_size)
+
+    var a_tt = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
+    var b_tt = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
+    var c_tt = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -390,11 +362,11 @@ def test_gemv_tma[
 
     gemv_tma(
         c_device,
-        c_device_nd,
+        c_tt,
         a_device,
-        a_device_nd,
+        a_tt,
         b_device,
-        b_device_nd,
+        b_tt,
         M,
         N,
         K,
@@ -412,11 +384,11 @@ def test_gemv_tma[
         def run_func(ctx: DeviceContext) raises:
             gemv_tma(
                 c_device,
-                c_device_nd,
+                c_tt,
                 a_device,
-                a_device_nd,
+                a_tt,
                 b_device,
-                b_device_nd,
+                b_tt,
                 M,
                 N,
                 K,
@@ -442,15 +414,13 @@ def test_gemv_tma[
         )
     else:
         # Compare with vendor BLAS for correctness.
-        var b_2d = NDBuffer[rank=2, dtype](
-            b_device.unsafe_ptr(),
-            Index(K, 1),
-            Index(1, K),
-        )
+        var b_2d_shape = Coord(Idx(K), Idx[1]())
+        var b_2d = TileTensor(b_device.unsafe_ptr(), row_major(b_2d_shape))
+        var c_ref_tt = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
         vendor_blas.matmul(
             ctx,
-            c_device_ref_nd,
-            a_device_nd,
+            c_ref_tt,
+            a_tt,
             b_2d,
             c_row_major=True,
             transpose_b=False,
@@ -464,9 +434,9 @@ def test_gemv_tma[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host.data,
-            c_host_ref.data,
-            c_host.num_elements(),
+            c_host_ptr,
+            c_host_ref_ptr,
+            c_size,
             atol=0.0001,
             rtol=rtol,
         )
@@ -474,21 +444,23 @@ def test_gemv_tma[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
 
 
 def main() raises:
     with DeviceContext() as ctx:
         var benchmark = is_benchmark()
         test_gemv_tma[DType.bfloat16](
-            ctx, dynamic(256), static[1](), static[256](), benchmark=benchmark
+            ctx, Idx(256), Idx[1](), Idx[256](), benchmark=benchmark
         )
         test_gemv_tma[DType.bfloat16](
-            ctx, dynamic(4096), static[1](), static[4096](), benchmark=benchmark
+            ctx, Idx(4096), Idx[1](), Idx[4096](), benchmark=benchmark
         )
 
         test_gemv_tma[DType.float32](
-            ctx, dynamic(256), static[1](), static[256](), benchmark=benchmark
+            ctx, Idx(256), Idx[1](), Idx[256](), benchmark=benchmark
         )
         test_gemv_tma[DType.float32](
-            ctx, dynamic(4096), static[1](), static[4096](), benchmark=benchmark
+            ctx, Idx(4096), Idx[1](), Idx[4096](), benchmark=benchmark
         )

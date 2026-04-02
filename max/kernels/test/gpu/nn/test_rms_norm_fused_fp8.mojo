@@ -13,19 +13,12 @@
 
 """Tests for fused RMSNorm + FP8 quantization kernel."""
 
-from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout.int_tuple import fill_like
 from std.memory import bitcast
 from std.runtime.asyncrt import DeviceContextPtr
 from std.utils.index import Index, IndexList
@@ -194,40 +187,30 @@ def test_dynamic[
     ctx.enqueue_copy(in_device, in_host)
     ctx.enqueue_copy(gamma_device, gamma_host)
 
-    comptime layout_nd = Layout.row_major[rank]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-
-    var in_tensor = LayoutTensor[in_dtype, layout_nd](
-        in_device, RuntimeLayout[layout_nd].row_major(shape)
-    )
-    var out_tensor = LayoutTensor[out_dtype, layout_nd](
-        out_device, RuntimeLayout[layout_nd].row_major(shape)
-    )
-
     var param_shape = Index(cols)
     var gamma_tensor = TileTensor(gamma_device, row_major(Coord(param_shape)))
-
-    var scales_tensor = LayoutTensor[scales_dtype, layout_1d](
-        scales_device, RuntimeLayout[layout_1d].row_major(Index(rows))
-    )
 
     var scale_shape = shape
     scale_shape[rank - 1] = 1
 
-    @__copy_capture(in_tensor)
+    var in_ptr = in_device.unsafe_ptr()
+
+    @__copy_capture(in_ptr)
     @always_inline
     @parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
-        var idx_linear = in_tensor.runtime_layout(
-            RuntimeTuple[fill_like(in_tensor.layout.shape, UNKNOWN_VALUE)](idx)
-        )
-        return in_tensor.ptr.load[width=width, alignment=width](idx_linear)
+        var linear_idx = Int(0)
+        var stride = 1
+        for i in reversed(range(_rank)):
+            linear_idx += idx[i] * stride
+            stride *= shape[i]
+        return in_ptr.load[width=width, alignment=width](linear_idx)
 
-    var out_tile = TileTensor(out_tensor.ptr, row_major(Coord(shape)))
+    var out_tile = TileTensor(out_device.unsafe_ptr(), row_major(Coord(shape)))
     var scale_tile = TileTensor(
-        scales_tensor.ptr, row_major(Coord(scale_shape))
+        scales_device.unsafe_ptr(), row_major(Coord(scale_shape))
     )
 
     rms_norm_fused_fp8[

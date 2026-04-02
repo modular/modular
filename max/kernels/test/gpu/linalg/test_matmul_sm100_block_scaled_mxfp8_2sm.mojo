@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.hashlib import default_comp_time_hasher
 from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
@@ -22,9 +21,6 @@ from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     Coord,
     CoordLike,
@@ -37,7 +33,6 @@ from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import 
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -48,7 +43,6 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from std.random import random_ui64
-from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -184,51 +178,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())
 
-    comptime a_scales_5d_layout = Layout.row_major(
-        a_scales_tensor.static_shape[0],
-        a_scales_tensor.static_shape[1],
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    comptime b_scales_5d_layout = Layout.row_major(
-        b_scales_tensor.static_shape[0],
-        b_scales_tensor.static_shape[1],
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
-    var a_scales_tensor_host = LayoutTensor[
-        scales_dtype, a_scales_5d_layout, MutAnyOrigin
-    ](
-        a_scales_host_ptr,
-        RuntimeLayout[a_scales_5d_layout].row_major(
-            IndexList[5](
-                Int(a_scales_host.dim(0)),
-                Int(a_scales_host.dim(1)),
-                Int(a_scales_host.dim(2)),
-                Int(a_scales_host.dim(3)),
-                Int(a_scales_host.dim(4)),
-            ),
-        ),
-    )
-
-    var b_scales_tensor_host = LayoutTensor[
-        scales_dtype, b_scales_5d_layout, MutAnyOrigin
-    ](
-        b_scales_host_ptr,
-        RuntimeLayout[b_scales_5d_layout].row_major(
-            IndexList[5](
-                Int(b_scales_host.dim(0)),
-                Int(b_scales_host.dim(1)),
-                Int(b_scales_host.dim(2)),
-                Int(b_scales_host.dim(3)),
-                Int(b_scales_host.dim(4)),
-            ),
-        ),
-    )
-
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     for idx0 in range(align_up(m.value(), SF_MN_GROUP_SIZE)):
         for idx1 in range(
@@ -241,11 +190,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    a_scales_tensor_host, idx0, idx1, scale_value
+                    a_scales_host, idx0, idx1, scale_value
                 )
             else:
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    a_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
+                    a_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
     for idx0 in range(align_up(n.value(), SF_MN_GROUP_SIZE)):
@@ -259,11 +208,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    b_scales_tensor_host, idx0, idx1, scale_value
+                    b_scales_host, idx0, idx1, scale_value
                 )
             else:
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    b_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
+                    b_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
     # Move operands to the Device

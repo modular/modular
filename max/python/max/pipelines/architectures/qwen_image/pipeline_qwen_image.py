@@ -21,7 +21,7 @@ Key differences from Flux2Pipeline:
 - 3D position IDs (T, H, W) instead of 4D (T, H, W, L)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Literal
 
 import numpy as np
@@ -33,7 +33,7 @@ from max.graph.ops import shape_to_tensor
 from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
-from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
+from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
@@ -43,18 +43,59 @@ from .model import QwenImageTransformerModel
 
 
 @dataclass(kw_only=True)
-class QwenImageModelInputs(PixelModelInputs):
-    """QwenImage-specific PixelModelInputs.
+class QwenImageModelInputs:
+    """QwenImage execution inputs.
 
     QwenImage is not guidance-distilled — use ``--true-cfg-scale``
     (not ``--guidance-scale``) to control classifier-free guidance.
     """
 
+    tokens: TokenBuffer
+    tokens_2: TokenBuffer | None = None
+    negative_tokens: TokenBuffer | None = None
+    negative_tokens_2: TokenBuffer | None = None
+    timesteps: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    sigmas: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    latents: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    latent_image_ids: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    num_warmup_steps: int = 0
+    input_image: npt.NDArray[np.uint8] | None = None
+    strength: float = 0.6
+    cfg_normalization: bool = False
+    cfg_truncation: float = 1.0
     width: int = 1024
     height: int = 1024
     true_cfg_scale: float = 4.0
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
+
+    @classmethod
+    def kwargs_from_context(cls, context: PixelContext) -> dict[str, Any]:
+        """Build kwargs from PixelContext using matching dataclass fields."""
+        kwargs: dict[str, Any] = {}
+        for dataclass_field in fields(cls):
+            name = dataclass_field.name
+            if not hasattr(context, name):
+                continue
+            value = getattr(context, name)
+            if value is None:
+                if dataclass_field.default is not MISSING:
+                    kwargs[name] = dataclass_field.default
+                elif dataclass_field.default_factory is not MISSING:
+                    kwargs[name] = dataclass_field.default_factory()
+                else:
+                    kwargs[name] = None
+            else:
+                kwargs[name] = value
+        return kwargs
 
 
 @dataclass
@@ -109,7 +150,9 @@ class QwenImagePipeline(DiffusionPipeline):
 
     def prepare_inputs(self, context: PixelContext) -> QwenImageModelInputs:  # type: ignore[override]
         """Convert a PixelContext into QwenImageModelInputs."""
-        return QwenImageModelInputs.from_context(context)
+        return QwenImageModelInputs(
+            **QwenImageModelInputs.kwargs_from_context(context)
+        )
 
     def _compile_runtime_helpers(self) -> None:
         """Compile the core runtime helper graphs used by QwenImage."""

@@ -13,6 +13,7 @@
 
 from std.io.io import _printf
 from std.math import erf
+from std.math.uutils import ufloordiv, udivmod
 from std.sys.info import is_nvidia_gpu, simd_width_of
 
 import std.gpu.primitives.warp as warp
@@ -21,11 +22,11 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
+    thread_idx,
     block_dim,
     block_idx,
     global_idx,
     lane_id,
-    thread_idx,
     warp_id,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -116,7 +117,7 @@ def erf_elementwise(
 ) raises:
     # Each thread will process 4 * simd_width elements.
     comptime granularity = 4 * simd_width_of[DType.float32]()
-    var tid = granularity * Int(global_idx.x)
+    var tid = granularity * global_idx.x
 
     @always_inline
     @__copy_capture(tid)
@@ -163,7 +164,7 @@ def test_erf_elementwise_sm90() raises:
 def erf_kernel(buf: UnsafePointer[Float32, MutAnyOrigin], len: Int):
     var tid = thread_idx.x + block_dim.y * block_idx.y
 
-    if tid >= UInt(len):
+    if tid >= len:
         return
 
     buf[tid] = erf(buf[tid])
@@ -309,13 +310,13 @@ def gemm(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i, j = divmod(thread_idx.x, TILE_SZ_B)
+        var i, j = udivmod(thread_idx.x, TILE_SZ_B)
 
         # Load the B matrix into shared memory.
         var b_val: Float32
-        var r = tile_idx * TILE_SZ_RATIO + Int(i)
-        if r < k and col + j < UInt(n):
-            b_val = get_b(r, Int(col + j))
+        var r = tile_idx * TILE_SZ_RATIO + i
+        if r < k and col + j < n:
+            b_val = get_b(r, col + j)
         else:
             b_val = 0
         b_shared[i * TILE_SZ_B + j] = b_val
@@ -326,8 +327,8 @@ def gemm(
         comptime for idx in range(TILE_SZ_RATIO):
             # Load the A tile into the register.
             var a_reg: Float32
-            if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
-                a_reg = get_a(Int(row), tile_idx * TILE_SZ_RATIO + idx)
+            if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
+                a_reg = get_a(row, tile_idx * TILE_SZ_RATIO + idx)
             else:
                 a_reg = 0
 
@@ -340,8 +341,8 @@ def gemm(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < UInt(m) and col + UInt(out_idx) < UInt(n):
-            set_c(Int(row), Int(col + UInt(out_idx)), c_reg.load(out_idx))
+        if row < m and col + out_idx < n:
+            set_c(row, col + out_idx, c_reg.load(out_idx))
 
 
 def _verify_gemm(asm: StringSlice) raises:
@@ -480,7 +481,7 @@ def block_reduce(val: Float32) -> Float32:
 
     return warp_sum_reduce(
         shared.load(lane) if thread_idx.x
-        < block_dim.x // UInt(WARP_SIZE) else 0
+        < ufloordiv(block_dim.x, WARP_SIZE) else 0
     )
 
 

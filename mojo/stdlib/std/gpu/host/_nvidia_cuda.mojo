@@ -14,7 +14,7 @@
 from std.ffi import external_call
 from std.gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from std.gpu.host.device_context import (
-    _ConstCharPtr,
+    _CString,
     _checked,
     _DeviceBufferPtr,
     _DeviceContextPtr,
@@ -54,9 +54,7 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
     _checked(
         external_call[
             "AsyncRT_DeviceContext_cuda_context",
-            _ConstCharPtr,
-            UnsafePointer[CUcontext, origin_of(result)],
-            _DeviceContextPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             ctx._handle,
@@ -74,9 +72,7 @@ def CUDA(stream: DeviceStream) raises -> CUstream:
     _checked(
         external_call[
             "AsyncRT_DeviceStream_cuda_stream",
-            _ConstCharPtr,
-            UnsafePointer[CUstream, origin_of(result)],
-            _DeviceStreamPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             stream._handle,
@@ -93,9 +89,7 @@ def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
     _checked(
         external_call[
             "AsyncRT_DeviceFunction_cuda_module",
-            _ConstCharPtr,
-            UnsafePointer[CUmodule, origin_of(result)],
-            _DeviceFunctionPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             func._handle,
@@ -108,9 +102,7 @@ def CUDA_get_current_context() raises -> CUcontext:
     var result = CUcontext()
     # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
     _checked(
-        external_call[
-            "AsyncRT_DeviceContext_cuda_current_context", _ConstCharPtr
-        ](
+        external_call["AsyncRT_DeviceContext_cuda_current_context", _CString[]](
             UnsafePointer(to=result),
         )
     )

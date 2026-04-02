@@ -16,7 +16,7 @@ from std.os import abort
 from std.random import random_float64
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from std.gpu import WARP_SIZE, block_dim, global_idx, grid_dim
+from std.gpu import WARP_SIZE, global_idx
 from std.gpu.host import DeviceContext
 from layout import *
 from layout._utils import ManagedLayoutTensor
@@ -59,16 +59,13 @@ def matmul_naive[
     var x = global_idx.x
     var y = global_idx.y
 
-    if Int(x) >= mat_c.shape[0]() or Int(y) >= mat_c.shape[1]():
+    if x >= mat_c.shape[0]() or y >= mat_c.shape[1]():
         return
 
-    var accum = mat_c[Int(x), Int(y)]
+    var accum = mat_c[x, y]
     for i in range(mat_a.shape[1]()):
-        accum += (
-            mat_a[Int(x), i].cast[out_type]()
-            * mat_b[i, Int(y)].cast[out_type]()
-        )
-    mat_c[Int(x), Int(y)] = accum
+        accum += mat_a[x, i].cast[out_type]() * mat_b[i, y].cast[out_type]()
+    mat_c[x, y] = accum
 
 
 def test_layout_mma[

@@ -31,19 +31,19 @@ def semaphore_vector_reduce[
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks, Int(tid))
+    var sema = Semaphore(locks, tid)
 
     sema.fetch()
     # for each block the partition id is the same as block_idx
 
-    sema.wait(Int(block_idx))
+    sema.wait(block_idx)
 
-    c_ptr[tid] += a_ptr[block_idx * UInt(N) + tid]
+    c_ptr[tid] += a_ptr[block_idx * N + tid]
     var lx: Int
-    if num_parts == Int(block_idx + 1):
+    if num_parts == block_idx + 1:
         lx = 0
     else:
-        lx = Int(block_idx + 1)
+        lx = block_idx + 1
     sema.release(Int32(lx))
 
 
@@ -113,23 +113,23 @@ def semaphore_matrix_reduce[
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks, Int(tid))
+    var sema = Semaphore(locks, tid)
 
     sema.fetch()
 
-    sema.wait(Int(block_idx))
+    sema.wait(block_idx)
     for x in range(tid, M * N, block_dim.x):
         var row = x // N
         var col = x % N
         c_ptr[row * N + col] += a_ptr[
-            row * (N * num_parts) + Int(block_idx * UInt(num_parts) + UInt(col))
+            row * (N * num_parts) + (block_idx * num_parts + col)
         ]
 
     var lx: Int
-    if num_parts == Int(block_idx + 1):
+    if num_parts == block_idx + 1:
         lx = 0
     else:
-        lx = Int(block_idx + 1)
+        lx = block_idx + 1
     sema.release(Int32(lx))
 
 

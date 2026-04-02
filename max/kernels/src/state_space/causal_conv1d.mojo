@@ -55,22 +55,15 @@ Activation Support:
     - SiLU: Sigmoid Linear Unit activation (x * sigmoid(x))
 """
 
-from std.collections import OptionalReg
-from std.collections.string import StaticString
 from std.math import exp
-from std.sys.info import simd_width_of
 
 from std.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
 from std.gpu import (
-    block_dim,
+    block_dim_uint as block_dim,
     block_idx_int as block_idx,
     thread_idx_int as thread_idx,
 )
 from layout import TensorLayout, TileTensor
-from std.memory import UnsafePointer
-from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 
 
 # ===----------------------------------------------------------------------=== #
@@ -161,8 +154,7 @@ def causal_conv1d_channel_first_fwd_cpu[
     # Parallelize across batch*channel combinations
     @parameter
     def process_bc(bc_idx: Int):
-        var b = bc_idx // dim
-        var c = bc_idx % dim
+        var b, c = divmod(bc_idx, dim)
 
         # Bounds checking
         if b >= batch or c >= dim:
@@ -296,8 +288,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
     # Parallelize across batch*channel combinations
     @parameter
     def process_bc(bc_idx: Int):
-        var b = bc_idx // dim
-        var c = bc_idx % dim
+        var b, c = divmod(bc_idx, dim)
 
         var weight_c_base_offset = UInt32(UInt32(c) * weight_c_stride)
 
@@ -1331,8 +1322,7 @@ def causal_conv1d_channel_last_fwd_gpu[
         if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
             var prev_row_2d: Int = batch_id * nSeqLen + prev_chunk_col * kNElts
             if prev_row_2d >= 0 and prev_row_2d < nBatches * nSeqLen:
-                var prev_batch: Int = prev_row_2d // nSeqLen
-                var prev_seq: Int = prev_row_2d % nSeqLen
+                var prev_batch, prev_seq = divmod(prev_row_2d, nSeqLen)
                 if (
                     prev_batch >= 0
                     and prev_batch < nBatches
@@ -1361,8 +1351,7 @@ def causal_conv1d_channel_last_fwd_gpu[
                 batch_id * nSeqLen + current_chunk_col * kNElts
             )
             if current_row_2d >= 0 and current_row_2d < nBatches * nSeqLen:
-                var current_batch: Int = current_row_2d // nSeqLen
-                var current_seq: Int = current_row_2d % nSeqLen
+                var current_batch, current_seq = divmod(current_row_2d, nSeqLen)
                 if (
                     current_batch >= 0
                     and current_batch < nBatches
@@ -1518,8 +1507,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
         if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
             var prev_row_2d: Int = batch_id * nSeqLen + prev_chunk_col * kNElts
             if prev_row_2d >= 0 and prev_row_2d < nBatches * nSeqLen:
-                var prev_batch: Int = prev_row_2d // nSeqLen
-                var prev_seq: Int = prev_row_2d % nSeqLen
+                var prev_batch, prev_seq = divmod(prev_row_2d, nSeqLen)
                 if (
                     prev_batch >= 0
                     and prev_batch < nBatches
@@ -1548,8 +1536,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
                 batch_id * nSeqLen + current_chunk_col * kNElts
             )
             if current_row_2d >= 0 and current_row_2d < nBatches * nSeqLen:
-                var current_batch: Int = current_row_2d // nSeqLen
-                var current_seq: Int = current_row_2d % nSeqLen
+                var current_batch, current_seq = divmod(current_row_2d, nSeqLen)
                 if (
                     current_batch >= 0
                     and current_batch < nBatches

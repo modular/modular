@@ -61,8 +61,8 @@ def bfs_kernel(
 
     barrier()
 
-    var grid_size = Int(grid_dim.x) * Int(block_dim.x)
-    var tid = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var grid_size = grid_dim.x * block_dim.x
+    var tid = block_idx.x * block_dim.x + thread_idx.x
 
     var i = tid
     while i < num_prev_frontier:
@@ -114,12 +114,12 @@ def bfs_kernel(
     var curr_frontier_start_idx = Int(start_idx_ptr[0])
     var local_frontier_size = Int(num_curr_frontier_s[0])
 
-    var commit_tid = Int(thread_idx.x)
+    var commit_tid = thread_idx.x
     while commit_tid < local_frontier_size:
         curr_frontier[curr_frontier_start_idx + commit_tid] = curr_frontier_s[
             commit_tid
         ]
-        commit_tid += Int(block_dim.x)
+        commit_tid += block_dim.x
 
 
 def main() raises:
@@ -183,13 +183,13 @@ def main() raises:
         h_zero.free()
 
         ctx.enqueue_function_experimental[bfs_kernel](
-            d_src_ptrs.unsafe_ptr(),
-            d_dst.unsafe_ptr(),
-            d_level.unsafe_ptr(),
-            d_prev_frontier.unsafe_ptr(),
-            d_curr_frontier.unsafe_ptr(),
+            d_src_ptrs,
+            d_dst,
+            d_level,
+            d_prev_frontier,
+            d_curr_frontier,
             num_prev_frontier,
-            d_num_curr_frontier.unsafe_ptr(),
+            d_num_curr_frontier,
             curr_level,
             grid_dim=(fixed_grid_size, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),

@@ -20,21 +20,20 @@ from std.gpu.primitives.cluster import (
     cluster_sync_relaxed,
     elect_one_sync,
 )
-from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.device_context import DeviceBuffer
 from std.gpu import (
     block_id_in_cluster,
     block_idx_int as block_idx,
-    grid_dim,
+    grid_dim_uint as grid_dim,
     thread_idx_int as thread_idx,
 )
-from std.gpu import warp_id
+from std.gpu import warp_id_uint as warp_id
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import (
     AddressSpace,
@@ -51,9 +50,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    row_major,
 )
-from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
@@ -62,21 +59,15 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
-from std.memory import stack_allocation
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import block_swizzle
-from ..tile_scheduler import MatmulSchedule, TileScheduler, RasterOrder
+from ..tile_scheduler import RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
-from ....structuring import (
-    SMemTile as LTSMemTile,  # LayoutTensor-based (for compatibility)
-    RegTile,
-    PipelineBarrier,
-    eval,
-)
+from ....structuring import SMemTile as LTSMemTile, RegTile
 
 # Shared types from SM100 tile_types
 from structured_kernels.tile_types import (
@@ -95,7 +86,6 @@ from .tile_loader import (
     TileLoader,
     BarrierHandler,
     TMABarrierHandler,
-    CPAsyncBarrierHandler,
 )
 from .matmul_output import MatmulTileWriter
 
@@ -1233,7 +1223,7 @@ struct HopperMatmulSM90Kernel[
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
         comptime K = Self.b_layout.shape[1].value()
-        comptime num_k_iters = K // Self.BK
+        comptime num_k_iters = ceildiv(K, Self.BK)
 
         # FIXME: this seems to trip some logits tests
         # comptime assert (K % Self.BK) == 0, "K must be divisible by BK"

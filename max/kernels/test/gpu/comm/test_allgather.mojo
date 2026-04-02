@@ -21,15 +21,10 @@ import comm.vendor.ccl as vendor_ccl
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Idx,
-    Layout,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout._utils import ManagedLayoutTensor
 from std.testing import assert_equal, assert_true
-from std.utils.index import IndexList
 
 
 def all_gather_test[
@@ -189,15 +184,7 @@ def _verify_results[
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var length = lengths[input_idx]
-            var host_output_managed = ManagedLayoutTensor[
-                dtype, Layout(UNKNOWN_VALUE)
-            ](
-                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                    IndexList[1](length)
-                ),
-                list_of_ctx[device_idx],
-            )
-            var host_output = host_output_managed.tensor[update=False]().ptr
+            var host_output = alloc[Scalar[dtype]](length)
 
             # Copy output back to host.
             list_of_ctx[device_idx].enqueue_copy(
@@ -226,6 +213,8 @@ def _verify_results[
                         expected,
                     )
                     raise e^
+
+            host_output.free()
 
 
 def main() raises -> None:

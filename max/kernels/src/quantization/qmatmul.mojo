@@ -15,7 +15,12 @@ from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 
 from std.algorithm import sync_parallelize, tile
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+)
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.arch.cpu.vnni_intrinsics import (
@@ -44,9 +49,13 @@ comptime K_BATCH_SIZE = 512
 def matmul_qint4_pack_b[
     group_size: Int
 ](
-    b: LayoutTensor[DType.uint8, ...],
-    b_rot: LayoutTensor[mut=True, DType.uint8, ...],
+    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    b_rot_tt: TileTensor[
+        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
 ) raises:
+    var b = b_tt.to_layout_tensor()
+    var b_rot = b_rot_tt.to_layout_tensor()
     comptime assert b.rank == 2
     comptime assert b_rot.rank == 2
     comptime n_tiles = 2
@@ -1251,17 +1260,18 @@ def _matmul_qint4[
 
 def matmul_qint4[
     group_size: Int,
-    b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[
-        DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    c: LayoutTensor[
+    a_tt: TileTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
+    var c = c_tt.to_layout_tensor()
+
     @parameter
     def kernel_dispatch[kernel: _MatmulQInt4Kernel]():
         return _matmul_qint4[

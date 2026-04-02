@@ -58,8 +58,8 @@ For example, we accept contributions to the following sections where you can
 find specific contribution guidelines:
 
 - [Mojo standard library](mojo/CONTRIBUTING.md)
-- [MAX API and models](max/CONTRIBUTING.md)
-- [MAX AI kernels](max/kernels/CONTRIBUTING.md)
+- [MAX API and models](/max/CONTRIBUTING.md)
+- [MAX AI kernels](/max/kernels/CONTRIBUTING.md)
 - [Code examples](examples#contributing)
 - [Mojo documentation](mojo/docs#contributing)
 
@@ -144,22 +144,20 @@ pull request:
    - This repo (`https://github.com/modular/modular`) is known as the upstream
       repo. In Git terminology, it's the *upstream remote*.
    - Your fork on GitHub is known as *origin* (also remote).
-   - Your local clone is stored on our computer.
+   - Your local clone is stored on your computer.
 
      Because a fork can diverge from the upstream repo it was forked from, it is
-     crucial to configure our local clone to track upstream changes:
+     crucial to configure your local clone to track upstream changes:
 
      ```bash
      git remote add upstream <git@github.com>:modular/modular.git
-
-     ```text
+     ```
 
      Then sync your fork to the latest code from upstream:
 
      ```bash
      git pull --rebase upstream
-
-     ```text
+     ```
 
 2. Create a branch off `main` to work on your change:
 
@@ -181,7 +179,7 @@ pull request:
 
 3. Create a pull request:
 
-   When you're code is ready, create a pull request into the `main` branch.
+   When your code is ready, create a pull request into the `main` branch.
 
    First push the local changes to your origin on GitHub:
 
@@ -207,8 +205,8 @@ pull request:
 
    - Add a short commit title describing the change.
    - Add a detailed commit description that includes rationalization for the
-      change and/or explanation of the problem that it solves, with a link to
-      any relevant GitHub issues.
+     change and/or explanation of the problem that it solves, with a link to any
+     relevant GitHub issues.
 
      Click **Create pull request**.
 
@@ -279,16 +277,16 @@ website), a day or two after it's merged.
 1. Proposals
 
    - Proposals take more time for the team to review, discuss, and make sure
-     this
-is in line with the overall strategy and vision for the standard library. These
-will get discussed in the team's weekly design meetings internally and feedback
-will be communicated back on the relevant proposal. As a team, we'll ensure
-these get reviewed and discussed within 6 weeks of submission.
+     this is in line with the overall strategy and vision for the standard
+     library. These will get discussed in the team's weekly design meetings
+     internally and feedback will be communicated back on the relevant proposal.
+     As a team, we'll ensure these get reviewed and discussed within 6 weeks of
+     submission.
 
 ### Exceptions
 
 While we strive our best to adhere to these timelines, there may be occasional
-delays due any of the following:
+delays due to any of the following:
 
 - High volume of contributions.
 - Maintainers' availability (e.g. holidays, team events).

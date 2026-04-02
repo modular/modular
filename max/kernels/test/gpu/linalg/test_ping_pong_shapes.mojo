@@ -17,10 +17,9 @@ Documents known limitations:
 - BF16: Works with all M values
 """
 
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from std.testing import assert_equal
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 from std.testing import assert_true
 from std.random import random_float64
@@ -43,27 +42,28 @@ def test_shape[
         for i in range(K * N):
             host_b[i] = random_float64(-0.5, 0.5).cast[in_dtype]()
 
-    var a_tensor = LayoutTensor[in_dtype, Layout.row_major(M, K)](device_a)
-    var b_tensor = LayoutTensor[in_dtype, Layout.row_major(N, K)](device_b)
-    var c_tensor = LayoutTensor[DType.float32, Layout.row_major(M, N)](device_c)
+    var a_tt = TileTensor(device_a, row_major[M, K]())
+    var b_tt = TileTensor(device_b, row_major[N, K]())
+    var c_tt = TileTensor(device_c, row_major[M, N]())
 
     ctx.enqueue_memset(device_c, 0)
     ctx.enqueue_memset(device_c_ref, 0)
 
     # Run kernel
     ping_pong_matmul[enable_swizzle=enable_swizzle](
-        a_tensor, b_tensor, c_tensor, ctx
+        a_tt.to_layout_tensor(),
+        b_tt.to_layout_tensor(),
+        c_tt.to_layout_tensor(),
+        ctx,
     )
 
     # Compute reference
-    var c_ref_tensor = LayoutTensor[DType.float32, Layout.row_major(M, N)](
-        device_c_ref
-    )
+    var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor,
-        a_tensor,
-        b_tensor,
+        c_ref_tt.to_layout_tensor(),
+        a_tt.to_layout_tensor(),
+        b_tt.to_layout_tensor(),
         c_row_major=True,
         transpose_b=True,
     )

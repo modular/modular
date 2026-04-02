@@ -16,7 +16,7 @@ from std.sys import simd_width_of
 
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx_int as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -54,7 +54,7 @@ def async_copy_kernel[
     BM: Int,
     BN: Int,
 ](input: LayoutTensor[DType.float32, input_layout, MutAnyOrigin]):
-    var input_tile = input.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var input_tile = input.tile[BM, BN](block_idx.y, block_idx.x)
 
     var smem_tile = LayoutTensor[
         DType.float32,
@@ -171,14 +171,14 @@ def swizzle_copy[
 
     copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=True](
         a_smem_tile.vectorize[1, simd_size](),
-        a.tile[BM, BK](Int(block_idx.x), 0).vectorize[1, simd_size](),
+        a.tile[BM, BK](block_idx.x, 0).vectorize[1, simd_size](),
     )
 
     async_copy_wait_all()
     barrier()
 
     # Write current stage to global memory.
-    var b_gmem_tile = b.tile[BM, BK](Int(block_idx.x), 0)
+    var b_gmem_tile = b.tile[BM, BK](block_idx.x, 0)
     var b_gmem_frag = b_gmem_tile.vectorize[1, simd_size]().distribute[
         thread_layout
     ](thread_idx.x)

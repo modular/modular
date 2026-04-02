@@ -15,13 +15,19 @@
 from std.math import sqrt
 from std.memory import alloc
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from std.random import rand, Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_gpu
 from std.testing import TestSuite, assert_almost_equal
 
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 
 
 def main() raises:
@@ -95,7 +101,6 @@ def run_rms_norm_fused_residual_gpu[
 
     # Create device LayoutTensors
     comptime layout_nd = Layout.row_major[rank]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     var input_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
         input_d.unsafe_ptr(),
@@ -113,10 +118,7 @@ def run_rms_norm_fused_residual_gpu[
         residual_output_d.unsafe_ptr(),
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var gamma_tensor = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        gamma_d.unsafe_ptr(),
-        RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
-    )
+    var gamma_tensor = TileTensor(gamma_d.unsafe_ptr(), row_major(Idx(cols)))
 
     var epsilon = Scalar[dtype](1e-5)
     var weight_offset = Scalar[dtype](0.0)

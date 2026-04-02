@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import IntTuple, RuntimeTuple, UNKNOWN_VALUE
-from layout.int_tuple import crd2idx as crd2idx_int_tuple
 from layout.int_tuple import fill_like
 from layout.int_tuple import idx2crd as idx2crd_int_tuple
 from layout.int_tuple import shape_div as shape_div_int_tuple

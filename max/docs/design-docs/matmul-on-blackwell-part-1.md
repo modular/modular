@@ -378,12 +378,12 @@ Blackwell architecture
 To give the reader’s a sense of the magnitude of the differences, here’s a
 table comparing peer-to-peer performance:
 
-| Metric | A100 (Baseline) | H100 | H200 | B100 | B200 |
-| --- | --- | --- | --- | --- | --- |
-| **Peak Memory Bandwidth** | 1.0x | 1.6x | 2.4x | 3.9x | 3.9x |
-| **NVLink Bandwidth** | 1.0x | 1.5x | 1.5x | 3.0x | 3.0x |
-| **Peak BF16 TFLOPS (dense)** | 1.0x | 3.2x | 3.2x | 5.6x | 7.2x |
-| **Peak FP8 TFLOPS (dense)** | N/A | 1.0x | 1.0x | 1.8x | 2.3x |
+| Metric                       | A100 (Baseline) | H100 | H200 | B100 | B200 |
+|------------------------------|-----------------|------|------|------|------|
+| **Peak Memory Bandwidth**    | 1.0x            | 1.6x | 2.4x | 3.9x | 3.9x |
+| **NVLink Bandwidth**         | 1.0x            | 1.5x | 1.5x | 3.0x | 3.0x |
+| **Peak BF16 TFLOPS (dense)** | 1.0x            | 3.2x | 3.2x | 5.6x | 7.2x |
+| **Peak FP8 TFLOPS (dense)**  | N/A             | 1.0x | 1.0x | 1.8x | 2.3x |
 
 As the GPU becomes more powerful in terms of FLOPs/s and bandwidth, the
 programming model to achieve this peak performance also evolves. Below is a

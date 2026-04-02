@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.hashlib import default_comp_time_hasher
 from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
@@ -27,7 +26,6 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
@@ -37,15 +35,10 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     set_batched_scale_factor,
 )
-from std.random import random_ui64
-from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
     Coord,
     CoordLike,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -159,13 +152,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         b_scales_device.unsafe_ptr(), b_scales_shape
     )
 
-    # LayoutTensors for reference matmul (vendor_blas)
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     # Initialize matmul operands
     if simple_init():
         for b in range(batch.value()):
@@ -182,55 +168,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
         rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
 
-    comptime a_scales_6d_layout = Layout.row_major(
-        a_scales_tensor.static_shape[0],
-        a_scales_tensor.static_shape[1],
-        a_scales_tensor.static_shape[2],
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    comptime b_scales_6d_layout = Layout.row_major(
-        b_scales_tensor.static_shape[0],
-        b_scales_tensor.static_shape[1],
-        b_scales_tensor.static_shape[2],
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
-    var a_scales_tensor_host = LayoutTensor[
-        scales_dtype, a_scales_6d_layout, MutAnyOrigin
-    ](
-        a_scales_host_ptr,
-        RuntimeLayout[a_scales_6d_layout].row_major(
-            IndexList[6](
-                Int(a_scales_host.dim(0)),
-                Int(a_scales_host.dim(1)),
-                Int(a_scales_host.dim(2)),
-                Int(a_scales_host.dim(3)),
-                Int(a_scales_host.dim(4)),
-                Int(a_scales_host.dim(5)),
-            ),
-        ),
-    )
-
-    var b_scales_tensor_host = LayoutTensor[
-        scales_dtype, b_scales_6d_layout, MutAnyOrigin
-    ](
-        b_scales_host_ptr,
-        RuntimeLayout[b_scales_6d_layout].row_major(
-            IndexList[6](
-                Int(b_scales_host.dim(0)),
-                Int(b_scales_host.dim(1)),
-                Int(b_scales_host.dim(2)),
-                Int(b_scales_host.dim(3)),
-                Int(b_scales_host.dim(4)),
-                Int(b_scales_host.dim(5)),
-            ),
-        ),
-    )
-
     rand(a_scales_host.ptr, a_scales_host.num_elements())
     rand(b_scales_host.ptr, b_scales_host.num_elements())
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
@@ -241,13 +178,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K),
                 SF_VECTOR_SIZE,
             ):
-                set_batched_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    a_scales_tensor_host,
-                    batch_idx,
-                    row_idx,
-                    col_idx,
-                    Scalar[scales_dtype](0.0),
-                )
+                if row_idx >= m.value() or col_idx >= k.value():
+                    set_batched_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        a_scales_host,
+                        batch_idx,
+                        row_idx,
+                        col_idx,
+                        Scalar[scales_dtype](0.0),
+                    )
 
     for batch_idx in range(batch.value()):
         for row_idx in range(align_up(n.value(), SF_MN_GROUP_SIZE)):
@@ -258,7 +196,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             ):
                 if row_idx >= n.value() or col_idx >= k.value():
                     set_batched_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                        b_scales_tensor_host,
+                        b_scales_host,
                         batch_idx,
                         row_idx,
                         col_idx,
@@ -300,96 +238,56 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    @parameter
-    def _reshape_to_2d[layout: Layout]() -> Layout:
-        return Layout.row_major(
-            layout.shape[1].value(),
-            layout.shape[2].value(),
+    var a_2d_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
+    var b_2d_shape = row_major(Coord(n, Idx[KType.static_value // 2]()))
+    var c_2d_shape = row_major(Coord(m, n))
+    var a_scales_5d_shape = row_major(
+        Coord(
+            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
         )
-
-    @parameter
-    def _reshape_to_5d[layout: Layout]() -> Layout:
-        return Layout.row_major(
-            layout.shape[1].value(),
-            layout.shape[2].value(),
-            SF_ATOM_M[0],
-            SF_ATOM_M[1],
-            SF_ATOM_K,
+    )
+    var b_scales_5d_shape = row_major(
+        Coord(
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
         )
+    )
 
-    def _convert_to_none_batched_tensor[
-        dtype: DType,
-        layout: Layout,
-        //,
-        reshape_layout: Layout,
-    ](
-        tensor: LayoutTensor[dtype, layout, ...],
-        batch_idx: Int,
-    ) -> LayoutTensor[
-        tensor.dtype,
-        reshape_layout,
-        tensor.origin,
-        address_space=tensor.address_space,
-    ]:
-        comptime if tensor.rank == 3:
-            return LayoutTensor[
-                dtype, reshape_layout, address_space=tensor.address_space
-            ](
-                tensor.ptr + batch_idx * tensor.dim(1) * tensor.dim(2),
-                RuntimeLayout[reshape_layout].row_major(
-                    IndexList[2](
-                        tensor.dim(1),
-                        tensor.dim(2),
-                    ),
-                ),
-            )
-        else:
-            comptime assert tensor.rank == 6, "expecting rank 3 for tensor"
-            return LayoutTensor[
-                dtype, reshape_layout, address_space=tensor.address_space
-            ](
-                tensor.ptr
-                + batch_idx
-                * tensor.dim(1)
-                * tensor.dim(2)
-                * SF_ATOM_M[0]
-                * SF_ATOM_M[1]
-                * SF_ATOM_K,
-                RuntimeLayout[reshape_layout].row_major(
-                    IndexList[5](
-                        tensor.dim(1),
-                        tensor.dim(2),
-                        tensor.dim(3),
-                        tensor.dim(4),
-                        tensor.dim(5),
-                    ),
-                ),
-            )
+    var a_batch_stride = m.value() * (KType.static_value // 2)
+    var b_batch_stride = n.value() * (KType.static_value // 2)
+    var c_batch_stride = m.value() * n.value()
+    var a_scales_batch_stride = a_scales_5d_shape.product()
+    var b_scales_batch_stride = b_scales_5d_shape.product()
 
     for b in range(batch.value()):
-        var a_lt_2d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_2d[a_lt.layout]()
-        ](a_lt, b)
-        var b_lt_2d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_2d[b_lt.layout]()
-        ](b_lt, b)
-        var c_ref_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_2d[c_ref_tensor_lt.layout]()
-        ](c_ref_tensor_lt, b)
-        var a_scales_tensor_5d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_5d[a_scales_lt.layout]()
-        ](a_scales_lt, b)
-        var b_scales_tensor_5d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_5d[b_scales_lt.layout]()
-        ](b_scales_lt, b)
+        var a_2d = TileTensor(a_tensor.ptr + b * a_batch_stride, a_2d_shape)
+        var b_2d = TileTensor(b_tensor.ptr + b * b_batch_stride, b_2d_shape)
+        var c_ref_2d = TileTensor(
+            c_ref_tensor.ptr + b * c_batch_stride, c_2d_shape
+        )
+        var a_scales_5d = TileTensor(
+            a_scales_tensor.ptr + b * a_scales_batch_stride,
+            a_scales_5d_shape,
+        )
+        var b_scales_5d = TileTensor(
+            b_scales_tensor.ptr + b * b_scales_batch_stride,
+            b_scales_5d_shape,
+        )
 
         vendor_blas.matmul(
             ctx,
-            c_ref_tensor_2d,
-            a_lt_2d,
-            b_lt_2d,
-            a_scales=a_scales_tensor_5d.get_immutable(),
-            b_scales=b_scales_tensor_5d.get_immutable(),
+            c_ref_2d,
+            a_2d,
+            b_2d,
+            a_scales=a_scales_5d,
+            b_scales=b_scales_5d,
             transpose_b=transpose_b,
             c_row_major=True,
         )

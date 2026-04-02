@@ -35,24 +35,24 @@ The table below lists the various Mojo operators, along with their order of
 precedence and associativity (also referred to as grouping). This table lists
 operators from the highest precedence to the lowest precedence.
 
-| **Operators** | **Description** | **Associativity (Grouping)** |
-| ------------- | --------------- | ----------------- |
-| `()` | Parenthesized expression | Left to right |
-| `x[index]`, `x[index:index]` | Subscripting, slicing | Left to right |
-| `**` | Exponentiation | Right to left |
-| `+x`, `-x`, `~x` | Positive, negative, bitwise NOT | Right to left |
-| `*`, `@`, `/`, `//`, `%` | Multiplication, matrix multiplication, division, floor division, remainder | Left to right |
-| `+`, `-` | Addition and subtraction | Left to right |
-| `<<`, `>>` | Shifts | Left to right |
-| `&` | Bitwise AND | Left to right |
-| `^` | Bitwise XOR | Left to right |
-| `\|` | Bitwise OR | Left to right |
-| `in`, `not in`, `is`, `is not`, `<`, `<=`, `>`, `>=`, `!=`, `==` | Comparisons, membership tests, identity tests | Left to right |
-| `not x` | Boolean NOT | Right to left |
-| `x and y` | Boolean AND | Left to right |
-| `x or y` | Boolean OR | Left to right |
-| `a if condition else b`| Conditional expression | Right to left |
-| `:=` | Assignment expression (walrus operator) | Right to left |
+| **Operators**                                                    | **Description**                                                            | **Associativity (Grouping)** |
+|------------------------------------------------------------------|----------------------------------------------------------------------------|------------------------------|
+| `()`                                                             | Parenthesized expression                                                   | Left to right                |
+| `x[index]`, `x[index:index]`                                     | Subscripting, slicing                                                      | Left to right                |
+| `**`                                                             | Exponentiation                                                             | Right to left                |
+| `+x`, `-x`, `~x`                                                 | Positive, negative, bitwise NOT                                            | Right to left                |
+| `*`, `@`, `/`, `//`, `%`                                         | Multiplication, matrix multiplication, division, floor division, remainder | Left to right                |
+| `+`, `-`                                                         | Addition and subtraction                                                   | Left to right                |
+| `<<`, `>>`                                                       | Shifts                                                                     | Left to right                |
+| `&`                                                              | Bitwise AND                                                                | Left to right                |
+| `^`                                                              | Bitwise XOR                                                                | Left to right                |
+| `\|`                                                             | Bitwise OR                                                                 | Left to right                |
+| `in`, `not in`, `is`, `is not`, `<`, `<=`, `>`, `>=`, `!=`, `==` | Comparisons, membership tests, identity tests                              | Left to right                |
+| `not x`                                                          | Boolean NOT                                                                | Right to left                |
+| `x and y`                                                        | Boolean AND                                                                | Left to right                |
+| `x or y`                                                         | Boolean OR                                                                 | Left to right                |
+| `a if condition else b`                                          | Conditional expression                                                     | Right to left                |
+| `:=`                                                             | Assignment expression (walrus operator)                                    | Right to left                |
 
 Mojo supports the same operators as Python (plus a few extensions), and they
 have the same precedence levels. For example, the following arithmetic
@@ -970,10 +970,10 @@ applies. The supported unary operators and their corresponding methods are shown
 in the table below.
 
 | **Operator**    | **Dunder method** |
-| --------------- | ----------------- |
-| `+` positive    | `__pos__()` |
-| `-` negative    | `__neg__()` |
-| `~` bitwise NOT | `__invert__()`  |
+|-----------------|-------------------|
+| `+` positive    | `__pos__()`       |
+| `-` negative    | `__neg__()`       |
+| `~` bitwise NOT | `__invert__()`    |
 
 For each of these methods that you decide to implement, you should return either
 the original value if unchanged, or a new value representing the result of the
@@ -1018,21 +1018,21 @@ The table below lists the various binary arithmetic, shift, and bitwise
 operators and their corresponding normal, reflected, and in-place dunder
 methods.
 
-| **Operator** | **Normal** | **Reflected** | **In-place** |
-| ------------ | ---------- | ------------- | ------------ |
-| `+` addition | `__add__()` | `__radd__()` | `__iadd__()` |
-| `-` subtraction | `__sub__()`  | `__rsub__()`  | `__isub__()` |
-| `*` multiplication | `__mul__()`  | `__rmul__()`  | `__imul__()` |
-| `/` division | `__truediv__()`  | `__rtruediv__()`  | `__itruediv__()` |
-| `//` floor division | `__floordiv__()` | `__rfloordiv__()` | `__ifloordiv__()` |
-| `%` modulus/remainder | `__mod__()`  | `__rmod__()`  | `__imod__()` |
-| `**` exponentiation | `__pow__()`  | `__rpow__()`  | `__ipow__()` |
-| `@` matrix multiplication | `__matmul__()` | `__rmatmul__()` | `__imatmul__()` |
-| `<<` left shift | `__lshift__()` | `__rlshift__()` | `__ilshift__()` |
-| `>>` right shift | `__rshift__()` | `__rrshift__()` | `__irshift__()` |
-| `&` bitwise AND | `__and__()`  | `__rand__()`  | `__iand__()` |
-| `\|` bitwise OR | `__or__()`  | `__ror__()`  | `__ior__()`  |
-| `^` bitwise XOR | `__xor__()`  | `__rxor__()`  | `__ixor__()`  |
+| **Operator**              | **Normal**       | **Reflected**     | **In-place**      |
+|---------------------------|------------------|-------------------|-------------------|
+| `+` addition              | `__add__()`      | `__radd__()`      | `__iadd__()`      |
+| `-` subtraction           | `__sub__()`      | `__rsub__()`      | `__isub__()`      |
+| `*` multiplication        | `__mul__()`      | `__rmul__()`      | `__imul__()`      |
+| `/` division              | `__truediv__()`  | `__rtruediv__()`  | `__itruediv__()`  |
+| `//` floor division       | `__floordiv__()` | `__rfloordiv__()` | `__ifloordiv__()` |
+| `%` modulus/remainder     | `__mod__()`      | `__rmod__()`      | `__imod__()`      |
+| `**` exponentiation       | `__pow__()`      | `__rpow__()`      | `__ipow__()`      |
+| `@` matrix multiplication | `__matmul__()`   | `__rmatmul__()`   | `__imatmul__()`   |
+| `<<` left shift           | `__lshift__()`   | `__rlshift__()`   | `__ilshift__()`   |
+| `>>` right shift          | `__rshift__()`   | `__rrshift__()`   | `__irshift__()`   |
+| `&` bitwise AND           | `__and__()`      | `__rand__()`      | `__iand__()`      |
+| `\|` bitwise OR           | `__or__()`       | `__ror__()`       | `__ior__()`       |
+| `^` bitwise XOR           | `__xor__()`      | `__rxor__()`      | `__ixor__()`      |
 
 As an example, consider implementing support for all of the `+` operator dunder
 methods for a custom `MyInt` struct. This shows supporting adding two `MyInt`
@@ -1086,14 +1086,14 @@ trait, which defines only the "equal" and "not equal" comparison methods, with
 The supported comparison operators and their corresponding methods are shown in
 the table below.
 
-| **Operator** | **Dunder method** |
-| ------------ | ----------------- |
-| `==` equal | `__eq__()` |
-| `!=` not equal | `__ne__()` |
-| `<` less than | `__lt__()` |
-| `<=` less than or equal | `__le__()` |
-| `>` greater than | `__gt__()` |
-| `>=` greater than or equal | `__ge__()` |
+| **Operator**               | **Dunder method** |
+|----------------------------|-------------------|
+| `==` equal                 | `__eq__()`        |
+| `!=` not equal             | `__ne__()`        |
+| `<` less than              | `__lt__()`        |
+| `<=` less than or equal    | `__le__()`        |
+| `>` greater than           | `__gt__()`        |
+| `>=` greater than or equal | `__ge__()`        |
 
 As an example, consider implementing support for all of the comparison operator
 dunder methods for a custom `MyInt` struct by relying on the default

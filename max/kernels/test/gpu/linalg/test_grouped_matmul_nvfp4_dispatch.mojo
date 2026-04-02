@@ -19,7 +19,6 @@ on (N, K) shape. Verifies correctness against vendor_blas reference for:
 - Various active expert counts, token patterns, and -1 expert IDs
 """
 from std.math import align_up, ceildiv
-from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
@@ -28,19 +27,13 @@ from internal_utils import assert_almost_equal
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
-from std.utils.index import Index, IndexList
 from std.random import random_ui64, seed, rand
 from std.builtin.simd import _convert_f32_to_float8_scalar
 from layout import (
     Coord,
-    CoordLike,
     Idx,
-    Layout,
-    LayoutTensor,
     RuntimeInt,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from linalg.fp4_utils import (
@@ -57,7 +50,6 @@ def _test_dispatch[
     num_experts: Int,
     N: Int,
     K: Int,
-    is_decode: Bool = True,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -68,7 +60,7 @@ def _test_dispatch[
 
     Follows the same reference-computation pattern as
     test_grouped_matmul_sm100_block_fp4.mojo but calls the dispatch function
-    which selects all config parameters based on (N, K) and is_decode.
+    which selects all config parameters based on (N, K).
     """
     seed(1234)
     comptime a_type = DType.uint8
@@ -228,60 +220,8 @@ def _test_dispatch[
     rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
     rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
 
-    # LayoutTensors for scale factor initialization (same pattern as full test)
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
-    comptime scales_5d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    comptime a_scales_5d_layout = scales_5d_layout[a_scales_lt.layout]
-    comptime b_scales_6d_layout = Layout.row_major(
-        b_scales_lt.layout.shape[0].value(),
-        b_scales_lt.layout.shape[1].value(),
-        b_scales_lt.layout.shape[2].value(),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
-    var a_scales_tensor_host = LayoutTensor[
-        scales_dtype, a_scales_5d_layout, MutAnyOrigin
-    ](
-        a_scales_host_ptr,
-        RuntimeLayout[a_scales_5d_layout].row_major(
-            IndexList[5](
-                Int(a_scales_host.dim(0)),
-                Int(a_scales_host.dim(1)),
-                Int(a_scales_host.dim(2)),
-                Int(a_scales_host.dim(3)),
-                Int(a_scales_host.dim(4)),
-            ),
-        ),
-    )
-
-    var b_scales_tensor_host = LayoutTensor[
-        scales_dtype, b_scales_6d_layout, MutAnyOrigin
-    ](
-        b_scales_host_ptr,
-        RuntimeLayout[b_scales_6d_layout].row_major(
-            IndexList[6](
-                Int(b_scales_host.dim(0)),
-                Int(b_scales_host.dim(1)),
-                Int(b_scales_host.dim(2)),
-                Int(b_scales_host.dim(3)),
-                Int(b_scales_host.dim(4)),
-                Int(b_scales_host.dim(5)),
-            ),
-        ),
-    )
+    var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
+    var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     # Initialize a_scales to 0, then set valid regions to power-of-2 values
     for i in range(a_scales_host.num_elements()):
@@ -320,25 +260,16 @@ def _test_dispatch[
             * Int(b_scales_host.dim(4))
             * Int(b_scales_host.dim(5))
         )
-        comptime b_scales_5d_layout = Layout.row_major(
-            b_scales_lt.layout.shape[1].value(),
-            b_scales_lt.layout.shape[2].value(),
-            SF_ATOM_M[0],
-            SF_ATOM_M[1],
-            SF_ATOM_K,
-        )
-        var b_scales_tensor_expert_slice = LayoutTensor[
-            scales_dtype, b_scales_5d_layout, MutAnyOrigin
-        ](
+        var b_scales_tensor_expert_slice = TileTensor(
             b_scales_host_ptr + e * expert_slice_size,
-            RuntimeLayout[b_scales_5d_layout].row_major(
-                IndexList[5](
-                    Int(b_scales_host.dim(1)),
-                    Int(b_scales_host.dim(2)),
-                    Int(b_scales_host.dim(3)),
-                    Int(b_scales_host.dim(4)),
-                    Int(b_scales_host.dim(5)),
-                ),
+            row_major(
+                Coord(
+                    Idx[n_groups](),
+                    Idx[k_groups](),
+                    Idx[SF_ATOM_M[0]](),
+                    Idx[SF_ATOM_M[1]](),
+                    Idx[SF_ATOM_K](),
+                )
             ),
         )
         for idx0 in range(align_up(N, SF_MN_GROUP_SIZE)):
@@ -401,7 +332,7 @@ def _test_dispatch[
     ).as_any_origin()
 
     # --- Call dispatch function (MOGG argument order) ---
-    grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b, is_decode=is_decode](
+    grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -412,22 +343,21 @@ def _test_dispatch[
         expert_ids_tensor,
         expert_scales_tt,
         num_active_experts,
+        total_num_tokens,
         ctx,
     )
     ctx.synchronize()
 
     # --- Reference computation via vendor_blas (per-expert) ---
-    comptime new_c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    comptime new_a_layout = Layout.row_major(UNKNOWN_VALUE, packed_K)
-    comptime new_b_layout = Layout.row_major(N, packed_K)
-    comptime new_b_scales_layout = Layout.row_major(
-        b_scales_lt.layout.shape[1].value(),
-        b_scales_lt.layout.shape[2].value(),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    comptime new_a_scales_layout = a_scales_lt.layout
+    var c_row_stride = N
+    var a_row_stride = packed_K
+    comptime b_expert_stride = N * packed_K
+    comptime b_scales_expert_stride = n_groups * k_groups * SF_ATOM_M[
+        0
+    ] * SF_ATOM_M[1] * SF_ATOM_K
+    comptime a_scales_row_stride = k_groups * SF_ATOM_M[0] * SF_ATOM_M[
+        1
+    ] * SF_ATOM_K
 
     for i in range(num_active_experts):
         start = Int(a_offsets_host_ptr[i])
@@ -437,62 +367,47 @@ def _test_dispatch[
         if expert_id < 0 or end - start == 0:
             continue
 
-        var c_stride = c_ref_tensor_lt.runtime_layout.stride[0].get_int()
-        var c_slice = LayoutTensor[c_type, new_c_layout, MutAnyOrigin](
-            c_ref_tensor_lt.ptr + start * Int(c_stride),
-            RuntimeLayout[new_c_layout].row_major(
-                IndexList[2](end - start, N),
-            ),
+        var c_slice = TileTensor(
+            c_ref_tensor.ptr + start * c_row_stride,
+            row_major((Idx(end - start), Idx[N]())),
         )
 
-        var a_stride = a_lt.runtime_layout.stride[0].get_int()
-        var new_a_tensor = LayoutTensor[a_type, new_a_layout, MutAnyOrigin](
-            a_lt.ptr + start * Int(a_stride),
-            RuntimeLayout[new_a_layout].row_major(
-                IndexList[2](end - start, packed_K),
-            ),
+        var new_a_tensor = TileTensor(
+            a_tensor.ptr + start * a_row_stride,
+            row_major((Idx(end - start), Idx[packed_K]())),
         )
 
-        comptime b_stride = b_lt.layout.stride[0].value()
-        var new_b_tensor = LayoutTensor[b_type, new_b_layout, MutAnyOrigin](
-            b_lt.ptr + expert_id * Int32(b_stride),
-            RuntimeLayout[new_b_layout].row_major(
-                IndexList[2](Int(b_lt.dim(1)), Int(b_lt.dim(2))),
-            ),
+        var new_b_tensor = TileTensor(
+            b_tensor.ptr + Int(expert_id) * b_expert_stride,
+            row_major((Idx[N](), Idx[packed_K]())),
         )
 
-        comptime b_scales_stride = b_scales_lt.layout.stride[0].value()
-        var new_b_scales_tensor = LayoutTensor[
-            scales_dtype, new_b_scales_layout, MutAnyOrigin
-        ](
-            b_scales_lt.ptr + expert_id * Int32(b_scales_stride),
-            RuntimeLayout[new_b_scales_layout].row_major(
-                IndexList[5](
-                    Int(b_scales_host.dim(1)),
-                    Int(b_scales_host.dim(2)),
-                    Int(b_scales_host.dim(3)),
-                    Int(b_scales_host.dim(4)),
-                    Int(b_scales_host.dim(5)),
-                ),
+        var new_b_scales_tensor = TileTensor(
+            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
+            row_major(
+                Coord(
+                    Idx[n_groups](),
+                    Idx[k_groups](),
+                    Idx[SF_ATOM_M[0]](),
+                    Idx[SF_ATOM_M[1]](),
+                    Idx[SF_ATOM_K](),
+                )
             ),
         )
 
         var a_scales_start = start // SF_MN_GROUP_SIZE + Int(
             a_scale_offsets_ptr[i]
         )
-        comptime a_scales_stride = a_scales_lt.layout.stride[0].value()
-        var new_a_scales_tensor = LayoutTensor[
-            scales_dtype, new_a_scales_layout, MutAnyOrigin
-        ](
-            a_scales_lt.ptr + a_scales_start * a_scales_stride,
-            RuntimeLayout[new_a_scales_layout].row_major(
-                IndexList[5](
-                    ceildiv(end - start, SF_MN_GROUP_SIZE),
-                    Int(a_scales_host.dim(1)),
-                    Int(a_scales_host.dim(2)),
-                    Int(a_scales_host.dim(3)),
-                    Int(a_scales_host.dim(4)),
-                ),
+        var new_a_scales_tensor = TileTensor(
+            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
+            row_major(
+                Coord(
+                    Idx(ceildiv(end - start, SF_MN_GROUP_SIZE)),
+                    Idx[k_groups](),
+                    Idx[SF_ATOM_M[0]](),
+                    Idx[SF_ATOM_M[1]](),
+                    Idx[SF_ATOM_K](),
+                )
             ),
         )
 
@@ -502,8 +417,8 @@ def _test_dispatch[
             c_slice,
             new_a_tensor,
             new_b_tensor,
-            a_scales=new_a_scales_tensor.get_immutable(),
-            b_scales=new_b_scales_tensor.get_immutable(),
+            a_scales=new_a_scales_tensor,
+            b_scales=new_b_scales_tensor,
             transpose_b=transpose_b,
             c_row_major=True,
             alpha=expert_scale,
@@ -772,14 +687,17 @@ def main() raises:
         )
 
         # ============================================================
-        # 6. Prefill path (is_decode=False)
+        # 6. Prefill path (estimated_total_m >= num_active_experts * 8)
         #    Uses mma_bn=128, cta_group=2 via _dispatch_prefill
         # ============================================================
-        print("\n=== Prefill path (is_decode=False) ===")
+        print(
+            "\n=== Prefill path (estimated_total_m >= num_active_experts *"
+            " 8) ==="
+        )
 
         # 6a: Tuned shape, moderate tokens
         print("  6a: N=4096, K=7168, 4 experts, 128 tok each")
-        _test_dispatch[6, 4096, 7168, is_decode=False](
+        _test_dispatch[6, 4096, 7168](
             4,
             [128, 128, 128, 128],
             [0, 1, 2, 3],
@@ -788,7 +706,7 @@ def main() raises:
 
         # 6b: Tuned shape, larger tokens (prefill regime)
         print("  6b: N=4096, K=7168, 4 experts, 256 tok each")
-        _test_dispatch[6, 4096, 7168, is_decode=False](
+        _test_dispatch[6, 4096, 7168](
             4,
             [256, 256, 256, 256],
             [0, 1, 2, 3],
@@ -797,7 +715,7 @@ def main() raises:
 
         # 6c: Down-proj shape
         print("  6c: N=7168, K=2048, 4 experts, mixed tokens")
-        _test_dispatch[6, 7168, 2048, is_decode=False](
+        _test_dispatch[6, 7168, 2048](
             4,
             [128, 256, 192, 96],
             [0, 3, 2, 4],
@@ -806,7 +724,7 @@ def main() raises:
 
         # 6d: Unaligned tokens on prefill path
         print("  6d: N=4096, K=7168, unaligned tokens")
-        _test_dispatch[6, 4096, 7168, is_decode=False](
+        _test_dispatch[6, 4096, 7168](
             3,
             [129, 257, 193],
             [2, 0, 1],
@@ -815,7 +733,7 @@ def main() raises:
 
         # 6e: Single expert, large M
         print("  6e: N=7168, K=2048, 1 expert, 512 tokens")
-        _test_dispatch[6, 7168, 2048, is_decode=False](
+        _test_dispatch[6, 7168, 2048](
             1,
             [512],
             [3],
@@ -824,7 +742,7 @@ def main() raises:
 
         # 6f: Mixed -1 IDs on prefill path
         print("  6f: N=4096, K=7168, -1 IDs mixed")
-        _test_dispatch[6, 4096, 7168, is_decode=False](
+        _test_dispatch[6, 4096, 7168](
             4,
             [128, 256, 128, 256],
             [-1, 2, -1, 4],
@@ -833,7 +751,7 @@ def main() raises:
 
         # 6g: Many experts (Kimi K2.5 like)
         print("  6g: N=4096, K=7168, 8 experts, 96 tok each")
-        _test_dispatch[8, 4096, 7168, is_decode=False](
+        _test_dispatch[8, 4096, 7168](
             8,
             [96, 96, 96, 96, 96, 96, 96, 96],
             [0, 1, 2, 3, 4, 5, 6, 7],
@@ -842,7 +760,7 @@ def main() raises:
 
         # 6h: Fallback shape on prefill path
         print("  6h: N=2048, K=1024, fallback prefill")
-        _test_dispatch[4, 2048, 1024, is_decode=False](
+        _test_dispatch[4, 2048, 1024](
             3,
             [256, 128, 192],
             [2, 0, 1],

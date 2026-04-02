@@ -158,3 +158,20 @@ comptime _AllImplicitlyDestructibleReducer[
     From: Variadic.TypesOfTrait[AnyType],
     idx: Int,
 ] = Variadic.values[conforms_to(From[idx], ImplicitlyDestructible) and Prev[0]]
+
+comptime AllRegisterPassable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
+    BaseVal=Variadic.values[True],
+    VariadicType=Ts,
+    Reducer=_AllRegisterPassableReducer,
+][0]
+"""Evaluates to `True` if all types in `Ts` conform to `RegisterPassable`, `False` otherwise.
+
+Parameters:
+    Ts: The types to check for conformance to `RegisterPassable`.
+"""
+
+comptime _AllRegisterPassableReducer[
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[AnyType],
+    idx: Int,
+] = Variadic.values[conforms_to(From[idx], RegisterPassable) and Prev[0]]

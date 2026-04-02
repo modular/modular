@@ -53,7 +53,7 @@ def cenergy_scatter_kernel(
         numatoms: Number of atoms.
     """
     # Each thread handles one atom
-    var n = (Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)) * 4
+    var n = (block_idx.x * block_dim.x + thread_idx.x) * 4
 
     # Bounds check for atom array
     if n < numatoms * 4:
@@ -159,8 +159,8 @@ def main() raises:
     var num_blocks = (numatoms + block_size - 1) // block_size
 
     ctx.enqueue_function[cenergy_scatter_kernel, cenergy_scatter_kernel](
-        d_energygrid.unsafe_ptr(),
-        d_atoms.unsafe_ptr(),
+        d_energygrid,
+        d_atoms,
         vol_dim.x,
         vol_dim.y,
         gridspacing,

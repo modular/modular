@@ -49,10 +49,10 @@ def spmv_csc_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var col = block_idx.x * block_dim.x + thread_idx.x
-    if Int(col) < cscMatrix.numCols:
-        var inValue = x[Int(col)]
-        var start = cscMatrix.colPtrs[Int(col)]
-        var end = cscMatrix.colPtrs[Int(col) + 1]
+    if col < cscMatrix.numCols:
+        var inValue = x[col]
+        var start = cscMatrix.colPtrs[col]
+        var end = cscMatrix.colPtrs[col + 1]
         for i in range(Int(start), Int(end)):
             var row = cscMatrix.rowIdxs[i]
             var val = cscMatrix.values[i]
@@ -160,8 +160,8 @@ def main() raises:
 
     ctx.enqueue_function_experimental[spmv_csc_kernel](
         d_cscMatrix,
-        d_x_buf.unsafe_ptr(),
-        d_y_buf.unsafe_ptr(),
+        d_x_buf,
+        d_y_buf,
         grid_dim=numBlocks,
         block_dim=blockSize,
     )

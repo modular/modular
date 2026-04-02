@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
+from std.gpu import block_idx, thread_idx, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.primitives.id import lane_id
 from std.gpu.primitives.warp import shuffle_up
@@ -55,7 +55,7 @@ def test_warp_scan(
         output: Output array for scan result.
         N: Number of elements.
     """
-    var i = Int(block_idx.x) * WARP_SIZE + Int(thread_idx.x)
+    var i = block_idx.x * WARP_SIZE + thread_idx.x
     var val = Float32(0.0) if i >= Int(N) else input[i]
     val = warp_scan(val)
     if i < Int(N):

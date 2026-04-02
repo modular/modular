@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
+    PIXEL_GENERATION_TASKS,
     Backend,
     BenchmarkTask,
     Endpoint,
@@ -63,12 +64,15 @@ from max.benchmark.benchmark_shared.cpu_metrics import (
     collect_pids_for_port,
 )
 from max.benchmark.benchmark_shared.datasets import (
+    AgenticCodeBenchmarkDataset,
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
     BatchJobBenchmarkDataset,
     BenchmarkDataset,
     ChatSession,
     CodeDebugBenchmarkDataset,
+    InstructCoderBenchmarkDataset,
+    LocalImageBenchmarkDataset,
     ObfuscatedConversationsBenchmarkDataset,
     RandomBenchmarkDataset,
     SampledRequest,
@@ -89,8 +93,10 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PixelGenerationBenchmarkMetrics,
+    SpecDecodeMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
+    calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
@@ -106,6 +112,7 @@ from max.benchmark.benchmark_shared.request import (
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     collect_server_metrics,
+    fetch_spec_decode_metrics,
     print_server_metrics,
 )
 from max.benchmark.benchmark_shared.steady_state import detect_steady_state
@@ -275,7 +282,7 @@ def build_single_turn_request_input(
     max_output_len: int | None,
 ) -> BaseRequestFuncInput:
     request_model_id = model_id if lora_id is None else lora_id
-    if benchmark_task == BenchmarkTask.text_generation:
+    if benchmark_task == "text-generation":
         max_tokens = min(
             filter(None, (request.output_len, max_output_len)),
             default=None,
@@ -293,15 +300,16 @@ def build_single_turn_request_input(
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
         )
-    if benchmark_task == BenchmarkTask.text_to_image:
+    if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
             raise TypeError(
-                "text-to-image benchmark requires PixelGenerationSampledRequest."
+                "pixel-generation benchmark requires PixelGenerationSampledRequest."
             )
         return PixelGenerationRequestFuncInput(
             model=request_model_id,
             session_id=None,
             prompt=request.prompt_formatted,
+            input_image_paths=request.input_image_paths,
             api_url=api_url,
             image_options=request.image_options,
         )
@@ -311,6 +319,31 @@ def build_single_turn_request_input(
 def print_section(title: str, char: str = "-") -> None:
     """Helper function to print a section with formatted header."""
     print("{s:{c}^{n}}".format(s=title, n=50, c=char))
+
+
+def _is_vllm_backend(backend: Backend) -> bool:
+    return backend in ("vllm", "vllm-chat")
+
+
+def _add_spec_decode_result(
+    result: dict[str, Any],
+    spec_decode_stats: dict[str, Any] | None,
+) -> None:
+    """Add speculative decoding stats to the JSON result."""
+    if spec_decode_stats is None:
+        return
+    result["spec_decode_acceptance_rate"] = spec_decode_stats["acceptance_rate"]
+    result["spec_decode_acceptance_length"] = spec_decode_stats[
+        "acceptance_length"
+    ]
+    result["spec_decode_num_drafts"] = int(spec_decode_stats["num_drafts"])
+    result["spec_decode_draft_tokens"] = int(spec_decode_stats["draft_tokens"])
+    result["spec_decode_accepted_tokens"] = int(
+        spec_decode_stats["accepted_tokens"]
+    )
+    result["spec_decode_per_position_acceptance_rates"] = spec_decode_stats.get(
+        "per_position_acceptance_rates", []
+    )
 
 
 def print_lora_benchmark_results(
@@ -405,9 +438,10 @@ def print_benchmark_summary(
     achieved_request_rate: float,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
+    spec_decode_stats: dict[str, Any] | None = None,
     lora_manager: LoRABenchmarkManager | None = None,
 ) -> None:
-    """Print benchmark summary for both text-generation and text-to-image."""
+    """Print benchmark summary for text-generation and pixel-generation."""
 
     # 1. Print common benchmark summary
     print_section(title=" Serving Benchmark Result ", char="=")
@@ -524,6 +558,42 @@ def print_benchmark_summary(
                 metrics.cpu_utilization_system or 0.0,
             )
         )
+    if spec_decode_stats is not None:
+        print_section(title="Speculative Decoding")
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Acceptance rate (%):", spec_decode_stats["acceptance_rate"]
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Acceptance length:", spec_decode_stats["acceptance_length"]
+            )
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Drafts:", int(spec_decode_stats["num_drafts"])
+            )
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Draft tokens:", int(spec_decode_stats["draft_tokens"])
+            )
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Accepted tokens:", int(spec_decode_stats["accepted_tokens"])
+            )
+        )
+        per_pos_rates = spec_decode_stats.get(
+            "per_position_acceptance_rates", []
+        )
+        if per_pos_rates:
+            print("Per-position acceptance (%):")
+            for pos, rate in enumerate(per_pos_rates):
+                print(
+                    "{:<40} {:<10.2f}".format(f"  Position {pos}:", rate * 100)
+                )
     print("=" * 50)
     if lora_manager:
         print_lora_benchmark_results(lora_manager)
@@ -867,7 +937,6 @@ def calculate_metrics(
     actual_output_lens: list[int] = []
     nonempty_response_chunks = 0
     total_input = 0
-    completed = 0
     max_input = 0
     max_output = 0
     max_total = 0
@@ -879,57 +948,45 @@ def calculate_metrics(
     latencies: list[float] = []
     input_throughputs: list[float] = []
     output_throughputs: list[float] = []
-    for i in range(len(outputs)):
-        # If the request was cancelled due to max_benchmark_duration_s, we skip it
-        # and don't count it towards the metrics
-        if outputs[i].cancelled:
+
+    successful: list[tuple[RequestFuncOutput, int]] = []
+    for o in outputs:
+        if o.cancelled:
             continue
-        if outputs[i].success:
-            completed += 1
-            # We use the tokenizer to count the number of output tokens for all
-            # serving backends instead of looking at len(outputs[i].itl) since
-            # multiple output tokens may be bundled together
-            # Note : this may inflate the output token count slightly
-            total_input += outputs[i].prompt_len
-            output_len = compute_output_len(tokenizer, outputs[i])
-            actual_output_lens.append(output_len)
-            nonempty_response_chunks += 1 if outputs[i].ttft != 0 else 0
-            nonempty_response_chunks += len(outputs[i].itl)
-
-            max_input = max(max_input, outputs[i].prompt_len)
-            max_output = max(max_output, output_len)
-            max_total = max(max_total, outputs[i].prompt_len + output_len)
-
-            # We only skip these requests for client experience metrics like
-            # TTFT, ITL, TPOT, E2E. They are still considered for overall token
-            # counts and throughputs.
-            if i < skip_first_n_requests:
-                continue
-            if (
-                skip_last_n_requests > 0
-                and i >= len(outputs) - skip_last_n_requests
-            ):
-                continue
-
-            tpots += outputs[i].tpot
-            itls += outputs[i].itl
-            ttfts.append(outputs[i].ttft)
-            # Input throughput is fully calculated once we reach the first output token.
-            if outputs[i].ttft > 0:
-                input_throughputs.append(
-                    outputs[i].prompt_len / outputs[i].ttft
-                )
-            # output throughput ignores the first token.
-            # It is just timing for the chain of output tokens.
-            if (outputs[i].latency - outputs[i].ttft) > 0:
-                output_throughputs.append(
-                    (output_len - 1) / (outputs[i].latency - outputs[i].ttft)
-                )
-            latencies.append(outputs[i].latency)
+        if o.success:
+            successful.append((o, compute_output_len(tokenizer, o)))
         else:
             actual_output_lens.append(0)
-            failures = failures + 1
-            failed_responses.append(outputs[i])
+            failures += 1
+            failed_responses.append(o)
+
+    completed = len(successful)
+
+    for o, output_len in successful:
+        total_input += o.prompt_len
+        actual_output_lens.append(output_len)
+        nonempty_response_chunks += 1 if o.ttft != 0 else 0
+        nonempty_response_chunks += len(o.itl)
+        max_input = max(max_input, o.prompt_len)
+        max_output = max(max_output, output_len)
+        max_total = max(max_total, o.prompt_len + output_len)
+
+    end = (
+        completed - skip_last_n_requests
+        if skip_last_n_requests > 0
+        else completed
+    )
+    measured = successful[skip_first_n_requests:end]
+
+    for o, output_len in measured:
+        tpots += o.tpot
+        itls += o.itl
+        ttfts.append(o.ttft)
+        if o.ttft > 0:
+            input_throughputs.append(o.prompt_len / o.ttft)
+        if (o.latency - o.ttft) > 0:
+            output_throughputs.append((output_len - 1) / (o.latency - o.ttft))
+        latencies.append(o.latency)
 
     _warn_on_request_failures(
         outputs=outputs,
@@ -1523,6 +1580,8 @@ async def benchmark(
 
     with contextlib.ExitStack() as benchmark_stack:
         gpu_recorder: GPUBackgroundRecorder | None = None
+        spec_decode_metrics_before: SpecDecodeMetrics | None = None
+        spec_decode_metrics_after: SpecDecodeMetrics | None = None
         if collect_gpu_stats:
             try:
                 from max.diagnostics.gpu import BackgroundRecorder
@@ -1591,6 +1650,11 @@ async def benchmark(
             else base_driver
         )
 
+        if benchmark_task == "text-generation" and _is_vllm_backend(backend):
+            spec_decode_metrics_before = fetch_spec_decode_metrics(
+                backend, base_url
+            )
+
         try:
             outputs: Sequence[BaseRequestFuncOutput]
             if isinstance(samples, RequestSamples):
@@ -1645,8 +1709,20 @@ async def benchmark(
             if trace_path:
                 stop_trace(trace_session)
 
+    if benchmark_task == "text-generation" and _is_vllm_backend(backend):
+        spec_decode_metrics_after = fetch_spec_decode_metrics(backend, base_url)
+    spec_decode_stats = None
+    if (
+        spec_decode_metrics_before is not None
+        and spec_decode_metrics_after is not None
+    ):
+        spec_decode_stats = calculate_spec_decode_stats(
+            spec_decode_metrics_before,
+            spec_decode_metrics_after,
+        )
+
     if print_inputs_and_outputs:
-        if benchmark_task == BenchmarkTask.text_generation:
+        if benchmark_task == "text-generation":
             assert tokenizer is not None
             print("Generated output text:")
             for req_id, output in enumerate(outputs):
@@ -1659,7 +1735,7 @@ async def benchmark(
                         "output": output.generated_text,
                     }
                 )
-        elif benchmark_task == BenchmarkTask.text_to_image:
+        elif benchmark_task in PIXEL_GENERATION_TASKS:
             print("Generated pixel generation outputs:")
             for req_id, output in enumerate(outputs):
                 assert isinstance(output, PixelGenerationRequestFuncOutput)
@@ -1721,11 +1797,11 @@ async def benchmark(
             round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
         )
 
-    if benchmark_task == BenchmarkTask.text_to_image:
+    if benchmark_task in PIXEL_GENERATION_TASKS:
         if not _is_pixel_generation_outputs(outputs):
             raise TypeError(
                 "Expected all outputs to be PixelGenerationRequestFuncOutput"
-                " in text-to-image benchmark flow."
+                " in pixel-generation benchmark flow."
             )
         pixel_metrics = calculate_pixel_generation_metrics(
             outputs=outputs,
@@ -1745,6 +1821,7 @@ async def benchmark(
             max_concurrency=max_concurrency,
             collect_gpu_stats=collect_gpu_stats,
             collect_cpu_stats=collect_cpu_stats,
+            spec_decode_stats=None,
             lora_manager=lora_manager,
         )
 
@@ -1811,6 +1888,7 @@ async def benchmark(
         achieved_request_rate=achieved_request_rate,
         collect_gpu_stats=collect_gpu_stats,
         collect_cpu_stats=collect_cpu_stats,
+        spec_decode_stats=spec_decode_stats,
         lora_manager=lora_manager,
     )
 
@@ -1877,6 +1955,8 @@ async def benchmark(
         "gpu_utilization": text_metrics.gpu_utilization,
     }
 
+    _add_spec_decode_result(result, spec_decode_stats)
+
     _add_optional_result(
         result=result,
         metrics=text_metrics,
@@ -1908,12 +1988,11 @@ async def benchmark(
     result["steady_state_warning"] = steady.warning
 
     if steady.detected:
-        assert steady.start_index is not None
-        assert steady.end_index is not None
+        ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
             out
-            for out in outputs[steady.start_index : steady.end_index]
-            if out.success and not out.cancelled
+            for i, out in enumerate(outputs)
+            if i in ss_index_set and out.success and not out.cancelled
         ]
         ss_valid = [
             out
@@ -1966,16 +2045,16 @@ async def benchmark(
 def validate_task_and_endpoint(
     benchmark_task: BenchmarkTask, endpoint: Endpoint
 ) -> None:
-    if benchmark_task == BenchmarkTask.text_generation:
-        if endpoint == Endpoint.responses:
+    if benchmark_task == "text-generation":
+        if endpoint == "/v1/responses":
             raise ValueError(
                 "--benchmark-task text-generation does not support "
                 "--endpoint /v1/responses"
             )
-    elif benchmark_task == BenchmarkTask.text_to_image:
-        if endpoint != Endpoint.responses:
+    elif benchmark_task in PIXEL_GENERATION_TASKS:
+        if endpoint != "/v1/responses":
             raise ValueError(
-                "--benchmark-task text-to-image requires "
+                "--benchmark-task pixel-generation requires "
                 "--endpoint /v1/responses"
             )
 
@@ -1998,25 +2077,22 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         raise ValueError("--model is required when running benchmark")
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
-    benchmark_task = BenchmarkTask(args.benchmark_task)
-    try:
-        endpoint = Endpoint(args.endpoint)
-    except ValueError as e:
-        raise ValueError(f"Unknown endpoint: {args.endpoint}") from e
+    benchmark_task: BenchmarkTask = args.benchmark_task
+    endpoint: Endpoint = args.endpoint
 
     validate_task_and_endpoint(benchmark_task, endpoint)
-    chat = endpoint == Endpoint.chat_completions
+    chat = endpoint == "/v1/chat/completions"
 
     if args.base_url is not None:
         base_url = args.base_url
     else:
         base_url = f"http://{args.host}:{args.port}"
 
-    api_url = f"{base_url}{endpoint.value}"
+    api_url = f"{base_url}{endpoint}"
     tokenizer: PreTrainedTokenizerBase | None
     samples: Samples
 
-    if benchmark_task == BenchmarkTask.text_generation:
+    if benchmark_task == "text-generation":
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
@@ -2165,6 +2241,24 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     output_lengths is None and not args.record_output_lengths
                 ),
             )
+        elif isinstance(benchmark_dataset, InstructCoderBenchmarkDataset):
+            if args.num_chat_sessions:
+                samples = benchmark_dataset.gen_multiturn_sessions(
+                    num_sessions=args.num_chat_sessions,
+                    tokenizer=tokenizer,
+                    shuffle=(not args.record_output_lengths),
+                )
+            else:
+                assert args.num_prompts is not None
+                samples = benchmark_dataset.sample_requests(
+                    num_requests=args.num_prompts,
+                    tokenizer=tokenizer,
+                    output_lengths=output_lengths,
+                    shuffle=(
+                        output_lengths is None
+                        and not args.record_output_lengths
+                    ),
+                )
         elif isinstance(
             benchmark_dataset, ObfuscatedConversationsBenchmarkDataset
         ):
@@ -2201,28 +2295,65 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 ),
                 image_dir=args.batch_job_image_dir,
             )
+        elif isinstance(benchmark_dataset, AgenticCodeBenchmarkDataset):
+            if args.num_chat_sessions:
+                samples = benchmark_dataset.gen_multiturn_sessions(
+                    num_sessions=args.num_chat_sessions,
+                    shuffle=(not args.record_output_lengths),
+                )
+            else:
+                assert args.num_prompts is not None
+                samples = benchmark_dataset.sample_requests(
+                    num_requests=args.num_prompts,
+                    tokenizer=tokenizer,
+                    output_lengths=output_lengths,
+                    shuffle=(
+                        output_lengths is None
+                        and not args.record_output_lengths
+                    ),
+                    enable_tool_calls=args.tool_calls,
+                )
         else:
             raise ValueError(
                 f"Unknown / unsupported dataset: {benchmark_dataset}"
             )
-    elif benchmark_task == BenchmarkTask.text_to_image:
+    elif benchmark_task in PIXEL_GENERATION_TASKS:
         tokenizer = None
         if args.num_prompts is None:
             raise ValueError(
-                "Please specify '--num-prompts' for text-to-image benchmarks."
+                "Please specify '--num-prompts' for "
+                f"{benchmark_task} benchmarks."
+            )
+        if args.dataset_name == "local-image" and args.dataset_path is None:
+            raise ValueError(
+                "--benchmark-task image-to-image with "
+                f"--dataset-name {args.dataset_name} requires --dataset-path"
             )
         benchmark_dataset = BenchmarkDataset.from_flags(
             dataset_name=args.dataset_name,
             dataset_path=args.dataset_path,
         )
-        if not isinstance(benchmark_dataset, SyntheticPixelBenchmarkDataset):
+        if benchmark_task == "text-to-image":
+            if not isinstance(
+                benchmark_dataset, SyntheticPixelBenchmarkDataset
+            ):
+                raise ValueError(
+                    "text-to-image currently supports only "
+                    "--dataset-name synthetic-pixel"
+                )
+        elif not isinstance(
+            benchmark_dataset,
+            (LocalImageBenchmarkDataset, SyntheticPixelBenchmarkDataset),
+        ):
             raise ValueError(
-                "text-to-image currently supports only --dataset-name synthetic-pixel"
+                "image-to-image currently supports only "
+                "--dataset-name local-image or synthetic-pixel"
             )
         logger.info("sampling requests")
         samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=None,
+            benchmark_task=benchmark_task,
             image_width=args.image_width,
             image_height=args.image_height,
             image_steps=args.image_steps,
@@ -2274,13 +2405,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             f"Expected a single float value for request_rate, got {args.request_rate}"
         ) from e
 
-    try:
-        backend = Backend(args.backend)
-    except ValueError as e:
-        raise ValueError(
-            f"Unknown backend: {args.backend}. "
-            f"Supported backends: {', '.join(b.value for b in Backend)}"
-        ) from e
+    backend: Backend = args.backend
 
     # Handle trace flag
     trace_path = None
@@ -2368,7 +2493,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         current_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         result_json["date"] = current_dt
         result_json["backend"] = backend
-        result_json["benchmark_task"] = benchmark_task.value
+        result_json["benchmark_task"] = benchmark_task
         result_json["model_id"] = model_id
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
@@ -2424,10 +2549,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             json.dump(result_json, outfile)
 
     # Save output lengths if requested
-    if (
-        args.record_output_lengths
-        and benchmark_task == BenchmarkTask.text_generation
-    ):
+    if args.record_output_lengths and benchmark_task == "text-generation":
         # Save relevant input args for context
         args_to_save = (
             "backend",

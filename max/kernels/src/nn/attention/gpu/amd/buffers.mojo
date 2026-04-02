@@ -15,8 +15,8 @@ from std.math import ceildiv, recip
 from std.sys import simd_width_of
 from std.sys.intrinsics import readfirstlane
 
-from std.gpu import barrier, block_idx, lane_id
-from std.gpu import warp_id as get_warp_id
+from std.gpu import lane_id_uint as lane_id
+from std.gpu import warp_id_uint as get_warp_id
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from layout.layout import blocked_product
 from layout._utils import idx2crd
@@ -28,7 +28,6 @@ from layout.layout_tensor import (
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
 from std.memory.pointer import AddressSpace as BaseAddressSpace
-from nn.mha_utils import _kernel_mask
 
 from std.utils import IndexList
 
@@ -569,7 +568,8 @@ struct VBufferTransposeLoads[
             64,
             128,
             256,
-        ), "depth must be 64, 128, or 256"
+            512,
+        ), "depth must be 64, 128, 256, or 512"
         comptime assert (
             Self.tensor_core_mma.shape[2] * Self.tensor_core_mma.group_size
             == 16
@@ -836,6 +836,24 @@ struct QRegisterBuffer[
     @always_inline
     def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
+
+    @always_inline
+    def scale[accum_type: DType](self, scale_factor: Scalar[accum_type]):
+        """Scale all Q register elements in-place.
+
+        Casts bf16 -> f32, multiplies by scale_factor, casts back to bf16.
+        Used for pre-scaling Q by (1/sqrt(d) * log2e) so that QK matmul
+        produces already-scaled scores, eliminating scale from the hot loop.
+        """
+        var mma_tiles = self.reg_tile.split[Self.num_tiles]()
+        comptime for tile in range(Self.num_tiles):
+            var tile_data = mma_tiles[tile].split[Self.num_k_tiles]()
+            comptime for k in range(Self.num_k_tiles):
+                var vec = tile_data[k].vectorize[1, Self.simd_width]()
+                comptime for row in range(Self.num_mmas):
+                    var q_f32 = vec[row, 0].cast[accum_type]()
+                    q_f32 *= scale_factor
+                    vec[row, 0] = q_f32.cast[Self.dtype]()
 
     @always_inline
     def zero(self):

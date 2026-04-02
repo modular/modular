@@ -83,11 +83,6 @@ modular_py_test(
 modular_py_test(
     name = "test_pipelines_cli_json_lightweight",
     srcs = ["test_pipelines_cli_json_lightweight.py"],
-    # TODO(GEX-3155): Times out on remote macOS CI
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//max/python/max/entrypoints:pipelines",
     ],

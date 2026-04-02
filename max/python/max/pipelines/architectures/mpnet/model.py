@@ -151,17 +151,16 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         )
 
     def load_model(self, session: InferenceSession) -> Model:
-        timer = CompilationTimer("model")
-        if self.adapter:
-            state_dict = self.adapter(dict(self.weights.items()))
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        config = MPNetConfig.initialize(self.pipeline_config)
-        graph = build_graph(config, state_dict)
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=state_dict)
-        timer.done()
+        with CompilationTimer("model") as timer:
+            if self.adapter:
+                state_dict = self.adapter(dict(self.weights.items()))
+            else:
+                state_dict = {
+                    key: value.data() for key, value in self.weights.items()
+                }
+            config = MPNetConfig.initialize(self.pipeline_config)
+            graph = build_graph(config, state_dict)
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=state_dict)
 
         return model

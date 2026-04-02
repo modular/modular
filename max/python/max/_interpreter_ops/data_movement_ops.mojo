@@ -27,9 +27,18 @@ from std.runtime.asyncrt import DeviceContextPtr
 from tensor import ManagedTensorSlice
 from tensor.io_spec import Input, Output
 from compiler_internal import StaticTensorSpec
-from buffer.dimlist import DimList
+from layout import IntTuple, create_unknown_int_tuple
 from MOGGKernelAPI.MOGGKernelAPI import Slice, StaticBroadcastTo, Transpose
-from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_size, MAX_RANK
+from op_utils import (
+    _get_dtype,
+    _get_buffer_ptr,
+    _get_ctx,
+    _get_size,
+    _make_ptr,
+    MAX_RANK,
+    Dispatchable,
+    dispatch_dtype,
+)
 
 
 # =============================================================================
@@ -78,15 +87,6 @@ def _pad_shape_to_max_rank(
     return padded
 
 
-@always_inline
-def _make_ptr[
-    dtype: DType
-](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        unsafe_from_address=addr
-    )
-
-
 # ===----------------------------------------------------------------------=== #
 # Broadcast operation
 # ===----------------------------------------------------------------------=== #
@@ -127,14 +127,12 @@ def static_broadcast_to_op[
     ](out_ptr, out_shape)
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl
         StaticBroadcastTo.execute[
             target="cpu",
             dtype=dtype,
             in_rank=MAX_RANK,
             out_rank=MAX_RANK,
             _trace_name="interpreter.static_broadcast_to",
-            use_blocking_impl=True,
         ](output_tensor, input_tensor, out_shape, DeviceContextPtr())
     else:
         comptime if has_accelerator():
@@ -147,8 +145,6 @@ def static_broadcast_to_op[
                     out_rank=MAX_RANK,
                     _trace_name="interpreter.static_broadcast_to",
                 ](output_tensor, input_tensor, out_shape, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for static_broadcast_to"
@@ -157,6 +153,26 @@ def static_broadcast_to_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+@fieldwise_init
+struct _StaticBroadcastToBody(Dispatchable):
+    """Dispatch body for the StaticBroadcastTo operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var in_shape: IndexList[MAX_RANK]
+    var out_shape: IndexList[MAX_RANK]
+    var ctx: OpaquePointer[MutExternalOrigin]
+
+    def call[t: DType](self) raises -> None:
+        static_broadcast_to_op[t](
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.in_addr),
+            self.in_shape,
+            self.out_shape,
+            self.ctx,
+        )
 
 
 def static_broadcast_to_dispatcher(
@@ -194,115 +210,12 @@ def static_broadcast_to_dispatcher(
     var padded_in_shape = _pad_shape_to_max_rank(in_shape_obj, in_rank)
     var padded_out_shape = _pad_shape_to_max_rank(out_shape_obj, out_rank)
 
-    # Dispatch by dtype
-    if dtype == DType.float32:
-        static_broadcast_to_op[DType.float32](
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.float64:
-        static_broadcast_to_op[DType.float64](
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.float16:
-        static_broadcast_to_op[DType.float16](
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        static_broadcast_to_op[DType.bfloat16](
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        static_broadcast_to_op[DType.int8](
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        static_broadcast_to_op[DType.int16](
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        static_broadcast_to_op[DType.int32](
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        static_broadcast_to_op[DType.int64](
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        static_broadcast_to_op[DType.uint8](
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        static_broadcast_to_op[DType.uint16](
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        static_broadcast_to_op[DType.uint32](
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        static_broadcast_to_op[DType.uint64](
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        static_broadcast_to_op[DType.bool](
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            ctx,
-        )
-    else:
-        raise Error(
-            "Unsupported dtype for static_broadcast_to: " + String(dtype)
-        )
+    dispatch_dtype(
+        _StaticBroadcastToBody(
+            out_addr, in_addr, padded_in_shape, padded_out_shape, ctx
+        ),
+        dtype,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -346,19 +259,18 @@ def transpose_op[
         io_spec=Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
-    # Create permutation tensor from stack data
-    var perm_ptr = UnsafePointer[Scalar[DType.int64], MutExternalOrigin](
-        unsafe_from_address=Int(UnsafePointer(to=perm_data[0]))
-    )
+    # TODO: ManagedTensorSlice should correctly propagate mutability to
+    # prevent us from needing to unsafely cast the pointer mutability here.
+    var perm_data_ptr = perm_data.unsafe_ptr().unsafe_mut_cast[True]()
     var perm_tensor = ManagedTensorSlice[io_spec=Input, static_spec=perm_spec](
-        perm_ptr, IndexList[1](MAX_RANK)
+        perm_data_ptr, IndexList[1](MAX_RANK)
     )
 
     if not ctx:
         Transpose.execute[
             target="cpu",
             _trace_name="interpreter.transpose",
-            static_permutations=DimList.create_unknown[MAX_RANK](),
+            static_permutations=create_unknown_int_tuple(MAX_RANK),
             dtype=dtype,
             rank=MAX_RANK,
         ](output_tensor, input_tensor, perm_tensor, DeviceContextPtr())
@@ -369,12 +281,10 @@ def transpose_op[
                 Transpose.execute[
                     target="gpu",
                     _trace_name="interpreter.transpose",
-                    static_permutations=DimList.create_unknown[MAX_RANK](),
+                    static_permutations=create_unknown_int_tuple(MAX_RANK),
                     dtype=dtype,
                     rank=MAX_RANK,
                 ](output_tensor, input_tensor, perm_tensor, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for transpose"
@@ -382,6 +292,28 @@ def transpose_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+@fieldwise_init
+struct _TransposeBody(Dispatchable):
+    """Dispatch body for the Transpose operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var in_shape: IndexList[MAX_RANK]
+    var out_shape: IndexList[MAX_RANK]
+    var perm: InlineArray[Int64, MAX_RANK]
+    var ctx: OpaquePointer[MutExternalOrigin]
+
+    def call[t: DType](self) raises -> None:
+        transpose_op[t](
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.in_addr),
+            self.in_shape,
+            self.out_shape,
+            self.perm,
+            self.ctx,
+        )
 
 
 def transpose_dispatcher(
@@ -431,131 +363,44 @@ def transpose_dispatcher(
     for i in range(in_rank):
         padded_perm[pad_count + i] = Int64(Int(py=perm_obj[i]) + pad_count)
 
-    # Dispatch by dtype
-    if dtype == DType.float32:
-        transpose_op[DType.float32](
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](in_addr),
+    dispatch_dtype(
+        _TransposeBody(
+            out_addr,
+            in_addr,
             padded_in_shape,
             padded_out_shape,
             padded_perm,
             ctx,
-        )
-    elif dtype == DType.float64:
-        transpose_op[DType.float64](
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.float16:
-        transpose_op[DType.float16](
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        transpose_op[DType.bfloat16](
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        transpose_op[DType.int8](
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        transpose_op[DType.int16](
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        transpose_op[DType.int32](
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        transpose_op[DType.int64](
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        transpose_op[DType.uint8](
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        transpose_op[DType.uint16](
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        transpose_op[DType.uint32](
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        transpose_op[DType.uint64](
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        transpose_op[DType.bool](
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            padded_perm,
-            ctx,
-        )
-    else:
-        raise Error("Unsupported dtype for transpose: " + String(dtype))
+        ),
+        dtype,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
 # Memcpy operation (copy elements between buffers with offsets)
 # ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct _MemcpyBody(Dispatchable):
+    """Dispatch body for the Memcpy operation over data dtypes."""
+
+    var dst_addr: Int
+    var src_addr: Int
+    var dst_offset: Int
+    var src_offset: Int
+    var count: Int
+    var ctx: OpaquePointer[MutExternalOrigin]
+
+    def call[t: DType](self) raises -> None:
+        memcpy_op[t](
+            _make_ptr[t](self.dst_addr),
+            _make_ptr[t](self.src_addr),
+            self.dst_offset,
+            self.src_offset,
+            self.count,
+            self.ctx,
+        )
 
 
 def memcpy_dispatcher(
@@ -590,126 +435,13 @@ def memcpy_dispatcher(
     var s_off = Int(py=src_offset)
     var cnt = Int(py=count)
     var ctx = _get_ctx(device_context_ptr)
+    var dst_addr = Int(py=dst_buffer._data_ptr())
+    var src_addr = Int(py=src_buffer._data_ptr())
 
-    if dtype == DType.float16:
-        memcpy_op[DType.float16](
-            _get_buffer_ptr[DType.float16](dst_buffer),
-            _get_buffer_ptr[DType.float16](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.float32:
-        memcpy_op[DType.float32](
-            _get_buffer_ptr[DType.float32](dst_buffer),
-            _get_buffer_ptr[DType.float32](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.float64:
-        memcpy_op[DType.float64](
-            _get_buffer_ptr[DType.float64](dst_buffer),
-            _get_buffer_ptr[DType.float64](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        memcpy_op[DType.bfloat16](
-            _get_buffer_ptr[DType.bfloat16](dst_buffer),
-            _get_buffer_ptr[DType.bfloat16](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        memcpy_op[DType.int8](
-            _get_buffer_ptr[DType.int8](dst_buffer),
-            _get_buffer_ptr[DType.int8](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        memcpy_op[DType.int16](
-            _get_buffer_ptr[DType.int16](dst_buffer),
-            _get_buffer_ptr[DType.int16](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        memcpy_op[DType.int32](
-            _get_buffer_ptr[DType.int32](dst_buffer),
-            _get_buffer_ptr[DType.int32](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        memcpy_op[DType.int64](
-            _get_buffer_ptr[DType.int64](dst_buffer),
-            _get_buffer_ptr[DType.int64](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        memcpy_op[DType.uint8](
-            _get_buffer_ptr[DType.uint8](dst_buffer),
-            _get_buffer_ptr[DType.uint8](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        memcpy_op[DType.uint16](
-            _get_buffer_ptr[DType.uint16](dst_buffer),
-            _get_buffer_ptr[DType.uint16](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        memcpy_op[DType.uint32](
-            _get_buffer_ptr[DType.uint32](dst_buffer),
-            _get_buffer_ptr[DType.uint32](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        memcpy_op[DType.uint64](
-            _get_buffer_ptr[DType.uint64](dst_buffer),
-            _get_buffer_ptr[DType.uint64](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        memcpy_op[DType.bool](
-            _get_buffer_ptr[DType.bool](dst_buffer),
-            _get_buffer_ptr[DType.bool](src_buffer),
-            d_off,
-            s_off,
-            cnt,
-            ctx,
-        )
-    else:
-        raise Error("Unsupported dtype for memcpy: " + String(dtype))
+    dispatch_dtype(
+        _MemcpyBody(dst_addr, src_addr, d_off, s_off, cnt, ctx),
+        dtype,
+    )
 
 
 @always_inline
@@ -747,10 +479,9 @@ def memcpy_op[
         d.store[width=width](i, s.load[width=width](i))
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl=True
-        elementwise[
-            func, simd_width=simd_width_of[dtype](), use_blocking_impl=True
-        ](IndexList[1](count))
+        elementwise[func, simd_width=simd_width_of[dtype]()](
+            IndexList[1](count)
+        )
     else:
         # GPU execution
         comptime if has_accelerator():
@@ -759,8 +490,6 @@ def memcpy_op[
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](count), device_ctx
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for memcpy with dtype float64"
@@ -824,17 +553,17 @@ def slice_op[
         steps_ptr, IndexList[1](MAX_RANK)
     )
 
-    comptime unknown_steps = DimList.create_unknown[MAX_RANK]()
+    comptime unknown_starts = create_unknown_int_tuple(MAX_RANK)
+    comptime unknown_steps = create_unknown_int_tuple(MAX_RANK)
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl
         Slice.execute[
             target="cpu",
             _trace_name="interpreter.slice",
+            static_starts=unknown_starts,
             static_steps=unknown_steps,
             dtype=dtype,
             rank=MAX_RANK,
-            use_blocking_impl=True,
         ](
             output_tensor,
             input_tensor,
@@ -850,6 +579,7 @@ def slice_op[
                 Slice.execute[
                     target="gpu",
                     _trace_name="interpreter.slice",
+                    static_starts=unknown_starts,
                     static_steps=unknown_steps,
                     dtype=dtype,
                     rank=MAX_RANK,
@@ -861,14 +591,38 @@ def slice_op[
                     steps_tensor,
                     device_ctx,
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for slice with dtype float64"
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+@fieldwise_init
+struct _SliceBody(Dispatchable):
+    """Dispatch body for the Slice operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var in_shape: IndexList[MAX_RANK]
+    var out_shape: IndexList[MAX_RANK]
+    var starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
+    var stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
+    var steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
+    var ctx: OpaquePointer[MutExternalOrigin]
+
+    def call[t: DType](self) raises -> None:
+        slice_op[t](
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.in_addr),
+            self.in_shape,
+            self.out_shape,
+            self.starts_ptr,
+            self.stops_ptr,
+            self.steps_ptr,
+            self.ctx,
+        )
 
 
 def slice_dispatcher(
@@ -922,149 +676,16 @@ def slice_dispatcher(
     var stops_ptr = _get_buffer_ptr[DType.int64](stops_buffer)
     var steps_ptr = _get_buffer_ptr[DType.int64](steps_buffer)
 
-    # Dispatch by dtype
-    if dtype == DType.float32:
-        slice_op[DType.float32](
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](in_addr),
+    dispatch_dtype(
+        _SliceBody(
+            out_addr,
+            in_addr,
             padded_in_shape,
             padded_out_shape,
             starts_ptr,
             stops_ptr,
             steps_ptr,
             ctx,
-        )
-    elif dtype == DType.float64:
-        slice_op[DType.float64](
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.float16:
-        slice_op[DType.float16](
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        slice_op[DType.bfloat16](
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        slice_op[DType.int8](
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        slice_op[DType.int16](
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        slice_op[DType.int32](
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        slice_op[DType.int64](
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        slice_op[DType.uint8](
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        slice_op[DType.uint16](
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        slice_op[DType.uint32](
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        slice_op[DType.uint64](
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        slice_op[DType.bool](
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](in_addr),
-            padded_in_shape,
-            padded_out_shape,
-            starts_ptr,
-            stops_ptr,
-            steps_ptr,
-            ctx,
-        )
-    else:
-        raise Error("Unsupported dtype for slice: " + String(dtype))
+        ),
+        dtype,
+    )

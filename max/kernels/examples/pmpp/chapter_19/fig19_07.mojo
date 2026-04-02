@@ -23,7 +23,7 @@ The grid dimensions are organized as:
 - blockIdx.z: Batch index (n)
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from std.gpu import block_idx, thread_idx, grid_dim
 from std.gpu.host import DeviceContext
 
 from conv_utils import idx_x, idx_f, idx_y, conv_cpu, init_data, verify_results
@@ -58,18 +58,15 @@ def conv_layer_forward_kernel(
         F: Filter tensor pointer.
         Y: Output tensor pointer.
     """
-    var m = Int(block_idx.x)  # Output feature map index
-    var h = (Int(block_idx.y) // W_grid) * TILE_WIDTH + Int(
-        thread_idx.y
-    )  # Output H index
-    var w = (Int(block_idx.y) % W_grid) * TILE_WIDTH + Int(
-        thread_idx.x
-    )  # Output W index
-    var n = Int(block_idx.z)  # Batch index
+    var m = block_idx.x  # Output feature map index
+    var h_grid, w_grid = divmod(block_idx.y, W_grid)
+    var h = h_grid * TILE_WIDTH + thread_idx.y  # Output H index
+    var w = w_grid * TILE_WIDTH + thread_idx.x  # Output W index
+    var n = block_idx.z  # Batch index
 
     var H_out = H - K + 1
     var W_out = W - K + 1
-    var M = Int(grid_dim.x)  # Number of output channels
+    var M = grid_dim.x  # Number of output channels
 
     if n < N and m < M and h < H_out and w < W_out:
         var acc: Float32 = 0.0
@@ -158,9 +155,9 @@ def main() raises:
         W,
         K,
         W_grid,
-        d_X.unsafe_ptr(),
-        d_F.unsafe_ptr(),
-        d_Y.unsafe_ptr(),
+        d_X,
+        d_F,
+        d_Y,
         grid_dim=(M, T, N),
         block_dim=(TILE_WIDTH, TILE_WIDTH, 1),
     )

@@ -14,19 +14,15 @@
 import std.itertools
 
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.gpu.host.info import _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
+from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
 from std.testing import assert_almost_equal
 
@@ -77,23 +73,14 @@ def test[
         )
 
     # Define shapes
-    var dynamic_a_shape = IndexList[2](total_num_tokens, K)
     var a_size = total_num_tokens * K
 
     comptime actual_N = 3 * N
-    var dynamic_c_ref_shape = IndexList[2](total_num_tokens, actual_N)
     var c_ref_size = total_num_tokens * actual_N
 
-    var dynamic_lora_c_shape = IndexList[3](3, total_num_tokens, N)
     var lora_c_size = 3 * total_num_tokens * N
 
-    var dynamic_b_shape = IndexList[3](num_experts, 3 * N, K)
     var b_size = num_experts * 3 * N * K
-
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    comptime b_layout = Layout.row_major(num_experts, 3 * N, K)
-    comptime c_layout = Layout.row_major(3, UNKNOWN_VALUE, N)
-    comptime c_ref_layout = Layout.row_major(UNKNOWN_VALUE, actual_N)
 
     # Host allocations
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
@@ -103,21 +90,21 @@ def test[
     var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
     var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
 
-    var a_host = LayoutTensor[a_type, a_layout](
+    var a_host = TileTensor(
         a_host_ptr,
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
+        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
     )
-    var b_host = LayoutTensor[b_type, b_layout](
+    var b_host = TileTensor(
         b_host_ptr,
-        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, 3 * N, K)),
+        row_major[num_experts, 3 * N, K](),
     )
-    var c_host = LayoutTensor[c_type, c_layout](
+    var c_host = TileTensor(
         c_host_ptr,
-        RuntimeLayout[c_layout].row_major(dynamic_lora_c_shape),
+        row_major(Coord(Idx[3](), Idx(total_num_tokens), Idx[N]())),
     )
-    var c_ref_host = LayoutTensor[c_type, c_ref_layout](
+    var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        RuntimeLayout[c_ref_layout].row_major(dynamic_c_ref_shape),
+        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
     )
 
     # Setup offsets and expert ids

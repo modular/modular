@@ -29,28 +29,28 @@ implementations are in the book itself.
 
 ## Chapters covered
 
-| Chapter | Topics |
-|---------|--------|
-| 2 | Heterogeneous data parallel computing, vector addition |
-| 3 | Multidimensional grids, image processing |
-| 4 | Compute architecture and scheduling |
-| 5 | Memory architecture, shared memory, tiled matrix multiplication |
-| 6 | *(absent; Chapter 6 covers performance considerations and is mostly prose with no code figures in the book)* |
-| 7 | Convolution |
-| 8 | Stencil |
-| 9 | Parallel histogram |
-| 10 | Reduction and minimizing thread divergence |
-| 11 | Prefix sum (scan) |
-| 12 | Stream compaction and parallel partition |
-| 13 | Merge sort |
-| 14 | Sorting (odd-even, radix) |
-| 15 | Performance optimizations: register blocking, software pipelining |
-| 16 | Dynamic programming |
-| 17 | Sparse matrix-vector multiplication |
-| 18 | Graph traversal (BFS) |
-| 19 | Convolutional layers |
-| 20 | Softmax and attention |
-| 21 | Electrostatic potential map (Direct Coulomb Summation) |
+| Chapter | Topics                                                                                                       |
+|---------|--------------------------------------------------------------------------------------------------------------|
+| 2       | Heterogeneous data parallel computing, vector addition                                                       |
+| 3       | Multidimensional grids, image processing                                                                     |
+| 4       | Compute architecture and scheduling                                                                          |
+| 5       | Memory architecture, shared memory, tiled matrix multiplication                                              |
+| 6       | *(absent; Chapter 6 covers performance considerations and is mostly prose with no code figures in the book)* |
+| 7       | Convolution                                                                                                  |
+| 8       | Stencil                                                                                                      |
+| 9       | Parallel histogram                                                                                           |
+| 10      | Reduction and minimizing thread divergence                                                                   |
+| 11      | Prefix sum (scan)                                                                                            |
+| 12      | Stream compaction and parallel partition                                                                     |
+| 13      | Merge sort                                                                                                   |
+| 14      | Sorting (odd-even, radix)                                                                                    |
+| 15      | Performance optimizations: register blocking, software pipelining                                            |
+| 16      | Dynamic programming                                                                                          |
+| 17      | Sparse matrix-vector multiplication                                                                          |
+| 18      | Graph traversal (BFS)                                                                                        |
+| 19      | Convolutional layers                                                                                         |
+| 20      | Softmax and attention                                                                                        |
+| 21      | Electrostatic potential map (Direct Coulomb Summation)                                                       |
 
 ## Running the examples
 

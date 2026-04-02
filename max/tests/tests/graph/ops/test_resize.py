@@ -137,7 +137,7 @@ def test_resize_error_insufficient_rank(graph_builder: GraphBuilder) -> None:
 def test_resize_error_unsupported_interpolation(
     graph_builder: GraphBuilder,
 ) -> None:
-    """Test error when using unsupported interpolation mode."""
+    """Test error when using unsupported interpolation mode (NEAREST)."""
     input_type = TensorType(
         shape=[1, 3, 224, 224], dtype=DType.float32, device=DeviceRef.CPU()
     )
@@ -145,10 +145,28 @@ def test_resize_error_unsupported_interpolation(
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(
             NotImplementedError,
-            match=re.escape("Interpolation mode bilinear is not yet supported"),
+            match=re.escape("InterpolationMode.NEAREST is not yet supported"),
         ):
             ops.resize(
                 graph.inputs[0].tensor,
                 [1, 3, 448, 448],
-                interpolation=ops.InterpolationMode.BILINEAR,
+                interpolation=ops.InterpolationMode.NEAREST,
             )
+
+
+def test_resize_bilinear(graph_builder: GraphBuilder) -> None:
+    """Test resize with BILINEAR interpolation delegates to resize_linear."""
+    input_type = TensorType(
+        shape=[1, 3, 224, 224], dtype=DType.float32, device=DeviceRef.CPU()
+    )
+
+    with graph_builder(input_types=[input_type]) as graph:
+        out = ops.resize(
+            graph.inputs[0].tensor,
+            [1, 3, 448, 448],
+            interpolation=ops.InterpolationMode.BILINEAR,
+        )
+
+        assert out.dtype == input_type.dtype
+        assert out.shape == Shape([1, 3, 448, 448])
+        graph.output(out)

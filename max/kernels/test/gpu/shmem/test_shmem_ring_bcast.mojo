@@ -13,17 +13,9 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
 
-from std.os import getenv, listdir, setenv
-from std.os.path import dirname
-from std.pathlib import Path, cwd
-from std.subprocess import run
 from std.ffi import c_int
-from std.sys.defines import get_defined_string
 
-from std.gpu.host.device_attribute import DeviceAttribute
-from std.gpu.host.dim import Dim
 from std.gpu.host import DeviceBuffer
-from std.python import Python
 from shmem import *
 from std.testing import assert_equal
 
@@ -62,7 +54,7 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
     var psync = shmem_calloc[DType.uint64](1)
 
     for i in range(data_len):
-        data_h[i] = shmem_my_pe() + i
+        data_h[i] = shmem_my_pe() + Int32(i)
 
     data.enqueue_copy_from(data_h)
 

@@ -13,8 +13,8 @@
 
 from std.sys.info import simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout.tile_layout import row_major
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.packing import PackMatrixCols
 from std.testing import assert_equal
 
@@ -31,19 +31,18 @@ comptime K: Int = 128
 comptime kc = 128
 
 
-@export(ABI="C")
-def pack_b(
-    packed_b: NDBuffer[
-        rank=3,
-        type,
-        MutAnyOrigin,
-        DimList[width // kernel_cols, K, kernel_cols](),
-    ],
-    b: NDBuffer[rank=2, type, MutAnyOrigin, DimList[K, N]()],
-):
+def test_pack_b() raises:
+    var packed_b = tt_stack_allocation[dtype=type,](
+        row_major[width // kernel_cols, K, kernel_cols]()
+    )
+    for i in range(packed_b.num_elements()):
+        packed_b.ptr[i] = 1.0
+
+    var b = tt_stack_allocation[dtype=type,](row_major[K, N]())
+    for i in range(b.num_elements()):
+        b.ptr[i] = 1.0
+
     PackMatrixCols[
-        DimList[K, N](),
-        DimList[width // kernel_cols, K, kernel_cols](),
         type,
         simd_size,
         kernel_cols,
@@ -58,21 +57,6 @@ def pack_b(
         Index(kc, width),
         Index(K, N),
     )
-
-
-def test_pack_b() raises:
-    var packed_b = NDBuffer[
-        rank=3,
-        type,
-        MutAnyOrigin,
-        DimList[width // kernel_cols, K, kernel_cols](),
-    ].stack_allocation[alignment=64]()
-    packed_b.fill(1)
-    var b = NDBuffer[
-        rank=2, type, MutAnyOrigin, DimList[K, N]()
-    ].stack_allocation[alignment=64]()
-    b.fill(1)
-    pack_b(packed_b, b)
 
     assert_equal(packed_b[0, 0, 0], 1.0)
 

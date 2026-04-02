@@ -26,6 +26,7 @@ from std.algorithm import product as reduce_product
 from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
+from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
@@ -286,12 +287,13 @@ def reduce_dispatcher[
             ctx,
         )
     elif dtype == DType.float64:
-        reduce_op[DType.float64, reduce_fn](
-            _get_buffer_ptr[DType.float64](out_buffer),
-            _get_buffer_ptr[DType.float64](in_buffer),
-            normalized_shape,
-            ctx,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            reduce_op[DType.float64, reduce_fn](
+                _get_buffer_ptr[DType.float64](out_buffer),
+                _get_buffer_ptr[DType.float64](in_buffer),
+                normalized_shape,
+                ctx,
+            )
     elif dtype == DType.bfloat16:
         reduce_op[DType.bfloat16, reduce_fn](
             _get_buffer_ptr[DType.bfloat16](out_buffer),
@@ -422,12 +424,10 @@ def reduce_op[
 
     # Always dispatch rank-3 reduction with axis=1
     if not ctx:
-        # TODO(MXF-108): Remove single_thread_blocking_override
         reduce_fn[
             dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=True,
             target="cpu",
         ](normalized_shape, 1, DeviceContextPtr(ctx))
     else:
@@ -448,8 +448,6 @@ def reduce_op[
                     output_fn,
                     target="gpu",
                 ](normalized_shape, 1, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for reduce with dtype "

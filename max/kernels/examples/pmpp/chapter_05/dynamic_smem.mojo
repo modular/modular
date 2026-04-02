@@ -17,7 +17,7 @@
 
 from std.math import ceildiv, sqrt
 from std.gpu import block_idx, thread_idx, barrier
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace, external_memory
 
 # ========================== KERNEL CODE ==========================
@@ -57,10 +57,10 @@ def matrixMulKernel(
     )
     var Nds = Mds + 32 * 32  # Use max size for allocation
 
-    var tx = Int(thread_idx.x)
-    var ty = Int(thread_idx.y)
-    var Row = tile_width * Int(block_idx.y) + ty
-    var Col = tile_width * Int(block_idx.x) + tx
+    var tx = thread_idx.x
+    var ty = thread_idx.y
+    var Row = tile_width * block_idx.y + ty
+    var Col = tile_width * block_idx.x + tx
 
     var Pvalue = Float32(0)
 

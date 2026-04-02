@@ -19,7 +19,7 @@ Key differences from QwenImagePipeline:
 - True CFG with two forward passes (positive + negative prompts)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Literal
 
 import numpy as np
@@ -30,7 +30,7 @@ from max.graph import TensorType, TensorValue, ops
 from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
-from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
+from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import (
     max_compile,
 )
@@ -45,8 +45,8 @@ from .model import QwenImageEditTransformerModel
 
 
 @dataclass(kw_only=True)
-class QwenImageEditModelInputs(PixelModelInputs):
-    """QwenImage-edit-specific PixelModelInputs.
+class QwenImageEditModelInputs:
+    """QwenImage-edit execution inputs.
 
     For image editing the recommended usage is
     ``--guidance-scale 1.0 --true-cfg-scale 4.0``.
@@ -54,6 +54,28 @@ class QwenImageEditModelInputs(PixelModelInputs):
     ``true_cfg_scale`` drives the two-pass CFG behavior.
     """
 
+    tokens: TokenBuffer
+    tokens_2: TokenBuffer | None = None
+    negative_tokens: TokenBuffer | None = None
+    negative_tokens_2: TokenBuffer | None = None
+    timesteps: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    sigmas: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    latents: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    latent_image_ids: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    num_warmup_steps: int = 0
+    input_image: npt.NDArray[np.uint8] | None = None
+    input_images: list[npt.NDArray[np.uint8]] | None = None
+    strength: float = 0.6
+    cfg_normalization: bool = False
+    cfg_truncation: float = 1.0
     width: int = 1024
     height: int = 1024
     guidance_scale: float = 1.0
@@ -62,6 +84,26 @@ class QwenImageEditModelInputs(PixelModelInputs):
     num_images_per_prompt: int = 1
     prompt_images: list[npt.NDArray[np.uint8]] | None = None
     vae_condition_images: list[npt.NDArray[np.uint8]] | None = None
+
+    @classmethod
+    def kwargs_from_context(cls, context: PixelContext) -> dict[str, Any]:
+        """Build kwargs from PixelContext using matching dataclass fields."""
+        kwargs: dict[str, Any] = {}
+        for dataclass_field in fields(cls):
+            name = dataclass_field.name
+            if not hasattr(context, name):
+                continue
+            value = getattr(context, name)
+            if value is None:
+                if dataclass_field.default is not MISSING:
+                    kwargs[name] = dataclass_field.default
+                elif dataclass_field.default_factory is not MISSING:
+                    kwargs[name] = dataclass_field.default_factory()
+                else:
+                    kwargs[name] = None
+            else:
+                kwargs[name] = value
+        return kwargs
 
 
 @dataclass
@@ -507,7 +549,9 @@ class QwenImageEditPipeline(DiffusionPipeline):
 
     def prepare_inputs(self, context: PixelContext) -> QwenImageEditModelInputs:  # type: ignore[override]
         """Convert a PixelContext into QwenImageEditModelInputs."""
-        return QwenImageEditModelInputs.from_context(context)
+        return QwenImageEditModelInputs(
+            **QwenImageEditModelInputs.kwargs_from_context(context)
+        )
 
     def _patchify_and_pack(self, latents: TensorValue) -> TensorValue:
         """(B,C,H//2,2,W//2,2) → (B, H//2*W//2, C*4)"""

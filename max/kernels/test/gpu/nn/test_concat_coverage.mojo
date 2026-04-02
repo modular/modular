@@ -23,19 +23,17 @@ This file tests various code paths in nn/concat.mojo:
 """
 
 from std.collections import Optional
-from std.sys import size_of
 
-from std.gpu.host import DeviceContext, HostBuffer
-from layout import Coord, Idx, TileTensor, row_major
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,
-    _concat_gpu_elementwise,
     concat,
     elementwise_epilogue_type,
     fused_concat,
 )
 from std.runtime.asyncrt import DeviceContextPtr
-from std.testing import assert_almost_equal, assert_equal, assert_true
+from std.testing import assert_equal
 
 from std.utils import IndexList, StaticTuple
 from std.utils.index import product

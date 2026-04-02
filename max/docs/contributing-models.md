@@ -238,12 +238,12 @@ These scores were measured on NVIDIA B200 GPUs with MAX 25.7. The "vs Reference"
 column shows the percentage relative to the best of vLLM or SGLang for that
 model:
 
-| Model | Task | Accuracy | vs Reference |
-|-------|------|----------|--------------|
-| meta-llama/llama-3.1-8b-instruct | gsm8k_cot_llama | 0.878 | 101.4% |
-| unsloth/gpt-oss-20b-bf16 | gsm8k_cot_llama | 0.947 | 98.1% |
-| qwen/qwen2.5-vl-7b-instruct | gsm8k_cot_llama | 0.787 | 100.3% |
-| qwen/qwen2.5-vl-7b-instruct | chartqa | 0.812 | 100.3% |
+| Model                            | Task            | Accuracy | vs Reference |
+|----------------------------------|-----------------|----------|--------------|
+| meta-llama/llama-3.1-8b-instruct | gsm8k_cot_llama | 0.878    | 101.4%       |
+| unsloth/gpt-oss-20b-bf16         | gsm8k_cot_llama | 0.947    | 98.1%        |
+| qwen/qwen2.5-vl-7b-instruct      | gsm8k_cot_llama | 0.787    | 100.3%       |
+| qwen/qwen2.5-vl-7b-instruct      | chartqa         | 0.812    | 100.3%       |
 
 > [!NOTE]
 > Accuracy numbers may vary across GPU types. If your model scores

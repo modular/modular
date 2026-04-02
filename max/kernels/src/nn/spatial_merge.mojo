@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_dim, block_idx_int as block_idx, thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_int as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 
 def spatial_merge_kernel[
@@ -89,7 +93,7 @@ def spatial_merge_kernel[
 
     # Create a RuntimeLayout for the patch space [T, H_out, W_out]
     # to convert linear patch_local_idx to (t, ho, wo) coordinates.
-    var patch_space_rt_layout = row_major((Idx(T), Idx(H_out), Idx(W_out)))
+    var patch_space_rt_layout = row_major(Idx(T), Idx(H_out), Idx(W_out))
 
     # Convert linear patch index to 3D coordinates (t, ho, wo).
     var patch_coords = patch_space_rt_layout.idx2crd(Int(patch_local_idx))
@@ -147,7 +151,7 @@ def spatial_merge_kernel[
     # Copy patch - threads loop over output channels.
     # Each c_out in [0, C_out) corresponds to [merge_size, merge_size, hidden_size]
     # flattened in the permute(0, 1, 3, 2, 4, 5) order.
-    for c_out in range(thread_idx.x, C_out, block_dim.x):
+    for c_out in range(Int(thread_idx.x), C_out, Int(block_dim.x)):
         # Decompose c_out into (dh, dw, c) using the channel layout.
         var channel_coords = channel_layout.idx2crd(c_out)
         var dh, dw, c = (
@@ -184,7 +188,7 @@ def spatial_merge[
         ImmutOrigin(grid_thw.origin),
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel, kernel](
         output,
         input.as_immut(),
         grid_thw.as_immut(),

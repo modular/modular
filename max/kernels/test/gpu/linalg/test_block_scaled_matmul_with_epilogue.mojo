@@ -24,7 +24,6 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
 )
-from std.utils.index import IndexList
 
 
 def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
@@ -38,9 +37,9 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
     var b_device = ctx.enqueue_create_buffer[DType.uint8](n * k_packed)
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](max(m * n, 1))
 
-    var a_tensor = TileTensor(a_device, row_major((Idx(m), Idx(k_packed))))
-    var b_tensor = TileTensor(b_device, row_major((Idx(n), Idx(k_packed))))
-    var c_tensor = TileTensor(c_device, row_major((Idx(m), Idx(n))))
+    var a_tensor = TileTensor(a_device, row_major(Idx(m), Idx(k_packed)))
+    var b_tensor = TileTensor(b_device, row_major(Idx(n), Idx(k_packed)))
+    var c_tensor = TileTensor(c_device, row_major(Idx(m), Idx(n)))
 
     var a_scales_dim0 = ceildiv(m, SF_MN_GROUP_SIZE)
     var a_scales_dim1 = ceildiv(k, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)

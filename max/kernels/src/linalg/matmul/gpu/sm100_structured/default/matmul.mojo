@@ -27,14 +27,9 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
-    ComptimeInt,
-    Coord,
     Idx,
-    RowMajorLayout,
     RuntimeInt,
-    TensorLayout,
     TileTensor,
-    row_major,
     row_major as tt_row_major,
 )
 from structured_kernels.tile_types import create_tma_tile

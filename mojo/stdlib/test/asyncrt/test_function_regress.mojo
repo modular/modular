@@ -15,7 +15,7 @@ from std.sys import is_gpu
 
 from asyncrt_test_utils import create_test_device_context
 from std.builtin.device_passable import DevicePassable
-from std.gpu import *
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 from std.sys import has_apple_gpu_accelerator
@@ -94,7 +94,7 @@ def _vec_func_zero(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
@@ -107,7 +107,7 @@ def _vec_func_not_zero(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
@@ -122,7 +122,7 @@ def _vec_func[
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 

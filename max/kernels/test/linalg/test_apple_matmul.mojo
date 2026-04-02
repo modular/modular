@@ -34,7 +34,7 @@ from linalg.packing import (
 from linalg.utils import elementwise_epilogue_type
 from std.testing import assert_almost_equal, assert_true
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 comptime alignment = 64
 comptime some_constant = 20
@@ -284,9 +284,9 @@ def test_matmul[
 
     var bp_ptr = alloc[Scalar[b_type]](padded_k * padded_n, alignment=alignment)
 
-    var bp = TileTensor(bp_ptr, row_major((Idx(padded_k), Idx(padded_n))))
-    var a = TileTensor(a_ptr, row_major((Idx(m), Idx(k))))
-    var c = TileTensor(c0_ptr, row_major((Idx(m), Idx(n))))
+    var bp = TileTensor(bp_ptr, row_major(Idx(padded_k), Idx(padded_n)))
+    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+    var c = TileTensor(c0_ptr, row_major(Idx(m), Idx(n)))
 
     for i in range(m):
         for p in range(k):

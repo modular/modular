@@ -13,7 +13,7 @@
 
 from std.ffi import external_call
 from std.gpu.host.device_context import (
-    _ConstCharPtr,
+    _CString,
     _checked,
     _DeviceContextPtr,
 )
@@ -36,9 +36,7 @@ def metal_device(ctx: DeviceContext) raises -> MTLDevice:
     _checked(
         external_call[
             "AsyncRT_DeviceContext_metal_device",
-            _ConstCharPtr,
-            UnsafePointer[MTLDevice, origin_of(result)],
-            _DeviceContextPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             ctx._handle,

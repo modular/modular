@@ -186,6 +186,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--strength",
+        type=float,
+        default=0.6,
+        help="Image-to-image strength in (0, 1]. Ignored for text-to-image.",
+    )
+    parser.add_argument(
+        "--cfg-normalization",
+        action="store_true",
+        help="Enable CFG output renormalization when supported by the selected model.",
+    )
+    parser.add_argument(
+        "--cfg-truncation",
+        type=float,
+        default=1.0,
+        help="CFG truncation threshold in normalized time when supported by the selected model (> 0).",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -272,9 +289,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
     )
     parser.add_argument(
+        "--teacache",
+        action="store_true",
+        help="Enable TeaCache optimization for the FLUX.2 transformer.",
+    )
+    parser.add_argument(
+        "--teacache-rel-l1-thresh",
+        type=float,
+        default=None,
+        help="Relative-L1 threshold for TeaCache (model default if unset).",
+    )
+    parser.add_argument(
+        "--teacache-coefficients",
+        type=float,
+        action="append",
+        default=None,
+        help=(
+            "TeaCache polynomial coefficients. Repeat this flag once per "
+            "coefficient to override the model defaults (5 for FLUX)."
+        ),
+    )
+    parser.add_argument(
         "--prefer-module-v3",
         action="store_true",
-        help="Use the ModuleV3 FLUX implementation instead of the default architecture.",
+        help="Prefer the ModuleV3 implementation when the selected model provides one.",
     )
 
     args = parser.parse_args(argv)
@@ -292,6 +330,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         assert args.guidance_scale > 0.0, "guidance-scale must be positive."
     if args.true_cfg_scale is not None:
         assert args.true_cfg_scale > 0.0, "true-cfg-scale must be positive."
+    assert 0.0 < args.strength <= 1.0, "strength must be in (0, 1]."
+    assert args.cfg_truncation > 0.0, "cfg-truncation must be positive."
+    if args.residual_threshold is not None:
+        assert args.residual_threshold >= 0.0, (
+            "residual-threshold must be non-negative."
+        )
+    if args.taylorseer_cache_interval is not None:
+        assert args.taylorseer_cache_interval >= 1, (
+            "taylorseer-cache-interval must be >= 1."
+        )
+    if args.taylorseer_warmup_steps is not None:
+        assert args.taylorseer_warmup_steps >= 1, (
+            "taylorseer-warmup-steps must be >= 1."
+        )
 
     return args
 
@@ -372,7 +424,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.model.huggingface_model_repo,
+        config.model.architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
@@ -395,7 +447,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         max_length = components_config["tokenizer"]["config_dict"].get(
             "model_max_length", None
         )
-        if arch.name in _FLUX2_ARCH_NAMES:
+        if arch.name in _FLUX2_ARCH_NAMES or arch.name == "ZImagePipeline":
             max_length = 512
         elif arch.name in QWEN_IMAGE_ARCH_NAMES:
             max_length = 512
@@ -436,11 +488,13 @@ async def generate_image(args: argparse.Namespace) -> None:
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
     cache_config = DenoisingCacheConfig(
         first_block_caching=args.first_block_caching,
-        residual_threshold=args.residual_threshold,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
         taylorseer_max_order=args.taylorseer_max_order,
+        teacache=args.teacache,
+        teacache_rel_l1_thresh=args.teacache_rel_l1_thresh,
+        teacache_coefficients=args.teacache_coefficients,
     )
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
@@ -506,6 +560,9 @@ async def generate_image(args: argparse.Namespace) -> None:
                     steps=args.num_inference_steps,
                     guidance_scale=guidance_scale,
                     true_cfg_scale=true_cfg_scale,
+                    strength=args.strength,
+                    cfg_normalization=args.cfg_normalization,
+                    cfg_truncation=args.cfg_truncation,
                 )
             ),
         )
@@ -523,6 +580,9 @@ async def generate_image(args: argparse.Namespace) -> None:
                     steps=args.num_inference_steps,
                     guidance_scale=guidance_scale,
                     true_cfg_scale=true_cfg_scale,
+                    strength=args.strength,
+                    cfg_normalization=args.cfg_normalization,
+                    cfg_truncation=args.cfg_truncation,
                 )
             ),
         )
@@ -531,7 +591,8 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     print(
         "Parameters: "
-        f"steps={args.num_inference_steps}, guidance={guidance_scale}, true_cfg={true_cfg_scale}"
+        f"steps={args.num_inference_steps}, guidance={guidance_scale}, true_cfg={true_cfg_scale}, "
+        f"cfg_norm={args.cfg_normalization}, cfg_trunc={args.cfg_truncation}"
     )
 
     # Step 5: Create a PixelContext object from the request
@@ -569,6 +630,18 @@ async def generate_image(args: argparse.Namespace) -> None:
         print(
             f"TaylorSeer enabled: {order_info}, {interval_info}, {warmup_info}."
         )
+    if args.teacache:
+        thresh_info = (
+            f"rel_l1_thresh={args.teacache_rel_l1_thresh}"
+            if args.teacache_rel_l1_thresh is not None
+            else "rel_l1_thresh=model-default"
+        )
+        coeff_info = (
+            "coefficients=user-specified"
+            if args.teacache_coefficients is not None
+            else "coefficients=model-default"
+        )
+        print(f"TeaCache enabled: {thresh_info}, {coeff_info}.")
 
     # Step 6: Prepare inputs for the pipeline
     # Create a batch with a single context
@@ -591,6 +664,9 @@ async def generate_image(args: argparse.Namespace) -> None:
                     steps=args.num_inference_steps,
                     guidance_scale=guidance_scale,
                     true_cfg_scale=true_cfg_scale,
+                    strength=args.strength,
+                    cfg_normalization=args.cfg_normalization,
+                    cfg_truncation=args.cfg_truncation,
                 )
             ),
         )

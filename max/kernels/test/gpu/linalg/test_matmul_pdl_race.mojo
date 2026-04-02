@@ -30,7 +30,7 @@ and only for bfloat16.
 """
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -40,7 +40,7 @@ from std.gpu.primitives.grid_controls import (
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.math import ceildiv
-from std.sys import get_defined_int, size_of
+from std.sys import get_defined_int
 
 
 def consumer_kernel[
@@ -57,8 +57,8 @@ def consumer_kernel[
     """
     wait_on_dependent_grids()
 
-    var tid = Int(thread_idx.x + block_idx.x * block_dim.x)
-    var stride = Int(grid_dim.x * block_dim.x)
+    var tid = thread_idx.x + block_idx.x * block_dim.x
+    var stride = grid_dim.x * block_dim.x
     var inverse_tid = stride - tid
 
     # Read from matmul output and write to our output

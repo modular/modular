@@ -3,12 +3,7 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _FILECHECK_TESTS = [
-    "test_dimlist.mojo",
     "test_naive_matmul.mojo",
-    "test_ndbuffer.mojo",
-    "test_ndbuffer_dynamic_shape.mojo",
-    "test_ndbuffer_dynamic_stride.mojo",
-    "test_ndbuffer_indexing.mojo",
     "test_partial_load_store.mojo",
     "test_strsv.mojo",
 ]

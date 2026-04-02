@@ -26,18 +26,13 @@ from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from std.utils.index import Index, IndexList
 
 
 def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
@@ -83,29 +78,23 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     var num_expert_ids = max(num_active_experts, 0)
 
     # Create host buffers
-    var dynamic_a_shape = IndexList[2](total_tokens, K)
     var a_size = total_tokens * K
 
     var b_size = num_experts * N * K
 
-    var dynamic_c_shape = IndexList[2](total_tokens, N)
     var c_size = total_tokens * N
-
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    comptime b_layout = Layout.row_major(num_experts, N, K)
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
 
     var a_host_ptr = alloc[Scalar[in_type]](a_size)
     var b_host_ptr = alloc[Scalar[in_type]](b_size)
     var c_host_ptr = alloc[Scalar[out_type]](c_size)
 
-    var a_host = LayoutTensor[in_type, a_layout](
+    var a_host = TileTensor(
         a_host_ptr,
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
+        row_major(Coord(Idx(total_tokens), Idx[K]())),
     )
-    var b_host = LayoutTensor[in_type, b_layout](
+    var b_host = TileTensor(
         b_host_ptr,
-        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
+        row_major[num_experts, N, K](),
     )
 
     # Create offsets and expert_ids
@@ -121,35 +110,22 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         expert_ids_host_ptr[i] = Int32(i % num_experts)
 
     # Create scale buffers
-    var dynamic_a_scales_shape = IndexList[2](K // BLOCK_SCALE_K, total_tokens)
     var a_scales_size = (K // BLOCK_SCALE_K) * total_tokens
 
-    var dynamic_b_scales_shape = IndexList[3](
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
     var b_scales_size = (
         num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
-    )
-
-    comptime a_scales_layout = Layout.row_major(
-        K // BLOCK_SCALE_K, UNKNOWN_VALUE
-    )
-    comptime b_scales_layout = Layout.row_major(
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
     var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
     var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
 
-    var a_scales_host = LayoutTensor[DType.float32, a_scales_layout](
+    var a_scales_host = TileTensor(
         a_scales_host_ptr,
-        RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
+        row_major(Coord(Idx[K // BLOCK_SCALE_K](), Idx(total_tokens))),
     )
-    var b_scales_host = LayoutTensor[DType.float32, b_scales_layout](
+    var b_scales_host = TileTensor(
         b_scales_host_ptr,
-        RuntimeLayout[b_scales_layout].row_major(
-            IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
-        ),
+        row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
     )
 
     # Initialize with random data

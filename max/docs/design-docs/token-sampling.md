@@ -211,11 +211,11 @@ creativity and coherence.0.
 
 ## Comparisons
 
-| Method | Description | Pros | Cons |
-| --- | --- | --- | --- |
-| **Greedy Sampling** | Selects the highest probability token at each step. | Fast and deterministic | Can lack diversity |
-| **Beam Search** | Explores multiple sequences simultaneously, keeping track of top candidates. | Balances exploration and quality | More computationally intensive |
-| **Stochastic Sampling** | Introduces randomness by sampling from the probability distribution. | Produces diverse outputs | Less predictable |
+| Method                  | Description                                                                  | Pros                             | Cons                           |
+|-------------------------|------------------------------------------------------------------------------|----------------------------------|--------------------------------|
+| **Greedy Sampling**     | Selects the highest probability token at each step.                          | Fast and deterministic           | Can lack diversity             |
+| **Beam Search**         | Explores multiple sequences simultaneously, keeping track of top candidates. | Balances exploration and quality | More computationally intensive |
+| **Stochastic Sampling** | Introduces randomness by sampling from the probability distribution.         | Produces diverse outputs         | Less predictable               |
 
 ![Token sampling effects](img/token-sampling/img01-token-sampling-effects.png)
 /// caption

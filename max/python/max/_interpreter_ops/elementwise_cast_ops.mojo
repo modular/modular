@@ -27,6 +27,7 @@ from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.reflection import get_base_type_name
 from std.runtime.asyncrt import DeviceContextPtr
+from std.sys.info import has_apple_gpu_accelerator
 from tensor import ElementwiseUnaryMixedOp
 from MOGGKernelAPI.MOGGKernelAPI import Cast
 
@@ -96,9 +97,10 @@ def cast_dispatcher(
             out_buffer, in_buffer, out_dtype, size, ctx
         )
     elif in_dtype == DType.float64:
-        _cast_dispatch_out[DType.float64](
-            out_buffer, in_buffer, out_dtype, size, ctx
-        )
+        comptime if not has_apple_gpu_accelerator():
+            _cast_dispatch_out[DType.float64](
+                out_buffer, in_buffer, out_dtype, size, ctx
+            )
     elif in_dtype == DType.bfloat16:
         _cast_dispatch_out[DType.bfloat16](
             out_buffer, in_buffer, out_dtype, size, ctx
@@ -175,9 +177,10 @@ def _cast_dispatch_out[
             _get_buffer_ptr[DType.float32](out_buffer), in_ptr, size, ctx
         )
     elif out_dtype == DType.float64:
-        unary_mixed_op[Cast, in_dtype, DType.float64](
-            _get_buffer_ptr[DType.float64](out_buffer), in_ptr, size, ctx
-        )
+        comptime if not has_apple_gpu_accelerator():
+            unary_mixed_op[Cast, in_dtype, DType.float64](
+                _get_buffer_ptr[DType.float64](out_buffer), in_ptr, size, ctx
+            )
     elif out_dtype == DType.bfloat16:
         unary_mixed_op[Cast, in_dtype, DType.bfloat16](
             _get_buffer_ptr[DType.bfloat16](out_buffer), in_ptr, size, ctx
@@ -262,10 +265,7 @@ def unary_mixed_op[
         out_ptr.store[width=width](i, res)
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl=True
-        elementwise[
-            func, simd_width=simd_width_of[dtype](), use_blocking_impl=True
-        ](IndexList[1](size))
+        elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
@@ -276,8 +276,6 @@ def unary_mixed_op[
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for this mixed-type unary"

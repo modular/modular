@@ -23,7 +23,6 @@ from linalg.utils import (
     get_matmul_prefetch_b_distance_k,
 )
 
-from std.utils.index import Index
 
 from layout import TileTensor, Coord, Idx, row_major
 
@@ -43,7 +42,7 @@ comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
 def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
-    var a = TileTensor(a_ptr, row_major((Idx(m), Idx(n))))
+    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(n)))
     for i in range(m):
         for j in range(n):
             print(a[i, j], end=" ")
@@ -206,9 +205,9 @@ def main() raises:
     var c = TileTensor(c_ptr, row_major(Idx(m * n)))
     var c2 = TileTensor(c2_ptr, row_major(Idx(m * n)))
 
-    var am = TileTensor(a_ptr, row_major((Idx(m), Idx(k))))
-    var bm = TileTensor(b_ptr, row_major((Idx(k), Idx(n))))
-    var cm = TileTensor(c_ptr, row_major((Idx(m), Idx(n))))
+    var am = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+    var bm = TileTensor(b_ptr, row_major(Idx(k), Idx(n)))
+    var cm = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
 
     for i in range(m * k):
         a[i] = Scalar[dtype](i)

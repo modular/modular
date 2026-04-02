@@ -12,22 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp
-from std.sys.info import simd_width_of
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from std.random import rand
-from layout.int_tuple import fill_like
 from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
@@ -35,7 +31,7 @@ from state_space.causal_conv1d import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def main() raises:
@@ -120,14 +116,17 @@ def run_causal_conv1d_gpu[
 
     # Create TileTensors for CPU reference
     var input_tt = TileTensor(
-        input_buf.ptr, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        input_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
-    var weight_tt = TileTensor(
-        weight_buf.ptr, row_major((Idx(dim), Idx(width)))
+    var weight_tt = TileTensor(weight_buf.ptr, row_major(Idx(dim), Idx(width)))
+    var bias_tt = TileTensor(
+        bias_buf.ptr,
+        row_major(
+            Idx(dim),
+        ),
     )
-    var bias_tt = TileTensor(bias_buf.ptr, row_major((Idx(dim),)))
     var result_cpu_tt = TileTensor(
-        result_cpu_buf.ptr, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        result_cpu_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
 
     # Run CPU reference
@@ -190,19 +189,21 @@ def run_causal_conv1d_gpu[
     # Create TileTensors for GPU kernel
     var input_device_tt = TileTensor(
         input_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(batch), Idx(dim), Idx(seqlen))),
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
     var weight_device_tt = TileTensor(
         weight_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(dim), Idx(width))),
+        row_major(Idx(dim), Idx(width)),
     )
     var bias_device_tt = TileTensor(
         bias_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(dim),)),
+        row_major(
+            Idx(dim),
+        ),
     )
     var output_device_tt = TileTensor(
         output_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(batch), Idx(dim), Idx(seqlen))),
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
 
     # Run GPU kernel

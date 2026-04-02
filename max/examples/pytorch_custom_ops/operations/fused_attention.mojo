@@ -56,7 +56,7 @@ from std.math import exp
 
 from compiler import register
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx
+from std.gpu import block_idx_uint as block_idx
 from std.gpu.memory import AddressSpace
 from std.gpu.sync import barrier
 from layout import Layout, LayoutTensor

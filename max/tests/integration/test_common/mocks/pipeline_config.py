@@ -60,7 +60,6 @@ class DummyPipelineConfig(PipelineConfig):
         quantization_encoding: SupportedEncoding,
         max_batch_size: int | None,
         max_length: int | None,
-        pdl_level: str = "1",
         device_specs: list[DeviceSpec] | None = None,
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
@@ -83,7 +82,6 @@ class DummyPipelineConfig(PipelineConfig):
         # we keep pydantic-internal state consistent while still avoiding full
         # validation / resolution.
         runtime = PipelineRuntimeConfig.model_construct(
-            pdl_level=pdl_level,
             max_batch_size=max_batch_size,
         )
         base = PipelineConfig.model_construct(

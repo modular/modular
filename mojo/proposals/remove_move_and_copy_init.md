@@ -32,11 +32,11 @@ the job that needs doing.
 Mojo defines three separate constructor/initializer methods, each
 with different names and spelling:
 
-| Initializer       | Copy value | Move value | Takes ownership of |
-|-------------------|------------|------------|---------------------|
-| `__init__`        | ✓          | ✓          | value (copy/move)   |
-| `__copyinit__`    | ✓          |            | copied value        |
-| `__moveinit__`    |            | ✓          | moved value         |
+| Initializer    | Copy value | Move value | Takes ownership of |
+|----------------|------------|------------|--------------------|
+| `__init__`     | ✓          | ✓          | value (copy/move)  |
+| `__copyinit__` | ✓          |            | copied value       |
+| `__moveinit__` |            | ✓          | moved value        |
 
 These three methods essentially perform the same operation:
 construct a new value from an existing one. The differences
@@ -131,13 +131,13 @@ developed by our users, which will need migration/fixits.
 
 ## Spelling and terminology
 
-| Term       | Meaning                                                                 |
-|------------|-------------------------------------------------------------------------|
-| Copy       | Duplicate a value.                                                      |
-| Copyable   | A value capability: the value may be safely duplicated.                 |
-| Move       | Move a value. The source is consumed and no longer usable.          |
-| Movable    | A value capability: the value may be safely consumed and transferred.   |
-| Take       | “Move and own.” Construction moves the value and transfers<br />ownership to the new instance. The term already<br />appears in `UnsafePointer` APIs. |
+| Term     | Meaning                                                                                                                                               |
+|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Copy     | Duplicate a value.                                                                                                                                    |
+| Copyable | A value capability: the value may be safely duplicated.                                                                                               |
+| Move     | Move a value. The source is consumed and no longer usable.                                                                                            |
+| Movable  | A value capability: the value may be safely consumed and transferred.                                                                                 |
+| Take     | “Move and own.” Construction moves the value and transfers<br />ownership to the new instance. The term already<br />appears in `UnsafePointer` APIs. |
 
 This pitch adds a required argument label `take` for transfer and `copy` for
 copy initialization. This terminology is inspired from `UnsafePointer`'s

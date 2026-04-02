@@ -17,8 +17,8 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from nn.mla_index_fp8 import mla_indexer_ragged_float8_paged
-from nn.mha_mask import MaskName
+from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.mha_mask import MaskName
 from std.random import rand, random_ui64
 from layout import (
     Idx,
@@ -29,7 +29,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.testing import assert_true
 from std.collections import Set
 
@@ -236,22 +236,24 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     var q_tile = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((Idx(total_seq_len), Idx(num_heads), Idx(depth))),
+        row_major(Idx(total_seq_len), Idx(num_heads), Idx(depth)),
     )
 
     var qs_tile = TileTensor(
         qs_device.unsafe_ptr(),
-        row_major((Idx(total_seq_len), Idx(num_heads))),
+        row_major(Idx(total_seq_len), Idx(num_heads)),
     )
 
     var input_row_offsets_tile = TileTensor(
         input_row_offsets_device.unsafe_ptr(),
-        row_major((Idx(batch_size + 1),)),
+        row_major(
+            Idx(batch_size + 1),
+        ),
     )
 
     var o_tile = TileTensor(
         o_device.unsafe_ptr(),
-        row_major((Idx(total_seq_len), Idx(top_k))),
+        row_major(Idx(total_seq_len), Idx(top_k)),
     )
 
     mla_indexer_ragged_float8_paged[

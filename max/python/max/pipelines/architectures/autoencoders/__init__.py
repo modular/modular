@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .autoencoder_kl import AutoencoderKLModel
-from .autoencoder_kl_flux2 import AutoencoderKLFlux2Model
+from ..autoencoders_modulev3 import (
+    AutoencoderKLFlux2Model,
+    AutoencoderKLModel,
+)
 from .autoencoder_kl_qwen_image import AutoencoderKLQwenImageModel
+from .autoencoder_kl_wan import AutoencoderKLWanModel

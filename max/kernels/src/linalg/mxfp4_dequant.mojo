@@ -21,10 +21,10 @@ SF_VECTOR_SIZE (32) consecutive elements.
 
 from std.math import ceildiv
 from std.gpu import (
-    block_idx,
-    thread_idx,
-    grid_dim,
-    block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+    grid_dim_uint as grid_dim,
+    block_dim_uint as block_dim,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo
@@ -39,11 +39,10 @@ from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from layout import TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
-from .fp4_utils import (
-    cast_uint_to_fp4e2m1,
-    MXFP4_SF_VECTOR_SIZE,
-    MXFP4_SF_DTYPE,
-)
+from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
+from std.algorithm.functional import elementwise
+from std.utils.index import Index, IndexList
+from std.sys.info import simd_width_of
 
 
 @__llvm_metadata(
@@ -77,11 +76,13 @@ def _dequant_mxfp4_to_fp8_kernel[
     comptime BYTES_PER_THREAD = ELEMENTS_PER_THREAD // 2
 
     with PDL():
-        for global_row_idx in range(block_idx.x, num_rows, grid_dim.x):
+        for global_row_idx in range(
+            Int(block_idx.x), num_rows, Int(grid_dim.x)
+        ):
             for col_thread_idx in range(
-                thread_idx.x,
+                Int(thread_idx.x),
                 ceildiv(num_cols, ELEMENTS_PER_THREAD),
-                block_dim.x,
+                Int(block_dim.x),
             ):
                 var global_col_idx = col_thread_idx * ELEMENTS_PER_THREAD
 
@@ -223,4 +224,39 @@ def dequant_mxfp4[
         block_dim=block_dim_val,
         grid_dim=grid_dim_val,
         attributes=pdl_launch_attributes(pdl_level),
+    )
+
+
+def _cast_bf16_to_fp8(
+    ctx: DeviceContext,
+    output: TileTensor,
+    input: TileTensor,
+    num_rows: Int,
+    num_cols: Int,
+) raises:
+    """Cast BF16 tensor to FP8 using elementwise kernel."""
+    var out_tt = output.as_any_origin()
+    var in_tt = input.as_any_origin()
+    comptime assert out_tt.flat_rank == 2, "output must be rank 2"
+    comptime assert in_tt.flat_rank == 2, "input must be rank 2"
+    comptime assert out_tt.mut, "output must be mutable"
+
+    @always_inline
+    @__copy_capture(out_tt, in_tt)
+    @parameter
+    def cast_fn[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank],):
+        comptime assert rank == 2, "cast_fn only supports rank-2 tensors"
+        var idx = rebind[IndexList[2]](idx_arg)
+        var coord = Coord(idx)
+        comptime assert in_tt.flat_rank >= coord.flat_rank
+        comptime assert out_tt.flat_rank >= coord.flat_rank
+        out_tt.store[width=width](
+            coord,
+            in_tt.load[width=width](coord).cast[out_tt.dtype](),
+        )
+
+    elementwise[cast_fn, simd_width_of[input.dtype](), target="gpu"](
+        Index(num_rows, num_cols), ctx
     )

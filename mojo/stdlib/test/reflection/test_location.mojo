@@ -18,14 +18,16 @@ from std.reflection import (
     source_location,
     SourceLocation,
 )
-from std.testing import assert_equal, assert_true, TestSuite
+from std.memory import UnsafeMaybeUninit
+from std.sys import size_of
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def check_source_loc(line: Int, col: Int, source_loc: SourceLocation) raises:
     """Utility function to help writing source location tests."""
-    assert_equal(source_loc.line, line)
-    assert_equal(source_loc.col, col)
-    assert_true(String(source_loc.file_name).endswith("test_location.mojo"))
+    assert_equal(source_loc.line(), line)
+    assert_equal(source_loc.column(), col)
+    assert_true(String(source_loc.file_name()).endswith("test_location.mojo"))
 
 
 def get_locs() -> Tuple[SourceLocation, SourceLocation]:
@@ -72,10 +74,10 @@ def get_four_locs_inlined() -> (
 
 def test_builtin_source_loc() raises:
     var source_loc = source_location()
-    check_source_loc(74, 37, source_loc)
-    check_source_loc(76, 45, source_location())
+    check_source_loc(76, 37, source_loc)
+    check_source_loc(78, 45, source_location())
 
-    var l = (33, 34, 41, 42)
+    var l = (35, 36, 43, 44)
     var c = (24, 30, 24, 30)
     var loc_pair = get_locs()
     check_source_loc(l[0], c[0], loc_pair[0])
@@ -114,19 +116,19 @@ def get_callsite_statically() -> SourceLocation:
 def test_parameter_context() raises:
     # TODO: enable these in parameter contexts
     comptime sloc = source_location()
-    assert_equal(sloc.line, 0)
-    assert_equal(sloc.col, 0)
-    assert_equal(sloc.file_name, "<unknown location in parameter context>")
+    assert_equal(sloc.line(), 0)
+    assert_equal(sloc.column(), 0)
+    assert_equal(sloc.file_name(), "<unknown location in parameter context>")
 
     comptime cloc = get_callsite_statically()
-    assert_equal(cloc.line, 0)
-    assert_equal(cloc.col, 0)
-    assert_equal(cloc.file_name, "<unknown location in parameter context>")
+    assert_equal(cloc.line(), 0)
+    assert_equal(cloc.column(), 0)
+    assert_equal(cloc.file_name(), "<unknown location in parameter context>")
 
     comptime iloc = get_inner_location_statically()
-    check_source_loc(102, 27, iloc)
+    check_source_loc(104, 27, iloc)
     comptime iloc2 = get_inner_location_statically_with_debug()
-    check_source_loc(106, 33, iloc2)
+    check_source_loc(108, 33, iloc2)
 
 
 @always_inline
@@ -201,7 +203,7 @@ def get_four_call_locs_inlined() -> (
 
 
 def test_builtin_call_loc() raises:
-    var l = (154, 155, 164, 165)
+    var l = (156, 157, 166, 167)
     var c = (25, 33, 32, 40)
     var loc_pair = get_call_locs()
     check_source_loc(l[0], c[0], loc_pair[0])
@@ -212,8 +214,8 @@ def test_builtin_call_loc() raises:
     check_source_loc(l[3], c[3], loc_pair[1])
 
     loc_pair = get_call_locs_inlined_twice[2]()
-    check_source_loc(173, 40, loc_pair[0])
-    check_source_loc(173, 40, loc_pair[1])
+    check_source_loc(175, 40, loc_pair[0])
+    check_source_loc(175, 40, loc_pair[1])
 
     var loc_quad = get_four_call_locs()
     check_source_loc(l[0], c[0], loc_quad[0])
@@ -252,6 +254,19 @@ def source_loc_with_debug() -> SourceLocation:
 def test_source_location_struct() raises:
     var source_loc = SourceLocation(50, 60, "/path/to/some_file.mojo")
     assert_equal(String(source_loc), "/path/to/some_file.mojo:50:60")
+
+
+def test_source_location_niche() raises:
+    assert_equal(SourceLocation.niche_count(), 1)
+    assert_equal(size_of[SourceLocation](), size_of[Optional[SourceLocation]]())
+
+    var storage = UnsafeMaybeUninit[SourceLocation]()
+
+    SourceLocation.write_niche(UnsafePointer(to=storage))
+    assert_true(SourceLocation.isa_niche(UnsafePointer(to=storage)))
+
+    storage.init_from(SourceLocation(50, 60, "/path/to/some_file.mojo"))
+    assert_false(SourceLocation.isa_niche(UnsafePointer(to=storage)))
 
 
 def main() raises:

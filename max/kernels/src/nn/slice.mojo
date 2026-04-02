@@ -15,7 +15,7 @@ from std.math import clamp
 
 from std.algorithm import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, coord_to_index_list
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 from std.runtime.asyncrt import DeviceContextPtr
@@ -200,11 +200,9 @@ def copy_to_slice[
     def copy[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
-        var coords = rebind[IndexList[in_slice.rank]](idx)
-        var buf_index = buffer_slice_view.layout(Coord(coords))
-        var slice_index = in_slice.layout(Coord(coords))
-        buffer_slice_view.ptr.store[width=simd_width](
-            buf_index, in_slice.ptr.load[width=simd_width](slice_index)
+        var coords = Coord(rebind[IndexList[in_slice.rank]](idx))
+        buffer_slice_view.store[width=simd_width](
+            coords, in_slice.load[width=simd_width](coords)
         )
 
     elementwise[copy, 1, target=target](
@@ -240,11 +238,9 @@ def slice_as_copy[
     def copy[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
-        var index = rebind[IndexList[tensor.rank]](idx)
-        var output_index = output.layout(Coord(index))
-        var slice_index = sliced.layout(Coord(index))
-        output.ptr.store[width=simd_width](
-            output_index, sliced.ptr.load[width=simd_width](slice_index)
+        var index = Coord(rebind[IndexList[tensor.rank]](idx))
+        output.store[width=simd_width](
+            index, sliced.load[width=simd_width](index)
         )
 
     # Invoke copy.

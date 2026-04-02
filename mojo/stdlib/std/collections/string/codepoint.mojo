@@ -21,7 +21,7 @@ values in the ranges `0` to `0xD7FF` and `0xE000` to `0x10FFFF` inclusive.
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
-from std.bit._mask import splat
+from std.bit.mask import splat
 import std.format._utils as fmt
 from std.os import abort
 
@@ -237,7 +237,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         var shift = Int((6 * (num_bytes - 1)))
         var b1_mask = 0b11111111 >> (num_bytes + 1)
         var result = Int(b1 & b1_mask) << shift
-        for i in range(1, num_bytes):
+        for i in range(1, Int(num_bytes)):
             ptr += 1
             # Assert that this is a continuation byte
             debug_assert(

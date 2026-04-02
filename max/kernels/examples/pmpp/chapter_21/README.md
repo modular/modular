@@ -8,14 +8,14 @@ coarsening and the scatter vs. gather tradeoff.
 
 ## Files
 
-| File | Description |
-|------|-------------|
-| `dcs_utils.mojo` | Shared utilities; grid dimension struct, atom initialization, and verification functions |
-| `fig21_03.mojo` | CPU baseline (unoptimized); straightforward triple-nested loop: for each grid point, iterate over all atoms |
-| `fig21_04.mojo` | CPU baseline (optimized); reorders the loops to hoist z-related calculations out of the inner loops, reducing redundant work |
-| `fig21_05.mojo` | GPU scatter kernel; each thread handles one atom and adds its contribution to all grid points, requires atomic operations |
-| `fig21_06.mojo` | GPU gather kernel; each thread handles one grid point and accumulates contributions from all atoms, no atomics needed |
-| `fig21_08.mojo` | GPU gather with thread coarsening; each thread handles multiple consecutive grid points (`COARSEN_FACTOR`), reusing atom data across calculations |
+| File             | Description                                                                                                                                       |
+|------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `dcs_utils.mojo` | Shared utilities; grid dimension struct, atom initialization, and verification functions                                                          |
+| `fig21_03.mojo`  | CPU baseline (unoptimized); straightforward triple-nested loop: for each grid point, iterate over all atoms                                       |
+| `fig21_04.mojo`  | CPU baseline (optimized); reorders the loops to hoist z-related calculations out of the inner loops, reducing redundant work                      |
+| `fig21_05.mojo`  | GPU scatter kernel; each thread handles one atom and adds its contribution to all grid points, requires atomic operations                         |
+| `fig21_06.mojo`  | GPU gather kernel; each thread handles one grid point and accumulates contributions from all atoms, no atomics needed                             |
+| `fig21_08.mojo`  | GPU gather with thread coarsening; each thread handles multiple consecutive grid points (`COARSEN_FACTOR`), reusing atom data across calculations |
 
 ## Notes
 

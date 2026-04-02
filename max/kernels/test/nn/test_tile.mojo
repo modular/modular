@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.tile import tile
 from std.testing import assert_equal
-
-from std.utils import IndexList
 
 
 # CHECK-LABEL: test_tile_eg1

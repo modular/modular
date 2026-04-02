@@ -118,99 +118,97 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         )
 
     def load_model(self, session: InferenceSession) -> Model:
-        timer = CompilationTimer("unified_eagle_llama3_model")
+        with CompilationTimer("unified_eagle_llama3_model") as timer:
+            target_state_dict = parse_state_dict_from_weights(
+                self.pipeline_config, self.weights, self.adapter
+            )
 
-        target_state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, self.weights, self.adapter
-        )
+            assert self.pipeline_config.draft_model is not None
+            draft_model_config = self.pipeline_config.draft_model
+            draft_weight_paths = get_weight_paths(draft_model_config)
+            draft_weights = load_weights(draft_weight_paths)
+            draft_hf_config = draft_model_config.huggingface_config
+            assert draft_hf_config is not None
 
-        assert self.pipeline_config.draft_model is not None
-        draft_model_config = self.pipeline_config.draft_model
-        draft_weight_paths = get_weight_paths(draft_model_config)
-        draft_weights = load_weights(draft_weight_paths)
-        draft_hf_config = draft_model_config.huggingface_config
-        assert draft_hf_config is not None
+            draft_state_dict = _convert_safetensor_with_model_config(
+                dict(draft_weights.items()),
+                draft_hf_config,
+                draft_model_config,
+            )
 
-        draft_state_dict = _convert_safetensor_with_model_config(
-            dict(draft_weights.items()),
-            draft_hf_config,
-            draft_model_config,
-        )
+            target_hf_config = self.huggingface_config
+            assert target_hf_config is not None
 
-        target_hf_config = self.huggingface_config
-        assert target_hf_config is not None
+            target_config = Llama3Config.initialize(self.pipeline_config)
+            target_config.finalize(
+                huggingface_config=target_hf_config,
+                state_dict=target_state_dict,
+                return_logits=ReturnLogits.VARIABLE,
+                return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+            )
 
-        target_config = Llama3Config.initialize(self.pipeline_config)
-        target_config.finalize(
-            huggingface_config=target_hf_config,
-            state_dict=target_state_dict,
-            return_logits=ReturnLogits.VARIABLE,
-            return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
-        )
+            draft_config = Llama3Config.initialize_from_config(
+                self.pipeline_config, draft_hf_config, draft_model_config
+            )
+            draft_config.finalize(
+                huggingface_config=draft_hf_config,
+                state_dict=draft_state_dict,
+                return_logits=ReturnLogits.LAST_TOKEN,
+                return_hidden_states=ReturnHiddenStates.LAST,
+            )
 
-        draft_config = Llama3Config.initialize_from_config(
-            self.pipeline_config, draft_hf_config, draft_model_config
-        )
-        draft_config.finalize(
-            huggingface_config=draft_hf_config,
-            state_dict=draft_state_dict,
-            return_logits=ReturnLogits.LAST_TOKEN,
-            return_hidden_states=ReturnHiddenStates.LAST,
-        )
+            assert self.pipeline_config.speculative is not None
+            num_draft_steps = (
+                self.pipeline_config.speculative.num_speculative_tokens
+            )
 
-        assert self.pipeline_config.speculative is not None
-        num_draft_steps = (
-            self.pipeline_config.speculative.num_speculative_tokens
-        )
+            unified_config = UnifiedEagleLlama3Config(
+                target=target_config,
+                draft=draft_config,
+                num_draft_steps=num_draft_steps,
+            )
 
-        unified_config = UnifiedEagleLlama3Config(
-            target=target_config,
-            draft=draft_config,
-            num_draft_steps=num_draft_steps,
-        )
+            nn_model = UnifiedEagleLlama3Module(unified_config)
 
-        nn_model = UnifiedEagleLlama3Module(unified_config)
+            # Share embed_tokens and lm_head BEFORE loading so state_dict()
+            # deduplicates them.
+            nn_model.draft.embed_tokens = nn_model.target.embed_tokens
+            nn_model.draft.lm_head = nn_model.target.lm_head
 
-        # Share embed_tokens and lm_head BEFORE loading so state_dict()
-        # deduplicates them.
-        nn_model.draft.embed_tokens = nn_model.target.embed_tokens
-        nn_model.draft.lm_head = nn_model.target.lm_head
+            # --- Merge and load weights at top level ---
+            # Load with "target.*" and "draft.*" prefixed keys so the graph
+            # sees unique weight names (both models have layers.0.*).
+            unified_state_dict = convert_unified_safetensor_state_dict(
+                target_state_dict, draft_state_dict
+            )
 
-        # --- Merge and load weights at top level ---
-        # Load with "target.*" and "draft.*" prefixed keys so the graph
-        # sees unique weight names (both models have layers.0.*).
-        unified_state_dict = convert_unified_safetensor_state_dict(
-            target_state_dict, draft_state_dict
-        )
+            # strict=False: shared weights (embed_tokens, lm_head) are aliased
+            # to target's and won't have draft.* copies. EAGLE also replaces
+            # some norms with Identity. rope_freqs.weight is unused.
+            nn_model.load_state_dict(
+                unified_state_dict,
+                override_quantization_encoding=True,
+                weight_alignment=1,
+                strict=False,
+            )
+            self.state_dict = nn_model.state_dict()
 
-        # strict=False: shared weights (embed_tokens, lm_head) are aliased
-        # to target's and won't have draft.* copies. EAGLE also replaces
-        # some norms with Identity. rope_freqs.weight is unused.
-        nn_model.load_state_dict(
-            unified_state_dict,
-            override_quantization_encoding=True,
-            weight_alignment=1,
-            strict=False,
-        )
-        self.state_dict = nn_model.state_dict()
+            assert isinstance(self.kv_params, KVCacheParams)
+            draft_num_layers = draft_config.num_hidden_layers
+            self._draft_kv_params = replace(
+                self.kv_params, num_layers=draft_num_layers
+            )
 
-        assert isinstance(self.kv_params, KVCacheParams)
-        draft_num_layers = draft_config.num_hidden_layers
-        self._draft_kv_params = replace(
-            self.kv_params, num_layers=draft_num_layers
-        )
+            with Graph(
+                "unified_eagle_llama3",
+                input_types=nn_model.input_types(),
+            ) as graph:
+                inputs = nn_model._unflatten_graph_inputs(graph.inputs)
+                outputs = nn_model(inputs)
+                graph.output(*outputs)
 
-        with Graph(
-            "unified_eagle_llama3",
-            input_types=nn_model.input_types(),
-        ) as graph:
-            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(inputs)
-            graph.output(*outputs)
-
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=self.state_dict)
-        timer.done()
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=self.state_dict)
 
         return model
 
@@ -222,19 +220,10 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         assert isinstance(model_inputs, UnifiedEagleLlama3Inputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
 
-        # We don't strictly need all these outputs, but they are kept here for debugging purposes
         return UnifiedEagleOutputs(
-            last_logits=model_outputs[0],
-            next_token_logits=model_outputs[0],
-            logits=model_outputs[1],
-            logit_offsets=model_outputs[2],
-            hidden_states=model_outputs[3],
-            first_rejected=model_outputs[4],
-            recovered=model_outputs[5],
-            bonus=model_outputs[6],
-            shifted_tokens=model_outputs[7],
-            new_token=model_outputs[8],
-            draft_hs=model_outputs[9],
+            num_accepted_draft_tokens=model_outputs[0],
+            next_tokens=model_outputs[1],
+            next_draft_tokens=model_outputs[2],
         )
 
     def prepare_initial_token_inputs(

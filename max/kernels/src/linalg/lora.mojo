@@ -11,26 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
 
-from buffer.dimlist import Dim, DimList
+from layout import UNKNOWN_VALUE
 from std.gpu.host import DeviceContext
-from std.random import rand
-from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig
-from std.testing import assert_almost_equal
-from std.gpu.host.info import B200
+from linalg.grouped_matmul import grouped_matmul
 
 from std.utils import IndexList
-from std.utils.index import Index
 import std.itertools
 from layout import (
     Coord,
     Idx,
     IntTuple,
-    Layout,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -91,22 +82,16 @@ def shrink_qkv_permute_3mn_sm100(
     comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
     comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
 
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
     comptime c_type = c_lora.dtype
 
-    comptime c_shape = DimList[
-        dim[c_lora.static_shape[0]],
-        dim[c_lora.static_shape[1]],
-        dim[c_lora.static_shape[2]],
-    ]()
+    comptime N = c_lora.static_shape[2]
+    comptime B = c_lora.static_shape[0]
+    comptime assert N != UNKNOWN_VALUE and B == 3, String(
+        "the outer dimension of c_shape must be known and equal to 3",
+    )
 
     var M = Int(c_lora.dim(1))
     var c_tensor_lora = c_lora.to_layout_tensor()
-    comptime N = c_shape.get[2]()
-    comptime B = c_shape.get[0]()
-    comptime assert c_shape.has_value[2]() and c_shape.get[0]() == 3, String(
-        "the outer dimension of c_shape must be known and equal to 3",
-    )
     comptime N_Total = B * N
     # Create a null-backed TileTensor for C. This ensures GroupGEMM does NOT
     # write into C directly; any changes to the final C output must happen
@@ -143,7 +128,7 @@ def shrink_qkv_permute_3mn_sm100(
                 * Input view is row-major (M, 3N).
                 * Output view is row-major (3, M, N) with head-major tiles.
         """
-        comptime N = c_shape.get[2]()
+        comptime N = c_lora.static_shape[2]
         var i = idx[0]
         var j = idx[1]
         var new_j, new_k = divmod(j, N)

@@ -14,8 +14,7 @@
 from std.gpu.host import DeviceContext
 from nn.index_fp8 import fp8_index, fp8_index_naive
 from std.random import rand
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from std.utils.index import Index
+from layout import Idx, TileTensor, row_major
 from std.testing import assert_almost_equal
 
 
@@ -84,70 +83,44 @@ def test_index_fp8[
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
     # Ragged Q tensor: [total_seq_len, num_heads, depth]
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
-    var q_device = LayoutTensor[DType.float8_e4m3fn, q_layout](
+    var q_device = TileTensor(
         q_device_ptr.unsafe_ptr().as_immutable(),
-        RuntimeLayout[q_layout].row_major(
-            Index(batch_size * seq_len, num_heads, depth)
-        ),
+        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
     )
 
-    comptime qs_layout = Layout.row_major(UNKNOWN_VALUE, num_heads)
-    var qs_device = LayoutTensor[DType.float32, qs_layout](
+    var qs_device = TileTensor(
         qs_device_ptr.unsafe_ptr(),
-        RuntimeLayout[qs_layout].row_major(
-            Index(batch_size * seq_len, num_heads)
-        ),
+        row_major((Idx(batch_size * seq_len), Idx[num_heads]())),
     )
 
-    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
-    var k_device = LayoutTensor[DType.float8_e4m3fn, k_layout](
+    var k_device = TileTensor(
         k_device_ptr.unsafe_ptr().as_immutable(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size * num_keys, 1, depth)
-        ),
+        row_major((Idx(batch_size * num_keys), Idx[1](), Idx[depth]())),
     )
 
-    comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
-    var ks_device = LayoutTensor[DType.float32, ks_layout](
+    var ks_device = TileTensor(
         ks_device_ptr.unsafe_ptr(),
-        RuntimeLayout[ks_layout].row_major(Index(batch_size * num_keys)),
+        row_major(Idx(batch_size * num_keys)),
     )
 
-    comptime o_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    var o_device = LayoutTensor[DType.float32, o_layout](
+    var o_device = TileTensor(
         o_device_ptr.unsafe_ptr(),
-        RuntimeLayout[o_layout].row_major(
-            Index(batch_size * seq_len, num_keys)
-        ),
+        row_major((Idx(batch_size * seq_len), Idx(num_keys))),
     )
 
-    comptime o_ref_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    var o_ref_device = LayoutTensor[DType.float32, o_ref_layout](
+    var o_ref_device = TileTensor(
         o_device_ref_ptr.unsafe_ptr(),
-        RuntimeLayout[o_ref_layout].row_major(
-            Index(batch_size * seq_len, num_keys)
-        ),
+        row_major((Idx(batch_size * seq_len), Idx(num_keys))),
     )
 
-    comptime input_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
-    var input_row_offsets_device = LayoutTensor[
-        DType.uint32, input_row_offsets_layout
-    ](
+    var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr.unsafe_ptr(),
-        RuntimeLayout[input_row_offsets_layout].row_major(
-            Index(batch_size + 1)
-        ),
+        row_major(Idx(batch_size + 1)),
     )
 
-    comptime cache_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
-    var cache_row_offsets_device = LayoutTensor[
-        DType.uint32, cache_row_offsets_layout
-    ](
+    var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr.unsafe_ptr().as_immutable(),
-        RuntimeLayout[cache_row_offsets_layout].row_major(
-            Index(batch_size + 1)
-        ),
+        row_major(Idx(batch_size + 1)),
     )
 
     fp8_index[num_heads, depth](

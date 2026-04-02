@@ -20,14 +20,10 @@ This module provides:
 - Atomic utility functions for thread-safe counter operations
 """
 
-from std.gpu import thread_idx, WARP_SIZE
-from layout import Layout
+from std.gpu import thread_idx_uint as thread_idx, WARP_SIZE
 from linalg.structuring import SMemArray
 from std.os.atomic import Atomic
 from std.sys._assembly import inlined_assembly
-from std.utils import StaticTuple
-
-from .structured import SMemBuffer
 
 
 # ===----------------------------------------------------------------------=== #

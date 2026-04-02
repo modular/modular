@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 import pytest
 from max.interfaces import (
+    EOSTracker,
     GenerationStatus,
     ImageMetadata,
     PixelGenerationContext,
@@ -90,7 +91,7 @@ def test_context__get_min_token_logit_mask() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4},
+        eos_tracker=EOSTracker(eos_token_ids={4}),
         sampling_params=SamplingParams(min_new_tokens=3),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
@@ -118,7 +119,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids() -> (
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
         sampling_params=SamplingParams(min_new_tokens=3),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
@@ -145,7 +146,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
         sampling_params=SamplingParams(min_new_tokens=3),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(4)
     assert len(vocab_mask) == 4
@@ -192,7 +193,7 @@ def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
@@ -216,9 +217,9 @@ def test_context__eos() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4},
+        eos_tracker=EOSTracker(eos_token_ids={4}),
     )
-    assert context.eos_token_ids == {4}
+    assert context.eos_tracker.eos_token_ids == {4}
     assert context.is_initial_prompt
     context.update(4)
     assert not context.is_initial_prompt
@@ -413,7 +414,7 @@ def test_context_sampling_params_stop() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_sequences=[[1, 2]],
+        eos_tracker=EOSTracker(eos_sequences=[[1, 2]]),
         sampling_params=custom_params,
     )
 
@@ -427,7 +428,7 @@ def test_context_sampling_params_stop() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_sequences=[[2], [3, 1]],
+        eos_tracker=EOSTracker(eos_sequences=[[2], [3, 1]]),
         sampling_params=custom_params,
     )
     context.update(1)
@@ -445,7 +446,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_token_ids=set([5, 4, 2]),
+        eos_tracker=EOSTracker(eos_token_ids={5, 4, 2}),
         sampling_params=custom_params,
     )
     context.update(1)
@@ -458,7 +459,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_token_ids=set([5, 4, 2]),
+        eos_tracker=EOSTracker(eos_token_ids={5, 4, 2}),
         sampling_params=custom_params,
     )
     context.update(3)
@@ -667,7 +668,7 @@ def test_text_context_update_with_future_token() -> None:
     context = TextContext(
         max_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        eos_token_ids=set([42]),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
     )
 
     with pytest.raises(
@@ -708,7 +709,7 @@ def test_text_context_update_with_preemption_and_future_token() -> None:
     context = TextContext(
         max_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        eos_token_ids=set([42]),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
     )
     assert context.tokens.generated_length == 0
 
@@ -1030,32 +1031,31 @@ def test_text_and_vision_context_sad_case() -> None:
             vision_token_ids=[98],
         )
 
-    # Test that current_position cannot bisect an image
-    # Create a TokenBuffer and chunk it to position 7 (which bisects the image at 5-9)
+    # When the buffer is actively chunked (chunked prefill), current_position
+    # may bisect an image — the vision encoder cache handles re-encoding.
     token_buffer = TokenBuffer(tokens)
-    token_buffer.chunk(7)
+    token_buffer.chunk(7)  # bisects img0 at 5-9
 
-    with pytest.raises(
-        ValueError,
-        match=r"It is invalid for the current_position \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
-    ):
-        _ = TextAndVisionContext(
-            max_length=50,
-            tokens=token_buffer,
-            images=[
-                ImageMetadata(
-                    start_idx=5,
-                    end_idx=9,
-                    pixel_values=np.array([99]),
-                ),
-                ImageMetadata(
-                    start_idx=15,
-                    end_idx=19,
-                    pixel_values=np.array([99]),
-                ),
-            ],
-            vision_token_ids=[98],
-        )
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=token_buffer,
+        images=[
+            ImageMetadata(
+                start_idx=5,
+                end_idx=9,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=15,
+                end_idx=19,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
+    # img0 is bisected but this is valid during chunked prefill.
+    assert ctx.image_idx == 0
+    assert ctx.needs_vision_encoding
 
     with pytest.raises(
         ValueError,
@@ -1108,16 +1108,13 @@ def test_context__spec_decoding_state_lazy_init() -> None:
     # Lazy initialization on first access
     state = context.spec_decoding_state
     assert isinstance(state, SpecDecodingState)
-    assert state.draft_kv_start_idx == 0
     assert state.saved_draft_tokens == []
 
     # Same instance on subsequent access
     assert context.spec_decoding_state is state
 
     # Mutate the state
-    state.draft_kv_start_idx = 5
     state.saved_draft_tokens = [10, 20, 30]
-    assert context.spec_decoding_state.draft_kv_start_idx == 5
 
     # Reset clears the state
     context.update(4)
@@ -1128,7 +1125,6 @@ def test_context__spec_decoding_state_lazy_init() -> None:
     new_state = context.spec_decoding_state
     assert isinstance(new_state, SpecDecodingState)
     assert new_state is not state
-    assert new_state.draft_kv_start_idx == 0
     assert new_state.saved_draft_tokens == []
 
 
@@ -1141,7 +1137,6 @@ def test_context__spec_decoding_state_serializable() -> None:
     )
 
     # Initialize state with non-default values
-    context.spec_decoding_state.draft_kv_start_idx = 3
     context.spec_decoding_state.saved_draft_tokens = [10, 20]
 
     # Pickle round-trip
@@ -1150,7 +1145,6 @@ def test_context__spec_decoding_state_serializable() -> None:
 
     assert isinstance(pickle_decoded, TextContext)
     assert pickle_decoded._spec_decoding_state is not None
-    assert pickle_decoded.spec_decoding_state.draft_kv_start_idx == 3
     assert pickle_decoded.spec_decoding_state.saved_draft_tokens == [10, 20]
 
     # MsgPack round-trip
@@ -1160,7 +1154,6 @@ def test_context__spec_decoding_state_serializable() -> None:
     msgpack_decoded = deserialize(msgpack_encoded)
 
     assert isinstance(msgpack_decoded, TextContext)
-    assert msgpack_decoded.spec_decoding_state.draft_kv_start_idx == 3
     assert msgpack_decoded.spec_decoding_state.saved_draft_tokens == [10, 20]
 
 

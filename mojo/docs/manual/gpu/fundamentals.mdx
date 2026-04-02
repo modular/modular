@@ -145,14 +145,14 @@ def scalar_add(
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
     # size.
-    if idx < UInt(size):
+    if idx < size:
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
         vector[idx] += scalar
 
 
 def main() raises:
-    comptime for not has_accelerator():
+    comptime if not has_accelerator():
         print("No GPUs detected")
         exit(0)
     else:
@@ -311,18 +311,18 @@ From within a kernel function, you can access the grid and thread block
 dimensions and the assigned thread block and thread indices of the individual
 threads executing the kernel using the following structures:
 
-| Comptime value | Description |
-| --- | --- |
-| [`grid_dim`](/mojo/std/gpu/primitives/id/#grid_dim)  | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`). |
-| [`block_dim`](/mojo/std/gpu/primitives/id/#block_dim)  | Dimensions of the thread block as `x`, `y`, and `z` values. |
-| [`block_idx`](/mojo/std/gpu/primitives/id/#block_idx)  | Index of the block within the grid as `x`, `y`, and `z` values. |
-| [`thread_idx`](/mojo/std/gpu/primitives/id/#thread_idx)  | Index of the thread within the block as `x`, `y`, and `z` values. |
+| Comptime value                                          | Description                                                                                                                                                                                                                                                |
+|---------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`grid_dim`](/mojo/std/gpu/primitives/id/#grid_dim)     | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`).                                                                                                                                                                            |
+| [`block_dim`](/mojo/std/gpu/primitives/id/#block_dim)   | Dimensions of the thread block as `x`, `y`, and `z` values.                                                                                                                                                                                                |
+| [`block_idx`](/mojo/std/gpu/primitives/id/#block_idx)   | Index of the block within the grid as `x`, `y`, and `z` values.                                                                                                                                                                                            |
+| [`thread_idx`](/mojo/std/gpu/primitives/id/#thread_idx) | Index of the thread within the block as `x`, `y`, and `z` values.                                                                                                                                                                                          |
 | [`global_idx`](/mojo/std/gpu/primitives/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
 
 :::note
 
 All of these dimensions and indices are
-[`UInt`](/mojo/std/builtin/uint/UInt) values.
+[`Int`](/mojo/std/builtin/int/Int) values.
 
 :::
 
@@ -359,7 +359,7 @@ def print_threads():
     )
 
 def main() raises:
-    comptime for not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     elif has_apple_gpu_accelerator():
         print(
@@ -489,12 +489,12 @@ and to exchange blocks of data between host and device.
 The following table lists the most commonly used types in the Mojo libraries
 that conform to the `DevicePassable` trait.
 
-| Host type | Device Type | Description |
-| --- | --- | --- |
-| [`Int`](/mojo/std/builtin/int/Int) | `Int` | Signed integer |
-| [`SIMD[dtype, width]`](/mojo/std/builtin/simd/SIMD) | `SIMD[dtype, width]` | Small vector backed by a hardware vector element |
-| [`DeviceBuffer[dtype]`](/mojo/std/gpu/host/device_context/DeviceBuffer)  | [`UnsafePointer[SIMD[dtype, 1]]`](/mojo/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values |
-| [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/) | `LayoutTensor` | A powerful abstraction for multi-dimensional data. See [Using `LayoutTensor`](/mojo/manual/layout/tensors) for more information. |
+| Host type                                                               | Device Type                                                                       | Description                                                                                                                      |
+|-------------------------------------------------------------------------|-----------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| [`Int`](/mojo/std/builtin/int/Int)                                      | `Int`                                                                             | Signed integer                                                                                                                   |
+| [`SIMD[dtype, width]`](/mojo/std/builtin/simd/SIMD)                     | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                                 |
+| [`DeviceBuffer[dtype]`](/mojo/std/gpu/host/device_context/DeviceBuffer) | [`UnsafePointer[SIMD[dtype, 1]]`](/mojo/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                                  |
+| [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/)      | `LayoutTensor`                                                                    | A powerful abstraction for multi-dimensional data. See [Using `LayoutTensor`](/mojo/manual/layout/tensors) for more information. |
 
 ### `DeviceBuffer` and `HostBuffer`
 

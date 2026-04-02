@@ -95,6 +95,24 @@ class NotSupportedError(Exception):
 class RemoteDisconnectError(Exception):
     pass
 
+class CanceledError(Exception):
+    pass
+
+class NoTelemetryError(Exception):
+    pass
+
+class TransferTelemetry:
+    @property
+    def startTime(self) -> int: ...
+    @property
+    def postDuration(self) -> int: ...
+    @property
+    def xferDuration(self) -> int: ...
+    @property
+    def totalBytes(self) -> int: ...
+    @property
+    def descCount(self) -> int: ...
+
 class TransferDescriptorList:
     @overload
     def __init__(self, type: MemoryType, init_size: int = 0) -> None:
@@ -199,6 +217,8 @@ class AgentConfig:
         use_listen_thread: bool = False,
         listen_port: int = 0,
         sync_mode: ThreadSyncMode = ThreadSyncMode.NONE,
+        pthr_delay_us: int = 0,
+        lthr_delay_us: int = 100000,
     ) -> None: ...
 
 class Agent:
@@ -266,6 +286,9 @@ class Agent:
         self, request_handle: int, notif_msg: str = ""
     ) -> Status: ...
     def get_transfer_status(self, request_handle: int) -> Status: ...
+    def get_transfer_telemetry(
+        self, request_handle: int
+    ) -> TransferTelemetry: ...
     def query_transfer_backend(self, request_handle: int) -> int: ...
     def release_transfer_request(self, request_handle: int) -> Status: ...
     def release_descriptor_list_handle(self, handle: int) -> Status: ...

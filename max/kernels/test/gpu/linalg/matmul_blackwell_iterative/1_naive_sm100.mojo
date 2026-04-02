@@ -15,9 +15,8 @@ from std.math import ceildiv
 from std.sys import argv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import block_dim
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
@@ -44,10 +43,10 @@ def kernel_1[
     a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
     b: LayoutTensor[DType.bfloat16, Layout.row_major(K, N), MutAnyOrigin],
 ):
-    var row = block_dim.y * block_idx.y + (thread_idx.y)
-    var col = block_dim.x * block_idx.x + (thread_idx.x)
+    var row = block_dim.y * block_idx.y + thread_idx.y
+    var col = block_dim.x * block_idx.x + thread_idx.x
 
-    if row < UInt(M) and col < UInt(N):
+    if row < M and col < N:
         # Still accumulate in float32 for precision
         var acc: Float32 = 0
 

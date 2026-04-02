@@ -15,7 +15,7 @@
 # Handles matrix dimensions that are not divisible by tile width
 
 from std.math import ceildiv
-from std.gpu import global_idx, block_idx, thread_idx, barrier
+from std.gpu import block_idx, thread_idx, barrier
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -53,10 +53,10 @@ def matrix_mul_tiled_boundary_kernel(
         address_space=AddressSpace.SHARED,
     ]()
 
-    var tx = Int(thread_idx.x)
-    var ty = Int(thread_idx.y)
-    var Row = TILE_WIDTH * Int(block_idx.y) + ty
-    var Col = TILE_WIDTH * Int(block_idx.x) + tx
+    var tx = thread_idx.x
+    var ty = thread_idx.y
+    var Row = TILE_WIDTH * block_idx.y + ty
+    var Col = TILE_WIDTH * block_idx.x + tx
 
     var Pvalue = Float32(0)
 

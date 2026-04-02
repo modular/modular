@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _current_target, simd_width_of
-from std.sys.intrinsics import _type_is_eq
 
 from std.algorithm.functional import elementwise, unswitch
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -30,7 +29,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     LTToTTLayout,
@@ -43,24 +41,27 @@ from layout import (
     lt_to_tt,
     row_major,
 )
-from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.fp4_quantization import (
     block_scaled_matmul_with_epilogue as blockwise_scaled_fp4_with_epilogue,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
-from nn.flash_attention import (
+from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope_ragged
-from nn.mha import (
+from nn.attention.gpu.mha import (
     MHADecodeDispatchMetadata,
     flash_attention as gpu_flash_attention,
 )
-from nn.mha_mask import MHAMask
-from nn.mha_utils import MHAConfig, as_dynamic_row_major_1d, dispatch_mask
-from nn.mla import (
+from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_utils import (
+    MHAConfig,
+    as_dynamic_row_major_1d,
+    dispatch_mask,
+)
+from nn.attention.gpu.mla import (
     _k_cache_to_buffer,
     flare_mla_decoding,
     flare_mla_prefill,
@@ -1419,7 +1420,7 @@ def _matmul_common[
         target=target,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state, weight, context)
+    ](lt_to_tt(c_nd), lt_to_tt(hidden_state), lt_to_tt(weight), context)
 
     comptime if is_cpu[target]():
         c_nd.ptr.free()
@@ -2547,21 +2548,21 @@ def _qmatmul_gguf_quantized_common[
 ) raises:
     comptime if quantization_encoding == "q4_0":
         matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            lt_to_tt(hidden_state),
+            lt_to_tt(weight),
+            lt_to_tt(output),
         )
     elif quantization_encoding == "q4_k":
         matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            lt_to_tt(hidden_state),
+            lt_to_tt(weight),
+            lt_to_tt(output),
         )
     elif quantization_encoding == "q6_k":
         matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            lt_to_tt(hidden_state),
+            lt_to_tt(weight),
+            lt_to_tt(output),
         )
     else:
         raise Error(
@@ -3341,7 +3342,7 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     comptime latent_dim = Int(k_latent_buffer.layout.shape[1])
     var k_latent_tile = TileTensor(
         k_latent_buffer.ptr,
-        row_major((Idx(buffer_length_int), Idx[latent_dim]())),
+        row_major(Idx(buffer_length_int), Idx[latent_dim]()),
     )
     _k_cache_to_buffer(
         lt_to_tt(buffer_row_offsets_1d),
@@ -3376,7 +3377,12 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     matmul[
         target=target,
         transpose_b=True,
-    ](k_buffer_dynamic, k_latent_buffer_dynamic, weight, Optional(cuda_ctx))
+    ](
+        lt_to_tt(k_buffer_dynamic),
+        lt_to_tt(k_latent_buffer_dynamic),
+        lt_to_tt(weight),
+        Optional(cuda_ctx),
+    )
 
 
 # ===-----------------------------------------------------------------------===#

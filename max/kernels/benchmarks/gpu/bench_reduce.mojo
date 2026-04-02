@@ -23,19 +23,15 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
-    arg_parse,
     get_defined_shape,
     int_list_to_tuple,
-    update_bench_config_args,
 )
 from std.testing import assert_equal
 
 from std.utils import IndexList, StaticTuple
-from std.utils.index import product
 
 
 def align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:

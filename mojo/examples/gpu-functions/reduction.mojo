@@ -25,7 +25,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.bit import log2_floor
-from std.gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.primitives import warp
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext, DeviceBuffer
@@ -35,11 +35,10 @@ from std.testing import assert_equal
 
 # Initialize parameters
 # To achieve high bandwidth increase SIZE to large value
-comptime TPB: UInt = 512
-comptime LOG_TPB = log2_floor(TPB)
+comptime TPB = 512
 comptime BATCH_SIZE = 8  # needs to be power of 2
 comptime SIZE = 1 << 12
-comptime NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
+comptime NUM_BLOCKS = ceildiv(SIZE, TPB * BATCH_SIZE)
 comptime dtype = DType.int32
 
 
@@ -50,9 +49,9 @@ def sum_kernel[
     a: UnsafePointer[Int32, MutAnyOrigin],
 ):
     """Efficient reduction of the vector a."""
-    comptime KERNEL_TPB: UInt = 512
+    comptime KERNEL_TPB: Int = 512
     sums = stack_allocation[
-        Int(KERNEL_TPB),
+        KERNEL_TPB,
         Scalar[dtype],
         address_space=AddressSpace.SHARED,
     ]()
@@ -75,16 +74,14 @@ def sum_kernel[
     active_threads = KERNEL_TPB
     comptime KERNEL_LOG_TPB = log2_floor(KERNEL_TPB)
 
-    comptime for power in range(
-        1, KERNEL_LOG_TPB - UInt(log2_floor(WARP_SIZE)) + 1
-    ):
+    comptime for power in range(1, KERNEL_LOG_TPB - log2_floor(WARP_SIZE) + 1):
         active_threads >>= 1
-        if tid < UInt(active_threads):
+        if tid < active_threads:
             sums[tid] += sums[tid + active_threads]
         barrier()
 
     # Reduce the warp and accumulate via atomic addition
-    if tid < UInt(WARP_SIZE):
+    if tid < WARP_SIZE:
         var warp_sum: Int32 = sums[tid][0]
         warp_sum = warp.sum(warp_sum)
 

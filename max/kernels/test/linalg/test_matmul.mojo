@@ -17,8 +17,6 @@
 
 from std.sys.info import CompilationTarget
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from layout import Coord, Idx, TileTensor
 from layout.tile_layout import row_major
 from linalg.matmul import matmul
@@ -29,7 +27,6 @@ from linalg.packing import (
 )
 from std.testing import assert_almost_equal, assert_equal
 
-from std.utils.index import Index, IndexList
 
 comptime alignment = 64
 
@@ -117,20 +114,12 @@ def test_matmul[
     comptime if b_packed:
         pack_b_ndbuffer[a_type, c_type](b, bp, kernel_type_m)
 
-    # _matmul_cpu is an internal NDBuffer API — construct NDBuffers inline
-    # to test the kernel_type_m != 0 path.
-    comptime b_shape = DimList.create_unknown[2]()
     if kernel_type_m != 0:
-        var c_nd = NDBuffer[rank=2, c_type](c0_ptr, Index(m, n))
-        var a_nd = NDBuffer[rank=2, a_type](a_ptr, Index(m, k))
-        var bp_nd = NDBuffer[rank=2, b_type, _, b_shape](
-            bp_ptr, Index(padded_k, padded_n)
-        )
         _matmul_cpu[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c_nd, a_nd, bp_nd, kernel_type_m)
+        ](c, a, bp, kernel_type_m)
     else:
         matmul[
             transpose_b=transpose_b,

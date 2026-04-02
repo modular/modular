@@ -17,8 +17,18 @@ C standard library counterparts. These are used to implement higher level
 functionality in the rest of the Mojo standard library.
 """
 
-from std.ffi import c_char, c_int, c_size_t, c_pid_t, external_call, get_errno
+from std.ffi import (
+    c_char,
+    c_int,
+    c_size_t,
+    c_pid_t,
+    external_call,
+    get_errno,
+    CStringSlice,
+    _CPointer,
+)
 from std.sys import CompilationTarget
+from std.memory._nonnull import NonNullUnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -38,6 +48,23 @@ def free(ptr: UnsafePointer[mut=True, NoneType, ...]):
 
 
 @always_inline
+def free(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
+    """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
+
+    This overload accepts an `_CPointer` because it is valid in C to call
+    `free` on a null pointer (it is a no-op).
+
+    Args:
+        ptr: A c-pointer to the memory to free.
+    """
+    free(
+        UnsafePointer(to=ptr).bitcast[
+            UnsafePointer[NoneType, ExternalOrigin[mut=True]]
+        ]()[]
+    )
+
+
+@always_inline
 def exit(status: c_int):
     external_call["exit", NoneType](status)
 
@@ -46,7 +73,7 @@ def exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-comptime FILE_ptr = OpaquePointer[MutExternalOrigin]
+comptime FILE_ptr = _CPointer[NoneType, ExternalOrigin[mut=True]]
 
 
 @always_inline
@@ -107,13 +134,13 @@ struct BufferMode:
 
 @always_inline
 def posix_spawnp[
-    origin: ImmutOrigin,
+    argv_origin: ImmutOrigin,
     //,
 ](
-    pid: UnsafePointer[mut=True, c_pid_t, _],
-    file: UnsafePointer[mut=False, c_char, _],
-    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
-    envp: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
+    pid: NonNullUnsafePointer[mut=True, c_pid_t, _],
+    file: CStringSlice[_],
+    argv: NonNullUnsafePointer[Optional[CStringSlice[argv_origin]], _],
+    envp: _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
     — function creates a new process (child process) from the specified process image.
@@ -129,8 +156,8 @@ def posix_spawnp[
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        OpaquePointer[mut=False, origin](),
-        OpaquePointer[mut=False, origin](),
+        _CPointer[NoneType, ExternalOrigin[mut=False]](),
+        _CPointer[NoneType, ExternalOrigin[mut=False]](),
         argv,
         envp,
     )
@@ -152,7 +179,7 @@ def execvp[
     //,
 ](
     file: UnsafePointer[mut=False, c_char, _],
-    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
+    argv: UnsafePointer[mut=False, _CPointer[mut=False, c_char, origin], _],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -265,15 +292,15 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
 
 
 @always_inline
-def dlerror(out result: UnsafePointer[c_char, MutExternalOrigin]):
+def dlerror(out result: _CPointer[c_char, MutExternalOrigin]):
     result = external_call["dlerror", type_of(result)]()
 
 
 @always_inline
 def dlopen(
     filename: UnsafePointer[mut=False, c_char, _], flags: c_int
-) -> OpaquePointer[MutExternalOrigin]:
-    return external_call["dlopen", OpaquePointer[MutExternalOrigin]](
+) -> _CPointer[NoneType, MutExternalOrigin]:
+    return external_call["dlopen", _CPointer[NoneType, MutExternalOrigin]](
         filename, flags
     )
 
@@ -290,17 +317,17 @@ def dlsym[
 ](
     handle: OpaquePointer,
     name: UnsafePointer[mut=False, c_char, _],
-    out result: UnsafePointer[result_type, MutExternalOrigin],
+    out result: _CPointer[result_type, MutExternalOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
 
 def realpath(
     path: UnsafePointer[mut=False, c_char, _],
-    resolved_path: UnsafePointer[mut=True, c_char, _] = UnsafePointer[
+    resolved_path: _CPointer[mut=True, c_char, _] = _CPointer[
         c_char, MutExternalOrigin
     ](),
-    out result: UnsafePointer[c_char, MutExternalOrigin],
+    out result: _CPointer[c_char, MutExternalOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

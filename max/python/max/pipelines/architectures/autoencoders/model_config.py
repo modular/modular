@@ -78,6 +78,83 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
         return AutoencoderKLConfig(**init_dict)
 
 
+class AutoencoderKLWanConfigBase(MAXModelConfigBase):
+    # Defaults mirror Wan2.2 AutoencoderKLWan config.
+    base_dim: int = 96
+    decoder_base_dim: int | None = None
+    z_dim: int = 16
+    dim_mult: tuple[int, ...] = (1, 2, 4, 4)
+    num_res_blocks: int = 2
+    attn_scales: tuple[float, ...] = ()
+    temporal_downsample: tuple[bool, ...] = (False, True, True)
+    dropout: float = 0.0
+    is_residual: bool = False
+    in_channels: int = 3
+    out_channels: int = 3
+    patch_size: int | None = None
+    scale_factor_temporal: int = 4
+    scale_factor_spatial: int = 8
+    latents_mean: tuple[float, ...] = (
+        -0.7571,
+        -0.7089,
+        -0.9113,
+        0.1075,
+        -0.1745,
+        0.9653,
+        -0.1517,
+        1.5508,
+        0.4134,
+        -0.0715,
+        0.5517,
+        -0.3632,
+        -0.1922,
+        -0.9497,
+        0.2503,
+        -0.2921,
+    )
+    latents_std: tuple[float, ...] = (
+        2.8184,
+        1.4541,
+        2.3275,
+        2.6558,
+        1.2196,
+        1.7708,
+        2.6052,
+        2.0743,
+        3.2687,
+        2.1526,
+        2.8652,
+        1.5579,
+        1.6382,
+        1.1253,
+        2.8251,
+        1.9160,
+    )
+    dtype: DType = DType.bfloat16
+    device: DeviceRef = Field(default_factory=DeviceRef.GPU)
+
+
+class AutoencoderKLWanConfig(AutoencoderKLWanConfigBase):
+    @staticmethod
+    def generate(
+        config_dict: dict[str, Any],
+        encoding: SupportedEncoding,
+        devices: list[Device],
+    ) -> "AutoencoderKLWanConfig":
+        init_dict = {
+            key: value
+            for key, value in config_dict.items()
+            if key in AutoencoderKLWanConfigBase.__annotations__
+        }
+        init_dict.update(
+            {
+                "dtype": supported_encoding_dtype(encoding),
+                "device": DeviceRef.from_device(devices[0]),
+            }
+        )
+        return AutoencoderKLWanConfig(**init_dict)
+
+
 class AutoencoderKLQwenImageConfigBase(MAXModelConfigBase):
     """Configuration for the QwenImage 3D causal VAE (Wan-2.1 based)."""
 
@@ -86,7 +163,7 @@ class AutoencoderKLQwenImageConfigBase(MAXModelConfigBase):
     dim_mult: list[int] = Field(default_factory=lambda: [1, 2, 4, 4])
     num_res_blocks: int = 2
     attn_scales: list[float] = Field(default_factory=list)
-    temperal_downsample: list[bool] = Field(
+    temporal_downsample: list[bool] = Field(
         default_factory=lambda: [False, True, True]
     )
     dropout: float = 0.0

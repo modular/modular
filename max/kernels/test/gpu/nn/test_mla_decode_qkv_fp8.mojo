@@ -26,28 +26,32 @@ The test:
 6. Compares results with tolerances accounting for FP8 quantization
 """
 
-from std.collections import Optional
-from std.math import ceildiv, isclose
 from std.random import randn
 from std.sys import argv, has_nvidia_gpu_accelerator
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
-from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
-from nn.mha_mask import CausalMask, MaterializedMask, NullMask
-from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mla_decode_sm100_dispatch import (
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+    row_major,
+)
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import CausalMask, NullMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,
 )
-from nn.mha_utils import MHAConfig
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
+from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index
-from std.utils.numerics import get_accum_type
 
 
 # ===-----------------------------------------------------------------------===#
@@ -63,8 +67,6 @@ struct MLAMaskType(TrivialRegisterPassable):
 
     comptime NO_MASK = Self(0)
     comptime CAUSAL = Self(1)
-    comptime MASK_3D = Self(2)
-    comptime MASK_4D = Self(3)
 
     def __eq__(self, rhs: Self) -> Bool:
         return self.value == rhs.value
@@ -113,7 +115,6 @@ def test[
     q_type: DType,  # float8_e4m3fn
     kv_type: DType,  # float8_e4m3fn
     output_type: DType,  # bfloat16
-    mask_type: DType,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
@@ -133,8 +134,6 @@ def test[
         kv_type,
         "output_type:",
         output_type,
-        "mask_type:",
-        mask_type,
         "num_heads:",
         num_heads,
         "mla_mask_type:",
@@ -144,9 +143,7 @@ def test[
     comptime assert (
         mla_mask_type == MLAMaskType.NO_MASK
         or mla_mask_type == MLAMaskType.CAUSAL
-        or mla_mask_type == MLAMaskType.MASK_3D
-        or mla_mask_type == MLAMaskType.MASK_4D
-    ), "mha only supports NO_MASK, CAUSAL, MASK_3D, or MASK_4D."
+    ), "mha only supports NO_MASK or CAUSAL."
 
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -160,20 +157,12 @@ def test[
     # Output has v_depth per head (MLA decode only outputs 512, not 576)
     var o_size = batch_size * num_heads * seq_len * v_depth
 
-    var mask_size = (
-        (num_heads if mla_mask_type == MLAMaskType.MASK_4D else 1)
-        * seq_len
-        * num_keys
-        * batch_size
-    )
-
     # Allocate memory: BF16 reference Q and K, then quantize to FP8.
     var q_bf16_ptr = alloc[Scalar[output_type]](q_size)
     var q_fp8_ptr = alloc[Scalar[q_type]](q_size)
     var q_bf16_dequant_ptr = alloc[Scalar[output_type]](q_size)
     var k_fp8_ptr = alloc[Scalar[kv_type]](k_size)
     var k_bf16_ptr = alloc[Scalar[output_type]](k_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
     var output_ptr = alloc[Scalar[output_type]](o_size)
     var flash_output_ptr = alloc[Scalar[output_type]](o_size)
 
@@ -191,8 +180,6 @@ def test[
     host_cast_fp8_to_bf16[fp8_t=kv_type, bf16_t=output_type](
         k_fp8_ptr, k_bf16_ptr, k_size
     )
-
-    randn[mask_type](mask_ptr, mask_size)
 
     # ---- Device buffers ----
     # FP8 Q for the kernel
@@ -213,31 +200,31 @@ def test[
     var k_bf16_device_ptr = ctx.enqueue_create_buffer[output_type](k_size)
     ctx.enqueue_copy(k_bf16_device_ptr, k_bf16_ptr)
 
-    # Mask
-    var mask_device_ptr = ctx.enqueue_create_buffer[mask_type](mask_size)
-    ctx.enqueue_copy(mask_device_ptr, mask_ptr)
-
     # Output for the kernel
     var output_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
 
     # Output for reference
     var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
 
-    # ---- Construct layout tensors ----
-    comptime layout_4d = Layout.row_major[4]()
-
-    # FP8 Q device layout tensor for the kernel (BSHD)
-    comptime q_fp8_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_fp8_device = LayoutTensor[q_type, q_fp8_layout](
+    # ---- Construct TileTensors for kernel inputs ----
+    var q_fp8_tt = TileTensor(
         q_fp8_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_fp8_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
+    var out_tt = TileTensor(
+        output_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
+        ),
+    )
+    var null_valid_length_tt = TileTensor(
+        UnsafePointer[UInt32, MutAnyOrigin](),
+        row_major(Idx(0)),
+    )
 
-    # FP8 K operand for the kernel
+    # LayoutTensors for FP8 K (needed by LayoutTensorMHAOperand)
     comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
     )
@@ -248,7 +235,7 @@ def test[
         ),
     )
 
-    # BF16 K reference device tensor
+    # BF16 K reference device tensor (for mha_gpu_naive)
     var k_bf16_device = LayoutTensor[output_type, k_layout](
         k_bf16_device_ptr.unsafe_ptr(),
         RuntimeLayout[k_layout].row_major(
@@ -256,7 +243,10 @@ def test[
         ),
     )
 
-    # BF16 dequantized Q device tensor for reference
+    # BF16 dequantized Q device tensor for reference (for mha_gpu_naive)
+    comptime q_fp8_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    )
     var q_bf16_dequant_device = LayoutTensor[output_type, q_fp8_layout](
         q_bf16_dequant_device_ptr.unsafe_ptr(),
         RuntimeLayout[q_fp8_layout].row_major(
@@ -264,15 +254,9 @@ def test[
         ),
     )
 
-    # Output layout: v_depth per head
+    # Output ref layout (for mha_gpu_naive)
     comptime output_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, v_depth)
-    )
-    var output_device = LayoutTensor[output_type, output_layout](
-        output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, v_depth)
-        ),
     )
     var output_ref_device = LayoutTensor[output_type, output_layout](
         output_ref_device_ptr.unsafe_ptr(),
@@ -281,21 +265,7 @@ def test[
         ),
     )
 
-    # Mask tensors
-    var mask3d = LayoutTensor[mask_type, Layout.row_major[3]()](
-        mask_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size, seq_len, num_keys)
-        ),
-    )
-    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
-        mask_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
-    )
-
-    # Valid length (empty -- not using ragged)
+    # Valid length (empty -- not using ragged) for mha_gpu_naive
     var null_valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
@@ -331,13 +301,11 @@ def test[
     @parameter
     @always_inline
     @__copy_capture(
-        q_fp8_device,
+        q_fp8_tt,
         k_operand,
-        output_device,
-        null_valid_length,
+        out_tt,
+        null_valid_length_tt,
         scalar_args_buf_lt,
-        mask3d,
-        mask4d,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
@@ -354,11 +322,11 @@ def test[
                 _is_cache_length_accurate=True,
                 decoding_warp_split_k=False,
             ](
-                lt_to_tt(q_fp8_device),
+                q_fp8_tt,
                 k_operand,
-                lt_to_tt(output_device),
+                out_tt,
                 scale,
-                lt_to_tt(null_valid_length),
+                null_valid_length_tt,
                 CausalMask(),
                 lt_to_tt(scalar_args_buf_lt),
                 batch_size,
@@ -379,62 +347,12 @@ def test[
                 _is_cache_length_accurate=True,
                 decoding_warp_split_k=False,
             ](
-                lt_to_tt(q_fp8_device),
+                q_fp8_tt,
                 k_operand,
-                lt_to_tt(output_device),
+                out_tt,
                 scale,
-                lt_to_tt(null_valid_length),
+                null_valid_length_tt,
                 NullMask(),
-                lt_to_tt(scalar_args_buf_lt),
-                batch_size,
-                seq_len,
-                num_keys,
-                ctx,
-            )
-        elif mla_mask_type == MLAMaskType.MASK_3D:
-            mla_decode_sm100_dispatch[
-                q_type,
-                type_of(k_operand),
-                output_type,
-                MaterializedMask[mask3d.dtype, mask3d.layout, mask3d.origin],
-                config,
-                depth,
-                num_heads,
-                group,
-                _is_cache_length_accurate=True,
-                decoding_warp_split_k=False,
-            ](
-                lt_to_tt(q_fp8_device),
-                k_operand,
-                lt_to_tt(output_device),
-                scale,
-                lt_to_tt(null_valid_length),
-                MaterializedMask(mask3d),
-                lt_to_tt(scalar_args_buf_lt),
-                batch_size,
-                seq_len,
-                num_keys,
-                ctx,
-            )
-        elif mla_mask_type == MLAMaskType.MASK_4D:
-            mla_decode_sm100_dispatch[
-                q_type,
-                type_of(k_operand),
-                output_type,
-                MaterializedMask[mask4d.dtype, mask4d.layout, mask4d.origin],
-                config,
-                depth,
-                num_heads,
-                group,
-                _is_cache_length_accurate=True,
-                decoding_warp_split_k=False,
-            ](
-                lt_to_tt(q_fp8_device),
-                k_operand,
-                lt_to_tt(output_device),
-                scale,
-                lt_to_tt(null_valid_length),
-                MaterializedMask(mask4d),
                 lt_to_tt(scalar_args_buf_lt),
                 batch_size,
                 seq_len,
@@ -513,38 +431,6 @@ def test[
             group,
             ctx,
         )
-    elif mla_mask_type == MLAMaskType.MASK_3D:
-        mha_gpu_naive(
-            q_bf16_dequant_device,
-            k_fp8_device,
-            k_fp8_device,
-            mask3d,
-            output_ref_full_device,
-            scale,
-            batch_size,
-            seq_len,
-            num_keys,
-            num_heads,
-            depth,
-            group,
-            ctx,
-        )
-    elif mla_mask_type == MLAMaskType.MASK_4D:
-        mha_gpu_naive(
-            q_bf16_dequant_device,
-            k_fp8_device,
-            k_fp8_device,
-            mask4d,
-            output_ref_full_device,
-            scale,
-            batch_size,
-            seq_len,
-            num_keys,
-            num_heads,
-            depth,
-            group,
-            ctx,
-        )
 
     ctx.synchronize()
     print("  Reference completed.")
@@ -600,7 +486,6 @@ def test[
     _ = k_fp8_device_ptr
     _ = q_bf16_dequant_device_ptr
     _ = k_bf16_device_ptr
-    _ = mask_device_ptr
     _ = output_device_ptr
     _ = output_ref_device_ptr
     _ = output_ref_full_device_ptr
@@ -610,7 +495,6 @@ def test[
     q_bf16_dequant_ptr.free()
     k_fp8_ptr.free()
     k_bf16_ptr.free()
-    mask_ptr.free()
     output_ptr.free()
     flash_output_ptr.free()
     ref_full_output_ptr.free()
@@ -657,17 +541,25 @@ def bench[
 
     ctx.synchronize()
 
-    # Layout tensors
-    comptime q_fp8_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_fp8_device = LayoutTensor[q_type, q_fp8_layout](
+    # TileTensors for kernel inputs
+    var q_fp8_tt = TileTensor(
         q_fp8_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_fp8_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
+    var out_tt = TileTensor(
+        output_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
+        ),
+    )
+    var null_valid_length_tt = TileTensor(
+        UnsafePointer[UInt32, MutAnyOrigin](),
+        row_major(Idx(0)),
+    )
 
+    # LayoutTensor for FP8 K (needed by LayoutTensorMHAOperand)
     comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
     )
@@ -676,23 +568,6 @@ def bench[
         RuntimeLayout[k_layout].row_major(
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
-    )
-
-    comptime output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, v_depth)
-    )
-    var output_device = LayoutTensor[output_type, output_layout](
-        output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, v_depth)
-        ),
-    )
-
-    var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        UnsafePointer[UInt32, MutAnyOrigin](),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
     var k_operand = LayoutTensorMHAOperand(
@@ -719,10 +594,10 @@ def bench[
     @parameter
     @always_inline
     @__copy_capture(
-        q_fp8_device,
+        q_fp8_tt,
         k_operand,
-        output_device,
-        null_valid_length,
+        out_tt,
+        null_valid_length_tt,
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
@@ -739,11 +614,11 @@ def bench[
             _is_cache_length_accurate=True,
             decoding_warp_split_k=False,
         ](
-            lt_to_tt(q_fp8_device),
+            q_fp8_tt,
             k_operand,
-            lt_to_tt(output_device),
+            out_tt,
             scale,
-            lt_to_tt(null_valid_length),
+            null_valid_length_tt,
             NullMask(),
             lt_to_tt(scalar_args_buf_lt),
             batch_size,
@@ -796,7 +671,6 @@ def test_decoding[
         DType.float8_e4m3fn,  # q_type (FP8)
         DType.float8_e4m3fn,  # kv_type (FP8)
         DType.bfloat16,  # output_type
-        DType.float32,  # mask_type
         576,
         16,
         group=16,
@@ -808,7 +682,6 @@ def test_decoding[
         DType.float8_e4m3fn,  # q_type (FP8)
         DType.float8_e4m3fn,  # kv_type (FP8)
         DType.bfloat16,  # output_type
-        DType.float32,  # mask_type
         576,
         64,
         group=64,
@@ -820,7 +693,6 @@ def test_decoding[
         DType.float8_e4m3fn,  # q_type (FP8)
         DType.float8_e4m3fn,  # kv_type (FP8)
         DType.bfloat16,  # output_type
-        DType.float32,  # mask_type
         576,
         128,
         group=128,

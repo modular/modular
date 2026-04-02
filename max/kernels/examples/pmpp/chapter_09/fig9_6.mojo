@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.os import Atomic

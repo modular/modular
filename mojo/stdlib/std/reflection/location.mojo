@@ -29,7 +29,7 @@ from std.reflection import source_location
 def main():
     var loc = source_location()
     print(loc)  # Prints: /path/to/file.mojo:5:15
-    print("Line:", loc.line, "Column:", loc.col)
+    print("Line:", loc.line(), "Column:", loc.column())
 ```
 
 Example using `call_location()` for a custom assertion that reports the
@@ -52,8 +52,12 @@ def main() raises:
 """
 
 
-@fieldwise_init
-struct SourceLocation(TrivialRegisterPassable, Writable):
+from std.memory import UnsafeMaybeUninit
+from std.utils._nicheable import UnsafeSingleNicheable
+from .struct_fields import offset_of
+
+
+struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     """Type to carry file name, line, and column information.
 
     This struct stores source location data and provides utilities for formatting
@@ -74,18 +78,64 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
         # Prints: At /path/to/file.mojo:6:19: something went wrong
 
         # Access individual fields
-        print("File:", loc.file_name)
-        print("Line:", loc.line)
-        print("Column:", loc.col)
+        print("File:", loc.file_name())
+        print("Line:", loc.line())
+        print("Column:", loc.column())
     ```
     """
 
-    var line: Int
+    var _line: Int
     """The line number (1-indexed)."""
-    var col: Int
+    var _col: Int
     """The column number (1-indexed)."""
-    var file_name: StaticString
+    var _file_name: StaticString
     """The file name."""
+
+    @always_inline
+    @doc_hidden
+    def __init__(out self, line: Int, col: Int, file_name: StaticString):
+        """Constructs a `SourceLocation` from line, column, and file name.
+
+        `line` and `col` must be >= 1.
+
+        Args:
+            line: The 1-indexed line number.
+            col: The 1-indexed column number.
+            file_name: The file name.
+        """
+        # Note: Do not use `assert` or `debug_assert` here. Those internally
+        # call `call_location()` which returns a `SourceLocation`, causing
+        # circular elaboration that crashes the compiler.
+        self._line = line
+        self._col = col
+        self._file_name = file_name
+
+    @always_inline
+    def line(self) -> Int:
+        """Returns the 1-indexed line number.
+
+        Returns:
+            The line number.
+        """
+        return self._line
+
+    @always_inline
+    def column(self) -> Int:
+        """Returns the 1-indexed column number.
+
+        Returns:
+            The column number.
+        """
+        return self._col
+
+    @always_inline
+    def file_name(self) -> StaticString:
+        """Returns the file name.
+
+        Returns:
+            The file name.
+        """
+        return self._file_name
 
     @no_inline
     def prefix[T: Writable](self, msg: T) -> String:
@@ -109,7 +159,30 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
         Args:
             writer: The object to write to.
         """
-        writer.write(self.file_name, ":", self.line, ":", self.col)
+        writer.write(self._file_name, ":", self._line, ":", self._col)
+
+    comptime _LineNiche = -1
+    comptime _LineByteOffset = offset_of[Self, name="_line"]()
+
+    @staticmethod
+    @always_inline
+    @doc_hidden
+    def write_niche(
+        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
+    ):
+        (memory.bitcast[Byte]() + Self._LineByteOffset).bitcast[
+            Int
+        ]().init_pointee_move(Self._LineNiche)
+
+    @staticmethod
+    @always_inline
+    @doc_hidden
+    def isa_niche(
+        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+    ) -> Bool:
+        return (memory.bitcast[Byte]() + Self._LineByteOffset).bitcast[
+            Int
+        ]()[] == Self._LineNiche
 
 
 @always_inline("nodebug")
@@ -128,7 +201,7 @@ def source_location() -> SourceLocation:
 
     def log_message(msg: String):
         var loc = source_location()
-        print("[", loc.file_name, ":", loc.line, "]", msg)
+        print("[", loc.file_name(), ":", loc.line(), "]", msg)
 
     def main():
         log_message("hello")  # Prints: [ /path/to/file.mojo : 4 ] hello

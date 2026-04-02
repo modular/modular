@@ -26,7 +26,6 @@ from layout.tma_async import (
     TMATensorTile,
     _idx_product,
     create_tensor_tile,
-    create_tma_tile,
 )
 from std.memory import stack_allocation
 
@@ -73,13 +72,13 @@ def tma_swizzle_load_kernel[
         tma_tile.async_copy(
             tile,
             mbar[0],
-            (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM),
+            (block_idx.x * tileN, block_idx.y * tileM),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
 
     if thread_idx.x == 0:
         dst_tile.copy_from(tile)

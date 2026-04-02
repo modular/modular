@@ -13,13 +13,10 @@
 
 from std.collections import OptionalReg
 
-from std.io.io import _printf
 from std.random import randint, randn, seed
 from std.sys import (
-    align_of,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
-    simd_width_of,
     size_of,
 )
 
@@ -40,7 +37,6 @@ from layout import TileTensor, Idx
 from layout.tile_layout import row_major
 from shmem.ep_comm import (
     BF16TokenFormat,
-    EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
     combine_wait_kernel,
     combine_async_kernel,
@@ -169,7 +165,7 @@ def test_combine[
         device_output_2_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * top_k * hidden_size))
     # fmt: on
 
-    var topk_ids_layout = row_major((Idx(n_tokens_per_rank), Idx[top_k]()))
+    var topk_ids_layout = row_major(Idx(n_tokens_per_rank), Idx[top_k]())
     var input_tokens_layout = row_major(
         (Idx(n_tokens_per_rank), Idx[hidden_size]())
     )
@@ -409,7 +405,7 @@ def test_combine[
             OptionalReg[
                 TileTensor[
                     input_type,
-                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
                     ImmutAnyOrigin,
                 ]
             ](),
@@ -438,7 +434,7 @@ def test_combine[
             OptionalReg[
                 TileTensor[
                     input_type,
-                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
                     MutAnyOrigin,
                 ]
             ](),

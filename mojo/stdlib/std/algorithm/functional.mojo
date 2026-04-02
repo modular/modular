@@ -108,6 +108,8 @@ def _get_start_indices_of_nth_subvolume[
     ), "subvolume rank cannot be greater than indices rank"
     comptime assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
+    comptime IntType = type_of(shape)._int_type
+
     # fast impls for common cases
     comptime if rank == 2 and subvolume_rank == 1:
         return {n, 0}
@@ -121,54 +123,13 @@ def _get_start_indices_of_nth_subvolume[
         return {0}
 
     res = {}
-    var curr_index = n
+    # If the index type is unsigned, be sure to use unsigned div/mod operations.
+    var curr_index = IntType(n)
 
-    comptime for i in reversed(range(rank - subvolume_rank)):
-        res[i] = curr_index._positive_rem(shape[i])
-        curr_index = curr_index / shape[i]
+    comptime for i in reversed(range(1, rank - subvolume_rank)):
+        curr_index, res.data[i] = divmod(curr_index, IntType(shape.get[i]()))
 
-
-# TODO(KERN-637) - optimize this algorithm for UInt rather than delegating
-# to the Int overload.
-@always_inline
-def _get_start_indices_of_nth_subvolume_uint[
-    rank: Int,
-    //,
-    subvolume_rank: UInt = 1,
-](n: UInt, shape: IndexList[rank, ...]) -> type_of(shape):
-    """Converts a flat index into the starting ND indices of the nth subvolume
-    with rank `subvolume_rank`.
-
-    For example:
-        - `_get_start_indices_of_nth_subvolume[0](n, shape)` will return
-        the starting indices of the nth element in shape.
-        - `_get_start_indices_of_nth_subvolume[1](n, shape)` will return
-        the starting indices of the nth row in shape.
-        - `_get_start_indices_of_nth_subvolume[2](n, shape)` will return
-        the starting indices of the nth horizontal slice in shape.
-
-    The ND indices will iterate from right to left. I.E
-
-        shape = (20, 5, 2, N)
-        _get_start_indices_of_nth_subvolume[1](1, shape) = (0, 0, 1, 0)
-        _get_start_indices_of_nth_subvolume[1](5, shape) = (0, 2, 1, 0)
-        _get_start_indices_of_nth_subvolume[1](50, shape) = (5, 0, 0, 0)
-        _get_start_indices_of_nth_subvolume[1](56, shape) = (5, 1, 1, 0)
-
-    Parameters:
-        rank: The rank of the ND index.
-        subvolume_rank: The rank of the subvolume under consideration.
-
-    Args:
-        n: The flat index to convert (the nth subvolume to retrieve).
-        shape: The shape of the ND space we are converting into.
-
-    Returns:
-        Constructed ND-index.
-    """
-    return _get_start_indices_of_nth_subvolume[Int(subvolume_rank)](
-        Int(n), shape
-    )
+    res.data[0] = curr_index
 
 
 # ===-----------------------------------------------------------------------===#
@@ -353,7 +314,7 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -381,8 +342,7 @@ def elementwise[
     def description_fn() -> String:
         var shape_str = trace_arg("shape", shape)
         var vector_width_str = String(t"vector_width={simd_width}")
-
-        return ";".join(Span([shape_str, vector_width_str]))
+        return ";".join(Span([shape_str^, vector_width_str^]))
 
     # Intern the kind string as a static string so we don't allocate.
     comptime d = _trace_description
@@ -396,7 +356,7 @@ def elementwise[
     ):
         comptime if is_gpu[target]():
             _elementwise_impl_gpu[
-                func=func, simd_width=UInt(simd_width), pdl_level=pdl_level
+                func=func, simd_width=simd_width, pdl_level=pdl_level
             ](shape=shape, ctx=context[])
         else:
             _elementwise_impl_cpu[
@@ -429,7 +389,7 @@ def _elementwise_impl[
     else:
         _elementwise_impl_gpu[
             func=func,
-            simd_width=UInt(simd_width),
+            simd_width=simd_width,
             pdl_level=pdl_level,
         ](shape=shape, ctx=context)
 

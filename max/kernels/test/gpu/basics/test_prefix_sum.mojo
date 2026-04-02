@@ -31,7 +31,7 @@ def warp_prefix_sum_kernel[
     size: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(size):
+    if tid >= size:
         return
     output[tid] = warp.prefix_sum[exclusive=exclusive](input[tid])
 
@@ -97,7 +97,7 @@ def block_prefix_sum_kernel[
     size: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(size):
+    if tid >= size:
         return
     output[tid] = block.prefix_sum[exclusive=exclusive, block_size=block_size](
         input[tid]

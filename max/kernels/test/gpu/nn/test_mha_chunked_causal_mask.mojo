@@ -15,9 +15,16 @@ from std.math import isclose
 from std.random import rand
 
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import (
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import (
     MASK_VALUE,
     ChunkedCausalMask,
     TileMaskStatus,
@@ -98,36 +105,12 @@ def test_attention[
     var output_ptr = alloc[Scalar[qkv_type]](o_size)
     var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
 
-    # Construct buffers.
+    # Construct host mask buffer for initialization.
     comptime layout_4d = Layout.row_major[4]()
-    var q = LayoutTensor[qkv_type, layout_4d](
-        q_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
-    var k = LayoutTensor[qkv_type, layout_4d](
-        k_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var v = LayoutTensor[qkv_type, layout_4d](
-        v_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
     var mask = LayoutTensor[mask_type, layout_4d, MutAnyOrigin](
         mask_ptr,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, seq_len, num_keys)
-        ),
-    )
-    var output = LayoutTensor[qkv_type, layout_4d](
-        output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
         ),
     )
 
@@ -155,46 +138,59 @@ def test_attention[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var q_device = LayoutTensor[qkv_type, q_layout](
+    var q_device = TileTensor(
         q_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[depth](),
+            )
         ),
     )
-    comptime k_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
-    )
-    var k_device = LayoutTensor[qkv_type, k_layout](
+    var k_device = TileTensor(
         k_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[kv_num_heads](),
+                Idx[depth](),
+            )
         ),
     )
-    comptime v_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
-    )
-    var v_device = LayoutTensor[qkv_type, v_layout](
+    var v_device = TileTensor(
         v_device_ptr.unsafe_ptr(),
-        RuntimeLayout[v_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[kv_num_heads](),
+                Idx[depth](),
+            )
         ),
     )
-    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
+    var mask4d = TileTensor(
         mask_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx[num_heads](),
+                Idx(seq_len),
+                Idx(num_keys),
+            )
         ),
     )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var output_device = LayoutTensor[qkv_type, output_layout](
+    var output_device = TileTensor(
         output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[depth](),
+            )
         ),
     )
 
@@ -216,13 +212,15 @@ def test_attention[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-    comptime output_ref_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var output_device_ref = LayoutTensor[qkv_type, output_ref_layout](
+    var output_device_ref = TileTensor(
         output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_ref_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[depth](),
+            )
         ),
     )
 

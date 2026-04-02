@@ -12,55 +12,39 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import OptionalReg
-from std.math import ceildiv, recip
+from std.math import ceildiv
 from std.math.constants import log2e
 
-from std.sys import size_of, simd_width_of
-from std.sys.info import _cdna_4_or_newer
+from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq
 from std.sys._assembly import inlined_assembly
-from std.algorithm.functional import unswitch
-from std.gpu import barrier, block_idx_int as block_idx, lane_id, thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import (
+    block_idx_int as block_idx,
+    lane_id_uint as lane_id,
+    thread_idx_uint as thread_idx,
+)
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.layout import blocked_product
-from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.layout_tensor import (
-    ThreadScope,
-    copy_dram_to_local,
-    copy_local_to_dram,
-)
-from std.memory import bitcast
-from std.sys.intrinsics import readfirstlane
-from nn.mha_mask import CausalMask, MASK_VALUE, MaterializedMask
-from layout.swizzle import Swizzle
+from layout._utils import idx2crd
+from layout.layout_tensor import ThreadScope, copy_local_to_dram
+from nn.attention.mha_mask import CausalMask
 from layout.tensor_core import TiledTensorCore, num_matrix_reg
-from std.memory.pointer import AddressSpace as BaseAddressSpace
-from nn.mha_mask import MHAMask, TileMaskStatus
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import (
-    MHAConfig,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
+from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_operand import MHAOperand
+from nn.attention.mha_utils import MHAConfig, _kernel_mask
 from .softmax import Softmax
 from std.sys import _RegisterPackType
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .buffers import (
-    KBuffer,
     KVBuffer,
     OutputRegisterBuffer,
     PRegisterBuffer,
     QRegisterBuffer,
-    VBuffer,
-    VBufferTransposeLoads,
 )
 from .mma import mma
 from .utils import (
     GlobalMemoryManager,
-    LocalLayoutTensor,
     SharedLayoutTensor,
     SharedMemoryManager,
     copy_local_to_dram2,
@@ -182,43 +166,23 @@ def _mask_apply[
             comptime is_causal_mask = _type_is_eq[mask_t, CausalMask]()
 
             if masked:
-                comptime for j in range(
-                    0, output_frag_size, 2 if is_causal_mask else 1
-                ):
-                    var q_head_idx = attention_config_t.q_head_idx()
-
-                    comptime if is_causal_mask:
-                        var x_0 = Int32(
-                            score_row_with_start_pos
-                            - score_col_with_cache_start_pos
-                        )
+                comptime if is_causal_mask:
+                    var x_0 = Int32(
+                        score_row_with_start_pos
+                        - score_col_with_cache_start_pos
+                    )
+                    comptime for j in range(0, output_frag_size, 2):
                         comptime y_0 = Int32(fragment_layout(j)) - 1
                         var val_0 = p_reg_vectorized[mma_id, 0][j]
-
                         comptime y_1 = Int32(fragment_layout(j + 1)) - 1
                         var val_1 = p_reg_vectorized[mma_id, 0][j + 1]
-                        var val_inf = Scalar[accum_type](-10000.0)
-
-                        # v_cmp writing to 2 sgprs or vcc requires waiting for 1 cycle
-                        # before they can be used in another VALU instruction.
-                        # Using 2 cmp and 2 cndmask instructions avoids this wait.
-                        # Without using this inline asm, we would stall for a cycle after each comparison.
-                        # the generated asm without this would be:
-                        # v_cmp_lt_i32_e32 vcc, -1, v221
-                        # s_nop 1
-                        # v_cndmask_b32_e32 v82, v227, v82, vcc
-                        # v_cmp_lt_i32_e32 vcc, 0, v221
-                        # s_nop 1
-                        # v_cndmask_b32_e32 v83, v227, v83, vcc
-
-                        # this inline asm does the same thing as CausalMask.mask(),
-                        # it just processes 2 elements at a time vs. 1.
                         comptime asm = """
-                            v_cmp_lt_i32_e64 $2, $5, $4
-                            v_cmp_lt_i32_e64 $3, $8, $7
-                            v_cndmask_b32_e64 $0, $10, $6, $2
-                            v_cndmask_b32_e64 $1, $10, $9, $3
-                            """
+                                v_mov_b32 $4, 0xc61c4000
+                                v_cmp_lt_i32_e64 $2, $6, $5
+                                v_cmp_lt_i32_e64 $3, $9, $8
+                                v_cndmask_b32_e64 $0, $4, $7, $2
+                                v_cndmask_b32_e64 $1, $4, $10, $3
+                                """
                         var ret = inlined_assembly[
                             asm,
                             _RegisterPackType[
@@ -226,25 +190,16 @@ def _mask_apply[
                                 Scalar[accum_type],
                                 Int64,
                                 Int64,
+                                Scalar[accum_type],
                             ],
-                            constraints="=v,=v,=&s,=&s,v,n,v,v,n,v,v,~{vcc}",
-                        ](x_0, y_0, val_0, x_0, y_1, val_1, val_inf)
+                            constraints="=v,=v,=&s,=&s,=&v,v,n,v,v,n,v,~{vcc}",
+                        ](x_0, y_0, val_0, x_0, y_1, val_1)
                         p_reg_vectorized[mma_id, 0][j] = ret[0]
                         p_reg_vectorized[mma_id, 0][j + 1] = ret[1]
 
-                        # p_reg_vectorized[mma_id, 0][j] = mask.mask[
-                        #     element_type = DType.int32
-                        # ](
-                        #     IndexList[4, element_type = DType.int32](
-                        #         block_idx.z,
-                        #         Int(q_head_idx),
-                        #         Int(score_row_with_start_pos)
-                        #         - Int(score_col_with_cache_start_pos),
-                        #         Int(fragment_col),
-                        #     ),
-                        #     p_reg_vectorized[mma_id, 0][j],
-                        # )
-                    else:
+                else:
+                    var q_head_idx = attention_config_t.q_head_idx()
+                    comptime for j in range(0, output_frag_size, 1):
                         comptime fragment_col = fragment_layout(j)
                         p_reg_vectorized[mma_id, 0][j] = mask.mask(
                             IndexList[4, element_type=DType.uint32](
@@ -473,6 +428,16 @@ struct Attention[
     @always_inline
     def get_batch_idx(self) -> Int:
         return self.batch_idx
+
+    @always_inline
+    def scale_q_buffer(self):
+        """Pre-scale Q registers by scale factor (scale * log2e).
+
+        After this, QK matmul produces already-scaled scores so the
+        hot loop can skip per-element scale multiplication. The Q values
+        are cast to f32, scaled, then quantized back to bf16.
+        """
+        self.q_buffer.scale[Self.accum_type](self.scale)
 
     @always_inline
     def scale_p_reg[stage: Int = 0](self):
@@ -723,27 +688,7 @@ struct Attention[
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
-        comptime if not is_causal_mask or (
-            not Self.attention_config_t.double_buffer
-        ):
-            # using double buffer as proxy for the experimental kernel,
-            # using readfirstlane for the gfx942 kernel leads to incorrect results.
-            # This needs more investigation.
-            # Disable inline asm for all other masks except causal mask,
-            # Inline asm was generating bad code for the MaterializedMask,
-            # and for now we only care about the performance of the causal mask.
-            self.scale = scale_log2e
-        else:
-            self.scale = inlined_assembly[
-                "v_readfirstlane_b32 $0, $1",
-                Scalar[Self.accum_type],
-                constraints="=s,v",
-            ](scale_log2e)
-            # readfirstlane does not work without inline asm
-            # bitcast[Self.accum_type](
-            #     readfirstlane(bitcast[DType.int32](Float32(scale_log2e)))
-            # )
-
+        self.scale = scale_log2e
         self.seq_len = seq_len
         self.num_keys = num_keys
         self.start_pos = start_pos

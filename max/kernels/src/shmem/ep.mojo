@@ -18,19 +18,17 @@ Helper functions for Expert Parallelism (EP) Communication Kernels.
 
 from std.collections import OptionalReg
 
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host.info import is_gpu
-from layout import TensorLayout, TileTensor, Idx, Coord
+from layout import TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of
-from std.ffi import external_call
+from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
-    BF16TokenFormat,
-    BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
     TokenFormat,
     dispatch_async_kernel,
@@ -40,21 +38,9 @@ from shmem.ep_comm import (
     combine_wait_kernel,
     combine_kernel,
     elementwise_epilogue_type,
-    fused_silu_kernel,
-    fused_silu_fp8_kernel,
     router_weights_wrapper_type,
     input_scales_wrapper_type,
 )
-
-
-# This should eventually be moved to ffi.mojo with a more general global cache method
-# cache key is a string and cache value is a pointer.
-@always_inline
-def global_cache_lookup(key: String) -> OpaquePointer[ExternalOrigin[mut=True]]:
-    return external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull",
-        OpaquePointer[ExternalOrigin[mut=True]],
-    ](key.unsafe_ptr(), key.byte_length())
 
 
 @always_inline
@@ -205,7 +191,7 @@ def ep_dispatch_async_kernel_api[
             var cached_module_key = String(t"EP_DISPATCH_INITED_DEV_{gpu_id}")
 
             # Don't initialize the module repeatedly
-            if not Int(global_cache_lookup(cached_module_key)):
+            if not _get_global_or_null(cached_module_key):
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
@@ -267,7 +253,7 @@ def ep_dispatch_wait_kernel_api[
     maybe_fused_shared_expert_input: OptionalReg[
         TileTensor[
             DType.bfloat16,
-            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -519,7 +505,7 @@ def ep_fused_dispatch_kernel_api[
             )
 
             # Don't initialize the module repeatedly
-            if not Int(global_cache_lookup(cached_module_key)):
+            if not _get_global_or_null(cached_module_key):
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
@@ -555,7 +541,7 @@ def ep_fused_dispatch_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )
 
 
@@ -587,7 +573,7 @@ def ep_combine_async_kernel_api[
     maybe_fused_shared_expert_output: OptionalReg[
         TileTensor[
             combine_dtype,
-            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
             MutAnyOrigin,
         ]
     ] = None,
@@ -690,7 +676,7 @@ def ep_combine_async_kernel_api[
             var cached_module_key = String(t"EP_COMBINE_INITED_DEV_{gpu_id}")
 
             # Don't initialize the module repeatedly
-            if not Int(global_cache_lookup(cached_module_key)):
+            if not _get_global_or_null(cached_module_key):
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
@@ -1000,7 +986,7 @@ def ep_fused_combine_kernel_api[
             )
 
             # Don't initialize the module repeatedly
-            if not Int(global_cache_lookup(cached_module_key)):
+            if not _get_global_or_null(cached_module_key):
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
@@ -1033,5 +1019,5 @@ def ep_fused_combine_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )

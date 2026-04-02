@@ -57,9 +57,10 @@ def register_all_models() -> None:
     from .idefics3 import idefics3_arch
     from .idefics3_modulev3 import idefics3_modulev3_arch
     from .internvl import internvl_arch
-    from .kimik2_5 import kimik2_5_arch, kimivl_arch
+    from .kimik2_5 import eagle3_kimik25_arch, kimik2_5_arch, kimivl_arch
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
+    from .mamba import mamba_arch
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
@@ -83,6 +84,7 @@ def register_all_models() -> None:
     from .qwen_image_edit import qwen_image_edit_arch, qwen_image_edit_plus_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
+    from .z_image_modulev3 import z_image_arch
 
     architectures = [
         exaone_arch,
@@ -107,10 +109,12 @@ def register_all_models() -> None:
         internvl_arch,
         idefics3_arch,
         idefics3_modulev3_arch,
+        eagle3_kimik25_arch,
         kimik2_5_arch,
         kimivl_arch,
         llama_arch,
         llama_modulev3_arch,
+        mamba_arch,
         bert_arch,
         mistral_arch,
         mistral3_arch,
@@ -138,6 +142,7 @@ def register_all_models() -> None:
         qwen_image_edit_plus_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,
+        z_image_arch,
     ]
 
     for arch in architectures:

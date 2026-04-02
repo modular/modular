@@ -268,31 +268,11 @@ def range[T: Indexer, //](end: T) -> _ZeroStartingRange:
 
 
 @always_inline
-def range[T: IntableRaising, //](end: T) raises -> _ZeroStartingRange:
-    """Constructs a [0; end) Range.
-
-    Parameters:
-        T: The type of the end value.
-
-    Args:
-        end: The end of the range.
-
-    Returns:
-        The constructed range.
-
-    Raises:
-        An error if the conversion to an `Int` failed.
-    """
-    return _ZeroStartingRange(Int(end))
-
-
-@always_inline
-def range[T0: Indexer, T1: Indexer, //](start: T0, end: T1) -> _SequentialRange:
+def range[T: Indexer, //](start: T, end: T) -> _SequentialRange:
     """Constructs a [start; end) Range.
 
     Parameters:
-        T0: The type of the start value.
-        T1: The type of the end value.
+        T: The type of the start and end values.
 
     Args:
         start: The start of the range.
@@ -305,38 +285,11 @@ def range[T0: Indexer, T1: Indexer, //](start: T0, end: T1) -> _SequentialRange:
 
 
 @always_inline
-def range[
-    T0: IntableRaising, T1: IntableRaising
-](start: T0, end: T1) raises -> _SequentialRange:
-    """Constructs a [start; end) Range.
-
-    Parameters:
-        T0: The type of the start value.
-        T1: The type of the end value.
-
-    Args:
-        start: The start of the range.
-        end: The end of the range.
-
-    Returns:
-        The constructed range.
-
-    Raises:
-        An error if converting `start` or `end` to an `Int` failed.
-    """
-    return _SequentialRange(Int(start), Int(end))
-
-
-@always_inline
-def range[
-    T0: Indexer, T1: Indexer, T2: Indexer, //
-](start: T0, end: T1, step: T2) -> _StridedRange:
+def range[T: Indexer, //](start: T, end: T, step: T) -> _StridedRange:
     """Constructs a [start; end) Range with a given step.
 
     Parameters:
-        T0: The type of the start value.
-        T1: The type of the end value.
-        T2: The type of the step value.
+        T: The type of the start, end, and step values.
 
     Args:
         start: The start of the range.
@@ -347,31 +300,6 @@ def range[
         The constructed range.
     """
     return _StridedRange(index(start), index(end), index(step))
-
-
-@always_inline
-def range[
-    T0: IntableRaising, T1: IntableRaising, T2: IntableRaising, //
-](start: T0, end: T1, step: T2) raises -> _StridedRange:
-    """Constructs a [start; end) Range with a given step.
-
-    Parameters:
-        T0: The type of the start value.
-        T1: The type of the end value.
-        T2: The type of the step value.
-
-    Args:
-        start: The start of the range.
-        end: The end of the range.
-        step: The step for the range.
-
-    Returns:
-        The constructed range.
-
-    Raises:
-        An error if converting `start`, `end`, or `step` to an `Int` failed.
-    """
-    return _StridedRange(Int(start), Int(end), Int(step))
 
 
 # ===----------------------------------------------------------------------=== #

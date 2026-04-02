@@ -155,6 +155,21 @@ def test_variadic_contains_empty() raises:
     assert_false(ContainsWritable[Bool, variadic])
 
 
+def test_variadic_contains_value() raises:
+    comptime variadic = Variadic.values[1, 2, 3]
+    assert_equal(Variadic.size(variadic), 3)
+    assert_true(Variadic.contains_value[1, variadic])
+    assert_true(Variadic.contains_value[2, variadic])
+    assert_true(Variadic.contains_value[3, variadic])
+    assert_false(Variadic.contains_value[4, variadic])
+
+
+def test_variadic_contains_value_empty() raises:
+    comptime variadic = Variadic.empty_of_type[Int]
+    assert_equal(Variadic.size(variadic), 0)
+    assert_false(Variadic.contains_value[1, variadic])
+
+
 def test_zip_types_empty() raises:
     comptime v1 = Variadic.empty_of_trait[Writable]
     comptime v2 = Variadic.empty_of_trait[Writable]
@@ -447,6 +462,65 @@ def test_variadic_pack_write_repr_to() raises:
         assert_equal(s, "(Int(1), 'hello', True)")
 
     helper(1, "hello", True)
+
+
+def test_variadic_pack_forwarding() raises:
+    """Test that variadic packs can be forwarded with *pack syntax."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(1, hello, 3.14)")
+
+    def forwarder[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    forwarder(1, "hello", 3.14)
+
+
+def test_variadic_pack_forwarding_single_element() raises:
+    """Test forwarding a single-element variadic pack."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(42)")
+
+    def forwarder[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    forwarder(42)
+
+
+def test_variadic_pack_forwarding_empty() raises:
+    """Test forwarding an empty variadic pack."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "()")
+
+    def forwarder[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    forwarder()
+
+
+def test_variadic_pack_forwarding_through_two_levels() raises:
+    """Test forwarding a variadic pack through two levels of indirection."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(a, True)")
+
+    def middle[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    def outer[*Ts: Writable](*args: *Ts) raises:
+        middle(*args)
+
+    outer("a", True)
 
 
 def main() raises:

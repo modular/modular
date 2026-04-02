@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .agentic_code import AgenticCodeBenchmarkDataset
 from .arxiv_summarization import ArxivSummarizationBenchmarkDataset
 from .axolotl import AxolotlBenchmarkDataset
 from .batch_job import BatchJobBenchmarkDataset
@@ -22,15 +23,19 @@ from .distribution import (
     DistributionParameter,
 )
 from .huggingface import HuggingFaceBenchmarkDataset
+from .instruct_coder import InstructCoderBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
-from .pixel import PixelBenchmarkDataset, SyntheticPixelBenchmarkDataset
+from .pixel import PixelBenchmarkDataset
+from .pixel_image_edit import LocalImageBenchmarkDataset
+from .pixel_synthetic import SyntheticPixelBenchmarkDataset
 from .random import RandomBenchmarkDataset, SyntheticBenchmarkDataset
 from .registry import DATASET_REGISTRY, DatasetRegistryEntry
 from .sharegpt import ShareGPTBenchmarkDataset
 from .sonnet import SonnetBenchmarkDataset
 from .types import (
+    ChatSamples,
     ChatSession,
     DatasetMode,
     OpenAIImage,
@@ -42,11 +47,13 @@ from .vision_arena import VisionArenaBenchmarkDataset
 
 __all__ = [
     "DATASET_REGISTRY",
+    "AgenticCodeBenchmarkDataset",
     "ArxivSummarizationBenchmarkDataset",
     "AxolotlBenchmarkDataset",
     "BaseDistribution",
     "BatchJobBenchmarkDataset",
     "BenchmarkDataset",
+    "ChatSamples",
     "ChatSession",
     "CodeDebugBenchmarkDataset",
     "ContinuousDistribution",
@@ -55,7 +62,9 @@ __all__ = [
     "DiscreteDistribution",
     "DistributionParameter",
     "HuggingFaceBenchmarkDataset",
+    "InstructCoderBenchmarkDataset",
     "LocalBenchmarkDataset",
+    "LocalImageBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
     "OpenAIImage",
     "PixelBenchmarkDataset",

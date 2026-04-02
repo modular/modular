@@ -14,12 +14,10 @@ from std.sys._assembly import inlined_assembly
 from std.sys import is_nvidia_gpu, bit_width_of
 from std.sys.info import _is_sm_100x_or_newer, align_of
 from std.utils.index import IndexList
-from std.utils.numerics import FPUtils
 from std.memory import bitcast
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor
-from internal_utils._utils import ValOrDim, dynamic, static
+from layout import CoordLike, Idx, Layout, LayoutTensor, TileTensor
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 comptime SF_ATOM_M = (32, 4)
 comptime SF_ATOM_K = 4
@@ -317,6 +315,34 @@ def set_batched_scale_factor[
     ] = rebind[Scalar[scales_dtype]](scale_value)
 
 
+def set_batched_scale_factor[
+    scales_dtype: DType,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    batch_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
+    scale_value: Scalar[scales_dtype],
+):
+    comptime assert (
+        scales_tensor.flat_rank >= 6
+    ), "scales_tensor must be 6D for batched scales tensor"
+
+    scales_tensor.store(
+        (
+            Idx(batch_idx),
+            Idx(row_idx // SF_MN_GROUP_SIZE),
+            Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+            Idx(row_idx % SF_ATOM_M[0]),
+            Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+            Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+        ),
+        scale_value,
+    )
+
+
 def get_batched_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout,
@@ -345,6 +371,10 @@ def get_batched_scale_factor[
 
 
 def convert_ref_scales_to_mxfp8_format[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     ref_scales_type: DType,
     scales_type: DType,
     ref_a_scales_layout: Layout,
@@ -357,9 +387,9 @@ def convert_ref_scales_to_mxfp8_format[
     REF_BLOCK_SIZE: Int,
     SF_VECTOR_SIZE: Int,
 ](
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
     ref_a_scales: LayoutTensor[ref_scales_type, ref_a_scales_layout, _],
     ref_b_scales: LayoutTensor[ref_scales_type, ref_b_scales_layout, _],
     a_scales: LayoutTensor[scales_type, a_scales_layout, a_scales_origin],
@@ -376,9 +406,9 @@ def convert_ref_scales_to_mxfp8_format[
     comptime assert a_scales_layout.rank() == 5, "a_scales must be 5D"
     comptime assert b_scales_layout.rank() == 5, "b_scales must be 5D"
 
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
     # initialize a_scales_tensor and b_scales_tensor based on reference scales
     for m in range(M):
@@ -408,3 +438,21 @@ def convert_ref_scales_to_mxfp8_format[
                     ref_b_scales[n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE]
                 )
             )
+
+
+def get_scaling_kind[
+    a_type: DType,
+    scales_dtype: DType,
+    SF_VECTOR_SIZE: Int,
+]() -> UMMAKind:
+    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE:
+        return UMMAKind.KIND_MXF4NVF4
+    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE:
+        return UMMAKind.KIND_MXF4
+    else:
+        comptime assert (
+            a_type == DType.float8_e4m3fn
+            and scales_dtype == MXFP8_SF_DTYPE
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        ), "unsupported a_type/scales_dtype for block-scaled matmul"
+        return UMMAKind.KIND_MXF8F6F4

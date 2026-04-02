@@ -40,6 +40,8 @@ from std.builtin.device_passable import DevicePassable
 from std.compile import get_type_name
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
+from std.memory._nonnull import NonNullUnsafePointer, unsafe_origin_cast
+from std.reflection import call_location
 
 
 @fieldwise_init
@@ -85,12 +87,16 @@ struct Optional[T: Movable](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
+    DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
+        T, Copyable
+    ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     Iterable,
     Iterator,
     Movable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
     Writable where conforms_to(T, Writable),
 ):
     """A type modeling a value which may or may not be present.
@@ -143,6 +149,9 @@ struct Optional[T: Movable](
 
     comptime Element = Self.T
     """The element type of this optional."""
+
+    comptime device_type: AnyType = Self
+    """The device-side type for this optional."""
 
     comptime _type = Variant[_NoneType, Self.T]
     var _value: Self._type
@@ -214,6 +223,61 @@ struct Optional[T: Movable](
         ```
         """
         self = Self()
+
+    @implicit
+    @doc_hidden
+    @always_inline
+    def __init__[
+        U: AnyType, origin: Origin, address_space: AddressSpace, //
+    ](
+        out self: Optional[
+            NonNullUnsafePointer[U, origin, address_space=address_space]
+        ],
+        nullable: UnsafePointer[U, origin, address_space=address_space],
+    ):
+        self = nullable.as_nonnull()
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__(
+        nullable: UnsafePointer[...],
+        out self: Optional[
+            NonNullUnsafePointer[
+                nullable.type,
+                AnyOrigin[mut=False],
+                address_space=nullable.address_space,
+            ]
+        ],
+    ):
+        self = unsafe_origin_cast[AnyOrigin[mut=False]](nullable.as_nonnull())
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__(
+        nullable: UnsafePointer[mut=True, ...],
+        out self: Optional[
+            NonNullUnsafePointer[
+                nullable.type,
+                AnyOrigin[mut=True],
+                address_space=nullable.address_space,
+            ]
+        ],
+    ):
+        self = unsafe_origin_cast[AnyOrigin[mut=True]](nullable.as_nonnull())
+
+    # TODO(MOCO-3640): Remove once the compiler can synthesize copy
+    # constructors through variadic conditional conformances
+    # (AllCopyable[_NoneType, T] when T: Copyable).
+    @always_inline
+    def __init__(out self, *, copy: Self):
+        """Copy-initialize an `Optional`.
+
+        Args:
+            copy: The `Optional` to copy from.
+        """
+        self._value = Self._type(copy=copy._value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -463,6 +527,31 @@ struct Optional[T: Movable](
         else:
             hasher.update(UInt8(0))
 
+    def _to_device_type(
+        self, target: MutOpaquePointer[_]
+    ) where conforms_to(Self.T, DevicePassable) and conforms_to(
+        Self.T, Copyable
+    ):
+        """Convert to device type and store at the target address.
+
+        Args:
+            target: The target pointer to store the device type.
+        """
+        target.bitcast[Self]().init_pointee_copy(self)
+
+    @staticmethod
+    def get_type_name() -> (
+        String
+    ) where conforms_to(Self.T, DevicePassable) and conforms_to(
+        Self.T, Copyable
+    ):
+        """Get the human-readable type name for this `Optional` type.
+
+        Returns:
+            A string representation of the type, e.g. `Optional[Int]`.
+        """
+        return String(t"Optional[{get_type_name[Self.T]()}]")
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -489,10 +578,13 @@ struct Optional[T: Movable](
         """
         if not self.__bool__():
             abort(
-                "`Optional.value()` called on empty `Optional`. Consider using"
-                " `if optional:` to check whether the `Optional` is empty"
-                " before calling `.value()`, or use `.or_else()` to provide a"
-                " default value."
+                (
+                    "`Optional.value()` called on empty `Optional`. Consider"
+                    " using `if optional:` to check whether the `Optional` is"
+                    " empty before calling `.value()`, or use `.or_else()` to"
+                    " provide a default value."
+                ),
+                location=call_location(),
             )
 
         return self.unsafe_value()

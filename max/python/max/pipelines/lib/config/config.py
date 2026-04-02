@@ -159,7 +159,6 @@ class PipelineConfig(ConfigFileModel):
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._use_vendor_ccl(self.runtime.use_vendor_ccl)
-        session._pdl_level(self.runtime.pdl_level)
 
     @staticmethod
     def _extract_kwargs_for_config(
@@ -582,15 +581,14 @@ class PipelineConfig(ConfigFileModel):
 
         # Override target architecture for unified EAGLE pipeline.
         # huggingface_config is None for non-LLM pipelines (e.g. diffusion).
-        if self.model.huggingface_config is not None:
+        if self.speculative and self.model.huggingface_config is not None:
             target_archs = self.model.huggingface_config.architectures
-            if self.speculative and not os.getenv(
-                "MODULAR_USE_LEGACY_EAGLE_PIPELINE"
-            ):
-                if target_archs[0] == "LlamaForCausalLM":
-                    target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-                if target_archs[0] == "DeepseekV3ForCausalLM":
-                    target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+            if target_archs[0] == "LlamaForCausalLM":
+                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+            if target_archs[0] == "DeepseekV3ForCausalLM":
+                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+            if target_archs[0] == "KimiK25ForConditionalGeneration":
+                target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
 
         # Validate KV connector configuration
         self._validate_kv_connector_config()
@@ -639,7 +637,7 @@ class PipelineConfig(ConfigFileModel):
         arch: SupportedArchitecture | None = None
         if not self.runtime.force:
             arch = PIPELINE_REGISTRY.retrieve_architecture(
-                huggingface_repo=self.model.huggingface_model_repo,
+                architecture_name=self.model.architecture_name,
                 prefer_module_v3=self.runtime.prefer_module_v3,
             )
             max_batch_size = self.runtime.max_batch_size
@@ -768,8 +766,15 @@ class PipelineConfig(ConfigFileModel):
 
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
+        draft_arch_name = self.draft_model.architecture_name
+        if draft_arch_name is None:
+            raise ValueError(
+                f"Cannot determine architecture for draft model "
+                f"'{self.draft_model.model_path}': "
+                "no 'architectures' field in HuggingFace config."
+            )
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model.huggingface_model_repo,
+            architecture_name=draft_arch_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
@@ -777,7 +782,7 @@ class PipelineConfig(ConfigFileModel):
             # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
-                    huggingface_repo=self.draft_model.huggingface_model_repo,
+                    architecture_name=draft_arch_name,
                     prefer_module_v3=True,
                 )
                 if v3_arch:
@@ -791,14 +796,14 @@ class PipelineConfig(ConfigFileModel):
             )
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
+            architecture_name=self.model.architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
         if not target_arch:
             # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
-                    huggingface_repo=self.model.huggingface_model_repo,
+                    architecture_name=self.model.architecture_name,
                     prefer_module_v3=True,
                 )
                 if v3_arch:
@@ -876,8 +881,14 @@ class PipelineConfig(ConfigFileModel):
         estimation. Returns the resolved SupportedArchitecture.
         """
         # Retrieve the architecture
+        arch_name = model_config.architecture_name
+        if arch_name is None:
+            raise ValueError(
+                f"Cannot determine architecture for '{model_config.model_path}': "
+                "no 'architectures' field in HuggingFace config."
+            )
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=model_config.huggingface_model_repo,
+            architecture_name=arch_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
@@ -886,7 +897,7 @@ class PipelineConfig(ConfigFileModel):
             # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
-                    huggingface_repo=model_config.huggingface_model_repo,
+                    architecture_name=arch_name,
                     prefer_module_v3=True,
                 )
                 if v3_arch:
@@ -973,27 +984,17 @@ class PipelineConfig(ConfigFileModel):
         return arch
 
     def _validate_and_resolve_speculative_memory(self) -> None:
-        """Joint memory estimation for speculative decoding.
+        """Memory estimation for unified speculative decoding.
 
-        Reserves memory for the draft model's non-shared weights by
-        temporarily lowering the target's utilization, then runs
-        standard estimation for the target model.
+        The draft model shares almost all weights with the target, so
+        memory estimation uses the target model's weight size directly.
+        If a future speculative method introduces a draft with significant
+        non-shared weights, draft weight reservation should be added here.
         """
         assert self.draft_model is not None
 
-        # This code is a mess and really needs to be overhauled...
-        #
-        # Resolve the target model's architecture first so we can use its
-        # quantization_encoding as the default for the draft model.
-        # _validate_and_resolve_architecture is safe to call again later
-        # (via _validate_and_resolve_remaining_pipeline_config) because the
-        # second call will find quantization_encoding already set and just
-        # validate it.
+        target_arch = self._validate_and_resolve_architecture(self.model)
 
-        self._validate_and_resolve_architecture(self.model)
-
-        # Default draft model's quantization encoding to the target model's
-        # resolved encoding when the user hasn't explicitly specified one.
         if (
             self.draft_model.quantization_encoding is None
             and self.model.quantization_encoding is not None
@@ -1006,66 +1007,33 @@ class PipelineConfig(ConfigFileModel):
                 self.model.quantization_encoding
             )
 
-        draft_arch = self._validate_and_resolve_architecture(self.draft_model)
-        draft_reservation = draft_arch.pipeline_model.estimate_weights_size(
-            self
-        )
+        self._validate_and_resolve_architecture(self.draft_model)
 
-        # Temporarily lower utilization to carve out space for draft weights.
-        original_util = self.model.kv_cache.device_memory_utilization
-        devices = load_devices(self.model.device_specs)
-        free_memory = MemoryEstimator.free_memory(devices)
-        adjusted_util = max(
-            0.1, original_util - draft_reservation / free_memory
-        )
-        self.model.kv_cache.device_memory_utilization = adjusted_util
-
-        # Run standard target estimation with reduced budget.
         self._validate_and_resolve_remaining_pipeline_config(
-            model_config=self.model
+            model_config=self.model,
+            resolved_arch=target_arch,
         )
 
-        # Restore utilization and propagate results to draft.
-        self.model.kv_cache.device_memory_utilization = original_util
-
-        # Hardcode the draft kvcache to 0 bytes. When allocating the draft
-        # kvcache, we will use a portion of the target's available_cache_memory.
-        # This is handled in the SpeculativeDecodingPipelineBase via
-        # MultiKVCacheParams to ensure that the same number of pages are allocated
-        # for the target and draft kv caches.
         if self.draft_model.kv_cache._available_cache_memory is not None:
             raise ValueError(
                 "Expected draft model's available_cache_memory to be None"
             )
         self.draft_model.kv_cache._available_cache_memory = 0
 
-        # Clamp max_length to the draft model's max sequence length.
-        # EAGLE and other draft models may support a shorter context than the
-        # target model (e.g. 2048 vs 131072).  Both models share a KV cache
-        # and must agree on the sequence length, so we use the minimum.
-        draft_arch_config = draft_arch.config.initialize(
-            self, model_config=self.draft_model
-        )
-        draft_max_seq_len = draft_arch_config.get_max_seq_len()
-        target_max_length = self.model.max_length
-        if (
-            target_max_length is not None
-            and target_max_length > draft_max_seq_len
-        ):
-            logger.info(
-                f"Clamping max_length from {target_max_length} to"
-                f" {draft_max_seq_len} (draft model max sequence length)"
-            )
-            self.model.max_length = draft_max_seq_len
-
     def _validate_and_resolve_remaining_pipeline_config(
-        self, model_config: MAXModelConfig
+        self,
+        model_config: MAXModelConfig,
+        resolved_arch: SupportedArchitecture | None = None,
     ) -> None:
-        """Updates remaining pipeline config fields if not provided.
+        """Validates remaining config fields and runs memory estimation.
 
-        Errors out with a detailed reason if invalid config is provided.
+        Args:
+            model_config: The model configuration to validate and resolve.
+            resolved_arch: Pre-resolved architecture, skips re-validation.
         """
-        arch = self._validate_and_resolve_architecture(model_config)
+        arch = resolved_arch or self._validate_and_resolve_architecture(
+            model_config
+        )
 
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,
@@ -1150,75 +1118,45 @@ class PipelineConfig(ConfigFileModel):
         Retrieves all necessary information from self and the PIPELINE_REGISTRY.
         Raises an error if architecture is not found (which should not happen after config resolution).
         """
+        from max.pipelines.lib.model_manifest import ModelManifest
+
+        from .model_config import _format_config_entries
+
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
+            architecture_name=self.model.architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
             raise ValueError(
-                f"No architecture found for {self.model.huggingface_model_repo.repo_id}. "
+                f"No architecture found for {self.model.model_path}. "
                 "This should not happen after config resolution."
             )
 
         # Get pipeline task and class information
-        task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
-        pipeline_class = get_pipeline_for_task(task, self)
+        pipeline_class = get_pipeline_for_task(arch.task, self)
 
-        devices_str = ", ".join(
-            f"{d.device_type}[{d.id}]" for d in self.model.device_specs
-        )
-
-        quantization_encoding_str = str(self.model.quantization_encoding)
-        if self.model._applied_dtype_cast_from:
-            quantization_encoding_str = f"{quantization_encoding_str} (cast from {self.model._applied_dtype_cast_from})"
-
-        # Build model information entries.
-        model_entries: list[tuple[str, Any]] = [
+        # Log architecture and pipeline class information
+        arch_entries: list[tuple[str, Any]] = [
             ("architecture", arch.name),
             ("pipeline_class", pipeline_class.__name__),
             ("pipeline_model", arch.pipeline_model.__name__),
             ("tokenizer", arch.tokenizer_cls.__name__),
-            ("devices", devices_str),
-            ("model_path", self.model.model_path),
         ]
 
-        # Only show weights_repo_id when it differs from model_path.
-        weight_repo_id = self.model.huggingface_weight_repo_id
-        if weight_repo_id != self.model.model_path:
-            model_entries.append(("weights_repo_id", weight_repo_id))
-
-        model_entries.extend(
-            [
-                ("huggingface_revision", self.model.huggingface_model_revision),
-                ("quantization_encoding", quantization_encoding_str),
-            ]
-        )
-
-        # Format weight_path depending on the number of paths.
-        weight_paths = self.model.weight_path
-        if len(weight_paths) == 1:
-            model_entries.append(("weight_path", weight_paths[0]))
-        else:
-            display_paths = (
-                weight_paths[:3] + ["..."] + [weight_paths[-1]]
-                if len(weight_paths) > 5
-                else list(weight_paths)
-            )
-            formatted = (
-                "[\n"
-                + "\n".join(f"        {p}" for p in display_paths)
-                + "\n    ]"
-            )
-            model_entries.append(("weight_path", formatted))
-
-        # Log Pipeline and Model Information
         logger.info("")
-        logger.info("Model Information")
+        logger.info("Pipeline Architecture")
         logger.info("=" * 60)
-        for line in _format_config_entries(model_entries):
+        for line in _format_config_entries(arch_entries):
             logger.info(line)
+
+        # Delegate model-specific logging to ModelManifest
+        models: dict[str, MAXModelConfig] = {"main": self.model}
+        if self.draft_model is not None:
+            models["draft"] = self.draft_model
+        manifest = ModelManifest(models)
+        manifest.log_model_info()
 
         pipeline_entries: list[tuple[str, Any]] = [
             ("max_seq_len", self.model.max_length),
@@ -1238,44 +1176,27 @@ class PipelineConfig(ConfigFileModel):
             logger.info(line)
         logger.info("")
 
-        # KVCache Configuration Summary
-        logger.info("KVCache Config")
-        logger.info("=" * 60)
-
-        # Primary model kvcache config
-        kv_config = self.model.kv_cache
-        _log_kvcache_entries(kv_config)
-
-        # Draft model kvcache config (if using speculative decoding)
-        if self.draft_model is not None:
-            logger.info("")
-            logger.info("Draft Model KVCache Configuration:")
-            logger.info("-" * 40)
-            assert self.draft_model is not None
-            draft_kv_config = self.draft_model.kv_cache
-            _log_kvcache_entries(draft_kv_config)
-
-        logger.info("")
-
     def log_basic_config(self) -> None:
         """Log minimal pipeline configuration information.
 
         Logs basic :class:`~max.pipelines.lib.config.PipelineConfig` options including model name, pipeline task,
         weight path, max_batch_size, max_seq_len, and reserved memory.
         """
+        from .model_config import _format_config_entries
+
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
+            architecture_name=self.model.architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
             raise ValueError(
-                f"No architecture found for {self.model.huggingface_model_repo.repo_id}. "
+                f"No architecture found for {self.model.model_path}. "
                 "This should not happen after config resolution."
             )
 
-        task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
+        task = arch.task
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config (only for tasks that use KV cache)
@@ -1332,62 +1253,6 @@ class PipelineConfig(ConfigFileModel):
         for line in _format_config_entries(config_entries):
             logger.info(line)
         logger.info("")
-
-
-def _format_config_entries(
-    entries: list[tuple[str, Any]], indent: str = "    "
-) -> list[str]:
-    """Format key-value config entries with aligned colons.
-
-    Args:
-        entries: List of (key, value) tuples to format.
-        indent: Prefix string for each line.
-
-    Returns:
-        A list of formatted strings with keys left-aligned and colons
-        vertically aligned based on the longest key.
-    """
-    max_key_len = max(len(key) for key, _ in entries)
-    return [f"{indent}{key:<{max_key_len}} : {value}" for key, value in entries]
-
-
-def _log_kvcache_entries(config: KVCacheConfig, indent: str = "    ") -> None:
-    """Log KV cache configuration details using aligned formatting.
-
-    Args:
-        config: The KVCacheConfig to log.
-        indent: Prefix string for each line.
-    """
-    entries: list[tuple[str, Any]] = [
-        ("page_size", f"{config.kv_cache_page_size} tokens"),
-        ("prefix_caching", config.enable_prefix_caching),
-        ("kv_connector", config.kv_connector or "null"),
-    ]
-    cfg = config.kv_connector_config
-    if (
-        config.kv_connector in (KVConnectorType.local, KVConnectorType.tiered)
-        and cfg
-    ):
-        entries.append(
-            ("host_swap_space", f"{cfg.host_kvcache_swap_space_gb} GB")
-        )
-    entries.append(
-        ("memory_utilization", f"{config.device_memory_utilization:.1%}")
-    )
-
-    if config._available_cache_memory is None:
-        raise ValueError(
-            "KVCache config is not available after config resolution."
-        )
-    entries.append(
-        (
-            "available_cache_memory",
-            to_human_readable_bytes(config._available_cache_memory),
-        )
-    )
-
-    for line in _format_config_entries(entries, indent=indent):
-        logger.info(line)
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

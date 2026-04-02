@@ -13,23 +13,21 @@
 
 from std.math import align_up, ceildiv
 from std.gpu import (
-    block_idx,
-    thread_idx,
-    grid_dim,
-    block_dim,
-    global_idx,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+    grid_dim_uint as grid_dim,
+    block_dim_uint as block_dim,
+    global_idx_uint as global_idx,
     MAX_THREADS_PER_BLOCK_METADATA,
-    lane_id,
+    lane_id_uint as lane_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     row_major,
 )
@@ -38,30 +36,29 @@ from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
-    E2M1_TO_FLOAT32,
     cast_f4e2m1x2_to_fp16x2,
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
     set_scale_factor,
     get_scale_factor,
+    get_scaling_kind,
 )
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
-from linalg.utils import (
-    elementwise_epilogue_type,
-    elementwise_compute_lambda_type,
-)
+from linalg.utils import elementwise_epilogue_type
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from std.memory import bitcast
 from std.gpu.sync import named_barrier
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.intrinsics import warpgroup_reg_dealloc
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import (
     SharedMemBarrier,
@@ -72,24 +69,24 @@ from layout.tma_async import (
 from layout.layout_tensor import LayoutTensorIter
 from std.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu import barrier
-from std.sys import size_of, align_of, simd_width_of
+from std.sys import size_of, align_of, simd_width_of, get_defined_int
 from layout.swizzle import make_swizzle
 from std.algorithm import elementwise
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.sys import get_defined_bool
 from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
     heuristic_and_outliers_dispatch,
-    small_bn_dispatch,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
-from linalg.matmul.gpu.sm100_structured.default.dispatch import (
-    DISPATCH_HIT,
-    DISPATCH_MISS,
-)
+from linalg.matmul.gpu.sm100_structured.default.dispatch import DISPATCH_HIT
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
-from std.collections import OptionalReg
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
+from linalg.matmul.gpu.sm100.block_scaled_matmul import (
+    blackwell_block_scaled_matmul_tma_umma_warp_specialized,
+)
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -137,17 +134,22 @@ def quantize_dynamic_scaled_fp4fp8[
     ), "input dtype should be bfloat16"
 
     comptime assert (
-        out_dtype == DType.uint8
-        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-        and scales_dtype == DType.float8_e4m3fn
-    ) or (
-        out_dtype == DType.float8_e4m3fn
-        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
-        and scales_dtype == DType.float8_e8m0fnu
-    ), (
-        "output dtype should be uint8 (fp4-e2m1fnX2) for NVFP4 or"
-        " float8_e4m3fnuz for MXFP8"
-    )
+        (
+            out_dtype == DType.uint8
+            and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+            and scales_dtype == DType.float8_e4m3fn
+        )
+        or (
+            out_dtype == DType.uint8
+            and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+            and scales_dtype == DType.float8_e8m0fnu
+        )
+        or (
+            out_dtype == DType.float8_e4m3fn
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+            and scales_dtype == DType.float8_e8m0fnu
+        )
+    ), "output dtype should be uint8 for NVFP4/MXFP4 or float8_e4m3fn for MXFP8"
 
     comptime N = input_layout.shape[1].value()
 
@@ -197,7 +199,7 @@ def quantize_dynamic_scaled_fp4fp8[
         tensor_sf,
         block_dim=block_dim,
         grid_dim=grid_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 
@@ -248,10 +250,14 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     var num_sf_threads = num_sf_cols // ELEMENTS_PER_THREAD
 
     with PDL():
-        for global_row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
+        for global_row_idx in range(
+            Int(block_idx.x), num_rows_padded, Int(grid_dim.x)
+        ):
             var is_padded_row = global_row_idx >= num_rows
 
-            for col_idx in range(thread_idx.x, num_sf_threads, block_dim.x):
+            for col_idx in range(
+                Int(thread_idx.x), num_sf_threads, Int(block_dim.x)
+            ):
                 var global_col_idx = col_idx * ELEMENTS_PER_THREAD
 
                 if is_padded_row:
@@ -384,7 +390,8 @@ def block_scales_interleave_fp4[
     ), "This kernel is only supported on SM100"
     comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
-    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
+        MXFP4_SF_DTYPE,
+    ), "scales dtype should be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
 
     comptime num_SMs = B200.sm_count
 
@@ -439,8 +446,10 @@ def block_scales_interleave_fp4_kernel[
     var num_cols = input_scales.dim(1)
     var num_col_padded = align_up(num_cols, SF_ATOM_K)
 
-    for row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
-        for col_idx in range(thread_idx.x, num_col_padded, block_dim.x):
+    for row_idx in range(Int(block_idx.x), num_rows_padded, Int(grid_dim.x)):
+        for col_idx in range(
+            Int(thread_idx.x), num_col_padded, Int(block_dim.x)
+        ):
             var scale_factor = Scalar[scales_dtype](0.0)
             if row_idx < num_rows and col_idx < num_cols:
                 scale_factor = rebind[Scalar[scales_dtype]](
@@ -493,19 +502,27 @@ def naive_block_scaled_matmul[
         a_scales_type == b_scales_type
     ), "input A and B scales dtype should be same for block scaled matmul"
     comptime assert (
-        scaling_kind == UMMAKind.KIND_MXF4NVF4
-        and a_type == DType.uint8
-        and a_scales_type == NVFP4_SF_DTYPE
-        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    ) or (
-        scaling_kind == UMMAKind.KIND_MXF8F6F4
-        and a_type == DType.float8_e4m3fn
-        and a_scales_type == MXFP8_SF_DTYPE
-        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        (
+            scaling_kind == UMMAKind.KIND_MXF4NVF4
+            and a_type == DType.uint8
+            and a_scales_type == NVFP4_SF_DTYPE
+            and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        )
+        or (
+            scaling_kind == UMMAKind.KIND_MXF4
+            and a_type == DType.uint8
+            and a_scales_type == MXFP4_SF_DTYPE
+            and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+        )
+        or (
+            scaling_kind == UMMAKind.KIND_MXF8F6F4
+            and a_type == DType.float8_e4m3fn
+            and a_scales_type == MXFP8_SF_DTYPE
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        )
     ), (
-        "Only MXF4NVF4 scaling kind is supported for NVFP4 input dtype with"
-        " NVFP4 scales and MXF8F6F4 scaling kind is supported for MXFP8 input"
-        " dtype with MXFP8 scales for block scaled matmul"
+        "Only support NVFP4 (KIND_MXF4NVF4), MXFP4 (KIND_MXF4),"
+        " or MXFP8 (KIND_MXF8F6F4) for block scaled matmul"
     )
     comptime assert c_type in (DType.bfloat16, DType.float32), (
         "Only bfloat16 or float32 is supported for output dtype for block"
@@ -517,7 +534,11 @@ def naive_block_scaled_matmul[
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # We need to double the K dimension as we are allocating for uint8 input data type.
     # Remove this when GENAI-337 is fixed.
-    var K = a.dim(1) * 2 if scaling_kind == UMMAKind.KIND_MXF4NVF4 else a.dim(1)
+    comptime is_fp4 = (
+        scaling_kind == UMMAKind.KIND_MXF4NVF4
+        or scaling_kind == UMMAKind.KIND_MXF4
+    )
+    var K = a.dim(1) * 2 if is_fp4 else a.dim(1)
 
     if M == 0 or N == 0 or K == 0:
         return
@@ -628,7 +649,11 @@ def naive_block_scaled_matmul_kernel[
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # We need to double the K dimension as we are allocating for uint8 input data type.
     # Remove this when GENAI-337 is fixed.
-    comptime K_STEPS = 2 if scaling_kind == UMMAKind.KIND_MXF4NVF4 else 1
+    comptime is_fp4 = (
+        scaling_kind == UMMAKind.KIND_MXF4NVF4
+        or scaling_kind == UMMAKind.KIND_MXF4
+    )
+    comptime K_STEPS = 2 if is_fp4 else 1
     var K = a.dim(1) * K_STEPS
 
     var row_idx = global_idx.x
@@ -646,8 +671,8 @@ def naive_block_scaled_matmul_kernel[
             b_scales, Int(col_idx), k
         )
 
-        comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
-            # each uint8 element has two Float4-E2M1 values,
+        comptime if is_fp4:
+            # Each uint8 element has two Float4-E2M1 values.
             var a_val_fp16x2 = cast_f4e2m1x2_to_fp16x2(
                 rebind[UInt8](a[row_idx, k // K_STEPS])
             ).cast[accum_type]()
@@ -666,6 +691,7 @@ def naive_block_scaled_matmul_kernel[
                 )
                 accum += a_val * b_val * a_scale_val * b_scale_val
         else:
+            # MXFP8: one float8 value per byte.
             var a_val = rebind[Scalar[a_type]](a[row_idx, k // K_STEPS]).cast[
                 accum_type
             ]()
@@ -1118,7 +1144,7 @@ def quantize_dynamic_scaled_fp4_async[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 
@@ -1408,21 +1434,49 @@ def block_scaled_matmul[
     )
     comptime static_NK = Index(static_N, static_K)
 
-    comptime if get_defined_bool[
-        "ENABLE_EXPERIMENTAL_SM100_SMALL_N_BLOCK_SCALED_MATMUL", False
-    ]():
-        var status = small_bn_dispatch[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ](c_device, a_device, b_device, a_scales, b_scales, tensor_sf, ctx)
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
+        comptime BM = get_defined_int["TUNE_BM", 128]()
+        comptime BN = get_defined_int["TUNE_BN", 128]()
+        comptime BK = (
+            TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+        )
+        comptime MMA_K = 32
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
+        comptime CLUSTER_DIM = Index(
+            CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
+        )
+        comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
+            "TUNE_BLOCK_SWIZZLE_SIZE", 0
+        ]()
+        comptime RASTERIZE_ORDER = get_defined_int["TUNE_RASTER_ORDER", 1]()
+        comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
+        comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
+        comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
 
-        if status == DISPATCH_HIT:
-            logger.info("Executing SM100 small-BN Block Scaled matmul kernel")
-            return
-        else:
-            raise Error("Small-BN dispatch failed")
+        comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
+
+        comptime config = BlockScaledMatmulConfig[
+            a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+        ](
+            scaling_kind=get_scaling_kind[
+                a_type, scales_dtype, SF_VECTOR_SIZE
+            ](),
+            mma_shape=umma_shape,
+            cluster_shape=CLUSTER_DIM,
+            block_swizzle_size=BLOCK_SWIZZLE_SIZE,
+            raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),
+            cta_group=CTA_GROUP,
+            AB_swapped=AB_SWAPPED,
+            k_group_size=K_GROUP_SIZE,
+        )
+
+        return blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            K=a_device.static_shape[1],
+            config=config,
+        ](c, a, b, a_scales, b_scales, ctx)
 
     comptime if get_defined_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
@@ -1450,7 +1504,7 @@ def block_scaled_matmul[
         Index(16384, 2048),
     ]
 
-    comptime Llama_NK_1 = [
+    comptime Llama_405B_NK = [
         Index(2304, 16384),
         Index(16384, 2048),
         Index(6656, 16384),
@@ -1498,7 +1552,7 @@ def block_scaled_matmul[
     ):
         comptime if static_NK in DeepSeek_NK:
             if m == 1:
-                var status = small_bn_dispatch[
+                var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1536,9 +1590,9 @@ def block_scaled_matmul[
                 if status == DISPATCH_HIT:
                     return
 
-        comptime if static_NK in Llama_NK_1:
+        comptime if static_NK in Llama_405B_NK:
             if m == 1:
-                var status = small_bn_dispatch[
+                var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1557,24 +1611,7 @@ def block_scaled_matmul[
                     return
 
         comptime if static_NK in Kimi_NK:
-            if m == 1:
-                var status = small_bn_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-                if status == DISPATCH_HIT:
-                    return
-            if m > 1 and m <= 128:
+            if m <= 128:
                 var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
@@ -1668,17 +1705,19 @@ def quantize_dynamic_block_scaled[
 
     comptime static_input_N = input_tensor.static_shape[1]
     comptime static_output_N = output_tensor.static_shape[1]
-    comptime is_fp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    comptime is_nvfp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    comptime is_mxfp4 = out_dtype == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
     comptime is_fp8 = out_dtype == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
-    comptime assert is_fp4 or is_fp8, "invalid scaling kind"
+    comptime assert is_nvfp4 or is_mxfp4 or is_fp8, "invalid scaling kind"
 
-    comptime if is_fp4:
+    comptime is_packed_fp4 = is_nvfp4 or is_mxfp4
+    comptime if is_packed_fp4:
         comptime assert static_output_N == static_input_N // 2, (
             "output.dim(1) must be equal to input.dim(1) // 2 (each output"
             " element (uint8) is 2 fp4-e2m1fn values)"
         )
 
-    comptime if is_fp4 and static_input_N % 32 == 0:
+    comptime if is_nvfp4 and static_input_N % 32 == 0:
         quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             ctx,
             output_tensor,
@@ -1733,7 +1772,8 @@ def block_scales_interleave[
     ), "This kernel is only supported on SM100"
     comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
-    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) for now."
+        MXFP4_SF_DTYPE,
+    ), "scales dtype should be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)."
 
     var output = output_scales_device.as_any_origin()
     var input = input_scales_device.as_any_origin()

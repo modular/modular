@@ -402,6 +402,31 @@ def test_variant_conditional_conformances() raises:
     assert_false(conforms_to(Variant[MoveOnly[Int]], Hashable))
     assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
 
+    # Copyable: all types Copyable
+    assert_true(conforms_to(Variant[Int, String], Copyable))
+    assert_true(conforms_to(Variant[Int], Copyable))
+
+    # Copyable: move-only type
+    assert_false(conforms_to(Variant[MoveOnly[Int]], Copyable))
+    assert_false(conforms_to(Variant[Int, MoveOnly[Int]], Copyable))
+
+    # ImplicitlyCopyable: all types ImplicitlyCopyable
+    assert_true(conforms_to(Variant[Int, Bool], ImplicitlyCopyable))
+
+    # ImplicitlyCopyable: not all types ImplicitlyCopyable
+    assert_false(conforms_to(Variant[MoveOnly[Int]], ImplicitlyCopyable))
+
+    # RegisterPassable: all types RP
+    assert_true(conforms_to(Variant[Int, Bool], RegisterPassable))
+    assert_true(conforms_to(Variant[Int], RegisterPassable))
+
+    # RegisterPassable: all types non-RP
+    assert_false(conforms_to(Variant[String, List[Int]], RegisterPassable))
+
+    # RegisterPassable: mixture of RP and non-RP
+    assert_false(conforms_to(Variant[Int, String], RegisterPassable))
+    assert_false(conforms_to(Variant[Bool, List[Int], Int], RegisterPassable))
+
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

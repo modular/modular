@@ -19,7 +19,11 @@ around the target location to compute the interpolated value.
 from std.math import clamp, floor
 
 from std.gpu.host.info import is_gpu
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from layout import (
     Coord,
     Idx,
@@ -27,10 +31,8 @@ from layout import (
     TileTensor,
     coord,
     coord_to_index_list,
-    row_major,
 )
 from std.runtime.asyncrt import DeviceContextPtr
-from std.utils import Index
 from std.itertools import product
 
 
@@ -231,9 +233,9 @@ def gpu_bicubic_kernel[
 
     # Each thread processes multiple output pixels
     var total_pixels = out_height * out_width
-    var threads_per_block = block_dim.x
+    var threads_per_block = Int(block_dim.x)
 
-    for pixel_idx in range(tid, total_pixels, threads_per_block):
+    for pixel_idx in range(Int(tid), total_pixels, threads_per_block):
         var y_out, x_out = divmod(pixel_idx, out_width)
 
         var in_y = map_output_to_input_coord(y_out, scale_h)
@@ -314,7 +316,7 @@ def resize_bicubic[
             input_origin=ImmutOrigin(input.origin),
             InputLayoutType=input.LayoutType,
         ]
-        ctx.get_device_context().enqueue_function_experimental[kernel](
+        ctx.get_device_context().enqueue_function[kernel, kernel](
             output,
             input.as_immut(),
             grid_dim=(N, C),

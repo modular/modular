@@ -42,7 +42,7 @@ def vector_add(
     a: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     b: LayoutTensor[float_dtype, layout, MutAnyOrigin],
 ):
-    i = Int(global_idx.x)
+    i = global_idx.x
     if i < size:
         result[i] = a[i] + b[i]
 

@@ -7,12 +7,16 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-# TODO(GEX-3155): Tests that timeout on remote macOS CI
+# FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU
 _MACOS_INCOMPATIBLE_TESTS = [
-    "test_sampling.py",
-    # FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU
     "test_sampling_gpu.py",
 ]
+
+# CPU-only local suites should not pull in the dedicated GPU test target.
+_CPU_TEST_SRCS = glob(
+    ["test_*.py"],
+    exclude = ["*_gpu.py"],
+)
 
 # Tests that need a longer timeout on remote GPU CI.
 _LONG_TIMEOUT_TESTS = [
@@ -46,9 +50,20 @@ _LONG_TIMEOUT_TESTS = [
             "//max/python/max/graph",
             "//max/python/max/mlir",
             "//max/python/max/nn",
-            "//max/python/max/pipelines/lib",
             requirement("numpy"),
-        ],
+        ] + (
+            # pipelines/lib is only needed by the GPU sampling test; keep it
+            # out of the default dep list so cpu_tests stays lightweight.
+            ["//max/python/max/pipelines/lib"] if src == "test_sampling_gpu.py" else []
+        ),
     )
     for src in glob(["test_*.py"])
 ]
+
+test_suite(
+    name = "cpu_tests",
+    tests = [
+        ":" + src.replace(".py", "")
+        for src in _CPU_TEST_SRCS
+    ],
+)

@@ -14,13 +14,7 @@
 from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
-from std.testing import (
-    assert_equal,
-    assert_false,
-    assert_not_equal,
-    assert_raises,
-    assert_true,
-)
+from std.testing import assert_equal
 
 
 # Simple kernel for testing event synchronization
@@ -32,7 +26,7 @@ def simple_kernel(
 ):
     """Simple kernel that multiplies input by a multiplier."""
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = input[tid] * multiplier
 
@@ -46,7 +40,7 @@ def heavy_kernel(
 ):
     """Kernel that does multiple iterations of work."""
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
 
     var value = input[tid]

@@ -34,6 +34,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib.tokenizer import run_with_default_executor
 from max.support.image import find_contiguous_ranges, hash_image
 from transformers import AutoTokenizer
 
@@ -102,6 +103,9 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
         )
+        self.enable_vision_caching = (
+            pipeline_config.runtime.max_vision_cache_entries > 0
+        )
 
         # Resolve the media pad token ID used as the vision placeholder.
         media_pad_id = self.delegate.convert_tokens_to_ids(_MEDIA_PAD_TOKEN)
@@ -125,6 +129,48 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.rope_max_width: int = int(
             getattr(vision_cfg, "rope_max_width", 512)
         )
+
+    async def encode(
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Transforms the provided prompt into a token array.
+
+        Kimi's ``TikTokenTokenizer.encode()`` accepts
+        ``allow_special_tokens`` instead of the HuggingFace-standard
+        ``add_special_tokens``.  Passing the unrecognised kwarg causes
+        HF to silently fall back to the slow
+        ``PreTrainedTokenizer.encode()`` path (actually slow in
+        transformers v5+).  This override calls the delegate with
+        ``allow_special_tokens=True`` so the fast tiktoken path is
+        always used.
+
+        The ``add_special_tokens`` parameter is accepted for interface
+        compatibility but is effectively a no-op: the tiktoken fast
+        path never prepends/appends BOS/EOS tokens regardless, and
+        ``allow_special_tokens`` (whether tiktoken *recognises* special
+        token strings in the input) must stay ``True`` so that
+        chat-templated text is tokenised correctly.
+        """
+        encoded_prompt: npt.NDArray[np.integer[Any]]
+        if isinstance(prompt, str):
+
+            def _encode_fn(
+                prompt: str,
+            ) -> npt.NDArray[np.integer[Any]]:
+                return self.delegate.encode(prompt, allow_special_tokens=True)
+
+            encoded_prompt = await run_with_default_executor(_encode_fn, prompt)
+
+            max_length = self.max_length or self.delegate.model_max_length
+            if max_length and len(encoded_prompt) > max_length:
+                raise ValueError(
+                    f"Input string is larger than tokenizer's max length"
+                    f" ({len(encoded_prompt)} > {max_length})."
+                )
+        else:
+            encoded_prompt = np.array(list(prompt))
+
+        return encoded_prompt
 
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
@@ -257,11 +303,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             else None
         )
 
-        if request.sampling_params.ignore_eos:
-            eos_token_ids: set[int] = set()
-        else:
-            eos_token_ids = self._default_eos_token_ids
-
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
@@ -277,7 +318,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         context = KimiK2_5TextAndVisionContext(
             request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
+            eos_tracker=await self.create_eos_tracker(request),
             tokens=token_buffer,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
@@ -295,7 +336,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                     end_idx=end_idx,
                     pixel_values=pixels,
                     image_hash=hash_image(pixels)
-                    if self.enable_prefix_caching
+                    if self.enable_prefix_caching or self.enable_vision_caching
                     else None,
                 )
                 for (start_idx, end_idx), pixels in zip(

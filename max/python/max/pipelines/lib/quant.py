@@ -327,6 +327,75 @@ def _parse_fbgemm_fp8_config(
     )
 
 
+def _parse_tensorwise_fp8_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> QuantConfig:
+    """Parses a QuantConfig for AutoFP8 tensorwise (per-tensor) FP8 models.
+
+    These models have quant_method="fp8", activation_scheme="dynamic", and
+    per-tensor weight scales (no weight_block_size).
+    """
+    if dtype != DType.float8_e4m3fn:
+        raise TypeError(
+            "`_parse_tensorwise_fp8_config` only supports float8 dtype"
+        )
+
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    assert hf_quant_config and hf_quant_config.get("quant_method") == "fp8"
+
+    if hf_quant_config.get("activation_scheme") != "dynamic":
+        raise ValueError(
+            "tensorwise FP8 only supports dynamic activation_scheme"
+        )
+
+    # Determine weight scale dtype from checkpoint tensors.
+    # Accept scalar () or (1,) shapes — no rowwise shape check.
+    weight_scale_dtype: DType | None = None
+    for weight_name, weight in state_dict.items():
+        if "weight_scale" not in weight_name:
+            continue
+        weight_scale_dtype = weight.dtype
+    if not weight_scale_dtype:
+        raise ValueError(
+            "could not find weight scale dtype for tensorwise FP8 quantized"
+            " weights"
+        )
+
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=weight_scale_dtype,
+    )
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        dtype=weight_scale_dtype,
+    )
+
+    modules_to_not_convert = set(
+        hf_quant_config.get("modules_to_not_convert", [])
+    )
+
+    mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype = (
+        _quantized_layers_and_embedding_dtype(
+            huggingface_config, modules_to_not_convert, state_dict
+        )
+    )
+
+    bias_dtype = _bias_dtype(state_dict)
+
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=mlp_quantized_layers,
+        attn_quantized_layers=attn_quantized_layers,
+        embedding_output_dtype=embedding_output_dtype,
+        bias_dtype=bias_dtype,
+        format=QuantFormat.FBGEMM_FP8,
+    )
+
+
 def _parse_blockscaled_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -429,10 +498,15 @@ def _parse_fp8_config(
         )
     elif quant_method == "fbgemm_fp8":
         return _parse_fbgemm_fp8_config(huggingface_config, state_dict, dtype)
-    elif quant_method == "fp8":  # DeepSeekV3
-        return _parse_blockscaled_fp8_config(
-            huggingface_config, state_dict, dtype
-        )
+    elif quant_method == "fp8":
+        if hf_quant_config.get("weight_block_size"):
+            return _parse_blockscaled_fp8_config(
+                huggingface_config, state_dict, dtype
+            )
+        else:
+            return _parse_tensorwise_fp8_config(
+                huggingface_config, state_dict, dtype
+            )
 
     raise ValueError(
         "FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
@@ -576,28 +650,36 @@ def _parse_modelopt_float4_config(
     )
 
 
+def _is_mxfp4_config(hf_quant_config: dict[str, Any]) -> bool:
+    """Checks whether a HuggingFace quantization config describes MXFP4."""
+    quant_method = hf_quant_config.get("quant_method", "")
+    # https://huggingface.co/openai/gpt-oss-120b/blob/main/config.json
+    if quant_method.lower() == "mxfp4":
+        return True
+    # https://huggingface.co/amd/Kimi-K2.5-MXFP4/blob/main/config.json
+    if quant_method.lower() == "quark":
+        weight_cfg = hf_quant_config.get("global_quant_config", {}).get(
+            "weight", {}
+        )
+        return (
+            weight_cfg.get("scale_format") == "e8m0"
+            and weight_cfg.get("dtype") == "fp4"
+        )
+    return False
+
+
 def _parse_mxfp4_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
-    *,
-    quant_method_override: str | None = None,
-    quant_algo_override: str | None = None,
-) -> QuantConfig | None:
+) -> QuantConfig:
     """Parses a QuantConfig for MXFP4 quantization.
 
     MXFP4 uses float8_e8m0fnu scales (one per 32 elements) with packed uint8 weights.
     No input scale is needed; activations stay in bfloat16 and are cast to FP8 on-the-fly.
-    """
-    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    quant_method = quant_method_override
-    quant_algo = quant_algo_override
-    if hf_quant_config:
-        quant_method = hf_quant_config.get("quant_method", quant_method)
-        quant_algo = hf_quant_config.get("quant_algo", quant_algo)
-    if not quant_method or not quant_algo:
-        return None
 
+    The caller must verify :func:`_is_mxfp4_config` before calling this function.
+    """
     # MXFP4: block-scaled with 32-element blocks, E8M0 scales
     input_spec = InputScaleSpec(
         granularity=ScaleGranularity.BLOCK,
@@ -691,17 +773,22 @@ def parse_quant_config(
     # since only MoE weights are quantized; attention/embedding stay bf16).
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     if hf_quant_config:
+        if _is_mxfp4_config(hf_quant_config):
+            return _parse_mxfp4_config(huggingface_config, state_dict, dtype)
+
         quant_method = hf_quant_config.get("quant_method", "")
-        quant_algo = hf_quant_config.get("quant_algo", "")
-        if quant_method.lower() == "mxfp4" or (
-            quant_method == "modelopt" and quant_algo == "MXFP4"
+        if quant_method and quant_method not in (
+            "compressed-tensors",
+            "fbgemm_fp8",
+            "fp8",
+            "gptq",
+            "modelopt",
+            "mxfp4",
+            "quark",
         ):
-            return _parse_mxfp4_config(
-                huggingface_config,
-                state_dict,
-                dtype,
-                quant_method_override=quant_method,
-                quant_algo_override=quant_algo or "MXFP4",
+            raise ValueError(
+                f"Unrecognized quantization config: the `quant_method` "
+                f"field ({quant_method!r}) is provided but not recognized."
             )
 
     # uint8 is packed fp4 (float4_e2m1fnx2) in NVFP4 checkpoints.

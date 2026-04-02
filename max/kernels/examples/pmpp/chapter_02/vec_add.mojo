@@ -17,7 +17,6 @@
 from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
-from std.testing import assert_equal
 
 # ========================== KERNEL CODE ==========================
 
@@ -36,7 +35,7 @@ def vec_add_kernel(
         c_d: Output vector C (device).
         n: Number of elements in the vectors.
     """
-    var i = Int(global_idx.x)
+    var i = global_idx.x
     if i < n:
         c_d[i] = a_d[i] + b_d[i]
 

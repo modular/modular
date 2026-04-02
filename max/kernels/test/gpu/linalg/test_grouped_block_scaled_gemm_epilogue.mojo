@@ -20,23 +20,17 @@ GEMM kernel output. Verifies that:
 """
 
 from std.collections import Optional
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.random import rand, random_float64, seed
-from std.sys import align_of, size_of
+from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.memory import alloc
 from internal_utils import assert_almost_equal
-from layout._utils import ManagedLayoutTensor
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     Coord,
     CoordLike,
     row_major,
@@ -44,7 +38,6 @@ from layout import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -123,18 +116,10 @@ def test_grouped_gemm_epilogue[
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
-    )
-    var c_host = TileTensor(c_host_managed.tensor[update=False]().ptr, c_shape)
-    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
-    )
-    var c_host_ref = TileTensor(
-        c_host_ref_managed.tensor[update=False]().ptr, c_shape
-    )
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host = TileTensor(c_host_ptr, c_shape)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
     var c_host_original_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_original = TileTensor(c_host_original_ptr, c_shape)
 
@@ -422,6 +407,8 @@ def test_grouped_gemm_epilogue[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
     c_host_original_ptr.free()
     sfa_host_ptr.free()
     sfb_host_ptr.free()

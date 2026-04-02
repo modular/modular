@@ -156,11 +156,11 @@ modular/
 
 ```bash
 # Run benchmarks with compile-time defines
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul -- \
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul -- \
     get_defined_int[M]=1024 get_defined_int[N]=1024 get_defined_int[K]=1024
 
 # Use autotune tools
-python max/kernels/benchmarks/autotune/kbench.py benchmarks/gpu/bench_matmul.yaml
+python max/kernels/benchmarks/autotune/kbench.py benchmarks/gpu/linalg/bench_matmul.yaml
 ```
 
 ## Critical Development Notes

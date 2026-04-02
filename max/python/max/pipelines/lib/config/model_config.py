@@ -28,12 +28,14 @@ from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
+from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.device_specs import coerce_device_specs_input
 from max.pipelines.lib.hf_utils import (
     HuggingFaceRepo,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
+from max.pipelines.lib.memory_estimation import to_human_readable_bytes
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.lib.weight_path_parser import WeightPathParser
 from pydantic import (
@@ -157,16 +159,6 @@ class MAXModelConfig(MAXModelConfigBase):
         description="Weight encoding type.",
     )
     """The weight encoding type."""
-
-    allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = Field(
-        default=False,
-        description=(
-            "Whether to allow automatic float32 to/from bfloat16 safetensors "
-            "weight type casting, if needed. Currently only supported in "
-            "Llama3 models."
-        ),
-    )
-    """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting."""
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
@@ -460,15 +452,6 @@ class MAXModelConfig(MAXModelConfigBase):
         # Resolve chat_template if it's a Path
         self._resolve_chat_template()
 
-        # Validate that --quantization-encoding is given when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is True
-        if (
-            self.allow_safetensors_weights_fp32_bf6_bidirectional_cast
-            and self.quantization_encoding is None
-        ):
-            raise ValueError(
-                "--quantization-encoding must be provided when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is enabled"
-            )
-
         # Validate that the device_specs provided are available
         if not devices_exist(self.device_specs):
             available_devices = scan_available_devices()
@@ -486,6 +469,24 @@ class MAXModelConfig(MAXModelConfigBase):
         # keep the value seeded via __init__.
         if parsed_repo_id is not None:
             self._weights_repo_id = parsed_repo_id
+
+        # When subfolder is set, user-provided weight paths are relative to
+        # the subfolder.  Prepend the subfolder so that all downstream code
+        # (encoding detection, validation, downloading) sees repo-relative
+        # paths that include the subfolder prefix.
+        if self.subfolder and self.weight_path:
+            prefix = self.subfolder + "/"
+            adjusted: list[Path] = []
+            for p in self.weight_path:
+                if (
+                    not p.is_absolute()
+                    and not p.exists()
+                    and not str(p).startswith(prefix)
+                ):
+                    adjusted.append(Path(self.subfolder) / p)
+                else:
+                    adjusted.append(p)
+            self.weight_path = adjusted
 
         # If we cannot infer the weight path, we lean on the model_path
         # to provide it.
@@ -505,6 +506,141 @@ class MAXModelConfig(MAXModelConfigBase):
             # At this point, we should have a resolved weight path - be it local or remote HF.
             # weight_path should not be used directly anymore.
             self.model_path = self._weights_repo_id
+
+        # Best-effort encoding and weight_path resolution.
+        # For diffuser sub-components this is the only resolution step;
+        # for LLM models the architecture-level validation in
+        # PipelineConfig runs afterward and is idempotent.
+        self._resolve_encoding_and_weights()
+
+    # ------------------------------------------------------------------
+    # Best-effort encoding / weight resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_encoding_and_weights(self) -> None:
+        """Best-effort resolution of quantization_encoding and weight_path.
+
+        Infers encoding and discovers weight files without requiring
+        architecture-level information.  This enables diffuser
+        sub-components to get resolved fields even though they skip
+        architecture validation.
+
+        For LLM models that later go through
+        ``_validate_and_resolve_architecture()``, the fields resolved
+        here are consumed as-is (the downstream methods are idempotent
+        when these fields are already set).
+
+        Best-effort: if encoding or weights cannot be unambiguously
+        determined, the fields are left as-is rather than raising.
+        """
+        # Stage 1: infer encoding if not already set.
+        if not self.quantization_encoding:
+            try:
+                self._try_infer_encoding()
+            except Exception:
+                logger.debug(
+                    "Could not infer quantization_encoding for %s; "
+                    "architecture validation will handle it.",
+                    self.model_path,
+                )
+
+        # Stage 2: discover weight files if encoding is set but paths are not.
+        if self.quantization_encoding and not self.weight_path:
+            try:
+                self._try_resolve_weight_path()
+            except Exception:
+                logger.debug(
+                    "Could not resolve weight_path for %s; "
+                    "architecture validation will handle it.",
+                    self.model_path,
+                )
+
+        # Stage 3: finalize encoding config and validate paths.
+        if self.quantization_encoding and self.weight_path:
+            try:
+                self._finalize_encoding_config()
+            except Exception:
+                logger.debug(
+                    "Could not finalize encoding config for %s.",
+                    self.model_path,
+                )
+            try:
+                self._validate_final_architecture_model_path_weight_path()
+            except Exception:
+                logger.debug(
+                    "Weight path validation deferred for %s.",
+                    self.model_path,
+                )
+
+    def _try_infer_encoding(self) -> None:
+        """Try to infer quantization_encoding without architecture info.
+
+        Sets ``self.quantization_encoding`` when unambiguous, otherwise
+        leaves it as ``None``.  Does **not** raise on ambiguity.
+        """
+        if self.weight_path:
+            # Try filename-based detection first.
+            encoding = parse_supported_encoding_from_file_name(
+                str(self.weight_path[0])
+            )
+            if encoding is None and not os.path.exists(self.weight_path[0]):
+                # Remote file — ask the HF repo.
+                encoding = self.huggingface_weight_repo.encoding_for_file(
+                    self.weight_path[0]
+                )
+            if encoding:
+                self.quantization_encoding = encoding
+        else:
+            # No weight_path — check the repo's supported encodings.
+            supported = self.huggingface_weight_repo.supported_encodings
+            if len(supported) == 1:
+                self.quantization_encoding = supported[0]
+            elif (
+                len(supported) > 1
+                and self.default_device_spec.device_type != "cpu"
+            ):
+                # GPU preference: most-specific quantized format first,
+                # matching _validate_and_resolve_without_given_quantization_encoding.
+                if "float4_e2m1fnx2" in supported:
+                    self.quantization_encoding = "float4_e2m1fnx2"
+                elif "float8_e4m3fn" in supported:
+                    self.quantization_encoding = "float8_e4m3fn"
+                elif "bfloat16" in supported:
+                    self.quantization_encoding = "bfloat16"
+            # else: ambiguous — leave as None for architecture to resolve.
+
+        # On GPU, cast float32 → bfloat16 (the natural GPU dtype).
+        if (
+            self.quantization_encoding == "float32"
+            and self.default_device_spec.device_type != "cpu"
+        ):
+            self._validate_and_resolve_dtype_casting(
+                from_encoding="float32", to_encoding="bfloat16"
+            )
+
+    def _try_resolve_weight_path(self) -> None:
+        """Try to discover weight files without architecture info.
+
+        Requires ``quantization_encoding`` to be set.  Prefers safetensors
+        format as default.  Does **not** raise if no files are found.
+        """
+        assert self.quantization_encoding
+
+        weight_files = self.huggingface_weight_repo.files_for_encoding(
+            encoding=self.quantization_encoding
+        )
+
+        if not weight_files and self._applied_dtype_cast_from:
+            weight_files = self.huggingface_weight_repo.files_for_encoding(
+                encoding=self._applied_dtype_cast_from
+            )
+
+        # Prefer safetensors (reasonable default for diffuser components).
+        if safetensors_files := weight_files.get(WeightsFormat.safetensors, []):
+            self.weight_path = safetensors_files
+        elif weight_files:
+            # Fall back to any available format.
+            self.weight_path = next(iter(weight_files.values()))
 
     @property
     def model_name(self) -> str:
@@ -621,6 +757,28 @@ class MAXModelConfig(MAXModelConfigBase):
             trust_remote_code=self.trust_remote_code,
             subfolder=self.subfolder,
         )
+
+    @property
+    def architecture_name(self) -> str | None:
+        """Returns the architecture class name from the HuggingFace config.
+
+        For transformers models, returns ``architectures[0]`` from the
+        HuggingFace config.  For diffusers repos (which lack an
+        ``architectures`` field), falls back to ``_class_name`` from
+        the diffusers ``model_index.json``.
+        """
+        hf_config = self.huggingface_config
+        if hf_config is not None:
+            architectures = getattr(hf_config, "architectures", None)
+            if architectures:
+                return architectures[0]
+        # Diffusers repos use _class_name instead of architectures.
+        diffusers_cfg = self.diffusers_config
+        if diffusers_cfg is not None:
+            class_name = diffusers_cfg.get("_class_name")
+            if class_name:
+                return class_name
+        return None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -923,10 +1081,6 @@ class MAXModelConfig(MAXModelConfigBase):
         Raises:
             ValueError: If the dtype casting is not allowed.
         """
-        assert self.allow_safetensors_weights_fp32_bf6_bidirectional_cast, (
-            "allow_safetensors_weights_fp32_bf6_bidirectional_cast must be set to True"
-        )
-
         if from_encoding == to_encoding:
             return
         elif not (
@@ -972,56 +1126,43 @@ class MAXModelConfig(MAXModelConfigBase):
                 else:
                     file_encoding = (
                         self.huggingface_weight_repo.encoding_for_file(
-                            self.weight_path[0]
+                            self.weight_path[0],
+                            preferred_encoding=self.quantization_encoding,
                         )
                     )
 
-            if file_encoding:
-                if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:
-                    self._validate_and_resolve_dtype_casting(
-                        from_encoding=self.quantization_encoding,
-                        to_encoding=file_encoding,
-                    )
-                # For cases where they do not match but with allow_safetensors_weights_fp32_bf6_bidirectional_cast set to False, we raise an error.
-                elif file_encoding != self.quantization_encoding:
-                    raise ValueError(
-                        f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
-                    )
+            if file_encoding and (
+                file_encoding in _ALLOWED_CAST_ENCODINGS
+                and self.quantization_encoding in _ALLOWED_CAST_ENCODINGS
+            ):
+                self._validate_and_resolve_dtype_casting(
+                    from_encoding=self.quantization_encoding,
+                    to_encoding=file_encoding,
+                )
         else:
-            if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:
-                # Check if the repo only has one quantization_encoding.
-                supported_encodings = (
-                    self.huggingface_weight_repo.supported_encodings
-                )
-                to_encoding = self.quantization_encoding
-                for supported_encoding in supported_encodings:
-                    from_encoding = supported_encoding
+            # Check if the repo only has one quantization_encoding.
+            supported_encodings = (
+                self.huggingface_weight_repo.supported_encodings
+            )
+            to_encoding = self.quantization_encoding
+            for supported_encoding in supported_encodings:
+                from_encoding = supported_encoding
 
-                    if not (
-                        from_encoding in _ALLOWED_CAST_ENCODINGS
-                        and to_encoding in _ALLOWED_CAST_ENCODINGS
-                    ):
-                        continue
+                if not (
+                    from_encoding in _ALLOWED_CAST_ENCODINGS
+                    and to_encoding in _ALLOWED_CAST_ENCODINGS
+                ):
+                    continue
 
-                    weight_files = (
-                        self.huggingface_weight_repo.files_for_encoding(
-                            encoding=supported_encoding
-                        )
-                    )
-                    if weight_files:
-                        self._validate_and_resolve_dtype_casting(
-                            from_encoding=from_encoding,
-                            to_encoding=to_encoding,
-                        )
-                        return
-            else:
                 weight_files = self.huggingface_weight_repo.files_for_encoding(
-                    encoding=self.quantization_encoding
+                    encoding=supported_encoding
                 )
-                if not weight_files:
-                    raise ValueError(
-                        f"quantization_encoding '{self.quantization_encoding}' is not supported by the repo '{self.huggingface_weight_repo.repo_id}'"
+                if weight_files:
+                    self._validate_and_resolve_dtype_casting(
+                        from_encoding=from_encoding,
+                        to_encoding=to_encoding,
                     )
+                    return
 
     def _validate_and_resolve_without_given_quantization_encoding(
         self,
@@ -1386,3 +1527,129 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"Unrecognized kv_cache_format override: '{self.kv_cache.kv_cache_format}'. "
                 "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
             )
+
+    def log_model_info(self, role: str) -> None:
+        """Logs model configuration information for this config.
+
+        Args:
+            role: The semantic role of this model (e.g. ``"main"``,
+                ``"draft"``, ``"vae"``).
+        """
+        logger.info("")
+        logger.info("  Model: %s", role)
+        logger.info("  " + "-" * 40)
+
+        devices_str = ", ".join(
+            f"{d.device_type}[{d.id}]" for d in self.device_specs
+        )
+
+        quantization_encoding_str = str(self.quantization_encoding)
+        if self._applied_dtype_cast_from:
+            quantization_encoding_str = (
+                f"{quantization_encoding_str}"
+                f" (cast from {self._applied_dtype_cast_from})"
+            )
+
+        entries: list[tuple[str, Any]] = [
+            ("model_path", self.model_path),
+        ]
+
+        # Only show subfolder when it is set.
+        if self.subfolder:
+            entries.append(("subfolder", self.subfolder))
+
+        # Only show weights_repo_id when it differs from model_path.
+        weight_repo_id = self.huggingface_weight_repo_id
+        if weight_repo_id != self.model_path:
+            entries.append(("weights_repo_id", weight_repo_id))
+
+        entries.extend(
+            [
+                ("huggingface_revision", self.huggingface_model_revision),
+                ("quantization_encoding", quantization_encoding_str),
+            ]
+        )
+
+        # Format weight_path depending on the number of paths.
+        weight_paths = self.weight_path
+        if len(weight_paths) == 0:
+            entries.append(("weight_path", "(none)"))
+        elif len(weight_paths) == 1:
+            entries.append(("weight_path", weight_paths[0]))
+        elif len(weight_paths) > 1:
+            display_paths = (
+                weight_paths[:3] + ["..."] + [weight_paths[-1]]
+                if len(weight_paths) > 5
+                else list(weight_paths)
+            )
+            formatted = (
+                "[\n"
+                + "\n".join(f"            {p}" for p in display_paths)
+                + "\n        ]"
+            )
+            entries.append(("weight_path", formatted))
+
+        entries.extend(
+            [
+                ("devices", devices_str),
+                ("max_seq_len", self.max_length),
+            ]
+        )
+
+        for line in _format_config_entries(entries, indent="    "):
+            logger.info(line)
+
+        # KVCache configuration
+        self._log_kvcache_info()
+
+    def _log_kvcache_info(self) -> None:
+        """Logs KV cache configuration details for this model config."""
+        kv_config = self.kv_cache
+        entries: list[tuple[str, Any]] = [
+            ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
+            ("prefix_caching", kv_config.enable_prefix_caching),
+            ("kv_connector", kv_config.kv_connector or "null"),
+        ]
+        cfg = kv_config.kv_connector_config
+        if (
+            kv_config.kv_connector
+            in (KVConnectorType.local, KVConnectorType.tiered)
+            and cfg
+        ):
+            entries.append(
+                ("host_swap_space", f"{cfg.host_kvcache_swap_space_gb} GB")
+            )
+        entries.append(
+            (
+                "memory_utilization",
+                f"{kv_config.device_memory_utilization:.1%}",
+            )
+        )
+
+        if kv_config._available_cache_memory is not None:
+            entries.append(
+                (
+                    "available_cache_memory",
+                    to_human_readable_bytes(kv_config._available_cache_memory),
+                )
+            )
+
+        for line in _format_config_entries(entries, indent="    "):
+            logger.info(line)
+
+
+def _format_config_entries(
+    entries: list[tuple[str, Any]], indent: str = "    "
+) -> list[str]:
+    """Format key-value config entries with aligned colons.
+
+    Args:
+        entries: List of (key, value) tuples to format.
+        indent: Prefix string for each line.
+
+    Returns:
+        A list of formatted strings with keys left-aligned and colons
+        vertically aligned based on the longest key.
+    """
+    max_key_len = max(len(key) for key, _ in entries)
+    return [f"{indent}{key:<{max_key_len}} : {value}" for key, value in entries]

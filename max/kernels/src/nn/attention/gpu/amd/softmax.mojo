@@ -14,11 +14,9 @@
 import std.gpu.primitives.warp as warp
 from std.bit import log2_floor
 from std.gpu import (
-    WARP_SIZE,
     barrier,
-    lane_id,
-    thread_idx,
-    warp_id as get_warp_id,
+    lane_id_uint as lane_id,
+    warp_id_uint as get_warp_id,
 )
 from layout import (
     Layout,
@@ -341,6 +339,60 @@ struct Softmax[
                         )
 
     @always_inline
+    def scale_rowmax(self, scale: Scalar[Self.dtype]):
+        """Scale score_frag_rowmax by scale factor (e.g. scale * log2e).
+
+        Must be called after exp_scaled so that score_frag_rowmax is in the
+        same units as rowmax_tensor for calculate_correction.
+        """
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.score_frag_rowmax[col_tile, row] *= scale
+
+    @always_inline
+    def exp_scaled[
+        start: Int = 0, stride: Int = 1
+    ](
+        self,
+        score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...],
+        scale: Scalar[Self.dtype],
+    ):
+        """Numerically stable scaled exp: exp2((score - max) * scale).
+
+        Subtracts the unscaled max before scaling, so the subtraction is exact
+        for the maximum element (IEEE 754 guarantees a - a == 0). This avoids
+        the precision gap in exp_fma where fma(score, scale, -scaled_max) can
+        produce nonzero results when score == max due to independent rounding
+        of scaled_max.
+        """
+        comptime frag_type = score_reg_tile.element_type
+
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row_tile in range(
+                start, Self.num_rowwise_tiles, stride
+            ):
+                comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
+
+                comptime if Self.frag_is_row_vector:
+                    var neg_max = rebind[frag_type](
+                        SIMD[Self.dtype, Self.frag_num_cols](
+                            -self.score_frag_rowmax[col_tile, 0][0]
+                        )
+                    )
+                    var scale_vec = rebind[frag_type](
+                        SIMD[Self.dtype, Self.frag_num_cols](scale)
+                    )
+                    score_reg_tile[tile_id, 0] = Self.exp_function(
+                        (score_reg_tile[tile_id, 0] + neg_max) * scale_vec
+                    )
+                else:
+                    comptime for row in range(Self.frag_num_rows):
+                        var neg_max = -self.score_frag_rowmax[col_tile, row][0]
+                        score_reg_tile[tile_id, 0][row] = Self.exp_function(
+                            (score_reg_tile[tile_id, 0][row] + neg_max) * scale
+                        )
+
+    @always_inline
     def calculate_correction(self):
         comptime for col_tile in range(Self.num_colwise_tiles):
             # Corrention since previous max may be updated.
@@ -357,12 +409,6 @@ struct Softmax[
         comptime num_output_replications = output_reg_tile.layout.shape[
             0
         ].value() // (Self.num_colwise_tiles * Self.num_rowwise_tiles)
-        # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
-        # FIXME: require `warp_split_k` when delaying inter-warp communication.
-        comptime assert (
-            num_output_replications == 1
-            or num_output_replications % Self.num_rowwise_warps == 0
-        )
 
         # if num_output_replications
         comptime for k in range(num_output_replications):

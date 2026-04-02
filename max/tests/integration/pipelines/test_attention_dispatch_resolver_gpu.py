@@ -134,7 +134,7 @@ def mha_resolver(
     gpu_device_ref: DeviceRef,
 ) -> AttentionDispatchResolver:
     return AttentionDispatchResolver(
-        device=gpu_device_ref,
+        devices=[gpu_device_ref],
         is_mla=False,
         n_kv_heads_per_device=N_KV_HEADS,
     )
@@ -146,7 +146,7 @@ def mla_resolver(
     mla_num_heads: int,
 ) -> AttentionDispatchResolver:
     return AttentionDispatchResolver(
-        device=gpu_device_ref,
+        devices=[gpu_device_ref],
         is_mla=True,
         n_kv_heads_per_device=1,
         num_q_heads_per_device=mla_num_heads,
@@ -156,7 +156,7 @@ def mla_resolver(
 @pytest.fixture(scope="module")
 def mla_resolver_fp8(gpu_device_ref: DeviceRef) -> AttentionDispatchResolver:
     return AttentionDispatchResolver(
-        device=gpu_device_ref,
+        devices=[gpu_device_ref],
         is_mla=True,
         n_kv_heads_per_device=1,
         num_q_heads_per_device=128,

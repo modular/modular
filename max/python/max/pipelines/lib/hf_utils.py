@@ -501,7 +501,14 @@ class HuggingFaceRepo:
                     supported_encodings.add("float4_e2m1fnx2")
 
             elif self.repo_type == "online":
-                safetensors_info = self.info.safetensors
+                # When subfolder is set, repo-level safetensors metadata
+                # (self.info.safetensors) aggregates ALL files in the repo
+                # and is not scoped to the subfolder.  In that case, read
+                # the actual weight files within the subfolder to detect
+                # encodings accurately.
+                safetensors_info = (
+                    self.info.safetensors if self.subfolder is None else None
+                )
 
                 # Workaround for FP8 models that don't have safetensors metadata populated
                 # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
@@ -637,11 +644,36 @@ class HuggingFaceRepo:
         """Returns the weight formats available in this repo."""
         return list(self.weight_files.keys())
 
-    def encoding_for_file(self, file: str | Path) -> SupportedEncoding:
-        """Infers the supported encoding for a given weight file path."""
+    def encoding_for_file(
+        self,
+        file: str | Path,
+        preferred_encoding: SupportedEncoding | None = None,
+    ) -> SupportedEncoding:
+        """Infers the supported encoding for a given weight file path.
+
+        Args:
+            file: The weight file path.
+            preferred_encoding: If set and present in the repo's supported
+                encodings, return it directly. Useful for multi-encoding
+                safetensors repos (e.g. FP4 repos that also contain BF16
+                norm weights).
+        """
         if str(file).endswith(".safetensors"):
-            # If this file is safetensors, return the first encoding, as Safetensor repos can only have one.
-            return self.supported_encodings[0]
+            supported = self.supported_encodings
+            if preferred_encoding and preferred_encoding in supported:
+                return preferred_encoding
+            # For multi-encoding repos, pick the most specific quantized
+            # format (matches priority in MAXModelConfig._try_infer_encoding).
+            if len(supported) > 1:
+                for candidate in (
+                    "float4_e2m1fnx2",
+                    "float8_e4m3fn",
+                    "bfloat16",
+                    "float32",
+                ):
+                    if candidate in supported:
+                        return candidate
+            return supported[0]
         elif str(file).endswith(".gguf"):
             encoding = parse_supported_encoding_from_file_name(str(file))
             if encoding:
@@ -680,8 +712,9 @@ def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
 def generate_local_model_path(repo_id: str, revision: str) -> str:
     """Generate the local filesystem path where a Hugging Face model repo is cached.
 
-    This function uses Hugging Face's official snapshot_download with local_files_only=True
-    to resolve the local cache path for a model repository.
+    This function resolves the model from the local Hugging Face cache only.
+    Missing snapshots should be pre-downloaded explicitly so tests without the
+    ``requires-network`` tag do not silently fetch remote artifacts at runtime.
 
     Args:
         repo_id: The Hugging Face repository ID in the format "org/model"
@@ -692,7 +725,7 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
         str: The absolute path to the cached model files for the specified revision.
 
     Raises:
-        FileNotFoundError: If the model is not found in the local cache
+        FileNotFoundError: If the model is not found in the local cache.
     """
     try:
         return huggingface_hub.snapshot_download(
@@ -700,8 +733,15 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
             revision=revision,
             local_files_only=True,
         )
-    except huggingface_hub.utils.LocalEntryNotFoundError as e:
+    except huggingface_hub.errors.LocalEntryNotFoundError as local_error:
         raise FileNotFoundError(
             f"Model path does not exist: HF cache for '{repo_id}' "
-            f"(revision: {revision}) not found."
-        ) from e
+            f"(revision: {revision}) not found"
+            + (
+                " while HF_HUB_OFFLINE is enabled."
+                if huggingface_hub.constants.HF_HUB_OFFLINE
+                else "."
+            )
+            + " Configure HF_TOKEN for gated repos and pre-download the model with "
+            "'//max/tests/integration/tools:download_models_for_testing'."
+        ) from local_error

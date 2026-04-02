@@ -1,4 +1,4 @@
-<!-- markdownlint-disable -->
+<!-- rumdl-disable -->
 {% import 'macros.jinja' as macros %}
 {# Print YAML front matter #}
 {% macro print_front_matter(decl) %}
@@ -55,7 +55,14 @@ description: {% if decl.summary
 
 {% for alias in decl.aliases | sort(attribute='name') -%}
 
+{# Extra div to flex align stability marker. #}
+<div class='mojo-alias-header'>
+
 ###  `{{ alias.name }}`
+
+{{ macros.stability_marker(alias, header=True) }}
+
+</div>
 
 <div class='mojo-alias-detail'>
 <div class="mojo-alias-sig">

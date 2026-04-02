@@ -30,27 +30,31 @@ Scale values are restricted to power-of-2 values (0.25, 0.5, 1.0, 2.0, 4.0,
 these values are exact.
 """
 
-from std.collections import Optional, OptionalReg
-from std.math import ceildiv, exp
+from std.math import ceildiv
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator, size_of
+from std.sys import argv, has_nvidia_gpu_accelerator
 
-from std.gpu.host import DeviceContext, DeviceBuffer
-from std.gpu.memory import AddressSpace
-from kv_cache.types import (
-    KVCacheStaticParams,
-    PagedKVCache,
-    PagedKVCacheCollection,
+from std.gpu.host import DeviceContext
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+    row_major,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from std.memory import alloc
-from nn.mha import mha_gpu_naive
-from nn.mha_mask import NullMask
-from nn.mha_operand import KVCacheMHAOperand
-from nn.mla import flare_mla_decoding
-from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
-from nn.mha_utils import MHAConfig
-from std.testing import assert_almost_equal, assert_true
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import NullMask
+from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    MLADispatchScalarArgs,
+)
+from nn.attention.mha_utils import MHAConfig
+from std.testing import assert_almost_equal
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 
@@ -420,30 +424,19 @@ def run_test_blockwise_fp8[
 
     var kv_cache = kv_collection.get_key_cache(0)
 
-    comptime q_layout_3d = Layout.row_major(
-        Index(UNKNOWN_VALUE, num_heads, DEPTH)
-    )
-    var q_lt = LayoutTensor[q_type, q_layout_3d](
+    var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        RuntimeLayout[q_layout_3d].row_major(
-            Index(total_q_tokens, num_heads, DEPTH)
-        ),
+        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
-    comptime out_layout_3d = Layout.row_major(
-        Index(UNKNOWN_VALUE, num_heads, V_DEPTH)
-    )
-    var out_lt = LayoutTensor[q_type, out_layout_3d](
+    var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        RuntimeLayout[out_layout_3d].row_major(
-            Index(total_q_tokens, num_heads, V_DEPTH)
-        ),
+        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
-    comptime ro_layout = Layout.row_major(UNKNOWN_VALUE)
-    var row_offsets_lt = LayoutTensor[DType.uint32, ro_layout](
+    var row_offsets_tt = TileTensor(
         row_offsets_device.unsafe_ptr(),
-        RuntimeLayout[ro_layout].row_major(Index(batch_size + 1)),
+        row_major(Idx(batch_size + 1)),
     )
 
     # -----------------------------------------------------------------------
@@ -464,11 +457,11 @@ def run_test_blockwise_fp8[
         config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
         ragged=True,
     ](
-        lt_to_tt(out_lt),
-        lt_to_tt(q_lt),
+        out_tt,
+        q_tt,
         kv_cache,
         NullMask(),
-        lt_to_tt(row_offsets_lt),
+        row_offsets_tt,
         scale,
         ctx,
         lt_to_tt(scalar_args_buf_lt),
@@ -907,30 +900,19 @@ def run_bench_blockwise_fp8[
 
     var kv_cache = kv_collection.get_key_cache(0)
 
-    comptime q_layout_3d = Layout.row_major(
-        Index(UNKNOWN_VALUE, num_heads, DEPTH)
-    )
-    var q_lt = LayoutTensor[q_type, q_layout_3d](
+    var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        RuntimeLayout[q_layout_3d].row_major(
-            Index(total_q_tokens, num_heads, DEPTH)
-        ),
+        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
-    comptime out_layout_3d = Layout.row_major(
-        Index(UNKNOWN_VALUE, num_heads, V_DEPTH)
-    )
-    var out_lt = LayoutTensor[q_type, out_layout_3d](
+    var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        RuntimeLayout[out_layout_3d].row_major(
-            Index(total_q_tokens, num_heads, V_DEPTH)
-        ),
+        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
-    comptime ro_layout = Layout.row_major(UNKNOWN_VALUE)
-    var row_offsets_lt = LayoutTensor[DType.uint32, ro_layout](
+    var row_offsets_tt = TileTensor(
         row_offsets_device.unsafe_ptr(),
-        RuntimeLayout[ro_layout].row_major(Index(batch_size + 1)),
+        row_major(Idx(batch_size + 1)),
     )
 
     # Step 7: Pre-compute scalar args and benchmark
@@ -945,10 +927,10 @@ def run_bench_blockwise_fp8[
     @parameter
     @always_inline
     @__copy_capture(
-        out_lt,
-        q_lt,
+        out_tt,
+        q_tt,
         kv_cache,
-        row_offsets_lt,
+        row_offsets_tt,
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
@@ -957,11 +939,11 @@ def run_bench_blockwise_fp8[
             config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
             ragged=True,
         ](
-            lt_to_tt(out_lt),
-            lt_to_tt(q_lt),
+            out_tt,
+            q_tt,
             kv_cache,
             NullMask(),
-            lt_to_tt(row_offsets_lt),
+            row_offsets_tt,
             scale,
             ctx,
             lt_to_tt(scalar_args_buf_lt),

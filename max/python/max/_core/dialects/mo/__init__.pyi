@@ -94,6 +94,22 @@ class BufferType(max._core.Type):
     @property
     def metadata(self) -> max._core.dialects.builtin.DictionaryAttr: ...
 
+class BundleType(max._core.Type):
+    """
+    A grouping type that bundles multiple per-device tensors into a single SSA
+    value.  All elements must be `!mo.tensor` types.  Elements may have
+    different devices, shapes, or dtypes.
+
+    Example:
+    ```mlir
+    !mo.bundle<[!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>]>
+    ```
+    """
+
+    def __init__(self, element_types: Sequence[max._core.Type]) -> None: ...
+    @property
+    def element_types(self) -> Sequence[max._core.Type]: ...
+
 class ChainType(max._core.Type):
     """
     This type is used to sequence side-effecting operations. Any operation in
@@ -4491,21 +4507,11 @@ class ParallelOp(max._core.Operation):
     ```
     """
 
-    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         results: Sequence[max._core.Type],
-        inputs: Sequence[max._core.Value[max._core.Type]],
-        extra_inputs: Sequence[max._core.Value[max._core.Type]],
-        in_chain: max._core.Value[ChainType],
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
         inputs: Sequence[max._core.Value[max._core.Type]],
         extra_inputs: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
@@ -6033,71 +6039,6 @@ class SinOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
 
-class SliceDimOp(max._core.Operation):
-    """
-    Returns a new tensor with a subset of the elements from an N-dimensional
-    `input` tensor. The slice will be taken using `start` / `stop` / `step`
-    along the `dim` dimension.
-
-    The semantics follows the numpy index semantics, such that
-    1. For each dimension `i`, `start[i]:stop[i]:step[i]` represents the
-       "indexing" along that dimension.
-    2. Negative indices are supported for `start` and `stop`, e.g., -1
-       represents the largest axis.
-    3. Out of bound indices in `start` and `stop` will be clamped to
-       [-dim, dim], where `dim` is the dimension in the corresponding axis.
-    4. `step` must contain nonzero elements. Negative steps are supported.
-
-    Note: the order in which negative indices are resolved matches that of
-    python for `start:
-
-    1. Normalize negative indices by adding the dimension size.
-    2. Apply clipping logic.
-
-    This means the equivalent mo.slice for l[:-1:-1] returns an empty result.
-    If we want to reverse the values in `l` we should do l[:-N-1:-1] where
-    N is the dimension size. Numbers smaller than -N-1 should also work.
-
-    Example:
-    ```mlir
-      %input: !mo.tensor<[?, ?, ?], f32>
-      %start: !mo.tensor<[1], si64> // [1]
-      %stop: !mo.tensor<[1], si32>  // [-3]
-      %step: !mo.tensor<[1], si64>  // [5]
-      // equivalent to this in numpy: `input[1:-3:5, :, :]`
-      %res = mo.slice_dim[0](%input, %start, %stop, %step) : (
-        !mo.tensor<[10, 10, 10], f32>,
-        !mo.tensor<[1], si64>,
-        !mo.tensor<[1], si32>,
-        !mo.tensor<[1], si64>
-      ) -> !mo.tensor<[?, ?, ?], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-        axis: max._core.dialects.builtin.IntegerAttr,
-        start: max._core.Value[TensorType],
-        stop: max._core.Value[TensorType],
-        step: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def axis(self) -> int: ...
-    @axis.setter
-    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
-    @property
-    def start(self) -> max._core.Value[TensorType]: ...
-    @property
-    def stop(self) -> max._core.Value[TensorType]: ...
-    @property
-    def step(self) -> max._core.Value[TensorType]: ...
-
 class SliceOp(max._core.Operation):
     """
     Returns a new tensor with a subset of the elements from an N-dimensional
@@ -6397,6 +6338,28 @@ class TanhOp(max._core.Operation):
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
+
+class TensorBundleOp(max._core.Operation):
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: BundleType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+
+class TensorUnbundleOp(max._core.Operation):
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Type],
+        input: max._core.Value[BundleType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[BundleType]: ...
 
 class TileOp(max._core.Operation):
     """

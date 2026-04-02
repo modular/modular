@@ -109,7 +109,7 @@ build --remote_timeout=10m
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
 build --remote_cache_async
-build --experimental_remote_cache_ttl=14d
+build --experimental_remote_cache_lease_extension=true
 build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
@@ -119,15 +119,13 @@ build --slim_profile=false
 build --test_output=errors
 build --test_summary=terse
 
-# Disable crash reporting for all tests and runs, test rules can override this
+# Disable crash reporting for builds and tests, test rules can override this
 build --action_env=MODULAR_CRASH_REPORTING_ENABLED=false --host_action_env=MODULAR_CRASH_REPORTING_ENABLED=false
 build --test_env=MODULAR_CRASH_REPORTING_ENABLED=false
-run --run_env=MODULAR_CRASH_REPORTING_ENABLED=false
 
-# Disable telemetry for all tests and runs, test rules can override this
+# Disable telemetry for builds and tests, test rules can override this
 build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TELEMETRY_ENABLED=false
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
-run --run_env=MODULAR_TELEMETRY_ENABLED=false
 
 # Fix parallel tests competing for a single CPU on graviton
 build --test_env=KMP_AFFINITY=none
@@ -158,7 +156,7 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
-build --@llvm-project//third-party:llvm_enable_zstd=false
+build --@llvm-project//third-party:llvm_enable_zstd=true
 build --experimental_propagate_custom_flag=@llvm-project//third-party:llvm_enable_zstd
 build --@llvm-project//lldb:enable_libedit=true
 build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_libedit
