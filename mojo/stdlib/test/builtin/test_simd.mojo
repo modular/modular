@@ -381,14 +381,14 @@ def test_simd_repr_and_write_repr_to() raises:
     )
 
     # Platform-dependent integer aliases (Int and UInt)
-    _test_repr(Int(42), "Int(42)")
-    _test_repr(UInt(42), "UInt(42)")
-    _test_repr(Int(0), "Int(0)")
-    _test_repr(UInt(0), "UInt(0)")
+    _test_repr(SIMD[DType.index, 1](42), "Int(42)")
+    _test_repr(SIMD[DType.uindex, 1](42), "UInt(42)")
+    _test_repr(SIMD[DType.index, 1](0), "Int(0)")
+    _test_repr(SIMD[DType.uindex, 1](0), "UInt(0)")
 
     # Bool scalar (Bool is an alias for Scalar[DType.bool])
-    _test_repr(Bool(True), "Bool(True)")
-    _test_repr(Bool(False), "Bool(False)")
+    _test_repr(SIMD[DType.bool, 1](True), "Bool(True)")
+    _test_repr(SIMD[DType.bool, 1](False), "Bool(False)")
 
 
 def test_issue_1625() raises:
