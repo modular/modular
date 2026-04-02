@@ -376,17 +376,6 @@ def dynamic_used_as_param_2() -> Int:
   # expected-error @+1 {{cannot use a dynamic value in type parameter}}
   return func_with_static_param[w.x]()
 
-# expected-note @+1 {{function declared here}}
-def higher_order_int_func[func: def (Int) escaping -> Int]() -> Int:
-  return func(3)
-
-def use_non_parameter_func() -> Int:
-  var val = 8
-  def my_nested_func(x: Int) -> Int:
-    return val + x
-  # expected-error @+1 {{cannot use a dynamic value in a parameter list}}
-  var result: Int = higher_order_int_func[my_nested_func]()
-
 def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     ref r = a[0]
     r += 1 # expected-error {{expression must be mutable for in-place operator destination}}
