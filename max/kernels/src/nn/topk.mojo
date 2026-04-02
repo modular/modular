@@ -2261,10 +2261,9 @@ def fused_token_sampling_gpu[
         var vocab_size = input.layout.shape[1]().value()
         var adjusted_max_k = vocab_size if max_k == -1 else max_k
 
-        # softmax with temperature, then top-k+top-p
-        # rejection sampling. Enabled via compile-time env var.
+        # softmax with temperature, then top-k+top-p rejection sampling.
 
-        if adjusted_max_k >= 75:
+        if adjusted_max_k >= 64:
             _topk_topp_sampling_fi[dtype, out_idx_type](
                 ctx,
                 adjusted_max_k,
