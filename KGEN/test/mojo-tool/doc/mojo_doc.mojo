@@ -114,6 +114,12 @@ def fn_hidden() -> Int:
     return 33
 
 
+# CHECK-NOT: alias_hidden
+
+
+@doc_hidden
+comptime alias_hidden = 42
+
 # CHECK-NOT: _private_member
 
 
@@ -1005,6 +1011,16 @@ struct StructWithFnParam[
     param_fn: def(T, T) capturing[_] -> Bool,
     S: AnyType = T,
 ]:
+    pass
+
+
+# CHECK-NOT: "name": "HiddenStruct"
+
+
+@doc_hidden
+struct HiddenStruct:
+    """A struct that should be hidden from docs."""
+
     pass
 
 
