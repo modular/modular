@@ -676,6 +676,35 @@ def softmax[
     )
 
 
+
+
+def softmax_gpu[
+    dtype: DType,
+    simd_width: Int,
+    rank: Int,
+](
+    ctx: DeviceContext,
+    input: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    axis: Int,
+) raises:
+    @parameter
+    @always_inline
+    def input_fn[
+        _simd_width: Int, _rank: Int
+    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
+        return input.load_linear[width=_simd_width, alignment=1](coords)
+
+    _softmax_gpu[dtype, simd_width, rank, input_fn](
+        rebind[IndexList[rank]](
+            coord_to_index_list(input.layout.shape_coord())
+        ),
+        output,
+        axis,
+        ctx,
+    )
+
+
 def softmax_kernel[
     BLOCK_SIZE: Int,
     input_fn: def[_dtype: DType, _simd_width: Int, _rank: Int](
@@ -693,115 +722,120 @@ def softmax_kernel[
 ](
     shape: IndexList[rank],
     output: TileTensor[dtype, OutputLayoutType, output_origin],
-    sink_weights: LayoutTensor[
-        sink_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-    ],
+    sink_weights: UnsafePointer[Scalar[sink_type], ImmutAnyOrigin],
 ):
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
     comptime axis = rank - 1
+    comptime VEC_WIDTH = simd_width_of[dtype]()
+    comptime BLOCK_SPAN = BLOCK_SIZE * VEC_WIDTH
 
     var row_size = UInt(shape[axis])
     var num_rows = UInt(shape.flattened_length()) // row_size
+    var tid = Int(thread_idx.x)
+    var use_vectorized = row_size >= UInt(4 * BLOCK_SPAN)
 
-    var max_buf = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
-    ](row_major[1]())
-    var exp_sum_buf = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
-    ](row_major[1]())
+    with PDL():
+        for row_idx in range(block_idx.x, num_rows, grid_dim.x):
+            var sink_val = Scalar[accum_type].MIN
 
-    @parameter
-    @always_inline
-    def _max[
-        dtype: DType, width: Int
-    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return max(x, y)
+            comptime if sink:
+                sink_val = sink_weights[Int(row_idx % UInt(shape[0]))].cast[
+                    accum_type
+                ]()
 
-    @parameter
-    @always_inline
-    def _sum[
-        dtype: DType, width: Int
-    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return x + y
-
-    var tid = thread_idx.x
-
-    # grid stride loop over rows
-    # each block reduces a row, which is convenient because it requires no partial
-    # reductions across blocks
-    for row_idx in range(block_idx.x, num_rows, grid_dim.x):
-        var sink_val = Scalar[accum_type].MIN
-
-        comptime if sink:
-            sink_val = sink_weights[row_idx % UInt(sink_weights.dim[0]())][
-                0
-            ].cast[accum_type]()
-
-        # Step 1: compute max in row
-        var row_coords = _get_nd_indices_from_flat_index(
-            Int(row_idx), shape, axis
-        )
-        var row_max = row_reduce[
-            BLOCK_SIZE,
-            input_fn,
-            _max,
-            dtype,
-            1,
-            rank,
-            accum_type=accum_type,
-        ](row_coords, axis, Scalar[dtype].MIN, Int(row_size))
-
-        comptime if sink:
-            row_max = max(row_max, sink_val)
-
-        if tid == 0:
-            max_buf[0] = row_max
-        barrier()
-
-        row_max = max_buf[0][0]
-
-        # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
-        var exp_sum = Scalar[accum_type](0)
-
-        for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
-            row_coords[axis] = Int(row_offset)
-
-            # loads from input_fn twice
-            var val = exp(
-                input_fn[dtype, 1, rank](row_coords).cast[accum_type]()
-                - row_max
+            var row_coords = _get_nd_indices_from_flat_index(
+                Int(row_idx), shape, axis
             )
 
-            # TODO we're writing to and reading from global memory twice
-            # we can reduce the amount of reads by keeping values local here.
-            output.store_linear(row_coords, val.cast[dtype]())
-            exp_sum += val
+            var row_max = Scalar[accum_type].MIN
+            var exp_sum = Scalar[accum_type](0)
 
-        var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
+            if use_vectorized:
+                for tile_base in range(UInt(0), row_size, UInt(BLOCK_SPAN)):
+                    var lane_base = tile_base + UInt(tid * VEC_WIDTH)
+                    if lane_base < row_size:
+                        var lane_count = min(
+                            Int(row_size - lane_base), VEC_WIDTH
+                        )
 
-        if tid == 0:
-            exp_sum_buf[0] = block_exp_sum
-        barrier()
+                        @always_inline
+                        def online_max_sum[
+                            width: Int
+                        ](offset: Int) unified {mut}:
+                            row_coords[axis] = Int(lane_base) + offset
+                            var v = input_fn[dtype, width, rank](
+                                row_coords
+                            ).cast[accum_type]()
+                            var new_max = max(row_max, v.reduce_max())
+                            exp_sum = exp_sum * exp(
+                                row_max - new_max
+                            ) + exp(
+                                v - SIMD[accum_type, width](new_max)
+                            ).reduce_add()
+                            row_max = new_max
 
-        comptime if sink:
-            block_exp_sum += exp(sink_val - row_max)
+                        vectorize[VEC_WIDTH](lane_count, online_max_sum)
+            else:
+                for col in range(UInt(tid), row_size, UInt(BLOCK_SIZE)):
+                    row_coords[axis] = Int(col)
+                    var v = input_fn[dtype, 1, rank](
+                        row_coords
+                    ).cast[accum_type]()
+                    if v > row_max:
+                        exp_sum *= exp(row_max - v)
+                        row_max = v
+                    exp_sum += exp(v - row_max)
 
-        # Step 3: Normalize output (and apply log for logsoftmax)
-        var block_exp_sum_recip = 1 / exp_sum_buf[0]
-        for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
-            row_coords[axis] = Int(row_offset)
-            var normalized = (
-                output.load_linear[width=1](row_coords)
-                * block_exp_sum_recip.cast[dtype]()
-            )
+            comptime if sink:
+                if sink_val > row_max:
+                    exp_sum *= exp(row_max - sink_val)
+                    row_max = sink_val
+                exp_sum += exp(sink_val - row_max)
 
-            comptime if logsoftmax:
-                normalized = log(normalized)
+            var global_max = block.max[block_size=BLOCK_SIZE](row_max)
+            exp_sum *= exp(row_max - global_max)
+            var global_sum = block.sum[block_size=BLOCK_SIZE](exp_sum)
+            var recip = Scalar[accum_type](1) / global_sum
 
-            output.store_linear(row_coords, normalized)
+            if use_vectorized:
+                for tile_base in range(UInt(0), row_size, UInt(BLOCK_SPAN)):
+                    var lane_base = tile_base + UInt(tid * VEC_WIDTH)
+                    if lane_base < row_size:
+                        var lane_count = min(
+                            Int(row_size - lane_base), VEC_WIDTH
+                        )
+
+                        @always_inline
+                        def normalize[
+                            width: Int
+                        ](offset: Int) unified {mut}:
+                            row_coords[axis] = Int(lane_base) + offset
+                            var logit = input_fn[dtype, width, rank](
+                                row_coords
+                            ).cast[accum_type]()
+                            var val = exp(
+                                logit - SIMD[accum_type, width](global_max)
+                            ) * SIMD[accum_type, width](recip)
+                            comptime if logsoftmax:
+                                val = log(val)
+                            output.store_linear[width=width](
+                                row_coords, val.cast[dtype]()
+                            )
+
+                        vectorize[VEC_WIDTH](lane_count, normalize)
+            else:
+                for col in range(UInt(tid), row_size, UInt(BLOCK_SIZE)):
+                    row_coords[axis] = Int(col)
+                    var logit = input_fn[dtype, 1, rank](
+                        row_coords
+                    ).cast[accum_type]()
+                    var val = exp(logit - global_max) * recip
+                    comptime if logsoftmax:
+                        val = log(val)
+                    output.store_linear(row_coords, val.cast[dtype]())
 
 
 def _softmax_gpu[
@@ -834,11 +868,16 @@ def _softmax_gpu[
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return rebind[SIMD[_dtype, width]](input_fn[width, rank](idx))
 
-    comptime BLOCK_SIZE = 128
+    comptime BLOCK_SIZE = 512
     var num_rows = shape.flattened_length() // shape[axis]
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
-    comptime sm_overprovision_factor = 32  # tunable
+    comptime sm_overprovision_factor = 32
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+
+    var sink_ptr = UnsafePointer[Scalar[sink_type], ImmutAnyOrigin]()
+    if sink_weights:
+        sink_ptr = sink_weights.value().ptr
+
     comptime kernel = softmax_kernel[
         BLOCK_SIZE,
         input_fn_wrapper,
@@ -853,9 +892,10 @@ def _softmax_gpu[
     ctx.enqueue_function[kernel, kernel](
         shape,
         output,
-        sink_weights.value(),
+        sink_ptr,
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 
