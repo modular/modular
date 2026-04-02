@@ -84,8 +84,14 @@ def test_static_scaled_fp8_quant[
 def test_dynamic_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
+    use_zeros: Bool = False,
 ](ctx: DeviceContext, m: Int, n: Int) raises:
-    """Per-tensor dynamic scale (vLLM-style): global max |x| / fp8_max, then static quant.
+    """Per-tensor dynamic scale: global max |x| / fp8_max, then quant.
+
+    Parameters:
+        out_dtype: FP8 output dtype.
+        in_dtype: BF16/FP16/FP32 input dtype.
+        use_zeros: If True, fill the input with zeros (exercises scale fallback to 1.0).
     """
     var shape = row_major(Coord(Idx(Int64(m)), Idx(Int64(n))))
     var total_size = m * n
@@ -100,7 +106,10 @@ def test_dynamic_scaled_fp8_quant[
     var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
     var scale_device = ctx.enqueue_create_buffer[DType.float32](1)
 
-    random(in_host)
+    comptime if use_zeros:
+        _ = in_host.fill(0)
+    else:
+        random(in_host)
     _ = out_host.fill(0)
 
     ctx.enqueue_copy(in_device, in_host_ptr)
@@ -403,6 +412,33 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float32,
         ](ctx, 1000, 127)
+
+        # Corner shapes: minimal size, hidden dim vs block (256), wide skinny, odd sizes.
+        test_dynamic_scaled_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+        ](ctx, 1, 1)
+        test_dynamic_scaled_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+        ](ctx, 1, 257)
+        test_dynamic_scaled_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float32,
+        ](ctx, 4096, 1)
+        test_dynamic_scaled_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+        ](ctx, 11, 999)
+        test_dynamic_scaled_fp8_quant[
+            DType.float8_e4m3fnuz,
+            DType.float16,
+        ](ctx, 3, 127)
+        test_dynamic_scaled_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float32,
+            use_zeros=True,
+        ](ctx, 2, 2048)
 
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,

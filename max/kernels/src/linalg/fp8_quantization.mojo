@@ -144,16 +144,19 @@ def max_reduction_scale_kernel[
     var hidden_size = Int(input_tensor.dim[1]())
 
     var thread_max = Float32(0)
-    for e in range(tid, hidden_size, num_threads):
-        var v = abs(
-            input_tensor.load_linear(Index(row, e)).cast[DType.float32]()
-        ).reduce_max()
-        thread_max = max(thread_max, v)
+    with PDL():
+        for e in range(tid, hidden_size, num_threads):
+            var v = abs(
+                input_tensor.load_linear(Index(row, e)).cast[DType.float32]()
+            ).reduce_max()
+            thread_max = max(thread_max, v)
 
-    var row_max = block.max[block_size=num_threads, broadcast=True](thread_max)
+        var row_max = block.max[block_size=num_threads, broadcast=True](
+            thread_max
+        )
 
-    if tid == 0:
-        _ = Atomic[DType.float32].max(scale_global.ptr, row_max / fp8_max)
+        if tid == 0:
+            _ = Atomic[DType.float32].max(scale_global.ptr, row_max / fp8_max)
 
 
 @always_inline
@@ -161,6 +164,7 @@ def quantize_tensor_dynamic_scaled_fp8[
     out_dtype: DType,
     in_dtype: DType,
     num_threads: Int = 256,
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     out_tensor: TileTensor[mut=True, out_dtype, ...],
     in_tensor: TileTensor[in_dtype, ...],
@@ -170,8 +174,9 @@ def quantize_tensor_dynamic_scaled_fp8[
     """Per-tensor dynamic FP8 quantization.
 
     First reduces ``max |x| / max_finite[out_dtype]`` over the entire tensor
-    ``segmented_max_reduction_strided``, then quantizes with
-    `quantize_static_scaled_fp8` and that scale.
+    (``max_reduction_scale_kernel``), then runs the same elementwise path as
+    ``quantize_static_scaled_fp8`` with the scale read from ``scale_global`` on
+    device (no D2H round trip).
 
     Args:
         out_tensor: FP8 output, same shape as ``in_tensor``.
@@ -191,6 +196,9 @@ def quantize_tensor_dynamic_scaled_fp8[
         DType.float16,
         DType.bfloat16,
     ), "input dtype should be float16, bfloat16 or float32"
+    comptime assert out_tensor.rank == 2, "expected rank-2 output"
+    comptime assert in_tensor.rank == 2, "expected rank-2 input"
+    comptime assert scale_global.rank == 1, "expected rank-1 scale buffer"
 
     var num_tokens = Int(in_tensor.dim[0]())
     if num_tokens == 0:
@@ -222,15 +230,41 @@ def quantize_tensor_dynamic_scaled_fp8[
             in_tensor,
             grid_dim=(num_tokens, 1, 1),
             block_dim=(num_threads),
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
-        var scale_for_static: Float32
-        with scale_as_buf.map_to_host() as scale_h:
-            scale_for_static = scale_h[0] if scale_h[0] > 0 else Float32(1.0)
+        @always_inline
+        @parameter
+        @__copy_capture(out_tensor, in_tensor, scale_global)
+        def scaled_fp8_quant[
+            width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            comptime assert rank == 2, "rank should be equal to 2"
 
-        quantize_static_scaled_fp8[out_dtype, in_dtype](
-            out_tensor, in_tensor, scale_for_static, ctx
+            var scale_s = scale_global.load_linear[1](IndexList[1](0))[0]
+            var scale = scale_s if scale_s > 0 else Float32(1.0)
+            var in_vec_f32 = in_tensor.load_linear[width](idx).cast[
+                DType.float32
+            ]()
+            var inversed_scale: Float32 = 1.0 / scale
+            out_tensor.store_linear(
+                idx,
+                fp8_quantize[out_dtype, use_clamp=True](
+                    in_vec_f32, inversed_scale
+                ),
+            )
+
+        comptime target_simd_width = simd_width_of[
+            in_dtype, target=get_gpu_target()
+        ]()
+
+        _elementwise_impl_gpu[
+            func=scaled_fp8_quant, simd_width=target_simd_width
+        ](
+            shape=IndexList[2](
+                Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())
+            ),
+            ctx=ctx,
         )
 
 
