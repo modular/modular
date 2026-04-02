@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
-
 # CHECK: InlineArray index out of bounds during compile-time evaluation
 # CHECK-NOT: failed to run the pass manager
 def oob_at_comptime[size: Int](points: InlineArray[Float32, size]) -> Float32:
