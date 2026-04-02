@@ -1,5 +1,26 @@
 # gazelle:default_visibility //visibility:public
 
+load("//bazel/internal:modular_cc_binary.bzl", "modular_cc_binary")
+load("//bazel/internal:modular_shared_library.bzl", "modular_shared_library")
+
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["mblack-main.py"])
+
+modular_shared_library(
+    name = "first",
+    srcs = ["first.cpp"],
+)
+
+modular_shared_library(
+    name = "second",
+    srcs = ["second.cpp"],
+    deps = [":first"],
+)
+
+modular_cc_binary(
+    name = "bin",
+    testonly = True,
+    srcs = ["main.cpp"],
+    deps = [":second"],
+)
