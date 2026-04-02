@@ -65,11 +65,11 @@ struct PythonException(Movable, ImplicitlyCopyable):
         Args:
             error_message: The error message for the exception.
         """
-        ref cpy = Python().cpython()
-        # Create a standard Exception with the message
-        var exc_type = cpython.PyExc_Exception
-        var exc_value = cpython.PyUnicode_FromString(error_message)
-        self._exception_obj = PythonObject(from_owned=exc_value)
+        # Create a standard Exception using Python's eval
+        var py = Python()
+        var builtins = py.builtins()
+        var exc_type = builtins["Exception"]
+        self._exception_obj = exc_type(error_message)
     
     def __init__(out self, error_type: PythonObject, error_value: PythonObject):
         """Initialize a PythonException from an error type and value.
