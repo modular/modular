@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Idx, row_major, col_major
+from layout import Idx, Coord, coord, row_major, col_major
 from layout.tile_layout import (
     Layout,
     CoalesceLayout,
     blocked_product,
     coalesce,
+    zipped_divide,
 )
 from std.testing import assert_equal, TestSuite
 
@@ -219,6 +220,63 @@ def test_blocked_product_coalesce_output_false() raises:
     assert_equal(result.stride[0]()[1].value(), 12)
     assert_equal(result.stride[1]()[0].value(), 1)
     assert_equal(result.stride[1]()[1].value(), 4)
+
+
+# ===----------------------------------------------------------------------=== #
+# idx2crd tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_idx2crd_flat_row_major() raises:
+    """Test idx2crd on a flat row-major layout."""
+    var layout = row_major[3, 4]()
+    var c0 = layout.idx2crd(0)
+    assert_equal(Int(c0[0].value()), 0)
+    assert_equal(Int(c0[1].value()), 0)
+    var c5 = layout.idx2crd(5)
+    assert_equal(Int(c5[0].value()), 1)
+    assert_equal(Int(c5[1].value()), 1)
+    var c11 = layout.idx2crd(11)
+    assert_equal(Int(c11[0].value()), 2)
+    assert_equal(Int(c11[1].value()), 3)
+
+
+def test_idx2crd_nested_zipped_divide() raises:
+    """Test idx2crd on a nested layout from zipped_divide."""
+    var base = row_major[6, 8]()
+    var layout = zipped_divide[coord[2, 2]()](base)
+
+    # coord[1,1] maps to linear index 24
+    var linear_idx = Int(layout(coord[1, 1]()))
+    assert_equal(linear_idx, 24)
+
+    # Inverse: idx2crd(24) should give nested coords ((1, 0), (1, 0))
+    var coords = layout.idx2crd(linear_idx)
+    var inner = coords[0].tuple()
+    var outer = coords[1].tuple()
+    assert_equal(Int(inner[0].value()), 1)
+    assert_equal(Int(inner[1].value()), 0)
+    assert_equal(Int(outer[0].value()), 1)
+    assert_equal(Int(outer[1].value()), 0)
+
+
+def test_idx2crd_nested_roundtrip() raises:
+    """Verify that crd2idx(idx2crd(i)) == i for all valid indices."""
+    var base = row_major[4, 6]()
+    var layout = zipped_divide[coord[2, 3]()](base)
+
+    for i in range(24):
+        var coords = layout.idx2crd(i)
+        var inner = coords[0].tuple()
+        var outer = coords[1].tuple()
+        # Reconstruct using the flat formula
+        var reconstructed = (
+            Int(inner[0].value()) * 6
+            + Int(inner[1].value()) * 1
+            + Int(outer[0].value()) * 12
+            + Int(outer[1].value()) * 3
+        )
+        assert_equal(reconstructed, i)
 
 
 def main() raises:
