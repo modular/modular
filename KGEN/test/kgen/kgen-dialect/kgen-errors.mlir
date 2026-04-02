@@ -547,8 +547,18 @@ kgen.generator @bad_index_ref() {
 
 // -----
 
-// expected-error @below {{index reference depth 2 exceeds depth of contextual signatures: 2}}
-kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(2,0), i32>) -> ()>() {
+kgen.generator @test_cache() {
+  kgen.param.declare p1: !kgen.generator<<index>type> = <#kgen.gen<simd<*(0,0), f32>>>
+  // expected-error @below {{index reference has no contextual signature}}
+  kgen.param.declare p2: type = <#kgen.type<index, simd<*(0,0), f32>>>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @bad_index_ref() {
+  // expected-error @below {{index reference depth 2 exceeds depth of contextual signatures: 1}}
+  kgen.param.declare p1: <index>(!pop.array<*(2,0), i32>) -> () = <*?>
   kgen.return
 }
 

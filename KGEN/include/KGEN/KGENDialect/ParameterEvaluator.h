@@ -33,17 +33,22 @@ namespace M::KGEN {
 // IR tree without caching.
 
 /// Given a parameter expression, walk it and return any references to named
-/// parameters.  This fails if an invalid parameter expression exists.
+/// parameters. `requiredSignatureDepth` is set to the minimum signature depth
+/// needed for the expression to be valid. This fails if an invalid parameter
+/// expression exists.
 void collectParameterReferences(Attribute attr,
                                 SmallVectorImpl<ParamDeclRefAttr> &results,
-                                bool &hasConstExpr);
+                                bool &hasConstExpr,
+                                size_t &requiredSignatureDepth);
 
 /// Given a potentially-parameterized MLIR type, walk it and return any
-/// references to named parameters.  This fails if an invalid parameter
-/// expression exists.
+/// references to named parameters. `requiredSignatureDepth` is set to the
+/// minimum signature depth needed for the type to be valid. This fails if an
+/// invalid parameter expression exists.
 void collectParameterReferences(Type type,
                                 SmallVectorImpl<ParamDeclRefAttr> &results,
-                                bool &hasConstExpr);
+                                bool &hasConstExpr,
+                                size_t &requiredSignatureDepth);
 
 /// Return true if the specified type contains parameter references, e.g.
 /// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.

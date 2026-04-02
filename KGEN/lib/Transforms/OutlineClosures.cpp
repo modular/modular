@@ -128,8 +128,11 @@ void OutlineClosuresPass::runOnOperation() {
       ParameterCollector collector(paramCache);
       SmallVector<ParamDeclRefAttr, 16> capturedUses;
       for (Value capture : captures) {
-        bool unused = false;
-        collector.collectUsesFromType(capture.getType(), capturedUses, unused);
+        bool unusedHasConstExpr = false;
+        size_t unusedRequiredSignatureDepth = 0;
+        collector.collectUsesFromType(capture.getType(), capturedUses,
+                                      unusedHasConstExpr,
+                                      unusedRequiredSignatureDepth);
       }
 
       // Scan locations for captured parameters when in a debug build.
@@ -138,8 +141,11 @@ void OutlineClosuresPass::runOnOperation() {
           // Since nested regions aren't being deleted, walk over them.
           if (op != regionDecl && isa<ParamDeclareRegionOp>(op))
             return WalkResult::skip();
-          bool unused = false;
-          collector.collectUsesFromAttr(op->getLoc(), capturedUses, unused);
+          bool unusedHasConstExpr = false;
+          size_t unusedRequiredSignatureDepth = 0;
+          collector.collectUsesFromAttr(op->getLoc(), capturedUses,
+                                        unusedHasConstExpr,
+                                        unusedRequiredSignatureDepth);
           return WalkResult::advance();
         });
       }

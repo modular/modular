@@ -2004,9 +2004,11 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   SmallVector<ParamDeclRefAttr> capturedUses;
   for (auto &[_, capture] : shared.getCaptureRangeInScope(decl)) {
     captures.push_back(capture);
-    bool unused = false;
+    bool unusedHasConstExpr = false;
+    size_t unusedRequiredSignatureDepth = 0;
     collector.collectUsesFromType(capture.getValue().getType(), capturedUses,
-                                  unused);
+                                  unusedHasConstExpr,
+                                  unusedRequiredSignatureDepth);
   }
   for (ParamDeclRefAttr use : capturedUses)
     graph.usesFromAbove.insert(use);

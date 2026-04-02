@@ -62,6 +62,13 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant: i1 = <eq(p1, 1)>
   %12 = kgen.param.constant: i1 = <in(p1, [1])>
 
+  // CHECK: <index>i1 = <#kgen.gen<eq(:type simd<*(0,0), f32>, simd<2, f32>)>>
+  kgen.param.constant: !kgen.generator<<index>i1> = <
+    #kgen.gen<eq(:type
+      #kgen.type<!pop.simd<*(0,0), f32>>,
+      #kgen.type<!pop.simd<2, f32>>
+    )>>
+
   // CHECK: = kgen.param.constant: i1 = <in(:dtype f32, [type, f64])>
   %13 = kgen.param.constant: i1 = <in(:dtype f32, [f64, type, f64, type])>
 

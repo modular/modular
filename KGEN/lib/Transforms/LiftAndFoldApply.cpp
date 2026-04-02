@@ -91,7 +91,9 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     // lift this operator.
     SmallVector<ParamDeclRefAttr> uses;
     bool hasConstExpr = false;
-    collector.collectUsesFromAttr(op, uses, hasConstExpr);
+    size_t requiredSignatureDepth = 0;
+    collector.collectUsesFromAttr(op, uses, hasConstExpr,
+                                  requiredSignatureDepth);
 
     // Baseline is the top-level scope, which would be valid for empty uses.
     Region *upperBound = topLevel.scope;
