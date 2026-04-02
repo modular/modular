@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Modality-specific provider options."""
 
-from .common import GeneratedMediaResponseFormat
-from .image import ImageProviderOptions
-from .video import VideoProviderOptions
+from .generated_media import (
+    GeneratedMediaStore,
+    StoredMediaAsset,
+    encode_video_bytes_b64,
+)
 
 __all__ = [
-    "GeneratedMediaResponseFormat",
-    "ImageProviderOptions",
-    "VideoProviderOptions",
+    "GeneratedMediaStore",
+    "StoredMediaAsset",
+    "encode_video_bytes_b64",
 ]

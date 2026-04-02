@@ -10,14 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Modality-specific provider options."""
+"""Shared provider option types for generated media modalities."""
 
-from .common import GeneratedMediaResponseFormat
-from .image import ImageProviderOptions
-from .video import VideoProviderOptions
+from enum import Enum
 
-__all__ = [
-    "GeneratedMediaResponseFormat",
-    "ImageProviderOptions",
-    "VideoProviderOptions",
-]
+
+class GeneratedMediaResponseFormat(str, Enum):
+    """Response transport format for generated image/video outputs."""
+
+    url = "url"
+    b64_json = "b64_json"

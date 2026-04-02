@@ -19,9 +19,11 @@ import logging
 import os
 import signal
 import socket
+import tempfile
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, Response
@@ -41,6 +43,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
+from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -120,6 +123,13 @@ async def lifespan(
     logger.info("Starting server...")
 
     async with AsyncExitStack() as exit_stack:
+        media_root = Path(
+            exit_stack.enter_context(
+                tempfile.TemporaryDirectory(prefix="max_serve_media_")
+            )
+        )
+        app.state.media_store = GeneratedMediaStore(media_root)
+
         # start telemetry worker and configure Metrics to use it
 
         metric_client = await exit_stack.enter_async_context(
