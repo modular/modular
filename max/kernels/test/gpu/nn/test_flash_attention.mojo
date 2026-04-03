@@ -611,7 +611,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     )
 
     @always_inline
-    def launch(ctx: DeviceContext) raises:
+    def launch(ctx: DeviceContext) raises unified {read}:
         flash_attention[sink=True](
             out_device,
             q_device,
