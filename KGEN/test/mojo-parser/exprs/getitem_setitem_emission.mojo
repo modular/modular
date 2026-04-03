@@ -38,7 +38,8 @@ def test_getitem(a: WeirdArray, idx: Int, f: float):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx, %idx)
     _ = a[idx, idx, idx]
 
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %f, {{.*}})
     _ = a[f, idx, idx, idx, idx]
 
@@ -217,12 +218,14 @@ struct VariadicIndexList:
 # MOCO-696: Support variadic length keys in __setitem__
 def testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # Getter is straight-forward.
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
     # CHECK: lit.call {{.*}}VariadicIndexList::@"__getitem__{{.*}}(%foo, {{.*}})
     _ = foo[i, i]
 
     # Setter needs to pass the new value as 'val', not in the variadics.
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
     # CHECK: lit.call {{.*}}VariadicIndexList::@"__setitem__{{.*}}(%foo, {{.*}}, %the_value)
     foo[i, i, i, i] = the_value
 

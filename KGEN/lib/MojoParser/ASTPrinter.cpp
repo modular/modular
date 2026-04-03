@@ -609,10 +609,20 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     auto apply = cast<ParamOperatorAttr>(operand);
     assert(apply.getOpcode() == POC::Apply && "expected apply of init");
     ArrayRef<TypedAttr> elts;
-    if (auto elements = dyn_cast<VariadicAttr>(apply.getOperands().back()))
+    if (auto elements = dyn_cast<RefPackAttr>(apply.getOperands().back()))
       elts = elements.getValues();
-    else
-      elts = cast<RefPackAttr>(apply.getOperands().back()).getValues();
+    else {
+      // VariadicList will have a StoreToMem containing an Array, or might have
+      // a null pointer.
+      if (auto storeToMem =
+              dyn_cast<StoreToMemAttr>(apply.getOperands().back()))
+        elts = cast<POP::ArrayAttr>(storeToMem.getValue()).getValues();
+      else {
+        assert(isa<PointerAttr>(apply.getOperands().back()) &&
+               "Limited forms for building variadics are supported");
+        elts = {};
+      }
+    }
     SmallVector<TypedAttr> result;
     // Each argument value is passed by reference.
     for (auto element : elts)

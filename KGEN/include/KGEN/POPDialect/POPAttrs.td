@@ -148,6 +148,16 @@ def POP_ArrayAttr : POP_ExprAttr<"Array", "array"> {
     }]>
   ];
 
+
+  let extraClassDeclaration = [{
+    /// Construct an ArrayAttr where the elements have the specified type. This
+    /// is a convenience for having to set up the ArrayType.
+    static ArrayAttr getWithElementType(ArrayRef<TypedAttr> values,
+                                        Type elementType) {
+      return get(values, ArrayType::get(values.size(), elementType));
+    }
+  }];
+
   let genVerifyDecl = 1;
 }
 

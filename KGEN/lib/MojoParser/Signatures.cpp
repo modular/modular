@@ -1498,16 +1498,16 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   ASTDecl *listDecl = variadicListType.getDecl(emitter.shared);
 
   // We expect:
-  // VariadicList[elt_is_mutable: Bool, origin: Origin[mut=elt_is_mutable], //,
+  // VariadicList[elt_is_mutable: Bool, mlir_origin, origin: Origin,
   //              element_type: AnyType, is_owned: Bool]
   if (!listDecl) {
-    emitter.emitError(arg.loc, "malformed VariadicListInMem");
+    emitter.emitError(arg.loc, "malformed VariadicList");
     return {};
   }
   auto structDeclOp =
       dyn_cast_if_present<StructDeclOp>(*listDecl->getIfOperation());
   if (!structDeclOp || structDeclOp.getParams().size() != 5) {
-    emitter.emitError(arg.loc, "malformed VariadicListInMem");
+    emitter.emitError(arg.loc, "malformed VariadicList");
     return {};
   }
 

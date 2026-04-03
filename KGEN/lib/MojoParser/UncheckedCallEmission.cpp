@@ -404,8 +404,13 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     CValue argValue;
     if (calleeSig.isPosVarArg(argIdx)) {
       auto variadicInfo = listOrPackType.getVariadicListInfo();
-      auto newVarType = VariadicType::get(variadicInfo.getElementRefType());
-      argValue = PValue(VariadicAttr::get(args, newVarType));
+      // We have an array of references.
+      auto array = POP::ArrayAttr::getWithElementType(
+          args, variadicInfo.getElementRefType());
+      // We pass a reference to the array.
+      argValue = StoreToMemAttr::get(
+          array, RefType::get(array.getType(), ComptimeOriginAttr::get(
+                                                   array.getContext(), false)));
     } else {
       RefPackType packType = listOrPackType.getVariadicPackInfo(emitter.shared);
       argValue = PValue(RefPackAttr::get(args, packType));
@@ -451,11 +456,16 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
   CValue argVal;
   if (calleeSig.isPosVarArg(argIdx)) { // Positional homogenous varargs
-    // Rebind the origin of the argument to the expected origin if needed.
     auto refType = listOrPackType.getVariadicListInfo().getElementRefType();
-    expectedType = VariadicType::get(refType);
-    argVal = SRValue(POP::VariadicCreateOp::create(*emitter.builder, loc,
-                                                   expectedType, args));
+    // Create a stack temporary containing an array of the values.
+    auto arrayType = POP::ArrayType::get(args.size(), refType);
+    auto varDecl = emitter.emitVarDecl("__passed_varargs__", arrayType, loc,
+                                       VarDeclKind::Synthesized);
+    // Put all the elements into an array with one store.
+    auto array =
+        POP::ArrayCreateOp::create(*emitter.builder, loc, arrayType, args);
+    RefStoreOp::create(*emitter.builder, loc, array, varDecl);
+    argVal = SRValue(varDecl);
   } else { // Bundle them up into a VariadicPack instance.
     RefPackType packType = listOrPackType.getVariadicPackInfo(emitter.shared);
     argVal =
@@ -542,9 +552,14 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (calleeSig.isPosVarArg(argIdx)) {
       ASTType listType = RefType::stripRefConvention(expectedType, convention);
       auto refType = listType.getVariadicListInfo().getElementRefType();
-      // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
-      auto argAttr =
-          VariadicAttr::get(ArrayRef<TypedAttr>(), VariadicType::get(refType));
+      // VarArgs arguments are fulfilled with an null pointer to a zero element
+      // array. It will never be dereferenced.
+      auto arrayType = POP::ArrayType::get(0, refType);
+      auto immutOriginType = OriginType::get(emitter.getContext(), false);
+      // The origin of the reference is an empty union of the immut origin type.
+      auto nullRefType =
+          RefType::get(arrayType, OriginUnionAttr::get({}, immutOriginType));
+      auto argAttr = PointerAttr::get(0, nullRefType);
       auto result =
           emitVariadicCtor(listType, PValue(argAttr), callExpr, emitter);
       if (!result)
@@ -1556,7 +1571,9 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
   // Handle VariadicList and VariadicPack.  They are constructed objects dumped
   // into a VarDecl because they need to be passed to the callee with ownership.
   auto conv = signature.getVariadicConvention(argIdx);
-  for (auto elt : OriginTrackable::decodeIndividualVariadicArguments(argVal))
+  TypedAttr extraOrigin; // Unused here.
+  for (auto elt :
+       OriginTrackable::decodeIndividualVariadicArguments(argVal, extraOrigin))
     checkArg(elt, conv);
 }
 

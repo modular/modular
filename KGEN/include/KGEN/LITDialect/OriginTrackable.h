@@ -94,7 +94,12 @@ struct OriginTrackable {
   ///
   /// This returns empty for forwarded containers, because there are no
   /// individual values to track.
-  static SmallVector<Value> decodeIndividualVariadicArguments(Value value);
+  ///
+  /// 'extraOrigin' is a hack because VariadicList doesn't track the origin of
+  /// the vardecl it reads. This returns it so clients can know about it when
+  /// needed.
+  static SmallVector<Value>
+  decodeIndividualVariadicArguments(Value value, TypedAttr &extraOrigin);
 };
 
 //===----------------------------------------------------------------------===//

@@ -363,8 +363,15 @@ static void getCallOpEffects(
 
       // Find all the references getting passed into the list/pack so we can
       // process them individually.
-      for (auto elt : OriginTrackable::decodeIndividualVariadicArguments(arg))
+      TypedAttr extraOrigin;
+      for (auto elt :
+           OriginTrackable::decodeIndividualVariadicArguments(arg, extraOrigin))
         addArgument(elt, argConvention);
+
+      // This hack makes sure we extend the lifetime of the VarDecl containing
+      // the variadic list. VariadicList itself should capture the origin.
+      if (extraOrigin)
+        origins.push_back(extraOrigin);
 
       // Also add the list/pack itself so the VariadicList/VariadicPack
       // doesn't get destroyed too early.  We already handled all the
@@ -601,6 +608,22 @@ OverallOpValueEffect LIT::getOperationEffects(
 // Helpers
 //===----------------------------------------------------------------------===//
 
+/// Find the single !lit.ref.store that stores to the specified var decl.
+static Value findSingleStoreToVarDecl(VarDeclOp varDecl) {
+  Value foundValue;
+  for (Operation *user : varDecl.getResult().getUsers()) {
+    if (auto refStore = ::dyn_cast<RefStoreOp>(user)) {
+      if (refStore.getDest() == varDecl.getResult()) {
+        assert(!foundValue && "expected to find a single store to a var decl");
+        foundValue = refStore.getValue();
+      }
+    }
+  }
+
+  assert(foundValue && "expected to find a single store to a var decl");
+  return foundValue;
+}
+
 /// Given an argument to a function that takes a VariadicList/VariadicPack
 /// argument, dig out the RefPackCreateOp (or ParamConstantOp) that formed it.
 /// This is guaranteed to succeed immediately during/after the parser, not
@@ -636,7 +659,6 @@ static Value findArgPassedToVariadicConstructor(Value val) {
     else
       return {};
   }
-
   loadOperand = RebindOp::strip(loadOperand);
 
   // This is a forwarded variadic pack argument.
@@ -644,24 +666,14 @@ static Value findArgPassedToVariadicConstructor(Value val) {
     return loadOperand;
 
   auto varDecl = loadOperand.getDefiningOp<VarDeclOp>();
-  if (!varDecl)
-    return {};
+  assert(varDecl && "unknown variadic processing logic");
+  auto storedValue = findSingleStoreToVarDecl(varDecl);
 
-  for (Operation *user : varDecl.getResult().getUsers()) {
-    // Find the store to the pack.
-    auto refStore = ::dyn_cast<RefStoreOp>(user);
-    if (!refStore || refStore.getDest() != varDecl.getResult())
-      continue;
-
-    auto call = refStore.getValue().getDefiningOp<LIT::CallOp>();
-    if (!call || call.getNumOperands() != 1)
-      continue;
-
-    // Make sure any change to the API forces this code to get updated.
-    return RebindOp::strip(call.getOperand(0));
-  }
-
-  return {};
+  auto call = storedValue.getDefiningOp<LIT::CallOp>();
+  // Make sure any change to the API forces this code to get updated.
+  assert(call && call.getNumOperands() == 1 &&
+         "VariadicList/VariadicPack ctor take a single argument");
+  return RebindOp::strip(call.getOperand(0));
 }
 
 /// Given the argument passed to a variadic argument, dig out the trackable
@@ -672,7 +684,8 @@ static Value findArgPassedToVariadicConstructor(Value val) {
 /// This returns empty for forwarded containers, because there are no
 /// individual values to track.
 SmallVector<Value>
-OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal) {
+OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
+                                                   TypedAttr &extraOrigin) {
   // TODO: Despite the name, this is used for VariadicList as well. It gets the
   // argument to the VariadicList/VariadicPack constructor.
   auto ctorArg = findArgPassedToVariadicConstructor(callArgVal);
@@ -683,36 +696,42 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal) {
     // This is a forwarded variadic, no individual values to track.
   } else if (ctorArg.getDefiningOp<ParamConstantOp>()) {
     // Zero argument lists/packs are kgen.param.constant. They have no elements.
-  } else if (auto vararg = ctorArg.getDefiningOp<POP::VariadicCreateOp>()) {
-    // Handle positional/homogenous variadics.
-    for (auto elt : vararg.getOperands())
-      result.push_back(elt);
   } else if (auto pack = ctorArg.getDefiningOp<RefPackCreateOp>()) {
     // Handle variadic packs.
-    for (auto packOperand : pack.getOperands())
-      result.push_back(packOperand);
+    for (auto elt : pack.getOperands())
+      result.push_back(elt);
+  } else if (auto fromPointerPackOp =
+                 ctorArg.getDefiningOp<RefPackFromPointerPackOp>()) {
+    // This is either a RefPackFromPointerPackOp directly.
+  } else if (auto refLoad = ctorArg.getDefiningOp<RefLoadOp>()) {
+    assert(findSingleStoreToVarDecl(
+               refLoad.getOperand().getDefiningOp<VarDeclOp>())
+               .getDefiningOp<RefPackFromPointerPackOp>() &&
+           "expected to find a ref pack from pointer pack");
+
   } else {
-    // This is either a RefPackFromPointerPackOp directly, or a var defined by a
-    // RefPackFromPointerPackOp. Ensure it's one of these cases.
-    auto fromPointerPackOp = ctorArg.getDefiningOp<RefPackFromPointerPackOp>();
-    if (!fromPointerPackOp) {
-      auto extractStoredValue = [&](Value value) -> Value {
-        auto refLoad = ctorArg.getDefiningOp<RefLoadOp>();
-        if (!refLoad)
-          return {};
-        auto varDecl = refLoad.getOperand().getDefiningOp<VarDeclOp>();
-        if (!varDecl)
-          return {};
-        for (auto user : varDecl.getResult().getUsers())
-          if (auto refStore = dyn_cast<RefStoreOp>(user))
-            return refStore.getValue();
-        return {};
-      };
-      Value storedValue = extractStoredValue(ctorArg);
-      assert(storedValue && "unknown variadic pack processing logic");
-      fromPointerPackOp = storedValue.getDefiningOp<RefPackFromPointerPackOp>();
-      assert(fromPointerPackOp);
-    }
+    auto varDecl = ctorArg.getDefiningOp<VarDeclOp>();
+    assert(varDecl && "expected to find a var decl");
+    // Handle positional/homogenous variadics. This gets emitted as:
+    // %__passed_varargs__ = lit.var.decl: !lit.ref<array<4, eltref>>
+    // %arr = pop.array.create [%1, %2, %3]
+    // lit.ref.store %arr, %__passed_varargs__
+    // lit.call VariadicList::@"__init__(%__passed_varargs__)
+
+    // We act as though this is an access to the list itself so the list is kept
+    // alive across the call that uses the variadic list.  This is a hack:
+    // VariadicList should capture the origin of the VarDecl as a separate
+    // origin parameter. Unfortunately this VarDecl doesn't exist at ParamInf
+    // time: we need to do something like emitOperandsNeedingOriginsToMemory to
+    // materialize it.
+    // The callee reads the VarDecl but doesn't mutate it.
+    extraOrigin = OriginMutCastAttr::get(varDecl.getType().getOrigin(), false);
+
+    auto arrayCreate =
+        findSingleStoreToVarDecl(varDecl).getDefiningOp<POP::ArrayCreateOp>();
+    assert(arrayCreate && "expected to find an array create");
+    for (auto value : arrayCreate.getOperands())
+      result.push_back(value);
   }
   return result;
 }

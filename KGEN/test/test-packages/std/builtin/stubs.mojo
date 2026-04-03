@@ -12,6 +12,13 @@ from std.builtin.variadics import *
 comptime string = __mlir_type.`!kgen.string`
 comptime float = __mlir_type.`!pop.scalar<f64>`
 
+
+struct _MLIR:
+    comptime POPArrayType[
+        size: __mlir_type.index, elt_type: AnyType
+    ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
+
+
 comptime AnyOrigin[*, mut: Bool = False] = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
@@ -563,6 +570,12 @@ struct Span[
         self._data = UnsafePointer[Self.T, Self.origin]()
         self._len = 0
 
+    def __init__(
+        out self, *, ptr: UnsafePointer[Self.T, Self.origin], length: Int
+    ):
+        self._data = ptr
+        self._len = length
+
     @always_inline
     @implicit
     def __init__[U: Copyable](out self, ref[Self.origin] list: List[U]):
@@ -572,6 +585,10 @@ struct Span[
         self,
     ) -> UnsafePointer[Self.T, Self.origin]:
         return self._data
+
+    @always_inline
+    def __getitem__(self, idx: Int) -> ref[Self.origin] Self.T:
+        return self._data[normalized_idx]
 
 
 @stable
@@ -966,18 +983,33 @@ struct VariadicList[
     element_type: AnyType,
     is_owned: Bool,
 ](RegisterPassable):
-    comptime reference_type = Pointer[Self.element_type, Self.origin]
-    comptime _mlir_ref_type = Self.reference_type._mlir_type
-    comptime _mlir_type = __mlir_type[
-        `!kgen.variadic<`, Self._mlir_ref_type, `>`
-    ]
+    comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
+    # FIXME: This should be the origin of the container, not ExternalOrigin.
+    var value: Span[Self._EltPointerType, ExternalOrigin[]]
 
+    # TODO: the origin of the vardecl is captured in the Self.origin set
+    # by the compiler to make sure the container outlives all its elements.
     @implicit
-    def __init__(
+    def __init__[
+        size: __mlir_type.index, container_origin: Origin[mut=False]
+    ](
         out self,
-        value: Self._mlir_type,
+        value: Pointer[
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            container_origin,
+        ]._mlir_type,
     ):
-        pass
+        # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
+        # the first element.
+        var array_up = UnsafePointer(to=Pointer(value)[])
+        var elt_ptr = UnsafePointer[_, ExternalOrigin[]](
+            __mlir_op.`pop.array.gep`(
+                array_up.address,
+                Int(0)._mlir_value,
+            )
+        ).bitcast[Self._EltPointerType]()
+        var size_tmp = size  # FIXME: Weird MLIR syntax error?
+        self.value = Span(ptr=elt_ptr, length=Int(mlir_value=size_tmp))
 
     def __getitem__[
         self_origin: Origin[mut=False]
@@ -1225,6 +1257,34 @@ struct UnsafePointer[
         T: Movable, //
     ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
         return __get_address_as_owned_value(self.address)
+
+    @always_inline("builtin")
+    def bitcast[
+        T: AnyType
+    ](self) -> UnsafePointer[T, Self.origin, address_space=Self.address_space]:
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=UnsafePointer[
+                T,
+                Self.origin,
+                address_space=Self.address_space,
+            ]._mlir_type,
+        ](self.address)
+
+    comptime _OriginCastType[
+        target_mut: Bool, //, target_origin: Origin[mut=target_mut]
+    ] = UnsafePointer[
+        Self.type,
+        target_origin,
+        address_space=Self.address_space,
+    ]
+
+    @always_inline("builtin")
+    def unsafe_origin_cast[
+        target_origin: Origin[mut=Self.mut]
+    ](self) -> Self._OriginCastType[target_origin]:
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Self._OriginCastType[target_origin]._mlir_type,
+        ](self.address)
 
 
 comptime MutOpaquePointer[
