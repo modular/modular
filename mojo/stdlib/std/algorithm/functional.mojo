@@ -23,7 +23,6 @@ from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-from std.gpu.primitives.grid_controls import PDLLevel
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
@@ -227,7 +226,6 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-    pdl_level: PDLLevel = PDLLevel(),
 ](shape: Int, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -239,7 +237,6 @@ def elementwise[
         use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
-        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -254,7 +251,6 @@ def elementwise[
         simd_width=simd_width,
         use_blocking_impl=use_blocking_impl,
         target=target,
-        pdl_level=pdl_level,
     ](Index(shape), context)
 
 
@@ -270,7 +266,6 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank, ...], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -283,7 +278,6 @@ def elementwise[
         use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
-        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -298,7 +292,6 @@ def elementwise[
         simd_width,
         use_blocking_impl=use_blocking_impl,
         target=target,
-        pdl_level=pdl_level,
     ](shape, context)
 
 
@@ -314,7 +307,6 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-    pdl_level: PDLLevel = PDLLevel(1),
 ](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -327,7 +319,6 @@ def elementwise[
         use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
-        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -356,7 +347,8 @@ def elementwise[
     ):
         comptime if is_gpu[target]():
             _elementwise_impl_gpu[
-                func=func, simd_width=simd_width, pdl_level=pdl_level
+                func=func,
+                simd_width=simd_width,
             ](shape=shape, ctx=context[])
         else:
             _elementwise_impl_cpu[
@@ -378,7 +370,6 @@ def _elementwise_impl[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank, ...], context: DeviceContext) raises:
     comptime if is_cpu[target]():
         _elementwise_impl_cpu[
@@ -390,7 +381,6 @@ def _elementwise_impl[
         _elementwise_impl_gpu[
             func=func,
             simd_width=simd_width,
-            pdl_level=pdl_level,
         ](shape=shape, ctx=context)
 
 

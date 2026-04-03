@@ -304,21 +304,6 @@ class SplitKReductionPrecision(IntEnum):
     OUTPUT = auto()
 
 
-class PDLLevel(IntEnum):
-    """Internal use."""
-
-    # No PDL
-    OFF = auto()
-
-    # Start subsequent kernel at the end
-    # Apply to elementwise and reduction kernels
-    OVERLAP_AT_END = auto()
-
-    # Start subsequent kernel at the beginning
-    # Apply to elementwise and reduction kernels
-    OVERLAP_AT_BEGINNING = auto()
-
-
 class AssertLevel(str, Enum):
     """The AssertLevel specifies the assert level used by the Mojo Ops."""
 
