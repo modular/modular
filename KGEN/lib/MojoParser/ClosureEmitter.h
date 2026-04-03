@@ -32,14 +32,6 @@ struct AdapteeParts {
   bool needsResultConversion = false;
 };
 
-/// Top level types are the types of the Closure Wrapper function pointer
-/// fields.
-struct TopLevelTypes {
-  Type callFuncFieldType;
-  Type copyFuncFieldType;
-  Type delFuncFieldType;
-};
-
 /// Information about a closure parameter's external reference that needs
 /// a where clause constraint. Contains the closure parameter name and the
 /// alias representing the external reference.
@@ -79,13 +71,6 @@ public:
   /// Return true if \p type is a compiler-synthesized closure type.
   static bool isClosureType(SharedState &shared, Type type);
 
-  /// Generate a Closure Wrapper Struct, a struct that contains an opaque
-  /// pointer to the underlying Closure Implementation instance.
-  StructDeclOp
-  createClosureWrapperStructDecl(ASTDecl &moduleDecl, StringAttr name,
-                                 FnTypeGeneratorType signatureType,
-                                 SMLoc nestedFunctionOrTypeLocation);
-
   /// Generate a Parametric Closure Wrapper Struct, a struct that contains a
   /// parametric field. Both the field and the struct must conform to the
   /// associated closure trait characterized by the signature of the closure.
@@ -95,20 +80,8 @@ public:
                               unsigned numPrependedCaptures,
                               SMLoc nestedFunctionOrTypeLocation);
 
-  /// Generate a Closure Implementation Struct, a struct that contains the
-  /// capture list.
-  StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
-      ASTDecl &moduleDecl, ArrayRef<Capture> captures,
-      ArrayRef<ParamDeclRefAttr> paramCaptures, ASTDecl &nestedfnDecl,
-      FnTypeGeneratorType wrapperSigGen);
-
   /// Promote a stateless unified closure decl to a top-level function decl.
   ASTDecl *promoteStatelessClosure(ASTDecl &nestedFnDecl);
-  /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
-  /// instance.
-  FnOp createWrapperInitWithImpl(ASTDecl &moduleDecl,
-                                 StructDeclOp closureWrapper,
-                                 StructDeclOp closureImpl, SMLoc location);
   Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                       ArrayRef<Capture> captures, TraitDeclOp trait,
                       Location location, bool isCopyable,
@@ -160,12 +133,7 @@ private:
   MLIRContext *ctx;
 
   // Cached attributes and types.
-  StringAttr selfName, copyName, ptrToImplName, dtorFieldAttr;
-  StringAttr copyFieldAttr, callFieldAttr, callMethodAttr;
-  PointerType opaquePtrType;
-
-  /// Given a closure wrapper, collect the top level function types.
-  TopLevelTypes collectTopLevelFunctionTypes(StructDeclOp closureWrapper);
+  StringAttr selfName, copyName;
 
   /// Underlying implementation of `augmentWitnessTablesToConformTo` and
   /// `isCompatibleWith`.
