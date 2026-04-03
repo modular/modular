@@ -38,6 +38,13 @@ logger = logging.getLogger(__name__)
 
 from max.config import ConfigFileModel, deep_merge_max_configs
 
+BaseBackend = Literal[
+    "modular",
+    "sglang",
+    "trtllm",
+    "vllm",
+]
+
 Backend = Literal[
     "modular",
     "modular-chat",
