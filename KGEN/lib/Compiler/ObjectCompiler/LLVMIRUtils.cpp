@@ -236,8 +236,6 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
   // mirrors the order in which global values are deleted by LLVM's GlobalDCE.
   unsigned curIdx = 0;
   StringConstantTable::Injector it = strtab.begin();
-  // We need to keep the IR "valid" for the verifier because `materializeAll`
-  // may invoke it. It doesn't matter since we're deleting the globals anyway.
   for (llvm::GlobalVariable &global : result->globals()) {
     if (idxIt != idxEnd && curIdx == *idxIt) {
       ++idxIt;

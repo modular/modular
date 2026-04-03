@@ -24,6 +24,56 @@
 using namespace llvm;
 using namespace M::KGEN;
 
+// Demote ConstantAggregate values that contain pointer elements to sequences
+// of insertvalue instructions. This is needed because Metal's LLVM 5.0 bitcode
+// reader checks that aggregate element types match the values' types, but the
+// opaque-to-typed pointer downgrade creates mismatches (e.g., struct element
+// becomes {}* while the global value is [2 x i8]*). By converting to
+// insertvalue chains, we avoid ConstantAggregates with pointers in the bitcode
+// constants block entirely.
+static bool demotePointerConstantAggregates(Module &module) {
+  SmallVector<std::pair<Instruction *, int>, 8> worklist;
+  for (Function &func : module) {
+    for (BasicBlock &bb : func) {
+      for (Instruction &inst : bb) {
+        for (const Use &op : inst.operands()) {
+          auto *constAggregate = dyn_cast<ConstantAggregate>(op);
+          if (!constAggregate)
+            continue;
+          // Check if any element is a pointer
+          bool hasPtr = false;
+          for (unsigned i = 0, e = constAggregate->getNumOperands(); i != e;
+               ++i) {
+            if (constAggregate->getOperand(i)->getType()->isPointerTy()) {
+              hasPtr = true;
+              break;
+            }
+          }
+          if (hasPtr)
+            worklist.push_back({&inst, op.getOperandNo()});
+        }
+      }
+    }
+  }
+  if (worklist.empty())
+    return false;
+
+  for (auto [inst, opIdx] : worklist) {
+    auto *constAggregate = cast<ConstantAggregate>(inst->getOperand(opIdx));
+
+    // Build an insertvalue chain: start with undef, insert each element
+    Value *agg = UndefValue::get(constAggregate->getType());
+    for (unsigned i = 0, e = constAggregate->getNumOperands(); i != e; ++i) {
+      Value *elem = constAggregate->getOperand(i);
+      auto *iv = InsertValueInst::Create(agg, elem, {i});
+      iv->insertBefore(inst->getIterator());
+      agg = iv;
+    }
+    inst->setOperand(opIdx, agg);
+  }
+  return true;
+}
+
 // Demote all constant expressions that produce pointers, to their
 // corresponding instructions so that we can more easily rewrite them.
 static bool demotePointerConstexprs(Module &module) {
@@ -589,8 +639,13 @@ bool PointerRewriter::cleanupTypedPointerMetadata(Module &module) {
 }
 
 bool PointerRewriter::runImpl(Module &module) {
+  // Demote ConstantAggregates with pointer elements to insertvalue chains
+  // BEFORE demoting constant expressions, since the insertvalue chain uses
+  // the original pointer values directly.
+  bool changed = demotePointerConstantAggregates(module);
+
   // get rid of constant expressions so that we can more easily rewrite them
-  bool changed = demotePointerConstexprs(module);
+  changed |= demotePointerConstexprs(module);
 
   // insert no-op bitcasts surrounding pointer values
   changed |= bitcastGlobals(module);
