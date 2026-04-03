@@ -1291,7 +1291,7 @@ class OpOperandIterator:
     def __next__(self) -> OpOperand:
         """Returns the next operand in the iteration."""
 
-class OpOperandList(Sequence[Value]):
+class OpOperandList(Sequence[Value], Generic[_T]):
     def __getitem__(self, key, /):
         """Return self[key]."""
 
@@ -1311,7 +1311,7 @@ class OpOperands(Sequence[OpOperand]):
 
     def __add__(self, arg: OpOperands, /) -> list[OpOperand]: ...
 
-class OpResultList(Sequence[OpResult]):
+class OpResultList(Sequence[OpResult], Generic[_T]):
     def __getitem__(self, key, /):
         """Return self[key]."""
 
