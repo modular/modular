@@ -22,6 +22,11 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max:interpreter",
     ],
+    # Lazy import inside ensure_signal_buffers() in realization_context.py;
+    # avoids pulling the full nn package as a build dependency.
+    ignore_unresolved_imports = [
+        "max.nn.comm.allreduce.Signals",
+    ],
     deps = [
         "//max/python/max:_core",
         "//max/python/max:_mlir_context",

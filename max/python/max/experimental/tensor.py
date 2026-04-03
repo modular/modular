@@ -100,19 +100,33 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import warnings
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, cast
 
 from max import driver, graph
 from max.driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from max.dtype import DType
+from max.experimental.sharding import DistributedTensorType, Sharded
 from max.experimental.support import contextvar_context, driver_tensor_type
-from max.graph import DimLike, ShapeLike, TensorType, TensorValueLike, ops
+from max.graph import (
+    DimLike,
+    ShapeLike,
+    TensorType,
+    TensorValueLike,
+    ops,
+)
 from max.graph.ops.constant import NestedArray, Number
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
+
+if TYPE_CHECKING:
+    from max.experimental.sharding import (
+        DeviceMapping,
+        DeviceMesh,
+        Placement,
+    )
 
 GraphValue: TypeAlias = graph.BufferValue | graph.TensorValue
 
@@ -148,14 +162,41 @@ def realization_context(
 class RealizationState:
     """State for an unrealized tensor.
 
+    ``values`` is always a tuple of ``GraphValue`` — one entry for an
+    unsharded tensor, N entries (one per shard) for a sharded tensor.
+    All values live in the same graph and realization context, which
+    guarantees atomic realization: all shards compile and execute together.
+
     See :class:`~max.experimental.tensor.RealizationContext`.
     """
 
-    #: The symbolic value representing the computation backing this tensor.
-    value: GraphValue
+    #: The symbolic value(s) representing the computation backing this tensor.
+    #: Always a tuple: length-1 for unsharded, length-N for sharded.
+    values: tuple[GraphValue, ...]
     #: The realization context used to create this tensor. This context
     #: is responsible for realizing the tensor to a real value.
     ctx: RealizationContext
+
+    @property
+    def num_values(self) -> int:
+        """Returns the number of graph values (1 for unsharded, N for sharded)."""
+        return len(self.values)
+
+    @property
+    def value(self) -> GraphValue:
+        """Returns the single graph value. Raises if this is a sharded state."""
+        if len(self.values) != 1:
+            raise TypeError(
+                "Cannot access single value on a sharded RealizationState. "
+                f"This state has {len(self.values)} shard values."
+            )
+        return self.values[0]
+
+    @value.setter
+    def value(self, v: GraphValue) -> None:
+        if len(self.values) != 1:
+            raise TypeError("Cannot set single value on a sharded state.")
+        self.values = (v,)
 
 
 class RealizationContext(
@@ -251,16 +292,28 @@ class RealizationContext(
             the tensor as having been mutated.
         """
 
-    def create_unrealized(self, value: GraphValue) -> Tensor:
-        """Registers an unrealized graph value with the realization context.
+    def add_mutable_source(self, tensor: Tensor) -> RealizationState:
+        """Like ``add_source``, but creates a mutable (BufferType) graph input.
 
-        Returns it as an unrealized tensor.
+        Used by ``__buffervalue__`` when a tensor needs in-place mutation.
+        """
+
+    def create_unrealized(
+        self,
+        values: tuple[GraphValue, ...],
+        *,
+        mapping: DeviceMapping | None = None,
+        global_shape: Any = None,
+    ) -> Tensor:
+        """Registers unrealized graph value(s) with the realization context.
 
         Args:
-            value: The graph value representing the result of a computation.
+            values: Per-shard graph values (length-1 for unsharded).
+            mapping: Device mapping for distributed tensors.
+            global_shape: The global tensor shape for distributed tensors.
 
         Returns:
-            A new tensor associated with the unrealized value.
+            A new tensor associated with the unrealized value(s).
         """
 
 
@@ -300,7 +353,9 @@ def defaults(
     return (dtype or _default_dtype(device)), device
 
 
-def default_device(device: Device | graph.DeviceRef):  # noqa: ANN201
+def default_device(
+    device: Device | graph.DeviceRef,
+) -> contextlib.AbstractContextManager[Device]:
     """Context manager for setting the default device for tensor creation.
 
     Sets the default device used for tensor creation within the context. All
@@ -329,7 +384,7 @@ def default_device(device: Device | graph.DeviceRef):  # noqa: ANN201
     return contextvar_context(_DEFAULT_DEVICE, device)
 
 
-def default_dtype(dtype: DType):  # noqa: ANN201
+def default_dtype(dtype: DType) -> contextlib.AbstractContextManager[DType]:
     """Context manager for setting the default dtype for tensor creation.
 
     Sets the default data type used for tensor creation within the context. All
@@ -451,12 +506,138 @@ class Tensor(DLPackArray, HasTensorValue):
     arrays and standard DLPack conversion for export.
     """
 
-    #: Underlying memory for a realized tensor.
-    #: If the tensor is used in any mutating operations that have
-    #: not been realized, this holds the state before any updates.
-    storage: driver.Buffer | None
-    #: State for realizing an unrealized tensor.
-    state: RealizationState | None
+    # ─── Internal storage ──────────────────────────────────────────────
+    # For an unsharded tensor exactly one of _storages[0] / _state is
+    # set.  For a sharded tensor _storages has one entry per shard but
+    # _state is still singular (one RealizationContext for all shards).
+    # The public ``storage`` / ``state`` properties provide
+    # backward-compatible access for the unsharded case and raise for
+    # sharded tensors.
+
+    _storages: tuple[driver.Buffer, ...] | None
+    _state: RealizationState | None
+
+    # ─── Device mapping (always set) ────────────────────────────────────
+    _mapping: DeviceMapping
+    _global_shape: graph.Shape | None  # always set for distributed tensors
+
+    # ─── Placement helpers ────────────────────────────────────────────────
+
+    @property
+    def mapping(self) -> DeviceMapping:
+        """Returns the device mapping describing where this tensor lives."""
+        return self._mapping
+
+    @property
+    def is_distributed(self) -> bool:
+        """Returns ``True`` if this tensor spans multiple devices."""
+        return self._mapping.mesh.num_devices > 1
+
+    @property
+    def mesh(self) -> DeviceMesh:
+        """Returns the device mesh."""
+        return self._mapping.mesh
+
+    @property
+    def placements(self) -> tuple[Placement, ...]:
+        """Returns per-axis placement descriptors.
+
+        For :class:`~max.experimental.sharding.NamedMapping`,
+        this converts to placements on the fly.  Raises
+        :class:`~max.experimental.sharding.ConversionError`
+        if the spec contains compiler-only annotations.
+        """
+        return self._mapping.to_placements()
+
+    @property
+    def num_shards(self) -> int:
+        """Returns the number of shards (1 for an unsharded tensor)."""
+        if self._storages is not None:
+            return len(self._storages)
+        if self._state is not None:
+            return self._state.num_values
+        raise TypeError("Tensor has no storage and no state.")
+
+    @property
+    def local_shards(self) -> tuple[Tensor, ...]:
+        """Returns per-device shard views as independent unsharded Tensors.
+
+        Each returned Tensor is a lightweight, standalone, unsharded Tensor
+        backed by a single shard's storage or graph value.  They can be
+        passed directly to ``F.*`` ops or used as ``Module`` parameters.
+
+        For realized sharded tensors, each shard wraps one ``driver.Buffer``.
+        For unrealized sharded tensors, each shard wraps one ``GraphValue``
+        from the shared ``RealizationState``.
+        For unsharded tensors, returns a 1-tuple containing ``self``.
+        """
+        if not self.is_distributed:
+            return (self,)
+
+        if self._storages is not None:
+            # Realized: wrap each buffer as an unsharded Tensor.
+            return tuple(Tensor(storage=buf) for buf in self._storages)
+
+        # Unrealized: wrap each graph value as an unsharded Tensor,
+        # all sharing the same realization context.
+        assert self._state is not None
+        ctx = self._state.ctx
+        return tuple(ctx.create_unrealized((v,)) for v in self._state.values)
+
+    @property
+    def graph_values(self) -> tuple[GraphValue, ...]:
+        """Returns per-shard graph values directly from the realization state.
+
+        For unrealized tensors (both distributed and single-device), returns
+        the underlying ``GraphValue``s (``TensorValue | BufferValue``) without
+        wrapping in intermediate Tensor objects.
+
+        For realized tensors, creates graph values via ``__tensorvalue__()``
+        on each shard.
+
+        This is the primary way to access graph-level shard values for
+        custom dispatch rules and SPMD loops.
+        """
+        if self._state is not None:
+            return self._state.values
+
+        return tuple(s.__tensorvalue__() for s in self.local_shards)
+
+    def _check_not_distributed(self, op: str) -> None:
+        """Raises if this tensor is sharded."""
+        if self.is_distributed:
+            raise ValueError(
+                f"Cannot call {op!r} on a sharded tensor distributed over "
+                f"{self._mapping}. Use per-shard access or redistribute first."
+            )
+
+    # ─── Backward-compatible singular storage/state properties ───────
+
+    @property
+    def storage(self) -> driver.Buffer | None:
+        """Returns the single backing buffer (unsharded tensors only)."""
+        self._check_not_distributed("storage")
+        if self._storages is None:
+            return None
+        return self._storages[0]
+
+    @storage.setter
+    def storage(self, value: driver.Buffer | None) -> None:
+        self._check_not_distributed("storage")
+        self._storages = (value,) if value is not None else None
+
+    @property
+    def state(self) -> RealizationState | None:
+        """Returns the realization state (unsharded tensors only)."""
+        self._check_not_distributed("state")
+        return self._state
+
+    @state.setter
+    def state(self, value: RealizationState | None) -> None:
+        self._check_not_distributed("state")
+        self._state = value
+
+    # ─── Construction ────────────────────────────────────────────────────
 
     def __new__(
         cls,
@@ -558,8 +739,25 @@ class Tensor(DLPackArray, HasTensorValue):
             )
         if (storage is None) == (state is None):
             raise TypeError("Must supply exactly one of 'storage' and 'state'.")
-        self.storage = storage
-        self.state = state
+        # Single-device tensor: single-element storage tuple, trivial mapping.
+        from max.experimental.sharding import (
+            DeviceMesh,
+            PlacementMapping,
+            Replicated,
+        )
+
+        self._storages = (storage,) if storage is not None else None
+        self._state = state
+        if storage is not None:
+            device = storage.device
+        else:
+            assert state is not None
+            dev = state.value.device
+            device = dev if isinstance(dev, Device) else dev.to_device()
+        self._mapping = PlacementMapping(
+            DeviceMesh.single(device), (Replicated(),)
+        )
+        self._global_shape = None
 
     @classmethod
     def from_graph_value(cls, value: graph.Value[Any]) -> Tensor:
@@ -580,7 +778,7 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         if not isinstance(value, GraphValue):
             raise TypeError(f"{value=} must be a tensor or buffer value")
-        return current_realization_context().create_unrealized(value)
+        return current_realization_context().create_unrealized((value,))
 
     @classmethod
     def from_dlpack(cls, array: DLPackArray) -> Tensor:
@@ -611,6 +809,128 @@ class Tensor(DLPackArray, HasTensorValue):
         if isinstance(array, Tensor):
             return array
         return Tensor(storage=driver.Buffer.from_dlpack(array))
+
+    @classmethod
+    def _from_shards(
+        cls,
+        storages: tuple[driver.Buffer, ...],
+        mesh: DeviceMesh,
+        placements: tuple[Placement, ...],
+        global_shape: graph.ShapeLike,
+    ) -> Tensor:
+        """Creates a realized sharded tensor from per-device buffers.
+
+        This is an internal constructor. ``storages`` must have one entry per
+        device in the mesh, in row-major order.  All shards are realized
+        (concrete storage, no pending graph values).
+        """
+        from max.experimental.sharding import (
+            PlacementMapping,
+        )
+
+        if len(storages) != mesh.num_devices:
+            raise ValueError(
+                f"Expected {mesh.num_devices} storages for mesh {mesh}, "
+                f"got {len(storages)}."
+            )
+        if len(placements) != mesh.ndim:
+            raise ValueError(
+                f"Need one placement per mesh axis ({mesh.ndim}), "
+                f"got {len(placements)}."
+            )
+        instance = object.__new__(cls)
+        instance._storages = storages
+        instance._state = None
+        instance._mapping = PlacementMapping(mesh, placements)
+        instance._global_shape = graph.Shape(global_shape)
+        return instance
+
+    @classmethod
+    def _from_unrealized_shards(
+        cls,
+        state: RealizationState,
+        mesh: DeviceMesh,
+        placements: tuple[Placement, ...],
+        global_shape: graph.ShapeLike | None = None,
+    ) -> Tensor:
+        """Creates an unrealized sharded tensor from a single state.
+
+        ``state.values`` must have one entry per shard — all in the same
+        graph.  Realization is atomic: all shards compile and execute
+        together.  If ``global_shape`` is omitted, it is derived from the
+        first shard's shape, placements, and mesh.
+        """
+        from max.experimental.sharding import (
+            PlacementMapping,
+        )
+
+        if len(state.values) != mesh.num_devices:
+            raise ValueError(
+                f"Expected {mesh.num_devices} shard values for mesh {mesh}, "
+                f"got {len(state.values)}."
+            )
+        if len(placements) != mesh.ndim:
+            raise ValueError(
+                f"Need one placement per mesh axis ({mesh.ndim}), "
+                f"got {len(placements)}."
+            )
+        instance = object.__new__(cls)
+        instance._storages = None
+        instance._state = state
+        instance._mapping = PlacementMapping(mesh, placements)
+        instance._global_shape = (
+            graph.Shape(global_shape) if global_shape is not None else None
+        )
+        return instance
+
+    def _as_constant_external(self, name: str) -> Tensor:
+        """Creates graph external constant(s) matching ``self``'s layout.
+
+        For unsharded tensors, creates a single ``constant_external`` and
+        transfers it to ``self.device``.  For sharded tensors, creates one
+        ``constant_external`` per shard and assembles them into a sharded
+        Tensor preserving ``self``'s mesh, placements, and global shape.
+
+        Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+        """
+        from max.experimental.sharding import shard_shape
+
+        if not self.is_distributed:
+            stype = TensorType(self.dtype, self.shape, CPU())
+            return F.constant_external(name, stype).to(self.device)
+        assert self._mapping is not None
+        _mesh = self._mapping.mesh
+        _placements = self._mapping.to_placements()
+        local = shard_shape(self.shape, _placements, _mesh.mesh_shape)
+        values = []
+        for i in range(_mesh.num_devices):
+            stype = TensorType(self.dtype, local, CPU())
+            t = F.constant_external(f"{name}._shard.{i}", stype)
+            t = t.to(_mesh.devices[i])
+            values.append(t._graph_value)
+        return current_realization_context().create_unrealized(
+            tuple(values),
+            mapping=self._mapping,
+            global_shape=self.shape,
+        )
+
+    def _from_buffers_like(self, buffers: Sequence[driver.Buffer]) -> Tensor:
+        """Reconstructs a Tensor from flat result buffers.
+
+        Uses ``self`` as a sharding template.
+        For unsharded tensors, wraps ``buffers[0]`` as a plain Tensor.
+        For sharded tensors, wraps all buffers into a sharded Tensor
+        preserving ``self``'s mesh, placements, and global shape.
+        """
+        if not self.is_distributed:
+            return Tensor(storage=buffers[0])
+        assert self._mapping is not None
+        return Tensor._from_shards(
+            tuple(buffers),
+            self._mapping.mesh,
+            self._mapping.to_placements(),
+            self.shape,
+        )
 
     @classmethod
     def constant(
@@ -807,8 +1127,7 @@ class Tensor(DLPackArray, HasTensorValue):
         """Creates a tensor filled with ones.
 
         Returns a new tensor with the specified shape where all elements are
-        initialized to one. The tensor is created with eager execution and
-        automatic compilation.
+        initialized to one.
 
         .. code-block:: python
 
@@ -816,15 +1135,9 @@ class Tensor(DLPackArray, HasTensorValue):
 
             # Create a 2x3 tensor of ones
             x = tensor.Tensor.ones((2, 3))
-            # Result: [[1.0, 1.0, 1.0],
-            #          [1.0, 1.0, 1.0]]
-
-            # Create a 1D tensor using default dtype and device
-            y = tensor.Tensor.ones((5,))
 
         Args:
-            shape: The shape of the output tensor. Can be a tuple of integers,
-                a list of integers, or any value that can be converted to a shape.
+            shape: The shape of the output tensor.
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
@@ -989,41 +1302,74 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def real(self) -> bool:
-        """Returns ``True`` if this tensor is realized (has concrete storage)."""
-        return self.state is None
+        """Returns ``True`` if this tensor is realized (has concrete storage).
+
+        For sharded tensors this is all-or-nothing: either every shard is
+        realized (``_state is None``) or none are.
+        """
+        return self._state is None
 
     @property
     def _backing_value(self) -> driver.Buffer | GraphValue:
+        self._check_not_distributed("_backing_value")
         return self.driver_tensor if self.real else self._graph_value
 
     @property
     def _graph_value(self) -> GraphValue:
+        self._check_not_distributed("_graph_value")
         if self.real:
             raise TypeError("Can't get symbolic value for real tensor.")
-        assert self.state
-        return self.state.value
+        assert self._state
+        return self._state.value
 
     @property
     def driver_tensor(self) -> driver.Buffer:
         """A pointer to the underlying memory.
 
-        Raises if the tensor is unrealized.
+        Raises if the tensor is unrealized or sharded.
         """
-        if (storage := self.storage) is None:
+        self._check_not_distributed("driver_tensor")
+        if self._storages is None:
             raise TypeError("Can't get driver tensor for symbolic tensor")
-        return storage
+        return self._storages[0]
+
+    @property
+    def buffers(self) -> tuple[driver.Buffer, ...]:
+        """The underlying per-shard driver buffers.
+
+        Returns one buffer for non-distributed tensors, N buffers for
+        a distributed tensor with N shards.
+
+        Raises:
+            TypeError: If the tensor is unrealized (lazy/symbolic).
+        """
+        if self._storages is None:
+            raise TypeError(
+                "Can't get buffers for unrealized tensor — "
+                "realize the tensor first."
+            )
+        return self._storages
 
     @property
     def type(self) -> graph.TensorType:
         """Gets the tensor type information.
 
-        Returns the type information for the tensor, including shape, dtype,
-        and device. If the underlying value is a buffer type, it's converted
-        to a tensor type.
-
         Returns:
             TensorType: The type information for the tensor.
+
+        Raises:
+            TypeError: If the tensor is distributed.
         """
+        if self.is_distributed:
+            dist_type = DistributedTensorType(
+                self.dtype, self.shape, self.mesh, self.placements
+            )
+            raise TypeError(
+                f"Cannot get a single TensorType for a distributed tensor. "
+                f"The distributed type is: {dist_type!r}. "
+                f"This API may change in the future to return "
+                f"DistributedTensorType directly."
+            )
         type = (
             driver_tensor_type(self.driver_tensor)
             if self.real
@@ -1041,17 +1387,38 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             int: The number of dimensions in the tensor.
         """
-        return self._backing_value.rank
+        return len(self.shape)
 
     @property
     def shape(self) -> graph.Shape:
-        """Gets the shape of the tensor.
+        """Gets the global shape of the tensor.
 
-        Returns the dimensions of the tensor as a shape object.
+        For sharded tensors this returns the logical global shape (not the
+        per-shard shape).  If no explicit global shape was set, it is
+        derived from the first shard's shape, placements, and mesh.
 
         Returns:
             Shape: The shape of the tensor.
         """
+        if self._global_shape is not None:
+            return self._global_shape
+        if self.is_distributed:
+            # Get the shard shape from the first shard.
+            if self._storages is not None:
+                shard_shape = list(self._storages[0].shape)
+            else:
+                assert self._state is not None
+                sv = self._state.values[0]
+                shard_shape = list(sv.shape)
+            # Scale sharded dims back up by mesh size.
+            assert self._mapping is not None
+            _placements = self._mapping.to_placements()
+            _mesh = self._mapping.mesh
+            for ax, p in enumerate(_placements):
+                if isinstance(p, Sharded):
+                    d = p.axis % len(shard_shape)
+                    shard_shape[d] = int(shard_shape[d]) * _mesh.mesh_shape[ax]
+            return graph.Shape(shard_shape)
         shape = self._backing_value.shape
         return shape if isinstance(shape, graph.Shape) else graph.Shape(shape)
 
@@ -1059,32 +1426,38 @@ class Tensor(DLPackArray, HasTensorValue):
     def dtype(self) -> DType:
         """Gets the data type of the tensor elements.
 
-        Returns the data type (dtype) of the elements stored in the tensor,
-        such as ``float32``, ``int32``, or ``bfloat16``.
-
         Returns:
             DType: The data type of the tensor elements.
         """
-        return self._backing_value.dtype
+        if self._storages is not None:
+            return self._storages[0].dtype
+        assert self._state is not None
+        return self._state.values[0].dtype
 
     @property
     def device(self) -> Device:
         """Gets the device where the tensor is stored.
 
         Returns the device (CPU or accelerator) where the tensor's data is
-        located.
+        located.  Raises for distributed tensors that span multiple devices.
 
         Returns:
             Device: The device where the tensor is stored.
         """
-        device = self._backing_value.device
-        return device if isinstance(device, Device) else device.to_device()
+        if self.is_distributed:
+            raise ValueError(
+                f"Cannot access single device on a distributed tensor "
+                f"spanning {self._mapping.mesh.num_devices} devices. "
+                f"Use tensor.mesh.devices instead."
+            )
+        return self._mapping.mesh.devices[0]
 
     def __await__(self):
         """Force the tensor to realize if it is not already."""
+        self._check_not_distributed("__await__")
         if not self.real:
-            assert self.state is not None
-            yield from asyncio.create_task(self.state.ctx.realize_all())
+            assert self._state is not None
+            yield from asyncio.create_task(self._state.ctx.realize_all())
             assert self.real
         return self
 
@@ -1103,9 +1476,10 @@ class Tensor(DLPackArray, HasTensorValue):
         If the tensor is backed by a BufferValue, calls `ops.buffer_load`.
         The load is for ordering mutable operations and will be optimized away.
         """
+        self._check_not_distributed("__tensorvalue__")
         if not self.real:
-            assert self.state
-            if graph.Graph.current != self.state.ctx.graph:
+            assert self._state
+            if graph.Graph.current != self._state.ctx.graph:
                 # Can't pass unrealized tensors between graphs
                 self._sync_realize()
 
@@ -1113,8 +1487,8 @@ class Tensor(DLPackArray, HasTensorValue):
             state = current_realization_context().add_source(self)
             value = state.value
         else:
-            assert self.state
-            value = self.state.value
+            assert self._state
+            value = self._state.value
 
         if isinstance(value, graph.BufferValue):
             return value[...]
@@ -1135,17 +1509,18 @@ class Tensor(DLPackArray, HasTensorValue):
             - further ops on the same tensor will then load from the
             buffer to ensure proper sequencing with mutation
         """
+        self._check_not_distributed("__buffervalue__")
         if not self.real:
-            assert self.state
-            if graph.Graph.current != self.state.ctx.graph:
+            assert self._state
+            if graph.Graph.current != self._state.ctx.graph:
                 # Can't pass unrealized tensors between graphs
                 self._sync_realize()
 
         if self.real:
-            # This is a realized tensor that may not have been used in the
-            # realization context yet, add it so it isn't freed before use.
-            # Adding sources is idempotent, so safe to do more than once.
-            self.state = current_realization_context().add_source(self)
+            # This is a realized tensor that needs a mutable graph input so
+            # the BufferValue can be stored into in-place. add_mutable_source
+            # creates a BufferType input (vs add_source's TensorType).
+            self._state = current_realization_context().add_mutable_source(self)
 
         if isinstance(value := self._backing_value, graph.BufferValue):
             return value
@@ -1153,15 +1528,17 @@ class Tensor(DLPackArray, HasTensorValue):
         # This tensor is currently backed by an unrealized TensorValue.
         # Create a BufferValue and assign the current value to it
         tensor = self.__tensorvalue__()
-        assert self.state is not None
-        self.state.value = buffer = ops.buffer_create(tensor.type.as_buffer())
+        assert self._state is not None
+        self._state.value = buffer = ops.buffer_create(tensor.type.as_buffer())
         buffer[...] = tensor
         return buffer
 
     def __bool__(self) -> bool:
+        self._check_not_distributed("__bool__")
         return bool(self.item())
 
-    def _values(self):  # noqa: ANN202
+    def _values(self) -> Generator[Any]:
+        self._check_not_distributed("_values")
         self._sync_realize()
         dt = self.driver_tensor.to(CPU())
         for idx in dt._iterate_indices():
@@ -1171,14 +1548,16 @@ class Tensor(DLPackArray, HasTensorValue):
         return id(self)
 
     def __dlpack__(self, stream: int | None = None):
+        self._check_not_distributed("__dlpack__")
         self._sync_realize()
-        assert self.storage is not None
-        return self.storage.__dlpack__(stream=stream)
+        assert self._storages is not None
+        return self._storages[0].__dlpack__(stream=stream)
 
     def __dlpack_device__(self):
+        self._check_not_distributed("__dlpack_device__")
         self._sync_realize()
-        assert self.storage is not None
-        return self.storage.__dlpack_device__()
+        assert self._storages is not None
+        return self._storages[0].__dlpack_device__()
 
     def __rich_repr__(self):
         yield "<unrealized>"
@@ -1192,10 +1571,17 @@ class Tensor(DLPackArray, HasTensorValue):
         For realized tensors, displays the data using a matrix-of-matrices
         algorithm that preserves the multi-dimensional structure.
         For unrealized tensors, shows shape, dtype, and device information.
+        For sharded tensors, shows global shape, dtype, mesh, and placements.
 
         Returns:
             A string representation of the tensor.
         """
+        if self.is_distributed:
+            shape_str = ", ".join(str(d) for d in self.shape)
+            return (
+                f"Tensor(shape=[{shape_str}], dtype={self.dtype}, "
+                f"mapping={self._mapping!r})"
+            )
         if self.real:
             from max.experimental import _tensor_repr
 
@@ -1206,12 +1592,15 @@ class Tensor(DLPackArray, HasTensorValue):
         # Tensors are value-semantic
         return self
 
-    def item(self):  # noqa: ANN201
+    def item(self) -> Any:
         """Gets the scalar value from a single-element tensor.
 
         Extracts and returns the scalar value from a tensor containing exactly
         one element. The tensor is realized if needed and transferred to CPU
         before extracting the value.
+
+        For replicated distributed tensors, the value is read from the first
+        shard (all shards hold identical data).
 
         Returns:
             The scalar value from the tensor. The return type matches the tensor's
@@ -1219,7 +1608,17 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Raises:
             TypeError: If the tensor contains more than one element.
+            ValueError: If the tensor is distributed and not fully replicated.
         """
+        if self.is_distributed:
+            if not self._mapping.is_fully_replicated:
+                # Reuse the standard error for non-replicated distributed
+                # tensors (Sharded, Partial, etc.).
+                self._check_not_distributed("item")
+            # All shards are identical — read from the first one.
+            self._sync_realize()
+            assert self._storages is not None
+            return self._storages[0].to(CPU()).item()
         if self.num_elements() != 1:
             raise TypeError()
         self._sync_realize()
@@ -1276,6 +1675,7 @@ class Tensor(DLPackArray, HasTensorValue):
             Tensor: A new tensor on the specified device, or ``self`` if the
             tensor is already on that device.
         """
+        self._check_not_distributed("to")
         if self.real:
             if self.device == device:
                 return self
@@ -1916,6 +2316,9 @@ class Tensor(DLPackArray, HasTensorValue):
 
     def __invert__(self) -> Tensor:
         return F.logical_not(self)
+
+
+# ─── Sharding helpers (pure functions) ────────────────────────────────────
 
 
 # Import functional at module end to avoid circular import.

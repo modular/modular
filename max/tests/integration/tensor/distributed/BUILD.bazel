@@ -12,6 +12,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "sharding/__init__.py",
+        "test_tensor_sharding.py",
     ] + glob([
         "sharding/test_*.py",
     ]),
@@ -29,6 +30,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
