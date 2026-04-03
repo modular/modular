@@ -24,8 +24,14 @@ from layout import (
     TileTensor,
     row_major,
 )
+from layout import Layout, LayoutTensor
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
-from nn.attention.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
+from nn.attention.mha_mask import (
+    CausalMask,
+    CausalPaddingMask,
+    MHAMask,
+    SlidingWindowCausalMask,
+)
 from nn.attention.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from std.testing import assert_almost_equal, assert_equal
 
@@ -519,3 +525,61 @@ def main() raises:
                 32,
                 group=16,
             ](1, 2008, CausalMask(), ctx)
+
+        # CausalPaddingMask tests: allocate valid_lengths on device.
+        @parameter
+        def make_vl(
+            val: UInt32, ctx: DeviceContext
+        ) raises -> LayoutTensor[
+            DType.uint32, Layout.row_major(1), MutAnyOrigin
+        ]:
+            var host_ptr = alloc[Scalar[DType.uint32]](1)
+            host_ptr[] = val
+            var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
+            ctx.enqueue_copy(dev_buf, host_ptr)
+            host_ptr.free()
+            return LayoutTensor[
+                DType.uint32, Layout.row_major(1), MutAnyOrigin
+            ](dev_buf.unsafe_ptr())
+
+        # valid_length == num_keys (equivalent to CausalMask).
+        var vl_128_t = make_vl(128, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            1,
+        ](128, 128, CausalPaddingMask(vl_128_t), ctx)
+
+        # valid_length < num_keys (padding active).
+        var vl_100_t = make_vl(100, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            1,
+        ](128, 128, CausalPaddingMask(vl_100_t), ctx)
+
+        # CausalPaddingMask with GQA.
+        var vl_384_t = make_vl(384, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            24,
+            group=3,
+        ](384, 384, CausalPaddingMask(vl_384_t), ctx)
+
+        # CausalPaddingMask with padding and GQA.
+        var vl_300_t = make_vl(300, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            24,
+            group=3,
+        ](384, 384, CausalPaddingMask(vl_300_t), ctx)
+
+        # CausalPaddingMask: token gen with padding.
+        var vl_400_t = make_vl(400, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+        ](1, 512, CausalPaddingMask(vl_400_t), ctx)

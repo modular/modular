@@ -35,6 +35,7 @@ struct MaskName(Writable):
     comptime SLIDING_WINDOW_CAUSAL = Self("sliding_window_causal")
     comptime MATERIALIZED = Self("materialized")
     comptime CHUNKED_CAUSAL = Self("chunked_causal")
+    comptime CAUSAL_PADDING = Self("causal_padding")
 
     def __init__(out self, name: String):
         self.name = name
@@ -1021,6 +1022,133 @@ struct SlidingWindowCausalMask[window_size: Int](
                     Int32(Self.window_size),
                 )
             }
+
+
+# ===-----------------------------------------------------------------------===#
+# CausalPaddingMask
+# ===-----------------------------------------------------------------------===#
+
+
+struct CausalPaddingMask[layout_: Layout, origin_: Origin[mut=False]](
+    MHAMask, TrivialRegisterPassable
+):
+    """Causal mask combined with padding: a position (seq_id, head, q, k) is
+    visible only when q >= k (causal) AND k < valid_lengths[seq_id] (padding).
+
+    `valid_lengths` is a tensor of shape [num_seqs] with one uint32 value per
+    sequence indicating the number of valid (non-padding) tokens.
+    """
+
+    comptime causal_mask: CausalMask = CausalMask()
+
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = is_nvidia_gpu()
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
+
+    var valid_lengths: LayoutTensor[DType.uint32, Self.layout_, Self.origin_]
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(self, target: MutOpaquePointer[_]):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "CausalPaddingMask"
+
+    @staticmethod
+    def name() -> String:
+        return "CausalPaddingMask"
+
+    def __init__(
+        out self,
+        valid_lengths: LayoutTensor[DType.uint32, Self.layout_, Self.origin_],
+    ):
+        self.valid_lengths = valid_lengths
+
+    @always_inline
+    def mask[
+        dtype: DType,
+        width: Int,
+        //,
+        *,
+        element_type: DType = DType.uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        # Apply causal mask first, then further mask padding positions.
+        var causal_result = Self.causal_mask.mask(coord, score_vec)
+
+        comptime index_type = coord.element_type
+        var k_idx = coord[3]
+        var valid_len = Scalar[index_type](Int(self.valid_lengths[coord[0]]))
+        var k_positions = iota[index_type, width](Scalar[index_type](k_idx))
+
+        return k_positions.lt(valid_len).select(causal_result, MASK_VALUE)
+
+    @always_inline
+    def status[
+        *, element_type: DType = DType.uint32
+    ](
+        self,
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
+    ) -> TileMaskStatus:
+        var causal_status = Self.causal_mask.status(tile_offset, tile_size)
+
+        # If the causal component alone says FULL_MASK, the tile is fully
+        # masked regardless of padding.
+        if causal_status == TileMaskStatus.FULL_MASK:
+            return TileMaskStatus.FULL_MASK
+
+        # Conservatively return PARTIAL_MASK when not fully masked.
+        # We need batch_idx to exactly determine the padding status.
+        return TileMaskStatus.PARTIAL_MASK
+
+    @always_inline
+    def start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        return Self.causal_mask.start_column[BM, BN, page_size](row)
+
+    @always_inline
+    def total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return Self.causal_mask.total_iters[BM, BN, page_size](row, num_cols)
+
+    @staticmethod
+    def count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1
+
+    @always_inline
+    def last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](row, num_cols)
+
+    @always_inline
+    def masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {self.last_masked_set_end[BM, BN, page_size](row, num_cols)}
+
+    @staticmethod
+    def nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.UNKNOWN_MASK}
+
+    @staticmethod
+    def mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
 
 
 # ===-----------------------------------------------------------------------===#
