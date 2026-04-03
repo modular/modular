@@ -55,6 +55,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from max import _core, driver, engine
 from max._core.dialects import builtin, rmo
+from max.dtype import DType
 from max.experimental import _passes
 from max.experimental import functional as F
 from max.experimental.support import driver_tensor_type
@@ -192,14 +193,35 @@ def _cached_signal_buffers(
     and avoids mutable module-level state.  In pytest-xdist each worker is
     a separate process, so there are no cross-worker conflicts.
     """
-    # Lazy import: allreduce is not a declared dependency of experimental
-    # (see ignore_unresolved_imports in BUILD.bazel) to avoid pulling in
-    # the full nn package.  Only needed for multi-GPU signal buffers.
-    from max.nn.comm.allreduce import Signals  # type: ignore[import-not-found]
+    # Signal buffers: 1 MB signal + 512 MB communication scratch per GPU.
+    # Must stay in sync with the Mojo ``Signal`` struct size.
+    _NUM_BYTES = (1 + 512) * 1024 * 1024
 
-    gpu_refs = [DeviceRef.GPU(id=i) for i in device_ids]
-    signals = Signals(devices=gpu_refs)
-    return signals.buffers(), signals.input_types()
+    try:
+        driver.enable_all_peer_access()
+    except RuntimeError:
+        logging.getLogger(__name__).warning(
+            "Failed to enable peer-to-peer GPU access. "
+            "Collective operations will fall back to slower paths."
+        )
+
+    accelerators = [driver.Accelerator(id=i) for i in device_ids]
+    runtime_bufs = [
+        driver.Buffer.zeros(
+            shape=(_NUM_BYTES,), dtype=DType.uint8, device=accel
+        )
+        for accel in accelerators
+    ]
+    for accel in accelerators:
+        accel.synchronize()
+
+    buf_types = [
+        BufferType(
+            dtype=DType.uint8, shape=(_NUM_BYTES,), device=DeviceRef.GPU(id=i)
+        )
+        for i in device_ids
+    ]
+    return runtime_bufs, buf_types
 
 
 def _make_unrealized(
