@@ -12,6 +12,7 @@
 #include "LLVM/Transforms/InstructionRewrite.h"
 #include "LLVM/Transforms/LLVMIRDowngradePass.h"
 #include "LLVM/Transforms/MetalAIRPass.h"
+#include "LLVM/Transforms/MetalModuleRewritePass.h"
 #include "LLVM/Transforms/MetalRewriteDebugInfo.h"
 #include "LLVM/Transforms/MetalVerifier.h"
 #include "LLVM/Transforms/PointerRewriter.h"
@@ -386,6 +387,9 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
 
   // Add Metal AIR transformation pass at the very end for Metal GPU targets
   if (isMetalBackend(options)) {
+    // Run module-level lowering before per-function rewrites: inlines
+    // static_string_* globals and replaces print sentinel calls.
+    mpm.addPass(MetalModuleRewritePass());
     FunctionPassManager fpm;
     // Rewrite all Metal-unsupported LLVM IR intrinsics and instructions
     fpm.addPass(InstructionRewritePass());
@@ -572,6 +576,9 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
 
   // Add Metal AIR transformation pass at the very end for Metal GPU targets
   if (isMetalBackend(options)) {
+    // Run module-level lowering before per-function rewrites: inlines
+    // static_string_* globals and replaces print sentinel calls.
+    mpm.addPass(MetalModuleRewritePass());
     FunctionPassManager fpm;
     // Rewrite all Metal-unsupported LLVM IR intrinsics and instructions
     fpm.addPass(InstructionRewritePass());
