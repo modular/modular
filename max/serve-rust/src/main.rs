@@ -30,7 +30,7 @@ async fn main() {
     let cancel_addr = crate::types::generate_zmq_ipc_path();
     let metrics = Arc::new(RustMetrics::default());
     let proxy = Arc::new(
-        ZmqModelWorkerProxy::<crate::openai::ChatCompletionRequest, Vec<i32>>::new(
+        ZmqModelWorkerProxy::<Vec<i32>>::new(
             &request_addr,
             &response_addr,
             &cancel_addr,

@@ -17,6 +17,8 @@ pub struct RustMetrics {
     decode_latency_us_total: AtomicU64,
     request_batches: AtomicU64,
     request_batch_items_total: AtomicU64,
+    ingress_parse_count: AtomicU64,
+    ingress_parse_latency_us_total: AtomicU64,
 }
 
 #[derive(Debug, Serialize)]
@@ -38,6 +40,9 @@ pub struct RustMetricsSnapshot {
     pub request_batches: u64,
     pub request_batch_items_total: u64,
     pub request_batch_items_avg: f64,
+    pub ingress_parse_count: u64,
+    pub ingress_parse_latency_us_total: u64,
+    pub ingress_parse_latency_us_avg: f64,
 }
 
 impl RustMetrics {
@@ -83,6 +88,12 @@ impl RustMetrics {
             .fetch_add(batch_size as u64, Ordering::Relaxed);
     }
 
+    pub fn record_ingress_parse(&self, duration: Duration) {
+        self.ingress_parse_count.fetch_add(1, Ordering::Relaxed);
+        self.ingress_parse_latency_us_total
+            .fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> RustMetricsSnapshot {
         let requests_started = self.requests_started.load(Ordering::Relaxed);
         let requests_completed = self.requests_completed.load(Ordering::Relaxed);
@@ -98,6 +109,9 @@ impl RustMetrics {
         let decode_latency_us_total = self.decode_latency_us_total.load(Ordering::Relaxed);
         let request_batches = self.request_batches.load(Ordering::Relaxed);
         let request_batch_items_total = self.request_batch_items_total.load(Ordering::Relaxed);
+        let ingress_parse_count = self.ingress_parse_count.load(Ordering::Relaxed);
+        let ingress_parse_latency_us_total =
+            self.ingress_parse_latency_us_total.load(Ordering::Relaxed);
 
         RustMetricsSnapshot {
             requests_started,
@@ -117,6 +131,9 @@ impl RustMetrics {
             request_batches,
             request_batch_items_total,
             request_batch_items_avg: avg(request_batch_items_total, request_batches),
+            ingress_parse_count,
+            ingress_parse_latency_us_total,
+            ingress_parse_latency_us_avg: avg(ingress_parse_latency_us_total, ingress_parse_count),
         }
     }
 }

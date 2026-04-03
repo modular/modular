@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "net", "sync"] }
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 pyo3 = { version = "0.21", features = ["auto-initialize"] }
 zeromq = "0.4"

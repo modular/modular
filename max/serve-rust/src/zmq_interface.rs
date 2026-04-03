@@ -1,10 +1,9 @@
 use crate::metrics::RustMetrics;
 use crate::types::{RequestID, SchedulerResult, TextGenerationContext};
 use futures::Stream;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -55,18 +54,16 @@ impl fmt::Display for StreamInitError {
     }
 }
 
-pub struct ZmqModelWorkerProxy<Request, Reply> {
+pub struct ZmqModelWorkerProxy<Reply> {
     response_pull: Arc<AsyncMutex<PullSocket>>,
     request_tx: mpsc::Sender<OutboundRequest>,
     cancel_tx: mpsc::Sender<Vec<u8>>,
     metrics: Arc<RustMetrics>,
     pending_out_queues: Arc<Mutex<HashMap<RequestID, PendingRequest<Reply>>>>,
-    _phantom: PhantomData<Request>,
 }
 
-impl<Request, Reply> ZmqModelWorkerProxy<Request, Reply>
+impl<Reply> ZmqModelWorkerProxy<Reply>
 where
-    Request: Serialize + Send + Sync + 'static,
     Reply: for<'de> Deserialize<'de> + Send + Sync + 'static,
 {
     pub async fn new(
@@ -101,22 +98,24 @@ where
         let _ = cfg.request_batch_wait;
         tokio::spawn(async move {
             while let Some(first) = request_rx.recv().await {
-                let mut batch = Vec::with_capacity(max_batch_size);
-                batch.push(first);
+                let mut batch_size = 1usize;
+                if let Err(err) = request_push.send(first.payload.into()).await {
+                    tracing::error!("Failed to send request message over ZMQ: {}", err);
+                }
 
-                while batch.len() < max_batch_size {
+                while batch_size < max_batch_size {
                     match request_rx.try_recv() {
-                        Ok(msg) => batch.push(msg),
+                        Ok(msg) => {
+                            batch_size += 1;
+                            if let Err(err) = request_push.send(msg.payload.into()).await {
+                                tracing::error!("Failed to send request message over ZMQ: {}", err);
+                            }
+                        }
                         Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
                     }
                 }
 
-                sender_metrics.record_request_batch(batch.len());
-                for msg in batch {
-                    if let Err(err) = request_push.send(msg.payload.into()).await {
-                        tracing::error!("Failed to send request message over ZMQ: {}", err);
-                    }
-                }
+                sender_metrics.record_request_batch(batch_size);
             }
         });
 
@@ -135,11 +134,10 @@ where
             cancel_tx,
             metrics,
             pending_out_queues: Arc::new(Mutex::new(HashMap::new())),
-            _phantom: PhantomData,
         }
     }
 
-    pub async fn stream(
+    pub async fn stream<Request: serde::Serialize + Send + Sync>(
         &self,
         request_id: RequestID,
         data: Request,

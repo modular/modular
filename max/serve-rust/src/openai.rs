@@ -10,20 +10,25 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ChatCompletionRequest {
-    pub model: String,
-    pub messages: Vec<Message>,
+pub struct ChatCompletionRequest<'a> {
+    #[serde(borrow)]
+    pub model: Cow<'a, str>,
+    #[serde(borrow)]
+    pub messages: Vec<Message<'a>>,
     pub stream: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Message {
-    pub role: String,
-    pub content: String,
+pub struct Message<'a> {
+    #[serde(borrow)]
+    pub role: Cow<'a, str>,
+    #[serde(borrow)]
+    pub content: Cow<'a, str>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -38,12 +43,18 @@ pub struct ChatCompletionResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Choice {
     pub index: usize,
-    pub message: Message,
+    pub message: ResponseMessage,
     pub finish_reason: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResponseMessage {
+    pub role: String,
+    pub content: String,
+}
+
 pub struct AppState {
-    pub proxy: Arc<ZmqModelWorkerProxy<ChatCompletionRequest, Vec<i32>>>, // Returning token IDs
+    pub proxy: Arc<ZmqModelWorkerProxy<Vec<i32>>>, // Returning token IDs
     pub python_bridge: Arc<PythonBridge>,
     pub metrics: Arc<RustMetrics>,
 }
@@ -70,7 +81,8 @@ async fn create_chat_completion(
     State(state): State<Arc<AppState>>,
     body: Bytes,
 ) -> axum::response::Response {
-    let payload: ChatCompletionRequest = match serde_json::from_slice(&body) {
+    let parse_started = Instant::now();
+    let payload: ChatCompletionRequest<'_> = match serde_json::from_slice(&body) {
         Ok(payload) => payload,
         Err(err) => {
             return (
@@ -82,6 +94,7 @@ async fn create_chat_completion(
                 .into_response();
         }
     };
+    state.metrics.record_ingress_parse(parse_started.elapsed());
 
     let request_id = RequestID::generate();
     let response_id = request_id.0.clone();
@@ -151,7 +164,7 @@ async fn create_chat_completion(
         state.metrics.record_decode(token_count, started.elapsed());
 
         Json(ChatCompletionResponse {
-            id: response_id,
+            id: response_id.to_string(),
             object: "chat.completion".to_string(),
             created: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -160,7 +173,7 @@ async fn create_chat_completion(
             model: "max-model".to_string(),
             choices: vec![Choice {
                 index: 0,
-                message: Message {
+                message: ResponseMessage {
                     role: "assistant".to_string(),
                     content: full_content,
                 },
