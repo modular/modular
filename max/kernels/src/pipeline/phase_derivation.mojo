@@ -651,12 +651,12 @@ def apply_edge_rules(
 
     # Half assignment per op.
     @always_inline
-    def _op_half(idx: Int) -> Int:
+    def _op_half(idx: Int) unified {mut half} -> Int:
         return 0 if idx < half else 1
 
     # _in_half for Phase 1: op at idx is in the half that processes stage.
     @always_inline
-    def _in_half(idx: Int, stage: Int) -> Bool:
+    def _in_half(idx: Int, stage: Int) unified {mut half} -> Bool:
         return (stage == 0) == (idx < half)
 
     var edges = List[DepEdge]()
@@ -814,7 +814,7 @@ def derive_prologue_from_program(
         mut result: List[ScheduleEntry],
         op: OpDesc,
         mut slot: Int,
-    ):
+    ) unified {}:
         result.append(
             ScheduleEntry(
                 op=op,
@@ -825,7 +825,7 @@ def derive_prologue_from_program(
         )
         slot += 1
 
-    def _vm_cost(op: OpDesc, config: PipelineConfig) -> Int:
+    def _vm_cost(op: OpDesc, config: PipelineConfig) unified {} -> Int:
         return config.vm_per_channel(op.channel)
 
     var num_blocks = len(program.blocks)
@@ -838,7 +838,7 @@ def derive_prologue_from_program(
         k_off: KOffsetKind,
         config: PipelineConfig,
         mut slot: Int,
-    ):
+    ) unified {}:
         var vm = _vm_cost(gl, config)
         _emit(
             result,
