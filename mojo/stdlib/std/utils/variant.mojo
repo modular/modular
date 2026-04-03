@@ -32,6 +32,7 @@ from std.reflection.traits import (
 )
 from ._nicheable import UnsafeNicheable, NicheIndex
 from std.os import abort
+from std.reflection import struct_field_count
 from std.sys.intrinsics import _type_is_eq, size_of
 from std.utils.type_functions import ConditionalType
 
@@ -267,9 +268,11 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         ](UnsafePointer(to=self._impl).address)
 
 
-comptime _IsEmptyType[T: AnyType]: Bool = size_of[T]() == 0 and conforms_to(
-    T, TrivialRegisterPassable
-)
+# TODO(MOCO-3653): size_of[T]() == 0 does not work correctly in some cases when
+# an `Optional` is used as a comptime parameter's field.
+comptime _IsEmptyType[T: AnyType]: Bool = struct_field_count[
+    T
+]() == 0 and conforms_to(T, TrivialRegisterPassable)
 """True if `T` is a zero-sized, trivially passable type (i.e. carries no state,
 like `NoneType`). Used to identify the "empty" arm of a niche-optimized variant."""
 

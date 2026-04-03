@@ -16,7 +16,7 @@ from std.os import abort
 from std.os.atomic import Atomic
 from std.ffi import external_call
 from std.gpu.host.device_context import _DeviceContextPtr
-from std.memory import alloc
+from std.memory._nonnull import NonNullUnsafePointer
 
 from std.builtin.coroutine import (
     AnyCoroutine,
@@ -604,7 +604,7 @@ struct TaskGroup(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
+struct DeviceContextPtr(Defaultable, ImplicitlyCopyable, RegisterPassable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -613,7 +613,9 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
     by the graph compiler.
     """
 
-    var _handle: OpaquePointer[ExternalOrigin[mut=True]]
+    var _handle: Optional[
+        NonNullUnsafePointer[NoneType, ExternalOrigin[mut=True]]
+    ]
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline

@@ -1000,7 +1000,7 @@ def align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 def bit_width_of[
-    type: TrivialRegisterPassable, target: _TargetType = _current_target()
+    type: RegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -1033,7 +1033,7 @@ def bit_width_of[
 
 @always_inline("nodebug")
 def simd_width_of[
-    type: TrivialRegisterPassable, target: _TargetType = _current_target()
+    type: RegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
