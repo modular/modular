@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .model import Qwen25VLEncoderModel
-from .multimodal_encoder import Qwen25VLMultimodalEncoderModel
+from .arch import qwen_image_edit_arch, qwen_image_edit_plus_arch
+from .pipeline_qwen_image_edit import QwenImageEditPipeline
 
-__all__ = ["Qwen25VLEncoderModel", "Qwen25VLMultimodalEncoderModel"]
+__all__ = [
+    "QwenImageEditPipeline",
+    "qwen_image_edit_arch",
+    "qwen_image_edit_plus_arch",
+]

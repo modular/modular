@@ -118,16 +118,23 @@ class PixelGenerationPipeline(
         num_images_per_prompt = model_inputs.num_images_per_prompt
         expected_images = len(flat_batch) * num_images_per_prompt
 
-        if images.shape[0] != expected_images:
+        if isinstance(images, list):
+            image_list = images
+        elif getattr(images, "ndim", None) == 3:
+            image_list = [images]
+        else:
+            image_list = list(images)
+
+        if len(image_list) != expected_images:
             raise ValueError(
                 "Unexpected number of images returned from pipeline: "
-                f"expected {expected_images}, got {images.shape[0]}."
+                f"expected {expected_images}, got {len(image_list)}."
             )
 
         responses: dict[RequestID, GenerationOutput] = {}
         for index, (request_id, _context) in enumerate(flat_batch):
             offset = index * num_images_per_prompt
-            pixel_data = images[offset : offset + num_images_per_prompt]
+            pixel_data = image_list[offset : offset + num_images_per_prompt]
 
             output_format = getattr(_context, "output_format", "jpeg")
             responses[request_id] = GenerationOutput(

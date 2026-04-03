@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import math
 import threading
 from collections.abc import Callable
 from enum import Enum
@@ -41,12 +42,29 @@ from max.pipelines.core import PixelContext
 from transformers import AutoTokenizer
 
 from .diffusion_schedulers import SchedulerFactory
+from .qwen_image_processor import Qwen2_5VLPromptImageProcessor
 
 if TYPE_CHECKING:
     import PIL.Image
     from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
+
+QWEN_EDIT_PROMPT_IMAGE_SIZE = 384 * 384
+QWEN_EDIT_VAE_IMAGE_SIZE = 1024 * 1024
+QWEN_EDIT_PROMPT_TEMPLATE = (
+    "<|im_start|>system\n"
+    "Describe the key features of the input image (color, shape, size, "
+    "texture, objects, background), then explain how the user's text "
+    "instruction should alter or modify the image. Generate a new image "
+    "that meets the user's requirements while maintaining consistency "
+    "with the original input where appropriate.<|im_end|>\n"
+    "<|im_start|>user\n{}<|im_end|>\n"
+    "<|im_start|>assistant\n"
+)
+QWEN_EDIT_IMAGE_PROMPT_TEMPLATE = (
+    "Picture {}: <|vision_start|><|image_pad|><|vision_end|>"
+)
 
 
 async def run_with_default_executor(
@@ -99,6 +117,18 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    QWENIMAGE = "QwenImagePipeline"
+    QWENIMAGE_EDIT = "QwenImageEditPipeline"
+    QWENIMAGE_EDIT_PLUS = "QwenImageEditPlusPipeline"
+
+    @property
+    def is_qwen_image_family(self) -> bool:
+        """Returns whether the pipeline belongs to the Qwen image family."""
+        return self in {
+            PipelineClassName.QWENIMAGE,
+            PipelineClassName.QWENIMAGE_EDIT,
+            PipelineClassName.QWENIMAGE_EDIT_PLUS,
+        }
 
     @classmethod
     def from_diffusers_config(
@@ -110,6 +140,11 @@ class PipelineClassName(str, Enum):
             raise KeyError(
                 "diffusers_config is missing required key '_class_name'."
             )
+        if raw in {
+            cls.QWENIMAGE_EDIT.value,
+            cls.QWENIMAGE_EDIT_PLUS.value,
+        }:
+            return cls.QWENIMAGE
         try:
             return cls(raw)
         except ValueError as e:
@@ -137,6 +172,7 @@ class PixelGenerationTokenizer(
         max_length: Maximum sequence length for the primary tokenizer.
         secondary_max_length: Maximum sequence length for the secondary tokenizer, if used.
         trust_remote_code: Whether to trust remote code from the model.
+        context_validators: Optional list of validators to run on PixelContext.
     """
 
     def __init__(
@@ -151,6 +187,7 @@ class PixelGenerationTokenizer(
         secondary_max_length: int | None = None,
         trust_remote_code: bool = False,
         default_num_inference_steps: int = 50,
+        context_validators: list[Callable[[PixelContext], None]] | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -205,6 +242,10 @@ class PixelGenerationTokenizer(
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
 
+        self._context_validators = (
+            context_validators if context_validators else []
+        )
+
         # Extract diffusers_config
         if not pipeline_config or not hasattr(
             pipeline_config.model, "diffusers_config"
@@ -224,6 +265,30 @@ class PixelGenerationTokenizer(
         self._pipeline_class_name = PipelineClassName.from_diffusers_config(
             self.diffusers_config
         )
+        self._raw_pipeline_class_name = self.diffusers_config.get("_class_name")
+        self._is_qwen_image_edit_family = self._raw_pipeline_class_name in {
+            PipelineClassName.QWENIMAGE_EDIT.value,
+            PipelineClassName.QWENIMAGE_EDIT_PLUS.value,
+        }
+        self._qwen_edit_image_token_id: int | None = None
+        self._qwen_edit_image_processor: (
+            Qwen2_5VLPromptImageProcessor | None
+        ) = None
+        if self._is_qwen_image_edit_family:
+            self._qwen_edit_image_token_id = (
+                self.delegate.convert_tokens_to_ids("<|image_pad|>")
+            )
+            text_encoder_config = (
+                self.diffusers_config.get("components", {})
+                .get("text_encoder", {})
+                .get("config_dict", {})
+            )
+            vision_config = text_encoder_config.get("vision_config", {})
+            self._qwen_edit_image_processor = Qwen2_5VLPromptImageProcessor(
+                patch_size=vision_config.get("patch_size", 14),
+                temporal_patch_size=vision_config.get("temporal_patch_size", 2),
+                merge_size=vision_config.get("spatial_merge_size", 2),
+            )
 
         # Preserve tokenizer attention masks so downstream text encoders can
         # derive additive attention bias directly from tokenizer semantics.
@@ -237,9 +302,12 @@ class PixelGenerationTokenizer(
 
         # Compute static VAE scale factor
         block_out_channels = vae_config.get("block_out_channels", None)
-        self._vae_scale_factor = (
-            2 ** (len(block_out_channels) - 1) if block_out_channels else 8
-        )
+        if block_out_channels:
+            self._vae_scale_factor = 2 ** (len(block_out_channels) - 1)
+        elif self._pipeline_class_name.is_qwen_image_family:
+            self._vae_scale_factor = 8
+        else:
+            self._vae_scale_factor = 8
 
         # Store static model dimensions
         self._default_sample_size = 128
@@ -294,6 +362,21 @@ class PixelGenerationTokenizer(
                 latent_image_ids[np.newaxis, :, :], (batch_size, 1, 1)
             )
             return latent_image_ids
+        elif self._pipeline_class_name.is_qwen_image_family:
+            t_coords = np.zeros((height, width), dtype=np.int64)
+            h_centered = np.arange(height, dtype=np.int64) - (
+                height - height // 2
+            )
+            w_centered = np.arange(width, dtype=np.int64) - (width - width // 2)
+            h_coords, w_coords = np.meshgrid(
+                h_centered, w_centered, indexing="ij"
+            )
+            latent_image_ids = np.stack([t_coords, h_coords, w_coords], axis=-1)
+            latent_image_ids = latent_image_ids.reshape(-1, 3)
+            latent_image_ids = np.tile(
+                latent_image_ids[np.newaxis, :, :], (batch_size, 1, 1)
+            )
+            return latent_image_ids.astype(np.float32, copy=False)
         else:
             latent_image_ids = np.zeros((height, width, 3))
             latent_image_ids[..., 1] = (
@@ -355,7 +438,7 @@ class PixelGenerationTokenizer(
     ) -> PIL.Image.Image:
         """Preprocess input image for image-to-image generation.
 
-        Matches diffusers FLUX2 behavior:
+        Matches the shared image-to-image behavior:
         - cap image area when needed
         - floor dimensions to multiples of vae_scale_factor * 2
         - apply aspect-ratio preserving center-crop resize to the floored size
@@ -418,7 +501,132 @@ class PixelGenerationTokenizer(
                     resample=PIL.Image.Resampling.LANCZOS,
                 )
 
+        if target_width is None:
+            image_width = max(
+                (image_width // multiple_of) * multiple_of, multiple_of
+            )
+        else:
+            image_width = max(
+                (target_width // multiple_of) * multiple_of, multiple_of
+            )
+
+        if image.size != (image_width, image_height):
+            if target_height is None and target_width is None:
+                image = self._resize_with_center_crop(
+                    image, image_width, image_height
+                )
+            else:
+                image = image.resize(
+                    (image_width, image_height),
+                    PIL.Image.Resampling.LANCZOS,
+                )
+
         return image
+
+    @staticmethod
+    def _resize_image_to_area(
+        image: npt.NDArray[np.uint8], target_area: int
+    ) -> npt.NDArray[np.uint8]:
+        width = math.sqrt(target_area * (image.shape[1] / image.shape[0]))
+        height = width / (image.shape[1] / image.shape[0])
+        resized_width = round(width / 32) * 32
+        resized_height = round(height / 32) * 32
+        if (image.shape[1], image.shape[0]) == (resized_width, resized_height):
+            return image
+
+        pil_image = PIL.Image.fromarray(image)
+        resized = pil_image.resize(
+            (resized_width, resized_height), PIL.Image.Resampling.LANCZOS
+        )
+        return np.asarray(resized)
+
+    def _prepare_qwen_edit_condition_images(
+        self,
+        input_images: list[npt.NDArray[np.uint8]] | None,
+    ) -> tuple[
+        list[npt.NDArray[np.uint8]] | None, list[npt.NDArray[np.uint8]] | None
+    ]:
+        if not input_images:
+            return None, None
+
+        prompt_images = [
+            self._resize_image_to_area(image, QWEN_EDIT_PROMPT_IMAGE_SIZE)
+            for image in input_images
+        ]
+        vae_condition_images = [
+            self._resize_image_to_area(image, QWEN_EDIT_VAE_IMAGE_SIZE)
+            for image in input_images
+        ]
+        return prompt_images, vae_condition_images
+
+    def _prepare_qwen_edit_tokens(
+        self,
+        prompt: str,
+        prompt_images: list[npt.NDArray[np.uint8]] | None,
+    ) -> npt.NDArray[np.int64]:
+        if not prompt_images:
+            raise ValueError(
+                "prompt_images are required for qwen edit tokenization"
+            )
+        if self._qwen_edit_image_processor is None:
+            raise ValueError("qwen edit image processor is not initialized")
+        if self._qwen_edit_image_token_id is None:
+            raise ValueError("qwen edit image token id is not initialized")
+
+        from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
+            fetch_image,
+        )
+
+        processed_images = [
+            fetch_image({"image": PIL.Image.fromarray(image).convert("RGB")})
+            for image in prompt_images
+        ]
+        processed = self._qwen_edit_image_processor(
+            images=processed_images,
+            return_tensors="np",
+        )
+        processed_dict = (
+            processed[0] if isinstance(processed, tuple) else processed
+        )
+        image_grid_thw = np.asarray(
+            processed_dict["image_grid_thw"], dtype=np.int64
+        )
+
+        vision_prefix = "".join(
+            QWEN_EDIT_IMAGE_PROMPT_TEMPLATE.format(index + 1)
+            for index in range(len(prompt_images))
+        )
+        formatted_prompt = QWEN_EDIT_PROMPT_TEMPLATE.format(
+            vision_prefix + prompt
+        )
+        encoded = self.delegate(
+            formatted_prompt,
+            padding=False,
+            return_tensors="np",
+            add_special_tokens=False,
+        )
+        input_ids = encoded["input_ids"][0].astype(np.int64, copy=False)
+
+        merge_len = self._qwen_edit_image_processor.merge_size**2
+        image_token_indices = np.where(
+            input_ids == self._qwen_edit_image_token_id
+        )[0]
+        if len(image_token_indices) < len(image_grid_thw):
+            raise ValueError(
+                "not enough qwen edit image placeholder tokens were generated"
+            )
+
+        for index, grid_thw in enumerate(reversed(image_grid_thw)):
+            token_index = image_token_indices[-(index + 1)]
+            t, h, w = grid_thw
+            num_image_tokens = int((t * h * w) // merge_len)
+            input_ids = np.insert(
+                input_ids,
+                token_index,
+                [self._qwen_edit_image_token_id] * (num_image_tokens - 1),
+            )
+
+        return input_ids.astype(np.int64, copy=False)
 
     def _prepare_latents(
         self,
@@ -451,7 +659,6 @@ class PixelGenerationTokenizer(
         npt.NDArray[np.int64] | None,
         npt.NDArray[np.bool_] | None,
         npt.NDArray[np.int64] | None,
-        npt.NDArray[np.bool_] | None,
         npt.NDArray[np.int64] | None,
     ]:
         """Tokenize prompt(s) with encoder model(s).
@@ -469,7 +676,6 @@ class PixelGenerationTokenizer(
                 token_ids,
                 attn_mask,
                 token_ids_2,
-                attn_mask_2,
                 negative_token_ids,
                 negative_attn_mask,
                 negative_token_ids_2,
@@ -479,9 +685,8 @@ class PixelGenerationTokenizer(
         token_ids, attn_mask = await self.encode(prompt, images=images)
 
         token_ids_2: npt.NDArray[np.int64] | None = None
-        attn_mask_2: npt.NDArray[np.bool_] | None = None
         if self.delegate_2 is not None:
-            token_ids_2, attn_mask_2 = await self.encode(
+            token_ids_2, _attn_mask_2 = await self.encode(
                 prompt_2 or prompt,
                 use_secondary=True,
             )
@@ -494,7 +699,7 @@ class PixelGenerationTokenizer(
                 negative_prompt or ""
             )
             if self.delegate_2 is not None:
-                negative_token_ids_2, _negative_attn_mask_2 = await self.encode(
+                negative_token_ids_2, _attn_mask_neg_2 = await self.encode(
                     negative_prompt_2 or negative_prompt or "",
                     use_secondary=True,
                 )
@@ -503,7 +708,6 @@ class PixelGenerationTokenizer(
             token_ids,
             attn_mask,
             token_ids_2,
-            attn_mask_2,
             negative_token_ids,
             negative_attn_mask,
             negative_token_ids_2,
@@ -534,6 +738,9 @@ class PixelGenerationTokenizer(
         )
 
         tokenizer_output: Any
+
+        # Check if this is Flux2 pipeline (uses Mistral3Tokenizer with chat_template)
+        # Flux2 requires apply_chat_template for proper tokenization
 
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
@@ -631,6 +838,24 @@ class PixelGenerationTokenizer(
                     add_special_tokens=add_special_tokens,
                     return_attention_mask=True,
                 )
+            elif self._pipeline_class_name.is_qwen_image_family:
+                # QwenImage wraps prompts in a Qwen2 chat template.
+                template = (
+                    "<|im_start|>system\n"
+                    "Describe the image by detailing the color, shape, "
+                    "size, texture, quantity, text, spatial relationships "
+                    "of the objects and background:<|im_end|>\n"
+                    "<|im_start|>user\n{}<|im_end|>\n"
+                    "<|im_start|>assistant\n"
+                )
+                formatted = template.format(prompt_str)
+                return delegate(
+                    formatted,
+                    padding=False,
+                    max_length=max_sequence_length,
+                    truncation=True,
+                    add_special_tokens=add_special_tokens,
+                )
             elif self._pipeline_class_name == PipelineClassName.ZIMAGE:
                 # For Z-Image, use Qwen chat-template formatting.
                 messages = [{"role": "user", "content": prompt_str}]
@@ -667,7 +892,6 @@ class PixelGenerationTokenizer(
                         f" the maximum of {max_sequence_length}"
                         " tokens. Please shorten your prompt."
                     )
-
                 return delegate(
                     prompt_str,
                     padding="max_length",
@@ -831,46 +1055,47 @@ class PixelGenerationTokenizer(
         )
 
     @staticmethod
-    def _retrieve_image(
+    def _retrieve_images(
         request: OpenResponsesRequest,
-    ) -> PIL.Image.Image | None:
-        """Retrieve the input image from an OpenResponsesRequest.
+    ) -> list[PIL.Image.Image]:
+        """Retrieve all input images from an OpenResponsesRequest.
 
-        Extracts InputImageContent from the first message's content list and converts
-        the data URI to a PIL Image.
+        Extracts all InputImageContent items from the first message's content
+        list and converts data URIs to PIL Images.
 
         Args:
-            request: The OpenResponsesRequest to extract the image from.
+            request: The OpenResponsesRequest to extract images from.
 
         Returns:
-            PIL Image if found, None otherwise.
+            List of PIL Images (empty if none found).
         """
         # Only check list inputs
         if not isinstance(request.body.input, list):
-            return None
+            return []
 
         if not request.body.input:
-            return None
+            return []
 
         first_message = request.body.input[0]
 
         # Only check list content
         if not isinstance(first_message.content, list):
-            return None
+            return []
 
-        # Find first InputImageContent item
+        images: list[PIL.Image.Image] = []
         for item in first_message.content:
-            if isinstance(item, InputImageContent):
-                # Parse data URI and convert to PIL Image
-                image_url = item.image_url
+            image_type = getattr(item, "type", None)
+            image_url = getattr(item, "image_url", None)
+            if (
+                isinstance(item, InputImageContent)
+                or image_type == "input_image"
+            ) and isinstance(image_url, str):
                 if image_url.startswith("data:"):
-                    # Extract base64 data from data URI
-                    # Format: data:image/png;base64,<base64_data>
                     _, base64_data = image_url.split(",", 1)
                     image_bytes = base64.b64decode(base64_data)
-                    return PIL.Image.open(BytesIO(image_bytes))
+                    images.append(PIL.Image.open(BytesIO(image_bytes)))
 
-        return None
+        return images
 
     async def new_context(
         self,
@@ -883,8 +1108,10 @@ class PixelGenerationTokenizer(
         if not prompt:
             raise ValueError("Prompt must be a non-empty string.")
 
-        # Extract input image from request content (takes precedence over input_image parameter)
-        input_image = self._retrieve_image(request) or input_image
+        # Extract input images from request content (takes precedence over input_image parameter)
+        input_images_list = self._retrieve_images(request)
+        if not input_images_list and input_image is not None:
+            input_images_list = [input_image]
 
         # Extract image provider options (always available via defaults)
         image_options = request.body.provider_options.image
@@ -922,8 +1149,6 @@ class PixelGenerationTokenizer(
             is_distilled_klein = bool(
                 self.diffusers_config.get("is_distilled", False)
             )
-            # for non-distilled models, CFG is enabled
-            # whenever guidance_scale > 1.0; negative prompt defaults to "".
             do_true_cfg = (
                 image_options.guidance_scale > 1.0 and not is_distilled_klein
             )
@@ -932,23 +1157,25 @@ class PixelGenerationTokenizer(
                 image_options.true_cfg_scale > 1.0
                 and image_options.negative_prompt is not None
             )
+        import PIL.Image
 
         # 1. Tokenize prompts
-        # Convert input_image to list format for _generate_tokens_ids
+        # Convert input images to list format for _generate_tokens_ids
         images_for_tokenization: list[PIL.Image.Image] | None = None
-        if input_image is not None:
-            input_img: PIL.Image.Image
-            if isinstance(input_image, np.ndarray):
-                input_img = PIL.Image.fromarray(input_image.astype(np.uint8))
-            else:
-                input_img = input_image
-            images_for_tokenization = [input_img]
+        if input_images_list:
+            images_for_tokenization = []
+            for img in input_images_list:
+                if isinstance(img, np.ndarray):
+                    images_for_tokenization.append(
+                        PIL.Image.fromarray(img.astype(np.uint8))
+                    )
+                else:
+                    images_for_tokenization.append(img)
 
         (
             token_ids,
             attn_mask,
             token_ids_2,
-            _attn_mask_2,
             negative_token_ids,
             negative_attn_mask,
             negative_token_ids_2,
@@ -960,6 +1187,75 @@ class PixelGenerationTokenizer(
             do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
         )
+
+        default_sample_size = self._default_sample_size
+        vae_scale_factor = self._vae_scale_factor
+
+        requested_height = image_options.height
+        requested_width = image_options.width
+
+        height = (
+            requested_height
+            if requested_height is not None
+            else default_sample_size * vae_scale_factor
+        )
+        width = (
+            requested_width
+            if requested_width is not None
+            else default_sample_size * vae_scale_factor
+        )
+
+        # 2. Preprocess input images if provided
+        preprocessed_image_arrays: list[npt.NDArray[np.uint8]] | None = None
+        if input_images_list:
+            if self._is_qwen_image_edit_family:
+                target_height = None
+                target_width = None
+            else:
+                target_height = (
+                    requested_height if requested_height is not None else None
+                )
+                target_width = (
+                    requested_width if requested_width is not None else None
+                )
+            preprocessed_image_arrays = []
+            for img in input_images_list:
+                preprocessed_image = self._preprocess_input_image(
+                    img,
+                    target_height=target_height,
+                    target_width=target_width,
+                    preserve_aspect_ratio=(
+                        self._pipeline_class_name != PipelineClassName.ZIMAGE
+                    ),
+                )
+                if (
+                    not preprocessed_image_arrays
+                    and not self._is_qwen_image_edit_family
+                ):
+                    height = preprocessed_image.height
+                    width = preprocessed_image.width
+                preprocessed_image_arrays.append(
+                    np.array(preprocessed_image, dtype=np.uint8).copy()
+                )
+
+        prompt_images: list[npt.NDArray[np.uint8]] | None = None
+        vae_condition_images: list[npt.NDArray[np.uint8]] | None = None
+        if self._is_qwen_image_edit_family:
+            prompt_images, vae_condition_images = (
+                self._prepare_qwen_edit_condition_images(
+                    preprocessed_image_arrays
+                )
+            )
+            if prompt_images:
+                token_ids = self._prepare_qwen_edit_tokens(
+                    prompt, prompt_images
+                )
+                attn_mask = np.ones_like(token_ids, dtype=np.bool_)
+                if do_true_cfg and image_options.negative_prompt is not None:
+                    negative_token_ids = self._prepare_qwen_edit_tokens(
+                        image_options.negative_prompt,
+                        prompt_images,
+                    )
 
         token_buffer = TokenBuffer(
             array=token_ids.astype(np.int64, copy=False),
@@ -1091,9 +1387,17 @@ class PixelGenerationTokenizer(
             cfg_truncation=image_options.cfg_truncation,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
-            input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
+            input_image=preprocessed_image_arrays[0]
+            if preprocessed_image_arrays
+            else None,
+            input_images=preprocessed_image_arrays,
+            prompt_images=prompt_images,
+            vae_condition_images=vae_condition_images,
             output_format=image_options.output_format,
             residual_threshold=image_options.residual_threshold,
         )
+
+        for validator in self._context_validators:
+            validator(context)
 
         return context

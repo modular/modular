@@ -11,7 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .model import Qwen25VLEncoderModel
-from .multimodal_encoder import Qwen25VLMultimodalEncoderModel
+from .embeddings import QwenImagePosEmbed, QwenImageTimestepProjEmbeddings
+from .qwen_image_attention import (
+    QwenImageFeedForward,
+    QwenImageTransformerBlock,
+)
 
-__all__ = ["Qwen25VLEncoderModel", "Qwen25VLMultimodalEncoderModel"]
+__all__ = [
+    "QwenImageFeedForward",
+    "QwenImagePosEmbed",
+    "QwenImageTimestepProjEmbeddings",
+    "QwenImageTransformerBlock",
+]
