@@ -42,6 +42,7 @@ from linalg.bmm import (
 from std.utils.index import Index, IndexList
 
 from layout import TileTensor, Coord, CoordLike, Idx, row_major
+from layout.tile_layout import Layout as TileLayout
 
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -221,12 +222,6 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = a_device_nd.to_layout_tensor()
-    var b = b_device_nd.to_layout_tensor()
-    var c = c_device_nd.to_layout_tensor()
-    var a_scales = a_scales_device_nd.to_layout_tensor()
-    var b_scales = b_scales_device_nd.to_layout_tensor()
-
     bmm_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
         umma_shape=umma_shape,
@@ -237,22 +232,27 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
             epilogue_fn
         ) if use_epilogue else None,
     ](
-        c,
-        a.get_immutable(),
-        b.get_immutable(),
-        a_scales.get_immutable(),
-        b_scales.get_immutable(),
+        c_device_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_nd,
+        b_scales_device_nd,
         ctx,
     )
 
     ctx.synchronize()
 
-    var c_ref = c_device_ref_nd.to_layout_tensor()
-
     batched_matmul_dynamic_scaled_fp8_naive[
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
-    ](c_ref, a, b, a_scales, b_scales, ctx)
+    ](
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_nd,
+        b_scales_device_nd,
+        ctx,
+    )
 
     ctx.synchronize()
 
@@ -411,26 +411,14 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = a_device_nd.to_layout_tensor()
-    var b = b_device_nd.to_layout_tensor()
-    var a_scales = a_scales_device_nd.to_layout_tensor()
-    var b_scales = b_scales_device_nd.to_layout_tensor()
-
-    comptime c_non_row_major_layout = Layout(
-        IntTuple(B, UNKNOWN_VALUE, N),
-        IntTuple(N, B * N, 1),
+    # Construct non-row-major TileTensors for c: strides (N, B*N, 1) instead
+    # of the row-major (M*N, N, 1).
+    var c_non_rm_layout = TileLayout(
+        Coord(Idx[B](), Idx(M), Idx[N]()),
+        Coord(Idx[N](), Idx[B * N](), Idx[1]()),
     )
-    var c_runtime_layout = RuntimeLayout[c_non_row_major_layout](
-        RuntimeTuple[c_non_row_major_layout.shape](bs, M, N),
-        RuntimeTuple[c_non_row_major_layout.stride](N, B * N, 1),
-    )
-
-    var c = LayoutTensor[c_type, c_non_row_major_layout](
-        c_device_nd.ptr, c_runtime_layout
-    )
-    var c_ref = LayoutTensor[c_type, c_non_row_major_layout](
-        c_device_ref_nd.ptr, c_runtime_layout
-    )
+    var c = TileTensor(c_device_nd.ptr, c_non_rm_layout)
+    var c_ref = TileTensor(c_device_ref_nd.ptr, c_non_rm_layout)
 
     bmm_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
@@ -440,10 +428,10 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
         b_swizzle=swizzle,
     ](
         c,
-        a.get_immutable(),
-        b.get_immutable(),
-        a_scales.get_immutable(),
-        b_scales.get_immutable(),
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_nd,
+        b_scales_device_nd,
         ctx,
     )
 
@@ -452,7 +440,14 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     batched_matmul_dynamic_scaled_fp8_naive[
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
-    ](c_ref, a, b, a_scales, b_scales, ctx)
+    ](
+        c_ref,
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_nd,
+        b_scales_device_nd,
+        ctx,
+    )
 
     ctx.synchronize()
 

@@ -1171,11 +1171,6 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
 
 
 def bmm_sm100_blockwise_scaled_fp8[
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1189,13 +1184,20 @@ def bmm_sm100_blockwise_scaled_fp8[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, ...],
-    a: LayoutTensor[mut=False, a_type, a_layout, ...],
-    b: LayoutTensor[mut=False, b_type, b_layout, ...],
-    a_scales: LayoutTensor[mut=False, a_scales_type, a_scales_layout, ...],
-    b_scales: LayoutTensor[mut=False, b_scales_type, b_scales_layout, ...],
+    c_: TileTensor[mut=True, c_type, ...],
+    a_: TileTensor[mut=False, a_type, ...],
+    b_: TileTensor[mut=False, b_type, ...],
+    a_scales_: TileTensor[mut=False, a_scales_type, ...],
+    b_scales_: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
+    # Convert to LayoutTensor for internal operations.
+    var c = c_.to_layout_tensor()
+    var a = a_.to_layout_tensor()
+    var b = b_.to_layout_tensor()
+    var a_scales = a_scales_.to_layout_tensor()
+    var b_scales = b_scales_.to_layout_tensor()
+
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
@@ -1358,11 +1360,11 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     scales_granularity_mnk: IndexList[3],
     transpose_b: Bool = False,
 ](
-    c_: LayoutTensor[mut=True, c_type, ...],
-    a_: LayoutTensor[a_type, ...],
-    b_: LayoutTensor[b_type, ...],
-    a_scales_: LayoutTensor[a_scales_type, ...],
-    b_scales_: LayoutTensor[b_scales_type, ...],
+    c_: TileTensor[mut=True, c_type, ...],
+    a_: TileTensor[mut=False, a_type, ...],
+    b_: TileTensor[mut=False, b_type, ...],
+    a_scales_: TileTensor[mut=False, a_scales_type, ...],
+    b_scales_: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert (
@@ -1372,12 +1374,19 @@ def batched_matmul_dynamic_scaled_fp8_naive[
 
     comptime BLOCK_SCALE_K = 128
 
+    # Convert to LayoutTensor for internal operations.
+    var c_lt = c_.to_layout_tensor()
+    var a_lt = a_.to_layout_tensor()
+    var b_lt = b_.to_layout_tensor()
+    var a_scales_lt = a_scales_.to_layout_tensor()
+    var b_scales_lt = b_scales_.to_layout_tensor()
+
     # naive implementation requires all tensor have AddressSpace.GENERIC
-    var c = c_.address_space_cast[AddressSpace.GENERIC]()
-    var a = a_.address_space_cast[AddressSpace.GENERIC]()
-    var b = b_.address_space_cast[AddressSpace.GENERIC]()
-    var a_scales = a_scales_.address_space_cast[AddressSpace.GENERIC]()
-    var b_scales = b_scales_.address_space_cast[AddressSpace.GENERIC]()
+    var c = c_lt.address_space_cast[AddressSpace.GENERIC]()
+    var a = a_lt.address_space_cast[AddressSpace.GENERIC]()
+    var b = b_lt.address_space_cast[AddressSpace.GENERIC]()
+    var a_scales = a_scales_lt.address_space_cast[AddressSpace.GENERIC]()
+    var b_scales = b_scales_lt.address_space_cast[AddressSpace.GENERIC]()
 
     var B = c.dim(0)
     var M = c.dim(1)
@@ -1503,11 +1512,11 @@ def batched_matmul_dynamic_scaled_fp8[
             a_swizzle=swizzle,
             b_swizzle=swizzle,
         ](
-            c.to_layout_tensor(),
-            a.to_layout_tensor(),
-            b.to_layout_tensor(),
-            a_scales.to_layout_tensor(),
-            b_scales.to_layout_tensor(),
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
             ctx,
         )
 
@@ -1518,10 +1527,10 @@ def batched_matmul_dynamic_scaled_fp8[
             ),
             transpose_b=transpose_b,
         ](
-            c.to_layout_tensor(),
-            a.to_layout_tensor(),
-            b.to_layout_tensor(),
-            a_scales.to_layout_tensor(),
-            b_scales.to_layout_tensor(),
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
             ctx,
         )
