@@ -23,13 +23,60 @@ Weight key naming follows HuggingFace diffusers conventions:
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
+from max.nn.kernels import flash_attention_gpu, rope_ragged_with_position_ids
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 
-from .embeddings import apply_rotary_emb
 from .normalizations import LayerNormNoAffine
+
+
+def _apply_qwen_image_qk_rope(
+    query: TensorValue,
+    key: TensorValue,
+    freqs_cis: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Apply RoPE to Q and K using precomputed interleaved [cos, sin] frequencies.
+
+    Uses the fused ``rope_ragged_with_position_ids`` GPU kernel instead of
+    graph-level complex multiplication, following the same pattern as z-image.
+
+    Args:
+        query: [B, S, H, D] query tensor.
+        key: [B, S, H, D] key tensor.
+        freqs_cis: [S, D] interleaved [cos, sin] frequency tensor.
+
+    Returns:
+        Tuple of (query_rotated, key_rotated), each [B, S, H, D].
+    """
+    batch_size = query.shape[0]
+    seq_len = query.shape[1]
+    num_heads = query.shape[2]
+    head_dim = query.shape[3]
+
+    query_ragged = ops.reshape(
+        query, [batch_size * seq_len, num_heads, head_dim]
+    )
+    key_ragged = ops.reshape(key, [batch_size * seq_len, num_heads, head_dim])
+
+    position_ids = ops.range(
+        0, seq_len, dtype=DType.uint32, device=query.device
+    )
+    position_ids = ops.broadcast_to(
+        ops.unsqueeze(position_ids, 0), [batch_size, seq_len]
+    )
+
+    query_out = rope_ragged_with_position_ids(
+        query_ragged, freqs_cis, position_ids, interleaved=True
+    )
+    key_out = rope_ragged_with_position_ids(
+        key_ragged, freqs_cis, position_ids, interleaved=True
+    )
+    return (
+        ops.reshape(query_out, [batch_size, seq_len, num_heads, head_dim]),
+        ops.reshape(key_out, [batch_size, seq_len, num_heads, head_dim]),
+    )
+
 
 # ---------------------------------------------------------------------------
 # FeedForward (matches diffusers naming: net.0.proj, net.2)
@@ -248,7 +295,7 @@ class QwenImageAttention(Module):
         self,
         hidden_states: TensorValue,
         encoder_hidden_states: TensorValue | None = None,
-        image_rotary_emb: tuple[TensorValue, TensorValue] | None = None,
+        image_rotary_emb: TensorValue | None = None,
     ) -> TensorValue | tuple[TensorValue, TensorValue]:
         batch_size = hidden_states.shape[0]
         query = self.to_q(hidden_states)
@@ -304,14 +351,8 @@ class QwenImageAttention(Module):
             key = ops.concat([encoder_key, key], axis=1)
             value = ops.concat([encoder_value, value], axis=1)
 
-        original_dtype = query.dtype
         if image_rotary_emb is not None:
-            query = apply_rotary_emb(query, image_rotary_emb, sequence_dim=1)
-            key = apply_rotary_emb(key, image_rotary_emb, sequence_dim=1)
-            if query.dtype != original_dtype:
-                query = ops.cast(query, original_dtype)
-            if key.dtype != original_dtype:
-                key = ops.cast(key, original_dtype)
+            query, key = _apply_qwen_image_qk_rope(query, key, image_rotary_emb)
 
         hidden_states = flash_attention_gpu(
             query,
@@ -519,7 +560,7 @@ class QwenImageTransformerBlock(Module):
         hidden_states: TensorValue,
         encoder_hidden_states: TensorValue,
         temb: TensorValue,
-        image_rotary_emb: tuple[TensorValue, TensorValue] | None = None,
+        image_rotary_emb: TensorValue | None = None,
         temb_zero: TensorValue | None = None,
         num_noise_tokens: int | None = None,
     ) -> tuple[TensorValue, TensorValue]:

@@ -41,14 +41,13 @@ class QwenImageBlockWrapper(MaxBlock):
         hidden_states: Tensor,
         encoder_hidden_states: Tensor,
         temb: Tensor,
-        rotary_cos: Tensor,
-        rotary_sin: Tensor,
+        freqs_cis: Tensor,
     ) -> tuple[Tensor, Tensor]:
         return super().forward(
             hidden_states,
             encoder_hidden_states,
             temb,
-            image_rotary_emb=(rotary_cos, rotary_sin),
+            image_rotary_emb=freqs_cis,
         )
 
 
@@ -95,7 +94,7 @@ def generate_max_outputs(
     encoder_hidden_states: torch.Tensor,
     temb: torch.Tensor,
     block_weights: dict[str, torch.Tensor],
-    image_rotary_emb: tuple[torch.Tensor, torch.Tensor],
+    image_rotary_emb: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Run MAX QwenImageTransformerBlock and return outputs."""
     device_ref = Accelerator()
@@ -116,10 +115,6 @@ def generate_max_outputs(
 
     batch_size, img_seq_len, _ = hidden_states.shape
     txt_seq_len = encoder_hidden_states.shape[1]
-    total_seq_len = txt_seq_len + img_seq_len
-    head_dim = qwen_config["attention_head_dim"]
-
-    cos, sin = image_rotary_emb
 
     compiled = block.compile(
         TensorType(
@@ -129,8 +124,7 @@ def generate_max_outputs(
             DType.bfloat16, [batch_size, txt_seq_len, inner_dim], device_ref
         ),
         TensorType(DType.bfloat16, [batch_size, inner_dim], device_ref),
-        TensorType(DType.float32, list(cos.shape), device_ref),
-        TensorType(DType.float32, list(sin.shape), device_ref),
+        TensorType(DType.float32, list(image_rotary_emb.shape), device_ref),
         weights=block_weights,
     )
 
@@ -138,8 +132,7 @@ def generate_max_outputs(
         Tensor.from_dlpack(hidden_states),
         Tensor.from_dlpack(encoder_hidden_states),
         Tensor.from_dlpack(temb),
-        Tensor.from_dlpack(cos),
-        Tensor.from_dlpack(sin),
+        Tensor.from_dlpack(image_rotary_emb),
     )
     return result[0], result[1]
 
@@ -151,7 +144,7 @@ def test_qwen_image_block(
     temb: torch.Tensor,
     block_weights: dict[str, torch.Tensor],
     image_rotary_emb_diffusers: tuple[torch.Tensor, torch.Tensor],
-    image_rotary_emb_max: tuple[torch.Tensor, torch.Tensor],
+    image_rotary_emb_max: torch.Tensor,
 ) -> None:
     """Test that MAX QwenImageTransformerBlock matches diffusers output."""
     torch_txt_out, torch_img_out = generate_torch_outputs(

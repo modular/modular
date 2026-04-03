@@ -245,30 +245,28 @@ class QwenImagePosEmbed(Module):
         self.theta = theta
         self.axes_dim = tuple(axes_dim)
 
-    def __call__(self, ids: TensorValue) -> tuple[TensorValue, TensorValue]:
-        """Compute rotary position embeddings from position IDs.
+    def __call__(self, ids: TensorValue) -> TensorValue:
+        """Compute interleaved [cos, sin] rotary position embeddings.
 
         Args:
             ids: Position IDs of shape [S, len(axes_dim)] (3D: T, H, W).
 
         Returns:
-            Tuple of (cos, sin) tensors of shape [S, sum(axes_dim)//2].
+            Interleaved freqs_cis tensor of shape [S, sum(axes_dim)],
+            laid out as [cos0, sin0, cos1, sin1, ...] per axis.
         """
-        cos_out = []
-        sin_out = []
-
         pos = ops.cast(ids, DType.float32)
+        parts = []
 
         for i in range(len(self.axes_dim)):
+            dim = self.axes_dim[i]
             cos, sin = get_1d_rotary_pos_embed(
-                self.axes_dim[i],
+                dim,
                 pos[..., i],
                 theta=self.theta,
             )
-            cos_out.append(cos)
-            sin_out.append(sin)
+            # Interleave [cos, sin] pairs: [S, dim//2, 2] → [S, dim]
+            paired = ops.stack([cos, sin], axis=-1)
+            parts.append(ops.reshape(paired, [cos.shape[0], dim]))
 
-        freqs_cos = ops.concat(cos_out, axis=-1)
-        freqs_sin = ops.concat(sin_out, axis=-1)
-
-        return freqs_cos, freqs_sin
+        return ops.concat(parts, axis=-1)

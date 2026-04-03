@@ -114,19 +114,21 @@ def image_rotary_emb_diffusers(
 @pytest.fixture
 def image_rotary_emb_max(
     image_rotary_emb_diffusers: tuple[torch.Tensor, torch.Tensor],
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """RoPE in MAX format: (cos, sin) as real tensors.
+) -> torch.Tensor:
+    """RoPE in MAX format: interleaved [cos, sin] freqs_cis tensor.
 
     Concatenated as [txt, img] to match MAX's concat order.
-    cos, sin: [txt_seq_len + img_seq_len, head_dim] float32
+    freqs_cis: [txt_seq_len + img_seq_len, head_dim] float32
+    Layout: [cos0, sin0, cos1, sin1, ...] per position.
     """
     img_freqs, txt_freqs = image_rotary_emb_diffusers
     # MAX concatenates text first, then image
     full_freqs = torch.cat([txt_freqs, img_freqs], dim=0)
-    # Convert complex -> real: repeat_interleave to expand D//2 -> D
-    cos = full_freqs.real.repeat_interleave(2, dim=-1).float().to("cuda")
-    sin = full_freqs.imag.repeat_interleave(2, dim=-1).float().to("cuda")
-    return (cos, sin)
+    # Convert complex → interleaved real: [S, D//2] → [S, D]
+    cos = full_freqs.real.float()  # [S, D//2]
+    sin = full_freqs.imag.float()  # [S, D//2]
+    freqs_cis = torch.stack([cos, sin], dim=-1).reshape(full_freqs.shape[0], -1)
+    return freqs_cis.to("cuda")
 
 
 @pytest.fixture

@@ -1010,8 +1010,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
                 image_np = (
                     np.from_dlpack(
                         cpu_buf.view(dtype=DType.uint16, shape=cpu_buf.shape)
-                    )
-                    .astype(np.uint32)
+                    ).astype(np.uint32)
                     << 16
                 ).view(np.float32)
             else:

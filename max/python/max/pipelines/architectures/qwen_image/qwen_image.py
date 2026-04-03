@@ -230,9 +230,9 @@ class QwenImageTransformer2DModel(Module):
         encoder_hidden_states = self.txt_norm(encoder_hidden_states)
         encoder_hidden_states = self.txt_in(encoder_hidden_states)
 
-        # 3. Calculate RoPE embeddings
+        # 3. Calculate RoPE embeddings (interleaved freqs_cis)
         ids = ops.concat([txt_ids, img_ids], axis=0)
-        image_rotary_emb = self.pos_embed(ids)
+        image_rotary_emb = ops.cast(self.pos_embed(ids), hidden_states.dtype)
 
         # 4. Dual-stream transformer blocks (all 60)
         for block in self.transformer_blocks:
