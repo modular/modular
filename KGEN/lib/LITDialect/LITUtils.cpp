@@ -1138,14 +1138,15 @@ void LIT::canonicalizeTraitCompositionSymbols(
 FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
     TypeConformsToTraitAttr conformsTo,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
-  // Try to extract a TraitType from the type value.
   TraitType traitType;
   if (auto typeParam = sugarDynCast<TypeParamAttr>(conformsTo.getTypeValue())) {
     if (auto paramType = dyn_cast<ParamType>(typeParam.getMlirType()))
-      traitType = dyn_cast<TraitType>(paramType.getParam().getType());
+      traitType =
+          dyn_cast<TraitType>(getCanonicalType(paramType.getParam().getType()));
   }
   if (!traitType)
-    traitType = dyn_cast<TraitType>(conformsTo.getTypeValue().getType());
+    traitType = dyn_cast<TraitType>(
+        getCanonicalType(conformsTo.getTypeValue().getType()));
   if (!traitType)
     return failure();
 

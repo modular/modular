@@ -1235,6 +1235,40 @@ def test_default_equatable_conditional():
     print("default_ne_diff:", a != c)
 
 
+# ===========================================================================
+# Comptime trait alias on type parameter with conditional conformance
+# ===========================================================================
+# When T is constrained to a comptime trait alias (e.g. `comptime MyAlias =
+# A & B`), the alias introduces SugarAttr/AnyTraitType/ParamType wrapping
+# around the type parameter's type in the MLIR IR. The
+# `simplifyConformsToAgainstTypeValue` function must unwrap these layers to
+# extract the underlying TraitType and verify that it subsumes the required
+# trait from the conditional conformance constraint.
+
+
+comptime CopyableAlias = Copyable & ImplicitlyDestructible
+
+
+def test_alias_param_conditional[T: CopyableAlias](x: SimpleWrapper[T]):
+    # SimpleWrapper[T] is conditionally Copyable where conforms_to(T, Copyable).
+    # T: CopyableAlias = Copyable & ImplicitlyDestructible.
+    # The compiler must look through the alias sugar to see that T: Copyable.
+    needs_copyable(x)
+    print("alias_param_conditional: ok")
+
+
+def test_alias_param_conforms_to():
+    # Also verify conforms_to evaluates correctly with alias-constrained params.
+    print(
+        "alias_conforms_pos:",
+        conforms_to(SimpleWrapper[CopyableType], Copyable),
+    )
+    print(
+        "alias_conforms_neg:",
+        conforms_to(SimpleWrapper[MovableOnlyType], Copyable),
+    )
+
+
 def main():
     test_simple_conditional()
     test_nested_wrappers()
@@ -1276,3 +1310,8 @@ def main():
     test_default_equatable_conditional()
     # CHECK: RegisterPassable!
     test_conditional_rp()
+    # CHECK: alias_param_conditional: ok
+    test_alias_param_conditional(SimpleWrapper[CopyableType](CopyableType(42)))
+    # CHECK: alias_conforms_pos: True
+    # CHECK: alias_conforms_neg: False
+    test_alias_param_conforms_to()
