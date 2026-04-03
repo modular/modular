@@ -1,16 +1,16 @@
+use crate::metrics::{RustMetrics, RustMetricsSnapshot};
+use crate::python_bridge::PythonBridge;
+use crate::types::RequestID;
+use crate::zmq_interface::{StreamInitError, ZmqModelWorkerProxy};
 use axum::{
+    body::Bytes,
+    extract::State,
     http::StatusCode,
     routing::{get, post},
-    Router,
-    Json,
-    extract::State,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::types::RequestID;
-use crate::zmq_interface::{ZmqModelWorkerProxy, StreamInitError};
-use crate::python_bridge::PythonBridge;
-use crate::metrics::{RustMetrics, RustMetricsSnapshot};
 use std::time::Instant;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,8 +55,8 @@ pub fn openai_routes() -> Router<Arc<AppState>> {
         .route("/rust/metrics", get(rust_metrics))
 }
 
-use futures::StreamExt;
 use axum::response::IntoResponse;
+use futures::StreamExt;
 
 use axum::response::sse::{Event, Sse};
 use std::convert::Infallible;
@@ -68,11 +68,25 @@ struct ErrorBody {
 
 async fn create_chat_completion(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<ChatCompletionRequest>,
+    body: Bytes,
 ) -> axum::response::Response {
+    let payload: ChatCompletionRequest = match serde_json::from_slice(&body) {
+        Ok(payload) => payload,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorBody {
+                    error: format!("Invalid JSON payload: {}", err),
+                }),
+            )
+                .into_response();
+        }
+    };
+
     let request_id = RequestID::generate();
+    let response_id = request_id.0.clone();
     let is_stream = payload.stream.unwrap_or(false);
-    let mut stream = match state.proxy.stream(request_id.clone(), payload).await {
+    let mut stream = match state.proxy.stream(request_id, payload).await {
         Ok(stream) => stream,
         Err(StreamInitError::Overloaded) => {
             return (
@@ -98,14 +112,18 @@ async fn create_chat_completion(
         let sse_stream = async_stream::stream! {
             while let Some(chunk) = stream.next().await {
                 // Decode once per scheduler chunk to reduce Python GIL crossings.
-                let mut chunk_tokens = Vec::new();
-                for tokens in chunk {
-                    chunk_tokens.extend(tokens);
+                let chunk_capacity = chunk.iter().map(Vec::len).sum();
+                let mut chunk_tokens = Vec::with_capacity(chunk_capacity);
+                for mut tokens in chunk {
+                    chunk_tokens.append(&mut tokens);
                 }
                 if !chunk_tokens.is_empty() {
                     let token_count = chunk_tokens.len();
                     let started = Instant::now();
-                    let text = state.python_bridge.decode_tokens(chunk_tokens).unwrap_or_default();
+                    let text = state
+                        .python_bridge
+                        .decode_tokens(&chunk_tokens)
+                        .unwrap_or_default();
                     state
                         .metrics
                         .record_decode(token_count, started.elapsed());
@@ -117,20 +135,28 @@ async fn create_chat_completion(
     } else {
         let mut full_tokens = Vec::new();
         while let Some(chunk) = stream.next().await {
-            for output in chunk {
-                full_tokens.extend(output);
+            let chunk_capacity: usize = chunk.iter().map(Vec::len).sum();
+            full_tokens.reserve(chunk_capacity);
+            for mut output in chunk {
+                full_tokens.append(&mut output);
             }
         }
 
         let token_count = full_tokens.len();
         let started = Instant::now();
-        let full_content = state.python_bridge.decode_tokens(full_tokens).unwrap_or_else(|_| "Error decoding tokens".to_string());
+        let full_content = state
+            .python_bridge
+            .decode_tokens(&full_tokens)
+            .unwrap_or_else(|_| "Error decoding tokens".to_string());
         state.metrics.record_decode(token_count, started.elapsed());
 
         Json(ChatCompletionResponse {
-            id: request_id.0,
+            id: response_id,
             object: "chat.completion".to_string(),
-            created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+            created: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
             model: "max-model".to_string(),
             choices: vec![Choice {
                 index: 0,
@@ -140,7 +166,8 @@ async fn create_chat_completion(
                 },
                 finish_reason: Some("stop".to_string()),
             }],
-        }).into_response()
+        })
+        .into_response()
     }
 }
 
@@ -158,8 +185,6 @@ async fn list_models() -> Json<serde_json::Value> {
     }))
 }
 
-async fn rust_metrics(
-    State(state): State<Arc<AppState>>,
-) -> Json<RustMetricsSnapshot> {
+async fn rust_metrics(State(state): State<Arc<AppState>>) -> Json<RustMetricsSnapshot> {
     Json(state.proxy.metrics_snapshot())
 }

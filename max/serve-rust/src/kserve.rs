@@ -1,17 +1,19 @@
+use crate::openai::AppState;
 use axum::{
-    routing::{get, post},
-    Router,
-    Json,
     extract::Path,
+    routing::{get, post},
+    Json, Router,
 };
 use std::sync::Arc;
-use crate::openai::AppState;
 
 pub fn kserve_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/health/live", get(live))
         .route("/health/ready", get(ready))
-        .route("/models/:model_name/versions/:model_version/infer", post(infer))
+        .route(
+            "/models/:model_name/versions/:model_version/infer",
+            post(infer),
+        )
 }
 
 async fn live() -> &'static str {

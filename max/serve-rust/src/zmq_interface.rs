@@ -1,16 +1,16 @@
-use crate::types::{RequestID, SchedulerResult, TextGenerationContext};
 use crate::metrics::RustMetrics;
+use crate::types::{RequestID, SchedulerResult, TextGenerationContext};
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::{TryRecvError, TrySendError};
-use tokio::sync::{mpsc, Mutex};
-use zeromq::{PushSocket, PullSocket, Socket, SocketRecv, SocketSend};
-use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
+use zeromq::{PullSocket, PushSocket, Socket, SocketRecv, SocketSend};
 
 pub struct ZmqProxyConfig {
     pub request_queue_capacity: usize,
@@ -56,12 +56,11 @@ impl fmt::Display for StreamInitError {
 }
 
 pub struct ZmqModelWorkerProxy<Request, Reply> {
-    response_pull: Arc<Mutex<PullSocket>>,
+    response_pull: Arc<AsyncMutex<PullSocket>>,
     request_tx: mpsc::Sender<OutboundRequest>,
     cancel_tx: mpsc::Sender<Vec<u8>>,
     metrics: Arc<RustMetrics>,
-    pending_out_queues:
-        Arc<Mutex<HashMap<RequestID, PendingRequest<Reply>>>>,
+    pending_out_queues: Arc<Mutex<HashMap<RequestID, PendingRequest<Reply>>>>,
     _phantom: PhantomData<Request>,
 }
 
@@ -78,33 +77,37 @@ where
         metrics: Arc<RustMetrics>,
     ) -> Self {
         let mut request_push = PushSocket::new();
-        request_push.bind(request_addr).await.expect("Failed to bind request socket");
+        request_push
+            .bind(request_addr)
+            .await
+            .expect("Failed to bind request socket");
 
         let mut response_pull = PullSocket::new();
-        response_pull.bind(response_addr).await.expect("Failed to bind response socket");
+        response_pull
+            .bind(response_addr)
+            .await
+            .expect("Failed to bind response socket");
 
         let mut cancel_push = PushSocket::new();
-        cancel_push.bind(cancel_addr).await.expect("Failed to bind cancel socket");
+        cancel_push
+            .bind(cancel_addr)
+            .await
+            .expect("Failed to bind cancel socket");
 
         let (request_tx, mut request_rx) =
             mpsc::channel::<OutboundRequest>(cfg.request_queue_capacity);
         let sender_metrics = Arc::clone(&metrics);
         let max_batch_size = cfg.request_batch_max_size.max(1);
-        let batch_wait = cfg.request_batch_wait;
+        let _ = cfg.request_batch_wait;
         tokio::spawn(async move {
             while let Some(first) = request_rx.recv().await {
-                let mut batch = vec![first];
-                let deadline = Instant::now() + batch_wait;
+                let mut batch = Vec::with_capacity(max_batch_size);
+                batch.push(first);
 
                 while batch.len() < max_batch_size {
-                    let remaining = deadline.saturating_duration_since(Instant::now());
-                    if remaining.is_zero() {
-                        break;
-                    }
-
-                    match tokio::time::timeout(remaining, request_rx.recv()).await {
-                        Ok(Some(msg)) => batch.push(msg),
-                        Ok(None) | Err(_) => break,
+                    match request_rx.try_recv() {
+                        Ok(msg) => batch.push(msg),
+                        Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
                     }
                 }
 
@@ -127,7 +130,7 @@ where
         });
 
         Self {
-            response_pull: Arc::new(Mutex::new(response_pull)),
+            response_pull: Arc::new(AsyncMutex::new(response_pull)),
             request_tx,
             cancel_tx,
             metrics,
@@ -143,7 +146,10 @@ where
     ) -> Result<Pin<Box<dyn Stream<Item = Vec<Reply>> + Send>>, StreamInitError> {
         let (tx, mut rx) = mpsc::unbounded_channel();
         {
-            let mut pending = self.pending_out_queues.lock().await;
+            let mut pending = self
+                .pending_out_queues
+                .lock()
+                .expect("Pending request lock poisoned");
             pending.insert(
                 request_id.clone(),
                 PendingRequest {
@@ -161,21 +167,26 @@ where
         };
 
         let serialized = rmp_serde::to_vec(&context).expect("Serialization failed");
-        match self
-            .request_tx
-            .try_send(OutboundRequest { payload: serialized })
-        {
+        match self.request_tx.try_send(OutboundRequest {
+            payload: serialized,
+        }) {
             Ok(()) => {
                 self.metrics.record_request_started();
             }
             Err(TrySendError::Full(_)) => {
-                let mut pending = self.pending_out_queues.lock().await;
+                let mut pending = self
+                    .pending_out_queues
+                    .lock()
+                    .expect("Pending request lock poisoned");
                 pending.remove(&request_id);
                 self.metrics.record_request_rejected();
                 return Err(StreamInitError::Overloaded);
             }
             Err(TrySendError::Closed(_)) => {
-                let mut pending = self.pending_out_queues.lock().await;
+                let mut pending = self
+                    .pending_out_queues
+                    .lock()
+                    .expect("Pending request lock poisoned");
                 pending.remove(&request_id);
                 self.metrics.record_request_rejected();
                 return Err(StreamInitError::Unavailable);
@@ -251,7 +262,10 @@ where
                 let mut cancelled_count = 0_u64;
 
                 {
-                    let mut pending = proxy.pending_out_queues.lock().await;
+                    let mut pending = proxy
+                        .pending_out_queues
+                        .lock()
+                        .expect("Pending request lock poisoned");
                     for (request_id, response) in response_dict {
                         if let Some(entry) = pending.get_mut(&request_id) {
                             if !entry.seen_first_token && response.result.is_some() {
@@ -287,21 +301,24 @@ where
                     }
                 }
 
-                let mut pending = proxy.pending_out_queues.lock().await;
-                for id in &to_remove {
-                    pending.remove(id);
+                {
+                    let mut pending = proxy
+                        .pending_out_queues
+                        .lock()
+                        .expect("Pending request lock poisoned");
+                    for id in &to_remove {
+                        pending.remove(id);
+                    }
                 }
 
-                for _ in 0..completed_count {
-                    proxy.metrics.record_request_completed();
+                if completed_count > 0 {
+                    proxy.metrics.record_requests_completed(completed_count);
                 }
-                for _ in 0..cancelled_count {
-                    proxy.metrics.record_request_cancelled();
+                if cancelled_count > 0 {
+                    proxy.metrics.record_requests_cancelled(cancelled_count);
                 }
 
                 if !to_cancel.is_empty() {
-                    // Unlock pending queues before enqueueing cancellation to avoid potential deadlock.
-                    drop(pending);
                     let serialized = rmp_serde::to_vec(&to_cancel).expect("Serialization failed");
                     if let Err(e) = proxy.cancel_tx.send(serialized).await {
                         tracing::error!("Failed to enqueue cancellation message: {}", e);

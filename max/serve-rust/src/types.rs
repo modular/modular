@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::env;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash, PartialEq, Eq)]
 pub struct RequestID(pub String);
@@ -30,10 +30,4 @@ pub struct SchedulerResult<T> {
 pub struct TextGenerationContext<T> {
     pub request_id: RequestID,
     pub request: T,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TextGenerationOutput {
-    pub tokens: Vec<i32>,
-    pub final_status: i32,
 }

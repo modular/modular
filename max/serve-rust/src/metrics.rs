@@ -45,12 +45,12 @@ impl RustMetrics {
         self.requests_started.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_request_completed(&self) {
-        self.requests_completed.fetch_add(1, Ordering::Relaxed);
+    pub fn record_requests_completed(&self, count: u64) {
+        self.requests_completed.fetch_add(count, Ordering::Relaxed);
     }
 
-    pub fn record_request_cancelled(&self) {
-        self.requests_cancelled.fetch_add(1, Ordering::Relaxed);
+    pub fn record_requests_cancelled(&self, count: u64) {
+        self.requests_cancelled.fetch_add(count, Ordering::Relaxed);
     }
 
     pub fn record_request_rejected(&self) {
@@ -92,14 +92,12 @@ impl RustMetrics {
         let first_token_latency_us_total =
             self.first_token_latency_us_total.load(Ordering::Relaxed);
         let end_to_end_count = self.end_to_end_count.load(Ordering::Relaxed);
-        let end_to_end_latency_us_total =
-            self.end_to_end_latency_us_total.load(Ordering::Relaxed);
+        let end_to_end_latency_us_total = self.end_to_end_latency_us_total.load(Ordering::Relaxed);
         let decode_calls = self.decode_calls.load(Ordering::Relaxed);
         let decode_tokens_total = self.decode_tokens_total.load(Ordering::Relaxed);
         let decode_latency_us_total = self.decode_latency_us_total.load(Ordering::Relaxed);
         let request_batches = self.request_batches.load(Ordering::Relaxed);
-        let request_batch_items_total =
-            self.request_batch_items_total.load(Ordering::Relaxed);
+        let request_batch_items_total = self.request_batch_items_total.load(Ordering::Relaxed);
 
         RustMetricsSnapshot {
             requests_started,

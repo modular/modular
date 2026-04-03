@@ -35,7 +35,11 @@ impl Settings {
             host: env::var("MAX_SERVE_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("MAX_SERVE_PORT").map_or(8000, |val| {
                 val.parse().unwrap_or_else(|e| {
-                    tracing::warn!("Could not parse MAX_SERVE_PORT: '{}'. Error: {}. Using default 8000.", val, e);
+                    tracing::warn!(
+                        "Could not parse MAX_SERVE_PORT: '{}'. Error: {}. Using default 8000.",
+                        val,
+                        e
+                    );
                     8000
                 })
             }),
@@ -45,12 +49,17 @@ impl Settings {
                 .unwrap_or(8001),
             api_types: env::var("MAX_SERVE_API_TYPES")
                 .ok()
-                .map(|s| s.split(',').filter_map(|t| serde_json::from_str(&format!("\"{}\"", t.trim())).ok()).collect())
+                .map(|s| {
+                    s.split(',')
+                        .filter_map(|t| serde_json::from_str(&format!("\"{}\"", t.trim())).ok())
+                        .collect()
+                })
                 .unwrap_or_else(|| vec![APIType::OPENAI, APIType::SAGEMAKER]),
             disable_telemetry: env::var("MAX_SERVE_DISABLE_TELEMETRY").is_ok(),
             offline_inference: env::var("MAX_SERVE_OFFLINE_INFERENCE").is_ok(),
             headless: env::var("MAX_SERVE_HEADLESS").is_ok(),
-            logs_console_level: env::var("MAX_SERVE_LOGS_CONSOLE_LEVEL").unwrap_or_else(|_| "INFO".to_string()),
+            logs_console_level: env::var("MAX_SERVE_LOGS_CONSOLE_LEVEL")
+                .unwrap_or_else(|_| "INFO".to_string()),
             rust_request_queue_capacity: env::var("MAX_SERVE_RUST_REQUEST_QUEUE_CAPACITY")
                 .ok()
                 .and_then(|v| v.parse().ok())
