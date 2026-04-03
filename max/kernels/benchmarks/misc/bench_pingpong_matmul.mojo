@@ -168,9 +168,9 @@ def bench_matmul[
 
                 comptime if use_ping_pong_matmul:
                     ping_pong_matmul[enable_swizzle=enable_swizzle](
-                        tensor_a.to_layout_tensor(),
-                        tensor_b.to_layout_tensor(),
-                        tensor_c.to_layout_tensor(),
+                        tensor_a,
+                        tensor_b,
+                        tensor_c,
                         ctx,
                     )
                 else:

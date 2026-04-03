@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from linalg.matmul.gpu.amd.warp_spec_matmul import warp_specialized_matmul
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_si64
-from linalg.matmul.gpu.amd.warp_spec_matmul import warp_specialized_matmul
 
 
 def test_warp_specialization_amd[
@@ -49,22 +48,10 @@ def test_warp_specialization_amd[
             var val = random_si64(0, 20)
             host_b[i] = val.cast[DType.bfloat16]()
 
-    var a_device_tensor = LayoutTensor[
-        DType.bfloat16,
-        Layout.row_major(M, K),
-    ](device_a)
-
-    var b_device_tensor = LayoutTensor[DType.bfloat16, Layout.row_major(N, K)](
-        device_b
-    )
-
-    var c_device_tensor = LayoutTensor[DType.float32, Layout.row_major(M, N)](
-        device_c
-    )
-
-    var c_device_ref_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(M, N)
-    ](device_c_ref)
+    var a_tt = TileTensor(device_a, row_major[M, K]())
+    var b_tt = TileTensor(device_b, row_major[N, K]())
+    var c_tt = TileTensor(device_c, row_major[M, N]())
+    var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
 
     warp_specialized_matmul[
         M,
@@ -81,17 +68,17 @@ def test_warp_specialization_amd[
         consumer_warps,
         pipeline_stages,
     ](
-        a_device_tensor,
-        b_device_tensor,
-        c_device_tensor,
+        a_tt,
+        b_tt,
+        c_tt,
         ctx,
     )
 
     vendor_blas.matmul(
         ctx,
-        c_device_ref_tensor,
-        a_device_tensor,
-        b_device_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )

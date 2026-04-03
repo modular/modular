@@ -218,7 +218,11 @@ def compile_pingpong_kernel_to_asm[
         c_layout,
         pingpong_config,
         enable_swizzle=True,
-    ].matmul_ping_pong
+    ].matmul_ping_pong[
+        LTToTTLayout[a_layout],
+        LTToTTLayout[b_layout],
+        LTToTTLayout[c_layout],
+    ]
 
     # Compile for AMD GPU
     var compiled = _compile_code[
