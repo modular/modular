@@ -52,6 +52,8 @@ single_version_override(
         "//bazel/public-patches:rules_cc_textual_hdrs.patch",
         # https://github.com/bazelbuild/rules_cc/pull/578
         "//bazel/public-patches:rules_cc_private_api.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/675
+        "//bazel/public-patches:rules_cc_set_soname.patch",
     ],
 )
 
@@ -221,6 +223,13 @@ filegroup(
     # built from commit: https://github.com/modularml/rocm-systems/commit/84f4e1e366b66066ba01d0ec64bfeaee0bf6f7b6
     sha256 = "9e75030c46158d8ff87d305cf39b9953c5a0d780780fcff93ef89c149835c69e",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem/3.2.1/9e75030c46158d8ff87d305cf39b9953c5a0d780780fcff93ef89c149835c69e/rocshmem.tar.gz",
+)
+
+http_archive(
+    name = "llvm-ifs",
+    build_file_content = "filegroup(name = 'llvm-ifs', srcs = glob(['**']), visibility = ['//visibility:public'])",
+    sha256 = "126f4b14273588f221eb98e8d9952675eddd7f8a0466347be9c8e6d0530c9144",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-tools/1/126f4b14273588f221eb98e8d9952675eddd7f8a0466347be9c8e6d0530c9144/tools.tar.gz",
 )
 
 http_archive(
