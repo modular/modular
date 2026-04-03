@@ -54,6 +54,7 @@ from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
+from .dp_padding import DPBatchPadder
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -74,6 +75,7 @@ class DecodeScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         dispatcher: DecodeDispatcherClientV2,
+        dp_padder: DPBatchPadder | None = None,
     ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
@@ -112,6 +114,7 @@ class DecodeScheduler(Scheduler):
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
             extra_kv_caches=getattr(pipeline, "extra_kv_managers", []),
+            dp_padder=dp_padder,
         )
         self.scheduler_logger = SchedulerLogger()
         # None corresponds to the default destination address.
@@ -464,6 +467,20 @@ def load_decode_scheduler(
         pipeline_config
     )
 
+    # Build DP batch padder when DP > 1 with device graph capture.
+    dp_padder: DPBatchPadder | None = None
+    if (
+        scheduler_config.data_parallel_degree > 1
+        and pipeline_config.runtime.device_graph_capture
+    ):
+        dp_padder = DPBatchPadder(
+            dp_size=scheduler_config.data_parallel_degree,
+            kv_manager=pipeline.kv_manager,
+            max_length=pipeline._pipeline_model.max_seq_len,
+            model_name=pipeline_config.model.model_name,
+            pipeline=pipeline,
+        )
+
     return DecodeScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
@@ -472,4 +489,5 @@ def load_decode_scheduler(
         response_queue=response_queue,
         cancel_queue=cancel_queue,
         dispatcher=DecodeDispatcherClientV2(bind_addr=settings.di_bind_address),
+        dp_padder=dp_padder,
     )

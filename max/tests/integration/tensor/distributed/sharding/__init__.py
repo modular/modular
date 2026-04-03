@@ -10,24 +10,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-"""Distributed tensor abstractions for multi-device parallelism.
-
-Provides :class:`DTensor`, :class:`DeviceMesh`, and placement types
-(:class:`Replicated`, :class:`Sharded`, :class:`Partial`) for expressing how
-tensors are distributed across devices.
-"""
-
-from .device_mesh import DeviceMesh
-from .dtensor import DTensor
-from .placement import Partial, Placement, ReduceOp, Replicated, Sharded
-
-__all__ = [
-    "DTensor",
-    "DeviceMesh",
-    "Partial",
-    "Placement",
-    "ReduceOp",
-    "Replicated",
-    "Sharded",
-]

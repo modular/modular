@@ -86,6 +86,7 @@ class ChatMessage:
 class ChatSession:
     id: int | None
     messages: Sequence[ChatMessage]
+    prefix_turns: int = 0
 
 
 @dataclass

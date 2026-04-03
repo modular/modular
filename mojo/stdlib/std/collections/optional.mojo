@@ -42,6 +42,7 @@ from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory._nonnull import NonNullUnsafePointer, unsafe_origin_cast
 from std.reflection import call_location
+from std.utils.variant import _all_trivial_copyinit
 
 
 @fieldwise_init
@@ -270,6 +271,8 @@ struct Optional[T: Movable](
     # TODO(MOCO-3640): Remove once the compiler can synthesize copy
     # constructors through variadic conditional conformances
     # (AllCopyable[_NoneType, T] when T: Copyable).
+    comptime __copy_ctor_is_trivial: Bool = _all_trivial_copyinit[Self.T]()
+
     @always_inline
     def __init__(out self, *, copy: Self):
         """Copy-initialize an `Optional`.

@@ -14,7 +14,7 @@
 from std.math import ceildiv, divmod
 from std.sys.info import simd_width_of
 
-from std.gpu import block_idx_uint as block_idx, thread_idx_int as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor
 
@@ -72,9 +72,9 @@ def tpool_patch_merger_kernel[
     comptime assert x_tile.flat_rank >= 2
     comptime assert out_tile.flat_rank >= 2
 
-    var vid = Int(block_idx.z)
-    var pat_idx = Int(block_idx.y)
-    var d_tile = Int(block_idx.x)
+    var vid = block_idx.z
+    var pat_idx = block_idx.y
+    var d_tile = block_idx.x
     var tid = thread_idx.x
 
     if vid >= n_vids:

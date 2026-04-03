@@ -864,7 +864,7 @@ def _get_metal_m1_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m1", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -880,7 +880,7 @@ def _get_metal_m2_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m2", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -896,7 +896,7 @@ def _get_metal_m3_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m3", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -912,7 +912,7 @@ def _get_metal_m4_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m4", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -928,7 +928,23 @@ def _get_metal_m5_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m5", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+def _get_metal_m5_metal4_target() -> _TargetType:
+    """Creates an MLIR target configuration for M5 Metal GPU with Metal 4.0.
+
+    Returns:
+        MLIR target configuration for M5 Metal 4.0.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m5", `,
+        `features = "+metal4_0,+air2_8_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -977,8 +993,8 @@ comptime MetalM4 = GPUInfo.from_family(
     vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m4",
-    compute=4.0,  # Metal version 4.0 for M4
-    version="metal_4",
+    compute=3.0,  # Metal version 3.0 for M4
+    version="metal_3",
     sm_count=10,  # M4 has 10 GPU cores
 )
 """Apple M4 GPU configuration."""
@@ -989,11 +1005,23 @@ comptime MetalM5 = GPUInfo.from_family(
     vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m5",
-    compute=4.0,  # Metal version 4.0 for M5
-    version="metal_4",
+    compute=3.0,  # Metal version 3.0 for M5
+    version="metal_3",
     sm_count=10,  # M5 has 10 GPU cores
 )
 """Apple M5 GPU configuration."""
+
+comptime MetalM5Metal4 = GPUInfo.from_family(
+    family=AppleMetalFamily,
+    name="M5 Metal4",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m5-metal4",
+    compute=4.0,  # Metal 4.0, requires macOS 26
+    version="metal_4",
+    sm_count=10,  # M5 has 10 GPU cores
+)
+"""Apple M5 GPU configuration for Metal 4."""
 
 # ===-----------------------------------------------------------------------===#
 # A100
@@ -2206,6 +2234,8 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
             return _get_metal_m4_target()
         if self.name == "M5":
             return _get_metal_m5_target()
+        if self.name == "M5 Metal4":
+            return _get_metal_m5_metal4_target()
 
         if self.name == "":
             return _get_empty_target()
@@ -2443,6 +2473,7 @@ comptime _all_targets = (
     StaticString("apple-m3"),
     StaticString("apple-m4"),
     StaticString("apple-m5"),
+    StaticString("apple-m5-metal4"),
     StaticString("cuda"),
 )
 
@@ -2477,7 +2508,9 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("mi355x", "gfx950")
         .replace("gfx90", "gfx90a")
         .replace("amdgpu:", "")
-        # Apple normalization
+        # Apple normalization, handle the Metal4 variant before the
+        # general "metal:" → "apple-m" replacement.
+        .replace("metal:5:4", "apple-m5-metal4")
         .replace("metal:", "apple-m")
     )
 
@@ -2554,6 +2587,8 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return materialize[MetalM4]()
     elif target_arch == "apple-m5":
         return materialize[MetalM5]()
+    elif target_arch == "apple-m5-metal4":
+        return materialize[MetalM5Metal4]()
     # "cuda" means generic CUDA — use runtime GPU detection.
     elif target_arch == "cuda":
         return _get_info_from_target[_accelerator_arch()]()

@@ -20,7 +20,7 @@ import logging
 import os
 import sys
 import tempfile
-from typing import Any, Literal, cast, get_type_hints
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
@@ -33,6 +33,7 @@ from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
 )
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import (
     PIPELINE_REGISTRY,
@@ -45,17 +46,62 @@ from pydantic import (
     Field,
     ModelWrapValidatorHandler,
     PrivateAttr,
+    field_validator,
     model_validator,
 )
 from typing_extensions import Self, override
 
 from .kv_cache_config import KVCacheConfig, KVConnectorConfig
 from .lora_config import LoRAConfig
-from .model_config import MAXModelConfig
+from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig
 from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
+
+# ModelManifest is a dict[str, MAXModelConfig] subclass with extra methods.
+# cyclopts (CLI framework) only recognizes plain dict types via typing.get_origin(),
+# which returns None for concrete subclasses. At runtime, Pydantic sees
+# dict[str, MAXModelConfig] so cyclopts can resolve CLI paths like
+# --pipeline.models.main.model-path. mypy sees ModelManifest so methods like
+# .with_override(), .resolve(), .main_architecture_name type-check correctly.
+if TYPE_CHECKING:
+    _ModelsType = ModelManifest
+else:
+    _ModelsType = dict[str, MAXModelConfig]
+
+
+def _strip_default_model_kwargs(
+    model_kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Return *model_kwargs* with entries that match MAXModelConfig defaults removed.
+
+    Fields declared with ``default_factory`` have ``field.default`` set to
+    ``PydanticUndefined``, so we must invoke the factory to obtain the
+    comparable default value.
+    """
+    from pydantic_core import PydanticUndefined
+
+    fields = MAXModelConfig.model_fields
+    non_default: dict[str, Any] = {}
+    for k, v in model_kwargs.items():
+        field = fields.get(k)
+        if field is None:
+            # Not a MAXModelConfig field — keep it.
+            non_default[k] = v
+            continue
+        if field.default is not PydanticUndefined:
+            if v == field.default:
+                continue
+        elif field.default_factory is not None:
+            try:
+                if v == field.default_factory():  # type: ignore[call-arg]
+                    continue
+            except Exception:
+                pass
+        non_default[k] = v
+    return non_default
+
 
 _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "LlamaForCausalLM",
@@ -65,6 +111,9 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
     "Gemma4ForConditionalGeneration",
+    "UnifiedEagleLlama3ForCausalLM",
+    "UnifiedMTPDeepseekV3ForCausalLM",
+    "UnifiedEagleKimik25ForCausalLM",
 )
 
 _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
@@ -93,7 +142,7 @@ class PipelineConfig(ConfigFileModel):
     # mypy plugin) don't reject those unmatched kwargs.
     # TODO: This should be removed though, but only after we've fully unrolled
     # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 
     debug_verify_replay: bool = Field(
         default=False,
@@ -104,15 +153,66 @@ class PipelineConfig(ConfigFileModel):
     )
     """Whether to run eager verification before device graph replay."""
 
-    model: MAXModelConfig = Field(
-        default_factory=MAXModelConfig, description="The model config."
+    models: _ModelsType = Field(
+        default_factory=ModelManifest,
+        description="The model manifest containing all model configs keyed by role.",
     )
-    """The model configuration."""
+    """The model manifest containing all model configs keyed by role."""
 
-    draft_model: MAXModelConfig | None = Field(
-        default=None, description="The draft model config."
-    )
-    """The draft model configuration for speculative decoding."""
+    @staticmethod
+    def _normalize_models_dict(data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize dash-keyed dicts from cyclopts CLI parsing to underscores.
+
+        When cyclopts parses CLI args like ``--pipeline.models.main.model-path``,
+        it produces nested dicts with dash-separated keys (e.g.
+        ``{"main": {"model-path": "value"}}``).  Pydantic expects underscore-
+        separated field names, so we normalise before validation.
+        """
+        result: dict[str, Any] = {}
+        for role, value in data.items():
+            if isinstance(value, dict):
+                result[role] = {
+                    k.replace("-", "_"): v for k, v in value.items()
+                }
+            else:
+                result[role] = value
+        return result
+
+    @field_validator("models", mode="wrap")
+    @classmethod
+    def _coerce_models(cls, v: Any, handler: Any) -> ModelManifest:
+        if isinstance(v, ModelManifest):
+            return v
+        if isinstance(v, dict):
+            v = cls._normalize_models_dict(v)
+        result = handler(v)
+        if isinstance(result, ModelManifest):
+            return result
+        return ModelManifest(result)
+
+    @property
+    def model(self) -> MAXModelConfig:
+        """The main model config. Alias for ``models["main"]``."""
+        main = self.models.get("main")
+        if main is None:
+            raise ValueError(
+                "No main model configured. For diffusion pipelines, access "
+                "component models via pipeline_config.models[<role>]."
+            )
+        return main
+
+    @model.setter
+    def model(self, value: MAXModelConfig) -> None:
+        self.models = self.models.with_override("main", config=value)
+
+    @property
+    def draft_model(self) -> MAXModelConfig | None:
+        """The draft model configuration. Alias for ``models.get("draft")``."""
+        return self.models.get("draft")
+
+    @draft_model.setter
+    def draft_model(self, value: MAXModelConfig) -> None:
+        self.models = self.models.with_override("draft", config=value)
 
     sampling: SamplingConfig = Field(
         default_factory=SamplingConfig, description="The sampling config."
@@ -228,21 +328,64 @@ class PipelineConfig(ConfigFileModel):
         # click PipelineConfig autogenerates defaults for all fields, including
         # required ones.
 
-    # TODO: It might be cleaner to have the draft model be a part of the SpeculativeConfig
-    def _create_draft_model_config_if_needed(
-        self, kwargs: dict[str, Any]
+    def _build_models_from_kwargs(
+        self, unmatched_kwargs: dict[str, Any]
     ) -> None:
-        """Extract draft model kwargs and create MAXModelConfig if model_path provided."""
-        draft_kwargs = PipelineConfig._extract_kwargs_for_config(
-            kwargs, MAXModelConfig, key_prefix="draft_", strip_prefix=True
-        )
+        """Build the ModelManifest from unmatched model kwargs.
 
+        Uses ``ModelManifest.from_model_path()`` as the single entry point
+        for creating the main model config. Handles KV cache kwargs
+        separately and adds draft model via ``with_override``.
+
+        When the manifest is already populated (e.g. passed directly via
+        ``models=``), this method only processes KV cache and draft kwargs
+        without rebuilding the manifest.
+        """
+        # Extract model kwargs (model_path, quantization_encoding, etc.)
+        model_kwargs = PipelineConfig._extract_kwargs_for_config(
+            unmatched_kwargs, MAXModelConfig
+        )
+        kv_cache_kwargs: dict[str, Any] = {}
+        for key in list(unmatched_kwargs):
+            if key in KVCacheConfig.model_fields:
+                kv_cache_kwargs[key] = unmatched_kwargs.pop(key)
+
+        # Only rebuild the manifest when explicit model kwargs were provided
+        # in unmatched_kwargs.  When a pre-built ModelManifest was passed via
+        # the ``models=`` kwarg, ``model_kwargs`` will be empty and we should
+        # not reconstruct the manifest (which would trigger HF validation).
+        if model_kwargs:
+            model_path = model_kwargs.pop("model_path", "")
+            if model_path:
+                revision = model_kwargs.pop("huggingface_model_revision", None)
+                # Strip kwargs that match MAXModelConfig defaults so
+                # from_model_path() doesn't reject them for diffusion
+                # pipelines (which forbid extra kwargs).
+                non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
+                self.models = ModelManifest.from_model_path(
+                    model_path,
+                    revision=revision,
+                    **non_default_kwargs,
+                )
+
+        # Apply KV cache config to main model
+        if kv_cache_kwargs and "main" in self.models:
+            self.model.create_kv_cache_config(**kv_cache_kwargs)
+
+        # Extract draft model kwargs and add via with_override
+        draft_kwargs = PipelineConfig._extract_kwargs_for_config(
+            unmatched_kwargs,
+            MAXModelConfig,
+            key_prefix="draft_",
+            strip_prefix=True,
+        )
         if draft_kwargs.get("model_path", "") != "":
-            self.draft_model = MAXModelConfig(**draft_kwargs)
-        # TODO: We should add an elif to check / error out if other draft model
-        # params are provided, but model_path is not. We can't do this today
-        # as our click PipelineConfig autogenerates defaults for all fields,
-        # including required ones.
+            draft_config = MAXModelConfig(**draft_kwargs)
+            if kv_cache_kwargs:
+                draft_config.create_kv_cache_config(**kv_cache_kwargs)
+            self.models = self.models.with_override(
+                "draft", config=draft_config
+            )
 
     def _create_speculative_config_if_needed(
         self, kwargs: dict[str, Any]
@@ -285,50 +428,48 @@ class PipelineConfig(ConfigFileModel):
                     "LlamaForCausalLMEagle"
                 )
 
+    # Explicit type mapping for config classes that are processed from
+    # unmatched kwargs.  "model" is handled separately in
+    # _build_models_from_kwargs via ModelManifest.from_model_path().
+    _CONFIG_TYPE_MAPPING: dict[str, type[ConfigFileModel]] = {
+        "runtime": PipelineRuntimeConfig,
+        "sampling": SamplingConfig,
+        "profiling": ProfilingConfig,
+    }
+
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
     ) -> None:
         """Processes remaining kwargs for other config classes.
 
+        Note: model kwargs are handled separately in ``_build_models_from_kwargs``.
+
         Args:
             unmatched_kwargs: Dictionary of kwargs that haven't been matched yet
         """
-        # TODO(zheng): Make this more efficient by using MaxConfig instance
-        # instead of hardcoding the config names.
-        config_mappings = [
-            # NOTE: runtime must come before model so that its
-            # fields are consumed before the model config is built.
-            "runtime",
-            # NOTE: model must come before sampling so that
-            # SamplingConfig can use generation_config from the model
-            "model",
-            "sampling",
-            "profiling",
-        ]
+        # NOTE: runtime must come before sampling so that its
+        # fields are consumed first.
+        # NOTE: model must be built before sampling so that
+        # SamplingConfig can use generation_config from the model.
+        # Model is handled in _build_models_from_kwargs, which runs
+        # before this method.
+        config_mappings = ["runtime", "sampling", "profiling"]
 
         for config_name in config_mappings:
-            config_class = get_type_hints(self.__class__)[config_name]
+            config_class = self._CONFIG_TYPE_MAPPING[config_name]
             matched_kwargs = {}
-            kv_cache_kwargs = {}
 
             for key, value in unmatched_kwargs.items():
                 if key in config_class.model_fields:
                     matched_kwargs[key] = value
-                # Check if this is a KVCache config param
-                elif (
-                    config_name == "model" and key in KVCacheConfig.model_fields
-                ):
-                    kv_cache_kwargs[key] = value
 
             if matched_kwargs:
                 self._create_and_set_config(
-                    config_name, config_class, matched_kwargs, kv_cache_kwargs
+                    config_name, config_class, matched_kwargs
                 )
 
                 # Remove matched kwargs
                 for key in matched_kwargs:
-                    _ = unmatched_kwargs.pop(key, None)
-                for key in kv_cache_kwargs:
                     _ = unmatched_kwargs.pop(key, None)
 
     def _create_and_set_config(
@@ -336,28 +477,16 @@ class PipelineConfig(ConfigFileModel):
         config_name: str,
         config_class: type,
         matched_kwargs: dict[str, Any],
-        kv_cache_kwargs: dict[str, Any],
     ) -> None:
         """Creates and sets a config object with special handling for config types.
 
         Args:
-            config_name: Name of the config attribute (for example, ``"model"``)
+            config_name: Name of the config attribute (for example, ``"sampling"``)
             config_class: The config class to instantiate
             matched_kwargs: kwargs that matched the config class fields
-            kv_cache_kwargs: kwargs for KVCache config (model config only)
         """
-        if config_name == "model" and kv_cache_kwargs:
-            # Create new model config with updated KVCache config
-            model_config = config_class(**matched_kwargs)
-
-            model_config.create_kv_cache_config(**kv_cache_kwargs)
-            setattr(self, config_name, model_config)
-
-            if self.draft_model:
-                self.draft_model.create_kv_cache_config(**kv_cache_kwargs)
-
-        elif config_name == "sampling":
-            if hasattr(self, "model") and self.model:
+        if config_name == "sampling":
+            if "main" in self.models:
                 assert isinstance(self.model, MAXModelConfig)
                 assert hasattr(
                     config_class, "from_generation_config_sampling_defaults"
@@ -369,7 +498,9 @@ class PipelineConfig(ConfigFileModel):
             else:
                 sampling_config = config_class(**matched_kwargs)
 
-            if self.model.enable_echo or self.draft_model:
+            if (
+                "main" in self.models and self.model.enable_echo
+            ) or self.draft_model:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -399,6 +530,22 @@ class PipelineConfig(ConfigFileModel):
         # kwargs, so sub-config fields (e.g. model_path) from the YAML are
         # visible to _postprocess_configs.
         kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
+
+        # Intercept model/draft_model before field separation — these are
+        # no longer Pydantic fields but consumers still pass them directly.
+        model_kwarg = kwargs.pop("model", None)
+        draft_model_kwarg = kwargs.pop("draft_model", None)
+
+        # If a MAXModelConfig (or plain dict from config file) was passed
+        # directly, wrap it in a manifest.  Coerce dicts so that callers
+        # loading from YAML/JSON (which produce plain dicts) work correctly.
+        if model_kwarg is not None:
+            if isinstance(model_kwarg, dict) and not isinstance(
+                model_kwarg, MAXModelConfig
+            ):
+                model_kwarg = MAXModelConfig(**model_kwarg)
+            kwargs["models"] = ModelManifest({"main": model_kwarg})
+
         unmatched_kwargs: dict[str, Any] = {}
         # Use getattr to safely access model_fields in case it's not yet available
         # during class construction.
@@ -414,19 +561,23 @@ class PipelineConfig(ConfigFileModel):
                 unmatched_kwargs[key] = value
                 logger.debug("unmatched_kwargs key: %s, value: %s", key, value)
 
-        model = handler(pydantic_kwargs)
+        instance = handler(pydantic_kwargs)
         # `_unmatched_kwargs` is a PrivateAttr, so set it on the instance.
-        model._unmatched_kwargs = unmatched_kwargs
-        return model
+        instance._unmatched_kwargs = unmatched_kwargs
+
+        # Add draft model via with_override
+        if draft_model_kwarg is not None:
+            if isinstance(draft_model_kwarg, dict) and not isinstance(
+                draft_model_kwarg, MAXModelConfig
+            ):
+                draft_model_kwarg = MAXModelConfig(**draft_model_kwarg)
+            instance.models = instance.models.with_override(
+                "draft", config=draft_model_kwarg
+            )
+
+        return instance
 
     @model_validator(mode="after")
-    def _postprocess_configs(self) -> Self:
-        try:
-            return self.__postprocess_configs()
-        except Exception as e:
-            print(f"Error in __postprocess_configs: {e}")
-            raise e
-
     def __postprocess_configs(self) -> Self:
         """Process nested configs after Pydantic validation.
 
@@ -446,10 +597,14 @@ class PipelineConfig(ConfigFileModel):
         # Process specialized config creation
         self._create_cache_config_if_needed(unmatched_kwargs)
         self._create_lora_config_if_needed(unmatched_kwargs)
-        self._create_draft_model_config_if_needed(unmatched_kwargs)
+
+        # Build model manifest from kwargs — must come before sampling
+        # (which needs model's generation_config) and speculative
+        # (which needs draft_model).
+        self._build_models_from_kwargs(unmatched_kwargs)
         self._create_speculative_config_if_needed(unmatched_kwargs)
 
-        # Process remaining config classes
+        # Process remaining config classes (runtime, sampling, profiling)
         if unmatched_kwargs:
             self._process_remaining_config_classes(unmatched_kwargs)
 
@@ -557,7 +712,13 @@ class PipelineConfig(ConfigFileModel):
         # Before anything else, import custom model modules to add them to the registry.
         self._import_custom_architectures()
 
-        self.model.resolve()
+        self.models.resolve()
+        # Diffusers pipelines don't have a "main" model — they have
+        # per-component configs (unet, vae, etc.).  The LLM-specific
+        # validations below all assume a single main model, so skip
+        # them for multi-component diffusers manifests.
+        if "main" not in self.models:
+            return
 
         # Validation for max_length is handled in MAXModelConfig
 
@@ -700,10 +861,6 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "Variable logits are not supported with the Overlap scheduler. "
                 )
-            if self.speculative:
-                raise ValueError(
-                    "Speculative decoding is not supported with the Overlap scheduler."
-                )
             if self.lora:
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
@@ -722,7 +879,6 @@ class PipelineConfig(ConfigFileModel):
             self.runtime.pipeline_role == "prefill_and_decode"
             and not self.sampling.enable_structured_output
             and not self.sampling.enable_variable_logits
-            and not self.speculative
             and not self.lora
             and self.model.device_specs[0].device_type != "cpu"
         )
@@ -1009,7 +1165,7 @@ class PipelineConfig(ConfigFileModel):
                 self.model.quantization_encoding
             )
 
-        self._validate_and_resolve_architecture(self.draft_model)
+        draft_arch = self._validate_and_resolve_architecture(self.draft_model)
 
         self._validate_and_resolve_remaining_pipeline_config(
             model_config=self.model,
@@ -1021,6 +1177,26 @@ class PipelineConfig(ConfigFileModel):
                 "Expected draft model's available_cache_memory to be None"
             )
         self.draft_model.kv_cache._available_cache_memory = 0
+
+        # Clamp max_length to the draft model's max sequence length.
+        # EAGLE and other draft models may support a shorter context than the
+        # target model (e.g. 2048 vs 131072).  Both models share a KV cache
+        # and must agree on the sequence length, so we use the minimum.
+        draft_arch_config = draft_arch.config.initialize(
+            self, model_config=self.draft_model
+        )
+        draft_max_seq_len = draft_arch_config.get_max_seq_len()
+        target_max_length = self.model.max_length
+        if (
+            target_max_length is not None
+            and target_max_length > draft_max_seq_len
+        ):
+            logger.info(
+                f"Clamping max_length from {target_max_length} to"
+                f" {draft_max_seq_len} (draft model max sequence length)"
+            )
+            self.model.max_length = draft_max_seq_len
+            self.draft_model.max_length = draft_max_seq_len
 
     def _validate_and_resolve_remaining_pipeline_config(
         self,
@@ -1120,10 +1296,6 @@ class PipelineConfig(ConfigFileModel):
         Retrieves all necessary information from self and the PIPELINE_REGISTRY.
         Raises an error if architecture is not found (which should not happen after config resolution).
         """
-        from max.pipelines.lib.model_manifest import ModelManifest
-
-        from .model_config import _format_config_entries
-
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             architecture_name=self.model.architecture_name,
@@ -1153,23 +1325,25 @@ class PipelineConfig(ConfigFileModel):
         for line in _format_config_entries(arch_entries):
             logger.info(line)
 
-        # Delegate model-specific logging to ModelManifest
-        models: dict[str, MAXModelConfig] = {"main": self.model}
-        if self.draft_model is not None:
-            models["draft"] = self.draft_model
-        manifest = ModelManifest(models)
-        manifest.log_model_info()
-
-        pipeline_entries: list[tuple[str, Any]] = [
-            ("max_seq_len", self.model.max_length),
-            ("max_batch_size", self.runtime.max_batch_size),
-            ("chunked_prefill", self.runtime.enable_chunked_prefill),
-            ("max_batch_input_tokens", self.runtime.max_batch_input_tokens),
-            (
-                "in_flight_batching",
-                self.runtime.enable_in_flight_batching,
-            ),
-        ]
+        # Delegate model-specific logging to the manifest
+        self.models.log_model_info()
+        pipeline_entries: list[tuple[str, Any]] = []
+        if "main" in self.models:
+            pipeline_entries.append(("max_seq_len", self.model.max_length))
+        pipeline_entries.extend(
+            [
+                ("max_batch_size", self.runtime.max_batch_size),
+                ("chunked_prefill", self.runtime.enable_chunked_prefill),
+                (
+                    "max_batch_input_tokens",
+                    self.runtime.max_batch_input_tokens,
+                ),
+                (
+                    "in_flight_batching",
+                    self.runtime.enable_in_flight_batching,
+                ),
+            ]
+        )
 
         logger.info("")
         logger.info("Pipeline Config")
@@ -1184,8 +1358,6 @@ class PipelineConfig(ConfigFileModel):
         Logs basic :class:`~max.pipelines.lib.config.PipelineConfig` options including model name, pipeline task,
         weight path, max_batch_size, max_seq_len, and reserved memory.
         """
-        from .model_config import _format_config_entries
-
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             architecture_name=self.model.architecture_name,
@@ -1193,8 +1365,13 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if arch is None:
+            model_path = (
+                self.model.model_path
+                if "main" in self.models
+                else str(list(self.models.keys()))
+            )
             raise ValueError(
-                f"No architecture found for {self.model.model_path}. "
+                f"No architecture found for {model_path}. "
                 "This should not happen after config resolution."
             )
 
@@ -1211,7 +1388,7 @@ class PipelineConfig(ConfigFileModel):
         }
 
         memory_str = None
-        if task in kv_cache_tasks:
+        if "main" in self.models and task in kv_cache_tasks:
             kv_config = self.model.kv_cache
             if kv_config._available_cache_memory is None:
                 raise ValueError(
@@ -1221,29 +1398,32 @@ class PipelineConfig(ConfigFileModel):
                 kv_config._available_cache_memory
             )
 
-        devices_str = ", ".join(
-            f"{d.device_type}[{d.id}]" for d in self.model.device_specs
-        )
-
         # Log basic configuration
-        config_entries: list[tuple[str, Any]] = (
-            [
-                ("model", self.model.model_path),
-                ("architecture", arch.name),
-                ("pipeline", pipeline_class.__name__),
-                ("devices", devices_str),
-                ("max_batch_size", self.runtime.max_batch_size),
-                ("max_seq_len", self.model.max_length),
-            ]
-            + [("cache_memory", memory_str)]
-            if memory_str
-            else []
-            + [
-                (
-                    "device_graph_capture",
-                    self.runtime.device_graph_capture,
-                ),
-            ]
+        config_entries: list[tuple[str, Any]] = [
+            ("architecture", arch.name),
+            ("pipeline", pipeline_class.__name__),
+        ]
+        if "main" in self.models:
+            devices_str = ", ".join(
+                f"{d.device_type}[{d.id}]" for d in self.model.device_specs
+            )
+            config_entries.extend(
+                [
+                    ("model", self.model.model_path),
+                    ("devices", devices_str),
+                    ("max_batch_size", self.runtime.max_batch_size),
+                    ("max_seq_len", self.model.max_length),
+                ]
+            )
+        else:
+            config_entries.append(
+                ("max_batch_size", self.runtime.max_batch_size)
+            )
+
+        if memory_str:
+            config_entries.append(("cache_memory", memory_str))
+        config_entries.append(
+            ("device_graph_capture", self.runtime.device_graph_capture)
         )
 
         logger.info("")

@@ -98,6 +98,7 @@ class TokenGenerationSchedulerConfig:
         # We know that the max_length and max_batch_size is not None since they
         # are required for memory estimation.
         assert pipeline_config.runtime.max_batch_size is not None
+        assert pipeline_config.model is not None
 
         return cls(
             max_batch_size=pipeline_config.runtime.max_batch_size,

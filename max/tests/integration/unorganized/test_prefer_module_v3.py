@@ -19,6 +19,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
@@ -55,10 +56,14 @@ def test_registry__retrieve_architecture_default() -> None:
     PIPELINE_REGISTRY.register(v2_arch)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding="float32",
-            max_length=128,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    quantization_encoding="float32",
+                    max_length=128,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
@@ -93,10 +98,14 @@ def test_registry__retrieve_architecture_v3_falls_back_to_v2() -> None:
     PIPELINE_REGISTRY.register(v2_arch)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding="float32",
-            max_length=128,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    quantization_encoding="float32",
+                    max_length=128,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
@@ -151,10 +160,14 @@ def test_registry__retrieve_architecture_module_v3() -> None:
     PIPELINE_REGISTRY.register(v3_arch)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding="float32",
-            max_length=128,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    quantization_encoding="float32",
+                    max_length=128,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
@@ -195,10 +208,14 @@ def test_config__prefer_module_v3_default_is_false() -> None:
     PIPELINE_REGISTRY.register(v2_arch)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding="float32",
-            max_length=128,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    quantization_encoding="float32",
+                    max_length=128,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
@@ -231,10 +248,14 @@ def test_config__prefer_module_v3_can_be_set_to_true() -> None:
     PIPELINE_REGISTRY.register(v3_arch)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding="float32",
-            max_length=128,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    quantization_encoding="float32",
+                    max_length=128,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1, prefer_module_v3=True),
     )
@@ -264,12 +285,16 @@ def test_config__prefer_module_v3_true_falls_back_to_v2_arch() -> None:
 
     # Should succeed by falling back to ModuleV2 arch
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            # Use only one GPU since this model does not support multi-GPU inference.
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding="float32",
-            max_length=128,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    # Use only one GPU since this model does not support multi-GPU inference.
+                    device_specs=[DeviceSpec.accelerator()],
+                    quantization_encoding="float32",
+                    max_length=128,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1, prefer_module_v3=True),
     )
@@ -298,10 +323,14 @@ def test_registry__retrieve_architecture_falls_back_to_v3() -> None:
     PIPELINE_REGISTRY.register(v3_arch)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding="float32",
-            max_length=128,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    quantization_encoding="float32",
+                    max_length=128,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
@@ -339,10 +368,14 @@ def test_config__prefer_module_v3_with_draft_model() -> None:
     PIPELINE_REGISTRY.register(v3_arch)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding="float32",
-            max_length=128,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    quantization_encoding="float32",
+                    max_length=128,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1, prefer_module_v3=True),
     )

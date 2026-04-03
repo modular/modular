@@ -22,8 +22,8 @@ from layout.tile_layout import Layout
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    global_idx,
+    grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -195,8 +195,8 @@ struct ReduceScatterConfig[
         return self.rank_num_elements(rank)
 
     @always_inline
-    def thr_local_start(self, thread_idx: UInt) -> Int:
-        return Int(thread_idx) * Self.simd_width
+    def thr_local_start(self, thread_idx: Int) -> Int:
+        return thread_idx * Self.simd_width
 
 
 @always_inline
@@ -278,7 +278,7 @@ def _reduce_scatter_impl[
         TileTensor[dtype, in_tile_layout, ImmutAnyOrigin].flat_rank >= 1
     )
     for c in range(
-        Int(global_idx.x) * simd_width,
+        global_idx.x * simd_width,
         num_elements,
         thread_stride,
     ):
@@ -340,7 +340,7 @@ def _reducescatter_kernel[
     """
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     var my_sig = rank_sigs[my_rank]
-    var threads_per_gpu = Int(grid_dim.x) * BLOCK_SIZE
+    var threads_per_gpu = grid_dim.x * BLOCK_SIZE
 
     var config = ReduceScatterConfig[dtype, ngpus](
         axis_size, unit_numel, threads_per_gpu

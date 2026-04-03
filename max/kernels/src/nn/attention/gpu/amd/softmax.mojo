@@ -444,6 +444,26 @@ struct Softmax[
                 )
 
     @always_inline
+    def apply_sum_correction(self):
+        """Apply rowsum *= correction (deferred sum rescale pattern)."""
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.rowsum_tensor[col_tile, row] = (
+                    self.rowsum_tensor[col_tile, row]
+                    * self.correction[col_tile, row]
+                )
+
+    @always_inline
+    def update_sum_additive(self):
+        """Additive rowsum update: rowsum += new_sum (no correction)."""
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.rowsum_tensor[col_tile, row] = (
+                    self.rowsum_tensor[col_tile, row]
+                    + self.score_frag_rowsum[col_tile, row]
+                )
+
+    @always_inline
     def update_max(self):
         # Save current rowmax and rowsum
         comptime for i in range(Self.num_colwise_tiles):

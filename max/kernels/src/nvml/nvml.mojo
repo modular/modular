@@ -17,6 +17,7 @@ from std.os import abort
 from std.pathlib import Path
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
+from std.memory._nonnull import NonNullUnsafePointer
 
 from std.memory import stack_allocation
 
@@ -336,8 +337,8 @@ struct ClockType(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct _DeviceImpl(Defaultable, TrivialRegisterPassable):
-    var handle: OpaquePointer[MutAnyOrigin]
+struct _DeviceImpl(Defaultable, ImplicitlyCopyable, RegisterPassable):
+    var handle: Optional[NonNullUnsafePointer[NoneType, MutAnyOrigin]]
 
     @always_inline
     def __init__(out self):

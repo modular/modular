@@ -335,6 +335,28 @@ config_setting(
     tags = [ALLOW_UNUSED_TAG],
 )
 
+# Should only be read from the host config
+string_flag(
+    name = "host_modular_config",
+    build_setting_default = "default",
+    scope = "universal",
+    values = [
+        "default",
+        "ci_build",
+    ],
+)
+
+config_setting(
+    name = "host_modular_config_ci_build",
+    flag_values = {"//:host_modular_config": "ci_build"},
+)
+
+config_setting(
+    name = "host_modular_config_default",
+    flag_values = {"//:host_modular_config": "default"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 filegroup(
     name = "clang_tidy_config",
     srcs = [".clang-tidy"],

@@ -46,6 +46,7 @@ from max.pipelines.core import (
     validate_only_one_image,
 )
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, SamplingConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from test_common.mocks import mock_estimate_memory_footprint
 from transformers import AutoConfig
@@ -350,10 +351,14 @@ def test_text_tokenizer_with_constrained_decoding(
     else:
         device_specs.append(DeviceSpec.cpu(id=0))
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding="bfloat16",
-            device_specs=device_specs,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                    device_specs=device_specs,
+                )
+            }
         ),
         sampling=SamplingConfig(enable_structured_output=True),
     )
@@ -441,9 +446,13 @@ def test_text_and_vision_tokenizer_forwards_sampling_params() -> None:
     model_path = "OpenGVLab/InternVL3-1B-Instruct"
 
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_path,
-            trust_remote_code=True,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    trust_remote_code=True,
+                )
+            }
         ),
     )
 
@@ -487,10 +496,14 @@ def test_tokenizer_stores_eos_token_ids(
     else:
         device_specs.append(DeviceSpec.cpu(id=0))
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding="bfloat16",
-            device_specs=device_specs,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                    device_specs=device_specs,
+                )
+            }
         ),
     )
 
@@ -522,8 +535,14 @@ def test_text_and_vision_tokenizer_stores_eos_token_ids(
     model_path = google_gemma_3_4b_it_local_path
 
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_path, trust_remote_code=True, max_length=100
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    trust_remote_code=True,
+                    max_length=100,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )

@@ -42,6 +42,8 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
+    from max.interfaces import ToolParser
+
     from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
 
@@ -55,10 +57,7 @@ from .pipeline_variants.overlap_text_generation import (
 )
 from .pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .pipeline_variants.text_generation import TextGenerationPipeline
-from .speculative_decoding import (
-    StandaloneSpeculativeDecodingPipeline,
-    UnifiedEAGLEPipeline,
-)
+from .speculative_decoding import StandaloneSpeculativeDecodingPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
 
@@ -75,7 +74,6 @@ def get_pipeline_for_task(
     | type[AudioGeneratorPipeline]
     | type[PixelGenerationPipeline[Any]]
     | type[StandaloneSpeculativeDecodingPipeline]
-    | type[UnifiedEAGLEPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
@@ -93,19 +91,13 @@ def get_pipeline_for_task(
         and pipeline_config.speculative is not None
     ):
         spec_method = pipeline_config.speculative.speculative_method
-        assert spec_method is not None
-        if pipeline_config.runtime.enable_overlap_scheduler:
-            raise ValueError(
-                "Overlap scheduler is not supported with speculative decoding yet."
-            )
-
         if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
         elif (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
         ):
-            return UnifiedEAGLEPipeline
+            return OverlapTextGenerationPipeline[TextContext]
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
     elif pipeline_config.runtime.enable_overlap_scheduler:
@@ -263,6 +255,16 @@ class SupportedArchitecture:
 
     If True and max_batch_context_length is not specified, we will default to
     the max sequence length of the model.
+    """
+
+    tool_parser: type[ToolParser] | None = None
+    """Optional tool parser class for parsing tool calls from model responses.
+
+    When set, the serving layer will use this parser to extract tool calls
+    from the model's output. Different model architectures may use different
+    tool calling formats (e.g., Llama uses JSON, Kimi K2.5 uses structural tags).
+
+    If None, the default LlamaToolParser will be used.
     """
 
     @property
@@ -839,8 +841,12 @@ class PipelineRegistry:
             "tokenizer": typed_tokenizer,
         }
 
-        # If using speculative decoding, add draft model-specific parameters
-        if pipeline_config.draft_model is not None:
+        # If using standalone speculative decoding, add draft model-specific args
+        if (
+            pipeline_config.draft_model is not None
+            and pipeline_config.speculative is not None
+            and pipeline_config.speculative.is_standalone()
+        ):
             draft_arch_name = pipeline_config.draft_model.architecture_name
             if draft_arch_name is None:
                 raise ValueError(
@@ -966,6 +972,8 @@ class PipelineRegistry:
                 f"pipeline tasks: {task_list}. "
                 f"Please specify --task explicitly."
             )
+        if len(matching_tasks) == 1:
+            return matching_tasks[0]
         if arch := self.architectures.get(architecture_name):
             return arch.task
         raise ValueError(

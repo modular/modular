@@ -226,6 +226,7 @@ def struct_field_type_by_name[
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline("builtin")
 def struct_field_count[T: AnyType]() -> Int:
     """Returns the number of fields in struct `T`.
 

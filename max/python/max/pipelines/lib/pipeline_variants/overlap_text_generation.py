@@ -105,6 +105,8 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
+from ..speculative_decoding.base import SpeculativeDecodingMetrics
+from ..speculative_decoding.utils import build_response
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     get_eos_tokens,
@@ -113,10 +115,7 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from ..config import (
-        MAXModelConfig,
-        PipelineConfig,
-    )
+    from ..config import MAXModelConfig, PipelineConfig
 
 from dataclasses import dataclass
 
@@ -136,6 +135,133 @@ from ..sampling import (
 logger = logging.getLogger("max.pipelines")
 
 _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
+
+
+@dataclass
+class UnifiedEagleInputs(ModelInputs):
+    """Inputs for the unified EAGLE model."""
+
+    inputs: ModelInputs
+    draft_tokens: Buffer
+    draft_kv_cache_buffers: list[Buffer]
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Returns the buffers for the unified EAGLE model."""
+        return (
+            *self.inputs.buffers,
+            self.draft_tokens,
+            *self.draft_kv_cache_buffers,
+        )
+
+
+@dataclass(kw_only=True)
+class UnifiedEagleOutputs(ModelOutputs):
+    """Outputs from a unified EAGLE graph execution."""
+
+    num_accepted_draft_tokens: Buffer
+    next_tokens: Buffer
+    next_draft_tokens: Buffer
+
+    # HACK: These are required to inherit from ModelOutputs but are unused
+    # for UnifiedEagleOutputs!
+    logits: Buffer | None = None  # type: ignore[assignment]
+    next_token_logits: None = None
+    logit_offsets: None = None
+    hidden_states: None = None
+
+
+def _get_draft_kv_blocks(
+    draft_kv_manager: PagedKVCacheManager,
+    data_parallel_degree: int,
+) -> list[Buffer]:
+    """Extract persistent draft KV block buffers (one per device).
+
+    cache_lengths are NOT saved here — they must be created fresh
+    per-execute to match the runtime batch size.
+    """
+    draft_kv_inputs = draft_kv_manager.runtime_inputs(
+        [[] for _ in range(data_parallel_degree)]
+    )
+    return [per_dev.blocks for per_dev in draft_kv_inputs.inputs]
+
+
+@dataclass
+class SpecDecodeState:
+    """Pipeline for unified EAGLE: single fused graph handles target + draft.
+
+    Unlike EAGLESpeculativeDecodingPipeline which manages two separate models,
+    this pipeline uses a single model that runs both target forward and draft
+    generation in one compiled graph call. Rejection sampling also happens
+    in-graph (greedy acceptance).
+
+    Orchestration:
+    Prefill: model(draft_tokens=[?,0]) -> commit bonus, save new_token.
+    Decode:  model(draft_tokens=[?,K]) -> verify drafts, commit tokens,
+            save new_token for next iteration.
+    """
+
+    num_speculative_tokens: int
+    """The number of speculative tokens to generate."""
+
+    target_kv_manager: PagedKVCacheManager
+    """The KVCache manager for the target model."""
+
+    draft_kv_blocks: list[Buffer]
+    """The KVCache blocks for the draft model."""
+
+    metrics: SpeculativeDecodingMetrics
+    """The metrics for speculative decoding."""
+
+    @classmethod
+    def load(
+        cls,
+        session: InferenceSession,
+        model: PipelineModelWithKVCache[Any],
+        pipeline_config: PipelineConfig,
+    ) -> SpecDecodeState:
+        """Load the spec decode state."""
+        if pipeline_config.speculative is None:
+            raise ValueError(
+                "Speculative decoding is not enabled in the pipeline config."
+            )
+
+        target_kv_params = model.kv_params
+        assert isinstance(target_kv_params, KVCacheParams)
+        assert hasattr(model, "_draft_kv_params"), "Draft KV params not found"
+        draft_kv_params = model._draft_kv_params
+        assert isinstance(draft_kv_params, KVCacheParams)
+
+        multi_kv_params = MultiKVCacheParams.from_params(
+            target_kv_params, draft_kv_params
+        )
+        target_kv_mgr, draft_kv_mgr = load_multi_kv_managers(
+            params=multi_kv_params,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_seq_len=model.max_seq_len,
+            session=session,
+            available_cache_memory=pipeline_config.model.kv_cache._available_cache_memory,
+        )
+        target_kv_manager = target_kv_mgr
+
+        draft_kv_blocks = _get_draft_kv_blocks(
+            draft_kv_mgr, multi_kv_params.data_parallel_degree
+        )
+        assert len(draft_kv_blocks) == target_kv_params.n_devices
+
+        num_speculative_tokens = (
+            pipeline_config.speculative.num_speculative_tokens
+        )
+        spec_decoding_metrics = SpeculativeDecodingMetrics.empty(
+            num_speculative_tokens=num_speculative_tokens
+        )
+
+        return SpecDecodeState(
+            num_speculative_tokens=num_speculative_tokens,
+            target_kv_manager=target_kv_manager,
+            draft_kv_blocks=draft_kv_blocks,
+            metrics=spec_decoding_metrics,
+        )
 
 
 @runtime_checkable
@@ -420,6 +546,13 @@ class OverlapTextGenerationPipeline(
         """
         self._pipeline_config = pipeline_config
 
+        is_spec_decode = self._pipeline_config.speculative is not None
+        if is_spec_decode and not disable_overlap:
+            logger.info(
+                "Speculative decoding is enabled while using OverlapTextGenerationPipeline. Overriding disable_overlap to True."
+            )
+            disable_overlap = True
+
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
@@ -455,6 +588,16 @@ class OverlapTextGenerationPipeline(
             raise ValueError(
                 f"OverlapTextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
             )
+
+        enable_echo = self._pipeline_config.model.enable_echo
+        if is_spec_decode and enable_echo:
+            raise ValueError(
+                "Enable Echo is not supported for speculative decoding. Please disable echo."
+            )
+        elif is_spec_decode:
+            return_logits = ReturnLogits.VARIABLE
+        else:
+            return_logits = ReturnLogits.LAST_TOKEN
         self._pipeline_model: PipelineModelWithKVCache[Any] = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -462,48 +605,61 @@ class OverlapTextGenerationPipeline(
             kv_cache_config=model_config.kv_cache,
             weights=load_weights(weight_paths),
             adapter=weight_adapters.get(weights_format(weight_paths)),
-            return_logits=ReturnLogits.ALL
-            if self._pipeline_config.model.enable_echo
-            else ReturnLogits.LAST_TOKEN,
+            return_logits=return_logits,
         )
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
         kv_params = self._pipeline_model.kv_params
+
+        # Load the KVCache manager. This is pretty cursed at the moment because
+        # we do not have a KVCache manager that has first class support for
+        # speculative decoding.
+        self._spec_decode_state: SpecDecodeState | None = None
         self._extra_kv_managers: list[PagedKVCacheManager] = []
-        if isinstance(kv_params, MultiKVCacheParams):
-            kv_managers = load_multi_kv_managers(
-                params=kv_params,
-                max_batch_size=self._pipeline_config.runtime.max_batch_size,
-                max_seq_len=self._pipeline_model.max_seq_len,
-                session=session,
-                available_cache_memory=available_cache_memory,
-            )
-            self._kv_manager = kv_managers[0]
+        if not is_spec_decode:
+            if isinstance(kv_params, MultiKVCacheParams):
+                kv_managers = load_multi_kv_managers(
+                    params=kv_params,
+                    max_batch_size=self._pipeline_config.runtime.max_batch_size,
+                    max_seq_len=self._pipeline_model.max_seq_len,
+                    session=session,
+                    available_cache_memory=available_cache_memory,
+                )
+                self._kv_manager = kv_managers[0]
 
-            # Extra managers (e.g. global attention KV for multimodal models) must
-            # be exposed on the pipeline so the serve scheduler can claim/alloc
-            # them alongside the primary cache — same contract as generate.py and
-            # TextGenerationPipeline.
-            self._extra_kv_managers = kv_managers[1:]
-            self._pipeline_model.extra_kv_managers = self._extra_kv_managers
+                # Extra managers (e.g. global attention KV for multimodal models) must
+                # be exposed on the pipeline so the serve scheduler can claim/alloc
+                # them alongside the primary cache — same contract as generate.py and
+                # TextGenerationPipeline.
+                self._extra_kv_managers = kv_managers[1:]
+                self._pipeline_model.extra_kv_managers = self._extra_kv_managers
+            else:
+                assert isinstance(kv_params, KVCacheParams)
+                self._kv_manager = load_kv_manager(
+                    params=kv_params,
+                    max_batch_size=self._pipeline_config.runtime.max_batch_size,
+                    max_seq_len=self._pipeline_model.max_seq_len,
+                    session=session,
+                    available_cache_memory=available_cache_memory,
+                )
         else:
-            assert isinstance(kv_params, KVCacheParams)
-            self._kv_manager = load_kv_manager(
-                params=kv_params,
-                max_batch_size=self._pipeline_config.runtime.max_batch_size,
-                max_seq_len=self._pipeline_model.max_seq_len,
+            self._spec_decode_state = SpecDecodeState.load(
                 session=session,
-                available_cache_memory=available_cache_memory,
+                model=self._pipeline_model,
+                pipeline_config=self._pipeline_config,
             )
-
-        pipeline_role = self._pipeline_config.runtime.pipeline_role
+            self._kv_manager = self._spec_decode_state.target_kv_manager
 
         # Load sampler.
-        self._sampler: Model = session.load(
-            token_sampler(
-                self._pipeline_config.sampling,
-                device=DeviceRef.from_device(self._devices[0]),
+        self._sampler: Model | None = (
+            session.load(
+                token_sampler(
+                    self._pipeline_config.sampling,
+                    device=DeviceRef.from_device(self._devices[0]),
+                )
             )
+            if not is_spec_decode
+            else None
         )
 
         # Overlap scheduling specific initialization.
@@ -514,7 +670,9 @@ class OverlapTextGenerationPipeline(
             ScatterFutureTokenProcessor(
                 session, DeviceRef.from_device(self._devices[0])
             )
-            if pipeline_role != "prefill_only"
+            if self._pipeline_config.runtime.pipeline_role
+            in ("prefill_and_decode", "decode_only")
+            and not is_spec_decode
             else None
         )
         # Set previous asynchronously executing batch to None.
@@ -779,6 +937,7 @@ class OverlapTextGenerationPipeline(
         """Runs the forward pass, samples logits, and returns an AsyncBatch."""
         device0 = self._devices[0]
         assert not device0.is_host
+        assert self._sampler is not None
 
         flat_batch = inputs.flat_batch
         with Tracer("FusedSamplingProcessor"):
@@ -835,6 +994,141 @@ class OverlapTextGenerationPipeline(
             copy_event=copy_event,
         )
 
+    def _execute_spec_decode(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
+        """Executes unified EAGLE speculative decoding.
+
+        Single graph call handles: merge, target forward, greedy rejection,
+        shift, and draft forward.
+        """
+        assert self._spec_decode_state is not None
+        num_speculative_tokens = self._spec_decode_state.num_speculative_tokens
+
+        context_batch = inputs.flat_batch
+        verify_draft_tokens = all(
+            ctx.spec_decoding_state.num_draft_tokens == num_speculative_tokens
+            and ctx.tokens.generated_length > 1
+            for ctx in context_batch
+        )
+        num_draft_tokens_to_verify = (
+            num_speculative_tokens if verify_draft_tokens else 0
+        )
+
+        # Delete the saved draft tokens if we are not verifying them.
+        if not verify_draft_tokens:
+            for ctx in context_batch:
+                if ctx.spec_decoding_state.num_draft_tokens:
+                    ctx.spec_decoding_state.saved_draft_tokens = []
+
+        # Load or create draft tokens.
+        draft_tokens = np.zeros(
+            (len(context_batch), num_draft_tokens_to_verify), dtype=np.int64
+        )
+        if num_draft_tokens_to_verify:
+            for i, ctx in enumerate(context_batch):
+                tokens = ctx.spec_decoding_state.saved_draft_tokens
+                assert len(tokens) == num_draft_tokens_to_verify
+                draft_tokens[i, :] = tokens
+
+        kv_cache_inputs = self._kv_manager.runtime_inputs(
+            inputs.batches,
+            num_steps=1,
+            num_speculative_steps=num_speculative_tokens,
+        )
+
+        return_n_logits = (
+            num_speculative_tokens + 1 if verify_draft_tokens else 1
+        )
+
+        model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+            replica_batches=inputs.batches,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+        )
+        model_inputs = UnifiedEagleInputs(
+            inputs=model_inputs,
+            draft_tokens=Buffer.from_numpy(draft_tokens).to(self._devices[0]),
+            draft_kv_cache_buffers=self._spec_decode_state.draft_kv_blocks,
+        )
+
+        # Single graph call.
+        outputs = self._pipeline_model.execute(model_inputs)
+        assert isinstance(outputs, UnifiedEagleOutputs)
+
+        # Do the copy to host for each model output using pinned memory.
+        with Tracer("D2H generated_tokens"):
+            device0 = self._devices[0]
+            device0.synchronize()
+            num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
+            generated_tokens_host = DevicePinnedBuffer(
+                shape=num_accepted_draft_tokens_device.shape,
+                dtype=num_accepted_draft_tokens_device.dtype,
+                device=device0,
+            )
+            generated_tokens_host.inplace_copy_from(
+                num_accepted_draft_tokens_device
+            )
+
+            next_tokens_device = outputs.next_tokens
+            next_tokens_host = DevicePinnedBuffer(
+                shape=next_tokens_device.shape,
+                dtype=next_tokens_device.dtype,
+                device=device0,
+            )
+            next_tokens_host.inplace_copy_from(next_tokens_device)
+
+            next_draft_tokens_device = outputs.next_draft_tokens
+            next_draft_tokens_host = DevicePinnedBuffer(
+                shape=next_draft_tokens_device.shape,
+                dtype=next_draft_tokens_device.dtype,
+                device=device0,
+            )
+            next_draft_tokens_host.inplace_copy_from(next_draft_tokens_device)
+
+            # Sync to ensure all prior pinned d2h transfers are complete.
+            device0.synchronize()
+
+            num_accepted_draft_tokens_np = generated_tokens_host.to_numpy()
+            next_tokens_np = next_tokens_host.to_numpy()
+            next_draft_tokens_np = next_draft_tokens_host.to_numpy()
+
+        assert num_accepted_draft_tokens_np.shape == (len(context_batch),)
+        assert next_tokens_np.shape == (len(context_batch),)
+        assert next_draft_tokens_np.shape == (
+            len(context_batch),
+            num_speculative_tokens,
+        )
+        assert all(
+            num_accept <= num_draft_tokens_to_verify
+            for num_accept in num_accepted_draft_tokens_np
+        )
+
+        for batch_idx, ctx in enumerate(context_batch):
+            for token_idx in range(num_accepted_draft_tokens_np[batch_idx]):
+                if not ctx.is_done:
+                    ctx.update(draft_tokens[batch_idx, token_idx])
+            if not ctx.is_done:
+                ctx.update(next_tokens_np[batch_idx])
+                # Save the generated draft tokens for verification in next iteration.
+                ctx.spec_decoding_state.saved_draft_tokens = (
+                    next_draft_tokens_np[batch_idx].copy()
+                )
+
+        self._spec_decode_state.metrics.update(
+            draft_tokens_accepted=num_accepted_draft_tokens_np.sum(),
+            draft_tokens_generated=num_draft_tokens_to_verify
+            * len(context_batch),
+        )
+
+        res = build_response(
+            context_batch=context_batch,
+            max_seq_len=self._pipeline_model.max_seq_len,
+        )
+        self._kv_manager.step(inputs.batches)
+
+        return res
+
     @traced
     def execute(
         self,
@@ -870,6 +1164,9 @@ class OverlapTextGenerationPipeline(
             raise ValueError(
                 "Max num steps > 1 is not supported with the Overlap scheduler."
             )
+
+        if self._spec_decode_state is not None:
+            return self._execute_spec_decode(inputs)
 
         if inputs:
             # Run the entire forward pass and output processing if the batch has
@@ -941,3 +1238,9 @@ class OverlapTextGenerationPipeline(
     def extra_kv_managers(self) -> list[PagedKVCacheManager]:
         """Returns extra KV cache managers (e.g. global attention for Diancie)."""
         return self._extra_kv_managers
+
+    def spec_decode_metrics(self) -> SpeculativeDecodingMetrics | None:
+        """Returns the draft token acceptance metrics for speculative decoding."""
+        if self._spec_decode_state is None:
+            return None
+        return self._spec_decode_state.metrics

@@ -17,8 +17,8 @@ from std.math import align_down, ceildiv
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    global_idx,
+    grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -71,9 +71,9 @@ def broadcast_multimem_kernel[
     var my_sig = rank_sigs[my_rank]
 
     # --- Thread Indexing ---
-    var global_tid = Int(global_idx.x)
+    var global_tid = global_idx.x
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = Int(grid_dim.x) * BLOCK_SIZE
+    var stride = grid_dim.x * BLOCK_SIZE
 
     with PDL():
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -162,9 +162,9 @@ def broadcast_pull_1stage_kernel[
     var my_sig = rank_sigs[my_rank]
 
     # --- Thread Indexing ---
-    var global_tid = Int(global_idx.x)
+    var global_tid = global_idx.x
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = Int(grid_dim.x) * BLOCK_SIZE
+    var stride = grid_dim.x * BLOCK_SIZE
 
     with PDL():
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -241,8 +241,8 @@ def broadcast_pull_2stage_kernel[
     var my_sig = rank_sigs[my_rank]
 
     # Thread indexing
-    var global_tid = Int(global_idx.x)
-    var stride = Int(grid_dim.x) * BLOCK_SIZE
+    var global_tid = global_idx.x
+    var stride = grid_dim.x * BLOCK_SIZE
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime alignment = align_of[SIMD[dtype, simd_width]]()

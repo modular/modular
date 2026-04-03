@@ -38,8 +38,8 @@ from std.memory import UnsafePointer
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    global_idx,
+    grid_dim,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
@@ -166,7 +166,7 @@ def _allgather_p2p_kernel[
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * UInt(BLOCK_SIZE)
+    var stride = grid_dim.x * BLOCK_SIZE
     var my_sig = rank_sigs[my_rank]
 
     var src_ptrs_rr = InlineArray[
@@ -192,7 +192,7 @@ def _allgather_p2p_kernel[
         var num_simd_vectors, remainder = divmod(length, simd_width)
 
         # Grid-strided loop for this source (vectorized).
-        for idx in range(Int(global_tid), num_simd_vectors, Int(stride)):
+        for idx in range(global_tid, num_simd_vectors, stride):
             var elem_idx = idx * simd_width
             # Read directly from source GPU.
             var data = (
@@ -212,8 +212,8 @@ def _allgather_p2p_kernel[
         if remainder > 0:
             var tail_start = num_simd_vectors * simd_width
             # Use first warp to handle tail to minimize divergence.
-            if global_tid < UInt(WARP_SIZE):
-                for i in range(Int(global_tid), remainder, WARP_SIZE):
+            if global_tid < WARP_SIZE:
+                for i in range(global_tid, remainder, WARP_SIZE):
                     var elem_idx = tail_start + i
                     out_ptrs_rr[gpu_idx][elem_idx] = src_ptrs_rr[gpu_idx][
                         elem_idx

@@ -31,6 +31,7 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
@@ -58,15 +59,19 @@ def setup_speculative_decoding_pipeline(num_steps: int = 1):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_name,
-            quantization_encoding="float32",
-            device_specs=[DeviceSpec.accelerator()],
-            max_length=1024,
-        ),
-        draft_model=MAXModelConfig(
-            model_path=model_name,
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_name,
+                    quantization_encoding="float32",
+                    device_specs=[DeviceSpec.accelerator()],
+                    max_length=1024,
+                ),
+                "draft": MAXModelConfig(
+                    model_path=model_name,
+                    device_specs=[DeviceSpec.accelerator()],
+                ),
+            }
         ),
         speculative=SpeculativeConfig(
             speculative_method="standalone",
@@ -149,13 +154,17 @@ def test_config__validate_device_and_encoding_combinations(
 
     # Valid device/encoding combinations
     PipelineConfig(
-        model=MAXModelConfig(
-            model_path=smollm_135m_local_path,
-            quantization_encoding="float32",
-            device_specs=[DeviceSpec.cpu()],
-        ),
-        draft_model=MAXModelConfig(
-            model_path=smollm_135m_local_path,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=smollm_135m_local_path,
+                    quantization_encoding="float32",
+                    device_specs=[DeviceSpec.cpu()],
+                ),
+                "draft": MAXModelConfig(
+                    model_path=smollm_135m_local_path,
+                ),
+            }
         ),
     )
 
@@ -178,13 +187,17 @@ def test_config__validate_target_and_draft_architecture(
         # Test that when the target & draft architectures are different
         # we raise an error.
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path=smollm_135m_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-            ),
-            draft_model=MAXModelConfig(
-                model_path=gemma_3_1b_it_local_path,
-                device_specs=[DeviceSpec.accelerator()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=smollm_135m_local_path,
+                        device_specs=[DeviceSpec.accelerator()],
+                    ),
+                    "draft": MAXModelConfig(
+                        model_path=gemma_3_1b_it_local_path,
+                        device_specs=[DeviceSpec.accelerator()],
+                    ),
+                }
             ),
         )
 
@@ -195,19 +208,23 @@ def test_config__validate_target_and_draft_architecture(
         # Test that the target & draft architectures are the same,
         # but the tokenizers are different
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path=deepseek_r1_distill_llama_8b_local_path,
-                quantization_encoding="q6_k",
-                device_specs=[DeviceSpec.accelerator()],
-                weight_path=[
-                    Path(
-                        lmstudio_deepseek_r1_distill_llama_8b_local_path,
-                        "DeepSeek-R1-Distill-Llama-8B-Q6_K.gguf",
-                    )
-                ],
-            ),
-            draft_model=MAXModelConfig(
-                model_path=smollm_135m_local_path,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=deepseek_r1_distill_llama_8b_local_path,
+                        quantization_encoding="q6_k",
+                        device_specs=[DeviceSpec.accelerator()],
+                        weight_path=[
+                            Path(
+                                lmstudio_deepseek_r1_distill_llama_8b_local_path,
+                                "DeepSeek-R1-Distill-Llama-8B-Q6_K.gguf",
+                            )
+                        ],
+                    ),
+                    "draft": MAXModelConfig(
+                        model_path=smollm_135m_local_path,
+                    ),
+                }
             ),
         )
 
@@ -223,15 +240,19 @@ def test_draft_model_encoding_selection() -> None:
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     # Test 1: When draft_model.quantization_encoding is specified explicitly
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_name,
-            quantization_encoding="float32",
-            device_specs=[DeviceSpec.accelerator()],
-            max_length=1024,
-        ),
-        draft_model=MAXModelConfig(
-            model_path=model_name,
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_name,
+                    quantization_encoding="float32",
+                    device_specs=[DeviceSpec.accelerator()],
+                    max_length=1024,
+                ),
+                "draft": MAXModelConfig(
+                    model_path=model_name,
+                    device_specs=[DeviceSpec.accelerator()],
+                ),
+            }
         ),
         speculative=SpeculativeConfig(
             speculative_method="standalone",
@@ -252,15 +273,19 @@ def test_draft_model_encoding_selection() -> None:
     # Test 2: When draft_model.quantization_encoding is None (fallback to first supported)
     # This test verifies that the fallback mechanism works when no explicit encoding is set
     pipeline_config2 = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_name,
-            quantization_encoding="float32",
-            device_specs=[DeviceSpec.accelerator()],
-            max_length=1024,
-        ),
-        draft_model=MAXModelConfig(
-            model_path=model_name,
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_name,
+                    quantization_encoding="float32",
+                    device_specs=[DeviceSpec.accelerator()],
+                    max_length=1024,
+                ),
+                "draft": MAXModelConfig(
+                    model_path=model_name,
+                    device_specs=[DeviceSpec.accelerator()],
+                ),
+            }
         ),
         speculative=SpeculativeConfig(
             speculative_method="standalone",
@@ -291,15 +316,19 @@ def test_kv_cache_claiming_protocol() -> None:
 
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_name,
-            quantization_encoding="float32",
-            device_specs=[DeviceSpec.accelerator()],
-            max_length=1024,
-        ),
-        draft_model=MAXModelConfig(
-            model_path=model_name,
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_name,
+                    quantization_encoding="float32",
+                    device_specs=[DeviceSpec.accelerator()],
+                    max_length=1024,
+                ),
+                "draft": MAXModelConfig(
+                    model_path=model_name,
+                    device_specs=[DeviceSpec.accelerator()],
+                ),
+            }
         ),
         speculative=SpeculativeConfig(
             speculative_method="standalone",

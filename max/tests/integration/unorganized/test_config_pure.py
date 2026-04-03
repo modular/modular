@@ -35,6 +35,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import AudioGenerationConfig
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,
@@ -91,7 +92,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_basic(self) -> None:
         """Test basic kwargs extraction for a config class."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         # Test extracting SamplingConfig kwargs
         kwargs = {
@@ -125,7 +130,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_with_prefix(self) -> None:
         """Test kwargs extraction with prefix filtering."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         # Test extracting with draft_ prefix
         kwargs = {
@@ -157,7 +166,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_empty_result(self) -> None:
         """Test extraction when no matching kwargs exist."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         kwargs = {
             "unrelated_param1": "value1",
@@ -179,7 +192,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_create_lora_config_if_needed_with_lora_paths(self) -> None:
         """Test LoRA config creation when lora_paths are provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         kwargs = {
             "enable_lora": True,
@@ -208,7 +225,11 @@ class TestPipelineConfigUtilityMethods:
         self,
     ) -> None:
         """Test error when LoRA config detected but no lora_paths provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         kwargs = {
             "max_lora_rank": 32,
@@ -219,57 +240,21 @@ class TestPipelineConfigUtilityMethods:
         assert config.lora is None
 
     @mock_pipeline_config_resolve
-    def test_create_draft_model_config_if_needed_with_model_path(self) -> None:
-        """Test draft model config creation when model_path is provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
-
-        kwargs = {
-            "draft_model_path": "/path/to/draft",
-            "draft_quantization_encoding": "float32",
-            "other_param": "value",
-        }
-
-        config._create_draft_model_config_if_needed(kwargs)
-
-        # Should create draft model config
-        assert config.draft_model is not None
-        assert config.draft_model.model_path == "/path/to/draft"
-        assert config.draft_model.quantization_encoding == "float32"
-
-        # Should remove draft-related kwargs
-        assert "draft_model_path" not in kwargs
-        assert "draft_quantization_encoding" not in kwargs
-        assert "other_param" in kwargs  # Non-draft params should remain
-
-    @mock_pipeline_config_resolve
-    def test_create_draft_model_config_if_needed_error_on_incomplete_config(
-        self,
-    ) -> None:
-        """Test error when draft model config detected but no model_path provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
-
-        kwargs = {
-            "draft_quantization_encoding": "float32",
-            "draft_max_length": 1024,
-        }
-
-        config._create_draft_model_config_if_needed(kwargs)
-        # Draft model config should not be created if no model_path is provided.
-        assert config.draft_model is None
-
-    @mock_pipeline_config_resolve
     def test_create_and_set_config_basic(self) -> None:
         """Test basic config creation and setting."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         matched_kwargs: dict[str, Any] = {
             "enable_structured_output": True,
             "enable_penalties": True,
         }
-        kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "sampling", SamplingConfig, matched_kwargs
         )
 
         # Should create and set the config
@@ -278,34 +263,22 @@ class TestPipelineConfigUtilityMethods:
         assert config.sampling.enable_penalties is True
 
     @mock_pipeline_config_resolve
-    def test_create_and_set_config_model_config_with_kv_cache(self) -> None:
-        """Test model config creation with KV cache kwargs."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
-
-        matched_kwargs: dict[str, Any] = {"model_path": "/test/path"}
-        kv_cache_kwargs: dict[str, Any] = {"kv_cache_page_size": 256}
-
-        config._create_and_set_config(
-            "model", MAXModelConfig, matched_kwargs, kv_cache_kwargs
-        )
-
-        # Should create model config with KV cache config
-        assert config.model is not None
-        assert config.model.model_path == "/test/path"
-        assert config.model.kv_cache.kv_cache_page_size == 256
-
-    @mock_pipeline_config_resolve
     def test_create_and_set_config_sampling_with_echo_enabled(self) -> None:
         """Test sampling config creation with echo enabled sets variable logits."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path="test/model", enable_echo=True)
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model", enable_echo=True
+                    )
+                }
+            ),
         )
 
         matched_kwargs = {"enable_min_tokens": True}
-        kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "sampling", SamplingConfig, matched_kwargs
         )
 
         # Should create sampling config with variable logits enabled
@@ -316,14 +289,15 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes(self) -> None:
         """Test processing of remaining config classes."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         unmatched_kwargs = {
             "enable_structured_output": True,  # SamplingConfig
             "enable_penalties": True,  # SamplingConfig
-            "model_path": "/override/path",  # MAXModelConfig
-            "kv_cache_page_size": 128,  # KVCacheConfig
-            "kv_cache_format": "float8_e4m3fn",  # KVCacheConfig
             "unknown_param": "value",  # Should remain unmatched
         }
 
@@ -332,8 +306,6 @@ class TestPipelineConfigUtilityMethods:
         # Should process and remove matched kwargs
         assert "enable_structured_output" not in unmatched_kwargs
         assert "enable_penalties" not in unmatched_kwargs
-        assert "model_path" not in unmatched_kwargs
-        assert "kv_cache_page_size" not in unmatched_kwargs
 
         # Should leave unmatched kwargs
         assert "unknown_param" in unmatched_kwargs
@@ -341,14 +313,15 @@ class TestPipelineConfigUtilityMethods:
         # Should update configs
         assert config.sampling.enable_structured_output is True
         assert config.sampling.enable_penalties is True
-        assert config.model.model_path == "/override/path"
-        assert config.model.kv_cache.kv_cache_page_size == 128
-        assert config.model.kv_cache.cache_dtype == DType.float8_e4m3fn
 
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes_no_matches(self) -> None:
         """Test processing when no config classes match."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         unmatched_kwargs = {
             "unknown_param1": "value1",
@@ -488,8 +461,12 @@ class TestDraftModelEncodingDefault:
     def test_draft_encoding_defaults_to_target(self) -> None:
         """Draft encoding inherits the target's resolved encoding when unset."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path=self._MODEL),
-            draft_model=MAXModelConfig(model_path=self._MODEL),
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(model_path=self._MODEL),
+                    "draft": MAXModelConfig(model_path=self._MODEL),
+                }
+            ),
             speculative=SpeculativeConfig(speculative_method="standalone"),
         )
         assert config.draft_model is not None
@@ -503,9 +480,14 @@ class TestDraftModelEncodingDefault:
     def test_explicit_draft_encoding_is_preserved(self) -> None:
         """Explicit draft encoding is not overridden by the target's encoding."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path=self._MODEL),
-            draft_model=MAXModelConfig(
-                model_path=self._MODEL, quantization_encoding="float32"
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(model_path=self._MODEL),
+                    "draft": MAXModelConfig(
+                        model_path=self._MODEL,
+                        quantization_encoding="float32",
+                    ),
+                }
             ),
             speculative=SpeculativeConfig(speculative_method="standalone"),
         )
@@ -519,8 +501,14 @@ class TestDraftModelEncodingDefault:
     def test_max_length_clamped_to_draft_max_seq_len(self) -> None:
         """max_length is clamped to draft arch_config.get_max_seq_len()."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path=self._MODEL, max_length=131072),
-            draft_model=MAXModelConfig(model_path=self._MODEL),
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=self._MODEL, max_length=131072
+                    ),
+                    "draft": MAXModelConfig(model_path=self._MODEL),
+                }
+            ),
             speculative=SpeculativeConfig(speculative_method="standalone"),
         )
 
@@ -537,7 +525,9 @@ def test_validate_model_path__bad_repo_provided() -> None:
     # This test requires a HF call to check that this repo is not valid.
     with pytest.raises(Exception):
         _ = PipelineConfig(
-            model=MAXModelConfig(model_path="bert-base-asdfasdf"),
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="bert-base-asdfasdf")}
+            ),
         )
 
 
@@ -545,7 +535,9 @@ def test_config_init__raises_with_no_model_path() -> None:
     # We expect this to fail.
     with pytest.raises(ValueError):
         _ = PipelineConfig(
-            model=MAXModelConfig(weight_path=[Path("file.gguf")])
+            models=ModelManifest(
+                {"main": MAXModelConfig(weight_path=[Path("file.gguf")])}
+            ),
         )
 
 
@@ -553,12 +545,16 @@ def test_config_init__raises_with_no_model_path() -> None:
 def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model=MAXModelConfig(
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    weight_path=[
+                        Path(
+                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+                        )
+                    ],
                 )
-            ],
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -576,13 +572,17 @@ def test_config_post_init__other_repo_weights(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    weight_path=[
+                        Path(
+                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+                        )
+                    ],
                 )
-            ],
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -601,13 +601,17 @@ def test_config_init__reformats_with_str_weights_path(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     # We expect this to convert the string.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    weight_path=[
+                        Path(
+                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+                        )
+                    ],
                 )
-            ],
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -627,9 +631,13 @@ def test_validate_model_path__correct_repo_id_provided(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding="bfloat16",
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -648,15 +656,19 @@ def test_config__test_incompatible_quantization_encoding(
     with pytest.raises(ValueError):
         # This should raise, as q4_k != f32.
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding="q4_k",
-                weight_path=[
-                    Path(
-                        "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        quantization_encoding="q4_k",
+                        weight_path=[
+                            Path(
+                                "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+                            )
+                        ],
+                        max_length=1,
                     )
-                ],
-                max_length=1,
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 max_batch_size=1,
@@ -666,15 +678,19 @@ def test_config__test_incompatible_quantization_encoding(
 
     # This should not raise, as float32 == f32.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="float32",
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    quantization_encoding="float32",
+                    weight_path=[
+                        Path(
+                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+                        )
+                    ],
+                    max_length=1,
                 )
-            ],
-            max_length=1,
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -696,10 +712,14 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     # Float32 <-> bfloat16 casting is always enabled,
     # so this should succeed by casting bfloat16 weights to float32.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="float32",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    quantization_encoding="float32",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -722,10 +742,14 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
     # This should pass, because the flag also supports casting bfloat16 weights
     # to float32.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="float32",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    quantization_encoding="float32",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -748,10 +772,14 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
     # This should not raise, as float32 <-> bfloat16 casting is always enabled
     # and the quantization encoding is set to bfloat16.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="bfloat16",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    quantization_encoding="bfloat16",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -772,10 +800,14 @@ def test_config__test_retrieve_factory_with_known_architecture(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding="bfloat16",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -798,8 +830,12 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
         ValueError, match="MAX-optimized architecture not available"
     ):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=gemma_3_1b_it_local_path, max_length=1
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=gemma_3_1b_it_local_path, max_length=1
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 max_batch_size=1,
@@ -828,9 +864,13 @@ def test_config_is_picklable(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding="bfloat16",
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -861,11 +901,15 @@ def test_config__validates_supported_device(
 
     # Valid device/encoding combinations.
     _ = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding="float32",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    device_specs=[DeviceSpec.cpu()],
+                    quantization_encoding="float32",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -875,11 +919,15 @@ def test_config__validates_supported_device(
     if accelerator_count() == 0:
         with pytest.raises(ValueError):
             _ = PipelineConfig(
-                model=MAXModelConfig(
-                    model_path=modular_ai_llama_3_1_local_path,
-                    device_specs=[DeviceSpec.accelerator()],
-                    quantization_encoding="float32",
-                    max_length=1,
+                models=ModelManifest(
+                    {
+                        "main": MAXModelConfig(
+                            model_path=modular_ai_llama_3_1_local_path,
+                            device_specs=[DeviceSpec.accelerator()],
+                            quantization_encoding="float32",
+                            max_length=1,
+                        )
+                    }
                 ),
                 runtime=PipelineRuntimeConfig(
                     prefer_module_v3=True,
@@ -887,11 +935,15 @@ def test_config__validates_supported_device(
             )
     else:
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=modular_ai_llama_3_1_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=modular_ai_llama_3_1_local_path,
+                        device_specs=[DeviceSpec.accelerator()],
+                        quantization_encoding="bfloat16",
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 prefer_module_v3=True,
@@ -903,11 +955,15 @@ def test_config__validates_supported_device(
     ):
         # Invalid device/encoding combinations.
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=modular_ai_llama_3_1_local_path,
-                device_specs=[DeviceSpec.cpu()],
-                quantization_encoding="bfloat16",
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=modular_ai_llama_3_1_local_path,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="bfloat16",
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 prefer_module_v3=True,
@@ -926,12 +982,16 @@ def test_config__validates_lora_configuration(
 
     # Test LoRA configuration with valid config
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding="bfloat16",
-            kv_cache=KVCacheConfig(enable_prefix_caching=False),
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    device_specs=[DeviceSpec.accelerator()],
+                    quantization_encoding="bfloat16",
+                    kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                    max_length=1,
+                )
+            }
         ),
         lora=LoRAConfig(
             enable_lora=True, lora_paths=[llama_3_1_8b_lora_local_path]
@@ -961,12 +1021,16 @@ def test_config__validates_lora_only_supported_for_llama(
         match=r"LoRA is not currently supported for architecture.*LoRA support is currently only available for Llama-3\.x models",
     ):
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=gemma_3_1b_it_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=gemma_3_1b_it_local_path,
+                        device_specs=[DeviceSpec.accelerator()],
+                        quantization_encoding="bfloat16",
+                        kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                        max_length=1,
+                    )
+                }
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
             runtime=PipelineRuntimeConfig(
@@ -987,12 +1051,16 @@ def test_config__validates_lora_works_for_llama(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding="bfloat16",
-            kv_cache=KVCacheConfig(enable_prefix_caching=False),
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    device_specs=[DeviceSpec.accelerator()],
+                    quantization_encoding="bfloat16",
+                    kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                    max_length=1,
+                )
+            }
         ),
         lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
         runtime=PipelineRuntimeConfig(
@@ -1020,12 +1088,16 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
         match=r"LoRA is not compatible with prefix caching\. Please disable prefix caching by using the --no-enable-prefix-caching flag\.",
     ):
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                kv_cache=KVCacheConfig(enable_prefix_caching=True),
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        device_specs=[DeviceSpec.accelerator()],
+                        quantization_encoding="bfloat16",
+                        kv_cache=KVCacheConfig(enable_prefix_caching=True),
+                        max_length=1,
+                    )
+                }
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
             runtime=PipelineRuntimeConfig(
@@ -1045,12 +1117,16 @@ def test_config__validates_lora_single_device_only(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding="bfloat16",
-            kv_cache=KVCacheConfig(enable_prefix_caching=False),
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    device_specs=[DeviceSpec.accelerator()],
+                    quantization_encoding="bfloat16",
+                    kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                    max_length=1,
+                )
+            }
         ),
         lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
         runtime=PipelineRuntimeConfig(
@@ -1078,15 +1154,19 @@ def test_config__validates_lora_fails_with_multiple_devices(
         match=r"LoRA is currently not supported with the number of devices > 1\.",
     ):
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                device_specs=[
-                    DeviceSpec.accelerator(),
-                    DeviceSpec.accelerator(),
-                ],
-                quantization_encoding="bfloat16",
-                kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        device_specs=[
+                            DeviceSpec.accelerator(),
+                            DeviceSpec.accelerator(),
+                        ],
+                        quantization_encoding="bfloat16",
+                        kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                        max_length=1,
+                    )
+                }
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
             runtime=PipelineRuntimeConfig(
@@ -1095,11 +1175,18 @@ def test_config__validates_lora_fails_with_multiple_devices(
         )
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator(), DeviceSpec.accelerator()],
-            quantization_encoding="bfloat16",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    device_specs=[
+                        DeviceSpec.accelerator(),
+                        DeviceSpec.accelerator(),
+                    ],
+                    quantization_encoding="bfloat16",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -1198,9 +1285,13 @@ def test_pipeline_config_with_flux_1_dev_model() -> None:
 
     # Create a PipelineConfig with Flux.1-dev
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=flux_model,
-            device_specs=[DeviceSpec.cpu()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=flux_model,
+                    device_specs=[DeviceSpec.cpu()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(defer_resolve=True),
     )
@@ -1251,9 +1342,13 @@ def test_pipeline_config_with_tiny_stable_diffusion() -> None:
 
     # Create a PipelineConfig with the diffusion model
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=diffusion_model,
-            device_specs=[DeviceSpec.cpu()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=diffusion_model,
+                    device_specs=[DeviceSpec.cpu()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(defer_resolve=True),
     )
@@ -1392,9 +1487,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
     )
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_num_steps=42,
@@ -1441,9 +1540,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     ):
         with patch_retrieve_architecture(arch_name):
             config = PipelineConfig(
-                model=MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
+                models=ModelManifest(
+                    {
+                        "main": MAXModelConfig(
+                            model_path="test/model",
+                            device_specs=[DeviceSpec.accelerator()],
+                        )
+                    }
                 ),
                 runtime=PipelineRuntimeConfig(max_num_steps=42),
             )
@@ -1454,9 +1557,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     # Don't override if the device is CPU
     with patch_retrieve_architecture("LlamaForCausalLM"):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.cpu()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model",
+                        device_specs=[DeviceSpec.cpu()],
+                    )
+                }
             ),
         )
         config._validate_and_resolve_overlap_scheduler()
@@ -1465,9 +1572,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     # Don't override if structured output is enabled
     with patch_retrieve_architecture("LlamaForCausalLM"):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model",
+                        device_specs=[DeviceSpec.accelerator()],
+                    )
+                }
             ),
             sampling=SamplingConfig(enable_structured_output=True),
         )
@@ -1477,9 +1588,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     # Don't override if the pipeline role is not PrefillAndDecode
     with patch_retrieve_architecture("LlamaForCausalLM"):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model",
+                        device_specs=[DeviceSpec.accelerator()],
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(pipeline_role="prefill_only"),
         )
@@ -1489,9 +1604,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     # Don't override for other architectures
     with patch_retrieve_architecture("SomeOtherArchitecture"):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model",
+                        device_specs=[DeviceSpec.accelerator()],
+                    )
+                }
             ),
         )
         config._validate_and_resolve_overlap_scheduler()
@@ -1508,9 +1627,13 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 
     # Allow user to manually enable overlap scheduler
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
@@ -1519,9 +1642,13 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 
     # Error out if user tries to enable overlap scheduler on CPU
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.cpu()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.cpu()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
@@ -1530,9 +1657,13 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 
     # Error out if user tries to enable overlap scheduler without PrefillAndDecode
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             pipeline_role="prefill_only",
@@ -1544,9 +1675,13 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 
     # Error out if user tries to enable overlap scheduler with AudioGenerationConfig
     config = AudioGenerationConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             pipeline_role="prefill_and_decode",
@@ -1559,9 +1694,13 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 
     # Error out if user tries to enable overlap scheduler with structured output
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         sampling=SamplingConfig(enable_structured_output=True),
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),

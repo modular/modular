@@ -18,13 +18,7 @@ from std.sys import (
     get_defined_string,
     align_of,
 )
-from std.gpu import (
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
-    block_dim_uint as block_dim,
-    thread_idx_uint as thread_idx,
-    block_idx_uint as block_idx,
-)
+from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 import linalg.matmul.vendor.blas as vendor_blas
 from std.benchmark import (
     Bench,
@@ -95,9 +89,9 @@ def _verify_buffers_gpu[
     var ref_nz: Float32 = 0
 
     # Grid-stride loop
-    var i = UInt(global_idx.x)
-    var stride = UInt(grid_dim.x * block_dim.x)
-    while i < UInt(length):
+    var i = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+    while i < length:
         var x = output[i].cast[DType.float32]()
         var y = reference[i].cast[DType.float32]()
         abs_diff_sum += abs(x - y)
@@ -118,7 +112,7 @@ def _verify_buffers_gpu[
 
     # Each block writes its partial results
     if thread_idx.x == 0:
-        var base = Int(block_idx.x) * 5
+        var base = block_idx.x * 5
         result[base + 0] = abs_diff_sum
         result[base + 1] = abs_ref_sum
         result[base + 2] = max_violation

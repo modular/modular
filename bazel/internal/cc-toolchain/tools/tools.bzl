@@ -123,7 +123,7 @@ def _declare_tools(platform):
     native.alias(
         name = "{}-clang".format(platform),
         actual = select({
-            "//:modular_config_ci_build": ":{}-single-platform-clang".format(platform),
+            "//:host_modular_config_ci_build": ":{}-single-platform-clang".format(platform),
             "//conditions:default": ":multi-platform-clang",
         }),
         tags = ["manual"],
@@ -139,7 +139,7 @@ def _declare_tools(platform):
     native.alias(
         name = "{}-clang++".format(platform),
         actual = select({
-            "//:modular_config_ci_build": ":{}-single-platform-clang++".format(platform),
+            "//:host_modular_config_ci_build": ":{}-single-platform-clang++".format(platform),
             "//conditions:default": ":multi-platform-clang++",
         }),
         tags = ["manual"],
@@ -165,7 +165,7 @@ def _declare_tools(platform):
     native.alias(
         name = "{}-linker_driver".format(platform),
         actual = select({
-            "//:modular_config_ci_build": ":{}-single-platform-linker_driver".format(platform),
+            "//:host_modular_config_ci_build": ":{}-single-platform-linker_driver".format(platform),
             "//conditions:default": ":multi-platform-linker_driver",
         }),
         tags = ["manual"],

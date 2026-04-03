@@ -52,7 +52,7 @@ def serve_api_server_and_model_worker(
         )
         logger.info(
             f"Auto-detected pipeline task: {pipeline_task.value} "
-            f"(model architecture: {pipeline_config.model.model_path})"
+            f"(model architecture: {pipeline_config.models.main_architecture_name})"
         )
 
     override_architecture: str | None = None

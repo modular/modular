@@ -26,9 +26,11 @@ from std.gpu.sync import (
     cp_async_bulk_wait_group,
 )
 from std.gpu.compute.arch.tcgen05 import (
+    tcgen05_dealloc,
     tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_ld,
+    tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
 from structured_kernels.barriers import (
@@ -36,7 +38,6 @@ from structured_kernels.barriers import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TMEM_LOWER_ROW_OFFSET,
-    TmemAllocation,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout import row_major, stack_allocation as tt_stack_allocation
@@ -1002,6 +1003,5 @@ def fa4_softmax[
         )
     WarpGroupBarrier[2 * WARPGROUP_SIZE, 2].sync()
     if warp_idx == 0:
-        var tmem = TmemAllocation[cta_group](tmem_addr)
-        tmem.release_lock()
-        tmem.deallocate()
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, UInt32(512))

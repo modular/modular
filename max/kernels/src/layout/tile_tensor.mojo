@@ -24,6 +24,7 @@ from std.builtin.variadics import (
     _ReduceVariadicAndIdxToVariadic,
 )
 from std.builtin.int import index as _index
+from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout._fillers import BATCH_SIZE
@@ -1975,6 +1976,30 @@ struct TileTensor[
             self.num_elements(),
             owning=False,
         )
+
+
+comptime _ComptimeConditionalTileTensor[
+    mut: Bool,
+    //,
+    dtype: DType,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    *,
+    engaged: Bool = False,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
+    element_size: Int = 1,
+] = _ComptimeConditional[
+    TileTensor[
+        dtype,
+        LayoutType,
+        origin,
+        address_space=address_space,
+        linear_idx_type=linear_idx_type,
+        element_size=element_size,
+    ],
+    engaged=engaged,
+]
 
 
 @always_inline("nodebug")

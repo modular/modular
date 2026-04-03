@@ -813,8 +813,17 @@ def print_workload_stats(samples: Samples) -> None:
                 if msg.delay_until_next_message is not None:
                     all_delays.append(msg.delay_until_next_message)
 
+        total_prefix = sum(s.prefix_turns for s in sessions)
+        total_turns = sum(num_turns_list)
         print(f"  {'Total sessions:':<30} {len(sessions)}")
-        print(f"  {'Total turns (across all):':<30} {sum(num_turns_list)}")
+        if total_prefix > 0:
+            print(
+                f"  {'Total turns (measured):':<30}"
+                f" {total_turns - total_prefix}"
+            )
+            print(f"  {'Total turns (warmup):':<30} {total_prefix}")
+        else:
+            print(f"  {'Total turns (across all):':<30} {total_turns}")
         print()
         print(
             _format_distribution_table(
@@ -1149,6 +1158,7 @@ async def chat_session_driver(
     skip_session_count: int | None = None,
     ignore_first_turn_stats: bool = False,
     benchmark_should_end_time: int | None = None,
+    randomize_session_start: bool = False,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
@@ -1170,7 +1180,12 @@ async def chat_session_driver(
     chat_len = 0
 
     messages = chat_session.messages
+    prefix_end_idx = chat_session.prefix_turns * 2
+    applied_initial_sleep = False
+
     while content_idx + 1 < len(messages):
+        is_prefix_turn = content_idx < prefix_end_idx
+
         chat_len += messages[content_idx].num_tokens
         output_len = messages[content_idx + 1].num_tokens
         if chat_len + output_len > max_chat_len:
@@ -1179,9 +1194,10 @@ async def chat_session_driver(
             )
             break
 
-        advance_request = request_counter.advance_until_max()
-        if not advance_request:  # reached max_requests
-            break
+        if not is_prefix_turn:
+            advance_request = request_counter.advance_until_max()
+            if not advance_request:  # reached max_requests
+                break
 
         user_prompt = messages[content_idx].content
         message_history.append(
@@ -1194,7 +1210,13 @@ async def chat_session_driver(
         request_func_input.prompt_len = chat_len
         request_func_input.max_tokens = output_len
 
-        # Check timeout before making request
+        if not is_prefix_turn and not applied_initial_sleep:
+            applied_initial_sleep = True
+            if randomize_session_start:
+                delay_ms = messages[content_idx + 1].delay_until_next_message
+                if delay_ms and delay_ms > 0:
+                    await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
+
         if (
             benchmark_should_end_time is not None
             and time.perf_counter_ns() >= benchmark_should_end_time
@@ -1209,18 +1231,22 @@ async def chat_session_driver(
                     "Expected RequestFuncOutput in text-generation benchmark flow."
                 )
             response = raw_response
-        if (
-            skip_session_count is None
-            or chat_session.id is None
-            or chat_session.id >= skip_session_count
-        ) and not (ignore_first_turn_stats and content_idx == 0):
-            session_outputs.append(response)
+
+        if not is_prefix_turn:
+            if (
+                skip_session_count is None
+                or chat_session.id is None
+                or chat_session.id >= skip_session_count
+            ) and not (
+                ignore_first_turn_stats and content_idx == prefix_end_idx
+            ):
+                session_outputs.append(response)
 
         if not response.success:
             if not response.cancelled:
                 logger.error(
-                    f"Ending chat session {chat_session.id} due to server error"
-                    f" response: {response.error}"
+                    f"Ending chat session {chat_session.id} due to server"
+                    f" error response: {response.error}"
                 )
             break
 
@@ -1232,8 +1258,9 @@ async def chat_session_driver(
         )
         chat_len += output_len
 
-        if delay_ms := messages[content_idx + 1].delay_until_next_message:
-            await asyncio.sleep(delay_ms / 1000)
+        if not is_prefix_turn:
+            if delay_ms := messages[content_idx + 1].delay_until_next_message:
+                await asyncio.sleep(delay_ms / 1000)
 
         content_idx += 2
 
@@ -1329,6 +1356,7 @@ async def run_multiturn_benchmark(
     temperature: float | None,
     top_p: float | None,
     top_k: int | None,
+    randomize_session_start: bool = False,
 ) -> list[RequestFuncOutput]:
     """Run multi-turn chat benchmark scenario."""
 
@@ -1364,6 +1392,7 @@ async def run_multiturn_benchmark(
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
+                randomize_session_start=randomize_session_start,
             )
         async with semaphore:
             return await chat_session_driver(
@@ -1379,6 +1408,7 @@ async def run_multiturn_benchmark(
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
+                randomize_session_start=randomize_session_start,
             )
 
     tasks: list[asyncio.Task[list[RequestFuncOutput]]] = []
@@ -1392,6 +1422,15 @@ async def run_multiturn_benchmark(
     session_outputs: list[list[RequestFuncOutput]] = await asyncio.gather(
         *tasks
     )
+
+    if (
+        benchmark_should_end_time is not None
+        and time.perf_counter_ns() < benchmark_should_end_time
+    ):
+        logger.warning(
+            "All chat sessions completed before the time limit. "
+            "Consider increasing --num-chat-sessions for more stable load."
+        )
 
     return [output for sublist in session_outputs for output in sublist]
 
@@ -1521,6 +1560,7 @@ async def benchmark(
     max_benchmark_duration_s: int | None,
     warmup_delay_ms: float,
     ignore_first_turn_stats: bool,
+    randomize_session_start: bool,
     timing_data: dict[str, list[float]] | None,
     lora_manager: LoRABenchmarkManager | None,
     trace_path: str | None = None,
@@ -1695,6 +1735,7 @@ async def benchmark(
                     temperature=temperature,
                     top_p=top_p,
                     top_k=top_k,
+                    randomize_session_start=randomize_session_start,
                 )
 
             # Close pbar if it was created
@@ -2218,6 +2259,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     tokenizer=tokenizer,
                     sys_prompt_ratio=args.random_sys_prompt_ratio,
                     max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                    randomize_starting_turn=args.randomize_starting_turn,
                 )
             else:
                 assert args.num_prompts is not None
@@ -2469,6 +2511,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
             ignore_first_turn_stats=args.ignore_first_turn_stats,
+            randomize_session_start=args.randomize_session_start,
             timing_data=None,
             lora_manager=lora_manager,
             trace_path=trace_path,

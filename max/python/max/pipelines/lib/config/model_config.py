@@ -1537,7 +1537,8 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         logger.info("")
         logger.info("  Model: %s", role)
-        logger.info("  " + "-" * 40)
+        separator = "\u2550" * 40  # ═
+        logger.info("  %s", separator)
 
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.device_specs
@@ -1567,30 +1568,7 @@ class MAXModelConfig(MAXModelConfigBase):
             [
                 ("huggingface_revision", self.huggingface_model_revision),
                 ("quantization_encoding", quantization_encoding_str),
-            ]
-        )
-
-        # Format weight_path depending on the number of paths.
-        weight_paths = self.weight_path
-        if len(weight_paths) == 0:
-            entries.append(("weight_path", "(none)"))
-        elif len(weight_paths) == 1:
-            entries.append(("weight_path", weight_paths[0]))
-        elif len(weight_paths) > 1:
-            display_paths = (
-                weight_paths[:3] + ["..."] + [weight_paths[-1]]
-                if len(weight_paths) > 5
-                else list(weight_paths)
-            )
-            formatted = (
-                "[\n"
-                + "\n".join(f"            {p}" for p in display_paths)
-                + "\n        ]"
-            )
-            entries.append(("weight_path", formatted))
-
-        entries.extend(
-            [
+                ("weight_path", _format_weight_path_summary(self.weight_path)),
                 ("devices", devices_str),
                 ("max_seq_len", self.max_length),
             ]
@@ -1605,6 +1583,9 @@ class MAXModelConfig(MAXModelConfigBase):
     def _log_kvcache_info(self) -> None:
         """Logs KV cache configuration details for this model config."""
         kv_config = self.kv_cache
+        sub_separator = "\u2500" * 2  # ──
+        logger.info("  %s KV Cache %s", sub_separator, sub_separator)
+
         entries: list[tuple[str, Any]] = [
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
@@ -1636,6 +1617,37 @@ class MAXModelConfig(MAXModelConfigBase):
 
         for line in _format_config_entries(entries, indent="    "):
             logger.info(line)
+
+
+def _format_weight_path_summary(weight_paths: list[Path]) -> str:
+    """Format weight paths as a compact single-line summary.
+
+    Args:
+        weight_paths: List of weight file paths.
+
+    Returns:
+        A human-readable summary string, e.g.
+        ``"model-*.safetensors (10 files)"``.
+    """
+    if len(weight_paths) == 0:
+        return "(none)"
+    if len(weight_paths) == 1:
+        return str(weight_paths[0])
+
+    # Find common prefix and extension to build a glob-like summary.
+    from os.path import commonprefix
+
+    str_paths = [str(p) for p in weight_paths]
+    prefix = commonprefix(str_paths)
+    extensions = {p.rsplit(".", 1)[-1] for p in str_paths if "." in p}
+    ext = f".{extensions.pop()}" if len(extensions) == 1 else ""
+    # Trim prefix to last separator for a cleaner glob.
+    for sep in ("/", "-", "_"):
+        idx = prefix.rfind(sep)
+        if idx != -1:
+            prefix = prefix[: idx + 1]
+            break
+    return f"{prefix}*{ext} ({len(weight_paths)} files)"
 
 
 def _format_config_entries(

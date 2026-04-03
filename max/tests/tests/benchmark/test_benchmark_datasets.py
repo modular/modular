@@ -709,3 +709,72 @@ def test_synthetic_pixel_dataset_sample_requests_for_image_to_image() -> None:
         assert request.image_options.height == 832
         assert request.image_options.steps == 18
         assert request.image_options.guidance_scale == 3.0
+
+
+def test_randomize_starting_turn_generates_valid_prefix() -> None:
+    """gen_multiturn_random_requests with randomize_starting_turn produces valid prefix_turns."""
+    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
+    mock_tokenizer.vocab_size = 1000
+    mock_tokenizer.model_max_length = 4096
+    mock_tokenizer.all_special_ids = {0, 1, 2}
+    mock_tokenizer.encode.return_value = [100]
+    mock_tokenizer.decode.return_value = "random text"
+    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=223)
+    mock_tokenizer.unk_token_id = None
+    mock_result = Mock()
+    mock_result.input_ids = list(range(32))
+    mock_tokenizer.return_value = mock_result
+
+    dataset = BenchmarkDataset.from_flags(dataset_name="random")
+    assert isinstance(dataset, RandomBenchmarkDataset)
+    samples = dataset.gen_multiturn_random_requests(
+        input_len=32,
+        output_len=16,
+        num_chat_sessions=50,
+        num_turns=3,
+        delay_between_chat_turns=500,
+        tokenizer=mock_tokenizer,
+        sys_prompt_ratio=0.0,
+        max_num_unique_sys_prompt=1,
+        randomize_starting_turn=True,
+    )
+
+    for session in samples.chat_sessions:
+        total_turns = len(session.messages) // 2
+        assert 0 <= session.prefix_turns < total_turns, (
+            f"prefix_turns={session.prefix_turns} out of range for"
+            f" {total_turns} total turns"
+        )
+
+    assert any(s.prefix_turns > 0 for s in samples.chat_sessions)
+
+
+def test_randomize_starting_turn_disabled_gives_zero_prefix() -> None:
+    """gen_multiturn_random_requests without randomize_starting_turn gives prefix_turns=0."""
+    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
+    mock_tokenizer.vocab_size = 1000
+    mock_tokenizer.model_max_length = 4096
+    mock_tokenizer.all_special_ids = {0, 1, 2}
+    mock_tokenizer.encode.return_value = [100]
+    mock_tokenizer.decode.return_value = "random text"
+    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=223)
+    mock_tokenizer.unk_token_id = None
+    mock_result = Mock()
+    mock_result.input_ids = list(range(32))
+    mock_tokenizer.return_value = mock_result
+
+    dataset = BenchmarkDataset.from_flags(dataset_name="random")
+    assert isinstance(dataset, RandomBenchmarkDataset)
+    samples = dataset.gen_multiturn_random_requests(
+        input_len=32,
+        output_len=16,
+        num_chat_sessions=20,
+        num_turns=3,
+        delay_between_chat_turns=500,
+        tokenizer=mock_tokenizer,
+        sys_prompt_ratio=0.0,
+        max_num_unique_sys_prompt=1,
+        randomize_starting_turn=False,
+    )
+
+    assert all(s.prefix_turns == 0 for s in samples.chat_sessions)
