@@ -313,9 +313,6 @@ struct SharedState::Impl {
   /// The parser configuration used when loading bytecode.
   mlir::ParserConfig bytecodeParserContext;
 
-  /// The closure wrapper types that have already been generated, keyed off
-  /// signature and module.
-  DenseMap<std::pair<GeneratorType, ASTDecl *>, StructDeclOp> closureWrappers;
   /// Closure traits have a unique generator type and are global to the module.
   /// Cache previously built traits.
   DenseMap<GeneratorType, ASTDecl *> closureTraits;
@@ -2120,18 +2117,6 @@ static size_t getTokenLength(SharedState &shared, SMLoc loc) {
 static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   size_t tokenSize = getTokenLength(shared, loc);
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
-}
-
-LIT::StructDeclOp
-SharedState::getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
-                                       ASTDecl *moduleDecl) {
-  StructDeclOp &existing = impl->closureWrappers[{sig, moduleDecl}];
-  if (!existing) {
-    std::string name = ASTType(sig).getAsString(/*diags=*/this);
-    existing = closureEmitter->createClosureWrapperStructDecl(
-        *moduleDecl, StringAttr::get(getContext(), name), sig, loc);
-  }
-  return existing;
 }
 
 ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,

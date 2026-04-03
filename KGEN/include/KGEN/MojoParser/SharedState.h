@@ -496,10 +496,6 @@ public:
   struct Impl;
   Impl &getImpl() const { return *impl; }
 
-  /// This gets the typed-erased closure wrapper for `sig`, or creates one in
-  /// the provided module if one does not already exist.
-  StructDeclOp getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
-                                         ASTDecl *moduleDecl);
   /// Given a signature [Int](y:Int) -> Int for example, return the trait. If
   /// there is not a trait already generated, the compiler will generate the
   /// following:

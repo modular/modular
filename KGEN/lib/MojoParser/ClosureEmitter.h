@@ -104,7 +104,6 @@ public:
 
   /// Promote a stateless unified closure decl to a top-level function decl.
   ASTDecl *promoteStatelessClosure(ASTDecl &nestedFnDecl);
-
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.
   FnOp createWrapperInitWithImpl(ASTDecl &moduleDecl,
@@ -167,11 +166,6 @@ private:
 
   /// Given a closure wrapper, collect the top level function types.
   TopLevelTypes collectTopLevelFunctionTypes(StructDeclOp closureWrapper);
-
-  /// Synthesize the constructor for a closure wrapper struct from a bare
-  /// function pointer of the same function signature.
-  void synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
-                                  FnTypeGeneratorType sig);
 
   /// Underlying implementation of `augmentWitnessTablesToConformTo` and
   /// `isCompatibleWith`.

@@ -4186,25 +4186,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
 
-  if (argList.effects.isEscaping()) {
-    // Create a self contained signature type that represents the closure.
-    auto [capturedRefs, wrapperSig] =
-        DeclResolver::createSelfContainedSignature(signature);
-    ASTDecl *decl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
-    StructDeclOp structOp =
-        emitter.shared.getOrCreateClosureWrapper(getLoc(), wrapperSig, decl);
-
-    // Closure creation failed. Error emitted in ClosureEmitter.
-    if (!structOp)
-      return {};
-
-    // Build the return type by binding the parent parameter values to the
-    // struct parameters.
-    // TODO: Handle partial binding.
-    StructType selfType = structOp.bindReference(llvm::map_to_vector(
-        capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
-    return emitter.emitResult(ASTType(selfType), this, dest);
-  }
   if (argList.effects.isUnified()) {
     ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
         getLoc(), *emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>(),
