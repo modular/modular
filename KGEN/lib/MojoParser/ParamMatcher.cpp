@@ -23,6 +23,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -911,6 +912,18 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
         return error(MatchFailure::Unclassified{});
       for (auto [act, exp] :
            llvm::zip(actualVar.getValues(), expectedVar.getValues())) {
+        PROP(matchParams(act, exp));
+      }
+      return success();
+    }
+  }
+
+  if (auto actual = dyn_cast<POP::ArrayAttr>(actualAttr)) {
+    if (auto expected = dyn_cast<POP::ArrayAttr>(expectedAttr)) {
+      if (actual.getValues().size() != expected.getValues().size())
+        return error(MatchFailure::Unclassified{});
+      for (auto [act, exp] :
+           llvm::zip(actual.getValues(), expected.getValues())) {
         PROP(matchParams(act, exp));
       }
       return success();

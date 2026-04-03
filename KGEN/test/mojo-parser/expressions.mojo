@@ -143,7 +143,8 @@ def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # CHECK-NEXT: [[IMMREF1:%.*]] = lit.ref.immut %regX
   # CHECK-NEXT: [[IMMREF2:%.*]] = lit.ref.immut %regX
-  # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [[[IMMREF1]], [[IMMREF2]]]
+  # CHECK-NEXT: {{%.*}} = lit.var.decl "__passed_varargs__"
+  # CHECK-NEXT: {{%.*}} = pop.array.create [[[IMMREF1]], [[IMMREF2]]]
   # CHECK: lit.call {{.*}}VariadicList::@"__init__
   # CHECK: lit.call {{.*}}MemoryOnlyInt::@"variadic
   MemoryOnlyInt.variadic(regX, regX)

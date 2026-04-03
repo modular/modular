@@ -1613,6 +1613,13 @@ struct MyTypeWithOrigin[
 ]: pass
 def testMOCO1826[o: Origin[]](a: MyTypeWithOrigin[origin=o]): pass
 
+# Test variadic param inference.
+def vararg_example(*args: Int) -> Int: pass
+def variadic_inf[N: Int](a: StructWithIntParam[vararg_example(N, 2)]): pass
+def test_variadic_inf():
+    variadic_inf(StructWithIntParam[vararg_example(1, 2)]())
+
+
 ##===----------------------------------------------------------------------===##
 # Origin Parameters
 ##===----------------------------------------------------------------------===##

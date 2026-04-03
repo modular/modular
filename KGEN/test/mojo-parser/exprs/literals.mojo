@@ -83,7 +83,8 @@ def inspect(list: List[_]):
 
 # CHECK-LABEL: lit.fn @"test_list_literal
 def test_list_literal():
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!Movable> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
@@ -93,14 +94,14 @@ def test_list_literal():
     # CHECK-DAG: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-DAG: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-DAG: [[TMP3:%.*]] = kgen.param.constant: !Int = <{3}>
-    # CHECK-DAG: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
+    # CHECK-DAG: {{%.*}} = pop.array.create [{{.*}}]
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!Movable> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[TUP_TMP]])
     var b: IntList = [1, 2, 3]
 
-    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
+    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: !lit.ref<array<0, !lit.ref<!Int, imm {}>>, imm {}> = <#interp.pointer<0>>
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!Movable> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
@@ -236,7 +237,8 @@ def param_infer_equal[T: AnyType](a: T, b: T):
 
 # CHECK-LABEL: lit.fn @"test_set_literal
 def test_set_literal():
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!Movable> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
@@ -246,7 +248,8 @@ def test_set_literal():
     # MOCO-1974 - Param inference isn't substituting full type
     param_infer_equal(a, {})
 
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!Movable> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut

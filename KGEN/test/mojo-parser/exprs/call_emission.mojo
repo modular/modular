@@ -182,7 +182,7 @@ def takes_variadic_and_kw_only_args(
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_args
 def test_variadic_and_kw_only_args(x: Int):
-    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
+    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: !lit.ref<array<0, !lit.ref<!Int, imm {}>>, imm {}> = <#interp.pointer<0>>
     # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
@@ -191,7 +191,7 @@ def test_variadic_and_kw_only_args(x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"{{.*}}(%x, %x, [[T2]], %x, [[ZERO]])
     takes_variadic_and_kw_only_args(x, x, c=x)
 
-    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
+    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: !lit.ref<array<0, !lit.ref<!Int, imm {}>>, imm {}> = <#interp.pointer<0>>
     # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
@@ -199,8 +199,9 @@ def test_variadic_and_kw_only_args(x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"{{.*}}(%x, %x, [[T2]], %x, %x)
     takes_variadic_and_kw_only_args(x, x, d=x, c=x)
 
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
-    # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
+    # CHECK: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]

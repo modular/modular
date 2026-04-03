@@ -314,7 +314,8 @@ def callerFn(arg0: BorrowStruct):
     # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
 
-    # CHECK: %1 = pop.variadic.create [%arg0, %arg0]
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create [%arg0, %arg0]
     # CHECK: lit.call {{.*}}borrowedVarArgs{{.*}}(%arg0,
     arg0.borrowedVarArgs(arg0, arg0)
 
@@ -455,7 +456,7 @@ struct VarArgsParameterizedStruct[*Is: Int]:
 
 # CHECK-LABEL: lit.fn @"callVariadic{{.*}}"<p: !Int>
 def callVariadic[p: Int](x: Int):
-    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!lit.ref<!Int, imm {{..}}>> = <[]>
+    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: !lit.ref<array<0, !lit.ref<!Int, imm {}>>, imm {}> = <#interp.pointer<0>>
     # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
@@ -464,22 +465,25 @@ def callVariadic[p: Int](x: Int):
     variadics()
     # CHECK: [[C7:%.*]] = kgen.param.constant{{.*}}7
     # CHECK: [[C11:%.*]] = kgen.param.constant{{.*}}11
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
-    # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
+    # CHECK: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
     # CHECK: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
     variadics(7, 11)
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [%{{.*}}]
-    # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create [%{{.*}}]
+    # CHECK: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
     # CHECK: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
     variadics(x)
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
-    # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
+    # CHECK: lit.var.decl "__passed_varargs__"
+    # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
+    # CHECK: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
@@ -487,7 +491,7 @@ def callVariadic[p: Int](x: Int):
     variadics(x, 1)
 
     # CHECK: lit.alias.decl *"EmptyVariadic
-    # CHECK-SAME: "a": !lit.ref<!lit.struct<#VariadicList{{.*}}, [])))
+    # CHECK-SAME: "a": !lit.ref<!lit.struct<#VariadicList{{.*}}, #interp.pointer<0>)))
     comptime EmptyVariadic = variadics()
     # CHECK: lit.alias.decl *"NonEmptyVariadic
     # CHECK-SAME: @"variadics{{.*}}Int*)"{{.*}}[store_to_mem(p), store_to_mem({1})]
