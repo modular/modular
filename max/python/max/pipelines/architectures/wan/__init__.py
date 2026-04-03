@@ -11,15 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import wan_arch, wan_i2v_arch
-from .model import WanTransformerModel
-from .pipeline_wan import WanPipeline
-from .pipeline_wan_i2v import WanI2VPipeline
+from .arch import wan_animate_arch, wan_arch, wan_i2v_arch
 
 __all__ = [
-    "WanI2VPipeline",
-    "WanPipeline",
-    "WanTransformerModel",
+    "wan_animate_arch",
     "wan_arch",
     "wan_i2v_arch",
 ]

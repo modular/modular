@@ -20,6 +20,7 @@ import base64
 import logging
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
@@ -41,10 +42,13 @@ from max.pipelines.core import PixelContext
 from transformers import AutoTokenizer
 
 from .diffusion_schedulers import SchedulerFactory
+from .video_processor import VideoProcessor
 
 if TYPE_CHECKING:
     import PIL.Image
     from max.pipelines.lib.config import PipelineConfig
+    from max.pipelines.lib.image_options import ImageOptions
+    from max.pipelines.lib.video_options import VideoOptions
 
 logger = logging.getLogger("max.pipelines")
 
@@ -101,6 +105,7 @@ class PipelineClassName(str, Enum):
     ZIMAGE = "ZImagePipeline"
     WAN = "WanPipeline"
     WAN_I2V = "WanImageToVideoPipeline"
+    WAN_ANIMATE = "WanAnimatePipeline"
 
     @classmethod
     def from_diffusers_config(
@@ -119,6 +124,19 @@ class PipelineClassName(str, Enum):
             raise ValueError(
                 f"Unsupported _class_name={raw!r}. Allowed: {allowed}"
             ) from e
+
+
+@dataclass(kw_only=True)
+class WanAnimateContext:
+    """Tokenizer-prepared numeric media for Wan-Animate."""
+
+    pose_video_np: npt.NDArray[np.float32]
+    face_pixels_np: npt.NDArray[np.float32]
+    bg_video_np: npt.NDArray[np.float32] | None
+    mask_video_np: npt.NDArray[np.float32] | None
+    num_pose_frames: int
+    num_segments: int
+    effective_seg_len: int
 
 
 class PixelGenerationTokenizer(
@@ -157,6 +175,8 @@ class PixelGenerationTokenizer(
     ) -> None:
         self.model_path = model_path
         self._default_num_inference_steps = default_num_inference_steps
+        self.video_processor = VideoProcessor()
+        self.mask_video_processor = VideoProcessor(mask=True)
 
         if max_length is None:
             raise ValueError(
@@ -250,6 +270,7 @@ class PixelGenerationTokenizer(
         elif self._pipeline_class_name in (
             PipelineClassName.WAN,
             PipelineClassName.WAN_I2V,
+            PipelineClassName.WAN_ANIMATE,
         ):
             # Noise latent channels = out_channels (16), not in_channels
             # which may be 36 for I2V (16 noise + 4 mask + 16 image)
@@ -449,6 +470,96 @@ class PixelGenerationTokenizer(
 
         return image
 
+    def _prepare_wan_animate_context(
+        self,
+        *,
+        pose_video: list[PIL.Image.Image],
+        face_video: list[PIL.Image.Image],
+        background_video: list[PIL.Image.Image] | None = None,
+        mask_video: list[PIL.Image.Image] | None = None,
+        animate_mode: str = "animate",
+        segment_frame_length: int = 77,
+        prev_segment_conditioning_frames: int = 1,
+        height: int,
+        width: int,
+    ) -> WanAnimateContext:
+        """Convert raw Wan-Animate frame inputs into serializable numpy arrays."""
+        segment_len = int(segment_frame_length)
+        prev_cond_frames = int(prev_segment_conditioning_frames)
+        if segment_len <= prev_cond_frames:
+            raise ValueError(
+                "segment_frame_length must be greater than "
+                "prev_segment_conditioning_frames"
+            )
+        if prev_cond_frames < 0:
+            raise ValueError(
+                "prev_segment_conditioning_frames must be non-negative"
+            )
+
+        if not pose_video:
+            raise ValueError("Wan-Animate requires pose_video with frames.")
+        if not face_video:
+            raise ValueError("Wan-Animate requires face_video with frames.")
+
+        num_pose_frames = len(pose_video)
+        effective_seg_len, num_target_frames, num_segments = (
+            self.video_processor.compute_segment_layout(
+                num_pose_frames,
+                segment_len,
+                prev_cond_frames,
+            )
+        )
+
+        pose_video_np = self.video_processor.preprocess_video(
+            pose_video,
+            height=height,
+            width=width,
+            num_target_frames=num_target_frames,
+            resample=PIL.Image.Resampling.LANCZOS,
+        )
+        face_pixels_np = self.video_processor.preprocess_video(
+            face_video,
+            height=512,
+            width=512,
+            num_target_frames=num_target_frames,
+            resample=PIL.Image.Resampling.LANCZOS,
+        )
+
+        bg_video_np: npt.NDArray[np.float32] | None = None
+        mask_video_np: npt.NDArray[np.float32] | None = None
+        if str(animate_mode) == "replace":
+            if background_video is None:
+                raise ValueError(
+                    "Replace mode requires background_video (--background-video)"
+                )
+            if mask_video is None:
+                raise ValueError(
+                    "Replace mode requires mask_video (--mask-video)"
+                )
+            bg_video_np = self.video_processor.preprocess_video(
+                background_video,
+                height=height,
+                width=width,
+                num_target_frames=num_target_frames,
+                resample=PIL.Image.Resampling.BICUBIC,
+            )
+            mask_video_np = self.mask_video_processor.preprocess_video(
+                mask_video,
+                height=height,
+                width=width,
+                num_target_frames=num_target_frames,
+            )
+
+        return WanAnimateContext(
+            pose_video_np=pose_video_np,
+            face_pixels_np=face_pixels_np,
+            bg_video_np=bg_video_np,
+            mask_video_np=mask_video_np,
+            num_pose_frames=num_pose_frames,
+            num_segments=num_segments,
+            effective_seg_len=effective_seg_len,
+        )
+
     def _prepare_latents(
         self,
         batch_size: int,
@@ -456,6 +567,8 @@ class PixelGenerationTokenizer(
         latent_height: int,
         latent_width: int,
         seed: int | None,
+        video_options: VideoOptions | None = None,
+        image_options: ImageOptions | None = None,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         shape = (batch_size, num_channels_latents, latent_height, latent_width)
 
@@ -463,6 +576,25 @@ class PixelGenerationTokenizer(
         latent_image_ids = self._prepare_latent_image_ids(
             latent_height // 2, latent_width // 2, batch_size
         )
+
+        if video_options and video_options.num_frames:
+            vae_scale_factor_temporal = 4
+            latent_frames = (
+                video_options.num_frames - 1
+            ) // vae_scale_factor_temporal + 1
+
+            # WanAnimate needs +1 temporal frame for reference image conditioning
+            if self._pipeline_class_name == PipelineClassName.WAN_ANIMATE:
+                latent_frames += 1
+
+            shape_5d = (
+                image_options.num_images,
+                self._num_channels_latents,
+                latent_frames,
+                latent_height,
+                latent_width,
+            )
+            latents = self._randn_tensor(shape_5d, seed)
 
         return latents, latent_image_ids
 
@@ -905,6 +1037,14 @@ class PixelGenerationTokenizer(
         self,
         request: OpenResponsesRequest,
         input_image: PIL.Image.Image | None = None,
+        *,
+        pose_video: list[PIL.Image.Image] | None = None,
+        face_video: list[PIL.Image.Image] | None = None,
+        background_video: list[PIL.Image.Image] | None = None,
+        mask_video: list[PIL.Image.Image] | None = None,
+        animate_mode: str = "animate",
+        segment_frame_length: int = 77,
+        prev_segment_conditioning_frames: int = 1,
     ) -> PixelContext:
         """Create a new PixelContext object, leveraging necessary information from OpenResponsesRequest."""
         # Extract prompt from request using the helper method
@@ -971,7 +1111,11 @@ class PixelGenerationTokenizer(
             )
         if (
             self._pipeline_class_name
-            in (PipelineClassName.WAN, PipelineClassName.WAN_I2V)
+            in (
+                PipelineClassName.WAN,
+                PipelineClassName.WAN_I2V,
+                PipelineClassName.WAN_ANIMATE,
+            )
             and image_options.guidance_scale > 1.0
             and negative_prompt_resolved is not None
         ):
@@ -1089,6 +1233,7 @@ class PixelGenerationTokenizer(
         if self._pipeline_class_name in (
             PipelineClassName.WAN,
             PipelineClassName.WAN_I2V,
+            PipelineClassName.WAN_ANIMATE,
         ):
             if getattr(self._scheduler, "use_flow_sigmas", False):
                 self._scheduler.flow_shift = self._select_wan_flow_shift(
@@ -1110,6 +1255,7 @@ class PixelGenerationTokenizer(
         if self._pipeline_class_name in (
             PipelineClassName.WAN,
             PipelineClassName.WAN_I2V,
+            PipelineClassName.WAN_ANIMATE,
         ) and hasattr(self._scheduler, "build_step_coefficients"):
             step_coefficients = self._scheduler.build_step_coefficients()
         if (
@@ -1151,21 +1297,28 @@ class PixelGenerationTokenizer(
             latent_height,
             latent_width,
             request.body.seed,
+            video_options,
+            image_options,
         )
 
-        if video_options and video_options.num_frames:
-            vae_scale_factor_temporal = 4
-            latent_frames = (
-                video_options.num_frames - 1
-            ) // vae_scale_factor_temporal + 1
-            shape_5d = (
-                image_options.num_images,
-                self._num_channels_latents,
-                latent_frames,
-                latent_height,
-                latent_width,
+        animate_context: WanAnimateContext | None = None
+        if self._pipeline_class_name == PipelineClassName.WAN_ANIMATE:
+            if pose_video is None or face_video is None:
+                raise ValueError(
+                    "Wan-Animate requires explicit pose_video and face_video "
+                    "inputs to tokenizer.new_context(...)."
+                )
+            animate_context = self._prepare_wan_animate_context(
+                pose_video=pose_video,
+                face_video=face_video,
+                background_video=background_video,
+                mask_video=mask_video,
+                animate_mode=animate_mode,
+                segment_frame_length=segment_frame_length,
+                prev_segment_conditioning_frames=prev_segment_conditioning_frames,
+                height=int(height),
+                width=int(width),
             )
-            latents = self._randn_tensor(shape_5d, request.body.seed)
 
         # 5. Build the context
         context = PixelContext(
@@ -1204,6 +1357,31 @@ class PixelGenerationTokenizer(
             ),
             step_coefficients=step_coefficients,
             boundary_timestep=boundary_timestep,
+            pose_video_np=(
+                animate_context.pose_video_np if animate_context else None
+            ),
+            face_pixels_np=(
+                animate_context.face_pixels_np if animate_context else None
+            ),
+            bg_video_np=animate_context.bg_video_np
+            if animate_context
+            else None,
+            mask_video_np=(
+                animate_context.mask_video_np if animate_context else None
+            ),
+            num_pose_frames=(
+                animate_context.num_pose_frames if animate_context else None
+            ),
+            num_segments=animate_context.num_segments
+            if animate_context
+            else None,
+            effective_seg_len=(
+                animate_context.effective_seg_len if animate_context else None
+            ),
+            animate_mode=animate_mode,
+            segment_frame_length=segment_frame_length,
+            prev_segment_conditioning_frames=prev_segment_conditioning_frames,
+            seed=request.body.seed,
         )
 
         return context

@@ -256,7 +256,6 @@ class WanPipeline(DiffusionPipeline):
             "devices": self.devices,
             "weights": load_weights(abs_paths),
             "session": self.session,
-            "eager_load": False,
         }
         lora_path_2 = lora_files.get("low_noise_model")
         if lora_path_2 is not None:
@@ -445,7 +444,7 @@ class WanPipeline(DiffusionPipeline):
             g.output(ops.cast(g.inputs[0].tensor, DType.float32))
         self.__dict__["_cast_model_dtype_to_f32"] = self.session.load(g)
 
-    def build_denorm(self) -> None:
+    def build_denorm(self, skip_first: bool = False) -> None:
         """Compile VAE latent denormalization + dtype cast graph."""
         device = self.transformer.devices[0]
         model_dtype = self.transformer.config.dtype
@@ -462,6 +461,8 @@ class WanPipeline(DiffusionPipeline):
         with Graph("wan_denorm", input_types=input_types) as g:
             latents, std, mean = (v.tensor for v in g.inputs)
             result = ops.cast(latents * std + mean, model_dtype)
+            if skip_first and len(latents.shape) == 5:
+                result = result[:, :, 1:, :, :]
             g.output(result)
         self.__dict__["_denorm"] = self.session.load(g)
 
@@ -692,6 +693,16 @@ class WanPipeline(DiffusionPipeline):
         return (ls[2] // p_t) * (ls[3] // p_h) * (ls[4] // p_w)
 
     # Standard resolutions to pre-compile block graphs for.
+    def _prepare_prompt_state(
+        self,
+        model_inputs: WanModelInputs,
+    ) -> tuple[Buffer, Buffer | None, Buffer | None, bool]:
+        """Encode prompts; returns (prompt_embeds, neg_embeds, batched_embeds, do_cfg)."""
+        prompt_embeds, negative_prompt_embeds, do_cfg = (
+            self.prepare_prompt_embeddings(model_inputs)
+        )
+        return prompt_embeds, negative_prompt_embeds, None, do_cfg
+
     def prepare_prompt_embeddings(
         self,
         model_inputs: WanModelInputs,

@@ -775,6 +775,28 @@ class PixelContext:
     """Pre-computed scheduler step coefficients."""
     boundary_timestep: float | None = field(default=None)
     """Timestep threshold for switching between high/low noise experts."""
+    pose_video_np: npt.NDArray[np.float32] | None = field(default=None)
+    """All pose frames as [T, 3, H, W] float32 in [-1, 1], after segment padding."""
+    face_pixels_np: npt.NDArray[np.float32] | None = field(default=None)
+    """All face frames as [T, 3, 512, 512] float32 in [-1, 1], after padding."""
+    bg_video_np: npt.NDArray[np.float32] | None = field(default=None)
+    """Replace-mode background frames [T, 3, H, W] float32 in [-1, 1]."""
+    mask_video_np: npt.NDArray[np.float32] | None = field(default=None)
+    """Replace-mode mask frames [T, H, W] float32 in [0, 1] at pixel resolution."""
+    num_pose_frames: int | None = field(default=None)
+    """Original pose frame count before tokenizer padding."""
+    num_segments: int | None = field(default=None)
+    """Number of animate segments after padding to the segment stride."""
+    effective_seg_len: int | None = field(default=None)
+    """Frames advanced per segment after overlap is removed."""
+    animate_mode: str = field(default="animate")
+    """Wan-Animate mode: 'animate' (motion transfer) or 'replace' (character replacement)."""
+    segment_frame_length: int = field(default=77)
+    """Number of frames per segment for Wan-Animate."""
+    prev_segment_conditioning_frames: int = field(default=1)
+    """Number of overlap frames between segments for Wan-Animate."""
+    seed: int | None = field(default=None)
+    """Random seed for deterministic generation."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property

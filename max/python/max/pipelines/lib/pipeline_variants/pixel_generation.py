@@ -32,6 +32,7 @@ from max.interfaces.request.open_responses import OutputImageContent
 
 from ..interfaces.cache_mixin import DenoisingCacheConfig
 from ..interfaces.diffusion_pipeline import DiffusionPipeline
+from ..video_processor import video_tensor_to_frames
 from .utils import get_weight_paths
 
 if TYPE_CHECKING:
@@ -125,18 +126,32 @@ class PixelGenerationPipeline(
             )
 
         responses: dict[RequestID, GenerationOutput] = {}
+        is_video_output = images.ndim == 5
+        if is_video_output and num_images_per_prompt != 1:
+            raise ValueError(
+                "Video outputs currently require num_images_per_prompt == 1, "
+                f"got {num_images_per_prompt}."
+            )
+
         for index, (request_id, _context) in enumerate(flat_batch):
             offset = index * num_images_per_prompt
-            pixel_data = images[offset : offset + num_images_per_prompt]
-
             output_format = getattr(_context, "output_format", "jpeg")
+            if is_video_output:
+                output_items = [
+                    OutputImageContent.from_numpy(frame, format=output_format)
+                    for frame in video_tensor_to_frames(images[offset])
+                ]
+            else:
+                pixel_data = images[offset : offset + num_images_per_prompt]
+                output_items = [
+                    OutputImageContent.from_numpy(img, format=output_format)
+                    for img in pixel_data
+                ]
+
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
                 final_status=GenerationStatus.END_OF_SEQUENCE,
-                output=[
-                    OutputImageContent.from_numpy(img, format=output_format)
-                    for img in pixel_data
-                ],
+                output=output_items,
             )
 
         return responses

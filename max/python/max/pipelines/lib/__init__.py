@@ -93,6 +93,7 @@ from .tokenizer import (
     max_tokens_to_generate,
 )
 from .utils import CompilationTimer, upper_bounded_default
+from .video_processor import VideoProcessor, load_video_frames, save_video
 from .weight_path_parser import WeightPathParser
 
 __all__ = [
@@ -139,6 +140,7 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
+    "VideoProcessor",
     "WeightPathParser",
     "convert_max_config_value",
     "deep_merge_max_configs",
@@ -148,12 +150,14 @@ __all__ = [
     "generate_local_model_path",
     "get_default_max_config_file_section_name",
     "is_float4_encoding",
+    "load_video_frames",
     "max_tokens_to_generate",
     "parse_quant_config",
     "parse_supported_encoding_from_file_name",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
     "resolve_max_config_inheritance",
+    "save_video",
     "supported_encoding_dtype",
     "supported_encoding_quantization",
     "supported_encoding_supported_devices",

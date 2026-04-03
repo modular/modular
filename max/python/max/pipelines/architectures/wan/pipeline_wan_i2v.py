@@ -25,6 +25,7 @@ from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device
+from max.graph import Graph, TensorType, ops
 from max.profiler import Tracer, traced
 
 from ..autoencoders.autoencoder_kl_wan import (
@@ -158,50 +159,38 @@ class WanI2VPipeline(WanPipeline):
 
         return _numpy_f32_to_buffer(condition, self.vae.config.dtype, device)
 
-    def _compile_i2v_concat(
-        self, latent_model_input: Buffer, condition: Buffer
-    ) -> Any:
-        """Compile a GPU graph that concatenates latents + condition along axis=1.
+    def build_i2v_concat(self) -> None:
+        """Compile the I2V latent + condition concatenation graph AOT.
 
-        Uses symbolic spatial dims so the same graph works for different
-        resolutions (e.g. 1280x720 and 720x1280).
+        Channel dims are derived from the VAE config; spatial dims (T, H, W)
+        are symbolic so a single compilation handles any resolution.
+        Stores the result as ``_i2v_concat_model``.
         """
-        from max.graph import Graph, TensorType, ops
-
         device = self.transformer.devices[0]
-        dtype = latent_model_input.dtype
-        # batch, channels are concrete; T, H, W are symbolic
-        lat_shape = [
-            int(latent_model_input.shape[0]),
-            int(latent_model_input.shape[1]),
-            "T", "H", "W",
-        ]
-        cond_shape = [
-            int(condition.shape[0]),
-            int(condition.shape[1]),
-            "T", "H", "W",
-        ]
+        dtype = self.transformer.config.dtype
+        z_dim = int(self.vae.config.z_dim)
+        vae_t = int(self.vae_scale_factor_temporal)
 
         with Graph(
             "wan_i2v_concat",
             input_types=[
-                TensorType(dtype, lat_shape, device=device),
-                TensorType(dtype, cond_shape, device=device),
+                TensorType(dtype, [1, z_dim, "t", "h", "w"], device=device),
+                TensorType(
+                    dtype, [1, z_dim + vae_t, "t", "h", "w"], device=device
+                ),
             ],
         ) as g:
-            lat = g.inputs[0].tensor
-            cond = g.inputs[1].tensor
-            g.output(ops.concat([lat, cond], axis=1))
-        return self.session.load(g)
+            g.output(
+                ops.concat([g.inputs[0].tensor, g.inputs[1].tensor], axis=1)
+            )
+        self.__dict__["_i2v_concat_model"] = self.session.load(g)
 
     def _concat_i2v_condition(
         self, latent_model_input: Buffer, condition: Buffer
     ) -> Buffer:
         """Concat latents [B,C_l,T,H,W] with condition [B,C_c,T,H,W] on GPU."""
         if self._i2v_concat_model is None:
-            self._i2v_concat_model = self._compile_i2v_concat(
-                latent_model_input, condition
-            )
+            self.build_i2v_concat()
         return self._i2v_concat_model.execute(latent_model_input, condition)[0]
 
     @traced(message="WanI2VPipeline.execute")

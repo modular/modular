@@ -27,6 +27,7 @@ from max.pipelines.lib.interfaces import ArchConfig
 from typing_extensions import Self
 
 from .pipeline_wan import WanPipeline
+from .pipeline_wan_animate import WanAnimatePipeline
 from .pipeline_wan_i2v import WanI2VPipeline
 
 
@@ -80,6 +81,21 @@ wan_i2v_arch = SupportedArchitecture(
         "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",
     ],
     pipeline_model=WanI2VPipeline,
+    context_type=PixelContext,
+    default_weights_format=WeightsFormat.safetensors,
+    tokenizer=PixelGenerationTokenizer,
+    config=WanArchConfig,
+)
+
+wan_animate_arch = SupportedArchitecture(
+    name="WanAnimatePipeline",
+    task=PipelineTask.PIXEL_GENERATION,
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16", "float32"},
+    example_repo_ids=[
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers",
+    ],
+    pipeline_model=WanAnimatePipeline,  # type: ignore[arg-type]
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=PixelGenerationTokenizer,
