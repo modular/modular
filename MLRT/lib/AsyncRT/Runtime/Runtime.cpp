@@ -109,3 +109,25 @@ AsyncRT::getAllocator(const AllocatorOptions &options) {
     allocator = createProfilingAllocator(std::move(allocator));
   return allocator;
 }
+
+RuntimeRef AsyncRT::createRuntime(RuntimeSource source,
+                                  const RuntimeOptions &options) {
+  assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
+         "creating a runtime from a thread already associated with an outer "
+         "runtime");
+  CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
+  std::unique_ptr<Allocator> allocator =
+      getAllocator(options.getAllocatorOptions());
+  std::unique_ptr<WorkQueue> workQueue =
+      options.singleThreaded
+          ? createSingleThreadWorkQueue(runtimePtr)
+          : createThreadPoolWorkQueue(
+                runtimePtr, options.numThreads, options.maxThreads,
+                options.mainWillDonate, options.withAffinity,
+                std::chrono::microseconds(options.threadBusyWaitTime),
+                options.poolName);
+  return RuntimeRef::take(
+      new Runtime(runtimePtr, std::move(allocator), std::move(workQueue),
+                  source, options.profileFilename,
+                  options.runtimeProfilingTypeMask, options.profilerDebuginfo));
+}
