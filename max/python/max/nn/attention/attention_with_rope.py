@@ -452,15 +452,13 @@ class AttentionWithRope(Module, Shardable):
                 wk = clamp(wk, min=-self.clip_qkv, max=self.clip_qkv)
                 wv = clamp(wv, min=-self.clip_qkv, max=self.clip_qkv)
 
-            # Here we are rescaling the weights to be based on the max scale.
-            # This feels super fishy and like it could greatly hurt accuracy.
-            # That said, for these float8 models, all models run with vllm
-            # (not supported by torch/transformers). As such, vllm is the
-            # canonical implementation for correctness. This rescaling is what
-            # vllm does.
-            # https://github.com/vllm-project/vllm/blob/9b1769dd9ad13a5688d1e2b1b5f00b07b3716969/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w8a8_fp8.py#L35
+            # For static per-tensor FP8: dequant each projection with its
+            # own scale, then requant under the unified max scale.
+            # Dynamic tensor-wise FP8 skips this: per-projection scales
+            # are broadcast to rowwise in qkv_weight_scale instead.
             if (
                 self.quant_config
+                and self.quant_config.is_static
                 and self.quant_config.weight_scale.is_tensor
                 and self.q_proj.weight_scale is not None
                 and self.k_proj.weight_scale is not None
@@ -476,19 +474,7 @@ class AttentionWithRope(Module, Shardable):
             wqkv = ops.concat((wq, wk, wv))
             if self.quant_config and self.quant_config.is_nvfp4:
                 return wqkv
-            # For both static and dynamic per-tensor fp8: re-quantize the fused
-            # QKV weight back to fp8 using the unified max scale. The rescaling
-            # above dequantizes each projection's fp8 weights to float32 using
-            # their individual per-projection scales; this step re-quantizes
-            # the fused weight under a single max scale so that _matmul_float8
-            # receives an fp8 weight tensor with a scalar weight scale.
-            if self.quant_config and (
-                self.quant_config.is_static
-                or (
-                    self.quant_config.is_dynamic
-                    and self.quant_config.weight_scale.is_tensor
-                )
-            ):
+            if self.quant_config and self.quant_config.is_static:
                 assert self.qkv_weight_scale is not None
 
                 wqkv, qkv_weight_scale = convert_weights_to_fp8_fnuz_if_needed(
@@ -547,7 +533,6 @@ class AttentionWithRope(Module, Shardable):
         assert self.quant_config is not None
 
         if self.stacked_qkv:
-            # TODO: Handle stacked QKV weight scale when implemented
             raise NotImplementedError(
                 "QKV weight scale not implemented for stacked_qkv=True"
             )
@@ -569,13 +554,23 @@ class AttentionWithRope(Module, Shardable):
         weight_scale = ops.concat((q_scale, k_scale, v_scale))
 
         if weight_scale.rank == 2:
-            # Per-row/per-channel scaling: each row of the fused QKV weight
-            # has its own scale, so return the concatenated per-row scales
-            # directly.
             return weight_scale
 
-        # Per-tensor scaling (static or dynamic): return the unified max scale
-        # used when re-quantizing the fused QKV weight in wqkv.
+        # For dynamic tensor-wise FP8: broadcast each projection's
+        # scalar scale to [dim, 1] and concatenate so each row keeps
+        # its exact original scale (matches MLP per-projection approach).
+        if (
+            self.quant_config
+            and self.quant_config.weight_scale.is_tensor
+            and self.quant_config.is_dynamic
+        ):
+            q_dim = self.n_heads * self.kv_params.head_dim
+            kv_dim = self.num_key_value_heads * self.kv_params.head_dim
+            q_row = ops.broadcast_to(q_scale.reshape([1, 1]), [q_dim, 1])
+            k_row = ops.broadcast_to(k_scale.reshape([1, 1]), [kv_dim, 1])
+            v_row = ops.broadcast_to(v_scale.reshape([1, 1]), [kv_dim, 1])
+            return ops.concat((q_row, k_row, v_row))
+
         return ops.max(weight_scale).reshape([])
 
     @property

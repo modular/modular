@@ -868,10 +868,29 @@ class MLP(Module, Shardable):
         return result
 
     def _concat_or_max_gate_up_scales(self) -> TensorValue | None:
-        """Concatenates the gate and up projection scales."""
-        return self._concat_or_max_gate_up_tensors(
-            self.gate_proj.weight_scale, self.up_proj.weight_scale
-        )
+        """Builds the fused gate/up weight scale.
+
+        For tensor-wise FP8, broadcasts each scalar to [ffl, 1] and
+        concatenates into a [2*ffl, 1] rowwise scale so each row keeps
+        its exact original scale with no accuracy loss.
+        """
+        gate_scale = self.gate_proj.weight_scale
+        up_scale = self.up_proj.weight_scale
+        if gate_scale is None or up_scale is None:
+            return None
+
+        if (
+            self.quant_config is not None
+            and self.quant_config.weight_scale.is_tensor
+        ):
+            ffl = self.gate_proj.weight.shape[0]
+            gate_row_scale = ops.broadcast_to(
+                gate_scale.reshape([1, 1]), [ffl, 1]
+            )
+            up_row_scale = ops.broadcast_to(up_scale.reshape([1, 1]), [ffl, 1])
+            return ops.concat((gate_row_scale, up_row_scale))
+
+        return self._concat_or_max_gate_up_tensors(gate_scale, up_scale)
 
     def _concat_or_max_gate_up_bias(self) -> TensorValue | None:
         """Concatenates the gate and up projection biases."""
