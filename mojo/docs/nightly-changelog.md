@@ -120,6 +120,7 @@ This version is still a work in progress.
   and returns an iterator that owns the underlying elements.
   - `List` now conforms to `IterableOwned`.
   - `Optional` now conforms to `IterableOwned`.
+  - `Deque` now conforms to `IterableOwned`.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same

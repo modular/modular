@@ -37,6 +37,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     Iterable,
+    IterableOwned,
     Sized,
     Writable where conforms_to(ElementType, Writable),
 ):
@@ -59,6 +60,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+
+    comptime IteratorOwnedType: Iterator = _DequeIterOwned[Self.ElementType]
+    """The owned iterator type for this deque."""
 
     # ===-------------------------------------------------------------------===#
     # Aliases
@@ -329,6 +333,14 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             if lhs == rhs:
                 return True
         return False
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the deque and return an iterator over its elements.
+
+        Returns:
+            An iterator that owns the deque's elements.
+        """
+        return {self^, 0}
 
     def __iter__(
         ref self,
@@ -1002,3 +1014,48 @@ struct _DequeIter[
             iter_len = self.index
 
         return (iter_len, {iter_len})
+
+
+@fieldwise_init
+struct _DequeIterOwned[T: Copyable & ImplicitlyDestructible](
+    IterableOwned, Iterator, Movable
+):
+    """An owning iterator for Deque.
+
+    Parameters:
+        T: The type of the elements in the deque.
+    """
+
+    comptime Element = Self.T
+    comptime IteratorOwnedType = Self
+
+    var _deque: Deque[Self.T]
+    var _index: Int
+
+    @always_inline
+    def __del__(deinit self):
+        # Destroy remaining unconsumed elements at their physical positions.
+        # Note: `_index` tracks how many elements __next__ has consumed;
+        # _head/_tail are never modified, so len(self._deque) stays constant.
+        for i in range(self._index, len(self._deque)):
+            var phys = self._deque._physical_index(self._deque._head + i)
+            (self._deque._data + phys).destroy_pointee()
+        # Zero out head/tail so Deque.__del__ only frees memory.
+        self._deque._head = 0
+        self._deque._tail = 0
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._index >= len(self._deque):
+            raise StopIteration()
+        var phys = self._deque._physical_index(self._deque._head + self._index)
+        self._index += 1
+        return (self._deque._data + phys).take_pointee()
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = len(self._deque) - self._index
+        return (remaining, {remaining})
