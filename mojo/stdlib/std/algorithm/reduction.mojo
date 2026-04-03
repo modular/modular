@@ -29,7 +29,6 @@ from std.bit import log2_floor
 from std.math.math import max as _max, min as _min
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_valid_target
-from std.gpu.primitives.grid_controls import PDLLevel
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
@@ -120,7 +119,6 @@ def _reduce_generator[
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
@@ -141,7 +139,6 @@ def _reduce_generator[
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
         target: The target to run on.
-        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the tensor we are reducing.
@@ -172,7 +169,6 @@ def _reduce_generator[
             output_0_fn,
             reduce_function,
             single_thread_blocking_override,
-            pdl_level,
         ](shape, init, reduce_dim, context.get_device_context())
 
 

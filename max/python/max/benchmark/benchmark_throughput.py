@@ -647,6 +647,7 @@ def main() -> None:
             # Environment variable names follow pattern: MODULAR_<PARAM_NAME>
             Env(prefix="MODULAR_"),
         ],
+        result_action="return_value",
     )
 
     # Define benchmark command with cyclopts

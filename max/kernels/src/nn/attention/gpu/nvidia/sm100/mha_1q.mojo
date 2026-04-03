@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp2, recip, align_up
+from std.math.uutils import umod
 from std.math.constants import log2e
 
 from std.sys import align_of, simd_width_of, size_of
@@ -23,9 +24,9 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    lane_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -256,7 +257,7 @@ def local_tensor_type[
     dummy_arg = {
         UnsafePointer[
             Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.LOCAL
-        ]()
+        ](_unsafe_null=())
     }
 
 
@@ -2218,7 +2219,9 @@ def _mha_sm100[
     comptime ragged = not ValidLengthType.is_null
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
+    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin](
+        _unsafe_null=()
+    )
 
     comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
@@ -2342,8 +2345,8 @@ def _mha_sm100[
                 kv_smem,
                 produced_mbar_kv,
                 producer_mbar_kv,
-                {},
-                {},
+                {_unsafe_null = ()},
+                {_unsafe_null = ()},
                 kv_lut,
                 position,
                 partition,
@@ -2775,7 +2778,7 @@ def _mha_sm100[
             decoding and PartitionType.do_partition
         ):  # we may have an empty partition
             if kv_tile_start_row >= end:
-                if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                     4 * min(group, 8) + 128
                 ):
                     exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
@@ -3033,7 +3036,7 @@ def _mha_sm100[
 
         comptime if decoding and PartitionType.do_partition:
             # Only the first thread of each row
-            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+            if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                 4 * min(group, 8) + 128
             ):
                 exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(

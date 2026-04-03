@@ -515,7 +515,7 @@ def cli_benchmark(args: Sequence[str]) -> None:
         main_with_parsed_args(parsed_args)
         click.echo("Benchmark completed successfully!")
     except SystemExit as e:
-        # argparse calls sys.exit() for help and errors, we need to handle this
+        # cyclopts calls sys.exit() for help and errors, we need to handle this
         if e.code == 0:
             # Help was requested and printed, just return
             return

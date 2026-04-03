@@ -28,6 +28,7 @@ from std.ffi import (
 from std.memory._nonnull import NonNullUnsafePointer, bitcast
 from std.sys import (
     is_amd_gpu,
+    is_apple_gpu,
     is_gpu,
     is_nvidia_gpu,
     stdin,
@@ -38,6 +39,7 @@ from std.sys._amdgpu import (
     printf_append_string_n,
     printf_begin,
 )
+from std.sys._metal_print import _metal_print_write
 from std.sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
 from std.sys.info import CompilationTarget
 from std.sys.intrinsics import _type_is_eq
@@ -258,7 +260,7 @@ def _printf[
                     return UInt64(rebind[UInt](value))
                 return 0
 
-            comptime args_len = Variadic.size(types)
+            comptime args_len = Variadic.size_types[types]
 
             var message = printf_begin()
             message = printf_append_string_n(
@@ -287,6 +289,17 @@ def _printf[
                     Int32(Int(bound == args_len)),
                 )
 
+        elif is_apple_gpu():
+            # Apple GPU: format the template string and write to the shared
+            # print buffer. Metal doesn't support printf-style variadic args.
+            var buf = _WriteBufferHeap()
+            buf.write_string(fmt)
+            buf.nul_terminate()
+            var s = buf.as_string_slice()
+            _metal_print_write(
+                s.unsafe_ptr().bitcast[UInt8](),
+                len(s),
+            )
         elif not is_gpu():
             _printf_cpu[fmt](*args, file=file)
         else:
@@ -409,7 +422,26 @@ def print[
         if flush:
             _flush(file=file)
     else:
-        comptime if is_gpu():
+        comptime if is_gpu() and is_apple_gpu():
+            # Apple GPU: same formatting path as other GPUs but output
+            # goes through Metal os_log via _metal_print_write.
+            var buffer = _WriteBufferHeap()
+            comptime length = values.__len__()
+
+            comptime for i in range(length):
+                values[i].write_to(buffer)
+                if i < length - 1:
+                    sep.write_to(buffer)
+
+            end.write_to(buffer)
+            buffer.nul_terminate()
+
+            var slice = buffer.as_string_slice()
+            _metal_print_write(
+                slice.unsafe_ptr().bitcast[UInt8](),
+                len(slice),
+            )
+        elif is_gpu():
             var buffer = _WriteBufferHeap()
             comptime length = values.__len__()
 

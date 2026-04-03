@@ -67,7 +67,7 @@ def pack_ptrs_array[
     comptime assert _ptrs.flat_rank == 1, "Pointers must be a 1D tensor."
     var ptr_arr = InlineArray[
         UnsafePointer[Scalar[ptr_type], MutExternalOrigin], n_gpus_per_node
-    ](fill={})
+    ](fill={_unsafe_null = ()})
 
     comptime for i in range(n_gpus_per_node):
         ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutExternalOrigin](

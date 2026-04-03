@@ -422,6 +422,7 @@ def _fused_qkv_ragged_matmul_scaled_float8(
         scales_granularity_mnk = quant_config.scales_granularity_mnk
     else:
         # with out quant_config, we either use per-tensor or per-channel quantization
+        # both dynamic and static tensor wise quantization have weight shape [1, 1]
         if (
             input_scale.shape[0] == 1
             and input_scale.shape[1] == 1
@@ -4083,50 +4084,70 @@ def quantize_static_scaled_float8(
 
 
 def quantize_tensor_dynamic_scaled_float8(
-    x: TensorValue,
+    input: TensorValue,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
+    scale_ub: float = 1200.0,
+    group_size_or_per_token: int = -1,
     out_type: DType = DType.float8_e4m3fn,
+    scales_type: DType = DType.bfloat16,
 ) -> tuple[TensorValue, TensorValue]:
     """Quantizes a rank-2 tensor to float8 using a dynamic per-tensor scale.
 
-    The scale is computed as ``max(|x|) / max_finite(out_type)`` over the full
-    tensor, written to a length-1 float32 tensor on the same
-    device as ``x``, then used to quantize ``x`` to FP8.
-
     Args:
-        x: Input tensor to quantize. Must be rank 2 with dtype ``float16``,
-            ``bfloat16``, or ``float32``. Must reside on a GPU device.
-        out_type: Output dtype. Defaults to ``DType.float8_e4m3fn``.
+        input: The input tensor to quantize.
+        scale_ub: The upper bound of the scale factor.
+        group_size_or_per_token: The group size for quantization. When set to -1,
+            the quantization is column-wise.
+        out_type: The type of the output tensor.
+        scales_type: The type of the scales tensor.
 
     Returns:
-        A pair ``(quantized, scale)`` where ``quantized`` has the same shape as
-        ``x`` and dtype ``out_type``, and ``scale`` has shape ``[1]`` and dtype
-        ``float32`` on ``x.device`` holding the computed scale.
-
-    Raises:
-        ValueError: If ``x`` is not rank 2, ``x`` dtype is unsupported, or
-            ``out_type`` is not a supported float8 dtype.
+        The quantized tensor and the scales.
     """
-    if x.dtype not in [DType.float16, DType.bfloat16, DType.float32]:
+    if input.rank != 2:
+        raise ValueError("input must be rank 2 tensor")
+
+    if out_type not in (DType.float8_e4m3fn,):
+        raise ValueError("out_type must be float8_e4m3fn")
+
+    if not isinstance(input.shape[1], StaticDim):
         raise ValueError(
-            f"expected input dtype to be float16, bfloat16, or float32, but got {x.dtype}"
+            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
         )
 
-    if x.rank != 2:
-        raise ValueError(f"expected input rank to be 2, but got {x.rank}")
-
-    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+    if not (input_scale_spec.is_tensor and weight_scale_spec.is_tensor):
         raise ValueError(
-            f"out_type must be float8_e4m3fn or float8_e4m3fnuz, but got {out_type}"
+            "both input and weight must be tensor scaled for tensor scaling"
+        )
+
+    if group_size_or_per_token != -1:
+        raise ValueError(
+            "group_size_or_per_token should be -1 for dynamic tensor scaling so group_size == num_cols == input.shape[1]"
         )
 
     result = ops.custom(
         "mo.quantize_tensor_dynamic_scaled_float8",
-        device=x.device,
-        values=[x],
-        out_types=[
-            TensorType(dtype=out_type, shape=x.shape, device=x.device),
-            TensorType(dtype=DType.float32, shape=[1], device=x.device),
+        device=input.device,
+        values=[
+            input,
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
         ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1]],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[1, input.shape[0]],
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "group_size_or_per_token": group_size_or_per_token,
+        },
     )
 
     return result[0].tensor, result[1].tensor
@@ -4325,16 +4346,22 @@ def dynamic_scaled_matmul(
         )
 
     if input_scale_spec.is_tensor and weight_scale_spec.is_tensor:
-        if not (
-            a_scales.shape[0]
-            == a_scales.shape[1]
-            == b_scales.shape[0]
-            == b_scales.shape[1]
-            == 1
-        ):
-            raise ValueError(
-                "scaler tensors must be of shape [1, 1] for tensor scaling"
-            )
+        if input_scale_spec.origin.is_dynamic:
+            if not (b_scales.shape[0] == b_scales.shape[1] == 1):
+                raise ValueError(
+                    "scaler weight tensors must be of shape [1, 1] for dynamic tensor scaling"
+                )
+        else:
+            if not (
+                a_scales.shape[0]
+                == a_scales.shape[1]
+                == b_scales.shape[0]
+                == b_scales.shape[1]
+                == 1
+            ):
+                raise ValueError(
+                    "scaler tensors must be of shape [1, 1] for tensor scaling"
+                )
 
     elif input_scale_spec.is_colwise and weight_scale_spec.is_rowwise:
         if a_scales.shape[0] != 1:

@@ -1,0 +1,2 @@
+# Mark auto-generated protobuf code as generated so GitHub collapses diffs
+client_api_pb2.py linguist-generated=true

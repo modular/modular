@@ -24,7 +24,7 @@ Provides two paths for 2-D convolution on RDNA 3+:
 """
 
 from std.math import ceildiv
-from std.gpu import global_idx_uint as global_idx, WARP_SIZE
+from std.gpu import global_idx, WARP_SIZE
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
@@ -61,7 +61,7 @@ def _im2col_nhwc_kernel[
     var HW_out = H_out * W_out
     var total = batch_size * HW_out * K
 
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     if tid >= total:
         return
 
@@ -103,7 +103,7 @@ def _transpose_rscf_to_nk[
     """
     var K = R * S * C
     var total = K * F
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     if tid >= total:
         return
     var f = tid // K
@@ -124,7 +124,7 @@ def _transpose_fcrs_to_nk[
     """GPU kernel: transpose filter FCRS -> [N,K] for transpose_b matmul."""
     var K = R * S * C
     var total = K * F
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     if tid >= total:
         return
     var f = tid // K

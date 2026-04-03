@@ -49,7 +49,7 @@ comptime CUevent = UnsafePointer[_CUevent_st, ExternalOrigin[mut=True]]
 # Use `var cuda_ctx: CUcontext = CUDA(ctx)` where ctx is a `DeviceContext` to get access to the underlying CUcontext.
 @always_inline
 def CUDA(ctx: DeviceContext) raises -> CUcontext:
-    var result = CUcontext()
+    var result = CUcontext(_unsafe_null=())
     # const char *AsyncRT_DeviceContext_cuda_context(CUcontext *result, const DeviceContext *ctx)
     _checked(
         external_call[
@@ -67,7 +67,7 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
 # Use `var cuda_stream: CUstream = CUDA(ctx.stream())` where ctx is a `DeviceContext` to get access to the underlying CUstream.
 @always_inline
 def CUDA(stream: DeviceStream) raises -> CUstream:
-    var result = CUstream()
+    var result = CUstream(_unsafe_null=())
     # const char *AsyncRT_DeviceStream_cuda_stream(CUstream *result, const DeviceStream *stream)
     _checked(
         external_call[
@@ -84,7 +84,7 @@ def CUDA(stream: DeviceStream) raises -> CUstream:
 # Accessor function to get access to the underlying CUmodule from a DeviceFunction.
 @always_inline
 def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
-    var result = CUmodule()
+    var result = CUmodule(_unsafe_null=())
     # const char *AsyncRT_DeviceFunction_cuda_module(CUmodule *result, const DeviceFunction *func)
     _checked(
         external_call[
@@ -99,7 +99,7 @@ def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
 
 
 def CUDA_get_current_context() raises -> CUcontext:
-    var result = CUcontext()
+    var result = CUcontext(_unsafe_null=())
     # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
     _checked(
         external_call["AsyncRT_DeviceContext_cuda_current_context", _CString[]](

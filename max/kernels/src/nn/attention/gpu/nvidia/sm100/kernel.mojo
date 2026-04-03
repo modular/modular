@@ -17,8 +17,8 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     syncwarp,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair

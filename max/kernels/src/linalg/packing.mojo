@@ -921,9 +921,9 @@ struct BTileGenerator[
         Self.b_packed,
         Self.origin,
     ]:
-        var b_tile_stack_ptr = UnsafePointer[
-            Scalar[Self.b_type], MutAnyOrigin
-        ]()
+        var b_tile_stack_ptr = UnsafePointer[Scalar[Self.b_type], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
         assert not (
             Self.transpose_b and Self.b_packed

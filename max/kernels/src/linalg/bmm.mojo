@@ -142,9 +142,9 @@ def _slice_types[
     """
     Slice the last n_dims dimensions of the Coord element types.
     """
-    comptime rank = Variadic.size(stride_types)
-    comptime assert 0 <= rank - n_dims <= Variadic.size(stride_types)
-    comptime assert rank <= Variadic.size(stride_types)
+    comptime rank = Variadic.size_types[stride_types]
+    comptime assert 0 <= rank - n_dims <= Variadic.size_types[stride_types]
+    comptime assert rank <= Variadic.size_types[stride_types]
 
     return Variadic.slice_types[stride_types, rank - n_dims]
 
@@ -158,7 +158,7 @@ def _shape_types_to_3d[
     first dimension will be the product of the batch dimensions if all the batch
     dimensions are static, otherwise it's a runtime dimension.
     """
-    comptime rank = Variadic.size(shape_types)
+    comptime rank = Variadic.size_types[shape_types]
     comptime last_two_dims = _slice_types[shape_types, 2]()
     comptime batch_dims = _slice_types[
         Variadic.reverse[*shape_types], rank - 2

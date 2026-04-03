@@ -26,7 +26,7 @@ Functions:
 """
 
 from std.sys import simd_width_of, size_of
-from std.gpu import lane_id_int as lane_id, WARP_SIZE
+from std.gpu import lane_id, WARP_SIZE
 from std.gpu._utils import to_i32, to_i64
 from std.gpu.intrinsics import AMDBufferResource
 from std.memory import AddressSpace
@@ -297,7 +297,7 @@ def tt_copy_dram_to_sram_lds[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
-        ]()
+        ](_unsafe_null=())
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
         var ptr_to_simd = UnsafePointer(to=bc.desc)

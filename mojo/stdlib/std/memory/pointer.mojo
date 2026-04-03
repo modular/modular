@@ -381,7 +381,9 @@ struct Pointer[
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
-        memory.bitcast[Self._NullPointerType]().init_pointee_move({})
+        memory.bitcast[Self._NullPointerType]().init_pointee_move(
+            Self._NullPointerType(_unsafe_null=())
+        )
 
     @staticmethod
     @always_inline

@@ -524,7 +524,14 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     var _size: Int
 
     def __init__(out self):
-        self._d_buffers = [{}, {}]
+        self._d_buffers = [
+            UnsafePointer[Scalar[Self.dtype], MutExternalOrigin](
+                _unsafe_null=()
+            ),
+            UnsafePointer[Scalar[Self.dtype], MutExternalOrigin](
+                _unsafe_null=()
+            ),
+        ]
         self._selection = 0
         self._size = 0
 

@@ -161,7 +161,7 @@ def scatter[
     # Extract raw pointers and sizes from TileTensors for the kernel.
     var input_ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
-    ](fill={})
+    ](fill={_unsafe_null = ()})
     var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
     for i in range(dp_size):
         input_ptrs[i] = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](

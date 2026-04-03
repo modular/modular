@@ -30,6 +30,7 @@ from std.memory import bitcast
 
 from .globals import global_constant
 
+from std.sys import is_apple_gpu
 from std.utils.numerics import FPUtils, isinf, isnan
 
 
@@ -137,6 +138,86 @@ def _write_float[
         return writer.write("2**", Int(bitcast[DType.uint8](value)) - 127)
 
     else:
+        # Apple GPU: use a simple float formatter that avoids i128
+        # and float64 operations. Apple GPU doesn't support UInt128
+        # (needed by dragonbox) or double→uint64 conversions.
+        # Use float32 arithmetic only.
+        comptime if is_apple_gpu():
+            var f32 = value.cast[DType.float32]()
+            var bits = bitcast[DType.uint32](f32)
+            var is_neg = (bits >> 31) != 0
+
+            # Check special values using bit patterns.
+            var exp_bits = (bits >> 23) & 0xFF
+            var mant = bits & 0x007FFFFF
+
+            if exp_bits == 0xFF:
+                if mant != 0:
+                    return writer.write("nan")
+                if is_neg:
+                    return writer.write("-inf")
+                return writer.write("inf")
+
+            if is_neg:
+                writer.write("-")
+                f32 = -f32
+
+            if exp_bits == 0 and mant == 0:
+                return writer.write("0.0")
+
+            # Format as integer.fractional with up to 6 decimal digits.
+            # Use float32→uint32 cast (supported on Apple GPU).
+            var int_part = f32.cast[DType.uint32]()
+            var frac = f32 - int_part.cast[DType.float32]()
+
+            # Write integer part.
+            var digits = InlineArray[Byte, 12](fill=0)
+            var pos = 11
+            if int_part == 0:
+                pos = 10
+                digits[11] = Byte(ord("0"))
+            else:
+                var n = int_part
+                while n > 0:
+                    digits[pos] = Byte(ord("0") + Int(n % 10))
+                    n //= 10
+                    pos -= 1
+            writer.write_string(
+                StringSlice(
+                    unsafe_from_utf8=Span(
+                        ptr=digits.unsafe_ptr() + pos + 1,
+                        length=11 - pos,
+                    )
+                )
+            )
+
+            writer.write(".")
+
+            # Write fractional part (up to 6 digits).
+            var frac_digits = InlineArray[Byte, 7](fill=0)
+            var frac_len = 0
+            if frac < 1e-7:
+                frac_digits[0] = Byte(ord("0"))
+                frac_len = 1
+            else:
+                for i in range(6):
+                    frac *= 10.0
+                    var d = frac.cast[DType.uint32]()
+                    frac -= d.cast[DType.float32]()
+                    frac_digits[i] = Byte(ord("0") + Int(d))
+                    frac_len = i + 1
+                    if frac < 1e-7:
+                        break
+            writer.write_string(
+                StringSlice(
+                    unsafe_from_utf8=Span(
+                        ptr=frac_digits.unsafe_ptr(),
+                        length=frac_len,
+                    )
+                )
+            )
+            return
+
         # Upcast the float16 types to float32
         casted = value.cast[
             DType.float64 if dtype == DType.float64 else DType.float32

@@ -222,7 +222,7 @@ def _print_svg_impl[
         t: Int,
         element_idx: Int,
         mut writer: W,
-    ):
+    ) unified {mut cell_size}:
         writer.write(
             '<rect x="',
             x,

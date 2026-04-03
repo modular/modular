@@ -129,7 +129,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_unary_ops")
 
         # Unary elementwise operations
-        comptime for i in range(Variadic.size(UNARY_ELEMENTWISE_OPS)):
+        comptime for i in range(Variadic.size_types[UNARY_ELEMENTWISE_OPS]):
             comptime op = UNARY_ELEMENTWISE_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString("Elementwise " + name)
@@ -138,7 +138,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
             )
 
         # Unary float-only operations
-        comptime for i in range(Variadic.size(UNARY_FLOAT_ONLY_OPS)):
+        comptime for i in range(Variadic.size_types[UNARY_FLOAT_ONLY_OPS]):
             comptime op = UNARY_FLOAT_ONLY_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -154,7 +154,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         )
 
         # Unary predicate operations (float -> bool)
-        comptime for i in range(Variadic.size(UNARY_PREDICATE_OPS)):
+        comptime for i in range(Variadic.size_types[UNARY_PREDICATE_OPS]):
             comptime op = UNARY_PREDICATE_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(

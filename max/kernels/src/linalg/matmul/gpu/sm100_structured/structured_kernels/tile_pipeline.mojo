@@ -1442,7 +1442,7 @@ struct OutputProducer[
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
         )
 
     @always_inline
@@ -1713,7 +1713,7 @@ struct MmaKStage[
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
         )
 
     @always_inline
@@ -1759,7 +1759,7 @@ struct PerKConsumerStage[
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
         )
 
     @always_inline
@@ -1889,7 +1889,9 @@ struct EpilogueKContext[
         self.output_stage = Self.OutputStageType(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_output_stages](MbarPtr()),
+            ProducerConsumerPipeline[Self.num_output_stages](
+                MbarPtr(_unsafe_null=())
+            ),
         )
 
     @always_inline

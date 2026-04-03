@@ -25,10 +25,10 @@ load width as the standard matmul kernel's A-tile loader.
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx_int as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_int as thread_idx,
-    warp_id_uint as warp_id,
+    block_idx,
+    thread_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
@@ -264,8 +264,8 @@ def conv2d_kernel_rdna[
     var block_n_offset = block_n * BLOCK_N
 
     var tid = thread_idx.x
-    var wid = Int(warp_id())
-    var lid = Int(lane_id())
+    var wid = warp_id()
+    var lid = lane_id()
 
     var warp_m, warp_n = divmod(wid, WARPS_N)
     var effective_lane = lid % 16

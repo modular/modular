@@ -133,7 +133,7 @@ def bench_scatter[
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        fill={_unsafe_null = ()}
     )
 
     for gpu_idx in range(ngpus):

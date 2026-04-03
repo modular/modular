@@ -166,7 +166,7 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
 # bypassing the LTToTTLayout comptime alias chain where the compiler can't
-# simplify Variadic.size(_Flattened[...]) to 1.
+# simplify Variadic.size_types[_Flattened[...]] to 1.
 comptime _1d_tt_layout = InternalLayout[
     shape_types=Variadic.types[T=CoordLike, RuntimeInt[DType.int64]],
     stride_types=Variadic.types[T=CoordLike, ComptimeInt[1]],
@@ -867,7 +867,9 @@ struct ContinuousBatchingKVCache[
         Note: ContinuousBatchingKVCache does not support KVCache quantization.
         This function returns a NULL pointer.
         """
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
     @always_inline
     def scales_raw_ptr(
@@ -875,7 +877,9 @@ struct ContinuousBatchingKVCache[
     ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
         """Returns a null pointer. ContinuousBatchingKVCache does not support
         quantization."""
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
 
 struct PagedKVCache[
@@ -1495,7 +1499,9 @@ struct PagedKVCache[
 
         comptime if Self.quantization_enabled:
             return self.scales.value().ptr
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
 
 trait KVCollectionT(ImplicitlyCopyable):

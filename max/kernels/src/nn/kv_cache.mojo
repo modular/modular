@@ -420,7 +420,7 @@ def _matmul_common[
         )
     else:
         c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
-            UnsafePointer[Scalar[dtype], MutExternalOrigin](),
+            UnsafePointer[Scalar[dtype], MutExternalOrigin](_unsafe_null=()),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 

@@ -28,7 +28,7 @@ from std.math import align_up, ceildiv, min
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    thread_idx_uint as thread_idx,
+    thread_idx,
     warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE

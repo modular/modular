@@ -332,9 +332,14 @@ struct UnsafePointer[
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     def __init__(out self):
         """Create a null pointer."""
+        self = Self(_unsafe_null=())
+
+    @always_inline("nodebug")
+    @doc_hidden
+    def __init__(out self, *, _unsafe_null: ()):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
     @doc_hidden

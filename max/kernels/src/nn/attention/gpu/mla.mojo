@@ -157,9 +157,9 @@ def flare_mla_decoding[
     # Per-token Q scale pointer: float32 array with one scale per Q token.
     # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
     # Default is null (sigma_Q = 1.0, no effect).
-    q_scale_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -323,7 +323,7 @@ def flare_mla_decoding[
 
     var valid_length = lt_to_tt(
         LayoutTensor[DType.uint32, Layout.row_major(UNKNOWN_VALUE)](
-            UnsafePointer[UInt32, MutExternalOrigin](),
+            UnsafePointer[UInt32, MutExternalOrigin](_unsafe_null=()),
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
         )
     )
@@ -391,9 +391,9 @@ def flare_mla_decoding_dispatch[
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
-    q_scale_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -583,9 +583,9 @@ def flare_mla_decoding_dispatch[
             decoding_warp_split_k=decoding_warp_split_k,
         ]
 
-        comptime nullptr = UnsafePointer[
-            Scalar[accum_type], MutExternalOrigin
-        ]()
+        comptime nullptr = UnsafePointer[Scalar[accum_type], MutExternalOrigin](
+            _unsafe_null=()
+        )
 
         var num_partitions_value: Int = 1
         var q_device = DeviceBuffer[q.dtype](
@@ -679,11 +679,11 @@ def mla_decoding[
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
-    var qk_max_batch_ptr: type_of(qk_max_ptr) = {}
+    var qk_max_batch_ptr = type_of(qk_max_ptr)(_unsafe_null=())
     if qk_max_ptr:
         qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
-    var exp_sum_batch_ptr: type_of(exp_sum_ptr) = {}
+    var exp_sum_batch_ptr = type_of(exp_sum_ptr)(_unsafe_null=())
     if exp_sum_ptr:
         exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 

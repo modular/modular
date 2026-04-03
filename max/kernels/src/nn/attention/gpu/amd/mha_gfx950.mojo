@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import umod
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane, _type_is_eq
 from std.gpu import WARP_SIZE
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
@@ -385,13 +386,13 @@ struct KVBuffer[
     def load_from_shared[bk_tile: Int](self, buffer: UInt):
         comptime if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN
-            var warp_col = get_warp_id() % UInt(num_warps_n)
+            var warp_col = umod(get_warp_id(), num_warps_n)
             var smem_base = Self.SharedTileType(
                 self.smem_ptr + Int(buffer) * Self.smem_stage_size
             )
             var smem_tile = smem_base.tile[Self.BN, Self.BK](0, bk_tile)
 
-            var wtile_coord0 = Int(warp_col)
+            var wtile_coord0 = warp_col
             var wtile_coord1 = 0
             var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
                 wtile_coord0, wtile_coord1

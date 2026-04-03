@@ -41,7 +41,7 @@ struct _Chain(Boolable, Defaultable, TrivialRegisterPassable):
     var storage: UnsafePointer[Int, MutExternalOrigin]
 
     def __init__(out self):
-        self.storage = {}
+        self.storage = {_unsafe_null = ()}
 
     def __bool__(self) -> Bool:
         return Bool(self.storage)

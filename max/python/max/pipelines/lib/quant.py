@@ -812,7 +812,12 @@ def parse_quant_config(
         config = None
 
     if config is not None:
-        config.can_use_fused_mlp = can_use_fused_mlp(state_dict)
+        config.can_use_fused_mlp = can_use_fused_mlp(
+            state_dict,
+            tensor_wise=(
+                config.weight_scale.is_tensor and config.input_scale.is_tensor
+            ),
+        )
         if not config.can_use_fused_mlp:
             logger.warning(
                 "Fused MLP is not supported for this model. "

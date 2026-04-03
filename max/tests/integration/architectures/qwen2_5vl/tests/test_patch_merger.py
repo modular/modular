@@ -144,7 +144,6 @@ def test_qwen25vl_patch_merger_2d(
 
     # Load config and generate weights
     loader = get_config_loader()
-    hf_vision_config = loader.load_hf_vision_config(config_name)
     qwen2_5vl_config = loader.create_qwen2_5vl_config(config_name)
 
     torch_dtype = torch.bfloat16 if dtype == DType.bfloat16 else torch.float32

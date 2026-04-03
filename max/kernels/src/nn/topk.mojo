@@ -1421,8 +1421,8 @@ def _topk_stage2[
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
     # These values are only read from in the sampling case.
-    var s_val2 = type_of(vals_sram)()
-    var s_id = type_of(idxs_sram)()
+    var s_val2 = type_of(vals_sram)(_unsafe_null=())
+    var s_id = type_of(idxs_sram)(_unsafe_null=())
 
     with PDL():
         # Handle the case where stage 1 is executed with a single block
@@ -1681,7 +1681,9 @@ def _topk_gpu[
     if k:
         k_ptr = rebind[UnsafePointer[Int64, ImmutAnyOrigin]](k.value().ptr)
     else:
-        k_ptr = UnsafePointer[Int64, ImmutAnyOrigin]()  # null pointer
+        k_ptr = UnsafePointer[Int64, ImmutAnyOrigin](
+            _unsafe_null=()
+        )  # null pointer
 
     var k_size = k.value().num_elements() if k else 0
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
@@ -1794,7 +1796,9 @@ def _topk_gpu[
             temperature.value().ptr
         )
     else:
-        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
+        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+            _unsafe_null=()
+        )  # null pointer
     var temp_size = temperature.value().num_elements() if temperature else 0
 
     # Handle optional top_p parameter
@@ -1804,7 +1808,9 @@ def _topk_gpu[
             top_p.value().ptr
         )
     else:
-        top_p_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
+        top_p_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+            _unsafe_null=()
+        )  # null pointer
     var top_p_size = top_p.value().num_elements() if top_p else 0
 
     # Handle optional seed parameter
@@ -1812,7 +1818,9 @@ def _topk_gpu[
     if seed:
         seed_ptr = seed.value().ptr
     else:
-        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
+        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin](
+            _unsafe_null=()
+        )  # null pointer
     var seed_size = seed.value().num_elements() if seed else 0
 
     var temp_device = DeviceBuffer[DType.float32](
@@ -2468,7 +2476,9 @@ def gumbel_sampling_gpu[
                 temperature.value().ptr
             )
         else:
-            temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
+            temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+                _unsafe_null=()
+            )  # null pointer
         var temp_size = temperature.value().num_elements() if temperature else 0
 
         # Handle optional seed parameter
@@ -2478,7 +2488,9 @@ def gumbel_sampling_gpu[
                 seed.value().ptr
             )
         else:
-            seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
+            seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin](
+                _unsafe_null=()
+            )  # null pointer
         var seed_size = seed.value().num_elements() if seed else 0
 
         comptime hw_info = ctx.default_device_info

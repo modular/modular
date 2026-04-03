@@ -25,10 +25,10 @@ Key differences from CDNA buffers:
 
 from std.collections import OptionalReg
 from std.math import ceildiv, recip
+from std.math.uutils import umod, udivmod
 from std.sys import simd_width_of
 
-from std.gpu import lane_id_uint as lane_id
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import lane_id, warp_id as get_warp_id
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from layout.layout import blocked_product
 from layout.layout_tensor import copy_dram_to_local, copy_local_to_shared
@@ -96,8 +96,8 @@ def get_rdna_warp_layout() -> Layout:
 def get_rdna_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
     """Get warp coordinates for RDNA Wave32."""
     comptime num_warps_n = BN // WN
-    var warp_row, warp_col = divmod(get_warp_id(), UInt(num_warps_n))
-    return IndexList[2](Int(warp_row), Int(warp_col))
+    var warp_row, warp_col = udivmod(get_warp_id(), num_warps_n)
+    return IndexList[2](warp_row, warp_col)
 
 
 struct KBufferRDNA[
@@ -288,7 +288,7 @@ struct KBufferRDNA[
         # K goes to hardware A (via swap_a_b). We compute P^T = K * Q^T.
         # Hardware A maps: lane = key (row of K), element = depth (column of K).
         # So: a_frag[v] = K[key=lane, depth=v].
-        var lane = Int(lane_id() % UInt(16))
+        var lane = umod(lane_id(), 16)
 
         comptime for m in range(Self.num_mmas):
             comptime for k in range(RDNA_AB_FRAG_SIZE):
@@ -479,9 +479,9 @@ struct VBufferRDNA[
         comptime depth_per_thread = Self.depth_tile_size // threads_per_row
 
         var lane = lane_id()
-        var thread_row, thread_col = divmod(Int(lane), threads_per_row)
+        var thread_row, thread_col = divmod(lane, threads_per_row)
 
-        var src_row = Int(warp_id) * rows_per_warp + thread_row
+        var src_row = warp_id * rows_per_warp + thread_row
         var stride = global_tile.stride[0]()
 
         var tile_valid_rows = min(Self.BK, self.remaining_rows)
@@ -535,14 +535,14 @@ struct VBufferRDNA[
         comptime threads_per_row = RDNA_WARP_SIZE // rows_per_warp
         comptime depth_per_thread = Self.depth_tile_size // threads_per_row
 
-        var thread_row, thread_col = divmod(Int(lane), threads_per_row)
+        var thread_row, thread_col = divmod(lane, threads_per_row)
 
         var smem_tensor = Self.SharedTileType(self.smem_ptr)
         var load_tile = self.load_tile.split[Self.num_stages]()[tile_id]
 
         # In shared memory, V is transposed: smem[depth_pos, seq_pos]
         # smem_col_abs = V's row index (sequence position in BK dimension)
-        var smem_col_abs = Int(warp_id) * rows_per_warp + thread_row
+        var smem_col_abs = warp_id * rows_per_warp + thread_row
         var smem_chunk, smem_col = divmod(smem_col_abs, Self.simd_width)
 
         comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
@@ -584,10 +584,10 @@ struct VBufferRDNA[
         """
         var smem_tensor = Self.SharedTileType(self.smem_ptr)
 
-        var lane = lane_id() % UInt(16)
+        var lane = umod(lane_id(), 16)
 
         # Each warp reads its portion of the depth dimension
-        var warp_n_idx = Int(get_warp_id()) % Self.num_warps_n
+        var warp_n_idx = get_warp_id() % Self.num_warps_n
         var depth_offset = warp_n_idx * Self.warp_depth_tiles * Self.MMA_M
 
         comptime for depth_idx in range(Self.warp_depth_tiles):
@@ -602,9 +602,7 @@ struct VBufferRDNA[
             # shared memory row.  copy_to_shared writes in sub-tiles of
             # pad(depth_tile_size) rows each, so positions in the second
             # (and subsequent) depth tiles are offset by the padding.
-            var global_depth_pos = (
-                depth_offset + depth_idx * Self.MMA_M + Int(lane)
-            )
+            var global_depth_pos = depth_offset + depth_idx * Self.MMA_M + lane
             var dtile_idx, pos_in_dtile = divmod(
                 global_depth_pos, Self.depth_tile_size
             )
@@ -686,9 +684,9 @@ struct QRegisterBufferRDNA[
         # B[k=element_v, n=lane%16] → element = depth (row of Q^T), lane = seq (col of Q^T).
         # So: b_frag[v] = Q^T[v, lane%16] = Q[lane%16, v] = Q[seq=lane, depth=v].
         # Each lane loads one row of Q (its seq position) with elements = depth values.
-        var row_in_first_mma = Int(lane % UInt(16))
+        var row_in_first_mma = umod(lane, 16)
 
-        var warp_offset = Int(warp_base_row) * tensor.stride[0]()
+        var warp_offset = warp_base_row * tensor.stride[0]()
         var valid_rows = Int(
             min(Int32(Self.WM), Int32(tensor.dim[0]()) - Int32(warp_base_row))
         )
@@ -884,10 +882,10 @@ struct PRegisterBufferRDNA[
         var mma_reg_tile = Self.MMATileType.stack_allocation()
         var warp_row = get_rdna_warp_coords[Self.BN, Self.WN]()[0]
 
-        var warp_base_seq = Int(warp_row) * Self.WM
+        var warp_base_seq = warp_row * Self.WM
         var k_key_base = k_idx * Self.mma_shape[2]
 
-        var lane = Int(lane_id() % UInt(16))
+        var lane = umod(lane_id(), 16)
 
         comptime for m_mma in range(Self.num_m_mmas):
             var seq = warp_base_seq + m_mma * Self.mma_shape[0] + lane
@@ -936,7 +934,7 @@ struct PRegisterBufferRDNA[
         var warp_n_idx = warp_coords[1]
 
         # Only the warp that owns this chunk writes P data
-        if Int(warp_n_idx) != owning_warp:
+        if warp_n_idx != owning_warp:
             return
 
         # Map to warp-local tile indices (always 0-based, avoids OOB)
@@ -944,9 +942,9 @@ struct PRegisterBufferRDNA[
         comptime num_n_mmas_per_bk = Self.BK // Self.mma_shape[1]
         comptime chunk_n_start = local_chunk * num_n_mmas_per_bk
 
-        var warp_base_seq = Int(warp_row) * Self.WM
+        var warp_base_seq = warp_row * Self.WM
 
-        var lane = Int(lane_id())
+        var lane = lane_id()
         var lane_key_group, lane_seq_offset = divmod(lane, 16)
 
         var reg_ptr = self.reg_tile.ptr

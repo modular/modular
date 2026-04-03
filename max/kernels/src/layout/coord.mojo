@@ -437,10 +437,10 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     comptime static_product = _StaticProduct[*Self.element_types]
     """The product of all static dimensions, or -1 if any are dynamic."""
 
-    comptime rank = Variadic.size(Self.element_types)
+    comptime rank = Variadic.size_types[Self.element_types]
     """The number of top-level elements in this `Coord`."""
 
-    comptime flat_rank = Variadic.size(_Flattened[*Self.element_types])
+    comptime flat_rank = Variadic.size_types[_Flattened[*Self.element_types]]
     """The total number of leaf elements after flattening nested `Coord`s."""
 
     comptime is_flat = Self.rank == Self.flat_rank
@@ -513,7 +513,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             The number of elements in the tuple.
         """
 
-        comptime result = Variadic.size(Self.element_types)
+        comptime result = Variadic.size_types[Self.element_types]
         return result
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -847,7 +847,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
-        comptime flat_size = Variadic.size(FlatTypes)
+        comptime flat_size = Variadic.size_types[FlatTypes]
 
         var flat_tuple: _RegTuple[*FlatTypes]
 
@@ -1346,7 +1346,7 @@ def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     """
     var result = IntTuple()
 
-    comptime for i in range(Variadic.size(element_types)):
+    comptime for i in range(Variadic.size_types[element_types]):
         comptime T = element_types[i]
 
         comptime if T.is_tuple:
@@ -1482,9 +1482,9 @@ comptime _NextOffset[
     prev_offset: Int,
     element_type: CoordLike,
 ] = prev_offset + (
-    1 if element_type.is_value else Variadic.size(
+    1 if element_type.is_value else Variadic.size_types[
         _Flattened[*element_type.VariadicType]
-    )
+    ]
 )
 
 
@@ -1499,7 +1499,7 @@ comptime _FlattenOffsetReducer[
         ComptimeInt[
             0 if idx
             == 0 else _NextOffset[
-                Prev[Variadic.size(Prev) - 1].static_value,
+                Prev[Variadic.size_types[Prev] - 1].static_value,
                 From[idx - 1],
             ]
         ],
@@ -1531,7 +1531,7 @@ def _get_flattened_helper[
     comptime T = element_types[i]
 
     comptime if T.is_tuple:
-        comptime count = Variadic.size(_Flattened[*T.VariadicType])
+        comptime count = Variadic.size_types[_Flattened[*T.VariadicType]]
 
         comptime if flat_idx >= current_offset and flat_idx < current_offset + count:
             return _get_flattened[flat_idx - current_offset](tuple[i].tuple())
@@ -2008,7 +2008,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             The tuple length.
         """
 
-        comptime result = Variadic.size(Self.element_types)
+        comptime result = Variadic.size_types[Self.element_types]
         return result
 
     @always_inline("nodebug")
@@ -2300,7 +2300,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         comptime for i in range(type_of(result).__len__()):
             UnsafePointer(to=result[i]).init_pointee_copy(
                 rebind[type_of(result[i])](
-                    self[Variadic.size(Self.element_types) - 1 - i]
+                    self[Variadic.size_types[Self.element_types] - 1 - i]
                 )
             )
 

@@ -1643,7 +1643,7 @@ def _conv_transposed_cudnn[
     var algo = cudnnConvolutionBwdDataAlgo_t.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0
 
     # For now, use no workspace since UnsafePointer.alloc() only allocates host memory,
-    var workspace_ptr = UnsafePointer[Int8, MutExternalOrigin]()
+    var workspace_ptr = UnsafePointer[Int8, MutExternalOrigin](_unsafe_null=())
 
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
@@ -1671,7 +1671,7 @@ def _conv_transposed_cudnn[
             input.ptr.bitcast[NoneType](),
             cudnn_handle[].ptr_conv_desc,
             algo,
-            OpaquePointer[ExternalOrigin[mut=True]](),
+            OpaquePointer[ExternalOrigin[mut=True]](_unsafe_null=()),
             0,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,

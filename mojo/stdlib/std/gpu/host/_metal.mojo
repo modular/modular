@@ -31,7 +31,7 @@ comptime MTLDevice = UnsafePointer[_MTLDevice, MutAnyOrigin]
 # underlying MTLDevice.
 @always_inline
 def metal_device(ctx: DeviceContext) raises -> MTLDevice:
-    var result = MTLDevice()
+    var result = MTLDevice(_unsafe_null=())
     # const char *AsyncRT_DeviceContext_metal_device(MTL::Device **result, const DeviceContext *ctx)
     _checked(
         external_call[

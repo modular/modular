@@ -95,6 +95,7 @@ struct Optional[T: Movable](
     Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     Iterable,
+    IterableOwned,
     Iterator,
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
@@ -147,6 +148,9 @@ struct Optional[T: Movable](
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+
+    comptime IteratorOwnedType: Iterator = Self
+    """The owned iterator type for this optional."""
 
     comptime Element = Self.T
     """The element type of this optional."""
@@ -384,6 +388,16 @@ struct Optional[T: Movable](
             Self.T, Copyable
         ), "Cannot iterate over non-copyable Optional."
         return self.copy()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the Optional and return an iterator over its value.
+
+        Optionals act as a collection of size 0 or 1.
+
+        Returns:
+            An iterator that owns the Optional's value (if present).
+        """
+        return self^
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:

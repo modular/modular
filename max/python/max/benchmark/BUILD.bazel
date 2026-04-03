@@ -22,6 +22,7 @@ modular_py_library(
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",
+        requirement("cyclopts"),
         requirement("jinja2"),
         requirement("numpy"),
         requirement("pyyaml"),
@@ -43,6 +44,7 @@ modular_py_binary(
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",
+        requirement("cyclopts"),
         requirement("jinja2"),
         requirement("numpy"),
         requirement("tqdm"),

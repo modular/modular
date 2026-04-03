@@ -332,6 +332,12 @@ class TransferReqData(
     dst_replica_idx: int
     """Index of the destination replica this transfer is to."""
 
+    is_read: bool = False
+    """True if this is a READ (pull) transfer initiated by the destination."""
+
+    tp_shard_count: int = 0
+    """Number of TP shards participating. 0 = all shards (backwards compat)."""
+
 
 class KVTransferEngine:
     """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
@@ -485,6 +491,9 @@ class KVTransferEngine:
         # All send transfers - maps transfer_name to list of (tensor_idx, transfer_id) tuples
         self.inflight_send_transfers = {}
 
+        # All read transfers - maps transfer_name to TransferReqData
+        self.inflight_read_transfers: dict[str, TransferReqData] = {}
+
     @property
     def metadata(self) -> KVTransferEngineMetadata:
         """Get metadata for all replicas.
@@ -578,6 +587,7 @@ class KVTransferEngine:
         dst_idxs: list[int],
         src_replica_idx: int,
         dst_replica_idx: int,
+        tp_shard_limit: int | None = None,
     ) -> TransferReqData:
         """Initiate a transfer from current engine to remote engine.
 
@@ -589,6 +599,10 @@ class KVTransferEngine:
             dst_idxs: List of indices of the destination pages in the remote engine.
             src_replica_idx: Index of the source replica to transfer from.
             dst_replica_idx: Index of the destination replica to transfer to.
+            tp_shard_limit: Maximum number of TP shards to transfer. When set,
+                only the first ``tp_shard_limit`` shards participate in the
+                transfer. Useful for MLA models where KV data is identical
+                across shards.
         """
         if not (0 <= src_replica_idx < self.dp):
             raise ValueError(
@@ -630,14 +644,18 @@ class KVTransferEngine:
                     f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
                 )
 
-        # Create transfers for all TP shards in the specified source replica
+        # Create transfers for TP shards in the specified source replica
         transfer_name = str(uuid4())
         transfer_ids = []
 
         # Get the remote destination replica's agent metadata
         remote_replica_agents_meta = remote.agents_meta[dst_replica_idx]
 
-        for tp_idx, ta in enumerate(self.tensor_agents[src_replica_idx]):
+        src_agents = self.tensor_agents[src_replica_idx]
+        if tp_shard_limit is not None:
+            src_agents = src_agents[:tp_shard_limit]
+
+        for tp_idx, ta in enumerate(src_agents):
             # Prepare source descriptor list
             descs_src: list[tuple[int, int, int]] = []
             for src_idx in src_idxs:
@@ -689,13 +707,155 @@ class KVTransferEngine:
             dst_idxs=dst_idxs,
             src_replica_idx=src_replica_idx,
             dst_replica_idx=dst_replica_idx,
+            tp_shard_count=len(transfer_ids),
         )
         self.inflight_send_transfers[transfer_name] = transfer_req
+        return transfer_req
+
+    def initiate_read_transfer(
+        self,
+        remote_metadata: KVTransferEngineMetadata,
+        src_idxs: list[int],
+        dst_idxs: list[int],
+        src_replica_idx: int,
+        dst_replica_idx: int,
+        tp_shard_limit: int | None = None,
+    ) -> TransferReqData:
+        """Initiate a READ transfer from remote engine to current engine.
+
+        The current engine pulls data from the remote. Used by DKVConnector
+        to read KV blocks from BlockStore DRAM into GPU VRAM.
+
+        Args:
+            remote_metadata: Metadata for the remote engine (source).
+            src_idxs: Page indices in the remote engine (source).
+            dst_idxs: Page indices in the current engine (destination).
+            src_replica_idx: Replica index in the remote engine.
+            dst_replica_idx: Replica index in the current engine.
+            tp_shard_limit: If set, only the first N TP shards transfer.
+        """
+        if not (0 <= dst_replica_idx < self.dp):
+            raise ValueError(
+                f"dst_replica_idx {dst_replica_idx} must be between 0 and {self.dp - 1}"
+            )
+
+        if not (0 <= src_replica_idx < len(remote_metadata.agents_meta)):
+            raise ValueError(
+                f"src_replica_idx {src_replica_idx} must be between 0 and {len(remote_metadata.agents_meta) - 1}"
+            )
+
+        if remote_metadata.name not in self.remote_connections:
+            raise ValueError(
+                f"Remote connection {remote_metadata.name} not found"
+            )
+
+        remote = self.remote_connections[remote_metadata.name]
+
+        if len(src_idxs) != len(dst_idxs):
+            raise ValueError(
+                f"Source and destination indices must have the same length. Got {len(src_idxs)} and {len(dst_idxs)}"
+            )
+
+        for dst_idx in dst_idxs:
+            if not (0 <= dst_idx < self.total_num_pages):
+                raise ValueError(
+                    f"Destination index {dst_idx} must be between 0 and {self.total_num_pages - 1}"
+                )
+
+        for src_idx in src_idxs:
+            if not (0 <= src_idx < remote.total_num_pages):
+                raise ValueError(
+                    f"Source index {src_idx} must be between 0 and {remote.total_num_pages - 1}"
+                )
+
+        transfer_name = str(uuid4())
+        transfer_ids = []
+
+        # Remote source replica's agent metadata
+        remote_replica_agents_meta = remote.agents_meta[src_replica_idx]
+
+        # Local destination agents
+        dst_agents = self.tensor_agents[dst_replica_idx]
+        if tp_shard_limit is not None:
+            dst_agents = dst_agents[:tp_shard_limit]
+
+        for tp_idx, ta in enumerate(dst_agents):
+            # Local descriptors (destination: our GPU memory)
+            descs_local: list[tuple[int, int, int]] = []
+            for dst_idx in dst_idxs:
+                local_addr = ta.base_addr + dst_idx * self.bytes_per_page
+                descs_local.append(
+                    (local_addr, self.bytes_per_page, ta.device_id)
+                )
+            local_dlist = nixl.TransferDescriptorList(
+                type=self.memory_type, descs=descs_local
+            )
+
+            # Remote descriptors (source: BlockStore DRAM)
+            remote_agent_meta = remote_replica_agents_meta[tp_idx]
+            descs_remote: list[tuple[int, int, int]] = []
+            for src_idx in src_idxs:
+                remote_addr = (
+                    remote_agent_meta.base_addr
+                    + src_idx * remote.bytes_per_page
+                )
+                descs_remote.append(
+                    (
+                        remote_addr,
+                        remote.bytes_per_page,
+                        remote_agent_meta.device_id,
+                    )
+                )
+            remote_dlist = nixl.TransferDescriptorList(
+                type=remote.memory_type, descs=descs_remote
+            )
+
+            transfer_id = ta.agent.create_transfer_request(
+                operation=nixl.TransferOpType.READ,
+                local_descs=local_dlist,
+                remote_descs=remote_dlist,
+                remote_agent=remote_agent_meta.agent_name,
+                notif_msg=transfer_name,
+            )
+            status = ta.agent.post_transfer_request(transfer_id)
+
+            if status not in [nixl.Status.SUCCESS, nixl.Status.IN_PROG]:
+                raise ValueError(
+                    f"Read transfer request failed with status {status} for TP shard {tp_idx}"
+                )
+
+            transfer_ids.append(transfer_id)
+
+        transfer_req = TransferReqData(
+            dst_name=self.name,
+            src_name=remote_metadata.name,
+            transfer_name=transfer_name,
+            transfer_ids=transfer_ids,
+            src_idxs=src_idxs,
+            dst_idxs=dst_idxs,
+            src_replica_idx=src_replica_idx,
+            dst_replica_idx=dst_replica_idx,
+            is_read=True,
+            tp_shard_count=len(transfer_ids),
+        )
+        self.inflight_read_transfers[transfer_name] = transfer_req
         return transfer_req
 
     def _is_sender_of(self, transfer_req: TransferReqData) -> bool:
         """Check if the current engine is the sender of a transfer."""
         return transfer_req.src_name == self.name
+
+    def _owns_transfer_request(self, transfer_req: TransferReqData) -> bool:
+        """Check if the current engine owns the transfer request handles."""
+        if transfer_req.is_read:
+            return transfer_req.dst_name == self.name
+        return self._is_sender_of(transfer_req)
+
+    def _notification_remote_name(self, transfer_req: TransferReqData) -> str:
+        """Return the remote engine name associated with completion notifications."""
+        if transfer_req.is_read:
+            return transfer_req.dst_name
+        return transfer_req.src_name
 
     def _is_send_complete(self, transfer_req: TransferReqData) -> bool:
         """Check if a send transfer is complete.
@@ -711,10 +871,8 @@ class KVTransferEngine:
         is_complete = True
         src_replica_idx = transfer_req.src_replica_idx
         tp_agents = self.tensor_agents[src_replica_idx]
-        for ta, transfer_id in zip(
-            tp_agents, transfer_req.transfer_ids, strict=True
-        ):
-            agent = ta.agent
+        for tp_idx, transfer_id in enumerate(transfer_req.transfer_ids):
+            agent = tp_agents[tp_idx].agent
             status = agent.get_transfer_status(transfer_id)
 
             if status == nixl.Status.SUCCESS:
@@ -731,12 +889,16 @@ class KVTransferEngine:
 
     def _is_recv_complete(self, transfer_req: TransferReqData) -> bool:
         """Check if a recv transfer is complete."""
-        assert not self._is_sender_of(transfer_req)
+        assert not self._owns_transfer_request(transfer_req)
 
         # Check what recv completion notifications have been received
-        # We only check agents in the specific destination replica for this transfer
-        dst_replica_idx = transfer_req.dst_replica_idx
-        tp_agents = self.tensor_agents[dst_replica_idx]
+        # We only check agents in the replica local to the current engine.
+        local_replica_idx = (
+            transfer_req.src_replica_idx
+            if transfer_req.is_read
+            else transfer_req.dst_replica_idx
+        )
+        tp_agents = self.tensor_agents[local_replica_idx]
         for ta in tp_agents:
             notifs = ta.agent.get_notifs()
             for remote_agent_name, notifications in notifs.items():
@@ -747,15 +909,48 @@ class KVTransferEngine:
                         notif_decoded
                     ] += 1
 
-        # A recv is complete when we get num_agents_per_replica notifications about it
+        # A recv is complete when we get expected number of notifications
         transfer_name = transfer_req.transfer_name
+        expected = (
+            transfer_req.tp_shard_count
+            if transfer_req.tp_shard_count > 0
+            else self.tp
+        )
+        remote_name = self._notification_remote_name(transfer_req)
         return (
-            self.completed_recv_transfers[transfer_req.src_name][transfer_name]
-            == self.tp
+            self.completed_recv_transfers[remote_name][transfer_name]
+            == expected
         )
 
+    def _is_read_complete(self, transfer_req: TransferReqData) -> bool:
+        """Check if a read transfer is complete.
+
+        For READ ops the local agent initiates the transfer, so we poll
+        get_transfer_status on our own agents (same pattern as send).
+        """
+        assert transfer_req.is_read
+        assert self._owns_transfer_request(transfer_req)
+
+        dst_replica_idx = transfer_req.dst_replica_idx
+        tp_agents = self.tensor_agents[dst_replica_idx]
+
+        for tp_idx, transfer_id in enumerate(transfer_req.transfer_ids):
+            agent = tp_agents[tp_idx].agent
+            status = agent.get_transfer_status(transfer_id)
+
+            if status == nixl.Status.SUCCESS:
+                continue
+            elif status == nixl.Status.IN_PROG:
+                return False
+            else:
+                raise ValueError(
+                    f"Read transfer failed with status {status} in replica {dst_replica_idx}"
+                )
+
+        return True
+
     def is_complete(self, transfer_req: TransferReqData) -> bool:
-        """Checks if a given send or recv transfer is completed.
+        """Checks if a given send, recv, or read transfer is completed.
 
         .. caution::
            This method is prone to infinite loops. For the transfer to progress,
@@ -784,17 +979,22 @@ class KVTransferEngine:
         Returns:
             bool: True if all transfers have completed; false otherwise.
         """
-        if self._is_sender_of(transfer_req):
+        if transfer_req.is_read:
+            if self._owns_transfer_request(transfer_req):
+                return self._is_read_complete(transfer_req)
+            return self._is_recv_complete(transfer_req)
+        elif self._is_sender_of(transfer_req):
             return self._is_send_complete(transfer_req)
         else:
             return self._is_recv_complete(transfer_req)
 
     def _cleanup_recv_transfer(self, transfer_req: TransferReqData) -> None:
         """Cleanup a transfer."""
-        assert not self._is_sender_of(transfer_req)
+        assert not self._owns_transfer_request(transfer_req)
         assert transfer_req.transfer_name not in self.inflight_send_transfers
 
-        del self.completed_recv_transfers[transfer_req.src_name][
+        remote_name = self._notification_remote_name(transfer_req)
+        del self.completed_recv_transfers[remote_name][
             transfer_req.transfer_name
         ]
 
@@ -815,6 +1015,23 @@ class KVTransferEngine:
                     f"Failed to release transfer request: {status}"
                 )
 
+    def _cleanup_read_transfer(self, transfer_req: TransferReqData) -> None:
+        """Cleanup a read transfer by releasing transfer requests."""
+        assert transfer_req.is_read
+        transfer_name = transfer_req.transfer_name
+        assert transfer_name in self.inflight_read_transfers
+
+        del self.inflight_read_transfers[transfer_name]
+
+        dst_replica_idx = transfer_req.dst_replica_idx
+        for tp_idx, transfer_id in enumerate(transfer_req.transfer_ids):
+            agent = self.tensor_agents[dst_replica_idx][tp_idx].agent
+            status = agent.release_transfer_request(transfer_id)
+            if status != nixl.Status.SUCCESS:
+                raise ValueError(
+                    f"Failed to release read transfer request: {status}"
+                )
+
     def cleanup_transfer(self, transfer_req: TransferReqData) -> None:
         """Cleanup a transfer. This should be called after a transfer is complete.
 
@@ -826,7 +1043,12 @@ class KVTransferEngine:
                 f"Transfer {transfer_req.transfer_name} is not complete"
             )
 
-        if self._is_sender_of(transfer_req):
+        if transfer_req.is_read:
+            if self._owns_transfer_request(transfer_req):
+                self._cleanup_read_transfer(transfer_req)
+            else:
+                self._cleanup_recv_transfer(transfer_req)
+        elif self._is_sender_of(transfer_req):
             self._cleanup_send_transfer(transfer_req)
         else:
             self._cleanup_recv_transfer(transfer_req)
@@ -844,9 +1066,13 @@ class KVTransferEngine:
         Moving this logic into the __del__ destructor does causes a UCX error for
         unknown reasons.
         """
-        # Release all transfers
+        # Release all send transfers
         for send_transfer_req in list(self.inflight_send_transfers.values()):
             self._cleanup_send_transfer(send_transfer_req)
+
+        # Release all read transfers
+        for read_transfer_req in list(self.inflight_read_transfers.values()):
+            self._cleanup_read_transfer(read_transfer_req)
 
         # Invalidate metadata of other agents
         for remote_name in self.remote_connections:

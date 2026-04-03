@@ -34,6 +34,10 @@ class KVCacheMetrics:
     """Number of cache blocks written to disk."""
     disk_blocks_read: int = 0
     """Number of cache blocks read from disk."""
+    nixl_read_blocks: int = 0
+    """Number of cache blocks read via NIXL (dKV GET)."""
+    nixl_write_blocks: int = 0
+    """Number of cache blocks written via NIXL (dKV PUT)."""
 
     @property
     def prompt_tokens(self) -> int:
@@ -73,4 +77,6 @@ class KVCacheMetrics:
             disk_blocks_written=self.disk_blocks_written
             + other.disk_blocks_written,
             disk_blocks_read=self.disk_blocks_read + other.disk_blocks_read,
+            nixl_read_blocks=self.nixl_read_blocks + other.nixl_read_blocks,
+            nixl_write_blocks=self.nixl_write_blocks + other.nixl_write_blocks,
         )

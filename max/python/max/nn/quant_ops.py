@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef, TensorValue, ops
 
 from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
@@ -31,7 +31,13 @@ from .kernels import (
     quantize_tensor_dynamic_scaled_float8,
 )
 from .kv_cache import KVCacheParams, PagedCacheValues
-from .quant_config import QuantConfig, QuantFormat
+from .quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    WeightScaleSpec,
+)
 
 
 def _reshape_pre_interleaved_scales(
@@ -138,20 +144,44 @@ def _matmul_float8(
         quant_config.input_scale.is_tensor
         and quant_config.weight_scale.is_tensor
     ):
-        # Tensor+tensor dynamic (AutoFP8 per-tensor scaling).
-        x, x_scale = quantize_tensor_dynamic_scaled_float8(
-            x, out_type=weight.dtype
-        )
-        x_scale = x_scale.reshape([1, 1])
-        weight_scale = weight_scale.to(x.device).reshape([1, 1])
+        # Workaround for GEX-3496: force tensor-scale into row-scale
+        # format so we hit the rowwise/colwise kernel path. weight_scale
+        # may already be [N, 1] from MLP fusion; only broadcast scalars.
+        n_out = weight.shape[0]
+        if quant_config.weight_scale.is_tensor and weight_scale.rank < 2:
+            weight_scale = ops.broadcast_to(
+                weight_scale.reshape([1, 1]), [n_out, 1]
+            )
+        elif weight_scale.rank < 2:
+            weight_scale = weight_scale.reshape([1, 1])
+        weight_scale = weight_scale.to(x.device)
 
+        colwise_input_spec = InputScaleSpec(
+            granularity=ScaleGranularity.COLWISE,
+            origin=quant_config.input_scale.origin,
+            dtype=weight_scale.dtype,
+        )
+        rowwise_weight_spec = WeightScaleSpec(
+            granularity=ScaleGranularity.ROWWISE,
+            dtype=weight_scale.dtype,
+        )
+
+        x, x_scales = quantize_dynamic_scaled_float8(
+            x,
+            colwise_input_spec,
+            rowwise_weight_spec,
+            scales_type=weight_scale.dtype,
+            out_type=weight.dtype,
+        )
+
+        # activation scales are [1xm] which but in the dynamic scaled matmul we expect just use x_scale[0,0]
         return dynamic_scaled_matmul(
             x,
             weight,
-            x_scale,
+            x_scales,
             weight_scale,
-            quant_config.input_scale,
-            quant_config.weight_scale,
+            colwise_input_spec,
+            rowwise_weight_spec,
             out_type=DType.bfloat16,
         )
     else:
@@ -322,11 +352,33 @@ def quantized_fused_qkv_matmul(
                 quant_config.input_scale.is_tensor
                 and quant_config.weight_scale.is_tensor
             ):
+                # Workaround for GEX-3496: force tensor-scale into
+                # row-scale format. Input: per-tensor dynamic quantization.
+                # Weight: rowwise [total_dim, 1] from qkv_weight_scale.
                 x, x_scales = quantize_tensor_dynamic_scaled_float8(
-                    x, out_type=wqkv.dtype
+                    x,
+                    quant_config.input_scale,
+                    quant_config.weight_scale,
+                    out_type=wqkv.dtype,
+                    scales_type=weight_scale.dtype,
                 )
-                x_scales = x_scales.reshape([1, 1])
-                weight_scale = weight_scale.reshape([1, 1])
+                # x_scales = x_scales.reshape([1, 1])
+                # Don't pass quant_config so the kernel infers
+                # per-channel (1,1,-1) from [1,1] + [N,1] shapes.
+                return _fused_qkv_ragged_matmul_scaled_float8(
+                    kv_params,
+                    input=x,
+                    wqkv=wqkv,
+                    bias=bias,
+                    input_row_offsets=input_row_offsets,
+                    kv_collection=kv_collection,
+                    layer_idx=layer_idx,
+                    n_heads=n_heads,
+                    input_scale=x_scales.to(x.device),
+                    weight_scale=weight_scale.to(x.device),
+                    quant_config=None,
+                    _output_dim=_output_dim,
+                )
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
                     x,

@@ -332,7 +332,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var host_ptr: Self._HostPtr = {}
+        var host_ptr = Self._HostPtr(_unsafe_null=())
 
         # const char *AsyncRT_DeviceContext_createHostBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
         _checked(
@@ -482,7 +482,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
-        var new_host_ptr: UnsafePointer[Scalar[view_type], MutAnyOrigin] = {}
+        var new_host_ptr = UnsafePointer[Scalar[view_type], MutAnyOrigin](
+            _unsafe_null=()
+        )
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
         #     const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
@@ -711,7 +713,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             _DeviceBufferPtr[mut=True],
         ](self._handle)
         var result = self._host_ptr
-        self._host_ptr = {}
+        self._host_ptr = {_unsafe_null = ()}
         return result
 
     @always_inline
@@ -894,7 +896,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var device_ptr: Self._DevicePtr = {}
+        var device_ptr = Self._DevicePtr(_unsafe_null=())
 
         # TODO: Remove this if statement.
         # As of GEX-3005, Driver only supports async allocation. For
@@ -1114,7 +1116,9 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
-        var new_device_ptr: UnsafePointer[Scalar[view_type], MutAnyOrigin] = {}
+        var new_device_ptr = UnsafePointer[Scalar[view_type], MutAnyOrigin](
+            _unsafe_null=()
+        )
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
         #     const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
@@ -1346,7 +1350,7 @@ struct DeviceBuffer[dtype: DType](
             _DeviceBufferPtr[mut=True],
         ](self._handle)
         var result = self._device_ptr
-        self._device_ptr = Self._DevicePtr()
+        self._device_ptr = {_unsafe_null = ()}
         return result
 
     @always_inline
@@ -2284,7 +2288,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = Variadic.size(Ts)
+        comptime num_args = Variadic.size_types[Ts]
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2455,7 +2459,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = Variadic.size(Ts)
+        comptime num_args = Variadic.size_types[Ts]
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2562,9 +2566,9 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = Variadic.size(
+        comptime declared_num_args = Variadic.size_types[
             Self.declared_arg_types.value()
-        )
+        ]
 
         comptime assert (
             declared_num_args == num_args
@@ -2655,7 +2659,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = Variadic.size(Ts)
+        comptime num_args = Variadic.size_types[Ts]
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2777,7 +2781,7 @@ struct DeviceFunction[
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
-        comptime num_passed_args = Variadic.size(Ts)
+        comptime num_passed_args = Variadic.size_types[Ts]
         var num_translated_args = 0
 
         var translated_arg_offsets = InlineArray[Int, num_passed_args](
@@ -3232,7 +3236,7 @@ struct DeviceExternalFunction:
         Raises:
             If the function launch fails.
         """
-        comptime num_args = Variadic.size(Ts)
+        comptime num_args = Variadic.size_types[Ts]
 
         var dense_args_addrs = InlineArray[
             OpaquePointer[MutAnyOrigin], num_args
@@ -3292,7 +3296,7 @@ struct DeviceExternalFunction:
                 UInt32(len(attributes)),
                 dense_args_addrs.unsafe_ptr(),
                 UInt32(num_args),
-                UnsafePointer[UInt64, MutAnyOrigin](),
+                UnsafePointer[UInt64, MutAnyOrigin](_unsafe_null=()),
             )
         )
 
@@ -3563,7 +3567,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ```
         """
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
-        var api_ptr = StaticString(ptr={}, length=0)
+        var api_ptr = StaticString()
         external_call["AsyncRT_DeviceContext_deviceApi", NoneType](
             UnsafePointer(to=api_ptr),
             self._handle,
@@ -6657,7 +6661,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         This is a private method intended for internal use only.
         """
-        var arch_name = StaticString(ptr={}, length=0)
+        var arch_name = StaticString()
         external_call[
             "AsyncRT_DeviceContext_archName",
             NoneType,
@@ -7018,7 +7022,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
         comptime _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        var buf_ptr: _BufPtr = {}
+        var buf_ptr = _BufPtr(_unsafe_null=())
 
         _checked(
             external_call[
@@ -7047,7 +7051,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
         comptime _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        var buf_ptr: _BufPtr = {}
+        var buf_ptr = _BufPtr(_unsafe_null=())
 
         _checked(
             external_call[

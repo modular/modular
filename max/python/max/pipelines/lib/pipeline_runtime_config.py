@@ -104,7 +104,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     enable_in_flight_batching: bool = Field(
-        default=False,
+        default=True,
         description=(
             "When enabled, prioritizes token generation by batching it with "
             "context encoding requests."

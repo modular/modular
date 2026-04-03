@@ -38,6 +38,13 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Variadics of types have been moved to the `TypeList` struct.
+  One can write operations such as:
+
+  ```mojo
+  comptime assert TypeList[Trait=AnyType, Int, String]().contains[Bool]
+  ```
+
 - `abort(message)` now includes the call site location in its output. The
   location is automatically captured and printed alongside the message. You can
   also pass an explicit `SourceLocation` to override it:
@@ -112,6 +119,9 @@ This version is still a work in progress.
   `IterableOwned` implement `__iter__(var self)`, which consumes the collection
   and returns an iterator that owns the underlying elements.
   - `List` now conforms to `IterableOwned`.
+  - `Optional` now conforms to `IterableOwned`.
+  - `Deque` now conforms to `IterableOwned`.
+  - `LinkedList` now conforms to `IterableOwned`.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same

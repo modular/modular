@@ -92,7 +92,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_binary_ops")
 
         # Binary arithmetic operations
-        comptime for i in range(Variadic.size(BINARY_ARITHMETIC_OPS)):
+        comptime for i in range(Variadic.size_types[BINARY_ARITHMETIC_OPS]):
             comptime op = BINARY_ARITHMETIC_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -103,7 +103,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
             )
 
         # Binary boolean operations
-        comptime for i in range(Variadic.size(BINARY_BOOLEAN_OPS)):
+        comptime for i in range(Variadic.size_types[BINARY_BOOLEAN_OPS]):
             comptime op = BINARY_BOOLEAN_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(

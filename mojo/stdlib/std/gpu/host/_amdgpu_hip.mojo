@@ -45,7 +45,7 @@ comptime hipModule_t = UnsafePointer[_ihipModule_t, ExternalOrigin[mut=True]]
 # underlying hipDevice_t.
 @always_inline
 def HIP(ctx: DeviceContext) raises -> hipDevice_t:
-    var result = hipDevice_t()
+    var result = hipDevice_t(_unsafe_null=())
     # const char *AsyncRT_DeviceContext_hip_device(hipDevice_t *result, const DeviceContext *ctx)
     _checked(
         external_call["AsyncRT_DeviceContext_hip_device", _CString[]](
@@ -60,7 +60,7 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
 # Use `var hip_stream: hipStream_t = HIP(ctx.stream())` where ctx is a `DeviceContext` to get access to the underlying hipStream_t.
 @always_inline
 def HIP(stream: DeviceStream) raises -> hipStream_t:
-    var result = hipStream_t()
+    var result = hipStream_t(_unsafe_null=())
     # const char *AsyncRT_DeviceStream_hip_stream(hipStream_t *result, const DeviceStream *stream)
     _checked(
         external_call[
@@ -77,7 +77,7 @@ def HIP(stream: DeviceStream) raises -> hipStream_t:
 # Accessor function to get access to the underlying hipModule_t from a DeviceFunction.
 @always_inline
 def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
-    var result = hipModule_t()
+    var result = hipModule_t(_unsafe_null=())
     # const char *AsyncRT_DeviceFunction_hip_module(hipModule_t *result, const DeviceFunction *func)
     _checked(
         external_call[

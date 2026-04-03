@@ -45,7 +45,7 @@ from std.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     mul_ftz,

@@ -531,7 +531,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     def get_block_swizzle(
-        lut_ptr: UnsafePointer[UInt32, MutAnyOrigin] = {},
+        lut_ptr: UnsafePointer[UInt32, MutAnyOrigin] = {_unsafe_null = ()},
     ) -> IndexList[2, element_type=DType.uint32]:
         """Calculate block swizzle for better L2 cache locality.
 

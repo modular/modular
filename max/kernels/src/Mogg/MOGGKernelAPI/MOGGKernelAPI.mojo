@@ -6868,7 +6868,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
-            {}, IndexList[2](0)
+            {_unsafe_null = ()}, IndexList[2](0)
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
@@ -10071,7 +10071,7 @@ struct DistributedAllReduceSum:
         # Marshal signal buffers into the expected format.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](fill={_unsafe_null = ()})
         comptime for i in range(num_devices):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
@@ -10203,7 +10203,7 @@ struct BundledAllReduceSum:
         var out_buf = output.to_tile_tensor[DType.int64]()
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](fill={_unsafe_null = ()})
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -10290,7 +10290,7 @@ struct DistributedReduceScatterSum:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](fill={_unsafe_null = ()})
 
         comptime for i in range(num_devices):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
@@ -10404,7 +10404,7 @@ struct DistributedAllGather:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](fill={_unsafe_null = ()})
 
         comptime for i in range(num_devices):
             in_tensors[i] = TileTensor(
@@ -10515,7 +10515,7 @@ struct DistributedBroadcast:
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](fill={_unsafe_null = ()})
 
         comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
@@ -10599,7 +10599,7 @@ struct DistributedScatter:
         var in_tensors = InlineArray[InputTensorType, ngpus](uninitialized=True)
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](fill={_unsafe_null = ()})
 
         comptime for i in range(ngpus):
             in_tensors[i] = rebind[InputTensorType](
@@ -10690,7 +10690,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](fill={_unsafe_null = ()})
 
         comptime for i in range(inputs.size):
             in_tensors[i] = rebind[InputTensorType](
@@ -11060,28 +11060,42 @@ struct QuantizeTensorDynamicScaledFloat8:
     @staticmethod
     def execute[
         input_type: DType,
+        scales_type: DType,
         output_type: DType,
+        //,
+        group_size_or_per_token: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
-        scale: OutputTensor[dtype=DType.float32, rank=1, ...],
-        input: InputTensor[dtype=input_type, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
-        comptime assert output_type in (
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-        ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
-        var cuda_ctx = ctx.get_device_context()
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
+
         quantize_tensor_dynamic_scaled_fp8[
-            output_type,
-            input_type,
+            out_dtype=output_type,
+            in_dtype=input_type,
+            scales_dtype=scales_type,
+            input_fn,
+            group_size_or_per_token,
+            num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
             output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            scale.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            scales.to_tile_tensor[DType.int64](),
+            scale_ub,
+            ctx.get_device_context(),
+            num_rows=input.dim_size(0),
         )
 
 
@@ -11259,7 +11273,7 @@ struct MatmulStaticScaledFloat8:
         comptime N = type_of(weight_tt).static_shape[0]
         var M = Int(input_tt.dim[0]())
         var output_dummy = TileTensor(
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin](),
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin](_unsafe_null=()),
             row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
         )
 

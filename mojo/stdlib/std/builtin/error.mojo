@@ -111,7 +111,7 @@ struct StackTrace(Copyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
+        var buffer = UnsafePointer[UInt8, MutExternalOrigin](_unsafe_null=())
         var num_bytes = external_call["KGEN_CompilerRT_GetStackTrace", Int](
             UnsafePointer(to=buffer), depth
         )

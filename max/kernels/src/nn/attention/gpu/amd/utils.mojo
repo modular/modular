@@ -13,11 +13,8 @@
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import (
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
-)
-from std.gpu import warp_id_uint as get_warp_id, WARP_SIZE
+from std.gpu import lane_id, thread_idx
+from std.gpu import WARP_SIZE, warp_id as get_warp_id
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, TileTensor
 from std.gpu.intrinsics import AMDBufferResource
 from layout._utils import idx2crd, make_amd_buffer_resource
@@ -26,7 +23,7 @@ from layout.layout_tensor import ThreadScope
 from layout.tensor_core import num_matrix_reg
 from std.memory import AddressSpace as BaseAddressSpace
 from std.memory import stack_allocation
-from std.math.uutils import umod, ufloordiv
+from std.math.uutils import umod, ufloordiv, udivmod
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
@@ -61,8 +58,8 @@ def get_warp_layout[mma_shape: IndexList[3]]() -> Layout:
 @always_inline
 def get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
     comptime num_warps_n = BN // WN
-    var warp_row, warp_col = divmod(get_warp_id(), UInt(num_warps_n))
-    return IndexList[2](Int(warp_row), Int(warp_col))
+    var warp_row, warp_col = udivmod(get_warp_id(), num_warps_n)
+    return IndexList[2](warp_row, warp_col)
 
 
 @always_inline
@@ -264,7 +261,13 @@ struct SharedMemoryManager[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]:
-        return self.k_smem.bitcast[Scalar[_dtype]]() if Self.token_gen else {}
+        return self.k_smem.bitcast[
+            Scalar[_dtype]
+        ]() if Self.token_gen else UnsafePointer[
+            Scalar[_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        ](
+            _unsafe_null=()
+        )
 
 
 struct GlobalMemoryManager[
@@ -626,7 +629,7 @@ def copy_dram_to_sram_lds[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
-        ]()
+        ](_unsafe_null=())
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
         var ptr_to_simd = UnsafePointer(to=bc.desc)
@@ -729,7 +732,7 @@ def copy_dram_to_sram_lds[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
-        ]()
+        ](_unsafe_null=())
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
         var ptr_to_simd = UnsafePointer(to=bc.desc)
