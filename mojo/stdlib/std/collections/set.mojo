@@ -20,7 +20,14 @@ from std.format._utils import (
 )
 from std.hashlib import Hasher, default_hasher
 
-from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
+from .dict import (
+    Dict,
+    KeyElement,
+    _DictEntryIter,
+    _DictEntryIterOwned,
+    _DictKeyIter,
+    _DictKeyIterOwned,
+)
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
@@ -30,6 +37,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Iterable,
+    IterableOwned,
     Sized,
     Writable where conforms_to(T, Writable),
 ):
@@ -68,6 +76,11 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+
+    comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
+        Self.T, NoneType, Self.H
+    ]
+    """The owned iterator type for this set."""
 
     # Fields
     var _data: Dict[Self.T, NoneType, Self.H]
@@ -353,6 +366,14 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    def __iter__(deinit self) -> Self.IteratorOwnedType:
+        """Consume the set and iterate over its elements.
+
+        Returns:
+            An iterator that owns the set's elements.
+        """
+        return {_DictEntryIterOwned(self._data^, 0)}
 
     def __iter__(
         ref self,

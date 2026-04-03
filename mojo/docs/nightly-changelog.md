@@ -122,6 +122,9 @@ This version is still a work in progress.
   - `Optional` now conforms to `IterableOwned`.
   - `Deque` now conforms to `IterableOwned`.
   - `LinkedList` now conforms to `IterableOwned`.
+  - `Dict` now conforms to `IterableOwned`.
+  - `Set` now conforms to `IterableOwned`.
+  - `Counter` now conforms to `IterableOwned`.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same

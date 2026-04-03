@@ -561,5 +561,29 @@ def test_set_conditional_conformances() raises:
     assert_true(conforms_to(Set[Int], Writable))
 
 
+def test_set_iter_owned() raises:
+    var s = Set[Int](1, 2, 3)
+    var elems = List[Int]()
+    for elem in s^:
+        elems.append(elem)
+
+    assert_equal(len(elems), 3)
+    assert_true(1 in elems)
+    assert_true(2 in elems)
+    assert_true(3 in elems)
+
+
+def test_set_iter_owned_bounds() raises:
+    var s = Set[Int](1, 2, 3)
+    var it = s^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
