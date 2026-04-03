@@ -1551,9 +1551,9 @@ kgen.func @dtype_from_ui8() -> !kgen.dtype {
 }
 
 // CHECK-LABEL: @fold_offset
-// CHECK: (%[[ARG0:.*]]:
+// CHECK: ([[ARG0:%.*]]:
 kgen.func @fold_offset(%arg0: !kgen.pointer<index>) -> (!kgen.pointer<index>) {
-  // CHECK-NEXT: kgen.return %[[ARG0]]
+  // CHECK-NEXT: kgen.return [[ARG0]]
   %0 = kgen.param.constant = <0>
   %1 = pop.offset %arg0[%0] : !kgen.pointer<index>
   kgen.return %1 : !kgen.pointer<index>
@@ -1600,6 +1600,22 @@ kgen.func @offset_of_offset(%arg0: !kgen.pointer<index>) -> !kgen.pointer<index>
   %1 = pop.offset %0[%idx200] : !kgen.pointer<index>
   // CHECK: return %0
   kgen.return %1 : !kgen.pointer<index>
+}
+
+// CHECK-LABEL: @array_gep_offset
+kgen.func @array_gep_offset(%arg1: !pop.array<4, index>, %arg2: index) -> index {
+  // CHECK: %0 = pop.stack_allocation 1 x array<4, index>
+  %0 = kgen.param.constant = <0>
+  %array = pop.stack_allocation 1 x array<4, index>
+  // CHECK-NEXT: pop.store %arg0, %0
+  pop.store %arg1, %array : !kgen.pointer<array<4, index>>
+  %gep = pop.array.gep %array[%0] : <array<4, index>>
+  // Fold gep+offset into just gep.
+  // CHECK: %1 = pop.array.gep %0[%arg1]
+  // CHECK: %2 = pop.load %1
+  %offset = pop.offset %gep[%arg2] : !kgen.pointer<index>
+  %load = pop.load %offset : !kgen.pointer<index>
+  kgen.return %load : index
 }
 
 // CHECK-LABEL: @large_int_memory_leak
