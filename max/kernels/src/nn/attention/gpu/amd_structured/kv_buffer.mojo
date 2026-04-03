@@ -27,10 +27,11 @@ that construct LayoutTensor views at the MMA boundary.
 """
 
 from std.math import ceildiv
+from std.math.uutils import umod
 from std.sys import simd_width_of, llvm_intrinsic
 from std.sys.intrinsics import readfirstlane
 from std.gpu import WARP_SIZE
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import warp_id as get_warp_id
 from std.memory.pointer import AddressSpace as BaseAddressSpace
 from layout import (
     ComptimeInt,
@@ -349,7 +350,7 @@ struct KVBuffer[
 
         comptime if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN
-            var warp_col = get_warp_id() % UInt(num_warps_n)
+            var warp_col = umod(get_warp_id(), num_warps_n)
 
             var warp_tt = smem_subtile[
                 Self.wtile_dim0,
@@ -357,7 +358,7 @@ struct KVBuffer[
                 Self.BN,
                 Self.BK,
                 Self.kv_t.dtype,
-            ](smem_base + bk_tile * Self.BN * Self.BK, Int(warp_col), 0)
+            ](smem_base + bk_tile * Self.BN * Self.BK, warp_col, 0)
 
             comptime total_frags = Self.num_mmas * Self.num_k_mmas2
             var frags = tt_load_b[

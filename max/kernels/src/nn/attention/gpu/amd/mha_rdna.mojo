@@ -22,12 +22,9 @@ Key features:
 """
 
 from std.collections import OptionalReg
+from std.math.uutils import umod
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-)
+from std.gpu import barrier, block_idx, lane_id
 from nn.attention.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
 from std.utils import IndexList
@@ -73,22 +70,22 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
     @always_inline
     def q_head_idx() -> UInt:
         comptime if Self.token_gen:
-            var group_idx = lane_id() % UInt(Self.group)
-            return block_idx.y * UInt(Self.group) + UInt(group_idx)
+            var group_idx = umod(lane_id(), Self.group)
+            return UInt(block_idx.y) * UInt(Self.group) + UInt(group_idx)
         else:
-            return block_idx.x
+            return UInt(block_idx.x)
 
     @staticmethod
     @always_inline
     def q_tile_idx() -> UInt:
-        return block_idx.y if not Self.token_gen else 0
+        return UInt(block_idx.y) if not Self.token_gen else 0
 
     @staticmethod
     @always_inline
     def kv_head_idx() -> UInt:
-        return block_idx.y if Self.token_gen else Self.q_head_idx() // UInt(
-            Self.group
-        )
+        return UInt(
+            block_idx.y
+        ) if Self.token_gen else Self.q_head_idx() // UInt(Self.group)
 
     @staticmethod
     @always_inline
@@ -332,7 +329,7 @@ __extension AttentionRDNA:
             barrier()
 
         start, end = get_start_and_end_for_partitions[Int(Self.BN)](
-            self.num_keys, num_partitions, Int(block_idx.x)
+            self.num_keys, num_partitions, block_idx.x
         )
 
         for i in range(start, end, Int(Self.BN)):

@@ -12,12 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.gpu.primitives.warp as warp
+from std.math.uutils import umod
 from std.bit import log2_floor
-from std.gpu import (
-    barrier,
-    lane_id_uint as lane_id,
-    warp_id_uint as get_warp_id,
-)
+from std.gpu import barrier, lane_id, warp_id as get_warp_id
 from layout import (
     Layout,
     LayoutTensor,
@@ -129,7 +126,7 @@ struct Softmax[
                     col_tile, row
                 ]
 
-        var warp_x = get_warp_id() % UInt(Self.num_rowwise_warps)
+        var warp_x = umod(get_warp_id(), Self.num_rowwise_warps)
 
         comptime for col_tile in range(Self.num_colwise_tiles):
             comptime for row_tile in range(Self.num_rowwise_tiles):
@@ -154,7 +151,7 @@ struct Softmax[
                     stride=Int(Self.rowwise_lanes_stride),
                 ](self.score_frag_rowmax[col_tile, row])
 
-        var coords = idx2crd[Self.warp_layout](Int(lane_id()))
+        var coords = idx2crd[Self.warp_layout](lane_id())
         var lane_contains_first_column = coords[1] == 0
         var lane_row = coords[0]
 
@@ -176,7 +173,7 @@ struct Softmax[
                         # warp scratch has layout row_major(num_warps, num_rows). The
                         # "score_row_idx" is the idx-th row in the score matrix.
                         warp_scratch[
-                            Int(warp_x), Int(score_row_idx)
+                            warp_x, Int(score_row_idx)
                         ] = self.score_frag_rowmax[col_tile, row][0]
 
             barrier()
@@ -224,11 +221,9 @@ struct Softmax[
             comptime for row in range(Self.frag_num_rows):
                 self.score_frag_rowsum[col_tile, row] = 0
 
-        var warp_x = get_warp_id[broadcast=True]() % UInt(
-            Self.num_rowwise_warps
-        )
+        var warp_x = umod(get_warp_id[broadcast=True](), Self.num_rowwise_warps)
 
-        var coords = idx2crd[Self.warp_layout](Int(lane_id()))
+        var coords = idx2crd[Self.warp_layout](lane_id())
         var lane_contains_first_column = coords[1] == 0
         var lane_row = coords[0]
 
@@ -267,7 +262,7 @@ struct Softmax[
                         )
 
                         warp_scratch[
-                            warp_x + UInt(Self.num_rowwise_warps),
+                            warp_x + Self.num_rowwise_warps,
                             Int(score_row_idx),
                         ] = self.score_frag_rowsum[col_tile, row][0]
 

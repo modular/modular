@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, recip
+from std.math.uutils import umod, ufloordiv, udivmod
 from std.sys import simd_width_of
 from std.sys.intrinsics import readfirstlane
 
-from std.gpu import lane_id_uint as lane_id
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import lane_id, warp_id as get_warp_id
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from layout.layout import blocked_product
 from layout._utils import idx2crd
@@ -643,11 +643,11 @@ struct VBufferTransposeLoads[
             comptime for i in range(Self.loads_per_thread_per_depth_tile):
                 var warp_tile = (
                     global_tile.tile[16, Self.depth](
-                        Int(warp_id) // 2,
+                        warp_id // 2,
                         0,
                     )
                     .tile[8, Self.depth](i, 0)
-                    .tile[4, Self.depth_tile_size](Int(warp_id) % 2, depth_idx)
+                    .tile[4, Self.depth_tile_size](warp_id % 2, depth_idx)
                 )
                 copy_dram_to_local[
                     src_thread_layout=Layout.row_major(4, 16),
@@ -683,7 +683,7 @@ struct VBufferTransposeLoads[
         # and each warp writes to a different tile in smem
 
         var warp_id = get_warp_id()
-        var lane_coords = idx2crd[Layout.col_major(16, 4)](Int(lane_id()))
+        var lane_coords = idx2crd[Layout.col_major(16, 4)](lane_id())
         var lane_row = lane_coords[0]
         var lane_col = lane_coords[1]
 
@@ -694,7 +694,7 @@ struct VBufferTransposeLoads[
             var smem_warp_tile = smem_tensor.tile[
                 Self.pad[Self.depth](),
                 Self.simd_width,
-            ](0, Int(warp_id)).tile[
+            ](0, warp_id).tile[
                 Self.pad[Self.depth_tile_size](),
                 Self.simd_width,
             ](
@@ -724,22 +724,22 @@ struct VBufferTransposeLoads[
         # MMA
         # threads in 16x4 layout
         # each column loads depth x 8 elements from smem
-        var col_idx, lane = divmod(lane_id(), 32)
+        var col_idx, lane = udivmod(lane_id(), 32)
         var smem_tensor = Self.SharedTileType(self.smem_ptr)
 
         comptime for depth_idx in range(Self.num_depth_tiles):
             # TODO: document and parameterize this magic
             var smem_fragment = (
                 smem_tensor.tile[Self.pad[Self.depth](), 8](
-                    0, Int(col_idx + UInt(k_mma * 2))
+                    0, col_idx + k_mma * 2
                 )
                 .vectorize[1, Self.simd_width]()
                 .tile[Self.pad[Self.MMA_M](), 1](depth_idx, 0)
                 .tile[Self.pad[Self.simd_width](), 1](
-                    Int(lane // UInt(Self.simd_width)), 0
+                    ufloordiv(lane, Self.simd_width), 0
                 )
                 .slice[: Self.simd_width, :]()
-                .tile[1, 1](Int(lane % UInt(Self.simd_width)), 0)
+                .tile[1, 1](umod(lane, Self.simd_width), 0)
             )
             self.mma_tile.vectorize[1, Self.simd_width]().tile[1, 1](
                 depth_idx, 0

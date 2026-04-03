@@ -22,7 +22,7 @@ from std.math import ceildiv
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane
 from std.gpu import WARP_SIZE
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import (
     schedule_barrier,
     s_waitcnt,

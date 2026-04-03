@@ -26,7 +26,7 @@ Functions:
 """
 
 from std.sys import simd_width_of, size_of
-from std.gpu import lane_id_int as lane_id, WARP_SIZE
+from std.gpu import lane_id, WARP_SIZE
 from std.gpu._utils import to_i32, to_i64
 from std.gpu.intrinsics import AMDBufferResource
 from std.memory import AddressSpace

@@ -13,7 +13,7 @@
 
 from std.sys import simd_width_of
 
-from std.gpu import barrier, block_idx_uint as block_idx
+from std.gpu import barrier, block_idx
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
@@ -40,7 +40,7 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
     @staticmethod
     @always_inline
     def q_head_idx() -> UInt:
-        return block_idx.y if Self.token_gen else MHAAttentionConfig[
+        return UInt(block_idx.y) if Self.token_gen else MHAAttentionConfig[
             Self.token_gen, Self.config, 1
         ].q_head_idx()
 
@@ -71,7 +71,7 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
         return UInt32(
             q_depth
             * (
-                block_idx.x
+                UInt(block_idx.x)
                 + Self.config.num_heads
                 * Self.q_tile_idx()
                 * Self.config.block_m()
