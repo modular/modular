@@ -28,7 +28,7 @@ def test_external_call_handles_rp_return_types() raises:
     var result = external_call["fopen", RegisterPassablePointer](
         path.as_c_string_slice(), mode.as_c_string_slice()
     )
-    assert_false(result.pointer)
+    assert_false(result.pointer._is_not_null())
 
 
 def main() raises:

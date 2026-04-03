@@ -106,7 +106,7 @@ def alloc[
         count,
     )
     var pointer = _malloc[type](size_of_t * count, alignment=alignment)
-    if unlikely(not pointer):
+    if unlikely(not pointer._is_not_null()):
         abort("alloc failed: returned a null pointer")
     return pointer
 
@@ -890,6 +890,15 @@ struct UnsafePointer[
 
         Returns:
             Whether the pointer is null.
+        """
+        return self._is_not_null()
+
+    @always_inline
+    def _is_not_null(self) -> Bool:
+        """Check if the pointer is non-null.
+
+        Returns:
+            True if the pointer is non-null, False otherwise.
         """
         return Int(self) != 0
 

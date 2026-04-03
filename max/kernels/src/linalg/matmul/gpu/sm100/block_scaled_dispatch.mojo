@@ -273,7 +273,7 @@ def _block_scaled_matmul_with_epilogue[
         return
 
     comptime if not elementwise_lambda_fn:
-        if not c.ptr:
+        if not c.ptr._is_not_null():
             raise "c must be allocated!"
 
         comptime K_phys = a.static_shape[1]
@@ -316,7 +316,7 @@ def _block_scaled_matmul_with_epilogue[
 
         # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
         # apply the epilogue.
-        if c.ptr:
+        if c.ptr._is_not_null():
             comptime K_phys = a.static_shape[1]
             blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
@@ -426,7 +426,7 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
         return
 
     comptime if not elementwise_lambda_fn:
-        if not c.ptr:
+        if not c.ptr._is_not_null():
             raise "c must be allocated!"
 
         matmul(
@@ -459,7 +459,7 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
 
         # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
         # apply the epilogue.
-        if c.ptr:
+        if c.ptr._is_not_null():
             var m = c.dim[0]()
             var n = c.dim[1]()
 

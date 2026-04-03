@@ -3236,11 +3236,11 @@ def mha_decoding[
 
     # split-k intermediate buffers
     var qk_max_batch_ptr = type_of(qk_max_ptr)(_unsafe_null=())
-    if qk_max_ptr:
+    if qk_max_ptr._is_not_null():
         qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
     var exp_sum_batch_ptr = type_of(exp_sum_ptr)(_unsafe_null=())
-    if exp_sum_ptr:
+    if exp_sum_ptr._is_not_null():
         exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 
     var seq_len: Int

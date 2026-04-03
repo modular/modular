@@ -156,7 +156,7 @@ struct NonNullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        assert Bool(self.ptr), (
+        assert self.ptr._is_not_null(), (
             "NonNullPointer is supposed to provide a compile-time guarantee"
             " of being non-null"
         )
