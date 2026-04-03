@@ -664,5 +664,63 @@ def test_linked_list_conditional_conformances() raises:
     assert_true(conforms_to(LinkedList[Int], Hashable))
 
 
+def test_linked_list_iter_owned() raises:
+    var ll = LinkedList[Int](1, 2, 3, 4, 5)
+    var result = List[Int]()
+    for elem in ll^:
+        result.append(elem)
+
+    assert_equal(len(result), 5)
+    assert_equal(result[0], 1)
+    assert_equal(result[1], 2)
+    assert_equal(result[2], 3)
+    assert_equal(result[3], 4)
+    assert_equal(result[4], 5)
+
+
+def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
+    var dtor_count = 0
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
+    var ll = LinkedList[DelCounter[ptr.origin]]()
+    ll.append(DelCounter(ptr))
+    ll.append(DelCounter(ptr))
+    ll.append(DelCounter(ptr))
+    assert_equal(dtor_count, 0)
+
+    # Create the owned iterator but never consume it; all elements should
+    # still be destroyed when the iterator is dropped.
+    var _ = ll^.__iter__()
+    assert_equal(dtor_count, 3)
+
+
+def test_linked_list_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var dtor_count = 0
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
+    var ll = LinkedList[DelCounter[ptr.origin]]()
+    ll.append(DelCounter(ptr))
+    ll.append(DelCounter(ptr))
+    ll.append(DelCounter(ptr))
+    assert_equal(dtor_count, 0)
+
+    var it = ll^.__iter__()
+    # Consume one element; it should be destroyed when dropped.
+    var _ = it.__next__()
+    assert_equal(dtor_count, 1)
+
+    # Drop the iterator with two unconsumed elements remaining.
+    _ = it^
+    assert_equal(dtor_count, 3)
+
+
+def test_linked_list_iter_owned_bounds() raises:
+    var ll = LinkedList[Int](1, 2, 3)
+    var it = ll^.__iter__()
+    for i in range(3, 0, -1):
+        assert_equal((i, Optional(i)), it.bounds())
+        _ = it.__next__()
+
+    assert_equal((0, Optional(0)), it.bounds())
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
