@@ -8,6 +8,7 @@
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 
 #include "gtest/gtest.h"
 
@@ -24,7 +25,7 @@ struct TimerHeapTest : public testing::Test {
   TimerHeap heap;
 
   TimerHeapTest()
-      : runtime(createRuntime(RuntimeSource::Test)),
+      : runtime(getOrCreateRuntime(RuntimeSource::Test)),
         start(steady_clock::now()) {}
 
   AsyncValueRef<Chain> in(int64_t ns) {

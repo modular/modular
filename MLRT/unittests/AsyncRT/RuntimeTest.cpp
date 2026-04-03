@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 
 #include "gtest/gtest.h"
 
@@ -14,25 +14,19 @@ using namespace M::AsyncRT;
 namespace {
 
 RuntimeRef createRuntime() {
-  return AsyncRT::createRuntime(AsyncRT::RuntimeSource::Test,
-                                AsyncRT::RuntimeOptions()
-                                    .withLeakCheckedAllocator()
-                                    .withMainWillNotDonate());
+  return AsyncRT::getOrCreateRuntime(AsyncRT::RuntimeSource::Test,
+                                     AsyncRT::RuntimeOptions()
+                                         .withLeakCheckedAllocator()
+                                         .withMainWillNotDonate());
 }
 
-/// Test to ensure that the thread-local Runtime pointer can only be set once,
-// and that it cannot be overwritten by a different Runtime.
-#if !defined(NDEBUG)
-TEST(RuntimeTest, CreatingSecondRuntimeOnSameThreadAsserts) {
-  EXPECT_DEATH(
-      {
-        auto first = createRuntime();
-        (void)first;
-        createRuntime(); // Thread already has thread-local Runtime pointer set.
-      },
-      "creating a runtime from a thread already associated");
+/// `getOrCreateRuntime` installs a single global runtime; a second call on the
+/// same thread with matching options returns another reference to that runtime.
+TEST(RuntimeTest, GetOrCreateRuntimeReturnsSameGlobalInstance) {
+  auto first = createRuntime();
+  auto second = createRuntime();
+  EXPECT_EQ(first.getPointer(), second.getPointer());
 }
-#endif
 
 /// Test to ensure that the thread-local Runtime pointer is cleared when a
 /// Runtime is destroyed.
