@@ -228,4 +228,4 @@ async def test_metrics_e2e_validate_disable_works_v1(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
         # Endpoint won't exist
         with pytest.raises(requests.exceptions.ConnectionError):
-            response = requests.get("http://localhost:8001/metrics", timeout=1)
+            requests.get("http://localhost:8001/metrics", timeout=1)

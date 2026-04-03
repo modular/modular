@@ -67,6 +67,7 @@ from .pipeline_variants import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VideoContentPart,
     VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
@@ -177,6 +178,7 @@ __all__ = [
     "TokenBuffer",
     "TokenSlice",
     "VLMTextGenerationContext",
+    "VideoContentPart",
     "drain_queue",
     "get_blocking",
     "msgpack_numpy_decoder",

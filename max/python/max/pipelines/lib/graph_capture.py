@@ -202,6 +202,27 @@ def _create_model_inputs_with_dispatch_metadata(
     return result
 
 
+def _patch_kv_cache_for_capture(
+    kv: KVCacheInputs,
+    dispatch_metadata: Buffer,
+    max_cache_valid_length: int,
+) -> KVCacheInputs:
+    """Patches max_lengths and dispatch metadata on a KV cache for capture."""
+    max_cache_u32 = np.uint32(max_cache_valid_length)
+    patched: list[KVCacheInputsPerDevice] = []
+    for kv_per_device in kv.inputs:
+        ml = kv_per_device.max_lengths.to_numpy().copy()
+        ml[:, 1] = max_cache_u32
+        patched.append(
+            replace(
+                kv_per_device,
+                max_lengths=Buffer.from_numpy(ml),
+                attention_dispatch_metadata=dispatch_metadata,
+            )
+        )
+    return KVCacheInputs(inputs=patched)
+
+
 class ServeGraphCaptureRunner:
     """Central owner for serve-time graph capture state."""
 
@@ -215,10 +236,15 @@ class ServeGraphCaptureRunner:
         warmup_model_inputs: WarmupModelInputs,
         max_cache_length_upper_bound: int,
         max_batch_size: int,
+        # TODO(b-rod): Replace single extra_dispatch_resolver with a
+        # list[AttentionDispatchResolver] to support N extra KV caches
+        # generically, instead of assuming at most one extra cache.
+        extra_dispatch_resolver: AttentionDispatchResolver | None = None,
     ) -> None:
         self._model = model
         self._execute_model = execute_model
         self._warmup_model_inputs = warmup_model_inputs
+        self._extra_dispatch_resolver = extra_dispatch_resolver
         if max_cache_length_upper_bound < 1:
             raise ValueError(
                 "Decode graph capture requires a positive decode "
@@ -314,6 +340,27 @@ class ServeGraphCaptureRunner:
                             is_mla=self._is_mla,
                         )
                     )
+
+                    # Patch extra KV caches with the same
+                    # max_cache_valid_length so kernel specialization
+                    # is consistent with replay.
+                    if (
+                        self._extra_dispatch_resolver is not None
+                        and capture_inputs.extra_kv_cache_inputs
+                    ):
+                        extra_dispatch = self._extra_dispatch_resolver(
+                            batch_size, 1, max_cache_valid_length
+                        )
+                        patched_extras: list[KVCacheInputs] = []
+                        for extra_kv in capture_inputs.extra_kv_cache_inputs:
+                            patched_extras.append(
+                                _patch_kv_cache_for_capture(
+                                    extra_kv,
+                                    extra_dispatch,
+                                    max_cache_valid_length,
+                                )
+                            )
+                        capture_inputs.extra_kv_cache_inputs = patched_extras
 
                     input_buffers = capture_inputs.buffers
                     packed_key = _pack_model_graph_key(key)
@@ -463,6 +510,7 @@ class ServeGraphCaptureRunner:
         different (but graph-key-equivalent) input shape.
         """
         replay_graph_key = self._resolve_replay_key(model_inputs)
+
         input_buffers = model_inputs.buffers
 
         packed_model_graph_key = _pack_model_graph_key(replay_graph_key)

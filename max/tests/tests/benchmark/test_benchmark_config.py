@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import sys
 import tempfile
-from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -35,6 +34,7 @@ from max.benchmark.benchmark_shared.config import (
     _resolve_user_provided_config_file_cli_arg,
     parse_benchmark_args,
 )
+from pydantic import Field
 
 
 # Helper functions for creating test config files
@@ -1642,51 +1642,39 @@ class TestSweepServingBenchmarkConfig:
         # (it's parsed from workload config instead)
 
     def test_sweep_config_field_metadata(self) -> None:
-        """Test that SweepServingBenchmarkConfig fields have proper metadata."""
-        config = SweepServingBenchmarkConfig()
+        """Test that SweepServingBenchmarkConfig fields have proper json_schema_extra metadata."""
+        model_fields = SweepServingBenchmarkConfig.model_fields
 
-        # Test that fields have proper group metadata
-        from dataclasses import fields
-
-        for field_info in fields(config):
-            if field_info.name in ["workload_config", "log_dir", "dry_run"]:
-                assert "group" in field_info.metadata
-                assert field_info.metadata["group"] in [
+        for name, field_info in model_fields.items():
+            extra = field_info.json_schema_extra
+            if extra is None or not isinstance(extra, dict):
+                continue
+            if name in ["workload_config", "log_dir", "dry_run"]:
+                assert "group" in extra
+                assert extra["group"] in [
                     "Workload Configuration",
                     "Logging and Debugging",
                 ]
-            elif field_info.name in [
+            elif name in [
                 "upload_results",
                 "benchmark_sha",
                 "cluster_information_path",
                 "benchmark_config_name",
             ]:
-                assert "group" in field_info.metadata
-                assert (
-                    field_info.metadata["group"]
-                    == "Result Upload Configuration"
-                )
-            elif field_info.name in ["metadata", "latency_percentiles"]:
-                assert "group" in field_info.metadata
-                assert (
-                    field_info.metadata["group"]
-                    == "Metadata and Result Tracking"
-                )
-            elif field_info.name in [
-                "num_iters",
-            ]:
-                assert "group" in field_info.metadata
-                assert field_info.metadata["group"] == "Sweep Configuration"
-            elif field_info.name in [
-                "max_concurrency",
-            ]:
-                assert "group" in field_info.metadata
-                assert field_info.metadata["group"] == "Request Configuration"
-            elif field_info.name in [
-                "request_rate",
-            ]:
-                assert "group" in field_info.metadata
-                assert field_info.metadata["group"] == "Traffic Control"
+                assert "group" in extra
+                assert extra["group"] == "Result Upload Configuration"
+            elif name in ["metadata", "latency_percentiles"]:
+                assert "group" in extra
+                assert extra["group"] == "Metadata and Result Tracking"
+            elif name in ["num_iters"]:
+                assert "group" in extra
+                assert extra["group"] == "Sweep Configuration"
+            elif name in ["max_concurrency"]:
+                assert "group" in extra
+                assert extra["group"] == "Request Configuration"
+            elif name in ["request_rate"]:
+                assert "group" in extra
+                assert extra["group"] == "Traffic Control"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1694,41 +1682,40 @@ class TestSweepServingBenchmarkConfig:
 # ===----------------------------------------------------------------------=== #
 
 
-@dataclass
 class TestSweepableConfig(BaseBenchmarkConfig):
     """Test configuration class with sweepable_type fields for testing."""
 
     # Integer sweepable field
-    max_concurrency: str | None = field(
+    max_concurrency: str | None = Field(
         default=None,
-        metadata={
+        description="Maximum concurrent requests. Can be a single integer, 'None', or comma-separated string for sweep configs.",
+        json_schema_extra={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
-            "sweepable_type": int,
+            "sweepable_type": "int",
         },
     )
-    """Maximum concurrent requests. Can be a single integer, "None", or comma-separated string for sweep configs."""
 
     # Float sweepable field
-    request_rate: str | None = field(
+    request_rate: str | None = Field(
         default="inf",
-        metadata={
+        description="Requests per second. Can be a single float value or comma-separated string for sweep configs.",
+        json_schema_extra={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
-            "sweepable_type": float,
+            "sweepable_type": "float",
         },
     )
-    """Requests per second. Can be a single float value or comma-separated string for sweep configs."""
 
     # Non-sweepable field for comparison
-    model: str = field(
+    model: str = Field(
         default="test-model",
-        metadata={
+        description="Model name (not sweepable).",
+        json_schema_extra={
             "group": "Model Configuration",
             "group_description": "Model configuration parameters",
         },
     )
-    """Model name (not sweepable)."""
 
 
 def parse_sweepable_values(
@@ -2006,43 +1993,54 @@ class TestSweepableTypeParsing:
         assert result == [None, 1.0, 2.0]
 
 
+_SWEEPABLE_TYPE_MAP: dict[str, type] = {"int": int, "float": float}
+
+
 class TestSweepableTypeIntegration:
     """Integration tests for sweepable_type with actual config classes."""
 
+    @staticmethod
+    def _get_extra(cls: type[BaseBenchmarkConfig], name: str) -> dict[str, Any]:
+        """Get json_schema_extra dict for a pydantic model field."""
+        extra = cls.model_fields[name].json_schema_extra
+        return extra if isinstance(extra, dict) else {}
+
+    @staticmethod
+    def _get_sweepable_type(
+        cls: type[BaseBenchmarkConfig], name: str
+    ) -> type | None:
+        """Resolve the sweepable_type string to an actual Python type."""
+        extra = cls.model_fields[name].json_schema_extra
+        if not isinstance(extra, dict):
+            return None
+        raw = extra.get("sweepable_type")
+        return _SWEEPABLE_TYPE_MAP.get(raw) if isinstance(raw, str) else None
+
     def test_config_field_metadata(self) -> None:
         """Test that config fields have correct sweepable_type metadata."""
-        config = TestSweepableConfig()
-
-        # Get field metadata
-        from dataclasses import fields
-
-        field_dict = {field.name: field for field in fields(config)}
-
         # Test max_concurrency field
-        max_concurrency_field = field_dict["max_concurrency"]
-        assert "sweepable_type" in max_concurrency_field.metadata
-        assert max_concurrency_field.metadata["sweepable_type"] is int
+        mc_extra = self._get_extra(TestSweepableConfig, "max_concurrency")
+        assert "sweepable_type" in mc_extra
+        assert mc_extra["sweepable_type"] == "int"
 
         # Test request_rate field
-        request_rate_field = field_dict["request_rate"]
-        assert "sweepable_type" in request_rate_field.metadata
-        assert request_rate_field.metadata["sweepable_type"] is float
+        rr_extra = self._get_extra(TestSweepableConfig, "request_rate")
+        assert "sweepable_type" in rr_extra
+        assert rr_extra["sweepable_type"] == "float"
 
         # Test model field (not sweepable)
-        model_field = field_dict["model"]
-        assert "sweepable_type" not in model_field.metadata
+        model_extra = self._get_extra(TestSweepableConfig, "model")
+        assert "sweepable_type" not in model_extra
 
     def test_sweepable_type_parsing_integration(self) -> None:
         """Test integration of sweepable_type parsing with config values."""
         # Test with max_concurrency (int type)
         config = TestSweepableConfig(max_concurrency="1,2,3")
 
-        # Simulate the parsing that would happen in sweep script
         if config.max_concurrency:
-            field_metadata = fields(TestSweepableConfig)[
-                0
-            ].metadata  # max_concurrency field
-            sweepable_type = field_metadata.get("sweepable_type")
+            sweepable_type = self._get_sweepable_type(
+                TestSweepableConfig, "max_concurrency"
+            )
             if sweepable_type:
                 parsed_values = parse_sweepable_values(
                     config.max_concurrency, sweepable_type
@@ -2053,10 +2051,9 @@ class TestSweepableTypeIntegration:
         config = TestSweepableConfig(request_rate="1.0,2.5,inf")
 
         if config.request_rate:
-            field_metadata = fields(TestSweepableConfig)[
-                1
-            ].metadata  # request_rate field
-            sweepable_type = field_metadata.get("sweepable_type")
+            sweepable_type = self._get_sweepable_type(
+                TestSweepableConfig, "request_rate"
+            )
             if sweepable_type:
                 parsed_values = parse_sweepable_values(
                     config.request_rate, sweepable_type
@@ -2065,30 +2062,27 @@ class TestSweepableTypeIntegration:
 
     def test_sweepable_type_with_none_values(self) -> None:
         """Test sweepable_type parsing with None values in config."""
-        # Test with None max_concurrency
         config = TestSweepableConfig(max_concurrency=None)
 
         if config.max_concurrency:
-            field_metadata = fields(TestSweepableConfig)[0].metadata
-            sweepable_type = field_metadata.get("sweepable_type")
+            sweepable_type = self._get_sweepable_type(
+                TestSweepableConfig, "max_concurrency"
+            )
             if sweepable_type:
                 parsed_values = parse_sweepable_values(
                     config.max_concurrency, sweepable_type
                 )
                 assert parsed_values == []
         else:
-            # None values should result in empty list
-            assert True  # This is expected behavior
+            assert True
 
     def test_sweepable_type_with_default_values(self) -> None:
         """Test sweepable_type parsing with default values."""
-        # Test with default request_rate ("inf")
         config = TestSweepableConfig()
 
-        field_metadata = fields(TestSweepableConfig)[
-            1
-        ].metadata  # request_rate field
-        sweepable_type = field_metadata.get("sweepable_type")
+        sweepable_type = self._get_sweepable_type(
+            TestSweepableConfig, "request_rate"
+        )
         if sweepable_type:
             parsed_values = parse_sweepable_values(
                 config.request_rate, sweepable_type
@@ -2097,11 +2091,11 @@ class TestSweepableTypeIntegration:
 
     def test_sweepable_type_error_handling(self) -> None:
         """Test error handling in sweepable_type parsing."""
-        # Test with invalid max_concurrency
         config = TestSweepableConfig(max_concurrency="1,abc,3")
 
-        field_metadata = fields(TestSweepableConfig)[0].metadata
-        sweepable_type = field_metadata.get("sweepable_type")
+        sweepable_type = self._get_sweepable_type(
+            TestSweepableConfig, "max_concurrency"
+        )
         if sweepable_type:
             with pytest.raises(
                 ValueError, match="Cannot parse '1,abc,3' as int"
@@ -2110,19 +2104,14 @@ class TestSweepableTypeIntegration:
 
     def test_sweepable_type_with_real_serving_config(self) -> None:
         """Test sweepable_type parsing with actual ServingBenchmarkConfig fields."""
-        # Test with actual serving config
         config = ServingBenchmarkConfig(
             max_concurrency="1,2,4,8", request_rate="1.0,2.0,4.0,8.0"
         )
 
-        # Get field metadata
-        from dataclasses import fields
-
-        field_dict = {field.name: field for field in fields(config)}
-
         # Test max_concurrency parsing
-        max_concurrency_field = field_dict["max_concurrency"]
-        sweepable_type = max_concurrency_field.metadata.get("sweepable_type")
+        sweepable_type = self._get_sweepable_type(
+            ServingBenchmarkConfig, "max_concurrency"
+        )
         if sweepable_type and config.max_concurrency:
             parsed_values = parse_sweepable_values(
                 config.max_concurrency, sweepable_type
@@ -2130,8 +2119,9 @@ class TestSweepableTypeIntegration:
             assert parsed_values == [1, 2, 4, 8]
 
         # Test request_rate parsing
-        request_rate_field = field_dict["request_rate"]
-        sweepable_type = request_rate_field.metadata.get("sweepable_type")
+        sweepable_type = self._get_sweepable_type(
+            ServingBenchmarkConfig, "request_rate"
+        )
         if sweepable_type and config.request_rate:
             parsed_values = parse_sweepable_values(
                 config.request_rate, sweepable_type
@@ -2144,21 +2134,19 @@ class TestSweepableTypeValidation:
 
     def test_validate_sweepable_type_metadata(self) -> None:
         """Test that sweepable_type metadata is properly validated."""
-        from dataclasses import fields
-
-        # Test that only int and float are supported
-        config = TestSweepableConfig()
-        field_dict = {field.name: field for field in fields(config)}
+        model_fields = TestSweepableConfig.model_fields
 
         # Check max_concurrency field
-        max_concurrency_field = field_dict["max_concurrency"]
-        sweepable_type = max_concurrency_field.metadata.get("sweepable_type")
-        assert sweepable_type in [int, float]
+        mc_extra = model_fields["max_concurrency"].json_schema_extra
+        assert isinstance(mc_extra, dict)
+        sweepable_type = mc_extra.get("sweepable_type")
+        assert sweepable_type in ["int", "float"]
 
         # Check request_rate field
-        request_rate_field = field_dict["request_rate"]
-        sweepable_type = request_rate_field.metadata.get("sweepable_type")
-        assert sweepable_type in [int, float]
+        rr_extra = model_fields["request_rate"].json_schema_extra
+        assert isinstance(rr_extra, dict)
+        sweepable_type = rr_extra.get("sweepable_type")
+        assert sweepable_type in ["int", "float"]
 
     def test_validate_parsed_values_types(self) -> None:
         """Test that parsed values have correct types."""

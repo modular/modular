@@ -170,17 +170,31 @@ class BlockManager:
 
     @traced
     def reuse_blocks_from_prefix_cache(
-        self, ctx: TextGenerationContext
-    ) -> None:
+        self,
+        ctx: TextGenerationContext,
+        skip_tokens: bool = True,
+    ) -> int:
         """Reuses blocks from prefix cache.
 
         Full blocks are directly reused and appended to the request's blocks.
         Partial blocks can be reused via COW.
+
+        Args:
+            ctx: The request context.
+            skip_tokens: When True (default), advances the context's active
+                token window via ``ctx.tokens.skip_processing`` to reflect
+                the reused prefix-cache blocks.  Set to False when multiple
+                cache managers share a context and the caller will apply the
+                skip separately.
+
+        Returns:
+            The number of tokens that were (or should be) skipped due to
+            prefix-cache reuse.  Returns 0 when no blocks were reused.
         """
         self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
-            return
+            return 0
 
         req_blocks = self.req_to_blocks[ctx.request_id]
 
@@ -197,7 +211,7 @@ class BlockManager:
             )
 
             # Since we got cache hits, clear out existing uncommitted blocks
-            self.release_uncommitted_blocks(ctx)
+            self.release_uncommitted_blocks(ctx, skip_tokens=skip_tokens)
 
             # Append them to the request's blocks.
             req_blocks.extend(prefix_cache_blocks)
@@ -205,16 +219,19 @@ class BlockManager:
             new_committed_idx = (
                 prev_committed_idx + len(prefix_cache_blocks) * self.block_size
             )
-            # Update BlockManager's committed index and advance ctx start_idx
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
-            ctx.tokens.skip_processing(
-                new_committed_idx - ctx.tokens.processed_length
-            )
-            assert ctx.tokens.active_length >= 1, (
-                "No active tokens after prefix caching! "
-                "We should never get 100% prefix cache hit rate. "
-                "Something went wrong!"
-            )
+
+            skip_amount = new_committed_idx - ctx.tokens.processed_length
+            if skip_tokens:
+                ctx.tokens.skip_processing(skip_amount)
+                assert ctx.tokens.active_length >= 1, (
+                    "No active tokens after prefix caching! "
+                    "We should never get 100% prefix cache hit rate. "
+                    "Something went wrong!"
+                )
+            return skip_amount
+
+        return 0
 
     @traced
     def _count_full_blocks_from_prefix_cache(
@@ -482,14 +499,18 @@ class BlockManager:
             ctx, num_steps, num_speculative_steps
         )
 
-        # Check that the number of completed tokens is less than or equal to the number of tokens we can
-        # currently store in the reserved blocks.
+        # Verify that committed tokens fit within the currently allocated
+        # blocks.  We check against committed_idx (block-manager-internal
+        # state) rather than ctx.tokens.processed_length, because the latter
+        # is shared across multiple cache managers and may not reflect this
+        # cache's state when skip_tokens=False is used.
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
-        assert ctx.tokens.processed_length <= (
-            num_current_blocks * self.block_size
-        ), (
-            f"Expected at least {ceildiv(ctx.tokens.processed_length, self.block_size)} blocks to store KV for {ctx.tokens.processed_length} tokens, but only {num_current_blocks} are assigned. This should never happen."
+        committed_idx = self.req_to_committed_idx[ctx.request_id]
+        assert committed_idx <= (num_current_blocks * self.block_size), (
+            f"Expected at least {ceildiv(committed_idx, self.block_size)} "
+            f"blocks to store KV for {committed_idx} committed tokens, but "
+            f"only {num_current_blocks} are assigned."
         )
 
         # Check that we have enough free blocks to allocate the new blocks.
@@ -549,7 +570,11 @@ class BlockManager:
         new_block, _ = self.device_block_pool.alloc_block()
         return new_block
 
-    def release_uncommitted_blocks(self, ctx: TextGenerationContext) -> None:
+    def release_uncommitted_blocks(
+        self,
+        ctx: TextGenerationContext,
+        skip_tokens: bool = True,
+    ) -> None:
         """Release the uncommitted blocks for the request."""
         req_blocks = self.req_to_blocks[ctx.request_id]
         num_committed_blocks = (
@@ -560,14 +585,15 @@ class BlockManager:
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             self.device_block_pool.free_block(block)
-        delta = (
-            ctx.tokens.processed_length
-            - self.req_to_committed_idx[ctx.request_id]
-        )
-        if delta > 0:
-            ctx.tokens.rewind_processing(delta)
-        elif delta < 0:
-            ctx.tokens.skip_processing(-delta)
+        if skip_tokens:
+            delta = (
+                ctx.tokens.processed_length
+                - self.req_to_committed_idx[ctx.request_id]
+            )
+            if delta > 0:
+                ctx.tokens.rewind_processing(delta)
+            elif delta < 0:
+                ctx.tokens.skip_processing(-delta)
 
     def register_dummy_request(
         self, request_id: RequestID, sentinel_request_id: RequestID

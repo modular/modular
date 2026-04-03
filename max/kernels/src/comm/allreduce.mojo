@@ -136,7 +136,11 @@ comptime elementwise_epilogue_type = def[
     dtype: DType, width: Int, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
 
-# Tuning table to get num_blocks for allreduce
+# Tuning table to get num_blocks for allreduce.
+# Arch-specific defaults use ngpus=-1, num_bytes=-1 with the arch's sm_version.
+# The global default (sm_version="default") is the ultimate fallback for
+# unknown architectures -- dispatch_max_num_blocks prefers arch-specific
+# defaults when available.
 comptime allreduce_tuning_table = Table(
     [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
@@ -181,6 +185,10 @@ comptime allreduce_tuning_table = Table(
         CommTuningConfig(
             ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
         ),
+        # default for sm103 (B300, encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="sm_103a", num_blocks=512
+        ),
         # default for CDNA3 (MI300X, encoded with ngpus=-1, num_bytes=-1)
         CommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="CDNA3", num_blocks=32
@@ -194,6 +202,10 @@ comptime allreduce_tuning_table = Table(
         ),
         CommTuningConfig(
             ngpus=8, num_bytes=(1 << 31), sm_version="CDNA4", num_blocks=44
+        ),
+        # global default for unknown architectures
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="default", num_blocks=512
         ),
     ],
     "allreduce_table",

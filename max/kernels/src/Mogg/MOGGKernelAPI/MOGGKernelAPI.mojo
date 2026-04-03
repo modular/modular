@@ -186,6 +186,7 @@ from nn.kv_cache import (
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
     rms_norm_kv_cache_ragged_paged,
+    rms_norm_value_cache_ragged_paged,
 )
 from nn.rope_split_store import rope_split_store_paged_ragged
 from nn.kv_cache_ragged import (
@@ -9440,6 +9441,52 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             max_lengths,
         )
         rms_norm_kv_cache_ragged_paged[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
+        ](
+            kv_collection,
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            layer_idx,
+            total_seq_len,
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.rms_norm_value_cache.ragged.paged")
+struct Struct_rms_norm_value_cache_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        multiply_before_cast: Bool,
+        per_head_norm: Bool,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype],
+        layer_idx: UInt32,
+        total_seq_len: UInt32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        rms_norm_value_cache_ragged_paged[
             target=target,
             multiply_before_cast=multiply_before_cast,
             per_head_norm=per_head_norm,
