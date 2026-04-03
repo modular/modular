@@ -59,6 +59,7 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VideoContentPart,
 )
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import PipelineConfig
@@ -641,15 +642,16 @@ async def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
     settings: Settings,
-) -> tuple[list[TextGenerationRequestMessage], list[bytes]]:
+) -> tuple[list[TextGenerationRequestMessage], list[bytes], list[bytes]]:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
     These will be used as inputs to the chat template to build the prompt.
-    Also extract the list of image references while we are here so they can be
-    downloaded and bundled alongside the request for preprocessing by pipelines.
+    Also extract the list of image/video references while we are here so they
+    can be downloaded and bundled alongside the request for preprocessing by
+    pipelines.
     """
     messages: list[TextGenerationRequestMessage] = []
     image_refs: list[AnyUrl] = []
-    resolve_image_tasks = []
+    video_refs: list[AnyUrl] = []
     for m in completion_request.messages:
         if isinstance(m.root.content, list):
             message_content: list[MessageContent] = []
@@ -658,6 +660,14 @@ async def openai_parse_chat_completion_request(
                     image_refs.append(content_part.root.image_url.url)
                     if wrap_content:
                         message_content.append(ImageContentPart())
+                    else:
+                        message_content.append(content_part.model_dump())
+                elif content_part.root.type == "video_url":
+                    video_url = getattr(content_part.root, "video_url", None)
+                    if video_url is not None:
+                        video_refs.append(video_url.url)
+                    if wrap_content:
+                        message_content.append(VideoContentPart())
                     else:
                         message_content.append(content_part.model_dump())
                 elif content_part.root.type == "text":
@@ -685,7 +695,12 @@ async def openai_parse_chat_completion_request(
     ]
     request_images = await asyncio.gather(*resolve_image_tasks)
 
-    return messages, request_images
+    resolve_video_tasks = [
+        resolve_image_from_url(video_url, settings) for video_url in video_refs
+    ]
+    request_videos = await asyncio.gather(*resolve_video_tasks)
+
+    return messages, request_images, list(request_videos)
 
 
 async def resolve_image_from_url(
@@ -830,6 +845,7 @@ async def openai_create_chat_completion(
         (
             request_messages,
             request_images,
+            request_videos,
         ) = await openai_parse_chat_completion_request(
             completion_request,
             pipeline.tokenizer.expects_content_wrapping,
@@ -889,6 +905,7 @@ async def openai_create_chat_completion(
             model_name=completion_request.model,
             messages=request_messages,
             images=request_images,
+            videos=request_videos,
             tools=tools,
             timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,

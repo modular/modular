@@ -238,8 +238,6 @@ def _make_session_and_kv_manager_fp8() -> tuple[
     """Create session and KV manager with FP8 quantized cache (includes kv_scales)."""
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    head_dim = 64
-    quantization_granularity = head_dim
     kv_params = KVCacheParams(
         dtype=DType.float8_e4m3fn,
         n_kv_heads=1,

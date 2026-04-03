@@ -247,6 +247,11 @@ override-dependencies = [
   # overwrites the ByteLevel decoder from tokenizer.json with Metaspace,
   # breaking decode for Llama/DeepSeek models (huggingface/transformers#44462).
   "transformers>=5.0.0,<5.3.0",
+  # Pin packages to avoid duplicates after vllm 0.16.0 update
+  "aiohttp==3.13.3",
+  "apache-tvm-ffi==0.1.9",
+  "flashinfer-python==0.6.3",
+  "nvidia-cutlass-dsl==4.4.1",
 ]
 
 [tool.uv.sources]

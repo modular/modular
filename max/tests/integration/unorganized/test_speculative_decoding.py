@@ -148,7 +148,7 @@ def test_config__validate_device_and_encoding_combinations(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
     # Valid device/encoding combinations
-    config = PipelineConfig(
+    PipelineConfig(
         model=MAXModelConfig(
             model_path=smollm_135m_local_path,
             quantization_encoding="float32",
@@ -177,7 +177,7 @@ def test_config__validate_target_and_draft_architecture(
     ):
         # Test that when the target & draft architectures are different
         # we raise an error.
-        config = PipelineConfig(
+        PipelineConfig(
             model=MAXModelConfig(
                 model_path=smollm_135m_local_path,
                 device_specs=[DeviceSpec.accelerator()],
@@ -194,7 +194,7 @@ def test_config__validate_target_and_draft_architecture(
     ):
         # Test that the target & draft architectures are the same,
         # but the tokenizers are different
-        config = PipelineConfig(
+        PipelineConfig(
             model=MAXModelConfig(
                 model_path=deepseek_r1_distill_llama_8b_local_path,
                 quantization_encoding="q6_k",

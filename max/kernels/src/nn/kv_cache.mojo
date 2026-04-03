@@ -1070,6 +1070,155 @@ def rms_norm_kv_cache_ragged_paged[
         )
 
 
+def rms_norm_value_cache_ragged_paged[
+    dtype: DType,
+    params: KVCacheStaticParams,
+    page_size: Int,
+    cache_dtype: DType,
+    //,
+    target: StaticString,
+    multiply_before_cast: Bool,
+    per_head_norm: Bool,
+](
+    kv_collection: PagedKVCacheCollection[
+        cache_dtype,
+        params,
+        page_size,
+    ],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    layer_idx: UInt32,
+    total_seq_len: UInt32,
+    input_row_offsets: TileTensor[DType.uint32, ...],
+    context: DeviceContextPtr,
+) raises:
+    """Performs RMSNorm in place on new entries in the value cache.
+
+    Same indexing and layout as ``rms_norm_kv_cache_ragged_paged`` on the key
+    cache, but reads/writes the value cache tensor for ``layer_idx``.
+    """
+    comptime assert gamma.flat_rank == 1, "gamma must be rank 1"
+    comptime assert (
+        input_row_offsets.flat_rank == 1
+    ), "input_row_offsets must be rank 1"
+
+    comptime rank = 3 if per_head_norm else 2
+    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
+    var kv_params = v_cache.kv_params
+    comptime rms_norm_cols = gamma.static_shape[0]
+
+    comptime assert rms_norm_cols != -1, "Need static shape for gamma"
+    comptime assert (
+        rms_norm_cols <= Int(kv_collection.kv_params.head_size)
+        or not per_head_norm
+    ), "Length of gamma must be smaller or equal to head size"
+
+    var shape = IndexList[rank]()
+    shape[0] = Int(total_seq_len)
+
+    comptime if per_head_norm:
+        shape[1] = Int(kv_params.num_heads)
+        shape[2] = rms_norm_cols
+    else:
+        shape[1] = rms_norm_cols
+
+    @always_inline
+    @parameter
+    @__copy_capture(v_cache, input_row_offsets)
+    def value_cache_input_fn[
+        width: Int, rank_: Int
+    ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
+        comptime assert rank_ == rank, (
+            "rms_norm_value_cache input lambda index should have rank "
+            + String(rank)
+        )
+
+        var global_token_idx = idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
+
+        var cache_length = v_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        comptime if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // Int(params.head_size)
+            head_dim_idx = idx[1] % Int(params.head_size)
+
+        return v_cache.load[width=width](
+            bs=batch_idx,
+            tok_idx=cache_token_idx,
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
+        ).cast[dtype]()
+
+    @always_inline
+    @parameter
+    @__copy_capture(v_cache)
+    def value_cache_output_fn[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        var global_token_idx = idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
+
+        var cache_length = v_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        comptime if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // Int(params.head_size)
+            head_dim_idx = idx[1] % Int(params.head_size)
+        v_cache.store(
+            bs=batch_idx,
+            tok_idx=cache_token_idx,
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
+            val=val.cast[cache_dtype](),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "rms_norm_value_cache_ragged_paged_nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        task_id=get_safe_task_id(context),
+    ):
+        _rms_norm_impl[
+            dtype,
+            rank,
+            value_cache_input_fn,
+            value_cache_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            shape,
+            gamma,
+            epsilon,
+            weight_offset,
+            context,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # Print KV Cache
 # ===-----------------------------------------------------------------------===#
