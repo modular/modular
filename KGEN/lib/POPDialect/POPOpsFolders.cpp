@@ -1546,6 +1546,18 @@ OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
 }
 
 LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
+  // Canonicalize (offset (array.gep a, 0), j) -> (array.gep a, i)
+  // TODO: could generalize (offset (array.gep a, i), j) -> (array.gep a, i + j)
+  // but we don't have a way to add two index values here.
+  if (auto gep = op.getPtr().getDefiningOp<ArrayGEPOp>()) {
+    if (!mlir::matchPattern(gep.getIndex(), mlir::m_Zero()))
+      return b.notifyMatchFailure(op, "not a constant offset");
+
+    b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), gep.getArray(),
+                                     op.getIndex());
+    return success();
+  }
+
   // Canonicalize `%ptr[%c0][%c1] -> %ptr[%c0 + %c1]`, where the indices are
   // constants.
   APInt c1;
