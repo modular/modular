@@ -24,6 +24,38 @@ from .constant import constant
 from .custom import custom
 
 
+def _scalar_repeat_interleave(
+    x: TensorValue,
+    repeats: int,
+    axis: int,
+) -> TensorValue:
+    if repeats < 0:
+        raise ValueError(
+            f"repeats_inteleave: repeat value must be non-negative, given {repeats=}"
+        )
+    if repeats == 1:
+        return x
+
+    interleaved_shape = [
+        *x.shape[:axis],
+        x.shape[axis],
+        Dim(1),
+        *x.shape[axis + 1 :],
+    ]
+    broadcast_shape = [
+        *x.shape[:axis],
+        x.shape[axis],
+        Dim(repeats),
+        *x.shape[axis + 1 :],
+    ]
+    result_shape = Shape(x.shape)
+    result_shape[axis] = x.shape[axis] * repeats
+
+    return broadcast_to(x.reshape(interleaved_shape), broadcast_shape).reshape(
+        result_shape
+    )
+
+
 def _promote_repeats(
     repeats: int | TensorValue,
     input_dim: Dim,
@@ -37,9 +69,9 @@ def _promote_repeats(
             repeats = broadcast_to(repeats, [1])
         return repeats, out_dim
 
-    if repeats <= 0:
+    if repeats < 0:
         raise ValueError(
-            f"repeats_inteleave: repeat value must be positive, given {repeats=}"
+            f"repeats_inteleave: repeat value must be non-negative, given {repeats=}"
         )
 
     return constant(
@@ -117,9 +149,6 @@ def repeat_interleave(
     """
     x = TensorValue(x)
 
-    if x.device == DeviceRef.GPU():
-        raise ValueError("repeat_interleave is not supported on GPU")
-
     if axis is not None and not -x.rank <= axis < x.rank:
         raise ValueError(
             f"repeat_interleave: {axis=} out of bounds for {x.rank=}"
@@ -132,6 +161,9 @@ def repeat_interleave(
 
     if axis < 0:
         axis += x.rank
+
+    if isinstance(repeats, int) and repeats >= 0:
+        return _scalar_repeat_interleave(x, repeats, axis)
 
     repeats, inferred_size = _promote_repeats(repeats, x.shape[axis], out_dim)
 

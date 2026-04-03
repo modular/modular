@@ -55,6 +55,18 @@ _SliceIndex: TypeAlias = "TensorValue | int | slice | tuple[slice, DimLike]"
 _SliceIndices: TypeAlias = "Sequence[_SliceIndex | builtins.ellipsis]"
 
 
+def _canonicalize_shape_args(
+    shape: tuple[ShapeLike | DimLike, ...],
+) -> ShapeLike:
+    if (
+        len(shape) == 1
+        and isinstance(shape[0], Iterable)
+        and not isinstance(shape[0], (str, bytes, Dim, np.integer, int))
+    ):
+        return cast(ShapeLike, shape[0])
+    return cast(ShapeLike, shape)
+
+
 class Value(Generic[MlirType]):
     """Represents a symbolic value within a :class:`~max.graph.Graph`.
 
@@ -520,7 +532,13 @@ class TensorValue(Value[mo.TensorType]):
         """
         ops.print(self, label=label)
 
-    def reshape(self, shape: ShapeLike) -> TensorValue:
+    def size(self, dim: int | None = None) -> Shape | Dim:
+        """Returns the tensor shape or a single dimension size."""
+        if dim is None:
+            return self.shape
+        return self.shape[dim]
+
+    def reshape(self, *shape: ShapeLike | DimLike) -> TensorValue:
         """Creates a new tensor with the same data but reshaped.
 
         The following example demonstrates how to reshape a tensor to change its dimensions:
@@ -546,12 +564,13 @@ class TensorValue(Value[mo.TensorType]):
                 print(f"Reshaped shape: {reshaped_tensor.shape}")  # Output: [1, 4]
 
         Args:
-            shape: The new shape as an iterable of integers or symbolic dimensions.
+            shape: The new shape as an iterable of integers or symbolic dimensions,
+                or as positional dimensions.
 
         Returns:
             A new :class:`TensorValue` with the reshaped dimensions.
         """
-        return ops.reshape(self, shape)
+        return ops.reshape(self, _canonicalize_shape_args(shape))
 
     def flatten(self, start_dim: int = 0, end_dim: int = -1) -> TensorValue:
         """Flattens the specified dims of a symbolic tensor.
@@ -589,6 +608,38 @@ class TensorValue(Value[mo.TensorType]):
             A new :class:`TensorValue` with the flattened dimensions.
         """
         return ops.flatten(self, start_dim, end_dim)
+
+    def repeat(self, *repeats: DimLike) -> TensorValue:
+        """Repeats the tensor along each dimension using PyTorch semantics."""
+        return ops.repeat(
+            self, cast(Sequence[DimLike], _canonicalize_shape_args(repeats))
+        )
+
+    def unflatten(self, dim: int, sizes: Sequence[DimLike]) -> TensorValue:
+        """Expands one dimension into multiple dimensions."""
+        return ops.unflatten(self, dim, sizes)
+
+    def unbind(self, dim: int = 0) -> tuple[TensorValue, ...]:
+        """Returns a tuple of slices with the selected dimension removed."""
+        return ops.unbind(self, dim)
+
+    def swapaxes(self, axis0: int, axis1: int) -> TensorValue:
+        """Swaps two tensor dimensions."""
+        return ops.swapaxes(self, axis0, axis1)
+
+    def flip(self, dims: Sequence[int]) -> TensorValue:
+        """Reverses the tensor along the requested dimensions."""
+        return ops.flip(self, dims)
+
+    def masked_fill(
+        self, mask: TensorValueLike, value: TensorValueLike
+    ) -> TensorValue:
+        """Replaces masked elements with a broadcastable fill value."""
+        return ops.masked_fill(self, mask, value)
+
+    def amin(self, axis: int | Sequence[int] | None = -1) -> TensorValue:
+        """Computes the minimum over one or more axes."""
+        return ops.amin(self, axis=axis)
 
     def broadcast_to(self, shape: ShapeLike) -> TensorValue:
         """Broadcasts the tensor to a new shape.
@@ -1203,52 +1254,52 @@ class TensorValue(Value[mo.TensorType]):
         return ops.pow(lhs, self)
 
     def __and__(self, rhs: TensorValueLike) -> TensorValue:
-        """Performs element-wise logical AND operation.
+        """Performs element-wise bitwise AND operation.
 
         Args:
-            rhs: The right-hand side operand for logical AND. Must be tensor-like.
+            rhs: The right-hand side operand for bitwise AND. Must be tensor-like.
         """
-        return ops.logical_and(self, rhs)
+        return ops.bitwise_and(self, rhs)
 
     def __rand__(self, lhs: TensorValueLike) -> TensorValue:
-        """Performs element-wise logical AND operation with reversed operands.
+        """Performs element-wise bitwise AND operation with reversed operands.
 
         Args:
-            lhs: The left-hand side operand for logical AND. Must be tensor-like.
+            lhs: The left-hand side operand for bitwise AND. Must be tensor-like.
         """
-        return ops.logical_and(lhs, self)
+        return ops.bitwise_and(lhs, self)
 
     def __or__(self, rhs: TensorValueLike) -> TensorValue:
-        """Performs element-wise logical OR operation.
+        """Performs element-wise bitwise OR operation.
 
         Args:
-            rhs: The right-hand side operand for logical OR. Must be tensor-like.
+            rhs: The right-hand side operand for bitwise OR. Must be tensor-like.
         """
-        return ops.logical_or(self, rhs)
+        return ops.bitwise_or(self, rhs)
 
     def __ror__(self, lhs: TensorValueLike) -> TensorValue:
-        """Performs element-wise logical OR operation with reversed operands.
+        """Performs element-wise bitwise OR operation with reversed operands.
 
         Args:
-            lhs: The left-hand side operand for logical OR. Must be tensor-like.
+            lhs: The left-hand side operand for bitwise OR. Must be tensor-like.
         """
-        return ops.logical_or(lhs, self)
+        return ops.bitwise_or(lhs, self)
 
     def __xor__(self, rhs: TensorValueLike) -> TensorValue:
-        """Performs element-wise logical XOR operation.
+        """Performs element-wise bitwise XOR operation.
 
         Args:
-            rhs: The right-hand side operand for logical XOR. Must be tensor-like.
+            rhs: The right-hand side operand for bitwise XOR. Must be tensor-like.
         """
-        return ops.logical_xor(self, rhs)
+        return ops.bitwise_xor(self, rhs)
 
     def __rxor__(self, lhs: TensorValueLike) -> TensorValue:
-        """Performs element-wise logical XOR operation with reversed operands.
+        """Performs element-wise bitwise XOR operation with reversed operands.
 
         Args:
-            lhs: The left-hand side operand for logical XOR. Must be tensor-like.
+            lhs: The left-hand side operand for bitwise XOR. Must be tensor-like.
         """
-        return ops.logical_xor(lhs, self)
+        return ops.bitwise_xor(lhs, self)
 
     def __invert__(self) -> TensorValue:
         """Performs element-wise logical NOT operation."""

@@ -33,8 +33,14 @@ input_types = st.shared(constrained_tensor_types)
 
 
 @given(input_type=input_types)
+@pytest.mark.parametrize(
+    "interpolation",
+    [ops.InterpolationMode.BICUBIC, ops.InterpolationMode.NEAREST],
+)
 def test_resize_valid(
-    graph_builder: GraphBuilder, input_type: TensorType
+    graph_builder: GraphBuilder,
+    input_type: TensorType,
+    interpolation: ops.InterpolationMode,
 ) -> None:
     """Test valid resize operations."""
     with graph_builder(input_types=[input_type]) as graph:
@@ -44,7 +50,7 @@ def test_resize_valid(
         out = ops.resize(
             graph.inputs[0].tensor,
             new_shape,
-            interpolation=ops.InterpolationMode.BICUBIC,
+            interpolation=interpolation,
         )
 
         assert out.dtype == input_type.dtype
@@ -91,6 +97,23 @@ def test_resize_basic_downscale(graph_builder: GraphBuilder) -> None:
         graph.output(out)
 
 
+def test_resize_nearest(graph_builder: GraphBuilder) -> None:
+    input_type = TensorType(
+        shape=[1, 3, 32, 48], dtype=DType.float32, device=DeviceRef.CPU()
+    )
+
+    with graph_builder(input_types=[input_type]) as graph:
+        out = ops.resize(
+            graph.inputs[0].tensor,
+            [1, 3, 64, 96],
+            interpolation=ops.InterpolationMode.NEAREST,
+        )
+
+        assert out.dtype == input_type.dtype
+        assert out.shape == Shape([1, 3, 64, 96])
+        graph.output(out)
+
+
 @given(input_type=input_types, resize_shape=...)
 def test_resize_error_size_wrong_length(
     graph_builder: GraphBuilder,
@@ -131,26 +154,6 @@ def test_resize_error_insufficient_rank(graph_builder: GraphBuilder) -> None:
                 graph.inputs[0].tensor,
                 [448, 448],
                 interpolation=ops.InterpolationMode.BICUBIC,
-            )
-
-
-def test_resize_error_unsupported_interpolation(
-    graph_builder: GraphBuilder,
-) -> None:
-    """Test error when using unsupported interpolation mode (NEAREST)."""
-    input_type = TensorType(
-        shape=[1, 3, 224, 224], dtype=DType.float32, device=DeviceRef.CPU()
-    )
-
-    with graph_builder(input_types=[input_type]) as graph:
-        with pytest.raises(
-            NotImplementedError,
-            match=re.escape("InterpolationMode.NEAREST is not yet supported"),
-        ):
-            ops.resize(
-                graph.inputs[0].tensor,
-                [1, 3, 448, 448],
-                interpolation=ops.InterpolationMode.NEAREST,
             )
 
 

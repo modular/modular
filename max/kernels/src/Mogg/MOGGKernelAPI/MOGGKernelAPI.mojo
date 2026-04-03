@@ -648,7 +648,9 @@ struct And(ElementwiseBinaryOp):
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.and"
+        comptime assert (
+            dtype == DType.bool or dtype.is_integral()
+        ), "expected bool or integral operands for mo.and"
         return lhs & rhs
 
 
@@ -659,7 +661,9 @@ struct Or(ElementwiseBinaryOp):
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.oor"
+        comptime assert (
+            dtype == DType.bool or dtype.is_integral()
+        ), "expected bool or integral operands for mo.or"
         return lhs | rhs
 
 
@@ -670,7 +674,9 @@ struct Xor(ElementwiseBinaryOp):
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.xor"
+        comptime assert (
+            dtype == DType.bool or dtype.is_integral()
+        ), "expected bool or integral operands for mo.xor"
         return lhs ^ rhs
 
 
@@ -4154,21 +4160,28 @@ struct Tile:
 @compiler.register("repeat_interleave")
 struct RepeatInterleave:
     @staticmethod
-    def execute(
-        output: OutputTensor[...],
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
         repeats: InputTensor[rank=1, ...],
         axis: Scalar,
+        ctx: DeviceContextPtr,
     ) raises:
         comptime assert (
             axis.dtype.is_integral()
         ), "axis value must be integer type"
 
-        repeat_interleave(
-            input.to_tile_tensor[DType.int64](),
-            repeats.to_tile_tensor[DType.int64](),
+        repeat_interleave[dtype, repeats.dtype, target=target](
+            input.to_tile_tensor[dtype](),
+            repeats.to_tile_tensor[repeats.dtype](),
             Int(normalize_neg_index(axis, input.rank)),
-            output.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[dtype](),
+            ctx.get_device_context(),
         )
 
     @staticmethod

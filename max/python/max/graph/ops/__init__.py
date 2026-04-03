@@ -49,6 +49,7 @@ from .buffer import buffer_create, buffer_load, buffer_store, buffer_store_slice
 from .call import call
 from .cast import cast
 from .chunk import chunk
+from .compat import amin, flip, masked_fill, repeat, swapaxes, unbind, unflatten
 from .complex import as_interleaved_complex
 from .concat import concat
 from .conditional import cond

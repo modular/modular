@@ -16,11 +16,13 @@ These tests verify that the Mojo op implementations produce correct results
 by comparing against numpy reference implementations.
 """
 
-from collections.abc import Sequence
+import operator
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
 import pytest
+import torch
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -99,6 +101,25 @@ class TestBinaryElementwiseOps:
 
         expected = np.multiply(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("int_dtype", [DType.int32, DType.int64])
+    def test_mul_integer_with_bfloat16(self, int_dtype: DType) -> None:
+        lhs_np = np.array([[1, 2], [3, 4]], dtype=int_dtype.to_numpy())
+        rhs_torch = torch.tensor(
+            [[1.5, 2.0], [3.0, 4.5]],
+            dtype=torch.bfloat16,
+        )
+
+        lhs = Tensor.from_dlpack(lhs_np)
+        rhs = Tensor.from_dlpack(rhs_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = lhs * rhs
+
+        expected = torch.from_numpy(lhs_np) * rhs_torch
+        torch.testing.assert_close(torch.from_dlpack(out), expected)
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_div(self, dtype: DType) -> None:
@@ -773,6 +794,37 @@ class TestBooleanLogicOps:
 
         expected = np.logical_not(x_np)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES + UINT_DTYPES)
+    @pytest.mark.parametrize(
+        "op,expected_fn",
+        [
+            (operator.and_, np.bitwise_and),
+            (operator.or_, np.bitwise_or),
+            (operator.xor, np.bitwise_xor),
+        ],
+    )
+    def test_integer_bitwise_ops(
+        self,
+        dtype: DType,
+        op: Callable[[Tensor, Tensor], Tensor],
+        expected_fn: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    ) -> None:
+        np_dtype = dtype.to_numpy()
+        a_np = np.array([1, 3, 5, 7], dtype=np_dtype)
+        b_np = np.array([7, 5, 3, 1], dtype=np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = op(a, b)
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out), expected_fn(a_np, b_np)
+        )
 
 
 class TestChainedOperations:

@@ -106,6 +106,30 @@ class TestBasicGPUExecution:
         expected = a_torch + b_torch
         torch.testing.assert_close(torch.from_dlpack(c), expected)
 
+    @pytest.mark.parametrize("int_dtype", [torch.int32, torch.int64])
+    def test_mul_integer_with_bfloat16_on_gpu(
+        self, int_dtype: torch.dtype
+    ) -> None:
+        lhs_torch = torch.tensor(
+            [[1, 2], [3, 4]], dtype=int_dtype, device="cuda"
+        )
+        rhs_torch = torch.tensor(
+            [[1.5, 2.0], [3.0, 4.5]],
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+
+        lhs = Tensor.from_dlpack(lhs_torch)
+        rhs = Tensor.from_dlpack(rhs_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = lhs * rhs
+
+        expected = lhs_torch * rhs_torch
+        torch.testing.assert_close(torch.from_dlpack(out), expected)
+
 
 class TestPowGPU:
     """Tests for GPU pow operation."""
@@ -260,6 +284,41 @@ class TestBooleanLogicOpsGPU:
         expected = torch.logical_not(a_torch)
         result_torch = torch.from_dlpack(c)
         torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [torch.int32, torch.int64, torch.uint32, torch.uint64],
+    )
+    @pytest.mark.parametrize(
+        "op,torch_func",
+        [
+            (operator.and_, torch.bitwise_and),
+            (operator.or_, torch.bitwise_or),
+            (operator.xor, torch.bitwise_xor),
+        ],
+    )
+    def test_integer_bitwise_ops_gpu(
+        self,
+        dtype: torch.dtype,
+        op: Any,
+        torch_func: Any,
+    ) -> None:
+        a_torch = torch.tensor([1, 3, 5, 7], dtype=dtype, device="cuda")
+        b_torch = torch.tensor([7, 5, 3, 1], dtype=dtype, device="cuda")
+
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = op(a, b)
+
+        if dtype in (torch.uint32, torch.uint64):
+            expected = torch_func(a_torch.cpu(), b_torch.cpu()).to("cuda")
+        else:
+            expected = torch_func(a_torch, b_torch)
+        torch.testing.assert_close(torch.from_dlpack(out), expected)
 
 
 class TestElementwiseGPU:

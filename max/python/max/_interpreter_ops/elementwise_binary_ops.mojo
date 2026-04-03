@@ -14,7 +14,7 @@
 """Mojo kernel wrappers for binary elementwise MO interpreter operations.
 
 This module contains binary arithmetic ops (Add, Sub, Mul, Div, Mod, Max, Min),
-binary boolean ops (And, Or, Xor), and Pow.
+binary bitwise ops (And, Or, Xor), and Pow.
 """
 
 from std.os import abort
@@ -51,7 +51,7 @@ comptime BINARY_ARITHMETIC_OPS = Variadic.types[
     T=ElementwiseBinaryOp, Add, Sub, Mul, Div, Mod, Max, Min
 ]
 
-# Binary boolean operations
+# Binary bitwise operations
 comptime BINARY_BOOLEAN_OPS = Variadic.types[
     T=ElementwiseBinaryOp, And, Or, Xor
 ]
@@ -102,14 +102,16 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
                 name, docstring=docstring
             )
 
-        # Binary boolean operations
+        # Binary bitwise operations
         comptime for i in range(Variadic.size_types[BINARY_BOOLEAN_OPS]):
             comptime op = BINARY_BOOLEAN_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
-                "Elementwise " + name + " (boolean only)"
+                "Elementwise " + name + " (bitwise for bool/integral dtypes)"
             )
-            b.def_function[bin_bool_dispatcher[op]](name, docstring=docstring)
+            b.def_function[bin_bitwise_dispatcher[op]](
+                name, docstring=docstring
+            )
 
         # Pow operation (custom dispatch - Pow doesn't conform to
         # ElementwiseBinaryOp)
@@ -387,7 +389,7 @@ def pow_dispatcher(
         raise Error("Unsupported dtype for pow: " + String(dtype))
 
 
-def bin_bool_dispatcher[
+def bin_bitwise_dispatcher[
     op: ElementwiseBinaryOp
 ](
     out_buffer: PythonObject,
@@ -395,7 +397,7 @@ def bin_bool_dispatcher[
     rhs_buffer: PythonObject,
     device_context_ptr: PythonObject,
 ) raises:
-    """Binary boolean operation dispatcher (bool only).
+    """Binary bitwise operation dispatcher for bool and integral dtypes.
 
     Args:
         out_buffer: The output buffer object.
@@ -413,9 +415,74 @@ def bin_bool_dispatcher[
             _get_size(out_buffer),
             _get_ctx(device_context_ptr),
         )
+    elif dtype == DType.int8:
+        bin_elementwise_op[op, DType.int8](
+            _get_buffer_ptr[DType.int8](out_buffer),
+            _get_buffer_ptr[DType.int8](lhs_buffer),
+            _get_buffer_ptr[DType.int8](rhs_buffer),
+            _get_size(out_buffer),
+            _get_ctx(device_context_ptr),
+        )
+    elif dtype == DType.int16:
+        bin_elementwise_op[op, DType.int16](
+            _get_buffer_ptr[DType.int16](out_buffer),
+            _get_buffer_ptr[DType.int16](lhs_buffer),
+            _get_buffer_ptr[DType.int16](rhs_buffer),
+            _get_size(out_buffer),
+            _get_ctx(device_context_ptr),
+        )
+    elif dtype == DType.int32:
+        bin_elementwise_op[op, DType.int32](
+            _get_buffer_ptr[DType.int32](out_buffer),
+            _get_buffer_ptr[DType.int32](lhs_buffer),
+            _get_buffer_ptr[DType.int32](rhs_buffer),
+            _get_size(out_buffer),
+            _get_ctx(device_context_ptr),
+        )
+    elif dtype == DType.int64:
+        bin_elementwise_op[op, DType.int64](
+            _get_buffer_ptr[DType.int64](out_buffer),
+            _get_buffer_ptr[DType.int64](lhs_buffer),
+            _get_buffer_ptr[DType.int64](rhs_buffer),
+            _get_size(out_buffer),
+            _get_ctx(device_context_ptr),
+        )
+    elif dtype == DType.uint8:
+        bin_elementwise_op[op, DType.uint8](
+            _get_buffer_ptr[DType.uint8](out_buffer),
+            _get_buffer_ptr[DType.uint8](lhs_buffer),
+            _get_buffer_ptr[DType.uint8](rhs_buffer),
+            _get_size(out_buffer),
+            _get_ctx(device_context_ptr),
+        )
+    elif dtype == DType.uint16:
+        bin_elementwise_op[op, DType.uint16](
+            _get_buffer_ptr[DType.uint16](out_buffer),
+            _get_buffer_ptr[DType.uint16](lhs_buffer),
+            _get_buffer_ptr[DType.uint16](rhs_buffer),
+            _get_size(out_buffer),
+            _get_ctx(device_context_ptr),
+        )
+    elif dtype == DType.uint32:
+        bin_elementwise_op[op, DType.uint32](
+            _get_buffer_ptr[DType.uint32](out_buffer),
+            _get_buffer_ptr[DType.uint32](lhs_buffer),
+            _get_buffer_ptr[DType.uint32](rhs_buffer),
+            _get_size(out_buffer),
+            _get_ctx(device_context_ptr),
+        )
+    elif dtype == DType.uint64:
+        bin_elementwise_op[op, DType.uint64](
+            _get_buffer_ptr[DType.uint64](out_buffer),
+            _get_buffer_ptr[DType.uint64](lhs_buffer),
+            _get_buffer_ptr[DType.uint64](rhs_buffer),
+            _get_size(out_buffer),
+            _get_ctx(device_context_ptr),
+        )
     else:
         raise Error(
-            "Boolean operation requires bool dtype, got: " + String(dtype)
+            "Bitwise operation requires bool or integral dtype, got: "
+            + String(dtype)
         )
 
 
