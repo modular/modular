@@ -24,7 +24,8 @@ key naming::
     diffusion_model.blocks.N.cross_attn.{q,k,v,o}
     diffusion_model.blocks.N.ffn.{0,2}
 
-The MAX state dict (after _remap_state_dict in model.py) uses::
+The MAX state dict (after convert_safetensor_state_dict in
+weight_adapters.py) uses::
 
     blocks.N.attn1.to_{q,k,v}.weight       (self-attention)
     blocks.N.attn1.to_out.weight            (self-attention output)

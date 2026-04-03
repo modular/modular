@@ -4647,7 +4647,6 @@ def conv_gpu[
             )
 
     elif input_lt.rank == 5:
-
         comptime if filter_is_fcrs:
             conv3d_cudnn[input_type, filter_type, output_type](
                 input_lt,
@@ -5281,9 +5280,7 @@ def _conv3d_cudnn[
     var workspace_size_var: Int
 
     if ptr_cached := _get_global_or_null(cache_key):
-        var cached = ptr_cached.unsafe_value().bitcast[
-            _Conv3dAlgoCacheEntry
-        ]()
+        var cached = ptr_cached.unsafe_value().bitcast[_Conv3dAlgoCacheEntry]()
         # Cache hit — reuse previously selected algorithm.
         algo = cached[].algo()
         workspace_size_var = cached[].workspace_size

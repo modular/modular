@@ -36,7 +36,13 @@ def _use_nvidia_fcrs_conv3d(device: DeviceRef | None) -> bool:
 
 def _zero_cache_for(x: TensorValue) -> TensorValue:
     """Create a zero cache tensor shaped for a causal conv input."""
-    shape: list[int | str] = [x.shape[0], x.shape[1], CACHE_T, x.shape[3], x.shape[4]]  # type: ignore[list-item]
+    shape: list[int | str] = [
+        x.shape[0],
+        x.shape[1],
+        CACHE_T,
+        x.shape[3],
+        x.shape[4],
+    ]  # type: ignore[list-item]
     return ops.constant(0.0, dtype=x.dtype, device=x.device).broadcast_to(shape)
 
 

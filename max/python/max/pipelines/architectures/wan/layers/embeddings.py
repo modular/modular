@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from __future__ import annotations
-
 import math
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Any
 
+import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.activation import activation_function_from_name
@@ -95,6 +95,61 @@ def apply_rotary_emb(
         x_rotated, DType.float32
     ) * ops.cast(sin, DType.float32)
     return ops.cast(out, input_dtype)
+
+
+def _get_1d_rotary_pos_embed_np(
+    dim: int,
+    pos: np.ndarray,
+    theta: float = 10000.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute 1D rotary position embeddings (numpy, for eager RoPE)."""
+    freq_exponent = np.arange(0, dim, 2, dtype=np.float64) / dim
+    freqs = 1.0 / (theta**freq_exponent)
+    angles = np.outer(pos.astype(np.float64), freqs)
+    cos_emb = np.cos(angles).astype(np.float32)
+    sin_emb = np.sin(angles).astype(np.float32)
+    cos_emb = np.repeat(cos_emb, 2, axis=1)
+    sin_emb = np.repeat(sin_emb, 2, axis=1)
+    return cos_emb, sin_emb
+
+
+@lru_cache(maxsize=8)
+def compute_wan_rope_cached(
+    num_frames: int,
+    height: int,
+    width: int,
+    patch_size: tuple[int, int, int],
+    head_dim: int,
+    theta: float = 10000.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute 3D RoPE cos/sin arrays for Wan transformer (cached by resolution)."""
+    p_t, p_h, p_w = patch_size
+    ppf = num_frames // p_t
+    pph = height // p_h
+    ppw = width // p_w
+
+    d_h = (head_dim // 3 // 2) * 2
+    d_w = d_h
+    d_t = head_dim - d_h - d_w
+
+    cos_t, sin_t = _get_1d_rotary_pos_embed_np(d_t, np.arange(ppf), theta)
+    cos_h, sin_h = _get_1d_rotary_pos_embed_np(d_h, np.arange(pph), theta)
+    cos_w, sin_w = _get_1d_rotary_pos_embed_np(d_w, np.arange(ppw), theta)
+
+    cos_t = np.broadcast_to(cos_t[:, None, None, :], (ppf, pph, ppw, d_t))
+    sin_t = np.broadcast_to(sin_t[:, None, None, :], (ppf, pph, ppw, d_t))
+    cos_h = np.broadcast_to(cos_h[None, :, None, :], (ppf, pph, ppw, d_h))
+    sin_h = np.broadcast_to(sin_h[None, :, None, :], (ppf, pph, ppw, d_h))
+    cos_w = np.broadcast_to(cos_w[None, None, :, :], (ppf, pph, ppw, d_w))
+    sin_w = np.broadcast_to(sin_w[None, None, :, :], (ppf, pph, ppw, d_w))
+
+    rope_cos = np.concatenate([cos_t, cos_h, cos_w], axis=-1)
+    rope_sin = np.concatenate([sin_t, sin_h, sin_w], axis=-1)
+
+    seq_len = ppf * pph * ppw
+    rope_cos = np.ascontiguousarray(rope_cos.reshape(seq_len, head_dim))
+    rope_sin = np.ascontiguousarray(rope_sin.reshape(seq_len, head_dim))
+    return rope_cos, rope_sin
 
 
 class Timesteps(Module):

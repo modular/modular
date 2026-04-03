@@ -42,6 +42,18 @@ class WanConfigBase(MAXModelConfigBase):
     dtype: DType = DType.bfloat16
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
 
+    # Animate-specific fields
+    latent_channels: int = 16
+    motion_dim: int = 20
+    motion_encoder_dim: int = 512
+    motion_encoder_size: int = 512
+    motion_style_dim: int = 512
+    face_encoder_hidden_dim: int = 1024
+    face_encoder_num_heads: int = 4
+    inject_face_latents_blocks: int = 5
+    motion_encoder_channel_sizes: dict[str, int] | None = None
+    motion_encoder_batch_size: int = 8
+
 
 class WanConfig(WanConfigBase):
     @staticmethod
