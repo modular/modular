@@ -881,10 +881,7 @@ struct _VariadicListIter[
     comptime Element = Self.elt_type
 
     var index: Int
-    var src: Pointer[
-        Self.variadic_list_type,
-        Self.list_origin,
-    ]
+    var src: Pointer[Self.variadic_list_type, Self.list_origin]
 
     def __init__(
         out self,
@@ -897,14 +894,18 @@ struct _VariadicListIter[
     @always_inline
     def __next__(
         mut self,
-    ) raises StopIteration -> ref[Self.elt_origin._mlir_origin] Self.elt_type:
+    ) raises StopIteration -> ref[self.src[][0]] Self.elt_type:
         var index = self.index
-        if index >= len(self.src[]):
+        if index == len(self.src[]):
             raise StopIteration()
         self.index = index + 1
-        return rebind[Self.variadic_list_type.reference_type](
-            Pointer(to=self.src[][index])
-        )[]
+        return self.src[][index]
+
+
+struct _MLIR:
+    comptime POPArrayType[
+        size: __mlir_type.index, elt_type: AnyType
+    ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
 
 
 struct VariadicList[
@@ -927,30 +928,49 @@ struct VariadicList[
                   passed as an 'var' argument.
     """
 
-    comptime reference_type = Pointer[Self.element_type, Self.origin]
-    """The pointer type for references to elements."""
-
-    comptime _mlir_type = Variadic.ValuesOfType[Self.reference_type._mlir_type]
-
-    var value: Self._mlir_type
-    """The underlying storage, a variadic list of references to elements of the
-    given type."""
+    comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
+    # FIXME: This should be the origin of the container, not ExternalOrigin.
+    var _value: Span[Self._EltPointerType, ExternalOrigin[mut=False]]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    # Provide support for read-only variadic arguments.
     @doc_hidden
     @always_inline
     @implicit
-    def __init__(out self, value: Self._mlir_type):
-        """Constructs a VariadicList from a variadic argument type.
+    def __init__[
+        size: __mlir_type.index, container_origin: ImmutOrigin
+    ](
+        out self,
+        value: Pointer[
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            container_origin,
+        ]._mlir_type,
+    ):
+        """Constructs a VariadicList from a compiler-generated array of element
+        pointers.
+
+        Parameters:
+            size: The number of elements in the variadic list.
+            container_origin: The origin of the container.
 
         Args:
-            value: The variadic argument to construct the list with.
+            value: The raw reference to the array of element pointers.
         """
-        self.value = value
+        # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
+        # the first element.
+        var array_up = UnsafePointer(
+            to=Pointer(_mlir_value=value)[]
+        ).unsafe_origin_cast[ExternalOrigin[mut=False]]()
+        var elt_ptr = UnsafePointer[_, ExternalOrigin[mut=False]](
+            __mlir_op.`pop.array.gep`(
+                array_up.address,
+                Int(0)._mlir_value,
+            )
+        ).bitcast[Self._EltPointerType]()
+        var size_tmp = size  # FIXME: Weird MLIR syntax error?
+        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size_tmp))
 
     # The destructor for this type is trivial if not an "owned" list.
     comptime __del__is_trivial: Bool = not Self.is_owned
@@ -1016,7 +1036,7 @@ struct VariadicList[
         Returns:
             The number of elements on the variadic list.
         """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
+        return len(self._value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1045,9 +1065,7 @@ struct VariadicList[
             A low-level pointer to the element on the list corresponding to the
             given index.
         """
-        return __get_litref_as_mvalue(
-            __mlir_op.`pop.variadic.get`(self.value, idx._mlir_value)
-        )
+        return self._value.unsafe_ptr()[idx][]
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[

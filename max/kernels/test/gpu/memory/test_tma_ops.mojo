@@ -75,7 +75,7 @@ def test_async_store_asm():
         cp_async_bulk_tensor_global_shared_cta(
             src_mem, tma_descriptor, Index(coords[0], coords[1])
         )
-        # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r4, %r5}], [%r1], %rd8;
+        # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r4, %r5}], [%r1], %rd9;
         cp_async_bulk_tensor_global_shared_cta[
             eviction_policy=CacheEviction.EVICT_FIRST
         ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
@@ -83,7 +83,7 @@ def test_async_store_asm():
         cp_async_bulk_tensor_global_shared_cta(
             src_mem, tma_descriptor, Index(coords[0])
         )
-        # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r7}], [%r1], %rd11;
+        # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r7}], [%r1], %rd12;
         cp_async_bulk_tensor_global_shared_cta[
             eviction_policy=CacheEviction.EVICT_LAST
         ](src_mem, tma_descriptor, Index(coords[0]))
