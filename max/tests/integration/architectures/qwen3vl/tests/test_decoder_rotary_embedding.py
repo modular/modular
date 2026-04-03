@@ -147,7 +147,6 @@ def test_decoder_rotary_embedding_with_grid_thw(
     qwen3vl_config = loader.create_qwen3vl_config(ConfigNames.QWEN3VL_30B)
 
     # Create test inputs
-    hidden_size = hf_text_config["hidden_size"]
     num_heads = hf_text_config["num_attention_heads"]
     head_dim = hf_text_config.get("head_dim")
     patch_size = hf_vision_config["patch_size"]

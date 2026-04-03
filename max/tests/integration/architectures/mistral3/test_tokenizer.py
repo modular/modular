@@ -165,9 +165,7 @@ def test_load_chat_template_with_revision(
     )
     mocker.patch("pathlib.Path.exists", return_value=True)
 
-    tokenizer = Mistral3Tokenizer(
-        "test/model", mock_pipeline_config, revision="v1.0"
-    )
+    Mistral3Tokenizer("test/model", mock_pipeline_config, revision="v1.0")
 
     # Verify cache was queried with correct revision
     mock_cache.assert_called_once_with(
@@ -199,7 +197,7 @@ def test_load_chat_template_with_pipeline_config_revision(
     )
     mocker.patch("pathlib.Path.exists", return_value=True)
 
-    tokenizer = Mistral3Tokenizer("test/model", pipeline_config)
+    Mistral3Tokenizer("test/model", pipeline_config)
 
     # Verify cache was queried with config revision
     mock_cache.assert_called_once_with(
@@ -231,7 +229,7 @@ def test_load_chat_template_revision_precedence(
     )
     mocker.patch("pathlib.Path.exists", return_value=True)
 
-    tokenizer = Mistral3Tokenizer(
+    Mistral3Tokenizer(
         "test/model",
         pipeline_config,
         revision="explicit-revision",

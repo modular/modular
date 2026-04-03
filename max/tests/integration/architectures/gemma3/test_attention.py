@@ -223,11 +223,6 @@ def generate_max_outputs(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    cache_positions_type = TensorType(
-        DType.uint32,
-        ["total_seq_len"],
-        device=device_ref,
-    )
     flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
     # Build graph.

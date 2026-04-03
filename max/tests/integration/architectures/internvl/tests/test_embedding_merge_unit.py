@@ -28,7 +28,7 @@ def test_merge_multimodal_embeddings_graph_construction() -> None:
     num_image_tokens = 4
     device = DeviceRef.GPU()
 
-    graph = Graph(
+    Graph(
         "test_merge",
         forward=merge_multimodal_embeddings,
         input_types=[

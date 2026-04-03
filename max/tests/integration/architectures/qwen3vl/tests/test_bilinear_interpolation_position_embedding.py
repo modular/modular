@@ -238,8 +238,6 @@ def test_vision_patch_position_embedding_multiple_images(
     ).generate_position_embedding_weights()
 
     # Create test inputs for multiple images
-    in_channels = hf_vision_config.get("in_channels", 3)
-    temporal_patch_size = hf_vision_config["temporal_patch_size"]
     patch_size = hf_vision_config["patch_size"]
 
     # Calculate patches for each image and create grid_thw

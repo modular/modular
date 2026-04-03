@@ -256,7 +256,6 @@ def test_vision_attention_multiple_images(
 
     # Load config and generate weights
     config_loader = get_config_loader()
-    hf_config = config_loader.load_hf_vision_config(ConfigNames.QWEN2_5VL_3B)
     qwen2_5vl_config = config_loader.create_qwen2_5vl_config(
         ConfigNames.QWEN2_5VL_3B
     )

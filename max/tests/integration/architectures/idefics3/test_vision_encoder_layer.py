@@ -74,7 +74,6 @@ def create_encoder_layer_weights(
     """Create shared encoder layer weights for both PyTorch and MAX models."""
     torch.manual_seed(42)
     std = IDEFICS3_VISION_CONFIG["initializer_range"]  # 0.02
-    head_dim = hidden_size // num_attention_heads
 
     weights = {}
 

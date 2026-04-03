@@ -205,7 +205,6 @@ def generate_max_linear_output(
     linear.load_state_dict(state_dict, override_quantization_encoding=True)
     # Build graph
     device_ref = DeviceRef.GPU()
-    input_seq_len = input_tensor.shape[1]
     hidden_size = input_tensor.shape[2]
 
     input_type = TensorType(

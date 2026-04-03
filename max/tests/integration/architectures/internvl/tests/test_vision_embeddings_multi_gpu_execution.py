@@ -100,8 +100,6 @@ def test_vision_embeddings_multi_gpu_execution(
     # Shape is now (batch_size, height_patches, width_patches, channels, patch_size, patch_size)
     input_shape = patches.shape
 
-    devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
-
     # Convert HuggingFace weights to MAX format using weight converter
     max_weights = convert_hf_to_max_weights(embeddings_weights)
 
