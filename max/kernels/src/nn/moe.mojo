@@ -14,6 +14,7 @@
 from std.collections import OptionalReg
 
 from std.math import align_up, ceildiv
+from std.math.uutils import umod
 from std.memory import stack_allocation
 
 from std.os.atomic import Atomic
@@ -25,10 +26,9 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    grid_dim,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
+    block_idx,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -104,15 +104,15 @@ def moe_create_indices_kernel[
     var num_tokens: Int = Int(topk_ids.layout.shape[0]().value())
     var num_tokens_padded: Int = Int(indices_padded.layout.shape[0]().value())
     var num_tokens_per_thread = ceildiv(num_tokens_padded, num_threads)
-    var thd_tok_idx = thread_idx.x * UInt(num_tokens_per_thread)
+    var thd_tok_idx = thread_idx.x * num_tokens_per_thread
 
     # first copy topk_ids to topk_ids_padded and fill indices_padded
     for tok_id in range(num_tokens_per_thread):
-        var i = thd_tok_idx + UInt(tok_id)
-        if i < UInt(num_tokens):
+        var i = thd_tok_idx + tok_id
+        if i < num_tokens:
             indices_padded[i] = UInt32(i)
             topk_ids_padded[i] = rebind[Scalar[input_type]](topk_ids[i])
-        elif i < UInt(num_tokens_padded):
+        elif i < num_tokens_padded:
             indices_padded[i] = Scalar[indices_type].MAX_FINITE
             topk_ids_padded[i] = Scalar[input_type].MAX_FINITE
         else:
@@ -187,14 +187,14 @@ def moe_create_indices_kernel[
         var step = stage // 2
         while step > 0:
             for tok_id in range(num_tokens_per_thread):
-                var i = thd_tok_idx + UInt(tok_id)
+                var i = thd_tok_idx + tok_id
                 bitonic_sort_step(
                     indices_padded,
                     topk_ids_padded,
                     num_tokens_padded,
                     step,
                     stage,
-                    Int(i),
+                    i,
                 )
             barrier()
             step //= 2
@@ -204,15 +204,15 @@ def moe_create_indices_kernel[
     var num_experts = Int(expert_start_indices.layout.shape[0]().value())
     var num_experts_per_thread = ceildiv(num_experts, num_threads)
     for i in range(num_experts_per_thread):
-        var expert_id = thread_idx.x * UInt(num_experts_per_thread) + UInt(i)
-        if expert_id < UInt(num_experts):
+        var expert_id = thread_idx.x * num_experts_per_thread + i
+        if expert_id < num_experts:
             expert_start_indices[expert_id] = Scalar[indices_type].MAX_FINITE
     barrier()
 
     # check if this is the start of a new expert
     for tok_id in range(num_tokens_per_thread):
-        var i = thd_tok_idx + UInt(tok_id)
-        if i < UInt(num_tokens):
+        var i = thd_tok_idx + tok_id
+        if i < num_tokens:
             # copy results back to token_expert_order
             token_expert_order[i] = indices_padded[i]
 
@@ -286,7 +286,7 @@ struct _BucketGroupParams[num_threads: Int, input_type: DType]:
     comptime MaskType = _uint_type_of_width[Self.num_threads]()
     comptime width = simd_width_of[Self.input_type]()
 
-    var expert: UInt
+    var expert: Int
     var reads_per_iteration: Int
     var topk_ids_length: Int
     var topk_ids_length_rounded: Int
@@ -300,10 +300,10 @@ struct _BucketGroupParams[num_threads: Int, input_type: DType]:
         self.topk_ids_length_rounded = align_up(
             self.topk_ids_length, self.reads_per_iteration
         )
-        self.start_idx = Int(thread_idx.x) * Self.width
+        self.start_idx = thread_idx.x * Self.width
         self.remainder_start_idx = (
             self.topk_ids_length // Self.width
-        ) * Self.width + Int(thread_idx.x)
+        ) * Self.width + thread_idx.x
 
 
 @always_inline
@@ -466,7 +466,7 @@ def _copy_tokens_smem_to_gmem[
     g_offset_copy += UInt32(start_idx)
 
     if UInt64(thread_idx.x) < smem_writes - UInt64(start_idx):
-        var smem_val = smem[0, start_idx + thread_idx.x]
+        var smem_val = smem[0, start_idx + UInt(thread_idx.x)]
         token_expert_order.store(
             Coord(Idx(Int(g_offset_copy + UInt32(thread_idx.x)))),
             smem_val,
@@ -837,7 +837,7 @@ def _warp_bitonic_sort[
 
     var val = _val
     # Use modulo so merge direction is consistent across all lane groups
-    var i = UInt32(lane_id() % UInt(num_lanes))
+    var i = UInt32(umod(lane_id(), num_lanes))
 
     comptime for stage_i in range(1, log2_floor(num_lanes) + 1):
         var stage = 1 << stage_i
@@ -921,8 +921,8 @@ def group_limited_router_kernel[
         num_threads == n_routed_experts
     ), "num_threads must be equal to n_routed_experts"
 
-    var token_idx = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var token_idx = block_idx.x
+    var tid = thread_idx.x
     var warp_id = tid // WARP_SIZE
 
     var num_tokens = expert_scores.dim(0)
