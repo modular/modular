@@ -22,20 +22,24 @@ from pydantic import Field
 from typing_extensions import Self
 
 
-class ClipVisionConfig(MAXModelConfigBase):
-    hidden_size: int = 1280
-    intermediate_size: int = 5120
-    num_hidden_layers: int = 32
-    num_attention_heads: int = 16
+class ClipConfig(MAXModelConfigBase):
+    vocab_size: int = 49408
+    hidden_size: int = 512
+    intermediate_size: int = 2048
+    projection_dim: int = 512
+    num_hidden_layers: int = 12
+    num_attention_heads: int = 8
+    max_position_embeddings: int = 77
     hidden_act: str = "quick_gelu"
     layer_norm_eps: float = 1e-5
     attention_dropout: float = 0.0
+    initializer_range: float = 0.02
+    initializer_factor: float = 1.0
+    pad_token_id: int = 1
+    bos_token_id: int = 49406
+    eos_token_id: int = 49407
     dtype: DType = DType.bfloat16
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
-    image_size: int = 224
-    patch_size: int = 14
-    num_channels: int = 3
-    return_penultimate: bool = False
 
     @classmethod
     def initialize_from_config(

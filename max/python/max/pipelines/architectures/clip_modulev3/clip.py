@@ -221,7 +221,10 @@ class CLIPMLP(Module[[Tensor], Tensor]):
             config.hidden_size,
             bias=True,
         )
-        self.act_fn = partial(F.gelu, approximate="quick")
+        if config.hidden_act == "quick_gelu":
+            self.act_fn = partial(F.gelu, approximate="quick")
+        else:
+            self.act_fn = F.gelu
 
     def forward(self, hidden_states: Tensor) -> Tensor:
         """Apply MLP block.
