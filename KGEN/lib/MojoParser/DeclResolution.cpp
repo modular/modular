@@ -1496,89 +1496,6 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   return MLValue(wrapperInstance);
 }
 
-static MLValue emitClosureInstance(ArrayRef<Capture> captures,
-                                   ArrayRef<ParamDeclRefAttr> paramCaptures,
-                                   ASTDecl &nestedFnDecl, SharedState &shared) {
-  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
-  StringAttr fnName = nestedFn.getSourceNameAttr();
-  SMLoc loc = nestedFnDecl.getLoc();
-  Location mlirLoc = shared.translateLocation(loc);
-  if (shared.diBuilder)
-    mlirLoc = shared.diBuilder->createScopedLoc(mlirLoc);
-
-  // Save the insertion point before closure creation since closure creation
-  // nukes the nested function.
-  ImplicitLocOpBuilder builder(mlirLoc, shared.getContext());
-  builder.setInsertionPointAfter(nestedFn);
-  OpBuilder::InsertPoint insertPoint = builder.saveInsertionPoint();
-  ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
-
-  auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
-      nestedFn.getFuncTypeGenerator());
-  if (!wrapperSig)
-    return {};
-  StructDeclOp closureWrapper =
-      shared.getOrCreateClosureWrapper(loc, wrapperSig, moduleDecl);
-  if (!closureWrapper)
-    return {};
-
-  // Create an instance of the closure implementation in the parent function
-  // right after the nested function definition.
-  ClosureEmitter &emitter = shared.getClosureEmitter();
-  StructDeclOp closureImpl =
-      emitter.replaceNestedFunctionWithClosureImplStructDecl(
-          *moduleDecl, captures, paramCaptures, nestedFnDecl, wrapperSig);
-  if (!closureImpl)
-    return {};
-
-  emitter.createWrapperInitWithImpl(*moduleDecl, closureWrapper, closureImpl,
-                                    loc);
-
-  builder.restoreInsertionPoint(insertPoint);
-
-  IREmitter exprEmitter(*nestedFnDecl.getParentDecl(), builder);
-  SyntheticNode node(loc);
-
-  // Pass all the captured values into the initializer.  In the case of a move
-  // capture, this will be an RValue for the thing captured, transferring to the
-  // owned argument in the initializer.
-  CallOperands closureImplInitArgs(CallSyntax::kTypeCall, &node);
-  for (const Capture &capture : captures)
-    closureImplInitArgs.add({capture.getValue(), node});
-
-  // Create Closure Impl type by adding captured parameters to the ClosureImpl
-  // DeclType.
-  ValueDest closureDest(EC_Closure);
-  Type closureImplType = closureImpl.bindReference(llvm::map_to_vector(
-      paramCaptures, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
-
-  CValue value = exprEmitter.emitConstructorCall(
-      ASTType(closureImplType), std::move(closureImplInitArgs), closureDest);
-  if (!value)
-    return {};
-
-  // Emit the Closure Wrapper instance.
-  VarDeclOp var = exprEmitter.emitVarDecl(
-      fnName, UnresolvedType::get(shared.getContext()),
-      exprEmitter.translateLocation(loc), VarDeclKind::Var);
-  ValueDest closureWrapperDest(var, EC_VarInit);
-
-  CallOperands closureWrapperInitArgs(CallSyntax::kTypeCall, &node);
-  closureWrapperInitArgs.add({value, node});
-
-  // Create the ClosureWrapper type by binding parent parameters to the
-  // ClosureWrapper type.
-  // TODO: Handle partial binding.
-  LIT::StructType closureWrapperType =
-      closureWrapper.bindReference(llvm::map_to_vector(
-          capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
-
-  exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
-                                  std::move(closureWrapperInitArgs),
-                                  closureWrapperDest);
-  return MLValue(var);
-}
-
 /// Make a copy or cast mutability if needed in the parent scope so that the
 /// semantics of the closure body are upheld. For example, consider the
 /// following:
@@ -2088,28 +2005,16 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return success();
   }
 
-  // If the function doesn't actually capture anything, don't demote it to a
-  // runtime value.
-  if (!signature.isEscaping() && captures.empty()) {
+  if (captures.empty() && captureSignature.parsedCaptures.empty() &&
+      !captureSignature.captureAllByConvention) {
     funcOp.setParamDeclAttr(
         ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
     funcOp.removeSymNameAttr();
     return success();
   }
 
-  if (!paramList.paramDeclAttrs.empty())
-    return emitError(funcOp.getLoc(), "TODO: closures cannot have parameters");
-
-  // Emit closure structures necessary for instantiating an escaping closure
-  signature = signature.getWithBody(signature.getBody().getWithFnEffects(
-      signature.getFnEffects().setEscaping()));
-  funcOp.setFuncTypeGenerator(signature);
-  MLValue instance = emitClosureInstance(captures, paramCaptures, decl, shared);
-  if (!instance)
-    return failure();
-  decl.setIRValue(instance);
-
-  return success();
+  return emitError(funcOp.getLoc(),
+                   "capturing nested functions must be declared 'unified'");
 }
 
 LogicalResult DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {

@@ -140,11 +140,6 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
     : FunctionEmitter(shared), ctx(shared.getContext()),
       selfName(StringAttr::get(ctx, "self")),
       copyName(StringAttr::get(ctx, "copy")),
-      dtorFieldAttr(StringAttr::get(ctx, "dtor")),
-      copyFieldAttr(StringAttr::get(ctx, "_copy")),
-      callFieldAttr(StringAttr::get(ctx, "call")),
-      callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
-      opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
       anyParent("AnyType", "", ClosureMethod::NONE),
       moveParent("Movable", "__init__", ClosureMethod::MOVE),
       implicitlyDestructibleParent("ImplicitlyDestructible", "__del__",
@@ -328,100 +323,6 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
       sig.getFnEffects().setEscaping(false), metadata, sig.getMetadata());
-}
-
-/// ```mojo
-/// def __init__(f: fn_ptr_type, out self):
-///     self.field0 = f
-///     self.dtor = __closure_wrapper_noop_dtor
-///     self.copy = __closure_wrapper_noop_copy
-///     def call_impl(field0: !kgen.pointer<none>, *args):
-///         return (fn_ptr_type)(field0)(*args)
-///     self.call = call_impl
-/// ```
-void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
-                                                FnTypeGeneratorType sig) {
-  // Skip this if builtins are not found.
-  if (!shared.hasBuiltinModule())
-    return;
-
-  // Declare the function.
-  FnTypeGeneratorType fnPtrType =
-      sig.getWithBody(sig.getBody().getWithFnEffects(
-          sig.getBody().getFnEffects().setEscaping(false)));
-  auto b = ImplicitLocOpBuilder::atBlockEnd(
-      translateLocation(decl.getLoc()),
-      &cast<StructDeclOp>(decl.getIfOperation()).getFields().front());
-  auto argListAttrs = PogListAttr::get(
-      ctx, {copyName, selfName}, {PassingKind::KwOnly, PassingKind::Implicit});
-  auto [func, _] = synthesizeFunction(
-      decl, "__init__", /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(ctx),
-      {fnPtrType, selfType.getRefForArgument("self", /*isMut=*/true)},
-      {ArgConvention::ReadReg, ArgConvention::ByRefResult}, argListAttrs,
-      shared.getNoneType(), SpecialFunctionKind::kInit, decl.getLoc(), b,
-      /*constraints=*/{});
-  func.setInlineLevel(InlineLevel::Always);
-
-  Value self = func.getArgument(1);
-  b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
-
-  // Store the function pointer into the pointer field.
-  Value opaqueFnPtr =
-      POP::PointerBitcastOp::create(b, opaquePtrType, func.getArgument(0));
-  storeField(b, self, opaqueFnPtr, b.getStringAttr("field0"));
-
-  // Use the no-op destructor and copy constructor.
-  ArrayRef<ASTDecl *> dtor =
-      shared.getBuiltinFunction(decl, "std.builtin._closure",
-                                "__closure_wrapper_noop_dtor", decl.getLoc());
-  ArrayRef<ASTDecl *> copy =
-      shared.getBuiltinFunction(decl, "std.builtin._closure",
-                                "__closure_wrapper_noop_copy", decl.getLoc());
-  if (dtor.empty() || copy.empty())
-    return;
-
-  Value dtorRef = CreateClosureOp::create(
-      b, cast<FnOp>(dtor.front()->getIfOperation())
-             .getBoundReference(shared.getEvaluationContext()));
-  Value copyRef = CreateClosureOp::create(
-      b, cast<FnOp>(copy.front()->getIfOperation())
-             .getBoundReference(shared.getEvaluationContext()));
-  storeField(b, self, dtorRef, b.getStringAttr("dtor"));
-  storeField(b, self, copyRef, b.getStringAttr("_copy"));
-
-  // Generate the 'call_impl' function that performs the indirect call.
-  FnTypeGeneratorType callImplType = addClosureSelfArgToFunctionSignature(
-      opaquePtrType, ArgConvention::ReadReg, fnPtrType);
-  StringAttr lambdaName = b.getStringAttr("call_impl");
-  auto [callImpl, callDecl] = synthesizeFunction(
-      decl, lambdaName, /*params=*/{}, callImplType.getMetadata(),
-      callImplType.getArguments(), callImplType.getArgConventions(),
-      callImplType.getArgListAttrs(), fnPtrType.getResultType(),
-      SpecialFunctionKind::kNormal, decl.getLoc(), b, /*constraints=*/{},
-      fnPtrType.getFnEffects());
-  auto paramDecl =
-      ParamDeclAttr::get(lambdaName, callImpl.getFuncTypeGenerator());
-  callImpl.setParamDeclAttr(paramDecl);
-
-  // Store it into the call field.
-  storeField(b, self,
-             CreateClosureOp::create(b, ParamDeclRefAttr::get(paramDecl)),
-             b.getStringAttr("call"));
-  IREmitter::emitNormalReturn(b);
-
-  // Populate the lambda.
-  b = ImplicitLocOpBuilder::atBlockBegin(callImpl.getLoc(), callImpl.getBody());
-  Value fnPtr =
-      POP::PointerBitcastOp::create(b, fnPtrType, callImpl.getArgument(0));
-  SmallVector<TypedAttr> origins;
-  for (ParamDeclAttr originDecl : callImpl.getParams())
-    origins.push_back(ParamDeclRefAttr::get(originDecl));
-  SmallVector<Value> callArgs;
-  llvm::append_range(callArgs, callImpl.getArguments());
-  auto callIndirect =
-      CallIndirectOp::create(b, fnPtrType.getResultType(), fnPtr, origins,
-                             ArrayRef(callArgs).drop_front());
-  IREmitter::emitNormalReturn(b, callIndirect.getResult(0));
 }
 
 std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
@@ -1929,8 +1830,6 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
                                              implicitOrigins, arguments);
     IREmitter::emitNormalReturn(builder, callResult.getResult(0));
   }
-
-  synthesizeWrapperFnPtrCtor(structDecl, selfType, dependentSignatureType);
   return declOp;
 }
 

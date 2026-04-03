@@ -51,7 +51,7 @@ def testThingWithStaticMethod():
 
 
 def top_level_fn(a: Int) raises:
-    # expected-error @below {{TODO: closures cannot have parameters}}
+    # expected-error @below {{capturing nested functions must be declared 'unified'}}
     def bar[b: Int]() -> Int:
       return a
 
