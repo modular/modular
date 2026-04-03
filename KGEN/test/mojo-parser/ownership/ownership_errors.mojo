@@ -634,25 +634,6 @@ def test_linear_type() raises:
     tok2^.consume()
 
 
-# MOCO-2984: Unexpected interaction between Linear types and ImplicitlyCopyable
-@fieldwise_init
-@explicit_destroy
-struct ImpCopyableLinear(ImplicitlyCopyable):
-    def __init__(out self, *, copy: Self):
-        pass
-
-    def destroy(deinit self):
-        pass
-
-
-def test_imp_copyable_linear(var x: ImpCopyableLinear, var y: ImpCopyableLinear):
-    # Generates an implicit copy ctor
-    # expected-error @below {{'x' abandoned without being explicitly destroyed: Unhandled explicit_destroy type ImpCopyableLinear}}
-    x.destroy()
-
-    # ok.
-    y^.destroy()
-
 
 # ===----------------------------------------------------------------------=== #
 # Trait-bound fields

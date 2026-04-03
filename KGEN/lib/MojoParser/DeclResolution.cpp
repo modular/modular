@@ -3299,6 +3299,23 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setCanonicalTrait(
       TraitType::get(getContext(), parentTraits, constraintsArray));
 
+  // Validate that @explicit_destroy + unconditional ImplicitlyDestructible is
+  // still an error. The combination is only valid when ImplicitlyDestructible
+  // has a non-trivial where-clause constraint (conditional conformance).
+  if (!linearTypeErrorMsg.empty()) {
+    for (auto [i, symbol] : llvm::enumerate(parentTraits)) {
+      if (symbol.getLeafReference() == "ImplicitlyDestructible" &&
+          isTriviallyTrueConstraint(constraintsArray[i])) {
+        shared.emitError(decl.getLoc())
+            << "@explicit_destroy cannot be combined with unconditional "
+               "conformance to 'ImplicitlyDestructible'; use a where-clause "
+               "for conditional conformance or remove @explicit_destroy";
+        decl.setErroneous();
+        return failure();
+      }
+    }
+  }
+
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
 
@@ -3674,12 +3691,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
           return failure();
         }
         if (traitName == "ImplicitlyDestructible") {
-          shared.emitError(traitConstraints[i].getLoc())
-              << "conditional conformance to 'ImplicitlyDestructible' is "
-                 "not supported; CheckLifetimes does not consult "
-                 "where-clause constraints when auto-destroying fields";
-          structDecl.setErroneous();
-          return failure();
+          if (!structOp.getLinearTypeErrorMsg().has_value()) {
+            shared.emitError(traitConstraints[i].getLoc())
+                << "conditional conformance to 'ImplicitlyDestructible' "
+                   "requires @explicit_destroy to provide the error message "
+                   "when the constraint is not satisfied";
+            structDecl.setErroneous();
+            return failure();
+          }
         }
       }
     }

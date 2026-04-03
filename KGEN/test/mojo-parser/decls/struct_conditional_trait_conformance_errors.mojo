@@ -209,13 +209,13 @@ struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDestructible & Movable](
 
 
 # ===========================================================================
-# Conditional conformance to ImplicitlyDestructible is not supported
+# Conditional ImplicitlyDestructible requires @explicit_destroy
 # ===========================================================================
-# CheckLifetimes does not consult where-clause constraints when
-# auto-destroying fields, so conditional destructibility silently miscompiles.
+# Without @explicit_destroy, there is no error message for when the
+# constraint is not satisfied, so the struct would silently auto-destroy.
 
 struct ConditionalImplicitlyDestructible[T: Movable](
-    # expected-error @below {{conditional conformance to 'ImplicitlyDestructible' is not supported}}
+    # expected-error @below {{conditional conformance to 'ImplicitlyDestructible' requires @explicit_destroy}}
     ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible),
     Movable,
 ):
@@ -223,7 +223,6 @@ struct ConditionalImplicitlyDestructible[T: Movable](
 
     def __init__(out self, var data: Self.T):
         self.data = data^
-
 
 
 # ===========================================================================
