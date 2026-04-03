@@ -119,6 +119,7 @@ This version is still a work in progress.
   `IterableOwned` implement `__iter__(var self)`, which consumes the collection
   and returns an iterator that owns the underlying elements.
   - `List` now conforms to `IterableOwned`.
+  - `Optional` now conforms to `IterableOwned`.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same
