@@ -11060,28 +11060,42 @@ struct QuantizeTensorDynamicScaledFloat8:
     @staticmethod
     def execute[
         input_type: DType,
+        scales_type: DType,
         output_type: DType,
+        //,
+        group_size_or_per_token: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
-        scale: OutputTensor[dtype=DType.float32, rank=1, ...],
-        input: InputTensor[dtype=input_type, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
-        comptime assert output_type in (
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-        ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
-        var cuda_ctx = ctx.get_device_context()
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
+
         quantize_tensor_dynamic_scaled_fp8[
-            output_type,
-            input_type,
+            out_dtype=output_type,
+            in_dtype=input_type,
+            scales_dtype=scales_type,
+            input_fn,
+            group_size_or_per_token,
+            num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
             output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            scale.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            scales.to_tile_tensor[DType.int64](),
+            scale_ub,
+            ctx.get_device_context(),
+            num_rows=input.dim_size(0),
         )
 
 

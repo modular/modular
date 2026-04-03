@@ -174,6 +174,7 @@ def _matmul_float8(
             out_type=weight.dtype,
         )
 
+        # activation scales are [1xm] which but in the dynamic scaled matmul we expect just use x_scale[0,0]
         return dynamic_scaled_matmul(
             x,
             weight,
@@ -355,9 +356,13 @@ def quantized_fused_qkv_matmul(
                 # row-scale format. Input: per-tensor dynamic quantization.
                 # Weight: rowwise [total_dim, 1] from qkv_weight_scale.
                 x, x_scales = quantize_tensor_dynamic_scaled_float8(
-                    x, out_type=wqkv.dtype
+                    x,
+                    quant_config.input_scale,
+                    quant_config.weight_scale,
+                    out_type=wqkv.dtype,
+                    scales_type=weight_scale.dtype,
                 )
-                x_scales = x_scales.reshape([1, 1])
+                # x_scales = x_scales.reshape([1, 1])
                 # Don't pass quant_config so the kernel infers
                 # per-channel (1,1,-1) from [1,1] + [N,1] shapes.
                 return _fused_qkv_ragged_matmul_scaled_float8(
