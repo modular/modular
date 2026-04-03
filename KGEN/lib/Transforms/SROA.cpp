@@ -343,6 +343,26 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
                SmallVector<Value> &valueMemCache)
       : Replacer(builder, alloc, container, maxNumElements, valueMemCache) {}
 
+  // We've found the specified GEP into an array, check to see if all the users
+  // are known to be safe to promote.  We cannot allow arbitrary uses, because
+  // they may have a pop.offset or similar that computes the address of a
+  // neighbor from the address of an element.
+  static bool areAllGEPUsersSafeToPromote(POP::ArrayGEPOp gep) {
+    for (Operation *user : gep->getUsers()) {
+      if (isa<StructGEPOp, POP::ArrayGEPOp, POP::LoadOp, DebugInfo::ValueOp>(
+              user))
+        continue;
+      if (auto store = dyn_cast<POP::StoreOp>(user)) {
+        if (store.getPtr() == gep)
+          continue;
+      }
+
+      // Don't know what it is, be conservative.
+      return false;
+    }
+    return true;
+  }
+
   bool canRun() {
     // If we don't know the size of the array there's nothing to do.
     if (!containerTy.getResolvedSize())
@@ -374,6 +394,13 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
         // Oddly this comes up. Guard against out of range accesses.
         if (static_cast<int64_t>(index.getLimitedValue()) >=
             *containerTy.getResolvedSize())
+          return false;
+
+        // Make sure all the users of the GEP look safe to promote.  We cannot
+        // promote arbitrary uses, because they may have a pop.offset or similar
+        // that computes the address of a neighbor from the address of an
+        // element.
+        if (!areAllGEPUsersSafeToPromote(gep))
           return false;
       }
     }
