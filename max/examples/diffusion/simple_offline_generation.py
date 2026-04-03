@@ -84,6 +84,11 @@ _FLUX2_ARCH_NAMES = {
     "Flux2KleinPipeline_ModuleV3",
 }
 
+_Z_IMAGE_ARCH_NAMES = {
+    "ZImagePipeline",
+    "ZImagePipeline_ModuleV3",
+}
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for the pixel generation example.
@@ -419,7 +424,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         max_length = components_config["tokenizer"]["config_dict"].get(
             "model_max_length", None
         )
-        if arch.name in _FLUX2_ARCH_NAMES or arch.name == "ZImagePipeline":
+        if arch.name in _FLUX2_ARCH_NAMES or arch.name in _Z_IMAGE_ARCH_NAMES:
             max_length = 512
         print(f"Using max length: {max_length} for tokenizer")
 

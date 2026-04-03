@@ -11,7 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import z_image_modulev3_arch
+from .arch import ZImageArchConfig, z_image_arch
+from .layers.attention import ZImageAttention
+from .layers.embeddings import RopeEmbedder, TimestepEmbedder
 from .model import ZImageTransformerModel
+from .model_config import ZImageConfig, ZImageConfigBase
+from .z_image import ZImageTransformer2DModel
 
-__all__ = ["ZImageTransformerModel", "z_image_modulev3_arch"]
+__all__ = [
+    "RopeEmbedder",
+    "TimestepEmbedder",
+    "ZImageArchConfig",
+    "ZImageAttention",
+    "ZImageConfig",
+    "ZImageConfigBase",
+    "ZImageTransformer2DModel",
+    "ZImageTransformerModel",
+    "z_image_arch",
+]
