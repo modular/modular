@@ -598,11 +598,14 @@ ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
   std::string errorMessage;
   std::string effectiveTriple = options.targetTriple;
+  std::string effectiveFeatures = options.targetFeatures;
 
   // Handle air64 targets by mapping to arm64 for LLVM
   if (isMetalBackend(options)) {
     // Replace air64 with arm64 for LLVM target lookup
     effectiveTriple = "arm64" + effectiveTriple.substr(5);
+    // Drop all features that are Metal-specific
+    effectiveFeatures = "";
   }
 
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
@@ -612,7 +615,7 @@ KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
                  "': " + errorMessage);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      llvm::Triple(effectiveTriple), options.targetCpu, options.targetFeatures,
+      llvm::Triple(effectiveTriple), options.targetCpu, effectiveFeatures,
       /*Options=*/{}, options.relocModel, /*CM=*/options.mcmodel,
       /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
   if (options.largeDataThreshold)
@@ -1650,6 +1653,8 @@ getMetalAdjustedOptions(const CompilationOptions &options,
   CompilationOptions adjusted = options;
   // Metal with air64 needs arm64 for TargetMachine
   adjusted.targetTriple = "arm64" + moduleTriple.substr(5);
+  // Metal-specific features needs to be dropped to avoid unnecessary warnings
+  adjusted.targetFeatures = "";
   return adjusted;
 }
 
