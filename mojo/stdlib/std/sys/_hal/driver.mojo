@@ -61,7 +61,7 @@ struct Driver(Movable):
             minor=M_DRIVER_INTERFACE_VERSION_MINOR,
             patch=M_DRIVER_INTERFACE_VERSION_PATCH,
         )
-        var handle = UnsafeMaybeUninit(DriverHandle())
+        var handle = UnsafeMaybeUninit(DriverHandle(_unsafe_null=()))
 
         var status = plugin.create.f(
             ImmutPointer(
@@ -135,7 +135,7 @@ struct Driver(Movable):
         if cached:
             return cached.value()
 
-        var device_handle = UnsafeMaybeUninit(DeviceHandle())
+        var device_handle = UnsafeMaybeUninit(DeviceHandle(_unsafe_null=()))
         var status = self._plugin.device_get.f(
             self._handle, id, OutParam[DeviceHandle](to=device_handle)
         )

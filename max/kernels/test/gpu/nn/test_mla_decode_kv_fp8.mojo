@@ -285,7 +285,7 @@ def test[
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE)
             ](
-                UnsafePointer[UInt32, MutAnyOrigin](),
+                UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     Index(0)
                 ),

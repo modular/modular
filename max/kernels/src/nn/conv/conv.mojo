@@ -3244,35 +3244,27 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
     def __init__(out self) raises:
-        self.ptr_handle = UnsafePointer[cudnnContext, AnyOrigin[mut=True]]()
+        self.ptr_handle = {_unsafe_null = ()}
         check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
 
-        self.ptr_input_desc = UnsafePointer[
-            cudnnTensorStruct, AnyOrigin[mut=True]
-        ]()
+        self.ptr_input_desc = {_unsafe_null = ()}
         check_cudnn_error(
             cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_input_desc))
         )
 
-        self.ptr_filter_desc = UnsafePointer[
-            cudnnFilterStruct, AnyOrigin[mut=True]
-        ]()
+        self.ptr_filter_desc = {_unsafe_null = ()}
         check_cudnn_error(
             cudnnCreateFilterDescriptor(UnsafePointer(to=self.ptr_filter_desc))
         )
 
-        self.ptr_conv_desc = UnsafePointer[
-            cudnnConvolutionStruct, AnyOrigin[mut=True]
-        ]()
+        self.ptr_conv_desc = {_unsafe_null = ()}
         check_cudnn_error(
             cudnnCreateConvolutionDescriptor(
                 UnsafePointer(to=self.ptr_conv_desc)
             )
         )
 
-        self.ptr_output_desc = UnsafePointer[
-            cudnnTensorStruct, AnyOrigin[mut=True]
-        ]()
+        self.ptr_output_desc = {_unsafe_null = ()}
         check_cudnn_error(
             cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
         )
@@ -3385,35 +3377,27 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
     var dil: Tuple[Int, Int]
 
     def __init__(out self) raises:
-        self.ptr_handle = UnsafePointer[cudnnContext, AnyOrigin[mut=True]]()
+        self.ptr_handle = {_unsafe_null = ()}
         check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
 
-        self.ptr_input_desc = UnsafePointer[
-            cudnnTensorStruct, AnyOrigin[mut=True]
-        ]()
+        self.ptr_input_desc = {_unsafe_null = ()}
         check_cudnn_error(
             cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_input_desc))
         )
 
-        self.ptr_filter_desc = UnsafePointer[
-            cudnnFilterStruct, AnyOrigin[mut=True]
-        ]()
+        self.ptr_filter_desc = {_unsafe_null = ()}
         check_cudnn_error(
             cudnnCreateFilterDescriptor(UnsafePointer(to=self.ptr_filter_desc))
         )
 
-        self.ptr_conv_desc = UnsafePointer[
-            cudnnConvolutionStruct, AnyOrigin[mut=True]
-        ]()
+        self.ptr_conv_desc = {_unsafe_null = ()}
         check_cudnn_error(
             cudnnCreateConvolutionDescriptor(
                 UnsafePointer(to=self.ptr_conv_desc)
             )
         )
 
-        self.ptr_output_desc = UnsafePointer[
-            cudnnTensorStruct, AnyOrigin[mut=True]
-        ]()
+        self.ptr_output_desc = {_unsafe_null = ()}
         check_cudnn_error(
             cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
         )
@@ -4199,9 +4183,9 @@ def conv_gpu[
     padding: IndexList[2 * conv_rank],
     num_groups: Int,
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[
-        Scalar[output_type], MutAnyOrigin
-    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin](),
+    source_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
     beta: Float32 = 0.0,
 ) raises:
     # Bridge to LayoutTensor for internal GPU kernel dispatch and cuDNN/MIOpen

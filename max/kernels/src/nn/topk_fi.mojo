@@ -400,7 +400,12 @@ def topk_mask_logits[
         if top_k_arr:
             top_k_buf = top_k_arr.value().to_device_buffer(ctx)
         else:
-            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            top_k_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
 
         @parameter
         def launch_kernel[vec_size: Int]() raises:
@@ -957,12 +962,22 @@ def topk_sampling_from_prob[
         if indices:
             indices_buf = indices.value().to_device_buffer(ctx)
         else:
-            indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            indices_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var top_k_buf: DeviceBuffer[out_idx_type]
         if top_k_arr:
             top_k_buf = top_k_arr.value().to_device_buffer(ctx)
         else:
-            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            top_k_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
@@ -1331,22 +1346,42 @@ def topk_topp_sampling_from_prob[
         if indices:
             indices_buf = indices.value().to_device_buffer(ctx)
         else:
-            indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            indices_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var top_k_buf: DeviceBuffer[out_idx_type]
         if top_k_arr:
             top_k_buf = top_k_arr.value().to_device_buffer(ctx)
         else:
-            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            top_k_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var top_p_buf: DeviceBuffer[DType.float32]
         if top_p_arr:
             top_p_buf = top_p_arr.value().to_device_buffer(ctx)
         else:
-            top_p_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+            top_p_buf = DeviceBuffer[DType.float32](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var seed_buf: DeviceBuffer[DType.uint64]
         if rng_seed:
             seed_buf = rng_seed.value().to_device_buffer(ctx)
         else:
-            seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+            seed_buf = DeviceBuffer[DType.uint64](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
@@ -1725,17 +1760,32 @@ def topk_softmax_sample[
         if top_k_arr:
             top_k_buf = top_k_arr.value().to_device_buffer(ctx)
         else:
-            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            top_k_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var temp_buf: DeviceBuffer[DType.float32]
         if temperature:
             temp_buf = temperature.value().to_device_buffer(ctx)
         else:
-            temp_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+            temp_buf = DeviceBuffer[DType.float32](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var seed_buf: DeviceBuffer[DType.uint64]
         if seed:
             seed_buf = seed.value().to_device_buffer(ctx)
         else:
-            seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+            seed_buf = DeviceBuffer[DType.uint64](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
 
         @parameter
         def launch_kernel[vec_size: Int]() raises:

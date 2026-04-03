@@ -94,9 +94,9 @@ def dispatch_sm100_conv2d[
     output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[
-        Scalar[output_type], MutAnyOrigin
-    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin](),
+    source_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
     beta: Float32 = 0.0,
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.

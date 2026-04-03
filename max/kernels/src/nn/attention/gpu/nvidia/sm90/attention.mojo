@@ -180,7 +180,7 @@ struct NullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        return {}
+        return Self.PtrType(_unsafe_null=())
 
 
 struct Pack[
@@ -506,9 +506,9 @@ def get_seq_info[
         pair_cta=pair_cta,
     ]()
     var state: MHATileState = scheduler.initial_state(
-        UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ](),
+        UnsafePointer[UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED](
+            _unsafe_null=()
+        ),
         tile_summary,
     )
     return scheduler.unsafe_seq_info(tile_summary, state)

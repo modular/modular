@@ -413,8 +413,8 @@ def fa4_softmax[
         order_s_wait = mbars.pipeline_order_wait(warp_group_idx)
         order_s_arrive = mbars.pipeline_order_arrive(warp_group_idx)
     else:
-        order_s_wait = MBarType()
-        order_s_arrive = MBarType()
+        order_s_wait = {_unsafe_null = ()}
+        order_s_arrive = {_unsafe_null = ()}
 
     var q_head_idx: UInt32 = seq_info.head_idx
     var scale_log2e: Scalar[accum_dtype] = scale

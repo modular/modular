@@ -415,7 +415,7 @@ struct Device(Writable):
         ]()(
             self.device,
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32, MutAnyOrigin](),
+            UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
         )
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
@@ -454,7 +454,7 @@ struct Device(Writable):
             self.device,
             UInt32(memory_clock_mhz),
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32, MutAnyOrigin](),
+            UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
         )
 
         if result == Result.SUCCESS:

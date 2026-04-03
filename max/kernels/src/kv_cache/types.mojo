@@ -867,7 +867,9 @@ struct ContinuousBatchingKVCache[
         Note: ContinuousBatchingKVCache does not support KVCache quantization.
         This function returns a NULL pointer.
         """
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
     @always_inline
     def scales_raw_ptr(
@@ -875,7 +877,9 @@ struct ContinuousBatchingKVCache[
     ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
         """Returns a null pointer. ContinuousBatchingKVCache does not support
         quantization."""
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
 
 struct PagedKVCache[
@@ -1495,7 +1499,9 @@ struct PagedKVCache[
 
         comptime if Self.quantization_enabled:
             return self.scales.value().ptr
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
 
 trait KVCollectionT(ImplicitlyCopyable):

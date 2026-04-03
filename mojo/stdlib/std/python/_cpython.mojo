@@ -484,7 +484,7 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def null() -> Self:
-        return PyType_Slot(0, OpaquePointer[MutAnyOrigin]())
+        return PyType_Slot(0, OpaquePointer[MutAnyOrigin](_unsafe_null=()))
 
 
 @fieldwise_init

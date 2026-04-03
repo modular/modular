@@ -1236,7 +1236,7 @@ def mgp_buffer_get_cached(
     Get a reference to the cached tensor.
     """
     var buffer_size: UInt64 = 0
-    var buffer_data = OpaquePointer[MutAnyOrigin]()
+    var buffer_data = OpaquePointer[MutAnyOrigin](_unsafe_null=())
 
     var buffer_ref = external_call[
         "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr

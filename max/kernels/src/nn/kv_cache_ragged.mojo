@@ -1410,7 +1410,9 @@ def _matmul_common[
         }
     else:
         c_nd = {
-            UnsafePointer[Scalar[output_dtype], MutExternalOrigin](),
+            UnsafePointer[Scalar[output_dtype], MutExternalOrigin](
+                _unsafe_null=()
+            ),
             RuntimeLayout[c_nd.layout].row_major(
                 IndexList[2](TOTAL_SEQ_LEN, N)
             ),
@@ -1448,7 +1450,7 @@ def _qmatmul_common[
     ]
 
     c_nd = {
-        UnsafePointer[Scalar[dtype], MutAnyOrigin](),
+        UnsafePointer[Scalar[dtype], MutAnyOrigin](_unsafe_null=()),
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
@@ -1529,7 +1531,7 @@ def _matmul_blockwise_scaled_fp8_common[
         RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
         MutAnyOrigin,
     ](
-        ptr=UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
+        ptr={_unsafe_null = ()},
         layout=row_major(
             (
                 RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
@@ -1590,7 +1592,7 @@ def _matmul_blockwise_scaled_fp4_common[
         RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
         MutAnyOrigin,
     ](
-        ptr=UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
+        ptr={_unsafe_null = ()},
         layout=row_major(
             (
                 RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
@@ -2936,9 +2938,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
-    q_scale_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
 ) raises:
     @always_inline
     @parameter
@@ -3010,9 +3012,9 @@ def _flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
-    q_scale_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 

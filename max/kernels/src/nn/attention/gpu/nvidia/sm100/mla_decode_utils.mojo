@@ -3084,12 +3084,12 @@ struct MLA_SM100_Decode_Common[
         prompt_idx: UInt32,  # batch index
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
-        scale_k_smem: SharedMemPointer[
-            Scalar[DType.float32]
-        ] = SharedMemPointer[Scalar[DType.float32]](),
+        scale_k_smem: SharedMemPointer[Scalar[DType.float32]] = {
+            _unsafe_null = ()
+        },
         q_scale_ptr: UnsafePointer[
             Scalar[DType.float32], origin=MutAnyOrigin
-        ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+        ] = {_unsafe_null = ()},
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime assert Self.AccumType.is_floating_point()

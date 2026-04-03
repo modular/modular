@@ -2631,7 +2631,7 @@ struct LayoutTensor[
                 Scalar[Self.dtype],
                 address_space=Self.address_space,
                 origin=MutExternalOrigin,
-            ]()
+            ](_unsafe_null=())
         )
 
     comptime StackTensorType = LayoutTensor[
@@ -8065,7 +8065,11 @@ struct LayoutTensorIter[
                 not Self.circular
             ), "Circular use case is not supported if an axis is defined."
 
-        self.ptr = {}
+        self.ptr = UnsafePointer[
+            Scalar[Self.dtype],
+            address_space=Self.address_space,
+            origin=Self.origin,
+        ](_unsafe_null=())
         self.offset = 0
         self.stride = 0
         self.bound = 0

@@ -601,7 +601,7 @@ def test_memset() raises:
 
 
 def test_pointer_string() raises:
-    var nullptr = UnsafePointer[Int, MutAnyOrigin]()
+    var nullptr = UnsafePointer[Int, MutAnyOrigin](_unsafe_null=())
     assert_equal(String(nullptr), "0x0")
 
     var ptr = alloc[Int](1)
@@ -611,7 +611,7 @@ def test_pointer_string() raises:
 
 
 def test_dtypepointer_string() raises:
-    var nullptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var nullptr = UnsafePointer[Float32, MutAnyOrigin](_unsafe_null=())
     assert_equal(String(nullptr), "0x0")
 
     var ptr = alloc[Float32](1)

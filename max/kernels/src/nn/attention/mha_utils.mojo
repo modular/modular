@@ -789,7 +789,9 @@ struct NoPartition[dtype: DType](
     def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
 
 struct SplitKPartition[dtype: DType](
@@ -806,7 +808,9 @@ struct SplitKPartition[dtype: DType](
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
     ):
-        assert ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
+        assert ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
+            _unsafe_null=()
+        )
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
 

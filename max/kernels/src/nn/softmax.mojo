@@ -1091,7 +1091,9 @@ def softmax_with_temperature[
     var d = shape[1]
 
     # Extract raw pointer for the kernel (null if not provided).
-    var temp_ptr = UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]()
+    var temp_ptr = UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin](
+        _unsafe_null=()
+    )
     if temperature_arr:
         temp_ptr = temperature_arr.value().ptr
 

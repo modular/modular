@@ -1122,7 +1122,9 @@ def _mha_sm90[
     comptime mma_thread_layout = Layout.row_major(8, 4)
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
+    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin](
+        _unsafe_null=()
+    )
 
     comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[

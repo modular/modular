@@ -661,9 +661,9 @@ def mla_decode_sm100_dispatch[
     q_max_seq_len: Int,
     max_cache_valid_length: Int,
     ctx: DeviceContext,
-    q_scale_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
 ) raises:
     var scales_ptr = k.scales_raw_ptr()
 
@@ -778,9 +778,9 @@ def _mla_decode_sm100_dispatch_impl[
     num_partitions: Int,
     effective_max_cache_len: Int,
     ctx: DeviceContext,
-    q_scale_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
 ) raises:
     comptime hw_info = ctx.default_device_info
     comptime sm_count = hw_info.sm_count
@@ -1120,9 +1120,9 @@ def mla_decode_sm100_sink_split_k[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
-    q_scale_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
 ) raises:
     comptime _scale_block_size = k_t.quantization_granularity if k_t.quantization_enabled else 0
     # Use native FP8 path when:

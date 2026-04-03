@@ -264,7 +264,13 @@ struct SharedMemoryManager[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]:
-        return self.k_smem.bitcast[Scalar[_dtype]]() if Self.token_gen else {}
+        return self.k_smem.bitcast[
+            Scalar[_dtype]
+        ]() if Self.token_gen else UnsafePointer[
+            Scalar[_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        ](
+            _unsafe_null=()
+        )
 
 
 struct GlobalMemoryManager[
@@ -626,7 +632,7 @@ def copy_dram_to_sram_lds[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
-        ]()
+        ](_unsafe_null=())
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
         var ptr_to_simd = UnsafePointer(to=bc.desc)
@@ -729,7 +735,7 @@ def copy_dram_to_sram_lds[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
-        ]()
+        ](_unsafe_null=())
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
         var ptr_to_simd = UnsafePointer(to=bc.desc)

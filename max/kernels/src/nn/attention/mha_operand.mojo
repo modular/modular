@@ -484,7 +484,9 @@ struct KVCacheScalesMHAOperand[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin](
+            _unsafe_null=()
+        )
 
     @always_inline
     def load_scale[
@@ -623,7 +625,9 @@ struct KVCacheScalesMHAOperand[
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
         """Returns a null pointer. KVCacheScalesMHAOperand already points to the
         scales pointer."""
-        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin]()
+        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
 
 struct LayoutTensorMHAOperand[
@@ -670,7 +674,9 @@ struct LayoutTensorMHAOperand[
         scale_buffer: LayoutTensor[
             Self.scale_dtype, Self.scale_layout, Self.scale_origin
         ] = LayoutTensor[Self.scale_dtype, Self.scale_layout](
-            UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]()
+            UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin](
+                _unsafe_null=()
+            )
         ),
     ):
         self.buffer = buffer
@@ -895,7 +901,9 @@ struct LayoutTensorMHAOperand[
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
         """Returns a null pointer. LayoutTensor operands do not support
         quantization."""
-        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin]()
+        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+            _unsafe_null=()
+        )
 
 
 struct RaggedMHAOperand[
@@ -950,7 +958,11 @@ struct RaggedMHAOperand[
         )
         self.scale_buffer = LayoutTensor[
             Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
-        ](UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]())
+        ](
+            UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin](
+                _unsafe_null=()
+            )
+        )
 
     def __init__(
         out self,
@@ -998,7 +1010,9 @@ struct RaggedMHAOperand[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]()
+        return UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin](
+            _unsafe_null=()
+        )
 
     @always_inline
     def load_scale[
@@ -1201,4 +1215,6 @@ struct RaggedMHAOperand[
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
         """Returns a null pointer. Ragged operands do not support
         quantization."""
-        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin]()
+        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+            _unsafe_null=()
+        )

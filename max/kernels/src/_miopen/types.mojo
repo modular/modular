@@ -24,7 +24,7 @@ struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer[MutAnyOrigin]
 
     def __init__(out self):
-        self._value = OpaquePointer[MutAnyOrigin]()
+        self._value = {_unsafe_null = ()}
 
 
 @fieldwise_init
@@ -32,7 +32,7 @@ struct TensorDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer[MutAnyOrigin]
 
     def __init__(out self):
-        self._value = OpaquePointer[MutAnyOrigin]()
+        self._value = {_unsafe_null = ()}
 
 
 @fieldwise_init
@@ -40,7 +40,7 @@ struct ConvolutionDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer[MutAnyOrigin]
 
     def __init__(out self):
-        self._value = OpaquePointer[MutAnyOrigin]()
+        self._value = {_unsafe_null = ()}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -225,7 +225,7 @@ struct Problem(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer[MutAnyOrigin]
 
     def __init__(out self):
-        self._value = OpaquePointer[MutAnyOrigin]()
+        self._value = {_unsafe_null = ()}
 
 
 @fieldwise_init
@@ -233,7 +233,7 @@ struct Solution(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer[MutAnyOrigin]
 
     def __init__(out self):
-        self._value = OpaquePointer[MutAnyOrigin]()
+        self._value = {_unsafe_null = ()}
 
 
 @fieldwise_init
@@ -241,7 +241,7 @@ struct FindOptions(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer[MutAnyOrigin]
 
     def __init__(out self):
-        self._value = OpaquePointer[MutAnyOrigin]()
+        self._value = {_unsafe_null = ()}
 
 
 @fieldwise_init

@@ -410,7 +410,7 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
 
     def __init__(out self):
         """Initializes a new AccessPolicyWindow with default values."""
-        self.base_ptr = {}
+        self.base_ptr = {_unsafe_null = ()}
         self.num_bytes = 0
         self.hit_ratio = 0
         self.hit_prop = AccessProperty.NORMAL

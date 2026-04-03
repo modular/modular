@@ -917,7 +917,7 @@ def flash_attention_dispatch[
                         else:
                             comptime nullptr = UnsafePointer[
                                 Scalar[accum_type], MutAnyOrigin
-                            ]()
+                            ](_unsafe_null=())
 
                             var nullptr_device = DeviceBuffer[accum_type](
                                 ctx, nullptr, 0, owning=False
@@ -3235,11 +3235,11 @@ def mha_decoding[
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
-    var qk_max_batch_ptr = type_of(qk_max_ptr)()
+    var qk_max_batch_ptr = type_of(qk_max_ptr)(_unsafe_null=())
     if qk_max_ptr:
         qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
-    var exp_sum_batch_ptr = type_of(exp_sum_ptr)()
+    var exp_sum_batch_ptr = type_of(exp_sum_ptr)(_unsafe_null=())
     if exp_sum_ptr:
         exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 
@@ -5309,7 +5309,7 @@ def mha_gpu_naive[
     var null_valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](),
+        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 

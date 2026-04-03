@@ -256,7 +256,7 @@ def local_tensor_type[
     dummy_arg = {
         UnsafePointer[
             Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.LOCAL
-        ]()
+        ](_unsafe_null=())
     }
 
 
@@ -2218,7 +2218,9 @@ def _mha_sm100[
     comptime ragged = not ValidLengthType.is_null
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
+    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin](
+        _unsafe_null=()
+    )
 
     comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
@@ -2342,8 +2344,8 @@ def _mha_sm100[
                 kv_smem,
                 produced_mbar_kv,
                 producer_mbar_kv,
-                {},
-                {},
+                {_unsafe_null = ()},
+                {_unsafe_null = ()},
                 kv_lut,
                 position,
                 partition,

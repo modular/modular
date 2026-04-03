@@ -898,7 +898,9 @@ def _matmul_dynamic_scaled_fp8_impl[
             comptime b_N = b.static_shape[b_row_axis]
             comptime if b_N > -1:
                 var c_dummy = TileTensor(
-                    UnsafePointer[Scalar[DType.float32], MutExternalOrigin](),
+                    UnsafePointer[Scalar[DType.float32], MutExternalOrigin](
+                        _unsafe_null=()
+                    ),
                     row_major(Coord(Idx(M), Idx[b_N]())),
                 )
 
@@ -919,7 +921,9 @@ def _matmul_dynamic_scaled_fp8_impl[
             else:
                 var N_rt = Int(b.dim[b_row_axis]())
                 var c_dummy = TileTensor(
-                    UnsafePointer[Scalar[DType.float32], MutExternalOrigin](),
+                    UnsafePointer[Scalar[DType.float32], MutExternalOrigin](
+                        _unsafe_null=()
+                    ),
                     row_major(Coord(Idx(M), Idx(N_rt))),
                 )
 

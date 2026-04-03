@@ -188,7 +188,7 @@ struct NVSHMEMXUniqueIDArgs:
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueIDArgs]())
-        self.id = UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]()
+        self.id = {_unsafe_null = ()}
         self.myrank = 0
         self.nranks = 0
 

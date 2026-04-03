@@ -85,7 +85,7 @@ struct MoveOnlyList[T: Movable & ImplicitlyDestructible]:
     var _capacity: Int
 
     def __init__(out self):
-        self._data = UnsafePointer[Self.T, MutExternalOrigin]()
+        self._data = UnsafePointer[Self.T, MutExternalOrigin](_unsafe_null=())
         self._len = 0
         self._capacity = 0
 

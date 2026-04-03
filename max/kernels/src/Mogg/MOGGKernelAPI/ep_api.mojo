@@ -241,7 +241,7 @@ struct Struct_ep_init:
             # When all the devices are on the same node, we skip the combine
             # send buffer and directly send tokens to each device's recv buffer.
             # Hence, we don't need to allocate the combine send buffer.
-            combine_send_p = UnsafePointer[UInt8, MutAnyOrigin]()
+            combine_send_p = UnsafePointer[UInt8, MutAnyOrigin](_unsafe_null=())
             combine_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
                 combine_recv_size
             ).take_ptr()
