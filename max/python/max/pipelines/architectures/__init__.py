@@ -38,6 +38,7 @@ def register_all_models() -> None:
     from .deepseekV3 import deepseekV3_arch
     from .deepseekV3_2 import deepseekV3_2_arch
     from .deepseekV3_nextn import deepseekV3_nextn_arch
+    from .diancie import diancie_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
@@ -102,6 +103,7 @@ def register_all_models() -> None:
         flux2_klein_modulev3_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
+        diancie_arch,
         granite_arch,
         granite_modulev3_arch,
         gpt_oss_arch,

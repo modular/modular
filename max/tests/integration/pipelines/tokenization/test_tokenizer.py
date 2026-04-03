@@ -23,6 +23,7 @@ import requests
 from max.driver import DeviceSpec, accelerator_count
 from max.interfaces import (
     ImageContentPart,
+    MessageContent,
     RequestID,
     SamplingParams,
     TextContentPart,
@@ -102,9 +103,9 @@ def test_text_and_vision_tokenizer() -> None:
             model_path, pipeline_config=pipeline_config, trust_remote_code=True
         )
         for imgs_list in imgs:
-            content: list[TextContentPart | ImageContentPart] = [
-                TextContentPart(text="What is in this image?"),
-            ] + [ImageContentPart() for _ in imgs_list]
+            content: list[MessageContent] = []
+            content.append(TextContentPart(text="What is in this image?"))
+            content.extend([ImageContentPart() for _ in imgs_list])
             filtered_imgs_list = [img for img in imgs_list if img is not None]
             assert len(filtered_imgs_list) == len(imgs_list)
             request = TextGenerationRequest(
