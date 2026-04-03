@@ -70,12 +70,12 @@ class TestSingleTransformersModelHF:
 
     def test_primary_model_path(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
-        assert registry["primary"].model_path == self.REPO
+        assert registry["main"].model_path == self.REPO
 
     def test_huggingface_config_loads(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
 
-        hf_config = registry["primary"].huggingface_config
+        hf_config = registry["main"].huggingface_config
         assert hf_config is not None
         assert hasattr(hf_config, "architectures")
         assert "LlamaForCausalLM" in hf_config.architectures
@@ -83,7 +83,7 @@ class TestSingleTransformersModelHF:
     def test_huggingface_config_fields(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
 
-        hf_config = registry["primary"].huggingface_config
+        hf_config = registry["main"].huggingface_config
         assert hf_config is not None
         # SmolLM2-135M should have standard transformer fields.
         assert hasattr(hf_config, "hidden_size")
@@ -96,16 +96,16 @@ class TestSingleTransformersModelHF:
         registry = ModelManifest.from_model_path(self.REPO)
 
         # A pure transformers model should not have a diffusers config.
-        assert registry["primary"].diffusers_config is None
+        assert registry["main"].diffusers_config is None
 
     def test_registry_structure(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
 
-        assert "primary" in registry
+        assert "main" in registry
         assert len(registry) == 1
         items = list(registry.items())
         assert len(items) == 1
-        assert items[0][0] == "primary"
+        assert items[0][0] == "main"
         assert items[0][1].model_path == self.REPO
 
 
