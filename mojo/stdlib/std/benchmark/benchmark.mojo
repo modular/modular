@@ -470,13 +470,12 @@ def run[
     @parameter
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
-        @parameter
         @always_inline
-        def iter_fn() raises:
+        def iter_fn() raises unified {read num_iters}:
             for _ in range(num_iters):
                 func1()
 
-        return Int(time_function[iter_fn]())
+        return Int(time_function(iter_fn))
 
     return _run_impl(
         _RunOptions[benchmark_fn](
@@ -571,13 +570,12 @@ def run[
     @parameter
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
-        @parameter
         @always_inline
-        def iter_fn() raises:
+        def iter_fn() raises unified {read num_iters}:
             for _ in range(num_iters):
                 func3()
 
-        return Int(time_function[iter_fn]())
+        return Int(time_function(iter_fn))
 
     return _run_impl(
         _RunOptions[benchmark_fn](

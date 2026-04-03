@@ -41,15 +41,14 @@ def test_basic_lock() raises:
         rawCounter,
     )
 
-    @parameter
-    def test_atomic() -> None:
+    def test_atomic() unified {mut lock} -> None:
         var tg = TaskGroup()
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
                 tg.create_task(inc())
         tg.wait[origin_of(lock)._mlir_origin]()
 
-    _ = time_function[test_atomic]()
+    _ = time_function(test_atomic)
     _ = lock^
     # print("Total time taken ", time_ns / (1_000_000_000), " s")
 
