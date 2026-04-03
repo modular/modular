@@ -45,10 +45,8 @@ struct Driver(Movable):
     var _handle: DriverHandle
     var _device_count: Int64
 
-    var _devices: Dict[Int64, ArcPointer[Device]]
-
     @staticmethod
-    def create(plugin_spec: String) raises HALError -> ArcPointer[Self]:
+    def create(plugin_spec: String) raises HALError -> Self:
         """Create a Driver by loading a plugin and initialising the backend.
 
         Args:
@@ -95,13 +93,10 @@ struct Driver(Movable):
                 message="Failed to get device count: " + err.message,
             )
 
-        return ArcPointer(
-            Driver(
-                _plugin=plugin^,
-                _handle=driver_handle,
-                _device_count=num_devices.unsafe_assume_init_ref(),
-                _devices=Dict[Int64, ArcPointer[Device]](),
-            )
+        return Driver(
+            _plugin=plugin^,
+            _handle=driver_handle,
+            _device_count=num_devices.unsafe_assume_init_ref(),
         )
 
     def __del__(deinit self):
@@ -120,37 +115,8 @@ struct Driver(Movable):
     def get_device_count(self) -> Int64:
         return self._device_count
 
-    def get_device(mut self, id: Int64) raises HALError -> ArcPointer[Device]:
-        """Retrieve a device by ID."""
-        if id < 0 or id >= self._device_count:
-            raise HALError(
-                STATUS_INVALID_ARG,
-                message="Invalid device ID "
-                + String(id)
-                + " — range is [0, "
-                + String(self._device_count)
-                + ")",
-            )
-        var cached = self._devices.find(id)
-        if cached:
-            return cached.value()
-
-        var device_handle = UnsafeMaybeUninit(DeviceHandle(_unsafe_null=()))
-        var status = self._plugin.device_get.f(
-            self._handle, id, OutParam[DeviceHandle](to=device_handle)
-        )
-        if status != STATUS_SUCCESS:
-            var err = self._plugin.get_status_message(status)
-            raise HALError(
-                err.status,
-                message="Failed to get device "
-                + String(id)
-                + ": "
-                + err.message,
-            )
-
-        var arc = ArcPointer(Device(device_handle.unsafe_assume_init_ref(), id))
-
-        self._devices[id] = arc
-
-        return arc
+    def get_device(
+        mut self, id: Int64
+    ) raises HALError -> Device[origin_of(self)]:
+        # """Retrieve a device by ID."""
+        return Device(self, id)
