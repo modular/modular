@@ -97,7 +97,7 @@ def test_math() raises:
                 SIMD[dtype, width]
             ) -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
-            comptime ls = Variadic.size(kernel_fns)
+            comptime ls = Variadic.size[kernel_fns]
 
             comptime for idx in range(ls):
                 comptime kernel_fn = kernel_fns[idx]

@@ -45,7 +45,7 @@ comptime _InvalidTypeIndex: Int = -1
 
 @always_inline
 def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
-    comptime for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size_types[Ts]):
         comptime if _type_is_eq[Ts[i], T]():
             return i
     return _InvalidTypeIndex
@@ -211,7 +211,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = copy.get_discriminant()
 
-        comptime for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size_types[Self.Ts]):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, Copyable)
             comptime T = downcast[TUnknown, Copyable]
@@ -225,7 +225,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = take.get_discriminant()
 
-        comptime for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size_types[Self.Ts]):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, Movable)
             comptime T = downcast[TUnknown, Movable]
@@ -238,7 +238,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
     @always_inline
     def __del__(deinit self):
-        comptime for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size_types[Self.Ts]):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, ImplicitlyDestructible)
             comptime T = downcast[TUnknown, ImplicitlyDestructible]
@@ -282,9 +282,9 @@ comptime _IsNicheablePair[T: AnyType, U: AnyType]: Bool = conforms_to(
 """True if `T` is `UnsafeNicheable` and `U` is an empty type. Called twice with
 swapped args by `_IsNicheEligible` to handle either ordering."""
 
-comptime _IsNicheEligible[*Ts: AnyType]: Bool = (Variadic.size(Ts) == 2) and (
-    _IsNicheablePair[Ts[0], Ts[1]] or _IsNicheablePair[Ts[1], Ts[0]]
-)
+comptime _IsNicheEligible[*Ts: AnyType]: Bool = (
+    Variadic.size_types[Ts] == 2
+) and (_IsNicheablePair[Ts[0], Ts[1]] or _IsNicheablePair[Ts[1], Ts[0]])
 """True if `Ts` qualifies for niche-optimized storage: exactly two types
 where one is `UnsafeNicheable` and the other is an empty type."""
 
@@ -554,7 +554,7 @@ struct Variant[*Ts: Movable](
         Returns:
             True if the variants hold the same type and equal values.
         """
-        comptime for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size_types[Self.Ts]):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 if not other.isa[T]():
@@ -586,7 +586,7 @@ struct Variant[*Ts: Movable](
         Args:
             hasher: The hasher instance.
         """
-        comptime for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size_types[Self.Ts]):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 hasher.update(UInt8(i))
@@ -600,7 +600,7 @@ struct Variant[*Ts: Movable](
     def _write_value_to[
         *, is_repr: Bool
     ](self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
-        comptime for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size_types[Self.Ts]):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 ref value = trait_downcast[Writable](self.unsafe_get[T]())
@@ -862,7 +862,7 @@ struct Variant[*Ts: Movable](
 
 
 def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size_types[Ts]):
         comptime T = Ts[i]
         if not conforms_to(T, ImplicitlyDestructible):
             return False
@@ -870,7 +870,7 @@ def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
 
 
 def _all_movable[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size_types[Ts]):
         comptime T = Ts[i]
         if not conforms_to(T, Movable):
             return False
@@ -878,7 +878,7 @@ def _all_movable[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size_types[Ts]):
         comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
@@ -888,7 +888,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size_types[Ts]):
         comptime if conforms_to(Ts[i], Copyable):
             if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
@@ -899,7 +899,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size_types[Ts]):
         comptime if conforms_to(Ts[i], Movable):
             if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False

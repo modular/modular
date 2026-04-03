@@ -43,37 +43,39 @@ struct Variadic:
         T: The trait that types in the variadic sequence must conform to.
     """
 
-    @staticmethod
-    @always_inline("builtin")
-    def size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
-        """Returns the length of a variadic sequence.
+    comptime size[T: AnyType, //, seq: Self.ValuesOfType[T]]: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(seq),
+            ` `,
+            +seq,
+            `> : index`,
+        ]
+    )
+    """Returns the length of a variadic sequence.
 
-        Parameters:
-            T: The type of values in the sequence.
+    Parameters:
+        T: The type of values in the sequence.
+        seq: The variadic sequence to measure.
+    """
 
-        Args:
-            seq: The variadic sequence to measure.
+    comptime size_types[
+        T: type_of(AnyType), //, seq: Self.TypesOfTrait[T]
+    ]: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(seq),
+            ` `,
+            +seq,
+            `> : index`,
+        ]
+    )
+    """Returns the length of a variadic sequence.
 
-        Returns:
-            The length of the variadic sequence.
-        """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
-
-    @staticmethod
-    @always_inline("builtin")
-    def size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
-        """Returns the length of a variadic sequence.
-
-        Parameters:
-            T: The trait that types in the sequence must conform to.
-
-        Args:
-            seq: The variadic sequence of types to measure.
-
-        Returns:
-            The length of the variadic sequence.
-        """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+    Parameters:
+        T: The trait that types in the sequence must conform to.
+        seq: The variadic sequence of types to measure.
+    """
 
     # ===-----------------------------------------------------------------------===#
     # Utils
@@ -314,7 +316,7 @@ struct Variadic:
     # The resulting variadic of types is [Int, String]
     comptime output = Variadic.map_types_to_types[input_types, mapper]
 
-    assert_equal(Variadic.size(output), 2)
+    assert_equal(Variadic.size[output], 2)
     assert_true(_type_is_eq[output[0], Int]())
     assert_true(_type_is_eq[output[1], String]())
     ```
@@ -326,8 +328,8 @@ struct Variadic:
         element_types: Variadic.TypesOfTrait[T],
         start: Int where start >= 0 = 0,
         end: Int where (
-            start <= end <= Variadic.size(element_types)
-        ) = Variadic.size(element_types),
+            start <= end <= Variadic.size_types[element_types]
+        ) = Variadic.size_types[element_types],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
         VariadicType=element_types,
@@ -345,7 +347,7 @@ struct Variadic:
         end: The ending index (exclusive).
 
     Constraints:
-        - 0 <= start <= end <= Variadic.size(element_types)
+        - 0 <= start <= end <= Variadic.size_types[element_types]
 
     Examples:
         ```mojo
@@ -522,7 +524,7 @@ struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
     ```
     """
 
-    comptime size = Variadic.size(Self.element_types)
+    comptime size = Variadic.size_types[Self.element_types]
     """The number of types in the list."""
 
     comptime __getitem_param__[idx: Int] = Self.element_types[idx]
@@ -708,15 +710,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         values: The values in the list.
     """
 
-    comptime size = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
-            type_of(Self.values),
-            ` `,
-            +Self.values,
-            `> : index`,
-        ]
-    )
+    comptime size = Variadic.size[Self.values]
     """The number of elements in the list."""
 
     @always_inline
@@ -1306,7 +1300,7 @@ struct VariadicPack[
             The number of elements in the variadic pack.
         """
 
-        comptime result = Variadic.size(Self.element_types)
+        comptime result = Variadic.size_types[Self.element_types]
         return result
 
     @always_inline
@@ -1791,7 +1785,7 @@ comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],
     idx: Int,
-] = element_types[Variadic.size(element_types) - 1 - idx]
+] = element_types[Variadic.size_types[element_types] - 1 - idx]
 """A generator that reverses a variadic sequence of types.
 
 Parameters:

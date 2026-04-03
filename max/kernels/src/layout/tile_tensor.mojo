@@ -138,9 +138,9 @@ struct TileTensor[
     comptime rank = Self.LayoutType.rank
     """The number of dimensions in the tensor's layout."""
 
-    comptime flat_rank = Variadic.size(
+    comptime flat_rank = Variadic.size_types[
         _Flattened[*Self.LayoutType._shape_types]
-    )
+    ]
     """The flattened rank - total number of dimensions after flattening nested Coords.
 
     For non-nested layouts, flat_rank == rank.
@@ -394,7 +394,7 @@ struct TileTensor[
     def __getitem__[
         *IndexTypes: Indexer & Copyable
     ](self, *items: *IndexTypes) -> Self.ElementType where (
-        Variadic.size(IndexTypes) == Self.flat_rank
+        Variadic.size_types[IndexTypes] == Self.flat_rank
     ):
         """Retrieves a single element from the tensor at the specified indices.
 
@@ -412,7 +412,7 @@ struct TileTensor[
         Returns:
             The element at the specified position.
         """
-        comptime arg_count = Variadic.size(IndexTypes)
+        comptime arg_count = Variadic.size_types[IndexTypes]
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
         comptime for i in range(arg_count):
@@ -449,7 +449,7 @@ struct TileTensor[
         address_space=Self.address_space,
         element_size=Self.element_size,
     ] where (
-        Variadic.size(IndexTypes) == Self.flat_rank
+        Variadic.size_types[IndexTypes] == Self.flat_rank
         and Coord[*IndexTypes].is_flat
         and Coord[*IndexTypes].contains_slices
     ):
@@ -550,7 +550,7 @@ struct TileTensor[
     def __setitem__[
         *IndexTypes: Indexer & Copyable
     ](self, *items: *IndexTypes, value: Self.ElementType) where (
-        Variadic.size(IndexTypes) == Self.flat_rank
+        Variadic.size_types[IndexTypes] == Self.flat_rank
     ) & Self.mut:
         """Sets a single element in the tensor at the specified indices.
 
@@ -566,7 +566,7 @@ struct TileTensor[
             items: The indices specifying the element's position.
             value: The value to store.
         """
-        comptime arg_count = Variadic.size(IndexTypes)
+        comptime arg_count = Variadic.size_types[IndexTypes]
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
         comptime for i in range(arg_count):
@@ -933,7 +933,7 @@ struct TileTensor[
             address_space=Self.address_space,
             element_size=Self.element_size,
         ],
-        IndexList[Variadic.size(coordinates.element_types)],
+        IndexList[Variadic.size_types[coordinates.element_types]],
         UInt,
     ]:
         """Like tile(), but also returns corner coordinates and linear offset.
@@ -963,7 +963,7 @@ struct TileTensor[
             address_space=Self.address_space,
             element_size=Self.element_size,
         ],
-        IndexList[Variadic.size(coordinates.element_types)],
+        IndexList[Variadic.size_types[coordinates.element_types]],
         UInt,
     ]:
         """Like tile(), but with explicit static strides.
@@ -1167,7 +1167,7 @@ struct TileTensor[
             address_space=Self.address_space,
             element_size=Self.element_size,
         ],
-        IndexList[Variadic.size(thread_layout.shape_types)],
+        IndexList[Variadic.size_types[thread_layout.shape_types]],
         UInt,
     ]:
         """Like distribute(), but also returns thread coordinates and offset.
@@ -1341,7 +1341,7 @@ struct TileTensor[
         Self.origin,
         address_space=Self.address_space,
         element_size=Self.element_size,
-    ] where (Variadic.size(slices) == Self.flat_rank and Self.all_dims_known):
+    ] where (Variadic.size[slices] == Self.flat_rank and Self.all_dims_known):
         """Extract a slice from the tensor using slice objects.
 
         This method creates a view into a subset of the tensor defined by the
@@ -1397,7 +1397,7 @@ struct TileTensor[
         # Compute offset based on slice start indices and strides
         var offset = 0
 
-        comptime for i in range(Variadic.size(slices)):
+        comptime for i in range(Variadic.size[slices]):
             comptime slice_i = slices[i]
             comptime slice_start = slice_i.start.or_else(0)
             var stride_i = self.layout.stride[i]().value()
@@ -2104,7 +2104,7 @@ def _distribute[
 
     var offset: UInt = 0
 
-    comptime for i in range(Variadic.size(thread_layout.stride_types)):
+    comptime for i in range(Variadic.size_types[thread_layout.stride_types]):
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
@@ -2135,7 +2135,7 @@ def _distribute[
     var stride = Coord[*NewStrideTypes]()
 
     # Populate runtime values for dimensions that aren't statically known.
-    comptime for i in range(Variadic.size(NewShapeTypes)):
+    comptime for i in range(Variadic.size_types[NewShapeTypes]):
         comptime if not NewShapeTypes[i].is_static_value:
             UnsafePointer(to=shape[i]).init_pointee_copy(
                 rebind[NewShapeTypes[i]](
@@ -2197,7 +2197,7 @@ def _distribute_with_offset[
         address_space=data_layout_tensor.address_space,
         element_size=data_layout_tensor.element_size,
     ],
-    IndexList[Variadic.size(thread_layout.shape_types)],
+    IndexList[Variadic.size_types[thread_layout.shape_types]],
     UInt,
 ]:
     """Like _distribute, but also returns thread coordinates and offset.
@@ -2209,9 +2209,11 @@ def _distribute_with_offset[
 
     # Use shape_types consistently for the IndexList size (must match return type)
     var offset: UInt = 0
-    var thread_coords = IndexList[Variadic.size(thread_layout.shape_types)]()
+    var thread_coords = IndexList[
+        Variadic.size_types[thread_layout.shape_types]
+    ]()
 
-    comptime for i in range(Variadic.size(thread_layout.shape_types)):
+    comptime for i in range(Variadic.size_types[thread_layout.shape_types]):
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
@@ -2243,7 +2245,7 @@ def _distribute_with_offset[
     var stride = Coord[*NewStrideTypes]()
 
     # Populate runtime values for dimensions that aren't statically known.
-    comptime for i in range(Variadic.size(NewShapeTypes)):
+    comptime for i in range(Variadic.size_types[NewShapeTypes]):
         comptime if not NewShapeTypes[i].is_static_value:
             UnsafePointer(to=shape[i]).init_pointee_copy(
                 rebind[NewShapeTypes[i]](
@@ -2391,7 +2393,7 @@ def _tile_with_offset[
         address_space=data_layout_tensor.address_space,
         element_size=data_layout_tensor.element_size,
     ],
-    IndexList[Variadic.size(coord_types)],
+    IndexList[Variadic.size_types[coord_types]],
     UInt,
 ]:
     """Like _tile, but also returns corner coordinates and linear offset.
@@ -2401,11 +2403,11 @@ def _tile_with_offset[
     The offset is the linear element offset used to advance the pointer.
     """
 
-    # Use Variadic.size(coord_types) consistently (must match return type)
+    # Use Variadic.size_types[coord_types] consistently (must match return type)
     var offset: UInt = 0
-    var corner_coords = IndexList[Variadic.size(coord_types)]()
+    var corner_coords = IndexList[Variadic.size_types[coord_types]]()
 
-    comptime for i in range(Variadic.size(coord_types)):
+    comptime for i in range(Variadic.size_types[coord_types]):
         corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
         offset += UInt(
             tile_coords[i].value()
@@ -2525,15 +2527,15 @@ def _tile_with_offset[
         address_space=data_layout_tensor.address_space,
         element_size=data_layout_tensor.element_size,
     ],
-    IndexList[Variadic.size(coord_types)],
+    IndexList[Variadic.size_types[coord_types]],
     UInt,
 ]:
     """Like _tile_with_offset, but with explicit static strides."""
 
     var offset: UInt = 0
-    var corner_coords = IndexList[Variadic.size(coord_types)]()
+    var corner_coords = IndexList[Variadic.size_types[coord_types]]()
 
-    comptime for i in range(Variadic.size(coord_types)):
+    comptime for i in range(Variadic.size_types[coord_types]):
         corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
         offset += UInt(
             tile_coords[i].value()
@@ -2620,7 +2622,7 @@ def _vectorize[
     var new_stride = Coord[*NewStrideTypes]()
 
     # Populate runtime values for dimensions that aren't statically known.
-    comptime for i in range(Variadic.size(NewShapeTypes)):
+    comptime for i in range(Variadic.size_types[NewShapeTypes]):
         comptime if not NewShapeTypes[i].is_static_value:
             UnsafePointer(to=new_shape[i]).init_pointee_copy(
                 rebind[NewShapeTypes[i]](
@@ -2826,8 +2828,8 @@ comptime _IsRowMajor[
     shape_types: Variadic.TypesOfTrait[CoordLike],
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = Coord[*_IsRowMajorHelper[shape_types, stride_types]].static_product == (
-    1 if Variadic.size(shape_types)
-    == 0 else StaticCoord[1, Variadic.size(shape_types)].static_product
+    1 if Variadic.size_types[shape_types]
+    == 0 else StaticCoord[1, Variadic.size_types[shape_types]].static_product
 )
 """Check if stride_types match row-major strides for shape_types.
 
