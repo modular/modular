@@ -13,15 +13,27 @@ struct Variadic:
         `!kgen.variadic<`, T, `>`
     ]
 
-    @staticmethod
-    @always_inline("builtin")
-    def size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+    comptime size[T: AnyType, //, seq: Self.ValuesOfType[T]]: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(seq),
+            ` `,
+            +seq,
+            `> : index`,
+        ]
+    )
 
-    @staticmethod
-    @always_inline("builtin")
-    def size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+    comptime size_types[
+        T: type_of(AnyType), //, seq: Self.TypesOfTrait[T]
+    ]: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(seq),
+            ` `,
+            +seq,
+            `> : index`,
+        ]
+    )
 
     # ===-----------------------------------------------------------------------===#
     # Utils
@@ -37,6 +49,7 @@ struct Variadic:
     comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
         T
     ] = values_
+
     # ===-----------------------------------------------------------------------===#
     # VariadicConcat
     # ===-----------------------------------------------------------------------===#
@@ -135,8 +148,8 @@ struct Variadic:
         element_types: Variadic.TypesOfTrait[T],
         start: Int where start >= 0 = 0,
         end: Int where (
-            start <= end <= Variadic.size(element_types)
-        ) = Variadic.size(element_types),
+            start <= end <= Variadic.size_types[element_types]
+        ) = Variadic.size_types[element_types],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
         VariadicType=element_types,
@@ -416,7 +429,7 @@ comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],
     idx: Int,
-] = element_types[Variadic.size(element_types) - 1 - idx]
+] = element_types[Variadic.size_types[element_types] - 1 - idx]
 comptime _ContainsReducer[
     Trait: type_of(AnyType),
     Type: Trait,
