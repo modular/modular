@@ -20,9 +20,9 @@ from std.bit import next_power_of_two
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_idx_uint as block_idx,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
+    block_idx,
+    global_idx,
+    thread_idx,
 )
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -122,7 +122,7 @@ def _bitonic_local_sort_kernel[
     """
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
-    var gid = Int(UInt(block_idx.x) * UInt(BLOCK_SIZE) + UInt(tid))
+    var gid: Int = block_idx.x * BLOCK_SIZE + tid
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
@@ -138,21 +138,21 @@ def _bitonic_local_sort_kernel[
     ]()
 
     if gid < n_arg:
-        shared_vals[Int(tid)] = vals[gid]
-        shared_idxs[Int(tid)] = idxs[gid]
+        shared_vals[tid] = vals[gid]
+        shared_idxs[tid] = idxs[gid]
     else:
-        shared_vals[Int(tid)] = _sentinel_val[input_dtype, ascending]()
-        shared_idxs[Int(tid)] = Scalar[indices_dtype](-1)
+        shared_vals[tid] = _sentinel_val[input_dtype, ascending]()
+        shared_idxs[tid] = Scalar[indices_dtype](-1)
 
     var k = 2
     while k <= BLOCK_SIZE:
         var j = k >> 1
         while j > 0:
             barrier()
-            var partner = UInt(tid) ^ UInt(j)
-            if partner > UInt(tid):
-                var vi = shared_vals[Int(tid)]
-                var vp = shared_vals[Int(partner)]
+            var partner = Int(UInt(tid) ^ UInt(j))
+            if partner > tid:
+                var vi = shared_vals[tid]
+                var vp = shared_vals[partner]
 
                 var cmp_val: Bool
                 comptime if ascending:
@@ -162,18 +162,18 @@ def _bitonic_local_sort_kernel[
 
                 var direction = (UInt(tid) & UInt(k)) == 0
                 if cmp_val == direction:
-                    shared_vals[Int(tid)] = vp
-                    shared_vals[Int(partner)] = vi
-                    var ii = shared_idxs[Int(tid)]
-                    shared_idxs[Int(tid)] = shared_idxs[Int(partner)]
-                    shared_idxs[Int(partner)] = ii
+                    shared_vals[tid] = vp
+                    shared_vals[partner] = vi
+                    var ii = shared_idxs[tid]
+                    shared_idxs[tid] = shared_idxs[partner]
+                    shared_idxs[partner] = ii
             j >>= 1
         k <<= 1
 
     barrier()
     if gid < n_arg:
-        vals[gid] = shared_vals[Int(tid)]
-        idxs[gid] = shared_idxs[Int(tid)]
+        vals[gid] = shared_vals[tid]
+        idxs[gid] = shared_idxs[tid]
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -199,7 +199,7 @@ def _bitonic_merge_local_kernel[
     """
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
-    var gid = Int(UInt(block_idx.x) * UInt(BLOCK_SIZE) + UInt(tid))
+    var gid: Int = block_idx.x * BLOCK_SIZE + tid
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
@@ -214,16 +214,16 @@ def _bitonic_merge_local_kernel[
         address_space=AddressSpace.SHARED,
     ]()
 
-    shared_vals[Int(tid)] = vals[gid]
-    shared_idxs[Int(tid)] = idxs[gid]
+    shared_vals[tid] = vals[gid]
+    shared_idxs[tid] = idxs[gid]
 
     var j = BLOCK_SIZE >> 1
     while j > 0:
         barrier()
-        var partner = UInt(tid) ^ UInt(j)
-        if partner > UInt(tid):
-            var vi = shared_vals[Int(tid)]
-            var vp = shared_vals[Int(partner)]
+        var partner = Int(UInt(tid) ^ UInt(j))
+        if partner > tid:
+            var vi = shared_vals[tid]
+            var vp = shared_vals[partner]
 
             var cmp_val: Bool
             comptime if ascending:
@@ -233,16 +233,16 @@ def _bitonic_merge_local_kernel[
 
             var direction = (UInt(gid) & UInt(stage)) == 0
             if cmp_val == direction:
-                shared_vals[Int(tid)] = vp
-                shared_vals[Int(partner)] = vi
-                var ii = shared_idxs[Int(tid)]
-                shared_idxs[Int(tid)] = shared_idxs[Int(partner)]
-                shared_idxs[Int(partner)] = ii
+                shared_vals[tid] = vp
+                shared_vals[partner] = vi
+                var ii = shared_idxs[tid]
+                shared_idxs[tid] = shared_idxs[partner]
+                shared_idxs[partner] = ii
         j >>= 1
 
     barrier()
-    vals[gid] = shared_vals[Int(tid)]
-    idxs[gid] = shared_idxs[Int(tid)]
+    vals[gid] = shared_vals[tid]
+    idxs[gid] = shared_idxs[tid]
 
 
 def _argsort_gpu_impl[
@@ -294,7 +294,7 @@ def _argsort_gpu_impl[
         step: Int,
         stage: Int,
     ):
-        var i = global_idx.x
+        var i = UInt(global_idx.x)
         if i >= UInt(n_arg):
             return
 
