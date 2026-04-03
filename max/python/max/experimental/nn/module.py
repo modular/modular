@@ -22,15 +22,17 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Generic
 
-from max import graph
-from max.driver import CPU, Device, DLPackArray
-from max.experimental import functional as F
+from max.driver import CPU, Buffer, Device, DLPackArray
+from max.engine import Model
 from max.experimental.realization_context import (
     GraphRealizationContext,
     _session,
 )
-from max.experimental.tensor import Tensor, realization_context
-from max.graph import DeviceRef, Graph, TensorType
+from max.experimental.tensor import (
+    Tensor,
+    realization_context,
+)
+from max.graph import DeviceRef, Graph
 from rich.pretty import pretty_repr
 from typing_extensions import ParamSpec, Self, TypeVar, dataclass_transform
 
@@ -40,6 +42,85 @@ if TYPE_CHECKING:
 # Type variables for Module's forward signature.
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+from max.experimental.nn._compile_utils import (
+    InputType,
+    _detect_signals,
+    _flatten_input_types,
+    _flatten_named_buffers,
+    _flatten_outputs,
+    _InputSlot,
+    _OutputSlot,
+    _reconstruct_outputs,
+    _unflatten_args,
+    _wrap_graph_inputs,
+)
+from max.nn.comm.allreduce import Signals
+
+
+class CompiledModel:
+    """Compiled model returned by :meth:`Module.compile`.
+
+    Provides two execution paths:
+
+    * **Tensor path** — ``compiled(tensor_a, tensor_b)`` handles distributed
+      Tensors transparently (unflatten shards, append signals, reconstruct).
+      Used by tests and the high-level API.
+    * **Buffer path** — ``compiled.execute_raw(*buffers)`` passes flat Buffers
+      straight to the engine, auto-appending signal buffers. Returns
+      ``list[Buffer]`` with zero Tensor overhead.  Used by pipeline
+      ``execute()`` methods.
+
+    For CUDA graph capture/replay, access ``compiled.engine_model`` directly::
+
+        compiled.engine_model.capture(key, *all_buffers)
+        compiled.engine_model.replay(key, *all_buffers)
+
+    For multi-GPU capture, append ``compiled.signal_buffers`` to the buffer
+    list passed to capture/replay.
+    """
+
+    def __init__(
+        self,
+        engine_model: Model,
+        input_slots: list[_InputSlot],
+        output_slots: list[_OutputSlot],
+        signal_buffers: list[Buffer],
+        unary: bool,
+    ) -> None:
+        self._engine_model = engine_model
+        self._input_slots = input_slots
+        self._output_slots = output_slots
+        self._signal_buffers = signal_buffers
+        self._unary = unary
+
+    @property
+    def engine_model(self) -> Model:
+        """The underlying :class:`~max.engine.Model` for capture/replay."""
+        return self._engine_model
+
+    @property
+    def signal_buffers(self) -> list[Buffer]:
+        """Signal buffers for multi-GPU collectives (empty for single-GPU)."""
+        return self._signal_buffers
+
+    def __call__(self, *args: Any) -> Any:
+        """Tensor-in, Tensor-out execution (distributed-aware)."""
+        flat_args = _unflatten_args(args, self._input_slots)
+        flat_args.extend(self._signal_buffers)
+        raw_results = list(self._engine_model(*flat_args))
+        return _reconstruct_outputs(
+            raw_results, self._output_slots, self._unary
+        )
+
+    def execute_raw(self, *buffers: Buffer) -> list[Buffer]:
+        """Buffer-in, Buffer-out execution (no Tensor wrapping).
+
+        Auto-appends signal buffers for multi-GPU collectives.
+        """
+        all_bufs: list[Any] = list(buffers)
+        all_bufs.extend(self._signal_buffers)
+        return list(self._engine_model(*all_bufs))
 
 
 class _DevicePinned:
@@ -56,8 +137,8 @@ current device.
 
 Use this for parameters that must stay on a specific device regardless of where
 the rest of the module is moved. For example, scalar quantization scale factors
-that GPU kernels consume as host-side launch arguments should remain on CPU; 
-moving them to the accelerator would force an expensive device sync every 
+that GPU kernels consume as host-side launch arguments should remain on CPU;
+moving them to the accelerator would force an expensive device sync every
 forward pass.
 """
 
@@ -680,12 +761,103 @@ class Module(Generic[_P, _R]):
         finally:
             self.load_state_dict(parameters)
 
+    def _trace(
+        self,
+        input_types: Sequence[InputType],
+        *,
+        custom_extensions: Iterable[Path] = (),
+    ) -> tuple[
+        Graph,
+        list[_InputSlot],
+        list[_OutputSlot],
+        bool,
+        Signals | None,
+    ]:
+        """Shared tracing core used by :meth:`trace` and :meth:`compile`.
+
+        Builds a :class:`~max.graph.Graph` by symbolically executing
+        ``forward`` with the given input types.  Returns the graph plus
+        bookkeeping needed by :meth:`compile`.
+        """
+        # Expand distributed input types into per-device local types.
+        # For pure single-device usage this is a no-op pass-through.
+        graph_types, input_slots = _flatten_input_types(input_types)
+
+        # Detect multi-GPU distributed inputs and create signal buffers
+        # so that collective ops (all_reduce_sum, all_gather, etc.) use
+        # hardware-accelerated multi-device communication.
+        signals = _detect_signals(input_types, parameters=self.parameters)
+        if signals is not None:
+            graph_types.extend(signals.input_types())
+
+        graph = Graph(
+            type(self).__qualname__,
+            input_types=graph_types,
+            custom_extensions=custom_extensions,
+        )
+
+        # Extract signal BufferValues from the graph inputs (at the end).
+        sig_buf_values = None
+        if signals is not None:
+            n_sig = len(signals.devices)
+            sig_buf_values = [
+                graph.inputs[len(graph_types) - n_sig + i].buffer
+                for i in range(n_sig)
+            ]
+
+        ctx = GraphRealizationContext(graph, signal_buffers=sig_buf_values)
+        with realization_context(ctx), ctx:
+            # Only wrap tensor inputs, not signal buffer inputs.
+            n_tensor_inputs = len(graph_types) - (
+                len(sig_buf_values) if sig_buf_values else 0
+            )
+            inputs = _wrap_graph_inputs(
+                list(graph.inputs[:n_tensor_inputs]), input_slots
+            )
+
+            def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
+                return tensor._as_constant_external(name)
+
+            # Temporarily replace the parameters with external constants
+            # while building the graph.
+            with self._mapped_parameters(as_weight):
+                outputs: Tensor | Sequence[Tensor] = self(*inputs)  # type: ignore[call-arg,assignment,arg-type]
+
+            # Flatten sharded outputs into per-shard graph values.
+            flat_values, output_slots, unary = _flatten_outputs(outputs)
+            graph.output(*flat_values)
+
+        return graph, input_slots, output_slots, unary, signals
+
+    def trace(
+        self,
+        *input_types: InputType,
+        custom_extensions: Iterable[Path] = (),
+    ) -> Graph:
+        """Traces the module's forward pass into a :class:`~max.graph.Graph`.
+
+        Like :meth:`compile`, but returns the raw graph without compiling
+        it.  Useful for inspecting the IR, debugging sharding propagation,
+        or feeding into a custom compilation pipeline.
+
+        Args:
+            *input_types: Type specifications for each input to ``forward``.
+            custom_extensions: Paths to custom Mojo kernel libraries.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        graph, *_ = self._trace(
+            input_types, custom_extensions=custom_extensions
+        )
+        return graph
+
     def compile(
         self,
-        *input_types: graph.Type[Any],
+        *input_types: InputType,
         weights: Mapping[str, DLPackArray] | None = None,
         custom_extensions: Iterable[Path] = (),
-    ) -> Callable[..., Any]:
+    ) -> CompiledModel:
         """Compiles the module to an optimized executable through graph tracing.
 
         This method performs symbolic tracing of the module's ``forward`` method
@@ -807,56 +979,16 @@ class Module(Generic[_P, _R]):
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
-        graph = Graph(
-            type(self).__qualname__,
-            input_types=input_types,
-            custom_extensions=custom_extensions,
+        graph, input_slots, output_slots, unary, signals = self._trace(
+            input_types, custom_extensions=custom_extensions
         )
-        with realization_context(GraphRealizationContext(graph)) as ctx, ctx:
-            # Wrap the graph inputs in Tensors
-            inputs = [Tensor.from_graph_value(input) for input in graph.inputs]
-
-            def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
-                # Weights are always on host and then moved to the device in init
-                type = TensorType(tensor.dtype, tensor.shape, CPU())
-                return F.constant_external(name, type).to(tensor.device)
-
-            # Temporarily replace the parameters with external constants
-            # while building the graph.
-            #  - Pure tensors as Module parameters are treated as constants
-            #  - Making them external constants allows them to be compiled as
-            #       weights instead.
-            #  - Weights aren't constant-folded (improving compile time) but
-            #       can be replaced in the compiled model and still subject
-            #       to exec-invariant-code-motion optimizations.
-            with self._mapped_parameters(as_weight):
-                # Type ignore: compile() calls self() with dynamic inputs;
-                # the specific forward signature is only known in subclasses.
-                outputs: Tensor | Sequence[Tensor] = self(*inputs)  # type: ignore[call-arg,assignment,arg-type]
-
-            # Set the outputs.
-            # - The graph API and model assume that all graphs and models
-            #   have variadic outputs
-            # - Module allows returning a single Tensor or variadic return
-            # - The compiled model should have the same semantics as the module
-            if unary := isinstance(outputs, Tensor):
-                graph.output(outputs)
-            else:
-                graph.output(*outputs)
 
         # Compile the graph with module parameters as weights
         session = _session()
 
-        # Avoid realizing parameters to a device if at all possible.
-        # Most users should pass CPU weights to this method explicitly.
+        # Build weights registry from parameters.
         if weights is None:
-            # - Weights are loaded from the host directly and then moved onto the
-            #   device during init
-            # - Holding a reference to the parameter would cause it to be realized
-            #   when passing weights to compilation
-            # - Instead, if a parameter is not real we reset it to _after_ the move
-            #   to CPU
-            weights = {k: t for k, t in self.parameters}
+            weights = _flatten_named_buffers(self.parameters)
         else:
             for name, existing in self.parameters:
                 if name not in weights:
@@ -871,18 +1003,16 @@ class Module(Generic[_P, _R]):
 
         session_model = session.load(graph, weights_registry=weights)
 
-        # Wrap the compiled session model with lightweight input/output conversion.
-        # Avoid F.functional here: that wrapper creates an EagerRealizationContext on
-        # every call, which builds a new MLIR graph, runs optimization passes, and
-        # compiles a seed mini-graph — adding significant per-call overhead.
-        def _compiled(*args: Any) -> list[Tensor]:
-            return [Tensor(storage=r) for r in session_model(*args)]
+        # Allocate signal buffers once for all future invocations.
+        cached_sig_bufs = signals.buffers() if signals is not None else []
 
-        if unary:
-            # Return the single result for a unary module
-            return functools.wraps(self)(lambda *inputs: _compiled(*inputs)[0])
-
-        return _compiled
+        return CompiledModel(
+            engine_model=session_model,
+            input_slots=input_slots,
+            output_slots=output_slots,
+            signal_buffers=cached_sig_bufs,
+            unary=unary,
+        )
 
     def __rich_repr__(self):
         yield from self.children

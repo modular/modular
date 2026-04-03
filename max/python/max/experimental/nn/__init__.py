@@ -15,12 +15,13 @@
 from .conv import Conv2d
 from .embedding import Embedding
 from .linear import Linear
-from .module import Module, PinnedDeviceTensor, module_dataclass
+from .module import CompiledModel, Module, PinnedDeviceTensor, module_dataclass
 from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
 
 __all__ = [
+    "CompiledModel",
     "Conv2d",
     "Embedding",
     "GemmaRMSNorm",

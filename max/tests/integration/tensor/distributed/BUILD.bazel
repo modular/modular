@@ -11,6 +11,7 @@ modular_py_test(
     name = "tests_simulated",
     size = "large",
     srcs = [
+        "module/test_module_internals.py",
         "sharding/__init__.py",
         "test_tensor_sharding.py",
     ] + glob([
@@ -33,8 +34,11 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        requirement("numpy"),
         requirement("pytest-xdist"),
     ],
 )
