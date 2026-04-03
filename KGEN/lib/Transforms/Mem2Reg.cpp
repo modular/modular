@@ -402,7 +402,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
         newTypes.push_back(getAllocType(alloc));
       Operation *newOp = Operation::create(
           op.getLoc(), op.getName(), newTypes, op.getOperands(),
-          op.getAttrDictionary(), nullptr, {}, op.getNumRegions());
+          op.getAttrDictionary(), mlir::PropertyRef{}, {}, op.getNumRegions());
       OpBuilder(&op).insert(newOp);
       for (unsigned i = 0, e = op.getNumRegions(); i != e; ++i)
         newOp->getRegion(i).takeBody(op.getRegion(i));
