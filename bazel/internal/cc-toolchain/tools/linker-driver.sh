@@ -50,8 +50,8 @@ if [[ "${BUILD_IFS:-}" == "yes" ]]; then
   ifs_root="$PWD/external/+http_archive+llvm-ifs/tools/$ifs_platform"
 
   if [[ "${MACOS:-}" == "true" ]]; then
-    exec "$ifs_root/llvm-readtapi.stripped" -arch arm64 -extract "$IFS_INPUT" -o "$IFS_OUTPUT"
+    "$ifs_root/llvm-readtapi.stripped" -arch arm64 -extract "$IFS_INPUT" -o "$IFS_OUTPUT"
   else
-    exec "$ifs_root/llvm-ifs.stripped" "$IFS_INPUT" --output-elf="$IFS_OUTPUT"
+    "$ifs_root/llvm-ifs.stripped" "$IFS_INPUT" --output-elf="$IFS_OUTPUT"
   fi
 fi
