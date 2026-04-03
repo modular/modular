@@ -1,0 +1,907 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Tests for DKVConnector block lifecycle RPCs.
+
+Unit tests use MockDKVServer (in-process ZMQ REP server). E2e tests
+connect to a real dKV server at DKV_ENDPOINT env var (skipped if unset).
+
+Run unit tests:
+    ./bazelw test //max/tests/integration/kv_cache:dkv_connector_tests
+
+Run e2e tests (requires running dKV server):
+    DKV_ENDPOINT=ipc:///var/run/dkv/api.sock \
+        ./bazelw test //max/tests/integration/kv_cache:dkv_connector_tests
+"""
+
+from __future__ import annotations
+
+import os
+import tempfile
+import uuid
+from collections.abc import Generator, Mapping
+from unittest.mock import MagicMock, patch
+
+import msgspec
+import numpy as np
+import pytest
+from max._core.nixl import MemoryType
+from max.interfaces import RequestID, TokenBuffer
+from max.kv_cache.connectors.dkv.connector import (
+    DKVConnector,
+    DKVExternalBlockMetadata,
+)
+from max.kv_cache.connectors.dkv.protocol import BlockDescriptor
+from max.kv_cache.paged_kv_cache.transfer_engine import (
+    KVTransferEngineMetadata,
+    TensorAgentMetadata,
+)
+from max.pipelines.core import TextContext
+from mock_dkv_server import MockDKVServer
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _ipc_address() -> str:
+    return f"ipc://{tempfile.gettempdir()}/{uuid.uuid4().hex[:18]}"
+
+
+def _make_descriptor(
+    seq_hash: int, offset: int = 0, length: int = 4096
+) -> BlockDescriptor:
+    return BlockDescriptor(
+        seq_hash=seq_hash,
+        agent_id=1,
+        device_id=0,
+        offset=offset,
+        length=length,
+    )
+
+
+def _make_ctx(
+    tokens: list[int] | None = None,
+    external_block_metadata: Mapping[int, object] | None = None,
+) -> TextContext:
+    if tokens is None:
+        tokens = [1, 2, 3]
+    ctx = TextContext(
+        request_id=RequestID(),
+        max_length=1000,
+        tokens=TokenBuffer(np.array(tokens, dtype=np.int64)),
+    )
+    if external_block_metadata is not None:
+        ctx.external_block_metadata = dict(external_block_metadata)
+    return ctx
+
+
+def _make_transfer_metadata(
+    name: str = "remote-dkv",
+    *,
+    bytes_per_page: int = 4096,
+    num_agents: int = 1,
+) -> KVTransferEngineMetadata:
+    agents = [
+        TensorAgentMetadata(
+            agent_name=f"{name}-agent-0-{i}",
+            metadata=b"remote-agent-metadata",
+            base_addr=0x1000,
+            device_id=0,
+        )
+        for i in range(num_agents)
+    ]
+    return KVTransferEngineMetadata(
+        name=name,
+        total_num_pages=64,
+        bytes_per_page=bytes_per_page,
+        memory_type=MemoryType.DRAM,
+        hostname=f"{name}.local",
+        agents_meta=[agents],
+    )
+
+
+def _make_external_metadata(
+    *descriptors: BlockDescriptor,
+    transfer_engine: KVTransferEngineMetadata | None = None,
+) -> dict[int, DKVExternalBlockMetadata]:
+    return {
+        descriptor.seq_hash: DKVExternalBlockMetadata.from_descriptor(
+            descriptor,
+            transfer_engine=transfer_engine,
+        )
+        for descriptor in descriptors
+    }
+
+
+def _round_trip_msgpack(value: object) -> object:
+    return msgspec.msgpack.decode(msgspec.msgpack.encode(value))
+
+
+def _make_connector(
+    endpoint: str,
+    page_size: int = 128,
+    tp_degree: int = 1,
+    is_mla: bool = False,
+) -> DKVConnector:
+    """Create a DKVConnector with mocked KVTransferEngine.
+
+    The transfer engine requires GPU buffers and NIXL, so we mock it.
+    The dKV client is real (talks to the ZMQ server at endpoint).
+    """
+    with patch.object(
+        DKVConnector,
+        "__init__",
+        lambda self, *a, **kw: None,
+    ):
+        connector = DKVConnector.__new__(DKVConnector)
+
+    # Manually init the fields we need (bypass KVTransferEngine).
+    from max.kv_cache.connectors.dkv.client import DKVClient
+
+    connector._block_size = page_size
+    connector._is_mla = is_mla
+    connector._tp_degree = tp_degree
+    connector._tp_shard_limit = 1 if is_mla else None
+    connector._client = DKVClient(endpoint)
+    connector._client.connect()
+    connector._engine = MagicMock()
+    connector._engine.remote_connections = {}
+    connector._engine.connect.side_effect = lambda metadata: (
+        connector._engine.remote_connections.setdefault(metadata.name, metadata)
+    )
+    connector._engine.bytes_per_page = 4096
+    connector._engine.is_complete.return_value = False
+    connector._bytes_per_page = 4096
+    connector._default_remote_metadata = None
+    connector._pending_loads = {}
+    connector._inflight_reads = {}
+    connector._held_blocks = {}
+    connector._pending_writes = []
+    connector._inflight_writes = []
+    connector._nixl_read_blocks = 0
+    connector._nixl_write_blocks = 0
+
+    return connector
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_address() -> str:
+    return _ipc_address()
+
+
+@pytest.fixture
+def mock_server(mock_address: str) -> Generator[MockDKVServer, None, None]:
+    server = MockDKVServer(mock_address)
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def connector(
+    mock_server: MockDKVServer,
+) -> Generator[DKVConnector, None, None]:
+    c = _make_connector(mock_server.bound_address)
+    yield c
+    c._client.close()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: initialization
+# ---------------------------------------------------------------------------
+
+
+class TestInitialization:
+    def test_connect_block_store_keeps_transfer_engine_lazy(
+        self, mock_server: MockDKVServer
+    ) -> None:
+        mock_params = MagicMock()
+        mock_params.page_size = 128
+        mock_params.is_mla = False
+
+        mock_device = MagicMock()
+
+        mock_buffer = MagicMock()
+        mock_buffer.values = [MagicMock()]
+        mock_buffer.total_num_pages = 64
+
+        with (
+            patch.object(
+                DKVConnector,
+                "_try_auto_discover_metadata",
+            ),
+            patch(
+                "max.kv_cache.connectors.dkv.connector.KVTransferEngine"
+            ) as transfer_engine_cls,
+        ):
+            connector = DKVConnector(
+                params=mock_params,
+                devices=[mock_device],
+                device_buffer=mock_buffer,
+                total_num_blocks=64,
+                local_block_store_endpoint=mock_server.bound_address,
+            )
+            connector.connect_block_store(_make_transfer_metadata())
+
+        transfer_engine_cls.assert_not_called()
+        connector._client.close()
+
+    def test_init_defers_transfer_engine_creation(
+        self, mock_server: MockDKVServer
+    ) -> None:
+        mock_params = MagicMock()
+        mock_params.page_size = 128
+        mock_params.is_mla = False
+
+        mock_device = MagicMock()
+
+        mock_buffer = MagicMock()
+        mock_buffer.values = [MagicMock()]
+        mock_buffer.total_num_pages = 64
+
+        with (
+            patch.object(
+                DKVConnector,
+                "_try_auto_discover_metadata",
+            ),
+            patch(
+                "max.kv_cache.connectors.dkv.connector.KVTransferEngine"
+            ) as transfer_engine_cls,
+        ):
+            connector = DKVConnector(
+                params=mock_params,
+                devices=[mock_device],
+                device_buffer=mock_buffer,
+                total_num_blocks=64,
+                local_block_store_endpoint=mock_server.bound_address,
+            )
+
+        transfer_engine_cls.assert_not_called()
+        connector._client.close()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: PUT flow (save → flush)
+# ---------------------------------------------------------------------------
+
+
+class TestPutFlow:
+    def test_save_calls_acquire_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.save([0, 1], [100, 200])
+
+        assert mock_server.request_count == 1
+        assert len(connector._pending_writes) == 2
+        assert connector._pending_writes[0].descriptor.seq_hash == 100
+        assert connector._pending_writes[1].descriptor.seq_hash == 200
+
+    def test_flush_registers_acquired_blocks_without_block_store_metadata(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.save([0, 1], [100, 200])
+        connector.flush()
+
+        assert len(connector._pending_writes) == 0
+        assert len(connector._inflight_writes) == 0
+        assert len(mock_server.registered_blocks) == 1
+        registered = mock_server.registered_blocks[0]
+        assert len(registered) == 2
+        assert registered[0].seq_hash == 100
+        assert registered[1].seq_hash == 200
+        assert connector._engine is not None
+        connector._engine.initiate_send_transfer.assert_not_called()
+
+    def test_connect_block_store_posts_write_transfer_and_registers_on_completion(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("local-dkv")
+        transfer_req = MagicMock()
+        assert connector._engine is not None
+        connector._engine.initiate_send_transfer.return_value = transfer_req
+
+        connector.connect_block_store(remote_metadata)
+        connector.save([0, 1], [100, 200])
+        connector.flush()
+
+        connector._engine.connect.assert_called_once_with(remote_metadata)
+        connector._engine.initiate_send_transfer.assert_called_once_with(
+            remote_metadata,
+            [0, 1],
+            [0, 1],
+            src_replica_idx=0,
+            dst_replica_idx=0,
+            tp_shard_limit=None,
+        )
+        assert len(mock_server.registered_blocks) == 0
+        assert len(connector._inflight_writes) == 1
+
+        connector._engine.is_complete.return_value = True
+        connector.flush()
+
+        assert len(mock_server.registered_blocks) == 1
+        connector._engine.cleanup_transfer.assert_called_once_with(transfer_req)
+
+    def test_flush_noop_when_no_pending(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.flush()
+        assert mock_server.request_count == 0
+
+    def test_save_empty_hashes_is_noop(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.save([], [])
+        assert mock_server.request_count == 0
+        assert len(connector._pending_writes) == 0
+
+    def test_metrics_track_write_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.save([0, 1, 2], [100, 200, 300])
+        connector.flush()
+
+        assert connector.metrics.nixl_write_blocks == 3
+
+    def test_save_flush_multiple_batches(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.save([0], [100])
+        connector.flush()
+        connector.save([1, 2], [200, 300])
+        connector.flush()
+
+        assert mock_server.request_count == 4  # 2 acquire + 2 register
+        assert connector.metrics.nixl_write_blocks == 3
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: GET flow (lookup → load → on_request_complete)
+# ---------------------------------------------------------------------------
+
+
+class TestGetFlow:
+    def test_lookup_returns_tokens_for_available_blocks(
+        self, connector: DKVConnector
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100, offset=0)
+        desc_200 = _make_descriptor(200, offset=4096)
+
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100,
+                desc_200,
+                transfer_engine=remote_metadata,
+            )
+        )
+        tokens = connector.lookup(ctx, [100, 200])
+
+        assert tokens == 2 * connector._block_size
+
+    def test_lookup_raw_descriptors_require_transfer_metadata(
+        self, connector: DKVConnector
+    ) -> None:
+        desc_100 = _make_descriptor(100)
+        ctx = _make_ctx(external_block_metadata={100: desc_100})
+
+        tokens = connector.lookup(ctx, [100])
+
+        assert tokens == 0
+
+    def test_lookup_uses_default_transfer_metadata_for_raw_descriptors(
+        self, connector: DKVConnector
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100)
+        connector.connect_block_store(remote_metadata)
+
+        ctx = _make_ctx(external_block_metadata={100: desc_100})
+        tokens = connector.lookup(ctx, [100])
+
+        assert tokens == connector._block_size
+
+    def test_lookup_stops_at_first_miss(self, connector: DKVConnector) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        tokens = connector.lookup(ctx, [100, 200, 300])
+        assert tokens == 1 * connector._block_size
+
+    def test_lookup_no_metadata_returns_zero(
+        self, connector: DKVConnector
+    ) -> None:
+        ctx = _make_ctx()  # no external_block_metadata
+        tokens = connector.lookup(ctx, [100, 200])
+        assert tokens == 0
+
+    def test_lookup_empty_hashes_returns_zero(
+        self, connector: DKVConnector
+    ) -> None:
+        ctx = _make_ctx(external_block_metadata={100: _make_descriptor(100)})
+        tokens = connector.lookup(ctx, [])
+        assert tokens == 0
+
+    def test_load_accepts_msgpack_decoded_metadata_and_posts_read_transfer(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100, offset=0)
+        desc_200 = _make_descriptor(200, offset=4096)
+        ctx = _make_ctx(
+            external_block_metadata={
+                100: _round_trip_msgpack(
+                    DKVExternalBlockMetadata.from_descriptor(
+                        desc_100, transfer_engine=remote_metadata
+                    )
+                ),
+                200: _round_trip_msgpack(
+                    DKVExternalBlockMetadata.from_descriptor(
+                        desc_200, transfer_engine=remote_metadata
+                    )
+                ),
+            }
+        )
+
+        connector.lookup(ctx, [100, 200])
+        loaded = connector.load(ctx, [10, 11])
+
+        assert loaded == [100, 200]
+        assert len(mock_server.read_blocks_log) == 1
+        assert mock_server.read_blocks_log[0][0].seq_hash == 100
+        assert mock_server.read_blocks_log[0][1].seq_hash == 200
+        assert connector._engine is not None
+        connector._engine.connect.assert_called_once_with(remote_metadata)
+        connector._engine.initiate_read_transfer.assert_called_once_with(
+            remote_metadata,
+            [0, 1],
+            [10, 11],
+            src_replica_idx=0,
+            dst_replica_idx=0,
+            tp_shard_limit=None,
+        )
+
+    def test_load_without_lookup_returns_empty(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        ctx = _make_ctx()
+        loaded = connector.load(ctx, [10, 11])
+        assert loaded == []
+        assert mock_server.request_count == 0
+
+    def test_sync_decrements_held_blocks_once_reads_complete(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+        connector.sync()
+
+        assert len(mock_server.decremented_blocks) == 1
+        assert mock_server.decremented_blocks[0][0].seq_hash == 100
+
+        connector.on_request_complete(ctx.request_id, [10])
+        assert len(mock_server.decremented_blocks) == 1
+
+    def test_on_request_complete_decrements_held_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+        connector.on_request_complete(ctx.request_id, [10])
+
+        assert len(mock_server.decremented_blocks) == 1
+        assert mock_server.decremented_blocks[0][0].seq_hash == 100
+
+    def test_on_request_complete_clears_unconsumed_pending_loads(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        # Don't call load(), simulate cancelled request.
+        assert str(ctx.request_id) in connector._pending_loads
+
+        connector.on_request_complete(ctx.request_id, [])
+        assert str(ctx.request_id) not in connector._pending_loads
+
+    def test_metrics_track_read_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        assert connector.metrics.nixl_read_blocks == 1
+
+    def test_multiple_requests_independent(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc_a = _make_descriptor(100)
+        desc_b = _make_descriptor(200)
+        ctx_a = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_a,
+                transfer_engine=remote_metadata,
+            )
+        )
+        ctx_b = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_b,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx_a, [100])
+        connector.lookup(ctx_b, [200])
+
+        loaded_a = connector.load(ctx_a, [10])
+        assert loaded_a == [100]
+        assert str(ctx_b.request_id) in connector._pending_loads
+
+        loaded_b = connector.load(ctx_b, [11])
+        assert loaded_b == [200]
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: shutdown
+# ---------------------------------------------------------------------------
+
+
+class TestShutdown:
+    def test_shutdown_releases_pending_writes(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.save([0], [100])
+        # Don't flush, so blocks are still FILLING.
+        connector.shutdown()
+
+        assert len(mock_server.released_blocks) == 1
+        assert mock_server.released_blocks[0][0].seq_hash == 100
+
+    def test_shutdown_decrements_held_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+        connector.shutdown()
+
+        assert len(mock_server.decremented_blocks) == 1
+
+    def test_shutdown_clears_all_state(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.shutdown()
+
+        assert len(connector._pending_loads) == 0
+        assert len(connector._inflight_reads) == 0
+        assert len(connector._held_blocks) == 0
+        assert len(connector._pending_writes) == 0
+        assert len(connector._inflight_writes) == 0
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: properties
+# ---------------------------------------------------------------------------
+
+
+class TestProperties:
+    def test_name(self, connector: DKVConnector) -> None:
+        assert connector.name == "dkv"
+
+    def test_num_host_blocks_is_maxsize(self, connector: DKVConnector) -> None:
+        assert connector.num_host_blocks == __import__("sys").maxsize
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: MLA tp_shard_limit optimization
+# ---------------------------------------------------------------------------
+
+
+class TestMLA:
+    """Verify MLA connector uses tp_shard_limit=1 on transfers."""
+
+    @pytest.fixture
+    def mla_connector(
+        self, mock_server: MockDKVServer
+    ) -> Generator[DKVConnector, None, None]:
+        c = _make_connector(mock_server.bound_address, tp_degree=4, is_mla=True)
+        yield c
+        c._client.close()
+
+    def test_load_passes_tp_shard_limit_1_for_mla(
+        self, mla_connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("remote-dkv", num_agents=4)
+        desc_100 = _make_descriptor(100, offset=0)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100, transfer_engine=remote_metadata
+            )
+        )
+
+        mla_connector.lookup(ctx, [100])
+        mla_connector.load(ctx, [10])
+
+        assert mla_connector._engine is not None
+        mla_connector._engine.initiate_read_transfer.assert_called_once()
+        call_kwargs = mla_connector._engine.initiate_read_transfer.call_args
+        assert call_kwargs.kwargs.get("tp_shard_limit") == 1
+
+    def test_flush_passes_tp_shard_limit_1_for_mla(
+        self, mla_connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("local-dkv", num_agents=4)
+        transfer_req = MagicMock()
+        assert mla_connector._engine is not None
+        mla_connector._engine.initiate_send_transfer.return_value = transfer_req
+        mla_connector.connect_block_store(remote_metadata)
+
+        mla_connector.save([0], [100])
+        mla_connector.flush()
+
+        mla_connector._engine.initiate_send_transfer.assert_called_once()
+        call_kwargs = mla_connector._engine.initiate_send_transfer.call_args
+        assert call_kwargs.kwargs.get("tp_shard_limit") == 1
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: TP agent replication and validation
+# ---------------------------------------------------------------------------
+
+
+class TestTPAgentReplication:
+    """Verify single-agent dKV metadata is replicated for TP > 1."""
+
+    @pytest.fixture
+    def tp4_connector(
+        self, mock_server: MockDKVServer
+    ) -> Generator[DKVConnector, None, None]:
+        c = _make_connector(mock_server.bound_address, tp_degree=4, is_mla=True)
+        yield c
+        c._client.close()
+
+    def test_single_agent_replicated_to_tp_degree(
+        self, tp4_connector: DKVConnector
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("remote-dkv", num_agents=1)
+
+        tp4_connector.connect_block_store(remote_metadata)
+
+        stored = tp4_connector._default_remote_metadata
+        assert stored is not None
+        assert len(stored.agents_meta) == 1
+        assert len(stored.agents_meta[0]) == 4
+
+    def test_matching_agent_count_not_replicated(
+        self, tp4_connector: DKVConnector
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("remote-dkv", num_agents=4)
+
+        tp4_connector.connect_block_store(remote_metadata)
+
+        stored = tp4_connector._default_remote_metadata
+        assert len(stored.agents_meta[0]) == 4
+
+    def test_incompatible_agent_count_raises(
+        self, tp4_connector: DKVConnector
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("remote-dkv", num_agents=2)
+
+        with pytest.raises(ValueError, match="incompatible"):
+            tp4_connector.connect_block_store(remote_metadata)
+
+    def test_multi_replica_metadata_raises(
+        self, tp4_connector: DKVConnector
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("remote-dkv")
+        # Manually set 2 replicas to trigger validation.
+        remote_metadata = KVTransferEngineMetadata(
+            name=remote_metadata.name,
+            total_num_pages=remote_metadata.total_num_pages,
+            bytes_per_page=remote_metadata.bytes_per_page,
+            memory_type=remote_metadata.memory_type,
+            hostname=remote_metadata.hostname,
+            agents_meta=[
+                remote_metadata.agents_meta[0],
+                remote_metadata.agents_meta[0],
+            ],
+        )
+
+        with pytest.raises(ValueError, match="exactly 1 replica"):
+            tp4_connector.connect_block_store(remote_metadata)
+
+    def test_bytes_per_page_mismatch_raises(
+        self, tp4_connector: DKVConnector
+    ) -> None:
+        remote_metadata = _make_transfer_metadata(
+            "remote-dkv", bytes_per_page=9999
+        )
+
+        with pytest.raises(ValueError, match="bytes_per_page"):
+            tp4_connector.connect_block_store(remote_metadata)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: DP multi-replica with shared dKV
+# ---------------------------------------------------------------------------
+
+
+class TestDPMultiReplica:
+    """Two connectors (simulating DP=2) sharing the same dKV server."""
+
+    def test_independent_request_state(
+        self, mock_server: MockDKVServer
+    ) -> None:
+        c1 = _make_connector(mock_server.bound_address)
+        c2 = _make_connector(mock_server.bound_address)
+
+        try:
+            # Both connectors save independently.
+            c1.save([0], [100])
+            c2.save([1], [200])
+
+            assert len(c1._pending_writes) == 1
+            assert len(c2._pending_writes) == 1
+            assert c1._pending_writes[0].descriptor.seq_hash == 100
+            assert c2._pending_writes[0].descriptor.seq_hash == 200
+
+            c1.flush()
+            c2.flush()
+
+            # Both registered independently (4 RPCs: 2 acquire + 2 register).
+            assert mock_server.request_count == 4
+        finally:
+            c1._client.close()
+            c2._client.close()
+
+
+# ---------------------------------------------------------------------------
+# E2e tests: real dKV server (skipped if DKV_ENDPOINT not set)
+# ---------------------------------------------------------------------------
+
+_DKV_ENDPOINT = os.environ.get("DKV_ENDPOINT")
+
+
+@pytest.mark.skipif(
+    _DKV_ENDPOINT is None,
+    reason="DKV_ENDPOINT not set; skipping e2e tests",
+)
+class TestE2eRealDKVServer:
+    """E2e tests against a real dKV server.
+
+    Start dKV locally (e.g. via ``cargo run`` in the dkv/ directory),
+    then run with::
+
+        DKV_ENDPOINT=ipc:///var/run/dkv/api.sock \
+            ./bazelw test //max/tests/integration/kv_cache:dkv_connector_tests
+    """
+
+    @pytest.fixture
+    def e2e_connector(self) -> Generator[DKVConnector, None, None]:
+        assert _DKV_ENDPOINT is not None
+        c = _make_connector(_DKV_ENDPOINT)
+        yield c
+        c._client.close()
+
+    def test_save_flush_round_trip(self, e2e_connector: DKVConnector) -> None:
+        """Acquire + register blocks against real dKV."""
+        e2e_connector.save([0, 1], [111, 222])
+        e2e_connector.flush()
+
+        assert e2e_connector.metrics.nixl_write_blocks == 2
+
+    def test_save_flush_then_lookup_load(
+        self, e2e_connector: DKVConnector
+    ) -> None:
+        """Full PUT then GET cycle against real dKV.
+
+        After save+flush registers blocks, we construct metadata
+        as if the Orchestrator provided it, then lookup+load.
+        """
+        hashes = [333, 444]
+        e2e_connector.save([0, 1], hashes)
+        e2e_connector.flush()
+
+        # Build metadata as Orchestrator would: hash → descriptor.
+        # We don't have the real descriptors from acquire (they're
+        # internal to the connector), so we re-acquire to get them.
+        from max.kv_cache.connectors.dkv.client import DKVClient
+
+        assert _DKV_ENDPOINT is not None
+        client = DKVClient(_DKV_ENDPOINT)
+        client.connect()
+        try:
+            # These blocks were already registered, so we can read them.
+            # First acquire new ones to get descriptors for the same hashes.
+            # In production, the Orchestrator would provide these.
+            descriptors = client.acquire_blocks(seq_hashes=hashes)
+            # Register them so they're readable.
+            client.register_blocks(descriptors)
+
+            remote_metadata = _make_transfer_metadata("e2e-dkv")
+            metadata = _make_external_metadata(
+                *descriptors,
+                transfer_engine=remote_metadata,
+            )
+
+            ctx = _make_ctx(external_block_metadata=metadata)
+            tokens = e2e_connector.lookup(ctx, hashes)
+            assert tokens == 2 * e2e_connector._block_size
+
+            loaded = e2e_connector.load(ctx, [10, 11])
+            assert loaded == hashes
+
+            e2e_connector.on_request_complete(ctx.request_id, [10, 11])
+        finally:
+            client.close()
+
+    def test_shutdown_clean(self, e2e_connector: DKVConnector) -> None:
+        """Shutdown doesn't raise against real dKV."""
+        e2e_connector.save([5], [555])
+        e2e_connector.shutdown()

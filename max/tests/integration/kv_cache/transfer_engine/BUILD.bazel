@@ -30,9 +30,47 @@ package(default_visibility = [
     )
     for src in glob(
         ["*.py"],
-        exclude = ["*_gpu.py"],
+        exclude = [
+            "*_gpu.py",
+            "test_read_transfer.py",
+            "test_send_recv.py",
+        ],
     )
 ]
+
+modular_py_test(
+    name = "test_send_recv",
+    srcs = ["test_send_recv.py"],
+    gpu_constraints = ["//:has_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "no-pydeps",
+    ],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/engine",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_read_transfer",
+    srcs = ["test_read_transfer.py"],
+    imports = ["."],
+    tags = [
+        "no-pydeps",
+    ],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/engine",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
 
 _4X_GPU_TESTS = [
     "test_send_recv_multi_tensor_threaded_gpu.py",

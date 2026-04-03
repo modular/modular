@@ -1,0 +1,29 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "dkv",
+    srcs = glob(["*.py"]),
+    ignore_unresolved_imports = [
+        # Provided transitively by the parent //max/python/max/kv_cache
+        # target. Declaring them here would create a circular dependency
+        # since kv_cache depends on this package.
+        "max.kv_cache",
+        "max.nn",
+        "max._core",
+        "max.driver",
+        "max.interfaces",
+        "max.profiler",
+        "msgspec",
+    ],
+    tags = [
+        "no-mypy",
+        "no-pydeps",
+    ],
+    deps = [
+        requirement("protobuf"),
+        requirement("pyzmq"),
+        requirement("typing-extensions"),
+    ],
+)

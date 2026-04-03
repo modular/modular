@@ -47,6 +47,7 @@ class KVConnectorType(str, Enum):
     local = "local"
     tiered = "tiered"
     lmcache = "lmcache"
+    dkv = "dkv"
 
 
 @dataclass

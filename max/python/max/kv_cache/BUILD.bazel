@@ -21,6 +21,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
+        "//max/python/max/kv_cache/connectors/dkv",
         "//max/python/max/nn",
         "//max/python/max/profiler",
         "//max/python/max/serve/kvcache_agent:kvcache_agent_proto_srcs",

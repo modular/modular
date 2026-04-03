@@ -65,6 +65,23 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Whether to use O_DIRECT for disk I/O."""
 
+    block_store_endpoint: str | None = Field(
+        default=None,
+        description=(
+            "Endpoint for the co-located dKV service. Supports IPC "
+            "(ipc:///path) or TCP (tcp://host:port). "
+            "Required when kv_connector is 'dkv'."
+        ),
+    )
+    """Endpoint for the co-located dKV service.
+
+    Remote dKV endpoints are discovered at runtime through the
+    Orchestrator (via ``external_block_metadata`` on the request
+    context), not configured statically. For multi-store reads, the
+    discovered metadata must include MAX-native transfer-engine metadata so
+    the connector can reuse ``KVTransferEngine.connect()``.
+    """
+
     def as_lmcache_config(self) -> dict[str, object]:
         """Returns only the extra (LMCache-specific) fields as a dict.
 

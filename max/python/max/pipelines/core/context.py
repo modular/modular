@@ -93,6 +93,13 @@ class TextContext:
 
     target_endpoint: str | None = field(default=None)
 
+    external_block_metadata: Any = field(default=None)
+    """Block metadata from the Orchestrator for distributed KV cache (dKV).
+
+    When set, the DKVConnector reads this during lookup() to determine
+    which blocks are available in the external BlockStore system.
+    """
+
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
 

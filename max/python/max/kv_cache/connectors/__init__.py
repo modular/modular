@@ -61,6 +61,26 @@ def create_connector(
     """
     connector = params.kv_connector
 
+    if connector == KVConnectorType.dkv:
+        from .dkv import DKVConnector
+
+        cfg = params.kv_connector_config
+        if cfg is None or not getattr(cfg, "block_store_endpoint", None):
+            raise ValueError(
+                "kv_connector_config must include 'block_store_endpoint' "
+                "when kv_connector is 'dkv'"
+            )
+        logger.info(
+            f"Creating DKVConnector: endpoint={cfg.block_store_endpoint}"
+        )
+        return DKVConnector(
+            params=params,
+            devices=devices,
+            device_buffer=device_buffer,
+            total_num_blocks=total_num_blocks,
+            local_block_store_endpoint=cfg.block_store_endpoint,
+        )
+
     if connector == KVConnectorType.lmcache:
         try:
             from .lmcache_connector import LMCacheConnector
@@ -116,6 +136,7 @@ def create_connector(
 
 
 __all__ = [
+    "DKVConnector",
     "KVConnector",
     "KVConnectorType",
     "LMCacheConnector",
