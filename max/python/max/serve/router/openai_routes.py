@@ -958,6 +958,7 @@ async def openai_create_chat_completion(
             target_endpoint=_get_target_endpoint(
                 request, completion_request.target_endpoint
             ),
+            dkv_cache_hint=completion_request.dkv_cache_hint,
         )
 
         if completion_request.stream:
@@ -1539,6 +1540,7 @@ async def openai_create_completion(
                 target_endpoint=_get_target_endpoint(
                     request, completion_request.target_endpoint
                 ),
+                dkv_cache_hint=completion_request.dkv_cache_hint,
             )
             token_requests.append(tgr)
 

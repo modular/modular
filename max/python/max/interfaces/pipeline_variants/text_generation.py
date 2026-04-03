@@ -318,6 +318,14 @@ class TextGenerationRequest:
     If not specified, the request will be routed to the default endpoint.
     """
 
+    dkv_cache_hint: dict[str, Any] | None = None
+    """Cache hint from the Orchestrator for distributed KV cache.
+
+    When present, the serving layer converts this into
+    ``TextContext.external_block_metadata`` so the DKVConnector can
+    fetch cached blocks before the forward pass.
+    """
+
     def __str__(self) -> str:
         return str(self.request_id)
 
