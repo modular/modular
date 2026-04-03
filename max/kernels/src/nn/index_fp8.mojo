@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from std.math.uutils import ufloordiv, udivmod
 from std.sys import size_of, simd_width_of
 from std.math import ceildiv
 from layout import (
@@ -21,7 +22,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.layout_tensor import ThreadScope, copy_dram_to_sram
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
@@ -87,19 +88,19 @@ def fp8_index_kernel[
 
     var batch_idx = block_idx.x
     var seq_offset = block_idx.y
-    var key_offset = block_idx.z * UInt(BM)
+    var key_offset = block_idx.z * BM
     var tid = thread_idx.x * 8 + thread_idx.y
 
     var start_of_seq = valid_length[batch_idx][0]
     var end_of_seq = valid_length[batch_idx + 1][0]
     var seq_len = end_of_seq - start_of_seq
 
-    var num_keys = k_operand.cache_length(Int(batch_idx))
+    var num_keys = k_operand.cache_length(batch_idx)
 
     comptime if not _is_cache_length_accurate:
         num_keys += Int(seq_len)
 
-    if seq_offset >= UInt(seq_len) or key_offset >= UInt(num_keys):
+    if seq_offset >= Int(seq_len) or key_offset >= num_keys:
         return
 
     ref smem_ptr = external_memory[
@@ -176,7 +177,7 @@ def fp8_index_kernel[
     var scratch = ScratchType(scratch_smem.unsafe_ptr())
 
     var q_s_frag = q_s_tile.tile[1, num_heads // thread_dim_y](
-        Int(thread_idx.x // thread_dim_x), Int(thread_idx.y)
+        ufloordiv(thread_idx.x, thread_dim_x), thread_idx.y
     )
 
     comptime for q_frag_idx in range(num_heads // thread_dim_y):
@@ -192,7 +193,7 @@ def fp8_index_kernel[
     )
 
     for i in range(BM // BN):
-        var current_key_offset = Int(key_offset) + i * Int(BN)
+        var current_key_offset = key_offset + i * BN
         if current_key_offset >= num_keys:
             break
 
@@ -201,7 +202,7 @@ def fp8_index_kernel[
             if current_key_offset + k_row >= num_keys:
                 # Zero-fill OOB rows
                 for d_idx in range(depth):
-                    if Int(tid) == k_row % 128:
+                    if tid == k_row % 128:
                         k_smem_ptr[k_row * depth + d_idx] = Scalar[dtype](0)
             else:
                 var k_ptr = k_operand.block_paged_ptr[1](
@@ -211,7 +212,7 @@ def fp8_index_kernel[
                     UInt32(0),
                 )
                 for d_idx in range(depth):
-                    if Int(tid) == k_row % 128:
+                    if tid == k_row % 128:
                         k_smem_ptr[k_row * depth + d_idx] = k_ptr[d_idx].cast[
                             dtype
                         ]()
@@ -220,20 +221,20 @@ def fp8_index_kernel[
 
         # Load K scales for current tile
         var k_s_reg: Float32 = 0.0
-        if current_key_offset + Int(tid) < num_keys:
+        if current_key_offset + tid < num_keys:
             var ks_ptr = ks_operand.block_paged_ptr[1](
                 UInt32(batch_idx),
-                UInt32(current_key_offset + Int(tid)),
+                UInt32(current_key_offset + tid),
                 UInt32(0),
                 UInt32(0),
             )
             k_s_reg = ks_ptr[0].cast[DType.float32]()
 
         q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
-            Int(thread_idx.y), 0
+            thread_idx.y, 0
         )
         k_smem_frag = k_smem_tile.tile[BN // thread_dim_x, depth](
-            Int(thread_idx.x), 0
+            thread_idx.x, 0
         )
 
         _ = logits.fill(0)
@@ -255,20 +256,20 @@ def fp8_index_kernel[
                 logits_sum[l_i, 0] += logits[l_i, l_j]
 
             scratch[
-                thread_idx.x * UInt(BN // thread_dim_x) + UInt(l_i),
+                thread_idx.x * (BN // thread_dim_x) + l_i,
                 thread_idx.y,
             ] = logits_sum[l_i, 0]
 
         barrier()
 
-        if current_key_offset + Int(tid) < num_keys:
+        if current_key_offset + tid < num_keys:
             # Sum logits across heads
             var row_sum: Float32 = 0.0
 
             for col_idx in range(thread_dim_y):
                 row_sum += scratch[tid, col_idx][0]
 
-            o_ptr[Scalar[DType.uint](i * BN) + tid] = k_s_reg * row_sum
+            o_ptr[i * BN + tid] = k_s_reg * row_sum
 
 
 @always_inline
@@ -387,7 +388,7 @@ def _index_matmul_max[
     comptime num_heads = q_layout.shape[1].value()
     comptime depth = q_layout.shape[2].value()
 
-    var batch_idx, head_idx = divmod(block_idx.z, UInt(num_heads))
+    var batch_idx, head_idx = udivmod(block_idx.z, num_heads)
     var seq_idx = block_idx.x * 16 + thread_idx.x
     var key_idx = block_idx.y * 16 + thread_idx.y
 
@@ -395,10 +396,10 @@ def _index_matmul_max[
     var end_of_seq = valid_length[batch_idx + 1][0]
     var seq_len = end_of_seq - start_of_seq
 
-    var num_keys = k_lut.cache_length(Int(batch_idx))
-    var k_row_start = k_lut.row_idx(UInt32(Int(batch_idx)), 0)
+    var num_keys = k_lut.cache_length(batch_idx)
+    var k_row_start = k_lut.row_idx(UInt32(batch_idx), 0)
 
-    if key_idx >= UInt(num_keys) or seq_idx >= UInt(seq_len):
+    if key_idx >= num_keys or seq_idx >= Int(seq_len):
         return
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq, 0, 0))
@@ -425,7 +426,7 @@ def _index_matmul_max[
     )
 
     var accum = Float32(0.0)
-    for d in range(Int(depth)):
+    for d in range(depth):
         accum += (
             k_batch[key_idx, 0, d][0] * q_batch[seq_idx, head_idx, d][0]
         ).cast[DType.float32]()
@@ -457,10 +458,10 @@ def _reduce_logits[
     var end_of_seq = valid_length[batch_idx + 1][0]
     var seq_len = end_of_seq - start_of_seq
 
-    var num_keys = k_lut.cache_length(Int(batch_idx))
-    var k_row_offset = k_lut.row_idx(UInt32(Int(batch_idx)), 0)
+    var num_keys = k_lut.cache_length(batch_idx)
+    var k_row_offset = k_lut.row_idx(UInt32(batch_idx), 0)
 
-    if seq_idx >= UInt(seq_len) or key_idx >= UInt(num_keys):
+    if seq_idx >= Int(seq_len) or key_idx >= num_keys:
         return
 
     var o_ptr = output.ptr_at_offset(Index(start_of_seq, 0))
