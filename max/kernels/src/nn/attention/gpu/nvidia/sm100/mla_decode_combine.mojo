@@ -29,12 +29,7 @@ Algorithm:
 from std.math import ceildiv, exp2, log2, max, min
 
 import std.gpu.primitives.warp as warp
-from std.gpu import (
-    WARP_SIZE,
-    block_idx_int as block_idx,
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
-)
+from std.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import (
@@ -168,8 +163,8 @@ def mla_combine_kernel[
     var batch_idx = block_idx.x
     var seq_idx = block_idx.y
     var head_block_idx = block_idx.z
-    var warp_idx = Int(warp_id())
-    var lane_idx = Int(lane_id())
+    var warp_idx = warp_id()
+    var lane_idx = lane_id()
 
     # In ragged mode, each batch can have a different number of Q tokens.
     # The grid launches with seq_len = q_max_seq_len, so CTAs with

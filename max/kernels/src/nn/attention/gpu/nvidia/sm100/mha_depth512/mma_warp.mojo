@@ -59,8 +59,6 @@ from .config import Depth512SM100Config
 from .smem import Depth512AttentionSMem
 from std.utils.index import Index
 
-# from std.gpu import thread_idx_int as thread_idx
-
 
 @always_inline
 def depth512_mma[

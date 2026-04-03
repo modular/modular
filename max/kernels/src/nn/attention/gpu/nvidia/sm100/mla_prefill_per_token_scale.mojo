@@ -43,12 +43,7 @@ from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from layout.coord import Idx, Coord
 from layout.layout_tensor import LayoutTensor
-from std.gpu import (
-    barrier,
-    MAX_THREADS_PER_BLOCK_METADATA,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
 from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.compute.arch.tcgen05 import tcgen05_alloc

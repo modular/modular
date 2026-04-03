@@ -54,12 +54,7 @@ from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
 from nn.attention.mha_utils import (
     MHAConfig,
     NoPartition,
@@ -443,7 +438,7 @@ __extension SM100MLA:
                 - 1
             )
 
-            var local_thread_idx = UInt32(thread_idx.x - 14 * UInt(WARP_SIZE))
+            var local_thread_idx = UInt32(thread_idx.x - 14 * WARP_SIZE)
 
             Self.convert_fp8_to_bf16(
                 iter_count,

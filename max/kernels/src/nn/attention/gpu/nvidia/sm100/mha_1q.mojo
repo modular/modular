@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp2, recip, align_up
+from std.math.uutils import umod
 from std.math.constants import log2e
 
 from std.sys import align_of, simd_width_of, size_of
@@ -23,9 +24,9 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    lane_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -2777,7 +2778,7 @@ def _mha_sm100[
             decoding and PartitionType.do_partition
         ):  # we may have an empty partition
             if kv_tile_start_row >= end:
-                if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                     4 * min(group, 8) + 128
                 ):
                     exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
@@ -3035,7 +3036,7 @@ def _mha_sm100[
 
         comptime if decoding and PartitionType.do_partition:
             # Only the first thread of each row
-            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+            if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                 4 * min(group, 8) + 128
             ):
                 exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
