@@ -105,7 +105,8 @@ struct RuntimeOptions {
   ///
   /// AsyncRT::RuntimeOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = AsyncRT::createRuntime(AsyncRT::RuntimeSource::Test, rtOpt);
+  /// auto rt = AsyncRT::getOrCreateRuntime(AsyncRT::RuntimeSource::Test,
+  /// rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
   uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled;
@@ -448,11 +449,6 @@ std::unique_ptr<Allocator>
 getAllocator(const AllocatorOptions &options = AllocatorOptions());
 
 using RuntimeRef = M::RCRef<Runtime>;
-
-/// Creates a runtime with the given source and options. Caller must not be
-/// within an outer runtime's thread (main or worker).
-RuntimeRef createRuntime(RuntimeSource source,
-                         const RuntimeOptions &options = RuntimeOptions());
 
 //===----------------------------------------------------------------------===//
 // Debugging helpers

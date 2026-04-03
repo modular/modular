@@ -7,6 +7,7 @@
 #include "Cache/CachedTransform.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Preprocessor.h"
@@ -82,8 +83,8 @@ struct TestPassDiagnosticValidator : public mlir::ScopedDiagnosticHandler {
 // on a cache miss and output of cacheHitFn on cache hit.
 TEST(CachedTransformTest, BufferReturn) {
   TempDir tempDir = createTempDir();
-  RuntimeRef runtime =
-      createRuntime(AsyncRT::RuntimeSource::Test, RuntimeOptions().forDebug());
+  RuntimeRef runtime = getOrCreateRuntime(AsyncRT::RuntimeSource::Test,
+                                          RuntimeOptions().forDebug());
   auto transformBackendChainOr =
       getLocalDefaultBackendChain(tempDir.getPath() / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));

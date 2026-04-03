@@ -12,6 +12,7 @@
 
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "MLRT/AsyncRT/Support/Semaphore.h"
 #include "llvm/Support/Threading.h"
 
@@ -32,8 +33,8 @@ protected:
     runtimeOptions.singleThreaded = GetParam() == kSingleThread;
     runtimeOptions.numThreads = numThreads;
     runtimeOptions.mainWillDonate = mainWillDonate;
-    return M::AsyncRT::createRuntime(M::AsyncRT::RuntimeSource::Test,
-                                     runtimeOptions);
+    return M::AsyncRT::getOrCreateRuntime(M::AsyncRT::RuntimeSource::Test,
+                                          runtimeOptions);
   }
 };
 
