@@ -72,9 +72,7 @@ model with MAX in Python.
     def main():
         model_path = "google/gemma-3-12b-it"
         pipeline_config = PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path=model_path)}
-            ),
+            models=ModelManifest({"main": MAXModelConfig(model_path=model_path)}),
         )
         llm = LLM(pipeline_config)
 

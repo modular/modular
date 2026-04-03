@@ -71,6 +71,7 @@ modular_py_test(
     deps = [
         "//max/python/max/pipelines/lib",
         requirement("huggingface-hub"),
+        requirement("transformers"),
     ],
 )
 

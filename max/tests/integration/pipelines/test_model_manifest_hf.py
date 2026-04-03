@@ -95,8 +95,11 @@ class TestSingleTransformersModelHF:
     def test_not_a_diffusers_model(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
 
-        # A pure transformers model should not have a diffusers config.
-        assert registry["main"].diffusers_config is None
+        # A pure transformers model is not a diffusers component.
+        # Its huggingface_config should still be a valid PretrainedConfig.
+        from transformers import PretrainedConfig
+
+        assert isinstance(registry["main"].huggingface_config, PretrainedConfig)
 
     def test_registry_structure(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
@@ -154,7 +157,7 @@ class TestLoadModelIndexRemote:
         registry = ModelManifest.from_model_path(self.PUBLIC_DIFFUSERS_REPO)
 
         # Should have been expanded — no "primary" role.
-        assert "primary" not in registry
+        assert "main" not in registry
 
         assert "unet" in registry
         assert "vae" in registry
@@ -254,7 +257,7 @@ class TestDiffusionMultiComponentHF:
 
     def test_auto_expanded(self, registry: ModelManifest) -> None:
         """from_model_path should auto-expand into components, not a primary."""
-        assert "primary" not in registry
+        assert "main" not in registry
 
     def test_contains_expected_components(
         self, registry: ModelManifest
@@ -283,10 +286,14 @@ class TestDiffusionMultiComponentHF:
     def test_len(self, registry: ModelManifest) -> None:
         assert len(registry) == len(self.EXPECTED_COMPONENTS)
 
-    def test_transformers_config_is_none(self, registry: ModelManifest) -> None:
-        """A diffusers repo should not resolve as a transformers config."""
+    def test_diffusers_component_has_pretrained_config(
+        self, registry: ModelManifest
+    ) -> None:
+        """A diffusers component should resolve to a PretrainedConfig."""
+        from transformers import PretrainedConfig
+
         cfg = registry["transformer"]
-        assert cfg.huggingface_config is None
+        assert isinstance(cfg.huggingface_config, PretrainedConfig)
 
     def test_load_model_index_returns_flux_pipeline(self) -> None:
         repo = HuggingFaceRepo(repo_id=self.REPO)

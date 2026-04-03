@@ -57,7 +57,7 @@ class Flux2ArchConfig(ArchConfig):
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
     ) -> Self:
-        model_config = model_config or pipeline_config.model
+        model_config = model_config or pipeline_config.models["transformer"]
         if len(model_config.device_specs) != 1:
             raise ValueError("Flux2 is only supported on a single device")
         return cls()

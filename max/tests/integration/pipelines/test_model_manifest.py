@@ -882,17 +882,10 @@ class TestPrimaryArchitectureName:
         cfg = _make_config("org/llm-model")
         manifest = ModelManifest({"main": cfg})
 
-        with (
-            patch.object(
-                type(cfg),
-                "huggingface_config",
-                new_callable=lambda: property(lambda self: None),
-            ),
-            patch.object(
-                type(cfg),
-                "diffusers_config",
-                new_callable=lambda: property(lambda self: None),
-            ),
+        with patch.object(
+            type(cfg),
+            "huggingface_config",
+            new_callable=lambda: property(lambda self: None),
         ):
             with pytest.raises(
                 ValueError, match="Cannot determine architecture name"
@@ -938,7 +931,6 @@ _COMPUTED_FIELDS = {
     "huggingface_weight_repo",
     "huggingface_model_repo",
     "huggingface_config",
-    "diffusers_config",
     "model_name",
     "graph_quantization_encoding",
     "generation_config",

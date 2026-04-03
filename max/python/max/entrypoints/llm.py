@@ -197,7 +197,7 @@ async def _async_worker(
     # Create dynamic and continuous batching workers and associated queues
     # to feed the model worker process.
     pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
-        pipeline_config.model.architecture_name,
+        pipeline_config.models.main_architecture_name,
     )
     lora_queue: LoRAQueue | None = (
         LoRAQueue(

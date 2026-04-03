@@ -27,6 +27,7 @@ from max.pipelines.lib import (
 )
 from transformers import (
     AutoTokenizer,
+    PretrainedConfig,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
@@ -77,6 +78,7 @@ def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
     model_config = MAXModelConfig.model_construct(
         served_model_name="echo",
     )
+    model_config._huggingface_config = PretrainedConfig()
 
     model_config.kv_cache = kv_cache_config
     pipeline_config.model = model_config

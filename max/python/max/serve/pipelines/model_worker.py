@@ -197,11 +197,13 @@ class ModelWorker:
             # heavyweight driver context initialization that can take
             # seconds. Doing it here at startup avoids that latency
             # hitting the first real request.
-            first_device = load_device(pipeline_config.model.device_specs[0])
+            # Use any model's device_specs — all components share the same device.
+            any_model = next(iter(pipeline_config.models.values()))
+            first_device = load_device(any_model.device_specs[0])
             _prime_pinned_memory_cache(first_device)
             # This crashes on 8xMI355. TODO(GEX-3321)
             if first_device.api == "cuda":
-                for spec in pipeline_config.model.device_specs[1:]:
+                for spec in any_model.device_specs[1:]:
                     _prime_pinned_memory_cache(load_device(spec))
 
             # Initialize token generator.
@@ -227,7 +229,7 @@ class ModelWorker:
                         "Device graph capture warmup completed in %.2fs "
                         "(model=%s, max_batch_size=%d).",
                         warmup_duration_s,
-                        pipeline_config.model.model_path,
+                        pipeline_config.models.main_architecture_name,
                         max_batch_size,
                     )
 

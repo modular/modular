@@ -148,8 +148,6 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
         max_batch_size=1,
         max_length=1,
     )
-    pipeline_config.model._diffusers_config = {"components": {}}
-
     PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,
         task=PipelineTask.PIXEL_GENERATION,
