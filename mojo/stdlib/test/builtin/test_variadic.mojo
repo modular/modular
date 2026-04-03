@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin.variadics import Variadic, _ReduceValueAndIdxToVariadic
+from std.builtin.variadics import (
+    TypeList,
+    Variadic,
+    _ReduceValueAndIdxToVariadic,
+)
 from std.sys.intrinsics import _type_is_eq
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from test_utils import ExplicitDelOnly
@@ -521,6 +525,113 @@ def test_variadic_pack_forwarding_through_two_levels() raises:
         middle(*args)
 
     outer("a", True)
+
+
+# ===-----------------------------------------------------------------------===#
+# TypeList tests
+# ===-----------------------------------------------------------------------===#
+
+
+def test_typelist_size() raises:
+    assert_equal(TypeList[Trait=AnyType, Int, String, Float64].size, 3)
+    assert_equal(TypeList[Bool].size, 1)
+
+
+def test_typelist_getitem() raises:
+    comptime TL = TypeList[Trait=AnyType, Int, String, Float64]()
+    assert_true(_type_is_eq[TL[0], Int]())
+    assert_true(_type_is_eq[TL[1], String]())
+    assert_true(_type_is_eq[TL[2], Float64]())
+
+
+def test_typelist_reversed() raises:
+    comptime rev = TypeList[Trait=AnyType, Int, String, Float64]().reverse()
+    assert_equal(rev.size, 3)
+    assert_true(_type_is_eq[rev[0], Float64]())
+    assert_true(_type_is_eq[rev[1], String]())
+    assert_true(_type_is_eq[rev[2], Int]())
+
+
+def test_typelist_contains() raises:
+    comptime TL = TypeList[Trait=AnyType, Int, String, Float64]()
+    comptime assert TL.contains[Int]
+    comptime assert TL.contains[String]
+    comptime assert TL.contains[Float64]
+    comptime assert not TL.contains[Bool]
+
+
+def test_typelist_slice() raises:
+    comptime TL = TypeList[Trait=AnyType, Int, String, Float64, Bool]()
+
+    # Slice middle
+    comptime middle = TL.slice[start=1, end=3]()
+    assert_equal(middle.size, 2)
+    assert_true(_type_is_eq[middle[0], String]())
+    assert_true(_type_is_eq[middle[1], Float64]())
+
+    # Slice from start
+    comptime first2 = TL.slice[start=0, end=2]()
+    assert_equal(first2.size, 2)
+    assert_true(_type_is_eq[first2[0], Int]())
+    assert_true(_type_is_eq[first2[1], String]())
+
+    # Slice to end (using default)
+    comptime last2 = TL.slice[start=2]()
+    assert_equal(last2.size, 2)
+    assert_true(_type_is_eq[last2[0], Float64]())
+    assert_true(_type_is_eq[last2[1], Bool]())
+
+    # Full slice (defaults)
+    comptime full = TL.slice[]
+    assert_equal(full.size, 4)
+
+
+def test_typelist_filter() raises:
+    comptime TL = TypeList[Trait=AnyType, Int, String, Float64, Bool]()
+
+    comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
+    comptime filtered = TL.filter[IsNotInt]()
+    assert_equal(filtered.size, 3)
+    assert_true(_type_is_eq[filtered[0], String]())
+    assert_true(_type_is_eq[filtered[1], Float64]())
+    assert_true(_type_is_eq[filtered[2], Bool]())
+
+
+def test_typelist_filter_empty_result() raises:
+    comptime TL = TypeList[Trait=AnyType, Int, String]
+
+    comptime AlwaysFalse[Type: AnyType] = False
+    comptime empty = TL.filter[AlwaysFalse]
+    assert_equal(empty.size, 0)
+
+
+def test_typelist_map() raises:
+    comptime TL = TypeList[Trait=Copyable, Int, String, Float64]()
+
+    comptime ToList[T: Copyable] = List[T]
+    comptime mapped = TL.map[To=Copyable, Mapper=ToList]()
+    assert_equal(mapped.size, 3)
+    comptime assert _type_is_eq[mapped[0], List[Int]]()
+    comptime assert _type_is_eq[mapped[1], List[String]]()
+    comptime assert _type_is_eq[mapped[2], List[Float64]]()
+
+
+def test_typelist_map_identity() raises:
+    comptime TL = TypeList[Trait=AnyType, Int, Bool]()
+
+    comptime Identity[T: AnyType] = T
+    comptime mapped = TL.map[To=AnyType, Mapper=Identity]()
+    assert_equal(mapped.size, 2)
+    comptime assert _type_is_eq[mapped[0], Int]()
+    comptime assert _type_is_eq[mapped[1], Bool]()
+
+
+def test_typelist_map_empty() raises:
+    comptime TL = TypeList[Trait=Copyable]()
+
+    comptime ToList[T: Copyable] = List[T]
+    comptime mapped = TL.map[To=Copyable, Mapper=ToList]()
+    assert_equal(mapped.size, 0)
 
 
 def main() raises:

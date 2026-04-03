@@ -233,7 +233,6 @@ struct Variadic:
     ] = _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[False],
         VariadicType=element_types,
-        #  Curry `_ContainsMapper` to fit the reducer signature
         Reducer=_ContainsReducer[Trait=Trait, Type=type, ...],
     ][
         0
@@ -484,6 +483,146 @@ struct Variadic:
         Prev,
         Variadic.values[Mapper[From[idx], idx]],
     ]
+
+
+# ===-----------------------------------------------------------------------===#
+# TypeList
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
+    """A compile-time list of types conforming to a common trait.
+
+    `TypeList` provides type-level operations on variadic sequences of types,
+    such as reversing, filtering, slicing, mapping, and membership testing.
+
+    Parameters:
+        Trait: The trait that all types in the list must conform to.
+        element_types: The types in the list.
+
+    Examples:
+
+    ```mojo
+    from std.builtin.variadics import TypeList
+    from std.sys.intrinsics import _type_is_eq
+
+    # Create a type list
+    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
+
+    # Query size
+    assert_equal(tl.size, 3)
+
+    # Check membership
+    comptime assert tl.contains[Int]
+    comptime assert not tl.contains[Bool]
+
+    # Index into the list
+    comptime assert _type_is_eq[tl[0], Int]()
+    ```
+    """
+
+    comptime size = Variadic.size(Self.element_types)
+    """The number of types in the list."""
+
+    comptime __getitem_param__[idx: Int] = Self.element_types[idx]
+    """Gets a type at the given index.
+
+    Parameters:
+        idx: The index of the type to access.
+    """
+
+    comptime reverse = TypeList[
+        *_MapVariadicAndIdxToType[
+            To=Self.Trait,
+            VariadicType=Self.element_types,
+            Mapper=_ReversedVariadic[Self.Trait, ...],
+        ]
+    ]
+    """The types in reverse order."""
+
+    comptime contains[type: Self.Trait] = _ReduceVariadicAndIdxToValue[
+        BaseVal=Variadic.values[False],
+        VariadicType=Self.element_types,
+        Reducer=_ContainsReducer[Trait=Self.Trait, Type=type, ...],
+    ][0]
+    """Checks if a type is contained in this type list.
+
+    Parameters:
+        type: The type to check for.
+    """
+
+    comptime map[
+        To: type_of(AnyType),
+        //,
+        Mapper: _TypeToTypeGenerator[Self.Trait, To],
+    ] = TypeList[
+        *_ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[To],
+            VariadicType=Self.element_types,
+            Reducer=_MapTypeToTypeReducer[Self.Trait, To, Mapper, ...],
+        ],
+    ]
+    """Maps types to new types using a mapper.
+
+    Returns a new variadic of types resulting from applying `Mapper[T]` to each
+    type in this type list.
+
+    Parameters:
+        To: The trait that the output types conform to.
+        Mapper: A generator that maps a type to another type.
+            The generator type is `[T: Trait] -> To`.
+    """
+
+    comptime slice[
+        start: Int where start >= 0 = 0,
+        end: Int where start <= end <= Self.size = Self.size,
+    ] = TypeList[
+        *_ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[Self.Trait],
+            VariadicType=Self.element_types,
+            Reducer=_SliceReducer[Self.Trait, start, end, ...],
+        ]
+    ]
+    """Extracts a contiguous subsequence from the type list.
+
+    Returns a new variadic containing elements from index `start` (inclusive)
+    to index `end` (exclusive). Similar to Python's slice notation [start:end].
+
+    Parameters:
+        start: The starting index (inclusive). Defaults to 0.
+        end: The ending index (exclusive). Defaults to the list size.
+
+    Constraints:
+        0 <= start <= end <= size.
+    """
+
+    comptime filter[
+        predicate: _TypePredicateGenerator[Self.Trait],
+    ] = TypeList[
+        *_ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[Self.Trait],
+            VariadicType=Self.element_types,
+            Reducer=_FilterReducer[Self.Trait, predicate, ...],
+        ]
+    ]
+    """Filters types based on a predicate.
+
+    Returns a new variadic containing only the types for which the predicate
+    returns True.
+
+    Parameters:
+        predicate: A generator that takes a type and returns Bool.
+    """
+
+    @always_inline
+    def __len__(self) -> Int:
+        """Gets the size of the TypeList.
+
+        Returns:
+            The number of elements on the TypeList.
+        """
+        return Self.size
 
 
 # ===-----------------------------------------------------------------------===#

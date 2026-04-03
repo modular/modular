@@ -144,6 +144,7 @@ from std.builtin.value import (
     TrivialRegisterPassable,
 )
 from std.builtin.variadics import (
+    TypeList,
     Variadic,
     VariadicParamList,
     VariadicList,
