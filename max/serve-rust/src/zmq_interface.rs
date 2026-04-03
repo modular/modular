@@ -1,8 +1,8 @@
 use crate::metrics::RustMetrics;
 use crate::types::{RequestID, SchedulerResult, TextGenerationContext};
 use futures::Stream;
+use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -59,7 +59,7 @@ pub struct ZmqModelWorkerProxy<Reply> {
     request_tx: mpsc::Sender<OutboundRequest>,
     cancel_tx: mpsc::Sender<Vec<u8>>,
     metrics: Arc<RustMetrics>,
-    pending_out_queues: Arc<Mutex<HashMap<RequestID, PendingRequest<Reply>>>>,
+    pending_out_queues: Arc<Mutex<FxHashMap<RequestID, PendingRequest<Reply>>>>,
 }
 
 impl<Reply> ZmqModelWorkerProxy<Reply>
@@ -133,7 +133,7 @@ where
             request_tx,
             cancel_tx,
             metrics,
-            pending_out_queues: Arc::new(Mutex::new(HashMap::new())),
+            pending_out_queues: Arc::new(Mutex::new(FxHashMap::default())),
         }
     }
 
@@ -193,7 +193,7 @@ where
 
         let stream = async_stream::stream! {
             while let Some(first_item) = rx.recv().await {
-                let mut outputs = Vec::new();
+                let mut outputs = Vec::with_capacity(4);
                 let mut should_stop = false;
 
                 if let Some(result) = first_item.result {
@@ -250,7 +250,7 @@ where
                         continue;
                     }
                 };
-                let response_dict: HashMap<RequestID, SchedulerResult<Reply>> =
+                let response_dict: FxHashMap<RequestID, SchedulerResult<Reply>> =
                     rmp_serde::from_slice(response_part).expect("Deserialization failed");
 
                 let mut deliveries = Vec::with_capacity(response_dict.len());
