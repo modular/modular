@@ -37,3 +37,21 @@ readonly dsym_path="${MODULAR_DSYM_PATH:-}"
 if [[ -n "$dsym_path" ]]; then
   "$dsymutil" -o "$dsym_path" "$MODULAR_BINARY_PATH"
 fi
+
+if [[ "${BUILD_IFS:-}" == "yes" ]]; then
+  if [[ $OSTYPE == darwin* ]]; then
+    ifs_platform=mac
+  elif [[ $(uname -m) == "x86_64" ]]; then
+    ifs_platform=intel
+  else
+    ifs_platform=graviton
+  fi
+
+  ifs_root="$PWD/external/+http_archive+llvm-ifs/tools/$ifs_platform"
+
+  if [[ "${MACOS:-}" == "true" ]]; then
+    exec "$ifs_root/llvm-readtapi.stripped" -arch arm64 -extract "$IFS_INPUT" -o "$IFS_OUTPUT"
+  else
+    exec "$ifs_root/llvm-ifs.stripped" "$IFS_INPUT" --output-elf="$IFS_OUTPUT"
+  fi
+fi

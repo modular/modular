@@ -46,10 +46,7 @@ cc_sysroot(
 [
     cc_toolchain(
         name = "{}_clang_toolchain".format(platform),
-        args = [
-            "//bazel/internal/cc-toolchain/args/interface-libraries:build_interface_libraries",
-            "//bazel/internal/cc-toolchain/args/interface-libraries:dynamic_library_linker_tool",
-        ] + select({
+        args = select({
             "//:linux_x86_64": [":linux_sysroot_x86_64"],
             "//:linux_aarch64": [":linux_sysroot_aarch64"],
             "@platforms//os:macos": [":macos_sysroot"],
@@ -98,13 +95,13 @@ cc_sysroot(
             "@rules_cc//cc/toolchains/args/preprocessor_defines:feature",
             "@rules_cc//cc/toolchains/args/random_seed:feature",
             "//bazel/internal/cc-toolchain/features:external_include_paths",
-            "//bazel/internal/cc-toolchain/args/interface-libraries:supports_interface_shared_libraries",
 
             # NOTE: Order matters, some flags must come before default flags
             "//bazel/internal/cc-toolchain/features:parse_headers_shim",
             "//bazel/internal/cc-toolchain/features:opt_feature",
             "@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features",
             "//bazel/internal/cc-toolchain/features:supports_start_end_lib",  # https://github.com/bazelbuild/rules_cc/issues/322
+            "//bazel/internal/cc-toolchain/args/interface-libraries",
         ],
         known_features = [
             # Only optional features need to be included here
@@ -119,8 +116,6 @@ cc_sysroot(
             "//bazel/internal/cc-toolchain/features:parse_headers",
             "@rules_cc//cc/toolchains/args/generate_linkmap:feature",
             "@rules_cc//cc/toolchains/args/thin_lto:feature",
-            "//bazel/internal/cc-toolchain/args/interface-libraries:build_interface_libraries_no_op",
-            "//bazel/internal/cc-toolchain/args/interface-libraries:dynamic_library_linker_tool_no_op",
         ] + [
             "//bazel/internal/cc-toolchain/features:" + name
             for name in MARKER_FEATURES

@@ -1,77 +1,73 @@
 load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
 load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
-load("@rules_cc//cc/toolchains:nested_args.bzl", "cc_nested_args")
+load("@rules_cc//cc/toolchains:feature_set.bzl", "cc_feature_set")
 
-cc_feature(
-    name = "dynamic_library_linker_tool_no_op",  # Make sure legacy toolchain feature isn't added
-    overrides = "@rules_cc//cc/toolchains/features/legacy:dynamic_library_linker_tool",
+cc_feature_set(
+    name = "interface-libraries",
+    all_of = [
+        ":build_interface_libraries",
+        ":dynamic_library_linker_tool",
+        ":has_configured_linker_path",
+        ":supports_interface_shared_libraries",
+    ],
     visibility = ["//visibility:public"],
 )
 
+# TODO: https://github.com/bazelbuild/rules_cc/pull/678
 cc_feature(
-    name = "build_interface_libraries_no_op",  # Make sure legacy toolchain feature isn't added
-    overrides = "@rules_cc//cc/toolchains/features/legacy:build_interface_libraries",
-    visibility = ["//visibility:public"],
+    name = "has_configured_linker_path",
+    feature_name = "has_configured_linker_path",
 )
 
+# TODO: Move to capabilities https://github.com/bazelbuild/rules_cc/pull/679
 cc_feature(
     name = "supports_interface_shared_libraries",
     feature_name = "supports_interface_shared_libraries",
-    visibility = ["//visibility:public"],
+)
+
+cc_feature(
+    name = "dynamic_library_linker_tool",  # Make sure legacy toolchain feature isn't added
+    overrides = "@rules_cc//cc/toolchains/features/legacy:dynamic_library_linker_tool",
+)
+
+cc_feature(
+    name = "build_interface_libraries",
+    args = [
+        ":enabled_env",
+        ":input_env",
+        ":output_env",
+    ],
+    overrides = "@rules_cc//cc/toolchains/features/legacy:build_interface_libraries",
 )
 
 cc_args(
-    name = "build_interface_libraries",
+    name = "enabled_env",
     actions = ["@rules_cc//cc/toolchains/actions:dynamic_library_link_actions"],
-    env = select({
+    data = ["@llvm-ifs"],
+    env = {
+        "BUILD_IFS": "{generate_interface_library}",
+    } | select({
         "@platforms//os:macos": {"MACOS": "true"},
         "//conditions:default": {},
     }),
-    nested = [
-        ":generate_interface_library_arg",
-        ":interface_library_builder_path_arg",
-        ":interface_library_input_path_arg",
-        ":interface_library_output_path_arg",
-    ],
-    requires_any_of = [":supports_interface_shared_libraries"],
-    requires_not_none = "@rules_cc//cc/toolchains/variables:generate_interface_library",
-    visibility = ["//visibility:public"],
-)
-
-cc_nested_args(
-    name = "generate_interface_library_arg",
-    args = ["{generate_interface_library}"],
     format = {"generate_interface_library": "@rules_cc//cc/toolchains/variables:generate_interface_library"},
-)
-
-cc_nested_args(
-    name = "interface_library_builder_path_arg",
-    args = ["bazel/internal/cc-toolchain/args/interface-libraries/builder.sh"],  # NOTE: This should be fixed upstream by allowing passing a custom binary path
-    data = [
-        ":builder.sh",
-        "@llvm-ifs",
-    ],
-)
-
-cc_nested_args(
-    name = "interface_library_input_path_arg",
-    args = ["{interface_library_input_path}"],
-    format = {"interface_library_input_path": "@rules_cc//cc/toolchains/variables:interface_library_input_path"},
-    requires_not_none = "@rules_cc//cc/toolchains/variables:interface_library_input_path",
-)
-
-cc_nested_args(
-    name = "interface_library_output_path_arg",
-    args = ["{interface_library_output_path}"],
-    format = {"interface_library_output_path": "@rules_cc//cc/toolchains/variables:interface_library_output_path"},
-    requires_not_none = "@rules_cc//cc/toolchains/variables:interface_library_output_path",
+    requires_any_of = [":supports_interface_shared_libraries"],
 )
 
 cc_args(
-    name = "dynamic_library_linker_tool",
+    name = "input_env",
     actions = ["@rules_cc//cc/toolchains/actions:dynamic_library_link_actions"],
-    args = ["bazel/internal/cc-toolchain/tools/linker-driver.sh"],  # NOTE: This should be fixed upstream by allowing passing a custom binary path
+    env = {"IFS_INPUT": "{interface_library_input_path}"},
+    format = {"interface_library_input_path": "@rules_cc//cc/toolchains/variables:interface_library_input_path"},
     requires_any_of = [":supports_interface_shared_libraries"],
-    requires_not_none = "@rules_cc//cc/toolchains/variables:generate_interface_library",
-    visibility = ["//visibility:public"],
+    requires_not_none = "@rules_cc//cc/toolchains/variables:interface_library_input_path",
+)
+
+cc_args(
+    name = "output_env",
+    actions = ["@rules_cc//cc/toolchains/actions:dynamic_library_link_actions"],
+    env = {"IFS_OUTPUT": "{interface_library_output_path}"},
+    format = {"interface_library_output_path": "@rules_cc//cc/toolchains/variables:interface_library_output_path"},
+    requires_any_of = [":supports_interface_shared_libraries"],
+    requires_not_none = "@rules_cc//cc/toolchains/variables:interface_library_output_path",
 )
