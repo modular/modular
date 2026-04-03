@@ -205,6 +205,8 @@ public:
   /// The result specifier if present.
   ParsedArgument resultArg;
   FnEffects effects;
+  /// Tracks the Mojo-only `thin` effect on function types.
+  bool isThin = false;
   ExprNode *thrownTypeExpr = nullptr;
 
   /// Trailing function level constraints specified with 'where' clauses.

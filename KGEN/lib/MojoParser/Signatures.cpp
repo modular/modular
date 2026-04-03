@@ -1216,8 +1216,9 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 
   auto isEffectKeywordOrWhere = [&](StringRef spelling) {
     return spelling == "raises" || spelling == "capturing" ||
-           spelling == "escaping" || spelling == "unified" ||
-           spelling == "register_passable" || spelling == "where";
+           spelling == "escaping" || spelling == "thin" ||
+           spelling == "unified" || spelling == "register_passable" ||
+           spelling == "where";
   };
 
   // If the client supports function effects, parse them as well.
@@ -1247,7 +1248,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       // Otherwise maybe it was misspelled, just eat it.
       p.emitError(loc, "unknown function effect '")
           << spelling
-          << "', expected 'raises', 'capturing', 'unified', or "
+          << "', expected 'raises', 'capturing', 'thin', 'unified', or "
              "'register_passable'";
     } else if (spelling == "raises") {
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
@@ -1272,6 +1273,14 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
                   "the 'escaping' function effect is no longer supported; use "
                   "'unified' closures instead");
       return failure();
+    } else if (spelling == "thin") {
+      if (kind != ArgListKind::kFnTypeArgList) {
+        p.emitError(loc, "function effect 'thin' is only allowed on function "
+                         "types");
+      } else if (isThin) {
+        p.emitError(loc, "function effect 'thin' was already specified");
+      }
+      isThin = true;
     } else if (spelling == "unified") {
       handleEffect(&FnEffects::isUnified, &FnEffects::setUnified);
     } else if (spelling == "register_passable") {
