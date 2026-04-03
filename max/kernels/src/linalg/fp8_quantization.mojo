@@ -113,6 +113,16 @@ def quantize_static_scaled_fp8[
     )
 
 
+def zero_scale_global_kernel(
+    scale_global: UnsafePointer[Float32, MutAnyOrigin]
+):
+    # GENAI-512: Avoid using `enqueue_fill` for this operation as this can
+    # deadlock when using CUDA graphs. The graph node for the async memset
+    # could try to load a CUDA kernel, but if the GPU is spinning inside a
+    # collectives kernel, then the graph replay will deadlock.
+    scale_global[0] = 0
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
@@ -224,7 +234,13 @@ def quantize_tensor_dynamic_scaled_fp8[
             1,
             owning=False,
         )
-        scale_as_buf.enqueue_fill(0)
+        ctx.enqueue_function[
+            zero_scale_global_kernel, zero_scale_global_kernel
+        ](
+            scale_as_buf,
+            grid_dim=1,
+            block_dim=1,
+        )
         ctx.enqueue_function[kernel, kernel](
             scale_global,
             in_tensor,
