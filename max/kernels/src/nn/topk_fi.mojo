@@ -15,11 +15,11 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    block_dim,
+    block_idx,
+    lane_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.primitives import block, warp
 from std.gpu.primitives.grid_controls import (
@@ -41,6 +41,7 @@ from layout import (
 )
 from layout.tile_layout import Layout
 from std.math import ceildiv, gcd, exp
+from std.math.uutils import ufloordiv
 from std.memory import stack_allocation
 from std.os import Atomic
 from std.random import Random
@@ -178,10 +179,8 @@ def get_min_max_value[
     for i in range(num_iterations):
         var in_data_vec = SIMD[DType.float32, vec_size](0)
 
-        if (i * block_size + Int(tx)) * vec_size < d:
-            var offset = (
-                row_idx * d + i * block_size * vec_size + Int(tx) * vec_size
-            )
+        if (i * block_size + tx) * vec_size < d:
+            var offset = row_idx * d + i * block_size * vec_size + tx * vec_size
             in_data_vec = in_data.load[width=vec_size](offset).cast[
                 DType.float32
             ]()
@@ -215,7 +214,7 @@ def TopKMaskLogitsKernel[
     d: Int,
 ):
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var row_idx = bx
 
     var logits_ptr = logits.ptr + bx * d
@@ -457,7 +456,7 @@ def device_sampling_from_prob[
         after all chunks are processed.
     """
 
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     # Step 1: Filter probabilities based on predicate (prob > low).
     var prob_gt_threshold = SIMD[DType.float32, vec_size]()
@@ -629,9 +628,9 @@ def _block_reduce_value_count[
     var warp_accum = _warp_reduce_value_count(val)
 
     # Store warp-level results in shared memory (only lane 0 of each warp).
-    if lane_id() == 0 and warp < UInt(num_warps_needed):
-        value_sram[Int(warp) * value_width] = warp_accum.value
-        count_sram[Int(warp) * count_width] = warp_accum.count
+    if lane_id() == 0 and warp < num_warps_needed:
+        value_sram[warp * value_width] = warp_accum.value
+        count_sram[warp * count_width] = warp_accum.count
     barrier()
 
     # Each warp has reduced its own ValueCount in smem (value_sram and count_sram).
@@ -641,12 +640,12 @@ def _block_reduce_value_count[
     # block_size = 1024 and WARP_SIZE = 32, then only the first 32 threads from warp 0
     # will have valid results).
     var block_accum: ValueCount[T]
-    var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
+    var thread_in_final_warp = thread_idx.x < ufloordiv(block_dim.x, WARP_SIZE)
 
     if thread_in_final_warp:
         block_accum = {
-            value = value_sram[lane_id() * UInt(value_width)],
-            count = count_sram[lane_id() * UInt(count_width)],
+            value = value_sram[lane_id() * value_width],
+            count = count_sram[lane_id() * count_width],
         }
     else:
         # Initialize unused threads with zeros (identity for sum).
@@ -710,7 +709,7 @@ def TopKSamplingFromProbKernel[
     comptime assert output.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     var sampled_id_sram = stack_allocation[
         1, Int, address_space=AddressSpace.SHARED
@@ -1054,7 +1053,7 @@ def TopKTopPSamplingFromProbKernel[
     comptime assert output.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     var row_idx = bx
     if indices:
@@ -1415,7 +1414,7 @@ def topk_softmax_sample_kernel[
     comptime assert sampled_indices.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var row_idx = bx
 
     var logits_ptr = logits.ptr + bx * d
