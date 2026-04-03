@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_down, ceildiv, exp, exp2, log
+from std.math.uutils import umod, ufloordiv, udivmod
 from std.collections import Optional, OptionalReg
 
 from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
@@ -32,11 +33,11 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    lane_id_int as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    block_idx,
+    grid_dim,
+    lane_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.host import DeviceAttribute, DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
@@ -703,8 +704,8 @@ def softmax_kernel[
     ), "accum_type must be floating point"
     comptime axis = rank - 1
 
-    var row_size = UInt(shape[axis])
-    var num_rows = UInt(shape.flattened_length()) // row_size
+    var row_size: Int = shape[axis]
+    var num_rows = ufloordiv(shape.flattened_length(), row_size)
 
     var max_buf = tt_stack_allocation[
         dtype=accum_type, address_space=AddressSpace.SHARED
@@ -737,13 +738,13 @@ def softmax_kernel[
             var sink_val = Scalar[accum_type].MIN
 
             comptime if sink:
-                sink_val = sink_weights[row_idx % UInt(sink_weights.dim[0]())][
+                sink_val = sink_weights[umod(row_idx, sink_weights.dim[0]())][
                     0
                 ].cast[accum_type]()
 
             # Step 1: compute max in row
             var row_coords = _get_nd_indices_from_flat_index(
-                Int(row_idx), shape, axis
+                row_idx, shape, axis
             )
             var row_max = row_reduce[
                 BLOCK_SIZE,
@@ -753,7 +754,7 @@ def softmax_kernel[
                 1,
                 rank,
                 accum_type=accum_type,
-            ](row_coords, axis, Scalar[dtype].MIN, Int(row_size))
+            ](row_coords, axis, Scalar[dtype].MIN, row_size)
 
             comptime if sink:
                 row_max = max(row_max, sink_val)
@@ -767,8 +768,8 @@ def softmax_kernel[
             # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
             var exp_sum = Scalar[accum_type](0)
 
-            for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
-                row_coords[axis] = Int(row_offset)
+            for row_offset in range(tid, row_size, BLOCK_SIZE):
+                row_coords[axis] = row_offset
 
                 # loads from input_fn twice
                 var val = exp(
@@ -792,8 +793,8 @@ def softmax_kernel[
 
             # Step 3: Normalize output (and apply log for logsoftmax)
             var block_exp_sum_recip = 1 / exp_sum_buf[0]
-            for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
-                row_coords[axis] = Int(row_offset)
+            for row_offset in range(tid, row_size, BLOCK_SIZE):
+                row_coords[axis] = row_offset
                 var normalized = (
                     output.load_linear[width=1](row_coords)
                     * block_exp_sum_recip.cast[dtype]()
@@ -955,9 +956,9 @@ def _softmax_temperature_kernel[
 
     comptime VEC_WIDTH = simd_width_of[dtype]()
 
-    var tid = Int(thread_idx.x)
-    var bid = Int(block_idx.x)
-    var gid = Int(grid_dim.x)
+    var tid = thread_idx.x
+    var bid = block_idx.x
+    var gid = grid_dim.x
 
     comptime BLOCK_SPAN = BLOCK_SIZE * VEC_WIDTH
     var use_vectorized = row_size >= 4 * BLOCK_SIZE * VEC_WIDTH
@@ -1182,15 +1183,11 @@ def _online_softmax_kernel[
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be
     # corrected with the right rowmax.
-    var input_warp_tile0 = input.tile[WM, WN](0, Int(warp_id))
-    var input_warp_tile1 = input.tile[WM, WN](
-        0, Int(warp_id) + num_rowwise_warps
-    )
+    var input_warp_tile0 = input.tile[WM, WN](0, warp_id)
+    var input_warp_tile1 = input.tile[WM, WN](0, warp_id + num_rowwise_warps)
 
-    var output_warp_tile0 = output.tile[WM, WN](0, Int(warp_id))
-    var output_warp_tile1 = output.tile[WM, WN](
-        0, Int(warp_id) + num_rowwise_warps
-    )
+    var output_warp_tile0 = output.tile[WM, WN](0, warp_id)
+    var output_warp_tile1 = output.tile[WM, WN](0, warp_id + num_rowwise_warps)
 
     var p = LayoutTensor[
         dtype,
@@ -1349,9 +1346,8 @@ def _online_softmax_iter_for_mma_output[
     comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
 
-    var tid = thread_idx.x
     var lane_id = lane_id()
-    var warp_x = warp_id[broadcast=True]() % UInt(num_rowwise_warps)
+    var warp_x = umod(warp_id[broadcast=True](), num_rowwise_warps)
 
     # Assume p_reg_tile has been properly vectorized. The element layout
     # represents number elements per thread in a row or column
@@ -1465,7 +1461,7 @@ def _online_softmax_iter_for_mma_output[
                     # warp scratch has layout row_major(num_warps, num_rows). The
                     # "score_row_idx" is the idx-th row in the score matrix.
                     warp_scratch[
-                        Int(warp_x), Int(score_row_idx)
+                        warp_x, Int(score_row_idx)
                     ] = score_frag_rowmax[col_tile, row][0]
 
         barrier()
@@ -1561,7 +1557,7 @@ def _online_softmax_iter_for_mma_output[
                     )
 
                     warp_scratch[
-                        warp_x + UInt(num_rowwise_warps), Int(score_row_idx)
+                        warp_x + num_rowwise_warps, Int(score_row_idx)
                     ] = score_frag_rowsum[col_tile, row][0]
 
         # Guard writing warp_scratch
@@ -1722,7 +1718,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     var tid = thread_idx.x
     var lane = UInt32(lane_id())
-    var warp_y, warp_x = divmod(tid // UInt(WARP_SIZE), UInt(num_warps_n))
+    var warp_y, warp_x = udivmod(ufloordiv(tid, WARP_SIZE), num_warps_n)
 
     comptime fragment_layout = Layout.row_major(
         1, 2
@@ -1757,14 +1753,12 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     #    constant when writing, and iterate across it when reducing.
     # 3-4. ((WM*WN)//frag_size) x frag_size: the two trailing dimensions of
     #    output_reg_tile
-    comptime warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
-    comptime row_warp_tile_size = (num_warps_n - 1) * Int(warp_tile_size)
+    comptime warp_tile_size = Int(WM * WN)  # ((WM*WN)//frag_size) x frag_size
+    comptime row_warp_tile_size = (num_warps_n - 1) * warp_tile_size
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
     var o_smem_ptr = (
         o_smem_ptr_base
-        + warp_y
-        * UInt(num_warps_n - 1)
-        * UInt(row_warp_tile_size) if num_warps_m
+        + warp_y * (num_warps_n - 1) * row_warp_tile_size if num_warps_m
         > 1 else o_smem_ptr_base
     )
 
@@ -1799,7 +1793,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
                 # warp scratch has layout row_major(num_warps, num_rows). The
                 # "score_row_idx" is the idx-th row in the score matrix.
                 warp_scratch[
-                    Int(warp_x) + num_warps_n, Int(score_row_idx)
+                    warp_x + num_warps_n, Int(score_row_idx)
                 ] = rowmax_tensor[col_tile, row][0]
 
     barrier()
@@ -1854,7 +1848,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
                     + UInt32(row)
                 )
                 var c = rebind[Scalar[dtype]](correction[col_tile, row])
-                warp_scratch[Int(warp_x), Int(score_row_idx)] = (
+                warp_scratch[warp_x, Int(score_row_idx)] = (
                     0.0 if c == 0.0 else rowsum_tensor[col_tile, row][0] * c
                 )
 
@@ -1916,7 +1910,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
         var reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](
             warp_n, 0
         )
-        if warp_n == Int(warp_x):
+        if warp_n == warp_x:
             comptime if warp_n > 0:
                 # we want `output_reg_tile[0,:,:]` to be the real output reg tile.
                 out_reg_tile.copy_from(
@@ -1934,10 +1928,10 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
             # -----------------------------------
             # `N\X` refer to `warp_n`, `warp_x`
             comptime row = warp_n
-            var col = warp_x - UInt(1 if warp_x > UInt(warp_n) else 0)
-            var o_smem_ptr_write = o_smem_ptr + (
-                row * (num_warps_n - 1) + Int(col)
-            ) * Int(warp_tile_size)
+            var col = warp_x - (1 if warp_x > warp_n else 0)
+            var o_smem_ptr_write = (
+                o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
+            )
             var o_smem_write = (
                 LayoutTensor[
                     dtype,
@@ -1966,8 +1960,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
         var row = warp_x
         comptime col = warp_n
         var o_smem_ptr_reduce = (
-            o_smem_ptr
-            + (row * UInt(num_warps_n - 1) + UInt(col)) * warp_tile_size
+            o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
         )
         var o_smem_reduce = (
             LayoutTensor[
