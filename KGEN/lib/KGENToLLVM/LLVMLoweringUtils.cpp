@@ -238,18 +238,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
         return convertType(sigGenType.getBody());
       });
 
-  // Variadic types are converted to a struct representing a pointer to the
-  // elements of the sequence, and the sequence size.
-  addConversion([this](VariadicType variadic) -> std::optional<Type> {
-    Type convertedType = convertType(variadic.getElementType());
-    if (!convertedType)
-      return {};
-
-    return LLVM::LLVMStructType::getLiteral(
-        &getContext(),
-        {LLVM::LLVMPointerType::get(variadic.getContext()), getIndexType()});
-  });
-
   // Convert pointer types to LLVM pointer types.
   addConversion([](PointerType pointer) -> std::optional<Type> {
     unsigned addressSpace =
@@ -1228,41 +1216,6 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
       return Error("cannot lower union constant with unknown type");
     VariantHelper helper(b, b.getLoc(), tc);
     return helper.materializeLLVMUnion(contentType, value);
-  }
-
-  // Convert variadic sequence constants to an LLVM struct constant.
-  if (auto variadic = dyn_cast<KGEN::VariadicAttr>(attr)) {
-    // 1. Allocate space for an array of elements.
-    Type elementType = tc.convertType(variadic.getType().getElementType());
-    if (!elementType)
-      return Error("cannot lower variadic sequence constant with unknown type");
-
-    Value size = LLVM::ConstantOp::create(
-        b, b.getIntegerAttr(cast<IntegerType>(tc.getIndexType()),
-                            variadic.getValues().size()));
-
-    Value ptr = LLVM::AllocaOp::create(
-        b, LLVM::LLVMPointerType::get(b.getContext()), elementType, size);
-
-    // 2. Store elements of the sequence into the allocated space.
-    for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
-      ErrorOr<Value> element = convertParameterToLLVM(b, tc, imc, scope, value);
-      if (element.isError())
-        return element;
-
-      auto destination = LLVM::GEPOp::create(
-          b, LLVM::LLVMPointerType::get(b.getContext()), elementType, ptr,
-          ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(idx)});
-      LLVM::StoreOp::create(b, element.get(), destination);
-    }
-
-    // 3. Create a struct with a pointer to the allocation & the sequence size.
-    auto variadicType = llvm::cast_if_present<LLVM::LLVMStructType>(
-        tc.convertType(variadic.getType()));
-    if (!variadicType)
-      return Error("cannot lower variadic sequence constant with unknown type");
-
-    return materializeLLVMStruct(b, variadicType, ValueRange{ptr, size});
   }
 
   // Otherwise we have a failure, try to report a useful error message.
