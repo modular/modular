@@ -21,6 +21,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/STLExtras.h"
@@ -3324,10 +3325,10 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
     auto loc = UnknownLoc::get(func.getContext());
     for (Type type : opExpr.getType().getBody().getArguments())
       fakeOperands.push_back(block->addArgument(type, loc));
-    OwningOpRef<Operation *> op =
-        Operation::create(loc, {opExpr.getName(), func.getContext()},
-                          opExpr.getType().getBody().getResults(), fakeOperands,
-                          opExpr.getAttrs(), /*properties=*/nullptr);
+    OwningOpRef<Operation *> op = Operation::create(
+        loc, {opExpr.getName(), func.getContext()},
+        opExpr.getType().getBody().getResults(), fakeOperands,
+        opExpr.getAttrs(), /*properties=*/mlir::PropertyRef{});
     block->push_back(*op);
     // Verify the operation. Fail to fold if the operation is invalid. Silence
     // the error, since there is no way to report it.

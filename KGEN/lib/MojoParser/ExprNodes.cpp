@@ -2434,7 +2434,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       return failure();
 
     SmallVector<char> propStorage(opNameInfo->getOpPropertyByteSize());
-    auto properties = mlir::OpaqueProperties(propStorage.data());
+    mlir::PropertyRef properties = mlir::PropertyRef(
+        opNameInfo->getOpPropertiesTypeID(), propStorage.data());
     auto attributes = state.attributes.getDictionary(context);
 
     // Initialize the properties storage

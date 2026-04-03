@@ -196,6 +196,13 @@ static void captureSignalInformation(int sig, siginfo_t *info, void *context) {
   sigInfo.signal = sig;
   sigInfo.info = buildSignalInformationString(sig, info);
 
+  // Set a timeout to prevent signal handlers from hanging indefinitely.
+  // When the heap is corrupted (e.g. SIGABRT from glibc malloc detecting
+  // a bad free list), PrintStackTrace may fork llvm-symbolizer which
+  // inherits malloc's internal lock and deadlocks. The default SIGALRM
+  // action terminates the process, bounding the hang to ~30 seconds.
+  alarm(30);
+
   llvm::sys::RunSignalHandlers();
 }
 
@@ -244,8 +251,10 @@ static void developmentSignalHandler(void *context) {
 
   llvm::errs() << "\n" << std::string(70, '=') << "\n";
 
-  // Exit with error code using the original signal, not SIGUSR2
-  std::exit(128 + originalSignal);
+  // Use _exit() rather than exit() to avoid re-entering glibc's atexit lock
+  // when this handler fires from within an atexit handler context (which
+  // exit() holds), and to skip C++ destructors that may be in a broken state.
+  _exit(128 + originalSignal);
 }
 
 void M::Init::registerDevelopmentSignalHandler(llvm::StringRef programName) {
