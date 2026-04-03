@@ -31,6 +31,7 @@ modular_py_library(
     deps = [
         ":test_helpers",
         "//max/python/max:tensor",
+        "//max/python/max/dtype",
         "//max/python/max/experimental",
         requirement("numpy"),
         requirement("pytest"),
