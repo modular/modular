@@ -489,8 +489,7 @@ def reference_gemm[
         var task_count = min(total_work - task_start, grain_size)
 
         for i in range(task_start, task_start + task_count):
-            var n = i % N
-            var m = i // N
+            var m, n = divmod(i, N)
 
             var result: Float32 = 0
 

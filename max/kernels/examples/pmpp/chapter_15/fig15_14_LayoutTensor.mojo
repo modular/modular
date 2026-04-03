@@ -14,11 +14,7 @@
 """Figure 15.14: Matrix multiplication with double buffering (software pipelining)."""
 
 from std.math import ceildiv
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.itertools import product
@@ -55,9 +51,9 @@ def mm_tiled_kernel_double_buffer(
     """
     comptime dtype = DType.float32
 
-    var bx = Int(block_idx.x)
-    var by = Int(block_idx.y)
-    var tx = Int(thread_idx.x)
+    var bx = block_idx.x
+    var by = block_idx.y
+    var tx = thread_idx.x
 
     var tiles_across_x = bN // tN
     var tile_x, tile_y = divmod(tx, tiles_across_x)
@@ -332,9 +328,9 @@ def main() raises:
         print("Using LayoutTensor-based double buffering")
 
         ctx.enqueue_function_experimental[mm_tiled_kernel_double_buffer](
-            d_A.unsafe_ptr(),
-            d_B.unsafe_ptr(),
-            d_C.unsafe_ptr(),
+            d_A,
+            d_B,
+            d_C,
             UInt32(M),
             UInt32(N),
             UInt32(K),

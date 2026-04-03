@@ -1765,7 +1765,7 @@ struct PythonObject(
         var type = PyObjectPtr(upcast_from=cpy.Py_TYPE(self._obj_ptr))
         var expected_type = lookup_py_type_object[T]()._obj_ptr
         if type == expected_type:
-            ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
+            ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
             if mojo_obj.is_initialized:
                 return UnsafePointer(to=mojo_obj.mojo_value).as_any_origin()
         return None
@@ -1792,7 +1792,7 @@ struct PythonObject(
         The user must be certain that this Python object type matches the bound
         Python type object for `T`.
         """
-        ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
+        ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
         # TODO(MSTDL-950): Should use something like `addr_of!`
         # Safety: The mutability matches that of `self`.
         return UnsafePointer[mut=mut](
@@ -1849,7 +1849,7 @@ def _unsafe_init[
      `obj_ptr` must be a Python object pointer allocated using the correct
      type object. Use of any other pointer is invalid.
     """
-    ref mojo_obj = obj_ptr.bitcast[PyMojoObject[T]]()[]
+    ref mojo_obj = obj_ptr.bitcast[PyMojoObject[T]]().value()[]
     UnsafePointer(to=mojo_obj.mojo_value).init_pointee_move(mojo_value^)
     mojo_obj.is_initialized = True
 

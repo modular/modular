@@ -274,8 +274,7 @@ def _load_tile_to_smem[
         # Coalesced: adjacent threads access adjacent elements
         comptime for i in range(elems_per_thread):
             var elem_idx = i * NUM_THREADS + tid
-            var row = elem_idx // BLOCK_K
-            var col = elem_idx % BLOCK_K
+            var row, col = divmod(elem_idx, BLOCK_K)
             var global_row = block_row_offset + row
             var global_col = k_offset + col
 

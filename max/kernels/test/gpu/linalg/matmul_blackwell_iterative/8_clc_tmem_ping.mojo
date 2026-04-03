@@ -27,8 +27,8 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from std.gpu import block_id_in_cluster, lane_id_uint as lane_id
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import block_id_in_cluster, lane_id
+from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -86,7 +86,7 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
@@ -98,7 +98,7 @@ struct WarpRole(TrivialRegisterPassable):
         return self._role != other._role
 
     @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
@@ -327,12 +327,12 @@ def stsm_helper[
     comptime shape0 = dst.layout.shape[1].value()
 
     var lane = lane_id()
-    var stsm_lane_offset = (lane & 15) * UInt(stride0) + (lane >> 4) * 8
+    var stsm_lane_offset = (lane & 15) * stride0 + (lane >> 4) * 8
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_row_size
-        var offset = swizzle(Int(stsm_lane_offset + UInt(n_offset)))
+        var offset = swizzle(stsm_lane_offset + n_offset)
         var v = SIMD[dst.dtype, stsmx4_lane_size]()
 
         comptime for k in range(stsmx4_lane_size // 2):
@@ -457,7 +457,7 @@ def multi_stage_store_C[
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
-        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
+        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
 
         # Pack the upper frag to shared memory
         comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE

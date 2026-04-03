@@ -103,6 +103,9 @@ common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 # Enable parse_headers when the feature is added (only applies to first party code)
 common --process_headers_in_dependencies
 
+# Don't wait for aspects before running tests
+common --experimental_use_validation_aspect
+
 build --remote_retries=2
 build --remote_timeout=10m
 # Buildbuddy cache optimization recommendations
@@ -119,15 +122,13 @@ build --slim_profile=false
 build --test_output=errors
 build --test_summary=terse
 
-# Disable crash reporting for all tests and runs, test rules can override this
+# Disable crash reporting for builds and tests, test rules can override this
 build --action_env=MODULAR_CRASH_REPORTING_ENABLED=false --host_action_env=MODULAR_CRASH_REPORTING_ENABLED=false
 build --test_env=MODULAR_CRASH_REPORTING_ENABLED=false
-run --run_env=MODULAR_CRASH_REPORTING_ENABLED=false
 
-# Disable telemetry for all tests and runs, test rules can override this
+# Disable telemetry for builds and tests, test rules can override this
 build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TELEMETRY_ENABLED=false
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
-run --run_env=MODULAR_TELEMETRY_ENABLED=false
 
 # PyO3 0.21 rejects Python >3.12 by default; allow forward-compat ABI3 builds
 # while we remain on this version in crate_universe.

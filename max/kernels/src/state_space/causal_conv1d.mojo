@@ -154,8 +154,7 @@ def causal_conv1d_channel_first_fwd_cpu[
     # Parallelize across batch*channel combinations
     @parameter
     def process_bc(bc_idx: Int):
-        var b = bc_idx // dim
-        var c = bc_idx % dim
+        var b, c = divmod(bc_idx, dim)
 
         # Bounds checking
         if b >= batch or c >= dim:
@@ -289,8 +288,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
     # Parallelize across batch*channel combinations
     @parameter
     def process_bc(bc_idx: Int):
-        var b = bc_idx // dim
-        var c = bc_idx % dim
+        var b, c = divmod(bc_idx, dim)
 
         var weight_c_base_offset = UInt32(UInt32(c) * weight_c_stride)
 
@@ -1324,8 +1322,7 @@ def causal_conv1d_channel_last_fwd_gpu[
         if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
             var prev_row_2d: Int = batch_id * nSeqLen + prev_chunk_col * kNElts
             if prev_row_2d >= 0 and prev_row_2d < nBatches * nSeqLen:
-                var prev_batch: Int = prev_row_2d // nSeqLen
-                var prev_seq: Int = prev_row_2d % nSeqLen
+                var prev_batch, prev_seq = divmod(prev_row_2d, nSeqLen)
                 if (
                     prev_batch >= 0
                     and prev_batch < nBatches
@@ -1354,8 +1351,7 @@ def causal_conv1d_channel_last_fwd_gpu[
                 batch_id * nSeqLen + current_chunk_col * kNElts
             )
             if current_row_2d >= 0 and current_row_2d < nBatches * nSeqLen:
-                var current_batch: Int = current_row_2d // nSeqLen
-                var current_seq: Int = current_row_2d % nSeqLen
+                var current_batch, current_seq = divmod(current_row_2d, nSeqLen)
                 if (
                     current_batch >= 0
                     and current_batch < nBatches
@@ -1511,8 +1507,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
         if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
             var prev_row_2d: Int = batch_id * nSeqLen + prev_chunk_col * kNElts
             if prev_row_2d >= 0 and prev_row_2d < nBatches * nSeqLen:
-                var prev_batch: Int = prev_row_2d // nSeqLen
-                var prev_seq: Int = prev_row_2d % nSeqLen
+                var prev_batch, prev_seq = divmod(prev_row_2d, nSeqLen)
                 if (
                     prev_batch >= 0
                     and prev_batch < nBatches
@@ -1541,8 +1536,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
                 batch_id * nSeqLen + current_chunk_col * kNElts
             )
             if current_row_2d >= 0 and current_row_2d < nBatches * nSeqLen:
-                var current_batch: Int = current_row_2d // nSeqLen
-                var current_seq: Int = current_row_2d % nSeqLen
+                var current_batch, current_seq = divmod(current_row_2d, nSeqLen)
                 if (
                     current_batch >= 0
                     and current_batch < nBatches

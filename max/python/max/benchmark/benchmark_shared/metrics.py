@@ -502,3 +502,129 @@ class PixelGenerationBenchmarkMetrics(Metrics):
                 errors.append(f"latency_ms: {err}")
 
         return len(errors) == 0, errors
+
+
+# ---------------------------------------------------------------------------
+# Speculative decoding metrics
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SpecDecodeMetrics:
+    """Speculative decoding counters scraped from a Prometheus endpoint.
+
+    These correspond to the ``vllm:spec_decode_*`` counter family exposed by
+    vLLM when speculative decoding is enabled.
+    """
+
+    num_drafts: int
+    num_draft_tokens: int
+    num_accepted_tokens: int
+    accepted_per_pos: dict[int, int]
+
+
+def parse_spec_decode_metrics(raw_text: str) -> SpecDecodeMetrics | None:
+    """Parse vLLM speculative decoding counters from Prometheus text output.
+
+    Args:
+        raw_text: Raw Prometheus text-format payload.
+
+    Returns:
+        Parsed counters, or ``None`` when no ``vllm:spec_decode`` metrics are
+        present.
+    """
+    num_drafts = 0
+    num_draft_tokens = 0
+    num_accepted_tokens = 0
+    accepted_per_pos: dict[int, int] = {}
+    found_spec_decode = False
+
+    for line in raw_text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        if line.startswith("vllm:spec_decode"):
+            found_spec_decode = True
+            parts = line.split()
+            if not parts:
+                continue
+            try:
+                value = int(float(parts[-1]))
+            except ValueError:
+                continue
+
+            if "num_drafts" in line:
+                num_drafts += value
+            elif "num_draft_tokens" in line:
+                num_draft_tokens += value
+            elif "num_accepted_tokens_per_pos" in line:
+                pos_label = 'position="'
+                if pos_label not in line:
+                    continue
+                start = line.index(pos_label) + len(pos_label)
+                end = line.index('"', start)
+                pos = int(line[start:end])
+                accepted_per_pos[pos] = accepted_per_pos.get(pos, 0) + value
+            elif "num_accepted_tokens" in line:
+                num_accepted_tokens += value
+
+    if not found_spec_decode:
+        return None
+
+    return SpecDecodeMetrics(
+        num_drafts=num_drafts,
+        num_draft_tokens=num_draft_tokens,
+        num_accepted_tokens=num_accepted_tokens,
+        accepted_per_pos=accepted_per_pos,
+    )
+
+
+def calculate_spec_decode_stats(
+    metrics_before: SpecDecodeMetrics,
+    metrics_after: SpecDecodeMetrics,
+) -> dict[str, Any] | None:
+    """Compute benchmark-window speculative decoding stats from metric deltas.
+
+    Args:
+        metrics_before: Snapshot taken before the benchmark window.
+        metrics_after: Snapshot taken after the benchmark window.
+
+    Returns:
+        A dict of computed stats (acceptance rate, length, per-position rates),
+        or ``None`` when there were no draft tokens in the window.
+    """
+    delta_drafts = metrics_after.num_drafts - metrics_before.num_drafts
+    delta_draft_tokens = (
+        metrics_after.num_draft_tokens - metrics_before.num_draft_tokens
+    )
+    delta_accepted = (
+        metrics_after.num_accepted_tokens - metrics_before.num_accepted_tokens
+    )
+    per_pos_rates: list[float] = []
+    if delta_drafts > 0:
+        positions = sorted(
+            set(metrics_before.accepted_per_pos.keys())
+            | set(metrics_after.accepted_per_pos.keys())
+        )
+        for pos in positions:
+            before_val = metrics_before.accepted_per_pos.get(pos, 0)
+            after_val = metrics_after.accepted_per_pos.get(pos, before_val)
+            delta_pos = after_val - before_val
+            per_pos_rates.append(delta_pos / delta_drafts)
+
+    if delta_draft_tokens <= 0:
+        return None
+
+    acceptance_rate = (delta_accepted / delta_draft_tokens) * 100
+    acceptance_length = (
+        1 + delta_accepted / delta_drafts if delta_drafts > 0 else 0.0
+    )
+    return {
+        "num_drafts": delta_drafts,
+        "draft_tokens": delta_draft_tokens,
+        "accepted_tokens": delta_accepted,
+        "acceptance_rate": acceptance_rate,
+        "acceptance_length": acceptance_length,
+        "per_position_acceptance_rates": per_pos_rates,
+    }

@@ -51,6 +51,7 @@ preloaded once and reused across all rows in the loop.
 """
 
 from std.collections import InlineArray, Optional
+from std.collections._conditional import _ComptimeConditional
 from std.math import ceildiv, rsqrt
 from std.sys import (
     align_of,
@@ -64,9 +65,9 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_int as thread_idx,
+    block_idx,
+    grid_dim,
+    thread_idx,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
@@ -78,6 +79,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
+from layout.tile_tensor import _ComptimeConditionalTileTensor
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
@@ -86,8 +88,12 @@ from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 from .rms_norm_fp8 import rms_norm_fused_fp8
 
-from .allreduce import allreduce, elementwise_epilogue_type
-from .device_query import get_sm_version, _dispatch_max_num_blocks
+from .allreduce import (
+    allreduce,
+    elementwise_epilogue_type,
+    allreduce_tuning_table,
+)
+from .device_query import get_sm_version, dispatch_max_num_blocks
 from .reducescatter import _target_address_space
 from .sync import (
     MAX_GPUS,
@@ -141,9 +147,17 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     scale_ub: Scalar[scales_dtype],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
-    residual: TileTensor[in_dtype, ResidualLayoutType, residual_origin],
-    residual_output: TileTensor[
-        mut=True, in_dtype, ResidualOutLayoutType, residual_out_origin
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype,
+        ResidualLayoutType,
+        residual_origin,
+        engaged=has_residual,
+    ],
+    residual_output: _ComptimeConditionalTileTensor[
+        in_dtype,
+        ResidualOutLayoutType,
+        residual_out_origin,
+        engaged=has_residual,
     ],
 ):
     """Fused allreduce + RMSNorm + FP8 kernel using warp-tiling.
@@ -159,8 +173,8 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     comptime assert gamma.flat_rank >= 1
     # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...))
     # loads/stores on residual and residual_output below.
-    comptime assert residual.flat_rank >= 2
-    comptime assert residual_output.flat_rank >= 2
+    comptime assert residual.T.flat_rank >= 2
+    comptime assert residual_output.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
@@ -196,8 +210,8 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
 
     # Row loop: each block processes rows with stride = grid_dim.
     # For rows <= grid_dim, the loop body runs exactly once per block.
-    var num_blocks = Int(grid_dim.x)
-    for row in range(Int(block_idx.x), rows, num_blocks):
+    var num_blocks = grid_dim.x
+    for row in range(block_idx.x, rows, num_blocks):
         # Phase 0: P2P load from all GPUs + accumulate in float32 regs.
         # Gamma load latency from above is hidden during P2P stalls.
         var vec_data = SIMD[accum_type, simd_width](0)
@@ -218,11 +232,13 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
 
             # Add residual and write pre-norm sum (compile-time gated).
             comptime if has_residual:
-                vec_data += residual.load[width=simd_width](
-                    Coord(Idx(row), Idx(idx))
-                ).cast[accum_type]()
+                vec_data += (
+                    residual[]
+                    .load[width=simd_width](Coord(Idx(row), Idx(idx)))
+                    .cast[accum_type]()
+                )
                 # Write bf16 pre-normalization sum for the residual stream.
-                residual_output.store[width=simd_width](
+                residual_output[].store[width=simd_width](
                     Coord(Idx(row), Idx(idx)), vec_data.cast[in_dtype]()
                 )
 
@@ -307,9 +323,17 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     scale_ub: Scalar[scales_dtype],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
-    residual: TileTensor[in_dtype, ResidualLayoutType, residual_origin],
-    residual_output: TileTensor[
-        mut=True, in_dtype, ResidualOutLayoutType, residual_out_origin
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype,
+        ResidualLayoutType,
+        residual_origin,
+        engaged=has_residual,
+    ],
+    residual_output: _ComptimeConditionalTileTensor[
+        in_dtype,
+        ResidualOutLayoutType,
+        residual_out_origin,
+        engaged=has_residual,
     ],
 ):
     """Single-kernel 2-stage fused RS + RMSNorm + FP8 + AG.
@@ -356,15 +380,15 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     comptime assert gamma.flat_rank >= 1
     # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...))
     # loads/stores on residual and residual_output below.
-    comptime assert residual.flat_rank >= 2
-    comptime assert residual_output.flat_rank >= 2
+    comptime assert residual.T.flat_rank >= 2
+    comptime assert residual_output.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
     var tid = thread_idx.x
     var col_idx = tid * simd_width
     var is_valid = col_idx < cols
-    var num_blocks = Int(grid_dim.x)
+    var num_blocks = grid_dim.x
 
     # Row-aligned partitioning: each GPU owns ceildiv(rows, ngpus) rows.
     var rows_per_rank = ceildiv(rows, ngpus)
@@ -453,7 +477,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     # === Stage 1: RS + RMSNorm + FP8 (partition rows only) ===
     # Each block iterates over its partition rows directly. With
     # grid_dim <= rows_per_rank, every block has at least one row.
-    for local_row in range(Int(block_idx.x), rows_per_rank, num_blocks):
+    for local_row in range(block_idx.x, rows_per_rank, num_blocks):
         var row = my_row_start + local_row
         if row < rows:
             # P2P load from all GPUs + accumulate in f32 registers.
@@ -475,9 +499,11 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
                 # Add residual and write residual to scratch (compile-time gated).
                 comptime if has_residual:
-                    accum += residual.load[width=simd_width](
-                        Coord(Idx(row), Idx(col_idx))
-                    ).cast[accum_type]()
+                    accum += (
+                        residual[]
+                        .load[width=simd_width](Coord(Idx(row), Idx(col_idx)))
+                        .cast[accum_type]()
+                    )
                     var local_elem = local_row * cols + col_idx
                     scratch_residual.address_space_cast[
                         _target_address_space
@@ -538,7 +564,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
         var gpu_row_start = gpu * rows_per_rank
         var gpu_row_end = min(gpu_row_start + rows_per_rank, rows)
         var gpu_rows = gpu_row_end - gpu_row_start
-        for local_row in range(Int(block_idx.x), gpu_rows, num_blocks):
+        for local_row in range(block_idx.x, gpu_rows, num_blocks):
             var row = gpu_row_start + local_row
             var local_elem = local_row * cols + col_idx
 
@@ -575,7 +601,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                             invariant=True,
                         ](local_elem)
                     )
-                    residual_output.store[width=simd_width](
+                    residual_output[].store[width=simd_width](
                         Coord(Idx(row), Idx(col_idx)), bf16_val
                     )
 
@@ -583,6 +609,8 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
 
 # --- Launcher ---
+
+comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx(0), Idx(0))))
 
 
 def _allreduce_rmsnorm_fp8_launch[
@@ -608,19 +636,29 @@ def _allreduce_rmsnorm_fp8_launch[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
-    residual: TileTensor[in_dtype, ...] = TileTensor(
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
-        row_major(Coord(Idx(0), Idx(0))),
-    ),
-    residual_output: TileTensor[mut=True, in_dtype, ...] = TileTensor(
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
-        row_major(Coord(Idx(0), Idx(0))),
-    ),
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
+    residual_output: _ComptimeConditionalTileTensor[
+        mut=True, in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        MutAnyOrigin,
+        engaged=False,
+    ](),
 ) raises:
     """Launch the fused allreduce + RMSNorm + FP8 kernel."""
     comptime sm_version = get_sm_version()
     var payload_bytes = rows * cols * size_of[in_dtype]()
-    var max_blocks = _dispatch_max_num_blocks[ngpus, sm_version](payload_bytes)
+    var max_blocks = dispatch_max_num_blocks[
+        ngpus, sm_version, allreduce_tuning_table
+    ](payload_bytes)
     var grid_dim = min(rows, max_blocks)
     var block_dim = threads_per_block
 
@@ -642,10 +680,10 @@ def _allreduce_rmsnorm_fp8_launch[
         scales_dtype=scales_dtype,
         scale_origin=scale_output.origin,
         ScaleLayoutType=scale_output.LayoutType,
-        ResidualLayoutType=residual.LayoutType,
-        residual_origin=residual.origin,
-        ResidualOutLayoutType=residual_output.LayoutType,
-        residual_out_origin=residual_output.origin,
+        ResidualLayoutType=residual.T.LayoutType,
+        residual_origin=residual.T.origin,
+        ResidualOutLayoutType=residual_output.T.LayoutType,
+        residual_out_origin=residual_output.T.origin,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
@@ -693,14 +731,22 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
-    residual: TileTensor[in_dtype, ...] = TileTensor(
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
-        row_major(Coord(Idx(0), Idx(0))),
-    ),
-    residual_output: TileTensor[mut=True, in_dtype, ...] = TileTensor(
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
-        row_major(Coord(Idx(0), Idx(0))),
-    ),
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
+    residual_output: _ComptimeConditionalTileTensor[
+        mut=True, in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        MutAnyOrigin,
+        engaged=False,
+    ](),
 ) raises:
     """Launch the single-kernel 2-stage fused RS + RMSNorm + FP8 + AG.
 
@@ -721,7 +767,9 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     # ensures 100% block utilization in both stages.
     comptime sm_version = get_sm_version()
     var payload_bytes = rows * cols * size_of[in_dtype]()
-    var max_blocks = _dispatch_max_num_blocks[ngpus, sm_version](payload_bytes)
+    var max_blocks = dispatch_max_num_blocks[
+        ngpus, sm_version, allreduce_tuning_table
+    ](payload_bytes)
     var grid_dim = min(ceildiv(rows, ngpus), max_blocks)
     var block_dim = threads_per_block
 
@@ -783,10 +831,10 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         scales_dtype=scales_dtype,
         scale_origin=scale_output.origin,
         ScaleLayoutType=scale_output.LayoutType,
-        ResidualLayoutType=residual.LayoutType,
-        residual_origin=residual.origin,
-        ResidualOutLayoutType=residual_output.LayoutType,
-        residual_out_origin=residual_output.origin,
+        ResidualLayoutType=residual.T.LayoutType,
+        residual_origin=residual.T.origin,
+        ResidualOutLayoutType=residual_output.T.LayoutType,
+        residual_out_origin=residual_output.T.origin,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
@@ -952,14 +1000,22 @@ def _dispatch_fused_kernel[
     scale_output_1d: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
-    residual: TileTensor[in_dtype, ...] = TileTensor(
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
-        row_major(Coord(Idx(0), Idx(0))),
-    ),
-    residual_output: TileTensor[mut=True, in_dtype, ...] = TileTensor(
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
-        row_major(Coord(Idx(0), Idx(0))),
-    ),
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
+    residual_output: _ComptimeConditionalTileTensor[
+        mut=True, in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        MutAnyOrigin,
+        engaged=False,
+    ](),
 ) raises:
     """Dispatch the fused kernel with appropriate simd width and stage count.
 
@@ -1150,8 +1206,8 @@ def _dispatch_fused_kernel[
                 scale_output_1d,
                 rank_sigs,
                 ctx,
-                residual,
-                residual_output,
+                residual[],
+                residual_output[],
             )
         return
 

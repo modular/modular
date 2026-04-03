@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -34,11 +34,12 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
-from max.pipelines.lib.pipeline_variants.utils import get_weight_paths
-from max.pipelines.lib.registry import AutoConfig
-from max.pipelines.lib.speculative_decoding.unified_eagle import (
+from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
+    UnifiedEagleInputs,
     UnifiedEagleOutputs,
 )
+from max.pipelines.lib.pipeline_variants.utils import get_weight_paths
+from max.pipelines.lib.registry import AutoConfig
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model_config import Llama3Config
@@ -56,19 +57,15 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
 
     tokens: Buffer
     input_row_offsets: Buffer
-    draft_tokens: Buffer
     return_n_logits: Buffer
-    draft_kv_cache_buffers: list[Buffer] = field(default_factory=list)
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         return (
             self.tokens,
             self.input_row_offsets,
-            self.draft_tokens,
             self.return_n_logits,
             *(self.kv_cache_inputs or ()),
-            *self.draft_kv_cache_buffers,
         )
 
 
@@ -217,7 +214,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
         """Execute and return all graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedEagleLlama3Inputs)
+        assert isinstance(model_inputs, UnifiedEagleInputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
 
         return UnifiedEagleOutputs(
@@ -231,14 +228,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
-        draft_kv_cache_buffers: list[Buffer] | None = None,
-        draft_tokens: Buffer | None = None,
-        **kwargs,
     ) -> UnifiedEagleLlama3Inputs:
-        if draft_kv_cache_buffers is None:
-            raise ValueError("draft_kv_cache_buffers is required")
-        if draft_tokens is None:
-            raise ValueError("draft_tokens is required")
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         device0 = self.devices[0]
 
@@ -262,10 +252,8 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         return UnifiedEagleLlama3Inputs(
             tokens=tokens_buf,
             input_row_offsets=offsets_buf,
-            draft_tokens=draft_tokens,
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
-            draft_kv_cache_buffers=draft_kv_cache_buffers,
         )
 
     def prepare_next_token_inputs(
@@ -273,7 +261,6 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> UnifiedEagleLlama3Inputs:
-        assert isinstance(prev_model_inputs, UnifiedEagleLlama3Inputs)
         raise NotImplementedError(
             "Multistep execution is not supported for UnifiedEagleLlama3Model. "
             "The unified pipeline handles iteration internally."

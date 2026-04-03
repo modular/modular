@@ -489,8 +489,7 @@ def cvt_block_fp8_to_bf16_with_scale[
     ) // WARP_SIZE
     comptime row_stride = type_of(input).static_stride[0]
 
-    var t_row = tid // 16
-    var t_col = tid % 16
+    var t_row, t_col = divmod(tid, 16)
 
     var fp8_regs = SIMD[input_type, num_regs](0)
 

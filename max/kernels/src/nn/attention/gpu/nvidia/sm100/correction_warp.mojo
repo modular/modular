@@ -75,8 +75,9 @@ def fa4_correction[
     comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8
     comptime assert config.ov_depth % batch_size == 0
     # output is BM x depth
-    comptime load_iters = config.ov_depth // (2 * batch_size)
-    comptime load_remainder = config.ov_depth % (2 * batch_size)
+    comptime load_iters, load_remainder = divmod(
+        config.ov_depth, 2 * batch_size
+    )
     comptime assert load_iters > 1
     comptime assert (load_remainder == batch_size) or (load_remainder == 0)
     var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % 128

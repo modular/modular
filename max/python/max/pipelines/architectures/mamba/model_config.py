@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
+from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
@@ -29,7 +30,7 @@ from max.pipelines.lib import (
     upper_bounded_default,
 )
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces import ArchConfig
+from max.pipelines.lib.interfaces import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -77,7 +78,7 @@ class SSMStateCacheParams:
 
 
 @dataclass(kw_only=True)
-class MambaConfig(ArchConfig):
+class MambaConfig(ArchConfigWithKVCache):
     """Model configuration for Mamba graph construction/execution."""
 
     # Core architecture fields
@@ -115,6 +116,23 @@ class MambaConfig(ArchConfig):
 
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
+
+    def get_kv_params(self) -> KVCacheParams:
+        """Return minimal dummy KV cache params.
+
+        Mamba uses SSM state caching, not attention KV cache, but the
+        pipeline interfaces require KVCacheParams for memory estimation
+        and PagedKVCacheManager initialization.  The tiny dimensions
+        (1 head, 1 dim, 1 layer) make the allocation negligible.
+        """
+        return KVCacheParams(
+            dtype=self.dtype,
+            n_kv_heads=1,
+            head_dim=1,
+            num_layers=1,
+            devices=self.devices,
+            page_size=128,
+        )
 
     def get_ssm_cache_params(self) -> SSMStateCacheParams:
         return SSMStateCacheParams(

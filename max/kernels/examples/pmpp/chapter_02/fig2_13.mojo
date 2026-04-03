@@ -35,7 +35,7 @@ def vec_add_kernel(
         c: Output vector C (device).
         n: Number of elements in the vectors.
     """
-    var i = Int(global_idx.x)
+    var i = global_idx.x
     if i < n:
         c[i] = a[i] + b[i]
 

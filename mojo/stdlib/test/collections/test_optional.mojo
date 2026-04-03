@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
 from std.sys import size_of
 
@@ -165,6 +166,29 @@ def test_optional_conditional_conformances() raises:
     assert_false(conforms_to(Optional[MoveOnly[Int]], Hashable))
 
 
+struct _NonTrivial(Copyable):
+    def __init__(out self, *, copy: Self):
+        pass
+
+    def __init__(out self, *, deinit take: Self):
+        pass
+
+    def __del__(deinit self):
+        pass
+
+
+def test_optional_triviality() raises:
+    comptime trivial = Optional[Int]
+    assert_true(trivial.__copy_ctor_is_trivial)
+    assert_true(trivial.__move_ctor_is_trivial)
+    assert_true(trivial.__del__is_trivial)
+
+    comptime not_trivial = Optional[_NonTrivial]
+    assert_false(not_trivial.__copy_ctor_is_trivial)
+    assert_false(not_trivial.__move_ctor_is_trivial)
+    assert_false(not_trivial.__del__is_trivial)
+
+
 def test_optional_write_to() raises:
     check_write_to(Optional[Int](None), expected="None", is_repr=False)
     check_write_to(Optional[Int](42), expected="42", is_repr=False)
@@ -306,6 +330,14 @@ def test_optional_conditional_register_passable() raises:
     assert_true(conforms_to(Optional[Bool], RegisterPassable))
     assert_false(conforms_to(Optional[List[Int]], RegisterPassable))
     assert_false(conforms_to(Optional[String], RegisterPassable))
+
+
+def test_optional_conditional_device_passable() raises:
+    assert_true(conforms_to(Optional[Int], DevicePassable))
+    assert_true(conforms_to(Optional[Scalar[DType.float32]], DevicePassable))
+    assert_false(conforms_to(Optional[Bool], DevicePassable))
+    assert_false(conforms_to(Optional[String], DevicePassable))
+    assert_false(conforms_to(Optional[MoveOnly[Int]], DevicePassable))
 
 
 def main() raises:

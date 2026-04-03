@@ -315,6 +315,34 @@ def set_batched_scale_factor[
     ] = rebind[Scalar[scales_dtype]](scale_value)
 
 
+def set_batched_scale_factor[
+    scales_dtype: DType,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    batch_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
+    scale_value: Scalar[scales_dtype],
+):
+    comptime assert (
+        scales_tensor.flat_rank >= 6
+    ), "scales_tensor must be 6D for batched scales tensor"
+
+    scales_tensor.store(
+        (
+            Idx(batch_idx),
+            Idx(row_idx // SF_MN_GROUP_SIZE),
+            Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+            Idx(row_idx % SF_ATOM_M[0]),
+            Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+            Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+        ),
+        scale_value,
+    )
+
+
 def get_batched_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout,

@@ -12,13 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
+
+from std.math.uutils import udivmod
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import lane_id, thread_idx, warp_id
 from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
@@ -96,28 +94,21 @@ def wgmma_kernel_rs[
         var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         var a_reg = SIMD[DType.bfloat16, 8](0)
-        var row = warp_id() * 16 + lane_id() // 4
-        var col = (lane_id() % 4) * 2
-        a_reg[0] = a_gmem_tile.ptr[row * UInt(K) + col].cast[DType.bfloat16]()
-        a_reg[1] = a_gmem_tile.ptr[row * UInt(K) + col + 1].cast[
+        var lane_q, lane_r = udivmod(lane_id(), 4)
+        var row = warp_id() * 16 + lane_q
+        var col = lane_r * 2
+        a_reg[0] = a_gmem_tile.ptr[row * K + col].cast[DType.bfloat16]()
+        a_reg[1] = a_gmem_tile.ptr[row * K + col + 1].cast[DType.bfloat16]()
+        a_reg[2] = a_gmem_tile.ptr[(row + 8) * K + col].cast[DType.bfloat16]()
+        a_reg[3] = a_gmem_tile.ptr[(row + 8) * K + col + 1].cast[
             DType.bfloat16
         ]()
-        a_reg[2] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col].cast[
+        a_reg[4] = a_gmem_tile.ptr[row * K + col + 8].cast[DType.bfloat16]()
+        a_reg[5] = a_gmem_tile.ptr[row * K + col + 9].cast[DType.bfloat16]()
+        a_reg[6] = a_gmem_tile.ptr[(row + 8) * K + col + 8].cast[
             DType.bfloat16
         ]()
-        a_reg[3] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 1].cast[
-            DType.bfloat16
-        ]()
-        a_reg[4] = a_gmem_tile.ptr[row * UInt(K) + col + 8].cast[
-            DType.bfloat16
-        ]()
-        a_reg[5] = a_gmem_tile.ptr[row * UInt(K) + col + 9].cast[
-            DType.bfloat16
-        ]()
-        a_reg[6] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 8].cast[
-            DType.bfloat16
-        ]()
-        a_reg[7] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 9].cast[
+        a_reg[7] = a_gmem_tile.ptr[(row + 8) * K + col + 9].cast[
             DType.bfloat16
         ]()
 
@@ -135,9 +126,9 @@ def wgmma_kernel_rs[
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
+        c_gmem.tile[16, WMMA_N](warp_id(), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](Int(lane_id()))
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
 
     for i in range(num_output_regs):
@@ -219,9 +210,9 @@ def wgmma_kernel_ss[
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
+        c_gmem.tile[16, WMMA_N](warp_id(), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](Int(lane_id()))
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
 
     for i in range(num_output_regs):

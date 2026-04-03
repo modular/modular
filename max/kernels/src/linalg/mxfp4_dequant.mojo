@@ -40,6 +40,9 @@ from layout import TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
+from std.algorithm.functional import elementwise
+from std.utils.index import Index, IndexList
+from std.sys.info import simd_width_of
 
 
 @__llvm_metadata(
@@ -221,4 +224,39 @@ def dequant_mxfp4[
         block_dim=block_dim_val,
         grid_dim=grid_dim_val,
         attributes=pdl_launch_attributes(pdl_level),
+    )
+
+
+def _cast_bf16_to_fp8(
+    ctx: DeviceContext,
+    output: TileTensor,
+    input: TileTensor,
+    num_rows: Int,
+    num_cols: Int,
+) raises:
+    """Cast BF16 tensor to FP8 using elementwise kernel."""
+    var out_tt = output.as_any_origin()
+    var in_tt = input.as_any_origin()
+    comptime assert out_tt.flat_rank == 2, "output must be rank 2"
+    comptime assert in_tt.flat_rank == 2, "input must be rank 2"
+    comptime assert out_tt.mut, "output must be mutable"
+
+    @always_inline
+    @__copy_capture(out_tt, in_tt)
+    @parameter
+    def cast_fn[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank],):
+        comptime assert rank == 2, "cast_fn only supports rank-2 tensors"
+        var idx = rebind[IndexList[2]](idx_arg)
+        var coord = Coord(idx)
+        comptime assert in_tt.flat_rank >= coord.flat_rank
+        comptime assert out_tt.flat_rank >= coord.flat_rank
+        out_tt.store[width=width](
+            coord,
+            in_tt.load[width=width](coord).cast[out_tt.dtype](),
+        )
+
+    elementwise[cast_fn, simd_width_of[input.dtype](), target="gpu"](
+        Index(num_rows, num_cols), ctx
     )

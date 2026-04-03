@@ -70,14 +70,14 @@ def bench_topk_batched[
 
     var in_buffer = TileTensor(
         in_buffer_ptr,
-        row_major((Idx(batch_size), Idx(N))),
+        row_major(Idx(batch_size), Idx(N)),
     )
     var topk_vals = TileTensor(
         topk_vals_ptr,
-        row_major((Idx(batch_size), Idx(K))),
+        row_major(Idx(batch_size), Idx(K)),
     )
     var topk_idxs = TileTensor(
-        topk_idxs_ptr, row_major((Idx(batch_size), Idx(out_idx_len)))
+        topk_idxs_ptr, row_major(Idx(batch_size), Idx(out_idx_len))
     )
 
     # Fill the buffer
@@ -93,14 +93,14 @@ def bench_topk_batched[
     )
 
     var device_in = TileTensor(
-        device_in_buffer.unsafe_ptr(), row_major((Idx(batch_size), Idx(N)))
+        device_in_buffer.unsafe_ptr(), row_major(Idx(batch_size), Idx(N))
     )
     var device_out_vals = TileTensor(
         device_out_vals_buffer.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx(K))),
+        row_major(Idx(batch_size), Idx(K)),
     )
     var device_out_idxs = TileTensor(
-        device_out_idxs_buffer, row_major((Idx(batch_size), Idx(out_idx_len)))
+        device_out_idxs_buffer, row_major(Idx(batch_size), Idx(out_idx_len))
     )
 
     if not num_blocks_per_input:
@@ -116,11 +116,11 @@ def bench_topk_batched[
 
     var device_local_topk_vals = TileTensor(
         device_local_topk_vals_buffer.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx(num_blocks_per_input * K))),
+        row_major(Idx(batch_size), Idx(num_blocks_per_input * K)),
     )
     var device_local_topk_idxs = TileTensor(
         device_local_topk_idxs_buffer.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx(num_blocks_per_input * K))),
+        row_major(Idx(batch_size), Idx(num_blocks_per_input * K)),
     )
 
     ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
@@ -197,10 +197,10 @@ def bench_topk_batched[
         var topk_vals_cpu_ptr = alloc[Scalar[dtype]](topk_vals_size)
         var topk_idxs_cpu_ptr = alloc[Int64](topk_vals_size)
         var topk_vals_cpu = TileTensor(
-            topk_vals_cpu_ptr, row_major((Idx(batch_size), Idx(K)))
+            topk_vals_cpu_ptr, row_major(Idx(batch_size), Idx(K))
         )
         var topk_idxs_cpu = TileTensor(
-            topk_idxs_cpu_ptr, row_major((Idx(batch_size), Idx(K)))
+            topk_idxs_cpu_ptr, row_major(Idx(batch_size), Idx(K))
         )
 
         _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
@@ -435,7 +435,7 @@ def bench_topk_fi[
     var in_buffer_ptr = alloc[Scalar[dtype]](in_size)
     var in_buffer = TileTensor(
         in_buffer_ptr,
-        row_major((Idx(batch_size), Idx(N))),
+        row_major(Idx(batch_size), Idx(N)),
     )
     fill_buffer[2, dtype](in_buffer, fill_fn_name)
 
@@ -449,11 +449,11 @@ def bench_topk_fi[
     )
 
     var device_in = TileTensor(
-        device_in_buffer.unsafe_ptr(), row_major((Idx(batch_size), Idx(N)))
+        device_in_buffer.unsafe_ptr(), row_major(Idx(batch_size), Idx(N))
     )
     var device_out_idxs = TileTensor(
         device_out_idxs_buffer.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx(1))),
+        row_major(Idx(batch_size), Idx(1)),
     )
     var temp_tt = TileTensor(
         device_temp_buffer.unsafe_ptr(), row_major(Idx(batch_size))

@@ -61,7 +61,12 @@ _EXTRA_CONSTRAINTS = {
         "//:nvidia_gpu",
         "//:has_multi_gpu",
     ],
-    "test_mxfp4_dequant_smoke.mojo": ["//:h100_gpu"],
+    "test_mxfp4_dequant_smoke.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mxfp4_matmul_amd.mojo": ["//:amd_gpu"],
     "test_matmul_sm90_fp8.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_bf16_multicast.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_hilbert.mojo": ["//:h100_gpu"],
@@ -182,6 +187,7 @@ _B200_TESTS = [
     "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo",
     "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo",
     "test_matmul_sm100_batched_1sm_bf16_ctype_fp8.mojo",
+    "test_matmul_sm100_1sm_bf16_rmsnorm.mojo",
 ]
 
 _GPU_MEMORY = {
@@ -224,6 +230,7 @@ _GPU_MEMORY = {
     "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo": "3",
     "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo": "3",
     "test_matmul_sm100_batched_1sm_bf16_ctype_fp8.mojo": "3",
+    "test_matmul_sm100_1sm_bf16_rmsnorm.mojo": "3",
     "test_ping_pong_shapes.mojo": "2",
 }
 

@@ -1,5 +1,5 @@
 This directory contains code examples for the
-[Calling Mojo from Python](../../../../docs/manual/python/mojo-from-python.mdx)
+[Calling Mojo from Python](../../../../manual/python/mojo-from-python.mdx)
 section of the Mojo Manual.
 
 Contents:

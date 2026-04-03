@@ -22,35 +22,59 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Embedding, Linear, Module
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
-from max.graph import TensorType
+from max.graph import DeviceRef, TensorType, TensorValue, TensorValueLike, ops
+from max.nn.embedding import Embedding
+from max.nn.layer import LayerList, Module
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import RotaryEmbedding
 
-from .layers import EncoderAttention, RotaryEmbedding
+from .layers import EncoderAttention
 
 if TYPE_CHECKING:
     from .model_config import Qwen3TextEncoderConfig
 
 
-class Qwen3MLP(Module[[Tensor], Tensor]):
+class Qwen3MLP(Module):
     """Qwen3 MLP with SiLU gate activation."""
 
-    def __init__(self, hidden_size: int, intermediate_size: int) -> None:
+    def __init__(
+        self,
+        hidden_size: int,
+        intermediate_size: int,
+        dtype: DType,
+        device: DeviceRef,
+    ) -> None:
         super().__init__()
-        self.gate_proj = Linear(hidden_size, intermediate_size, bias=False)
-        self.up_proj = Linear(hidden_size, intermediate_size, bias=False)
-        self.down_proj = Linear(intermediate_size, hidden_size, bias=False)
+        self.gate_proj = Linear(
+            hidden_size,
+            intermediate_size,
+            dtype,
+            device,
+            has_bias=False,
+        )
+        self.up_proj = Linear(
+            hidden_size,
+            intermediate_size,
+            dtype,
+            device,
+            has_bias=False,
+        )
+        self.down_proj = Linear(
+            intermediate_size,
+            hidden_size,
+            dtype,
+            device,
+            has_bias=False,
+        )
 
-    def forward(self, hidden_states: Tensor) -> Tensor:
-        gate = F.silu(self.gate_proj(hidden_states))
+    def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        gate = ops.silu(self.gate_proj(hidden_states))
         up = self.up_proj(hidden_states)
         return self.down_proj(gate * up)
 
 
-class EncoderTransformerBlock(Module[..., Tensor]):
+class EncoderTransformerBlock(Module):
     """Transformer block for encoder-only models without KV cache."""
 
     def __init__(
@@ -62,6 +86,8 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         intermediate_size: int,
         rms_norm_eps: float,
         scale: float,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         self.self_attn = EncoderAttention(
@@ -70,23 +96,41 @@ class EncoderTransformerBlock(Module[..., Tensor]):
             hidden_size=hidden_size,
             head_dim=head_dim,
             scale=scale,
+            dtype=dtype,
+            device=device,
             rms_norm_eps=rms_norm_eps,
         )
-        self.mlp = Qwen3MLP(hidden_size, intermediate_size)
-        self.input_layernorm = RMSNorm(hidden_size, eps=rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(hidden_size, eps=rms_norm_eps)
+        self.mlp = Qwen3MLP(
+            hidden_size,
+            intermediate_size,
+            dtype,
+            device,
+        )
+        self.input_layernorm = RMSNorm(
+            hidden_size,
+            dtype=dtype,
+            eps=rms_norm_eps,
+            multiply_before_cast=False,
+        )
+        self.post_attention_layernorm = RMSNorm(
+            hidden_size,
+            dtype=dtype,
+            eps=rms_norm_eps,
+            multiply_before_cast=False,
+        )
 
-    def forward(
+    def __call__(
         self,
-        x: Tensor,
+        x: TensorValue,
         rope: RotaryEmbedding,
-        attention_bias: Tensor,
-    ) -> Tensor:
+        attention_bias: TensorValue,
+    ) -> TensorValue:
         """Forward pass without KV cache.
 
         Args:
             x: Input hidden states [seq_len, hidden_dim]
             rope: RoPE embedding module
+            attention_bias: Additive causal/padding mask
         Returns:
             Output hidden states [seq_len, hidden_dim]
         """
@@ -107,7 +151,7 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         return x
 
 
-class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
+class Qwen3TextEncoderTransformer(Module):
     """Qwen3 text encoder transformer without KV cache dependency.
 
     Returns fused prompt embeddings by stacking configured hidden states and
@@ -120,6 +164,7 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.device = config.device
+        self.dtype = config.dtype
         if config.hidden_state_layers:
             self._sorted_hidden_state_layers = sorted(
                 config.hidden_state_layers
@@ -135,12 +180,11 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
-            device=config.device.to_device(),
             head_dim=config.head_dim,
             interleaved=False,
         )
 
-        self.layers = ModuleList(
+        self.layers = LayerList(
             [
                 EncoderTransformerBlock(
                     hidden_size=config.hidden_size,
@@ -150,12 +194,19 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
                     intermediate_size=config.intermediate_size,
                     rms_norm_eps=config.rms_norm_eps,
                     scale=config.attention_multiplier,
+                    dtype=config.dtype,
+                    device=config.device,
                 )
                 for _ in range(config.num_hidden_layers)
             ]
         )
 
-        self.embed_tokens = Embedding(config.vocab_size, dim=config.hidden_size)
+        self.embed_tokens = Embedding(
+            config.vocab_size,
+            config.hidden_size,
+            config.dtype,
+            config.device,
+        )
 
     def input_types(self) -> tuple[TensorType, ...]:
         """Define input tensor types for compilation."""
@@ -172,11 +223,11 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
             ),
         )
 
-    def forward(
+    def __call__(
         self,
-        tokens: Tensor,
-        attention_bias: Tensor,
-    ) -> tuple[Tensor, ...]:
+        tokens: TensorValueLike,
+        attention_bias: TensorValue,
+    ) -> tuple[TensorValue, ...]:
         """Forward pass returning fused prompt embeddings.
 
         Args:
@@ -193,7 +244,7 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         #   hidden_states[0] = token embeddings
         #   hidden_states[i + 1] = output after transformer block i
         # Flux2-Klein layer indices are specified against that HF contract.
-        selected: dict[int, Tensor] = {}
+        selected: dict[int, TensorValue] = {}
         if 0 in self._hidden_state_layers:
             selected[0] = h
 
@@ -209,12 +260,12 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
 
         hidden_states = [selected[i] for i in self._sorted_hidden_state_layers]
 
-        stacked = F.stack(hidden_states, axis=0)  # [L, S, D]
-        stacked = F.unsqueeze(stacked, axis=0)  # [1, L, S, D]
-        stacked = F.permute(stacked, [0, 2, 1, 3])  # [1, S, L, D]
+        stacked = ops.stack(hidden_states, axis=0)  # [L, S, D]
+        stacked = ops.unsqueeze(stacked, axis=0)  # [1, L, S, D]
+        stacked = ops.permute(stacked, [0, 2, 1, 3])  # [1, S, L, D]
         seq_len = stacked.shape[1]
         return (
-            F.reshape(
+            ops.reshape(
                 stacked, [1, seq_len, stacked.shape[2] * stacked.shape[3]]
             ),
         )

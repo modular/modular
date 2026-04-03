@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.os import Atomic
 
@@ -49,7 +49,7 @@ def filter_kernel(
         output_size: Pointer to output size counter.
         N: Number of elements.
     """
-    var i = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
+    var i = block_idx.x * BLOCK_DIM + thread_idx.x
     if UInt32(i) < N:
         var val = input[i]
         if cond(val):

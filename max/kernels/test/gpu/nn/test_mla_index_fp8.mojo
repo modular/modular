@@ -236,22 +236,24 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     var q_tile = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((Idx(total_seq_len), Idx(num_heads), Idx(depth))),
+        row_major(Idx(total_seq_len), Idx(num_heads), Idx(depth)),
     )
 
     var qs_tile = TileTensor(
         qs_device.unsafe_ptr(),
-        row_major((Idx(total_seq_len), Idx(num_heads))),
+        row_major(Idx(total_seq_len), Idx(num_heads)),
     )
 
     var input_row_offsets_tile = TileTensor(
         input_row_offsets_device.unsafe_ptr(),
-        row_major((Idx(batch_size + 1),)),
+        row_major(
+            Idx(batch_size + 1),
+        ),
     )
 
     var o_tile = TileTensor(
         o_device.unsafe_ptr(),
-        row_major((Idx(total_seq_len), Idx(top_k))),
+        row_major(Idx(total_seq_len), Idx(top_k)),
     )
 
     mla_indexer_ragged_float8_paged[

@@ -63,8 +63,8 @@ from std.gpu.primitives.grid_controls import (
 from std.gpu.sync import syncwarp
 from std.gpu.compute.arch.tcgen05 import *
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
     tile_sf_layout_k_major,
 )
 
@@ -236,15 +236,15 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== Shared Memory Layout Types ==========
 
-    comptime a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major_typed[
         Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
-    ]()
+    ].to_layout()
 
-    comptime b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major_typed[
         Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ]() if Self.transpose_b else tile_layout_mn_major[
+    ].to_layout() if Self.transpose_b else tile_layout_mn_major_typed[
         Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ]()
+    ].to_layout()
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
 

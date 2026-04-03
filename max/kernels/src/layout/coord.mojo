@@ -23,7 +23,6 @@ from std.builtin.variadics import (
     _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
 )
-from buffer.dimlist import Dim, DimList
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 
@@ -1112,7 +1111,15 @@ def idx2crd[
         var stride_t = stride.tuple()
 
         comptime for i in range(shape_len):
-            comptime if (
+            comptime if Shape.VariadicType[i].is_tuple:
+                # Nested shape: recurse into sub-shape/sub-stride.
+                var nested = idx2crd[out_dtype=out_dtype](
+                    idx, shape_t[i], stride_t[i]
+                )
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](nested)
+                )
+            elif (
                 Shape.VariadicType[i].is_static_value
                 and Shape.VariadicType[i].static_value == 1
             ):
@@ -1207,7 +1214,15 @@ def idx2crd[
         var stride_t = stride.tuple()
 
         comptime for i in range(shape_len):
-            comptime if (
+            comptime if Shape.VariadicType[i].is_tuple:
+                # Nested shape: recurse into sub-shape/sub-stride.
+                var nested = idx2crd[out_dtype=out_dtype](
+                    idx.value(), shape_t[i], stride_t[i]
+                )
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](nested)
+                )
+            elif (
                 Shape.VariadicType[i].is_static_value
                 and Shape.VariadicType[i].static_value == 1
             ):
@@ -1623,64 +1638,6 @@ comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
     Reducer=_IntToComptimeIntMapper,
 ]
 
-# ===-----------------------------------------------------------------------===#
-# Dim to CoordLike conversion
-# ===-----------------------------------------------------------------------===#
-
-
-comptime _DimToCoordLikeMapper[
-    dtype: DType,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.ValuesOfType[Dim],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike, ComptimeInt[From[idx]._value_or_missing]
-    ] if From[idx]._value_or_missing
-    != Dim._sentinel else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
-]
-"""Maps a single Dim value to a CoordLike type.
-
-If the Dim has a static value, produces ComptimeInt[value].
-If the Dim is dynamic, produces RuntimeInt.
-
-Uses direct field access rather than methods for compile-time evaluation.
-"""
-
-
-comptime _DimsToCoordLike[
-    dtype: DType, dims: DimList
-] = _ReduceValueAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=dims.values,
-    Reducer=_DimToCoordLikeMapper[dtype, ...],
-]
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
-
-Note:
-    This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
-
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
-
-Example:
-    ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _DimsToCoordLike, Coord
-
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
-    comptime coord_types = _DimsToCoordLike[DType.int32, dims]
-    # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
-
-    # Can be used to create a Coord type
-    comptime my_coords = Coord[*coord_types]
-    ```
-"""
-
 comptime _IntTupleToCoordLikeMapper[
     dtype: DType,
     tuple: IntTuple,
@@ -1692,12 +1649,10 @@ comptime _IntTupleToCoordLikeMapper[
     Variadic.types[T=CoordLike, ComptimeInt[Int(tuple[idx])]] if Int(tuple[idx])
     != layout.UNKNOWN_VALUE else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
 ]
-"""Maps a single Dim value to a CoordLike type.
+"""Maps a single IntTuple element to a CoordLike type.
 
-If the Dim has a static value, produces ComptimeInt[value].
-If the Dim is dynamic, produces RuntimeInt.
-
-Uses direct field access rather than methods for compile-time evaluation.
+If the value is known, produces ComptimeInt[value].
+If UNKNOWN_VALUE, produces RuntimeInt.
 """
 
 comptime _IntTupleToCoordLike[
@@ -1710,76 +1665,31 @@ comptime _IntTupleToCoordLike[
     ],
     Reducer=_IntTupleToCoordLikeMapper[dtype, tuple, ...],
 ]
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
+"""Converts an IntTuple to a variadic of CoordLike types.
 
 Note:
     This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
+    used in the parameter domain.
 
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
+For each element in the IntTuple:
+- If the value is known (not UNKNOWN_VALUE), produces `ComptimeInt[value]`
+- If the value is UNKNOWN_VALUE, produces `RuntimeInt`
 
 Example:
     ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _DimsToCoordLike, Coord
+    from layout import IntTuple
+    from layout.coord import _IntTupleToCoordLike, Coord
 
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
-    comptime coord_types = _DimsToCoordLike[DType.int32, dims]
-    # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
+    # Known values become ComptimeInt, UNKNOWN_VALUE becomes RuntimeInt
+    comptime shape = IntTuple(3, -1, 5)
+    comptime coord_types = _IntTupleToCoordLike[DType.int32, shape]
+    # coord_types is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
 
     # Can be used to create a Coord type
     comptime my_coords = Coord[*coord_types]
     ```
 """
 
-
-comptime _CoordToDimMapper[
-    Prev: Variadic.ValuesOfType[Dim],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_values[
-    Prev,
-    Variadic.values[
-        Dim(From[idx].static_value) if From[idx].is_static_value else Dim(),
-    ],
-]
-"""Maps a Coord to a DimList.
-
-Uses direct field access rather than methods for compile-time evaluation.
-"""
-
-
-comptime _CoordToDimList[*dims: CoordLike] = DimList[
-    *_ReduceVariadicAndIdxToValue[
-        BaseVal=Variadic.empty_of_type[Dim],
-        VariadicType=dims,
-        Reducer=_CoordToDimMapper,
-    ]
-]()
-"""Converts a variadic of Dim values to a variadic of CoordLike types.
-
-Note:
-    This transformation is a value-to-type mapper that is meant to be
-    used in the parameter domain,.
-
-For each Dim in the input:
-- If the dim has a static value, produces `ComptimeInt[value]`
-- If the dim is dynamic, produces `RuntimeInt`
-
-Example:
-    ```mojo
-    from buffer import Dim, DimList
-    from layout.coord import _CoordToDimList, Coord, Idx
-
-    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    var coords = Coord(Idx(3), Idx[5]())
-    comptime dimlist = _CoordToDimList[*coords.element_types]
-    # dims is equivalent to DimList[Dim(), 5]()
-    ```
-"""
 
 # ===-----------------------------------------------------------------------===#
 # CoordLike to Dynamic conversion
@@ -1822,6 +1732,137 @@ Example:
 
 
 # ===-----------------------------------------------------------------------===#
+# Nested dynamic coord type computation
+# ===-----------------------------------------------------------------------===#
+
+
+comptime _NestedDynamicCoordMapper[
+    dtype: DType,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        Coord[*_CoordToDynamic[dtype, *From[idx].VariadicType]],
+    ] if From[idx].is_tuple else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+]
+"""Maps a CoordLike type to a nested dynamic type.
+
+Scalar types become RuntimeInt[dtype]. Nested Coord types become
+Coord[RuntimeInt[dtype], ...] preserving one level of nesting.
+"""
+
+
+comptime _NestedDynamicCoord[
+    dtype: DType, *element_types: CoordLike
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=element_types,
+    Reducer=_NestedDynamicCoordMapper[dtype, ...],
+]
+"""Converts a variadic of CoordLike types to dynamic types preserving nesting.
+
+Scalar types become RuntimeInt[dtype]. Nested Coord types become
+Coord[RuntimeInt[dtype], ...], preserving the hierarchical structure.
+For flat layouts, this is equivalent to _CoordToDynamic (all RuntimeInt).
+For nested layouts (e.g. from zipped_divide), the result mirrors the
+nesting with RuntimeInt leaves.
+
+Example:
+
+    For flat types (ComptimeInt[3], ComptimeInt[4]):
+        result = (RuntimeInt[dtype], RuntimeInt[dtype])
+
+    For nested types (Coord[ComptimeInt[2], ComptimeInt[2]], Coord[ComptimeInt[3], ComptimeInt[4]]):
+        result = (Coord[RuntimeInt[dtype], RuntimeInt[dtype]], Coord[RuntimeInt[dtype], RuntimeInt[dtype]])
+"""
+
+
+# ===-----------------------------------------------------------------------===#
+# Deep nested dynamic coord type computation (depth 2 and 3)
+# ===-----------------------------------------------------------------------===#
+# These extend _NestedDynamicCoord (depth 1) to support deeper nesting.
+# Each level uses the previous level for its nested elements:
+#   depth 1: _NestedDynamicCoord — tuples become Coord[RuntimeInt, ...]
+#   depth 2: _DeepDynamicCoord2 — tuples become Coord[*depth1[...]]
+#   depth 3: _DeepDynamicCoord3 — tuples become Coord[*depth2[...]]
+
+
+comptime _DeepDynamicCoordMapper2[
+    dtype: DType,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        Coord[*_NestedDynamicCoord[dtype, *From[idx].VariadicType]],
+    ] if From[idx].is_tuple else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+]
+
+
+comptime _DeepDynamicCoord2[
+    dtype: DType, *element_types: CoordLike
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=element_types,
+    Reducer=_DeepDynamicCoordMapper2[dtype, ...],
+]
+"""Converts CoordLike types to dynamic types preserving up to 2 levels of nesting."""
+
+
+comptime _DeepDynamicCoordMapper3[
+    dtype: DType,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        Coord[*_DeepDynamicCoord2[dtype, *From[idx].VariadicType]],
+    ] if From[idx].is_tuple else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+]
+
+
+comptime _DeepDynamicCoord3[
+    dtype: DType, *element_types: CoordLike
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=element_types,
+    Reducer=_DeepDynamicCoordMapper3[dtype, ...],
+]
+"""Converts CoordLike types to dynamic types preserving up to 3 levels of nesting."""
+
+
+comptime _DeepDynamicCoordMapper4[
+    dtype: DType,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        Coord[*_DeepDynamicCoord3[dtype, *From[idx].VariadicType]],
+    ] if From[idx].is_tuple else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+]
+
+
+comptime _DeepDynamicCoord4[
+    dtype: DType, *element_types: CoordLike
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=element_types,
+    Reducer=_DeepDynamicCoordMapper4[dtype, ...],
+]
+"""Converts CoordLike types to dynamic types preserving up to 4 levels of nesting."""
+
+
+# ===-----------------------------------------------------------------------===#
 # idx2crd result type computation
 # ===-----------------------------------------------------------------------===#
 
@@ -1835,8 +1876,14 @@ comptime _Idx2CrdResultMapper[
     i: Int,
 ] = Variadic.concat_types[
     Prev,
+    # nested shape: produce nested Coord with RuntimeInt leaves (up to depth 4
+    # inside, supporting total depth 4 from the outermost idx2crd call).
+    Variadic.types[
+        T=CoordLike,
+        Coord[*_DeepDynamicCoord4[out_dtype, *From[i].VariadicType]],
+    ] if From[i].is_tuple
     # shape == 1: always ComptimeInt[0]
-    Variadic.types[T=CoordLike, ComptimeInt[0]] if From[i].is_static_value
+    else Variadic.types[T=CoordLike, ComptimeInt[0]] if From[i].is_static_value
     and From[i].static_value == 1
     # all three (idx, shape, stride) static: compute at compile time
     else Variadic.types[
@@ -1854,6 +1901,7 @@ comptime _Idx2CrdResultMapper[
 """Maps a shape element type to an idx2crd result type.
 
 Considers shape, stride, and index to determine the result type:
+- If shape is a nested tuple, produces a nested Coord with RuntimeInt leaves.
 - If shape is statically 1, produces ComptimeInt[0].
 - If all of idx, shape, and stride are statically known, produces
   ComptimeInt[(idx // stride) % shape].

@@ -24,6 +24,7 @@ import llguidance
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    EOSTracker,
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
@@ -54,7 +55,7 @@ class TextContext:
         request_id: A unique identifier for this sequence.
         max_length: Maximum allowed length of the generated sequence
         tokens: NumPy array containing the token IDs
-        eos_token_ids: Set of token IDs that indicate end of sequence
+        eos_tracker: holds EOS config and performs checks for EOS conditions
         log_probabilities: Whether to return token log probabilities
         log_probabilities_echo: Whether to return log probabilities for prompt tokens
         ignore_eos: Whether to ignore end of sequence tokens and continue generating
@@ -73,8 +74,7 @@ class TextContext:
     max_length: int
     tokens: TokenBuffer
     request_id: RequestID = field(default_factory=RequestID)
-    eos_token_ids: set[int] = field(default_factory=set)
-    eos_sequences: list[list[int]] = field(default_factory=list)
+    eos_tracker: EOSTracker = field(default_factory=EOSTracker)
     log_probabilities: int = field(default=0)
     log_probabilities_echo: bool = field(default=False)
     ignore_eos: bool = field(default=False)
@@ -168,7 +168,7 @@ class TextContext:
                 continue
 
             new_list = []
-            for eos_token_id in self.eos_token_ids:
+            for eos_token_id in self.eos_tracker.eos_token_ids:
                 new_list.append((0, eos_token_id))
 
             ret_list.append(np.asarray(new_list, dtype=np.int32))
@@ -237,31 +237,6 @@ class TextContext:
             final_status=self.status,
         )
 
-    def _is_eos(self, new_token: int) -> bool:
-        """Checks for end-of-sequence conditions.
-
-        This function performs two checks:
-        1. Whether the newly generated token is in the set of `eos_token_ids`.
-        2. Whether appending the new token results in a sequence that matches any per-request `stop` sequence.
-        """
-        if new_token in self.eos_token_ids:
-            return True
-
-        if not self.eos_sequences:
-            return False
-
-        for eos in self.eos_sequences:
-            if len(self.tokens.generated) < len(eos):
-                continue
-
-            comp_tokens = self.tokens.generated
-            comp_tokens = comp_tokens[len(comp_tokens) - len(eos) :]
-
-            if np.array_equal(comp_tokens, eos):
-                return True
-
-        return False
-
     def update(
         self,
         new_token: int,
@@ -284,7 +259,7 @@ class TextContext:
 
         self.tokens.advance_with_token(new_token)
 
-        if self._is_eos(new_token):
+        if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
             self.status = GenerationStatus.END_OF_SEQUENCE
         elif self.tokens.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
@@ -336,7 +311,7 @@ class TextContext:
 
         self.tokens.overwrite_last_token(new_token)
 
-        if self._is_eos(new_token):
+        if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
             self.status = GenerationStatus.END_OF_SEQUENCE
 
     def jump_ahead(self, new_token: int) -> None:
@@ -350,7 +325,7 @@ class TextContext:
             new_token, mark_previous_as_processed=False
         )
 
-        if self._is_eos(new_token):
+        if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
             self.status = GenerationStatus.END_OF_SEQUENCE
         elif self.tokens.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
@@ -694,7 +669,7 @@ class PixelContext:
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
-        input_image: Optional input image for image-to-image generation (PIL.Image.Image).
+        input_image: Optional HWC uint8 numpy array for image-to-image generation.
         model_name: Name of the model being used.
     """
 
@@ -722,6 +697,9 @@ class PixelContext:
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
 
+    explicit_negative_prompt: bool = field(default=False)
+    """Whether the request explicitly supplied a negative prompt."""
+
     # Precomputed tensors
     timesteps: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
@@ -748,6 +726,9 @@ class PixelContext:
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
     true_cfg_scale: float = field(default=1.0)
+    strength: float = field(default=0.6)
+    cfg_normalization: bool = field(default=False)
+    cfg_truncation: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
@@ -804,7 +785,7 @@ if TYPE_CHECKING:
             request_id=RequestID(),
             max_length=5,
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            eos_token_ids=set(),
+            eos_tracker=EOSTracker(),
         )
 
     def _verify_vlm_context_protocol() -> VLMTextGenerationContext:
@@ -812,7 +793,7 @@ if TYPE_CHECKING:
             request_id=RequestID(),
             max_length=5,
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            eos_token_ids=set(),
+            eos_tracker=EOSTracker(),
             vision_token_ids=[],
             images=[],
         )

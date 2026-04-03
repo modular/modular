@@ -134,8 +134,17 @@ def get_default_test_env(exec_properties):
 
     return select({
         "@//:has_gpu": {
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
+        },
+        "//conditions:default": {},
+    }) | select({
+        # On macOS, the Metal memory manager is disabled on BuildBuddy remote
+        # workers (max_cache_size=0), so MEMORY_MANAGER_ONLY must be false to
+        # allow fallthrough to direct device allocation.
+        "@platforms//os:macos": {
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
         },
         "//conditions:default": {},
     })

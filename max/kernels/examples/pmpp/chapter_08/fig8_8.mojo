@@ -14,11 +14,7 @@
 from std.random import random_float64
 from std.itertools import product
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -53,14 +49,14 @@ def stencil_kernel(
     ]()
 
     # Get thread and block indices
-    var tx = Int(thread_idx.x)
-    var ty = Int(thread_idx.y)
-    var tz = Int(thread_idx.z)
+    var tx = thread_idx.x
+    var ty = thread_idx.y
+    var tz = thread_idx.z
 
     # Calculate global indices with -1 offset to load halo cells
-    var i = Int(block_idx.z) * OUT_TILE_DIM + tz - 1
-    var j = Int(block_idx.y) * OUT_TILE_DIM + ty - 1
-    var k = Int(block_idx.x) * OUT_TILE_DIM + tx - 1
+    var i = block_idx.z * OUT_TILE_DIM + tz - 1
+    var j = block_idx.y * OUT_TILE_DIM + ty - 1
+    var k = block_idx.x * OUT_TILE_DIM + tx - 1
 
     # Load data into shared memory (all threads participate)
     if i >= 0 and i < N and j >= 0 and j < N and k >= 0 and k < N:

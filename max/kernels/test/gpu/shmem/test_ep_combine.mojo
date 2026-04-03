@@ -60,7 +60,7 @@ def welford_update(
     var delta: Float64
     var delta2: Float64
     delta = new_value - mean
-    mean += delta / count
+    mean += delta / Float64(count)
     delta2 = new_value - mean
     m2 += delta * delta2
 
@@ -168,15 +168,15 @@ def test_combine[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major((Idx(n_tokens_per_rank), Idx[top_k]()))
+        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major((Idx(n_tokens_per_rank), Idx[hidden_size]())),
+        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major((Idx[max_recv_num_tokens](), Idx[hidden_size]())),
+        row_major(Idx[max_recv_num_tokens](), Idx[hidden_size]()),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -186,11 +186,11 @@ def test_combine[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major((Idx[max_recv_num_tokens](), Idx[2]())),
+        row_major(Idx[max_recv_num_tokens](), Idx[2]()),
     )
     var output_2_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_2_buf,
-        row_major((Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]())),
+        row_major(Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]()),
     )
 
     var format_handler = token_fmt_type(output_tensor)
@@ -284,7 +284,7 @@ def test_combine[
             send_buf,
             recv_buf_ptrs,
             recv_count_ptrs,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -297,12 +297,12 @@ def test_combine[
             src_token_info_tensor,
             recv_buf,
             recv_count,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             OptionalReg[
                 TileTensor[
                     input_type,
-                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
                     ImmutAnyOrigin,
                 ]
             ](),
@@ -331,12 +331,12 @@ def test_combine[
             recv_buf,
             combine_recv_buf_ptrs,
             combine_recv_count_ptrs,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             OptionalReg[
                 TileTensor[
                     input_type,
-                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
                     MutAnyOrigin,
                 ]
             ](),
@@ -352,7 +352,7 @@ def test_combine[
             output_2_tensor,
             send_buf,
             recv_count,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -388,7 +388,7 @@ def test_combine[
 
         # First, bench kernel overhead
         run_full_dispatch(ctx)
-        new_value = ctx.execution_time[run_combine_async](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_combine_async](1)) * 1e-3
         welford_update(
             combine_async_stat_m, combine_async_stat_m2, i + 1, new_value
         )
@@ -396,7 +396,9 @@ def test_combine[
         # sleep 10 ms to make sure transfer is finished
         std.time.sleep(1e-2)
 
-        new_value = ctx.execution_time[run_combine_async_wait](1) * 1e-3
+        new_value = (
+            Float64(ctx.execution_time[run_combine_async_wait](1)) * 1e-3
+        )
         welford_update(
             combine_wait_stat_m, combine_wait_stat_m2, i + 1, new_value
         )
@@ -404,7 +406,7 @@ def test_combine[
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
         run_full_dispatch(ctx)
-        new_value = ctx.execution_time[run_e2e](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 
@@ -442,11 +444,11 @@ def test_combine[
     ](
         my_rank,
         combine_async_stat_m,
-        sqrt(combine_async_stat_m2 / num_iters),
+        sqrt(combine_async_stat_m2 / Float64(num_iters)),
         combine_wait_stat_m,
-        sqrt(combine_wait_stat_m2 / num_iters),
+        sqrt(combine_wait_stat_m2 / Float64(num_iters)),
         e2e_stat_m,
-        sqrt(e2e_stat_m2 / num_iters),
+        sqrt(e2e_stat_m2 / Float64(num_iters)),
     )
 
     shmem_free(send_buf)

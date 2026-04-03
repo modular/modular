@@ -11,20 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    block_dim_uint as block_dim,
-    WARP_SIZE,
-)
+from std.gpu import barrier, block_idx, thread_idx, block_dim, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 from std.gpu.primitives.warp import shuffle_down
 from std.gpu.primitives.id import (
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
+    lane_id,
+    warp_id,
 )
 from std.os import Atomic
 from std.random import random_float64
@@ -85,13 +79,13 @@ def reduce_kernel(
 
     # Store warp results to shared memory
     if lane_id() == 0:
-        partial_sums_s[Int(warp_id())] = partial_sum
+        partial_sums_s[warp_id()] = partial_sum
 
     barrier()
 
     # First warp reduces and atomically adds to output
     if UInt32(thread_idx.x) < UInt32(WARP_SIZE):
-        partial_sum = partial_sums_s[Int(thread_idx.x)]
+        partial_sum = partial_sums_s[thread_idx.x]
         partial_sum = warp_reduce(partial_sum)
         if thread_idx.x == 0:
             _ = Atomic.fetch_add(output, partial_sum)

@@ -84,8 +84,6 @@ class UnifiedMTPDeepseekV3(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
-        draft_signal_buffers: list[BufferValue] | None = None,
-        draft_ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
@@ -132,12 +130,6 @@ class UnifiedMTPDeepseekV3(Module):
             bonus.reshape((-1,)),
         )
 
-        _draft_signals = (
-            draft_signal_buffers
-            if draft_signal_buffers is not None
-            else signal_buffers
-        )
-
         host_merged_offsets = merged_offsets.cast(DType.uint32).to(
             DeviceRef.CPU()
         )
@@ -148,14 +140,14 @@ class UnifiedMTPDeepseekV3(Module):
         draft_outputs = self.draft(
             shifted_corrected,
             hidden_states,
-            _draft_signals,
+            signal_buffers,  # reuse target signal buffers for draft
             draft_kv_collections,
             return_n_logits,
             merged_offsets,
             host_merged_offsets,
             data_parallel_splits,
             batch_context_lengths,
-            draft_ep_inputs,
+            ep_inputs,  # reuse target ep inputs for draft
         )
         self.draft.return_hidden_states = ReturnHiddenStates.LAST
         self.draft.return_logits = ReturnLogits.LAST_TOKEN
@@ -228,20 +220,11 @@ class UnifiedMTPDeepseekV3(Module):
             tokens_type,
             device_input_row_offsets_type,
             host_input_row_offsets_type,
-            draft_tokens_type,
             return_n_logits_type,
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
         all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
-
-        if draft_kv_params is not None:
-            for sym in draft_kv_params.get_symbolic_inputs():
-                assert isinstance(sym, PagedCacheInputSymbols)
-                all_input_types.append(sym.kv_blocks)
-
-            draft_signals = Signals(devices=devices)
-            all_input_types.extend(draft_signals.input_types())
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
@@ -253,7 +236,10 @@ class UnifiedMTPDeepseekV3(Module):
         if self.target.ep_manager is not None:
             all_input_types.extend(self.target.ep_manager.input_types())
 
-        if self.draft.ep_manager is not None:
-            all_input_types.extend(self.draft.ep_manager.input_types())
+        all_input_types.append(draft_tokens_type)
+        if draft_kv_params is not None:
+            for sym in draft_kv_params.get_symbolic_inputs():
+                assert isinstance(sym, PagedCacheInputSymbols)
+                all_input_types.append(sym.kv_blocks)
 
         return tuple(all_input_types)

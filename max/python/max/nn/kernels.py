@@ -3330,6 +3330,68 @@ def rms_norm_key_cache(
     )
 
 
+def rms_norm_value_cache(
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    gamma: TensorValue,
+    epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    total_seq_len: Dim,
+    input_row_offsets: TensorValue,
+    weight_offset: float | np.floating[Any],
+    rms_norm_cols: int | None = None,
+    multiply_before_cast: bool = True,
+    per_head_norm: bool = True,
+) -> None:
+    """Applies RMSNorm in place to the _new_ entries in the value cache.
+    Semantics match :func:`rms_norm_key_cache`, but updates the value tensor
+    for the layer instead of the key tensor.
+    """
+    gamma_rank_expected = 1
+    if gamma.rank != gamma_rank_expected:
+        raise ValueError(
+            f"expected gamma of rank {gamma_rank_expected} but got {gamma.rank}"
+        )
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        )
+    if gamma.shape[0] != kv_params.head_dim and per_head_norm:
+        if rms_norm_cols is None:
+            raise ValueError(
+                "Size of gamma doesn't match head_dim. Please pass rms_norm_cols "
+                "explicitly if you intend to apply RMSNorm to only a subset of "
+                "head dimensions"
+            )
+        elif rms_norm_cols != gamma.shape[0]:
+            raise ValueError(
+                f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
+            )
+    if gamma.dtype != kv_params.dtype:
+        raise TypeError(
+            f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
+        )
+    parameters: dict[str, int | str | DType | bool] = {
+        "multiply_before_cast": multiply_before_cast,
+        "per_head_norm": per_head_norm,
+    }
+    assert kv_params.page_size is not None
+    ops.inplace_custom(
+        "mo.rms_norm_value_cache.ragged.paged",
+        device=input_row_offsets.device,
+        values=[
+            *kv_collection,
+            gamma,
+            ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.cast(TensorValue(total_seq_len), DType.uint32),
+            input_row_offsets,
+            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
+        ],
+        parameters=parameters,
+    )
+
+
 def moe_create_indices(
     topk_ids: TensorValue,
     num_local_experts: int,
@@ -4018,6 +4080,56 @@ def quantize_static_scaled_float8(
         parameters={"scale_is_inverted": scale_is_inverted},
         out_types=[TensorType(dtype=out_type, shape=x.shape, device=x.device)],
     )[0].tensor
+
+
+def quantize_tensor_dynamic_scaled_float8(
+    x: TensorValue,
+    out_type: DType = DType.float8_e4m3fn,
+) -> tuple[TensorValue, TensorValue]:
+    """Quantizes a rank-2 tensor to float8 using a dynamic per-tensor scale.
+
+    The scale is computed as ``max(|x|) / max_finite(out_type)`` over the full
+    tensor, written to a length-1 float32 tensor on the same
+    device as ``x``, then used to quantize ``x`` to FP8.
+
+    Args:
+        x: Input tensor to quantize. Must be rank 2 with dtype ``float16``,
+            ``bfloat16``, or ``float32``. Must reside on a GPU device.
+        out_type: Output dtype. Defaults to ``DType.float8_e4m3fn``.
+
+    Returns:
+        A pair ``(quantized, scale)`` where ``quantized`` has the same shape as
+        ``x`` and dtype ``out_type``, and ``scale`` has shape ``[1]`` and dtype
+        ``float32`` on ``x.device`` holding the computed scale.
+
+    Raises:
+        ValueError: If ``x`` is not rank 2, ``x`` dtype is unsupported, or
+            ``out_type`` is not a supported float8 dtype.
+    """
+    if x.dtype not in [DType.float16, DType.bfloat16, DType.float32]:
+        raise ValueError(
+            f"expected input dtype to be float16, bfloat16, or float32, but got {x.dtype}"
+        )
+
+    if x.rank != 2:
+        raise ValueError(f"expected input rank to be 2, but got {x.rank}")
+
+    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        raise ValueError(
+            f"out_type must be float8_e4m3fn or float8_e4m3fnuz, but got {out_type}"
+        )
+
+    result = ops.custom(
+        "mo.quantize_tensor_dynamic_scaled_float8",
+        device=x.device,
+        values=[x],
+        out_types=[
+            TensorType(dtype=out_type, shape=x.shape, device=x.device),
+            TensorType(dtype=DType.float32, shape=[1], device=x.device),
+        ],
+    )
+
+    return result[0].tensor, result[1].tensor
 
 
 def quantize_dynamic_scaled_float8(
@@ -4828,8 +4940,6 @@ def merge_ragged_tensors(
             - The merged ragged tensor with shape
                 [total_a_rows + total_b_rows, ...].
             - The merged row offsets with the same shape as input row offsets.
-
-    Example:
 
     .. code-block:: python
 

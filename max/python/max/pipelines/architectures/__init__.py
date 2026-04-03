@@ -38,6 +38,7 @@ def register_all_models() -> None:
     from .deepseekV3 import deepseekV3_arch
     from .deepseekV3_2 import deepseekV3_2_arch
     from .deepseekV3_nextn import deepseekV3_nextn_arch
+    from .diancie import diancie_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
@@ -82,6 +83,7 @@ def register_all_models() -> None:
     from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
+    from .z_image_modulev3 import z_image_arch
 
     architectures = [
         exaone_arch,
@@ -99,6 +101,7 @@ def register_all_models() -> None:
         flux2_klein_modulev3_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
+        diancie_arch,
         granite_arch,
         granite_modulev3_arch,
         gpt_oss_arch,
@@ -136,6 +139,7 @@ def register_all_models() -> None:
         qwen3vl_moe_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,
+        z_image_arch,
     ]
 
     for arch in architectures:

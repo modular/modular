@@ -82,6 +82,20 @@ class ChatCompletionRequestMessageContentPartImage(BaseModel):
     image_url: ImageUrl
 
 
+class VideoUrl(BaseModel):
+    url: AnyUrl = Field(
+        ...,
+        description='Either a URL of the video or the base64 encoded video data.',
+    )
+
+
+class ChatCompletionRequestMessageContentPartVideo(BaseModel):
+    type: Literal['video_url'] = Field(
+        ..., description='The type of the content part.'
+    )
+    video_url: VideoUrl
+
+
 class ChatCompletionRequestMessageContentPartRefusal(BaseModel):
     type: Literal['refusal'] = Field(
         ..., description='The type of the content part.'
@@ -102,12 +116,14 @@ class ChatCompletionRequestUserMessageContentPart(
         Union[
             ChatCompletionRequestMessageContentPartText,
             ChatCompletionRequestMessageContentPartImage,
+            ChatCompletionRequestMessageContentPartVideo,
         ]
     ]
 ):
     root: Union[
         ChatCompletionRequestMessageContentPartText,
         ChatCompletionRequestMessageContentPartImage,
+        ChatCompletionRequestMessageContentPartVideo,
     ]
 
 

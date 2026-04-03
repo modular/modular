@@ -409,12 +409,6 @@ struct Softmax[
         comptime num_output_replications = output_reg_tile.layout.shape[
             0
         ].value() // (Self.num_colwise_tiles * Self.num_rowwise_tiles)
-        # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
-        # FIXME: require `warp_split_k` when delaying inter-warp communication.
-        comptime assert (
-            num_output_replications == 1
-            or num_output_replications % Self.num_rowwise_warps == 0
-        )
 
         # if num_output_replications
         comptime for k in range(num_output_replications):
@@ -446,6 +440,26 @@ struct Softmax[
                 self.rowsum_tensor[col_tile, row] = (
                     self.rowsum_tensor[col_tile, row]
                     * self.correction[col_tile, row]
+                    + self.score_frag_rowsum[col_tile, row]
+                )
+
+    @always_inline
+    def apply_sum_correction(self):
+        """Apply rowsum *= correction (deferred sum rescale pattern)."""
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.rowsum_tensor[col_tile, row] = (
+                    self.rowsum_tensor[col_tile, row]
+                    * self.correction[col_tile, row]
+                )
+
+    @always_inline
+    def update_sum_additive(self):
+        """Additive rowsum update: rowsum += new_sum (no correction)."""
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.rowsum_tensor[col_tile, row] = (
+                    self.rowsum_tensor[col_tile, row]
                     + self.score_frag_rowsum[col_tile, row]
                 )
 

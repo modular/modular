@@ -1,7 +1,4 @@
-load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
-load("@aspect_rules_js//js:defs.bzl", "js_binary")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
-load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bazel:api.bzl", "modular_py_binary", "mojo_binary")
@@ -28,24 +25,6 @@ buildifier(
     exclude_patterns = _BUILDIFIER_IGNORES,
     lint_mode = "fix",
     mode = "fix",
-)
-
-npm_link_all_packages(
-    name = "node_modules",
-)
-
-directory_path(
-    name = "datadog_ci_entry_point",
-    directory = ":node_modules/@datadog/datadog-ci/dir",
-    path = "dist/cli.js",
-)
-
-js_binary(
-    name = "datadog-ci",
-    data = [
-        ":node_modules/@datadog/datadog-ci",
-    ],
-    entry_point = ":datadog_ci_entry_point",
 )
 
 sh_binary(

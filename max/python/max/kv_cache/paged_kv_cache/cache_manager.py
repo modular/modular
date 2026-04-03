@@ -286,7 +286,8 @@ class PagedKVCacheManager:
         replica_idx: int,
         num_steps: int = 1,
         num_speculative_steps: int = 0,
-    ) -> None:
+        skip_tokens: bool = True,
+    ) -> int:
         """Allocates blocks for a request to run for N steps.
 
         This method allocates blocks needed by a request to run for N steps.
@@ -298,17 +299,32 @@ class PagedKVCacheManager:
                 must already be assigned to a replica via ``claim``.
             replica_idx: Index of the replica to allocate on.
             num_steps: The number of steps to reserve blocks for. Default: 1.
-            num_speculative_steps: The number of speculative steps to reserve blocks for. Default: 0.
+            num_speculative_steps: The number of speculative steps to reserve
+                blocks for. Default: 0.
+            skip_tokens: When True (default), prefix-cache hits advance the
+                context's active token window via
+                ``data.tokens.skip_processing``.  Set to False when multiple
+                cache managers share a single context to avoid mutating shared
+                token state; the caller is then responsible for applying the
+                skip after all caches have allocated.
+
+        Returns:
+            The number of tokens skipped (or that should be skipped) due to
+            prefix-cache reuse.  When ``skip_tokens`` is True the skip has
+            already been applied; when False the caller must apply it.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
         replica = self._replica[replica_idx]
-        replica.block_manager.reuse_blocks_from_prefix_cache(data)
+        skipped = replica.block_manager.reuse_blocks_from_prefix_cache(
+            data, skip_tokens=skip_tokens
+        )
         replica.block_manager.allocate_new_blocks(
             data, num_steps, num_speculative_steps
         )
+        return skipped
 
     def _does_req_need_more_blocks(
         self,

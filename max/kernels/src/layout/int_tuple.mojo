@@ -58,9 +58,9 @@ var total_size = size(shape)  # Results in 120
 
 from std.os import abort
 
-from buffer import DimList
 from std.builtin.range import _StridedRange
 from std.memory import memcpy
+from std.memory._nonnull import NonNullUnsafePointer
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 from std.utils.numerics import max_finite
@@ -132,7 +132,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: UnsafePointer[Int, MutExternalOrigin]
+    var _data: Optional[NonNullUnsafePointer[Int, MutExternalOrigin]]
     var _size: Int
 
     @always_inline("nodebug")
@@ -142,7 +142,12 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         Args:
             size: Number of integers to allocate space for. Defaults to 0.
         """
-        self._data = alloc[Int](size)
+        if size > 0:
+            self._data = NonNullUnsafePointer(
+                unsafe_from_nullable=alloc[Int](size)
+            )
+        else:
+            self._data = {}
         self._size = size
 
     @always_inline("nodebug")
@@ -157,7 +162,9 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = copy._size
         if copy.owning():
             var size = copy.size()
-            self._data = alloc[Int](size)
+            self._data = NonNullUnsafePointer(
+                unsafe_from_nullable=alloc[Int](size)
+            )
             self.copy_from(0, copy, size)
         else:
             self._data = copy._data
@@ -170,7 +177,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         double-free errors with views.
         """
         if self.owning() and self._data:
-            self._data.free()
+            self._data.unsafe_value().free()
 
     @always_inline("nodebug")
     def __getitem__(self, idx: Int) -> Int:
@@ -187,7 +194,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         # Note:
         #     Bounds checking is performed when assertions are enabled (e.g., -D ASSERT=all).
 
-        return self._data[idx]
+        return self._data.unsafe_value()[idx]
 
     @always_inline("nodebug")
     def __setitem__(mut self, idx: Int, value: Int):
@@ -209,7 +216,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             ")",
         )
 
-        self._data[idx] = value
+        self._data.unsafe_value()[idx] = value
 
     @always_inline("nodebug")
     def owning(self) -> Bool:
@@ -239,7 +246,12 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             source: Source array to copy from.
             size: Number of elements to copy.
         """
-        memcpy(dest=self._data + offset, src=source._data, count=size)
+        if self._data and source._data:
+            memcpy(
+                dest=self._data.unsafe_value() + offset,
+                src=source._data.unsafe_value(),
+                count=size,
+            )
 
     @always_inline("nodebug")
     def copy_from(
@@ -253,11 +265,12 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             src_offset: Source offset in the source array.
             size: Number of elements to copy.
         """
-        memcpy(
-            dest=self._data + dst_offset,
-            src=source._data + src_offset,
-            count=size,
-        )
+        if self._data and source._data:
+            memcpy(
+                dest=self._data.unsafe_value() + dst_offset,
+                src=source._data.unsafe_value() + src_offset,
+                count=size,
+            )
 
 
 comptime UNKNOWN_VALUE = -1
@@ -266,6 +279,20 @@ comptime UNKNOWN_VALUE = -1
 This constant is used throughout the `IntTuple` system to represent dimensions
 that are not known at compile time or have not been specified.
 """
+
+
+def create_unknown_int_tuple(rank: Int) -> IntTuple:
+    """Creates an IntTuple of the given rank with all UNKNOWN_VALUE entries.
+
+    Args:
+        rank: The number of dimensions.
+
+    Returns:
+        An IntTuple with `rank` elements, all set to UNKNOWN_VALUE.
+    """
+    var result = IntTuple(rank)
+    _to_unknown(result)
+    return result
 
 
 struct _IntTupleIter[origin: ImmutOrigin](
@@ -607,40 +634,6 @@ struct IntTuple(
         for i in rng:
             storage = self._insert(pos, storage, existing[i])
             pos += 1
-
-        self.validate_structure()
-
-    @always_inline
-    def __init__(out self, dimlist: DimList):
-        """Initialize an `IntTuple` from a DimList.
-
-        Creates an `IntTuple` containing the dimensions from a DimList, handling
-        both defined and undefined dimensions appropriately.
-
-        Args:
-            dimlist: The DimList containing dimension information.
-
-        Notes:
-
-            - Converts undefined dimensions to `UNKNOWN_VALUE`.
-            - Validates that all values are above `MinimumValue`. If any value is
-              less than `MinimumValue`, assertion fails with an error message.
-        """
-        var size = len(dimlist) + 1
-        self._store = IntArray(size)
-        self._store[0] = len(dimlist)
-
-        var i = 0
-        for dim in VariadicParamList[*dimlist.values]():
-            var value = dim.get() if dim else UNKNOWN_VALUE
-            debug_assert(
-                value >= Self.MinimumValue,
-                "IntTuple value must be >= MinimumValue: ",
-                value,
-            )
-
-            self._store[i + 1] = value
-            i += 1
 
         self.validate_structure()
 

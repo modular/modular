@@ -18,7 +18,7 @@ Expert Parallelism (EP) Communication Kernel.
 
 import compiler_internal as compiler
 from comm.sync import is_p2p_enabled
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_gpu
 from layout import TileTensor, Idx
@@ -61,7 +61,7 @@ from shmem.ep_comm import (
     fused_silu_nvfp4_kernel,
 )
 
-comptime RT_LAYOUT_2D = type_of(row_major((Idx(Int64(1)), Idx(Int64(1)))))
+comptime RT_LAYOUT_2D = type_of(row_major(Idx(Int64(1)), Idx(Int64(1))))
 
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Initialization Kernel
@@ -468,7 +468,7 @@ struct Struct_ep_dispatch_wait:
 
         # Ensure the shape for the input tensors are correct
         comptime assert (
-            output_tokens.static_spec.shape.get[1]() == hidden_size
+            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var format_handler = BF16TokenFormat[hidden_size, top_k](
@@ -524,7 +524,7 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
 
         # Ensure the shape for the input tensors are correct
         comptime assert (
-            output_tokens.static_spec.shape.get[1]() == hidden_size
+            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var format_handler = BF16TokenFormat[hidden_size, top_k](
@@ -1305,7 +1305,7 @@ struct Struct_ep_fused_silu:
                 row_offsets_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
 
@@ -1389,7 +1389,7 @@ struct Struct_ep_fused_silu_fp8:
                 row_offsets_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
 
 
@@ -1481,5 +1481,5 @@ struct Struct_ep_fused_silu_nvfp4:
                 input_scales_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )

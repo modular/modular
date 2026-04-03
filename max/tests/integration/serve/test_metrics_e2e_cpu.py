@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.config import MetricLevel, MetricRecordingMethod
 from max.serve.schemas.openai import CreateChatCompletionResponse
@@ -62,14 +63,17 @@ def assert_metrics(
     "pipeline_config",
     [
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path=MODEL_NAME,
-                huggingface_model_revision=MODEL_REVISION,
-                device_specs=[DeviceSpec.cpu()],
-                quantization_encoding="float32",
-                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-                kv_cache=KVCacheConfig(),
-                max_length=512,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=MODEL_NAME,
+                        huggingface_model_revision=MODEL_REVISION,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="float32",
+                        kv_cache=KVCacheConfig(),
+                        max_length=512,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
@@ -133,14 +137,17 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     "pipeline_config",
     [
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path=MODEL_NAME,
-                huggingface_model_revision=MODEL_REVISION,
-                device_specs=[DeviceSpec.cpu()],
-                quantization_encoding="float32",
-                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-                kv_cache=KVCacheConfig(),
-                max_length=512,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=MODEL_NAME,
+                        huggingface_model_revision=MODEL_REVISION,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="float32",
+                        kv_cache=KVCacheConfig(),
+                        max_length=512,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
@@ -203,14 +210,17 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
     "pipeline_config",
     [
         PipelineConfig(
-            model=MAXModelConfig(
-                model_path=MODEL_NAME,
-                huggingface_model_revision=MODEL_REVISION,
-                device_specs=[DeviceSpec.cpu()],
-                quantization_encoding="float32",
-                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-                kv_cache=KVCacheConfig(),
-                max_length=512,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=MODEL_NAME,
+                        huggingface_model_revision=MODEL_REVISION,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="float32",
+                        kv_cache=KVCacheConfig(),
+                        max_length=512,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
@@ -231,4 +241,4 @@ async def test_metrics_e2e_validate_disable_works_v1(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
         # Endpoint won't exist
         with pytest.raises(requests.exceptions.ConnectionError):
-            response = requests.get("http://localhost:8001/metrics", timeout=1)
+            requests.get("http://localhost:8001/metrics", timeout=1)

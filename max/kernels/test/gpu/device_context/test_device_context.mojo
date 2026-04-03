@@ -13,7 +13,7 @@
 
 from std.math import iota
 
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal
 
@@ -27,7 +27,7 @@ def vec_func(
     supplement: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
@@ -179,7 +179,7 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
         var supplement, var in0, var in1, var output
     }:
         var tid = global_idx.x
-        if tid >= UInt(length):
+        if tid >= length:
             return
         output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
@@ -219,6 +219,126 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     out_host.free()
 
 
+def test_enqueue_copy_from_span(ctx: DeviceContext) raises:
+    comptime length = 8
+
+    # Test with List as source (implicitly converts to Span).
+    var src_list: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
+    ctx.enqueue_copy(dev_buf, Span(src_list))
+
+    var out_host = alloc[Float32](length)
+    ctx.enqueue_copy(out_host, dev_buf)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(out_host[i], Float32(i + 1))
+    out_host.free()
+
+
+def test_enqueue_copy_to_span(ctx: DeviceContext) raises:
+    comptime length = 8
+
+    # Set up device buffer with known data.
+    var src_list: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
+    ctx.enqueue_copy(dev_buf, Span(src_list))
+
+    # Copy device buffer back into a List via Span.
+    var dst_list: List[Float32] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    ctx.enqueue_copy(Span(dst_list), dev_buf)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(dst_list[i], Float32(i + 1))
+
+
+def test_enqueue_copy_from_span_host_buffer(ctx: DeviceContext) raises:
+    comptime length = 4
+
+    var src_list: List[Float32] = [100.0, 200.0, 300.0, 400.0]
+    var host_buf = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.enqueue_copy(host_buf, Span(src_list))
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_buf[i], src_list[i])
+
+
+def test_enqueue_copy_to_span_host_buffer(ctx: DeviceContext) raises:
+    comptime length = 4
+
+    var host_buf = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
+    for i in range(length):
+        host_buf[i] = Float32((i + 1) * 10)
+
+    var dst_list: List[Float32] = [0.0, 0.0, 0.0, 0.0]
+    ctx.enqueue_copy(Span(dst_list), host_buf)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(dst_list[i], Float32((i + 1) * 10))
+
+
+def test_device_buffer_enqueue_copy_from_span(ctx: DeviceContext) raises:
+    comptime length = 4
+
+    var src_list: List[Float32] = [10.0, 20.0, 30.0, 40.0]
+    var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
+    dev_buf.enqueue_copy_from(Span(src_list))
+
+    var dst_list: List[Float32] = [0.0, 0.0, 0.0, 0.0]
+    ctx.enqueue_copy(Span(dst_list), dev_buf)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(dst_list[i], src_list[i])
+
+
+def test_device_buffer_enqueue_copy_to_span(ctx: DeviceContext) raises:
+    comptime length = 4
+
+    var src_list: List[Float32] = [10.0, 20.0, 30.0, 40.0]
+    var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
+    ctx.enqueue_copy(dev_buf, Span(src_list))
+
+    var dst_list: List[Float32] = [0.0, 0.0, 0.0, 0.0]
+    dev_buf.enqueue_copy_to(Span(dst_list))
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(dst_list[i], src_list[i])
+
+
+def test_host_buffer_enqueue_copy_from_span(ctx: DeviceContext) raises:
+    comptime length = 4
+
+    var src_list: List[Float32] = [10.0, 20.0, 30.0, 40.0]
+    var host_buf = ctx.enqueue_create_host_buffer[DType.float32](length)
+    host_buf.enqueue_copy_from(Span(src_list))
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_buf[i], src_list[i])
+
+
+def test_host_buffer_enqueue_copy_to_span(ctx: DeviceContext) raises:
+    comptime length = 4
+
+    var host_buf = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
+    for i in range(length):
+        host_buf[i] = Float32((i + 1) * 10)
+
+    var dst_list: List[Float32] = [0.0, 0.0, 0.0, 0.0]
+    host_buf.enqueue_copy_to(Span(dst_list))
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(dst_list[i], Float32((i + 1) * 10))
+
+
 def main() raises:
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
@@ -229,3 +349,11 @@ def main() raises:
         test_id(ctx)
         test_print(ctx)
         test_enqueue_unified(ctx)
+        test_enqueue_copy_from_span(ctx)
+        test_enqueue_copy_to_span(ctx)
+        test_enqueue_copy_from_span_host_buffer(ctx)
+        test_enqueue_copy_to_span_host_buffer(ctx)
+        test_device_buffer_enqueue_copy_from_span(ctx)
+        test_device_buffer_enqueue_copy_to_span(ctx)
+        test_host_buffer_enqueue_copy_from_span(ctx)
+        test_host_buffer_enqueue_copy_to_span(ctx)

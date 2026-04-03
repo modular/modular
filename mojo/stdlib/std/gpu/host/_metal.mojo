@@ -37,8 +37,6 @@ def metal_device(ctx: DeviceContext) raises -> MTLDevice:
         external_call[
             "AsyncRT_DeviceContext_metal_device",
             _CString[],
-            UnsafePointer[MTLDevice, origin_of(result)],
-            _DeviceContextPtr,
         ](
             UnsafePointer(to=result),
             ctx._handle,

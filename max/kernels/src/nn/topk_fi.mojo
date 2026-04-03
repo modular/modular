@@ -15,14 +15,18 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    block_dim,
+    block_idx,
+    lane_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.primitives import block, warp
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    pdl_launch_attributes,
+    PDLLevel,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
@@ -37,10 +41,12 @@ from layout import (
 )
 from layout.tile_layout import Layout
 from std.math import ceildiv, gcd, exp
+from std.math.uutils import ufloordiv
 from std.memory import stack_allocation
 from std.os import Atomic
 from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.utils.static_tuple import StaticTuple
 from .normalization import (
     _APPLE_STATIC_SHMEM_MAX_COUNT,
@@ -173,10 +179,8 @@ def get_min_max_value[
     for i in range(num_iterations):
         var in_data_vec = SIMD[DType.float32, vec_size](0)
 
-        if (i * block_size + Int(tx)) * vec_size < d:
-            var offset = (
-                row_idx * d + i * block_size * vec_size + Int(tx) * vec_size
-            )
+        if (i * block_size + tx) * vec_size < d:
+            var offset = row_idx * d + i * block_size * vec_size + tx * vec_size
             in_data_vec = in_data.load[width=vec_size](offset).cast[
                 DType.float32
             ]()
@@ -210,129 +214,134 @@ def TopKMaskLogitsKernel[
     d: Int,
 ):
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var row_idx = bx
 
     var logits_ptr = logits.ptr + bx * d
     var masked_logits_ptr = masked_logits.ptr + bx * d
 
-    var logits_row = TileTensor(logits_ptr, row_major((Idx[1](), Idx(d))))
+    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
     var masked_logits_row = TileTensor(
-        masked_logits_ptr, row_major((Idx[1](), Idx(d)))
+        masked_logits_ptr, row_major(Idx[1](), Idx(d))
     )
 
-    var k = top_k_val
-    if top_k_arr:
-        k = Int(top_k_arr[bx])
+    with PDL():
+        var k = top_k_val
+        if top_k_arr:
+            k = Int(top_k_arr[bx])
 
-    # Initialize pivot to negative infinity.
-    var pivot = Float64(Float32.MIN)
+        # Initialize pivot to negative infinity.
+        var pivot = Float32.MIN
 
-    var logits_vec = SIMD[DType.float32, vec_size]()
+        var logits_vec = SIMD[DType.float32, vec_size]()
 
-    if k < d:
-        var min_max = get_min_max_value[vec_size, block_size](
-            logits.ptr, row_idx, d
-        )
-        var min_val, max_val = min_max[0], min_max[1]
-
-        # Initialize ternary search bounds.
-        var low = Float64(
-            min_val - 1 if min_val != Float32.MIN else Float32.MIN
-        )
-        var high = Float64(max_val)
-
-        while True:
-            var pivot_0 = (high + 2 * low) / 3
-            var pivot_1 = (2 * high + low) / 3
-
-            # Accumulate thread-local counts across all chunks.
-            var thread_count_0_total: Int32 = 0
-            var thread_count_1_total: Int32 = 0
-            var min_gt_low = Float32(high)
-            var max_le_high = Float32(low)
-
-            for i in range(ceildiv(d, block_size * vec_size)):
-                if (i * block_size + tx) * vec_size < d:
-                    logits_vec = logits_row.load[width=vec_size](
-                        (
-                            Idx[0](),
-                            Idx(i * block_size * vec_size + tx * vec_size),
-                        ),
-                    ).cast[DType.float32]()
-
-                var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
-                var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
-
-                comptime for j in range(vec_size):
-                    # Calculate the global index for this element in the row.
-                    # Will only count if the index is within the valid range [0, d).
-                    var idx = (i * block_size + tx) * vec_size + j
-
-                    # Count elements greater than pivot_0 (higher ternary search bound).
-                    probs_gt_pivot_0_count[j] = Int32(1) if (
-                        Float64(logits_vec[j]) > pivot_0 and idx < d
-                    ) else Int32(0)
-                    # Count elements greater than pivot_1 (lower ternary search bound).
-                    probs_gt_pivot_1_count[j] = Int32(1) if (
-                        Float64(logits_vec[j]) > pivot_1 and idx < d
-                    ) else Int32(0)
-
-                    # Track the minimum value that's greater than 'low'.
-                    # Used to narrow the search range from below.
-                    if Float64(logits_vec[j]) > low and idx < d:
-                        min_gt_low = min(min_gt_low, logits_vec[j])
-                    # Track the maximum value that's less than or equal to 'high'.
-                    # Used to narrow the search range from above.
-                    if Float64(logits_vec[j]) <= high and idx < d:
-                        max_le_high = max(max_le_high, logits_vec[j])
-
-                # Accumulate thread-local counts (no block reduction per chunk).
-                thread_count_0_total += probs_gt_pivot_0_count.reduce_add()
-                thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
-
-            # Single block reduction after processing all chunks.
-            var _pivot_results = _block_reduce_pivot_bounds[block_size](
-                thread_count_0_total,
-                thread_count_1_total,
-                min_gt_low,
-                max_le_high,
+        if k < d:
+            var min_max = get_min_max_value[vec_size, block_size](
+                logits.ptr, row_idx, d
             )
-            var aggregate_gt_pivot_0 = _pivot_results[0]
-            var aggregate_gt_pivot_1 = _pivot_results[1]
-            min_gt_low = _pivot_results[2]
-            max_le_high = _pivot_results[3]
+            var min_val, max_val = min_max[0], min_max[1]
 
-            # Update the search bounds based on the counts and the minimum/maximum values.
-            if aggregate_gt_pivot_1 >= Int32(k):
-                low = pivot_1
-            elif aggregate_gt_pivot_0 >= Int32(k):
-                low = pivot_0
-                high = min(pivot_1, Float64(max_le_high))
-            else:
-                high = min(pivot_0, Float64(max_le_high))
-
-            if min_gt_low == max_le_high:
-                break
-
-        pivot = low
-
-    for i in range(ceildiv(d, block_size * vec_size)):
-        logits_vec = 0
-        if (i * block_size + tx) * vec_size < d:
-            logits_vec = logits_row.load[width=vec_size](
-                (Idx[0](), Idx(i * block_size * vec_size + tx * vec_size))
-            ).cast[DType.float32]()
-
-        logits_vec = (logits_vec.cast[DType.float64]().gt(pivot)).select(
-            logits_vec, Float32.MIN
-        )
-
-        if (i * block_size + tx) * vec_size < d:
-            masked_logits_row.store[width=vec_size](
-                (Idx[0](), Idx(i * block_size * vec_size + tx * vec_size)),
-                logits_vec.cast[dtype](),
+            # Initialize ternary search bounds.
+            var low = Float32(
+                min_val - 1 if min_val != Float32.MIN else Float32.MIN
             )
+            var high = max_val
+
+            while True:
+                var pivot_0 = (high + 2 * low) / 3
+                var pivot_1 = (2 * high + low) / 3
+
+                # Accumulate thread-local counts across all chunks.
+                var thread_count_0_total: Int32 = 0
+                var thread_count_1_total: Int32 = 0
+                var min_gt_low = high
+                var max_le_high = low
+
+                for i in range(ceildiv(d, block_size * vec_size)):
+                    if (i * block_size + tx) * vec_size < d:
+                        logits_vec = logits_row.load[width=vec_size](
+                            (
+                                Idx[0](),
+                                Idx(i * block_size * vec_size + tx * vec_size),
+                            ),
+                        ).cast[DType.float32]()
+
+                    var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
+                    var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
+
+                    comptime for j in range(vec_size):
+                        # Calculate the global index for this element in the row.
+                        # Will only count if the index is within the valid range [0, d).
+                        var idx = (i * block_size + tx) * vec_size + j
+
+                        # Count elements greater than pivot_0 (higher ternary search bound).
+                        probs_gt_pivot_0_count[j] = Int32(1) if (
+                            logits_vec[j] > pivot_0 and idx < d
+                        ) else Int32(0)
+                        # Count elements greater than pivot_1 (lower ternary search bound).
+                        probs_gt_pivot_1_count[j] = Int32(1) if (
+                            logits_vec[j] > pivot_1 and idx < d
+                        ) else Int32(0)
+
+                        # Track the minimum value that's greater than 'low'.
+                        # Used to narrow the search range from below.
+                        if logits_vec[j] > low and idx < d:
+                            min_gt_low = min(min_gt_low, logits_vec[j])
+                        # Track the maximum value that's less than or equal to 'high'.
+                        # Used to narrow the search range from above.
+                        if logits_vec[j] <= high and idx < d:
+                            max_le_high = max(max_le_high, logits_vec[j])
+
+                    # Accumulate thread-local counts (no block reduction per chunk).
+                    thread_count_0_total += probs_gt_pivot_0_count.reduce_add()
+                    thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
+
+                # Single block reduction after processing all chunks.
+                var _pivot_results = _block_reduce_pivot_bounds[block_size](
+                    thread_count_0_total,
+                    thread_count_1_total,
+                    min_gt_low,
+                    max_le_high,
+                )
+                var aggregate_gt_pivot_0 = _pivot_results[0]
+                var aggregate_gt_pivot_1 = _pivot_results[1]
+                min_gt_low = _pivot_results[2]
+                max_le_high = _pivot_results[3]
+
+                # Update the search bounds based on the counts and the minimum/maximum values.
+                if aggregate_gt_pivot_1 >= Int32(k):
+                    low = pivot_1
+                elif aggregate_gt_pivot_0 >= Int32(k):
+                    low = pivot_0
+                    high = min(pivot_1, max_le_high)
+                else:
+                    high = min(pivot_0, max_le_high)
+
+                if min_gt_low == max_le_high:
+                    break
+
+            pivot = low
+
+        for i in range(ceildiv(d, block_size * vec_size)):
+            logits_vec = 0
+            if (i * block_size + tx) * vec_size < d:
+                logits_vec = logits_row.load[width=vec_size](
+                    (
+                        Idx[0](),
+                        Idx(i * block_size * vec_size + tx * vec_size),
+                    )
+                ).cast[DType.float32]()
+
+            logits_vec = (logits_vec.gt(pivot)).select(logits_vec, Float32.MIN)
+
+            if (i * block_size + tx) * vec_size < d:
+                masked_logits_row.store[width=vec_size](
+                    (
+                        Idx[0](),
+                        Idx(i * block_size * vec_size + tx * vec_size),
+                    ),
+                    logits_vec.cast[dtype](),
+                )
 
 
 def topk_mask_logits[
@@ -361,49 +370,65 @@ def topk_mask_logits[
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(masked_logits.layout.shape_coord())
-    if shape[0] != out_shape[0] or shape[1] != out_shape[1]:
-        raise Error("masked_logits shape must match logits shape")
-
-    # Use up to 16 elements per vector to minimize the number of chunks
-    # (and therefore the number of block-level reductions in inner loops).
-    # GPU vector loads handle wider-than-native SIMD efficiently, and the
-    # per-element idx < d guard handles non-aligned tails correctly.
-    var vec_size = gcd(8, d)
-
-    var top_k_buf: DeviceBuffer[out_idx_type]
-    if top_k_arr:
-        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-    else:
-        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-
     @parameter
-    def launch_kernel[vec_size: Int]() raises:
-        comptime kernel = TopKMaskLogitsKernel[
-            block_size,
-            vec_size,
-            dtype,
-            out_idx_type,
-            LogitsLayoutType=logits.LayoutType,
-            logits_origin=ImmutOrigin(logits.origin),
-            MaskedLogitsLayoutType=masked_logits.LayoutType,
-            masked_logits_origin=masked_logits.origin,
-        ]
-        ctx.enqueue_function[kernel, kernel](
-            logits.as_immut(),
-            masked_logits,
-            top_k_buf,
-            top_k_val,
-            d,
-            grid_dim=batch_size,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("logits", shape, dtype),
+                    "top_k_val=" + String(top_k_val),
+                ]
+            )
         )
 
-    # Runtime dispatch to compile-time parameter.
-    comptime for param_vec_size in [16, 8, 4, 2, 1]:
-        if vec_size == param_vec_size:
-            return launch_kernel[param_vec_size]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_mask_logits",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var out_shape = coord_to_index_list(masked_logits.layout.shape_coord())
+        if shape[0] != out_shape[0] or shape[1] != out_shape[1]:
+            raise Error("masked_logits shape must match logits shape")
+
+        # Use up to 16 elements per vector to minimize the number of chunks
+        # (and therefore the number of block-level reductions in inner loops).
+        # GPU vector loads handle wider-than-native SIMD efficiently, and the
+        # per-element idx < d guard handles non-aligned tails correctly.
+        var vec_size = gcd(8, d)
+
+        var top_k_buf: DeviceBuffer[out_idx_type]
+        if top_k_arr:
+            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+        else:
+            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+
+        @parameter
+        def launch_kernel[vec_size: Int]() raises:
+            comptime kernel = TopKMaskLogitsKernel[
+                block_size,
+                vec_size,
+                dtype,
+                out_idx_type,
+                LogitsLayoutType=logits.LayoutType,
+                logits_origin=ImmutOrigin(logits.origin),
+                MaskedLogitsLayoutType=masked_logits.LayoutType,
+                masked_logits_origin=masked_logits.origin,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                logits.as_immut(),
+                masked_logits,
+                top_k_buf,
+                top_k_val,
+                d,
+                grid_dim=batch_size,
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+        # Runtime dispatch to compile-time parameter.
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
+            if vec_size == param_vec_size:
+                return launch_kernel[param_vec_size]()
 
 
 @always_inline
@@ -415,7 +440,7 @@ def device_sampling_from_prob[
 ](
     i: Int,
     d: Int,
-    low: Float64,
+    low: Float32,
     u: Float32,
     prob_vec: SIMD[DType.float32, vec_size],
     aggregate: Float32,
@@ -431,7 +456,7 @@ def device_sampling_from_prob[
         after all chunks are processed.
     """
 
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     # Step 1: Filter probabilities based on predicate (prob > low).
     var prob_gt_threshold = SIMD[DType.float32, vec_size]()
@@ -439,7 +464,7 @@ def device_sampling_from_prob[
 
     comptime for j in range(vec_size):
         var idx = (i * block_size + tx) * vec_size + j
-        var passes_pred = prob_vec[j] > Float32(low)
+        var passes_pred = prob_vec[j] > low
         prob_gt_threshold[j] = prob_vec[j] if passes_pred else 0.0
         valid[j] = passes_pred and (idx < d)
 
@@ -603,9 +628,9 @@ def _block_reduce_value_count[
     var warp_accum = _warp_reduce_value_count(val)
 
     # Store warp-level results in shared memory (only lane 0 of each warp).
-    if lane_id() == 0 and warp < UInt(num_warps_needed):
-        value_sram[Int(warp) * value_width] = warp_accum.value
-        count_sram[Int(warp) * count_width] = warp_accum.count
+    if lane_id() == 0 and warp < num_warps_needed:
+        value_sram[warp * value_width] = warp_accum.value
+        count_sram[warp * count_width] = warp_accum.count
     barrier()
 
     # Each warp has reduced its own ValueCount in smem (value_sram and count_sram).
@@ -615,12 +640,12 @@ def _block_reduce_value_count[
     # block_size = 1024 and WARP_SIZE = 32, then only the first 32 threads from warp 0
     # will have valid results).
     var block_accum: ValueCount[T]
-    var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
+    var thread_in_final_warp = thread_idx.x < ufloordiv(block_dim.x, WARP_SIZE)
 
     if thread_in_final_warp:
         block_accum = {
-            value = value_sram[lane_id() * UInt(value_width)],
-            count = count_sram[lane_id() * UInt(count_width)],
+            value = value_sram[lane_id() * value_width],
+            count = count_sram[lane_id() * count_width],
         }
     else:
         # Initialize unused threads with zeros (identity for sum).
@@ -684,7 +709,7 @@ def TopKSamplingFromProbKernel[
     comptime assert output.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     var sampled_id_sram = stack_allocation[
         1, Int, address_space=AddressSpace.SHARED
@@ -693,153 +718,158 @@ def TopKSamplingFromProbKernel[
         1, Int, address_space=AddressSpace.SHARED
     ]()
 
-    var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
-    var k = top_k_val
-    if top_k_arr:
-        k = Int(top_k_arr.load(bx))
-    var row_idx = bx
-    if indices:
-        row_idx = Int(indices.load(bx))
+    with PDL():
+        var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
+        var k = top_k_val
+        if top_k_arr:
+            k = Int(top_k_arr.load(bx))
+        var row_idx = bx
+        if indices:
+            row_idx = Int(indices.load(bx))
 
-    var probs_ptr = probs.ptr + row_idx * d
-    var probs_row = TileTensor(probs_ptr, row_major((Idx[1](), Idx(d))))
+        var probs_ptr = probs.ptr + row_idx * d
+        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
 
-    var probs_vec: SIMD[DType.float32, vec_size]
-    var aggregate: Float32
-    var sampled_id = 0
-    var q: Float32 = 1.0
-    var low = 0.0
-    var high = 1.0
+        var probs_vec: SIMD[DType.float32, vec_size]
+        var aggregate: Float32
+        var sampled_id = 0
+        var q: Float32 = 1.0
+        var low: Float32 = 0.0
+        var high: Float32 = 1.0
 
-    while low < high:
-        if tx == 0:
-            sampled_id_sram[0] = d
-        barrier()
+        while low < high:
+            if tx == 0:
+                sampled_id_sram[0] = d
+            barrier()
 
-        var u = generator.step_uniform()[0] * q
-        aggregate = 0.0
-        var thread_max_valid = -1
+            var u = generator.step_uniform()[0] * q
+            aggregate = 0.0
+            var thread_max_valid = -1
 
-        for i in range(ceildiv(d, block_size * vec_size)):
-            probs_vec = 0
-            if (i * block_size + tx) * vec_size < d:
-                probs_vec = probs_row.load[width=vec_size](
-                    (Idx[0](), Idx((i * block_size + tx) * vec_size))
-                ).cast[DType.float32]()
+            for i in range(ceildiv(d, block_size * vec_size)):
+                probs_vec = 0
+                if (i * block_size + tx) * vec_size < d:
+                    probs_vec = probs_row.load[width=vec_size](
+                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                    ).cast[DType.float32]()
 
-            var result = device_sampling_from_prob[
-                vec_size, block_size, dtype, deterministic
-            ](
-                i,
-                d,
-                low,
-                u,
-                probs_vec,
-                aggregate,
-                sampled_id_sram,
+                var result = device_sampling_from_prob[
+                    vec_size, block_size, dtype, deterministic
+                ](
+                    i,
+                    d,
+                    low,
+                    u,
+                    probs_vec,
+                    aggregate,
+                    sampled_id_sram,
+                )
+                aggregate = result[0]
+                thread_max_valid = max(thread_max_valid, result[1])
+                if aggregate > u:
+                    break
+
+            # Reduce last_valid_id across block (single reduction after loop).
+            var block_max_valid = block.max[
+                block_size=block_size,
+                broadcast=False,
+            ](Int32(thread_max_valid))
+
+            if tx == 0 and block_max_valid != -1:
+                last_valid_id_sram[0] = Int(block_max_valid)
+
+            barrier()
+
+            sampled_id = sampled_id_sram[0]
+            if sampled_id == d:
+                # This would happen when u is very close to 1 and the
+                # sum of probabilities is smaller than u. In this case
+                # we use the last valid index as the sampled id.
+                sampled_id = last_valid_id_sram[0]
+
+            var pivot_0 = Float32(
+                probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
             )
-            aggregate = result[0]
-            thread_max_valid = max(thread_max_valid, result[1])
-            if aggregate > u:
+            var pivot_1 = (pivot_0 + high) / 2.0
+
+            # Accumulate thread-local value counts across all chunks.
+            var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
+            var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
+
+            for i in range(ceildiv(d, block_size * vec_size)):
+                probs_vec = 0
+                if (i * block_size + tx) * vec_size < d:
+                    probs_vec = probs_row.load[width=vec_size](
+                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                    ).cast[DType.float32]()
+
+                var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
+                var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
+                var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
+                var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
+
+                comptime for j in range(vec_size):
+                    var idx = (i * block_size + tx) * vec_size + j
+                    var is_valid = idx < d
+
+                    # For pivot_0.
+                    var gt_pivot_0 = probs_vec[j] > pivot_0
+                    probs_gt_pivot_0_values[j] = probs_vec[
+                        j
+                    ] if gt_pivot_0 else 0.0
+                    probs_gt_pivot_0_counts[j] = Int32(1) if (
+                        gt_pivot_0 and is_valid
+                    ) else Int32(0)
+
+                    # For pivot_1.
+                    var gt_pivot_1 = probs_vec[j] > pivot_1
+                    probs_gt_pivot_1_values[j] = probs_vec[
+                        j
+                    ] if gt_pivot_1 else 0.0
+                    probs_gt_pivot_1_counts[j] = Int32(1) if (
+                        gt_pivot_1 and is_valid
+                    ) else Int32(0)
+
+                # Accumulate thread-local (no block reduction per chunk).
+                thread_vc_0_total += ValueCount[DType.float32](
+                    probs_gt_pivot_0_values.reduce_add(),
+                    probs_gt_pivot_0_counts.reduce_add(),
+                )
+                thread_vc_1_total += ValueCount[DType.float32](
+                    probs_gt_pivot_1_values.reduce_add(),
+                    probs_gt_pivot_1_counts.reduce_add(),
+                )
+
+            # Reduce pivot_0 first; defer pivot_1 until needed.
+            # For small K, acceptance (count_0 < k) is common, saving
+            # the pivot_1 reduction (2 barriers) on the fast path.
+            var aggregate_gt_pivot_0 = _block_reduce_value_count[
+                DType.float32, broadcast=True
+            ](thread_vc_0_total)
+
+            if aggregate_gt_pivot_0.count < Int32(k):
+                # Case 1: pivot_0 accepted - found acceptable threshold.
                 break
 
-        # Reduce last_valid_id across block (single reduction after loop).
-        var block_max_valid = block.max[
-            block_size=block_size,
-            broadcast=False,
-        ](Int32(thread_max_valid))
+            # Only reduce pivot_1 when pivot_0 is rejected.
+            var aggregate_gt_pivot_1 = _block_reduce_value_count[
+                DType.float32, broadcast=True
+            ](thread_vc_1_total)
 
-        if tx == 0 and block_max_valid != -1:
-            last_valid_id_sram[0] = Int(block_max_valid)
+            if aggregate_gt_pivot_1.count < Int32(k):
+                # Case 2: pivot_0 rejected, pivot_1 accepted.
+                low = pivot_0
+                high = pivot_1
+                q = aggregate_gt_pivot_0.value
+            else:
+                # Case 3: both pivots rejected.
+                low = pivot_1
+                q = aggregate_gt_pivot_1.value
 
         barrier()
 
-        sampled_id = sampled_id_sram[0]
-        if sampled_id == d:
-            # This would happen when u is very close to 1 and the
-            # sum of probabilities is smaller than u. In this case
-            # we use the last valid index as the sampled id.
-            sampled_id = last_valid_id_sram[0]
-
-        var pivot_0 = Float64(
-            probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
-        )
-        var pivot_1 = (pivot_0 + high) / 2.0
-
-        # Accumulate thread-local value counts across all chunks.
-        var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
-        var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
-
-        for i in range(ceildiv(d, block_size * vec_size)):
-            probs_vec = 0
-            if (i * block_size + tx) * vec_size < d:
-                probs_vec = probs_row.load[width=vec_size](
-                    (Idx[0](), Idx((i * block_size + tx) * vec_size))
-                ).cast[DType.float32]()
-
-            var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
-            var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
-            var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
-            var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
-
-            comptime for j in range(vec_size):
-                var idx = (i * block_size + tx) * vec_size + j
-                var is_valid = idx < d
-
-                # For pivot_0.
-                var gt_pivot_0 = probs_vec[j] > Float32(pivot_0)
-                probs_gt_pivot_0_values[j] = probs_vec[j] if gt_pivot_0 else 0.0
-                probs_gt_pivot_0_counts[j] = Int32(1) if (
-                    gt_pivot_0 and is_valid
-                ) else Int32(0)
-
-                # For pivot_1.
-                var gt_pivot_1 = probs_vec[j] > Float32(pivot_1)
-                probs_gt_pivot_1_values[j] = probs_vec[j] if gt_pivot_1 else 0.0
-                probs_gt_pivot_1_counts[j] = Int32(1) if (
-                    gt_pivot_1 and is_valid
-                ) else Int32(0)
-
-            # Accumulate thread-local (no block reduction per chunk).
-            thread_vc_0_total += ValueCount[DType.float32](
-                probs_gt_pivot_0_values.reduce_add(),
-                probs_gt_pivot_0_counts.reduce_add(),
-            )
-            thread_vc_1_total += ValueCount[DType.float32](
-                probs_gt_pivot_1_values.reduce_add(),
-                probs_gt_pivot_1_counts.reduce_add(),
-            )
-
-        # Reduce pivot_0 first; defer pivot_1 until needed.
-        # For small K, acceptance (count_0 < k) is common, saving
-        # the pivot_1 reduction (2 barriers) on the fast path.
-        var aggregate_gt_pivot_0 = _block_reduce_value_count[
-            DType.float32, broadcast=True
-        ](thread_vc_0_total)
-
-        if aggregate_gt_pivot_0.count < Int32(k):
-            # Case 1: pivot_0 accepted - found acceptable threshold.
-            break
-
-        # Only reduce pivot_1 when pivot_0 is rejected.
-        var aggregate_gt_pivot_1 = _block_reduce_value_count[
-            DType.float32, broadcast=True
-        ](thread_vc_1_total)
-
-        if aggregate_gt_pivot_1.count < Int32(k):
-            # Case 2: pivot_0 rejected, pivot_1 accepted.
-            low = pivot_0
-            high = pivot_1
-            q = aggregate_gt_pivot_0.value
-        else:
-            # Case 3: both pivots rejected.
-            low = pivot_1
-            q = aggregate_gt_pivot_1.value
-
-    barrier()
-
-    if tx == 0:
-        output[bx] = Scalar[out_idx_type](sampled_id)
+        if tx == 0:
+            output[bx] = Scalar[out_idx_type](sampled_id)
 
 
 def topk_sampling_from_prob[
@@ -897,66 +927,82 @@ def topk_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(output.layout.shape_coord())
-    if out_shape[0] != batch_size:
-        raise Error("output batch size must match probs batch size")
-
-    # Use up to 16 elements per vector to minimize the number of chunks
-    # (and therefore the number of block-level reductions in inner loops).
-    # GPU vector loads handle wider-than-native SIMD efficiently, and the
-    # per-element idx < d guard handles non-aligned tails correctly.
-    var vec_size = gcd(8, d)
-
-    var indices_buf: DeviceBuffer[out_idx_type]
-    if indices:
-        indices_buf = indices.value().to_device_buffer(ctx)
-    else:
-        indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-    var top_k_buf: DeviceBuffer[out_idx_type]
-    if top_k_arr:
-        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-    else:
-        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-
     @parameter
-    def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
-        comptime kernel = TopKSamplingFromProbKernel[
-            probs.LayoutType,
-            ImmutOrigin(probs.origin),
-            output.LayoutType,
-            output.origin,
-            block_size,
-            vec_size,
-            dtype,
-            out_idx_type,
-            deterministic,
-        ]
-        ctx.enqueue_function[kernel, kernel](
-            probs.as_immut(),
-            output,
-            indices_buf,
-            top_k_buf,
-            top_k_val,
-            d,
-            rng_seed,
-            rng_offset,
-            grid_dim=batch_size,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("probs", shape, dtype),
+                    "top_k_val=" + String(top_k_val),
+                ]
+            )
         )
 
-    # Runtime dispatch to compile-time parameter.
-    @parameter
-    def dispatch_vec_size[deterministic: Bool]() raises:
-        comptime for param_vec_size in [16, 8, 4, 2, 1]:
-            if vec_size == param_vec_size:
-                return launch_kernel[param_vec_size, deterministic]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_sampling_from_prob",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var out_shape = coord_to_index_list(output.layout.shape_coord())
+        if out_shape[0] != batch_size:
+            raise Error("output batch size must match probs batch size")
 
-    # Dispatch on deterministic flag.
-    if deterministic:
-        dispatch_vec_size[True]()
-    else:
-        dispatch_vec_size[False]()
+        # Use up to 16 elements per vector to minimize the number of chunks
+        # (and therefore the number of block-level reductions in inner loops).
+        # GPU vector loads handle wider-than-native SIMD efficiently, and the
+        # per-element idx < d guard handles non-aligned tails correctly.
+        var vec_size = gcd(8, d)
+
+        var indices_buf: DeviceBuffer[out_idx_type]
+        if indices:
+            indices_buf = indices.value().to_device_buffer(ctx)
+        else:
+            indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+        var top_k_buf: DeviceBuffer[out_idx_type]
+        if top_k_arr:
+            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+        else:
+            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+
+        @parameter
+        def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+            comptime kernel = TopKSamplingFromProbKernel[
+                probs.LayoutType,
+                ImmutOrigin(probs.origin),
+                output.LayoutType,
+                output.origin,
+                block_size,
+                vec_size,
+                dtype,
+                out_idx_type,
+                deterministic,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                probs.as_immut(),
+                output,
+                indices_buf,
+                top_k_buf,
+                top_k_val,
+                d,
+                rng_seed,
+                rng_offset,
+                grid_dim=batch_size,
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+        # Runtime dispatch to compile-time parameter.
+        @parameter
+        def dispatch_vec_size[deterministic: Bool]() raises:
+            comptime for param_vec_size in [16, 8, 4, 2, 1]:
+                if vec_size == param_vec_size:
+                    return launch_kernel[param_vec_size, deterministic]()
+
+        # Dispatch on deterministic flag.
+        if deterministic:
+            dispatch_vec_size[True]()
+        else:
+            dispatch_vec_size[False]()
 
 
 def TopKTopPSamplingFromProbKernel[
@@ -1007,7 +1053,7 @@ def TopKTopPSamplingFromProbKernel[
     comptime assert output.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     var row_idx = bx
     if indices:
@@ -1020,161 +1066,166 @@ def TopKTopPSamplingFromProbKernel[
         1, Int, address_space=AddressSpace.SHARED
     ]()
 
-    var seed_val = UInt64(0)
-    if rng_seed:
-        seed_val = rng_seed[row_idx]
+    with PDL():
+        var seed_val = UInt64(0)
+        if rng_seed:
+            seed_val = rng_seed[row_idx]
 
-    var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
+        var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
 
-    var k = Int(top_k_arr.load(row_idx)) if top_k_arr else top_k_val
-    if k == -1:
-        k = top_k_val
+        var k = Int(top_k_arr.load(row_idx)) if top_k_arr else top_k_val
+        if k == -1:
+            k = top_k_val
 
-    var p = top_p_val
-    if top_p_arr:
-        p = top_p_arr[row_idx]
+        var p = top_p_val
+        if top_p_arr:
+            p = top_p_arr[row_idx]
 
-    var probs_ptr = probs.ptr + row_idx * d
-    var probs_row = TileTensor(probs_ptr, row_major((Idx[1](), Idx(d))))
+        var probs_ptr = probs.ptr + row_idx * d
+        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
 
-    var probs_vec: SIMD[DType.float32, vec_size]
-    var aggregate: Float32
-    var sampled_id = 0
-    var q: Float32 = 1.0
-    var low = 0.0
-    var high = 1.0
+        var probs_vec: SIMD[DType.float32, vec_size]
+        var aggregate: Float32
+        var sampled_id = 0
+        var q: Float32 = 1.0
+        var low: Float32 = 0.0
+        var high: Float32 = 1.0
 
-    while low < high:
-        if tx == 0:
-            sampled_id_sram[0] = d
-        barrier()
+        while low < high:
+            if tx == 0:
+                sampled_id_sram[0] = d
+            barrier()
 
-        var u = generator.step_uniform()[0] * q
-        aggregate = 0.0
-        var thread_max_valid = -1
+            var u = generator.step_uniform()[0] * q
+            aggregate = 0.0
+            var thread_max_valid = -1
 
-        for i in range(ceildiv(d, block_size * vec_size)):
-            probs_vec = 0
-            if (i * block_size + tx) * vec_size < d:
-                probs_vec = probs_row.load[width=vec_size](
-                    (Idx[0](), Idx((i * block_size + tx) * vec_size))
-                ).cast[DType.float32]()
+            for i in range(ceildiv(d, block_size * vec_size)):
+                probs_vec = 0
+                if (i * block_size + tx) * vec_size < d:
+                    probs_vec = probs_row.load[width=vec_size](
+                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                    ).cast[DType.float32]()
 
-            var result = device_sampling_from_prob[
-                vec_size, block_size, dtype, deterministic
-            ](
-                i,
-                d,
-                low,
-                u,
-                probs_vec,
-                aggregate,
-                sampled_id_sram,
+                var result = device_sampling_from_prob[
+                    vec_size, block_size, dtype, deterministic
+                ](
+                    i,
+                    d,
+                    low,
+                    u,
+                    probs_vec,
+                    aggregate,
+                    sampled_id_sram,
+                )
+                aggregate = result[0]
+                thread_max_valid = max(thread_max_valid, result[1])
+                if aggregate > u:
+                    break
+
+            # Reduce last_valid_id across block (single reduction after loop).
+            var block_max_valid = block.max[
+                block_size=block_size,
+                broadcast=False,
+            ](Int32(thread_max_valid))
+
+            if tx == 0 and block_max_valid != -1:
+                last_valid_id_sram[0] = Int(block_max_valid)
+
+            barrier()
+
+            sampled_id = sampled_id_sram[0]
+            if sampled_id == d:
+                sampled_id = last_valid_id_sram[0]
+
+            var pivot_0 = Float32(
+                probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
             )
-            aggregate = result[0]
-            thread_max_valid = max(thread_max_valid, result[1])
-            if aggregate > u:
+            var pivot_1 = (pivot_0 + high) / 2.0
+
+            # Accumulate thread-local value counts across all chunks.
+            var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
+            var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
+
+            for i in range(ceildiv(d, block_size * vec_size)):
+                probs_vec = 0
+                if (i * block_size + tx) * vec_size < d:
+                    probs_vec = probs_row.load[width=vec_size](
+                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                    ).cast[DType.float32]()
+
+                var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
+                var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
+                var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
+                var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
+
+                comptime for j in range(vec_size):
+                    var idx = (i * block_size + tx) * vec_size + j
+                    var is_valid = idx < d
+
+                    var gt_pivot_0 = probs_vec[j] > pivot_0
+                    probs_gt_pivot_0_values[j] = probs_vec[
+                        j
+                    ] if gt_pivot_0 else 0.0
+                    probs_gt_pivot_0_counts[j] = Int32(1) if (
+                        gt_pivot_0 and is_valid
+                    ) else Int32(0)
+
+                    var gt_pivot_1 = probs_vec[j] > pivot_1
+                    probs_gt_pivot_1_values[j] = probs_vec[
+                        j
+                    ] if gt_pivot_1 else 0.0
+                    probs_gt_pivot_1_counts[j] = Int32(1) if (
+                        gt_pivot_1 and is_valid
+                    ) else Int32(0)
+
+                # Accumulate thread-local (no block reduction per chunk).
+                thread_vc_0_total += ValueCount[DType.float32](
+                    probs_gt_pivot_0_values.reduce_add(),
+                    probs_gt_pivot_0_counts.reduce_add(),
+                )
+                thread_vc_1_total += ValueCount[DType.float32](
+                    probs_gt_pivot_1_values.reduce_add(),
+                    probs_gt_pivot_1_counts.reduce_add(),
+                )
+
+            # Reduce pivot_0 first; defer pivot_1 until needed.
+            # For small K, acceptance (count_0 < k) is common, saving
+            # the pivot_1 reduction (2 barriers) on the fast path.
+            var aggregate_gt_pivot_0 = _block_reduce_value_count[
+                DType.float32, broadcast=True
+            ](thread_vc_0_total)
+
+            if (
+                aggregate_gt_pivot_0.count < Int32(k)
+                and aggregate_gt_pivot_0.value <= p
+            ):
+                # Case 1: pivot_0 accepted - count below k AND prob mass below p.
+                # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
                 break
 
-        # Reduce last_valid_id across block (single reduction after loop).
-        var block_max_valid = block.max[
-            block_size=block_size,
-            broadcast=False,
-        ](Int32(thread_max_valid))
+            # Only reduce pivot_1 when pivot_0 is rejected.
+            var aggregate_gt_pivot_1 = _block_reduce_value_count[
+                DType.float32, broadcast=True
+            ](thread_vc_1_total)
 
-        if tx == 0 and block_max_valid != -1:
-            last_valid_id_sram[0] = Int(block_max_valid)
+            if (
+                aggregate_gt_pivot_1.count < Int32(k)
+                and aggregate_gt_pivot_1.value <= p
+            ):
+                # Case 2: pivot_0 rejected, pivot_1 accepted.
+                low = pivot_0
+                high = pivot_1
+                q = aggregate_gt_pivot_0.value
+            else:
+                # Case 3: both pivots rejected.
+                low = pivot_1
+                q = aggregate_gt_pivot_1.value
 
         barrier()
 
-        sampled_id = sampled_id_sram[0]
-        if sampled_id == d:
-            sampled_id = last_valid_id_sram[0]
-
-        var pivot_0 = Float64(
-            probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
-        )
-        var pivot_1 = (pivot_0 + high) / 2.0
-
-        # Accumulate thread-local value counts across all chunks.
-        var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
-        var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
-
-        for i in range(ceildiv(d, block_size * vec_size)):
-            probs_vec = 0
-            if (i * block_size + tx) * vec_size < d:
-                probs_vec = probs_row.load[width=vec_size](
-                    (Idx[0](), Idx((i * block_size + tx) * vec_size))
-                ).cast[DType.float32]()
-
-            var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
-            var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
-            var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
-            var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
-
-            comptime for j in range(vec_size):
-                var idx = (i * block_size + tx) * vec_size + j
-                var is_valid = idx < d
-
-                var gt_pivot_0 = probs_vec[j] > Float32(pivot_0)
-                probs_gt_pivot_0_values[j] = probs_vec[j] if gt_pivot_0 else 0.0
-                probs_gt_pivot_0_counts[j] = Int32(1) if (
-                    gt_pivot_0 and is_valid
-                ) else Int32(0)
-
-                var gt_pivot_1 = probs_vec[j] > Float32(pivot_1)
-                probs_gt_pivot_1_values[j] = probs_vec[j] if gt_pivot_1 else 0.0
-                probs_gt_pivot_1_counts[j] = Int32(1) if (
-                    gt_pivot_1 and is_valid
-                ) else Int32(0)
-
-            # Accumulate thread-local (no block reduction per chunk).
-            thread_vc_0_total += ValueCount[DType.float32](
-                probs_gt_pivot_0_values.reduce_add(),
-                probs_gt_pivot_0_counts.reduce_add(),
-            )
-            thread_vc_1_total += ValueCount[DType.float32](
-                probs_gt_pivot_1_values.reduce_add(),
-                probs_gt_pivot_1_counts.reduce_add(),
-            )
-
-        # Reduce pivot_0 first; defer pivot_1 until needed.
-        # For small K, acceptance (count_0 < k) is common, saving
-        # the pivot_1 reduction (2 barriers) on the fast path.
-        var aggregate_gt_pivot_0 = _block_reduce_value_count[
-            DType.float32, broadcast=True
-        ](thread_vc_0_total)
-
-        if (
-            aggregate_gt_pivot_0.count < Int32(k)
-            and aggregate_gt_pivot_0.value <= p
-        ):
-            # Case 1: pivot_0 accepted - count below k AND prob mass below p.
-            # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
-            break
-
-        # Only reduce pivot_1 when pivot_0 is rejected.
-        var aggregate_gt_pivot_1 = _block_reduce_value_count[
-            DType.float32, broadcast=True
-        ](thread_vc_1_total)
-
-        if (
-            aggregate_gt_pivot_1.count < Int32(k)
-            and aggregate_gt_pivot_1.value <= p
-        ):
-            # Case 2: pivot_0 rejected, pivot_1 accepted.
-            low = pivot_0
-            high = pivot_1
-            q = aggregate_gt_pivot_0.value
-        else:
-            # Case 3: both pivots rejected.
-            low = pivot_1
-            q = aggregate_gt_pivot_1.value
-
-    barrier()
-
-    if tx == 0:
-        output[bx] = Scalar[out_idx_type](sampled_id)
+        if tx == 0:
+            output[bx] = Scalar[out_idx_type](sampled_id)
 
 
 def topk_topp_sampling_from_prob[
@@ -1249,76 +1300,93 @@ def topk_topp_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(output.layout.shape_coord())
-    if out_shape[0] != batch_size:
-        raise Error("output batch size must match probs batch size")
-
-    # Use up to 8 elements per vector to minimize the number of chunks
-    # (and therefore the number of block-level reductions in inner loops).
-    # GPU vector loads handle wider-than-native SIMD efficiently, and the
-    # per-element idx < d guard handles non-aligned tails correctly.
-    var vec_size = gcd(8, d)
-
-    var indices_buf: DeviceBuffer[out_idx_type]
-    if indices:
-        indices_buf = indices.value().to_device_buffer(ctx)
-    else:
-        indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-    var top_k_buf: DeviceBuffer[out_idx_type]
-    if top_k_arr:
-        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-    else:
-        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-    var top_p_buf: DeviceBuffer[DType.float32]
-    if top_p_arr:
-        top_p_buf = top_p_arr.value().to_device_buffer(ctx)
-    else:
-        top_p_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
-    var seed_buf: DeviceBuffer[DType.uint64]
-    if rng_seed:
-        seed_buf = rng_seed.value().to_device_buffer(ctx)
-    else:
-        seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
-
     @parameter
-    def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
-        comptime kernel = TopKTopPSamplingFromProbKernel[
-            probs.LayoutType,
-            ImmutOrigin(probs.origin),
-            output.LayoutType,
-            output.origin,
-            block_size,
-            vec_size,
-            dtype,
-            out_idx_type,
-            deterministic,
-        ]
-        ctx.enqueue_function[kernel, kernel](
-            probs.as_immut(),
-            output,
-            indices_buf,
-            top_k_buf,
-            top_k_val,
-            top_p_buf,
-            top_p_val,
-            d,
-            seed_buf,
-            rng_offset,
-            grid_dim=batch_size,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("probs", shape, dtype),
+                    "top_k_val=" + String(top_k_val),
+                    "top_p_val=" + String(top_p_val),
+                ]
+            )
         )
 
-    @parameter
-    def dispatch_vec_size[deterministic: Bool]() raises:
-        comptime for param_vec_size in [16, 8, 4, 2, 1]:
-            if vec_size == param_vec_size:
-                return launch_kernel[param_vec_size, deterministic]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_topp_sampling_from_prob",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var out_shape = coord_to_index_list(output.layout.shape_coord())
+        if out_shape[0] != batch_size:
+            raise Error("output batch size must match probs batch size")
 
-    if deterministic:
-        dispatch_vec_size[True]()
-    else:
-        dispatch_vec_size[False]()
+        # Use up to 8 elements per vector to minimize the number of chunks
+        # (and therefore the number of block-level reductions in inner loops).
+        # GPU vector loads handle wider-than-native SIMD efficiently, and the
+        # per-element idx < d guard handles non-aligned tails correctly.
+        var vec_size = gcd(8, d)
+
+        var indices_buf: DeviceBuffer[out_idx_type]
+        if indices:
+            indices_buf = indices.value().to_device_buffer(ctx)
+        else:
+            indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+        var top_k_buf: DeviceBuffer[out_idx_type]
+        if top_k_arr:
+            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+        else:
+            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+        var top_p_buf: DeviceBuffer[DType.float32]
+        if top_p_arr:
+            top_p_buf = top_p_arr.value().to_device_buffer(ctx)
+        else:
+            top_p_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+        var seed_buf: DeviceBuffer[DType.uint64]
+        if rng_seed:
+            seed_buf = rng_seed.value().to_device_buffer(ctx)
+        else:
+            seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+
+        @parameter
+        def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+            comptime kernel = TopKTopPSamplingFromProbKernel[
+                probs.LayoutType,
+                ImmutOrigin(probs.origin),
+                output.LayoutType,
+                output.origin,
+                block_size,
+                vec_size,
+                dtype,
+                out_idx_type,
+                deterministic,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                probs.as_immut(),
+                output,
+                indices_buf,
+                top_k_buf,
+                top_k_val,
+                top_p_buf,
+                top_p_val,
+                d,
+                seed_buf,
+                rng_offset,
+                grid_dim=batch_size,
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+        @parameter
+        def dispatch_vec_size[deterministic: Bool]() raises:
+            comptime for param_vec_size in [16, 8, 4, 2, 1]:
+                if vec_size == param_vec_size:
+                    return launch_kernel[param_vec_size, deterministic]()
+
+        if deterministic:
+            dispatch_vec_size[True]()
+        else:
+            dispatch_vec_size[False]()
 
 
 def topk_softmax_sample_kernel[
@@ -1346,12 +1414,12 @@ def topk_softmax_sample_kernel[
     comptime assert sampled_indices.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var row_idx = bx
 
     var logits_ptr = logits.ptr + bx * d
 
-    var logits_row = TileTensor(logits_ptr, row_major((Idx[1](), Idx(d))))
+    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
 
     var k = top_k_val
     if top_k_arr:
@@ -1376,156 +1444,160 @@ def topk_softmax_sample_kernel[
 
     var s_idxs = (s_vals + k_rounded).bitcast[Int]()
     var s_count = stack_allocation[1, Int, address_space=AddressSpace.SHARED]()
-    if tx == 0:
-        s_count[0] = 0
 
-    # PHASE 1: Find pivot (k-th largest) via ternary search.
-    var pivot = Float64(Float32.MIN)
-    var max_logit: Float32
-    var logits_vec = SIMD[DType.float32, vec_size]()
+    with PDL():
+        if tx == 0:
+            s_count[0] = 0
 
-    if k < d:
-        var min_max = get_min_max_value[vec_size, block_size](
-            logits.ptr, row_idx, d
-        )
-        var min_val, max_val = min_max[0], min_max[1]
+        # PHASE 1: Find pivot (k-th largest) via ternary search.
+        var pivot = Float32.MIN
+        var max_logit: Float32
+        var logits_vec = SIMD[DType.float32, vec_size]()
 
-        max_logit = max_val
-
-        # Initialize ternary search bounds.
-        var low = Float64(
-            min_val - 1 if min_val != Float32.MIN else Float32.MIN
-        )
-        var high = Float64(max_val)
-
-        while True:
-            var pivot_0 = (high + 2 * low) / 3
-            var pivot_1 = (2 * high + low) / 3
-
-            # Accumulate thread-local counts across all chunks.
-            var thread_count_0_total: Int32 = 0
-            var thread_count_1_total: Int32 = 0
-            var min_gt_low = Float32(high)
-            var max_le_high = Float32(low)
-
-            for i in range(ceildiv(d, block_size * vec_size)):
-                if (i * block_size + tx) * vec_size < d:
-                    logits_vec = logits_row.load[width=vec_size](
-                        (
-                            Idx[0](),
-                            Idx(i * block_size * vec_size + tx * vec_size),
-                        )
-                    ).cast[DType.float32]()
-
-                var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
-                var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
-
-                comptime for j in range(vec_size):
-                    var idx = (i * block_size + tx) * vec_size + j
-
-                    probs_gt_pivot_0_count[j] = Int32(1) if (
-                        Float64(logits_vec[j]) > pivot_0 and idx < d
-                    ) else Int32(0)
-                    probs_gt_pivot_1_count[j] = Int32(1) if (
-                        Float64(logits_vec[j]) > pivot_1 and idx < d
-                    ) else Int32(0)
-
-                    if Float64(logits_vec[j]) > low and idx < d:
-                        min_gt_low = min(min_gt_low, logits_vec[j])
-                    if Float64(logits_vec[j]) <= high and idx < d:
-                        max_le_high = max(max_le_high, logits_vec[j])
-
-                # Accumulate thread-local counts (no block reduction per chunk).
-                thread_count_0_total += probs_gt_pivot_0_count.reduce_add()
-                thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
-
-            # Single block reduction after processing all chunks.
-            var _pivot_results = _block_reduce_pivot_bounds[block_size](
-                thread_count_0_total,
-                thread_count_1_total,
-                min_gt_low,
-                max_le_high,
+        if k < d:
+            var min_max = get_min_max_value[vec_size, block_size](
+                logits.ptr, row_idx, d
             )
-            var aggregate_gt_pivot_0 = _pivot_results[0]
-            var aggregate_gt_pivot_1 = _pivot_results[1]
-            min_gt_low = _pivot_results[2]
-            max_le_high = _pivot_results[3]
+            var min_val, max_val = min_max[0], min_max[1]
 
-            if aggregate_gt_pivot_1 >= Int32(k):
-                low = pivot_1
-            elif aggregate_gt_pivot_0 >= Int32(k):
-                low = pivot_0
-                high = min(pivot_1, Float64(max_le_high))
-            else:
-                high = min(pivot_0, Float64(max_le_high))
+            max_logit = max_val
 
-            if min_gt_low == max_le_high:
-                break
+            # Initialize ternary search bounds.
+            var low = Float32(
+                min_val - 1 if min_val != Float32.MIN else Float32.MIN
+            )
+            var high = max_val
 
-        pivot = low
-    else:
-        # If k >= d, include all elements.
-        var min_max = get_min_max_value[vec_size, block_size](
-            logits.ptr, row_idx, d
-        )
-        max_logit = min_max[1]
+            while True:
+                var pivot_0 = (high + 2 * low) / 3
+                var pivot_1 = (2 * high + low) / 3
 
-    barrier()
+                # Accumulate thread-local counts across all chunks.
+                var thread_count_0_total: Int32 = 0
+                var thread_count_1_total: Int32 = 0
+                var min_gt_low = high
+                var max_le_high = low
 
-    # PHASE 2: Compute softmax sum and cache top-k elements.
+                for i in range(ceildiv(d, block_size * vec_size)):
+                    if (i * block_size + tx) * vec_size < d:
+                        logits_vec = logits_row.load[width=vec_size](
+                            (
+                                Idx[0](),
+                                Idx(i * block_size * vec_size + tx * vec_size),
+                            )
+                        ).cast[DType.float32]()
 
-    # All threads cooperatively collect elements > pivot.
-    var thread_sum = Float32(0.0)
+                    var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
+                    var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
 
-    # Use atomic counter in shared memory for write position.
-    var s_write_idx = stack_allocation[
-        1, Int32, address_space=AddressSpace.SHARED
-    ]()
-    if tx == 0:
-        s_write_idx[0] = Int32(0)
+                    comptime for j in range(vec_size):
+                        var idx = (i * block_size + tx) * vec_size + j
 
-    barrier()
+                        probs_gt_pivot_0_count[j] = Int32(1) if (
+                            logits_vec[j] > pivot_0 and idx < d
+                        ) else Int32(0)
+                        probs_gt_pivot_1_count[j] = Int32(1) if (
+                            logits_vec[j] > pivot_1 and idx < d
+                        ) else Int32(0)
 
-    # Each thread processes elements and atomically writes to shared memory.
-    for i in range(tx, d, block_size):
-        var logit = logits_row.load[width=1]((Idx[0](), Idx(i))).cast[
-            DType.float32
+                        if logits_vec[j] > low and idx < d:
+                            min_gt_low = min(min_gt_low, logits_vec[j])
+                        if logits_vec[j] <= high and idx < d:
+                            max_le_high = max(max_le_high, logits_vec[j])
+
+                    # Accumulate thread-local counts (no block reduction per chunk).
+                    thread_count_0_total += probs_gt_pivot_0_count.reduce_add()
+                    thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
+
+                # Single block reduction after processing all chunks.
+                var _pivot_results = _block_reduce_pivot_bounds[block_size](
+                    thread_count_0_total,
+                    thread_count_1_total,
+                    min_gt_low,
+                    max_le_high,
+                )
+                var aggregate_gt_pivot_0 = _pivot_results[0]
+                var aggregate_gt_pivot_1 = _pivot_results[1]
+                min_gt_low = _pivot_results[2]
+                max_le_high = _pivot_results[3]
+
+                if aggregate_gt_pivot_1 >= Int32(k):
+                    low = pivot_1
+                elif aggregate_gt_pivot_0 >= Int32(k):
+                    low = pivot_0
+                    high = min(pivot_1, max_le_high)
+                else:
+                    high = min(pivot_0, max_le_high)
+
+                if min_gt_low == max_le_high:
+                    break
+
+            pivot = low
+        else:
+            # If k >= d, include all elements.
+            var min_max = get_min_max_value[vec_size, block_size](
+                logits.ptr, row_idx, d
+            )
+            max_logit = min_max[1]
+
+        barrier()
+
+        # PHASE 2: Compute softmax sum and cache top-k elements.
+
+        # All threads cooperatively collect elements > pivot.
+        var thread_sum = Float32(0.0)
+
+        # Use atomic counter in shared memory for write position.
+        var s_write_idx = stack_allocation[
+            1, Int32, address_space=AddressSpace.SHARED
         ]()
-        if Float64(logit) > pivot:
-            var exp_val = exp((logit - max_logit) / temp_val)
+        if tx == 0:
+            s_write_idx[0] = Int32(0)
 
-            # Atomically get write position and store.
-            var pos = Int(Atomic.fetch_add(s_write_idx, Int32(1)))
-            if pos < k:
-                s_vals[pos] = exp_val
-                s_idxs[pos] = i
-                thread_sum += exp_val
+        barrier()
 
-    var block_sum = block.sum[block_size=block_size, broadcast=True](thread_sum)
+        # Each thread processes elements and atomically writes to shared memory.
+        for i in range(tx, d, block_size):
+            var logit = logits_row.load[width=1]((Idx[0](), Idx(i))).cast[
+                DType.float32
+            ]()
+            if logit > pivot:
+                var exp_val = exp((logit - max_logit) / temp_val)
 
-    barrier()
+                # Atomically get write position and store.
+                var pos = Int(Atomic.fetch_add(s_write_idx, Int32(1)))
+                if pos < k:
+                    s_vals[pos] = exp_val
+                    s_idxs[pos] = i
+                    thread_sum += exp_val
 
-    if tx == 0:
-        s_count[0] = min(Int(s_write_idx[0]), k)
+        var block_sum = block.sum[block_size=block_size, broadcast=True](
+            thread_sum
+        )
 
-    barrier()
+        barrier()
 
-    # PHASE 3: Sampling.
-    if tx == 0:
-        var seed_val = seed_val
-        if seed:
-            seed_val = seed[bx]
-        var rng_state = Random(seed=seed_val)
-        var rng = rng_state.step_uniform()
-        var r = block_sum * rng[0]
+        if tx == 0:
+            s_count[0] = min(Int(s_write_idx[0]), k)
 
-        var cached_count = s_count[0]
-        for ki in range(cached_count):
-            var exp_val = s_vals[ki]
-            r -= exp_val
-            if r <= 0.0 or ki == cached_count - 1:
-                sampled_indices[bx] = Scalar[out_idx_type](s_idxs[ki])
-                return
+        barrier()
+
+        # PHASE 3: Sampling (thread 0 only).
+        if tx == 0:
+            var seed_val = seed_val
+            if seed:
+                seed_val = seed[bx]
+            var rng_state = Random(seed=seed_val)
+            var rng = rng_state.step_uniform()
+            var r = block_sum * rng[0]
+
+            var cached_count = s_count[0]
+            for ki in range(cached_count):
+                var exp_val = s_vals[ki]
+                r -= exp_val
+                if r <= 0.0 or ki == cached_count - 1:
+                    sampled_indices[bx] = Scalar[out_idx_type](s_idxs[ki])
+                    break
 
 
 def topk_softmax_sample[
@@ -1608,73 +1680,92 @@ def topk_softmax_sample[
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(sampled_indices.layout.shape_coord())
-    if shape[0] != out_shape[0]:
-        raise Error("sampled_indices shape must be [batch_size]")
-
-    # Use up to 16 elements per vector to minimize the number of chunks
-    # (and therefore the number of block-level reductions in inner loops).
-    # GPU vector loads handle wider-than-native SIMD efficiently, and the
-    # per-element idx < d guard handles non-aligned tails correctly.
-    var vec_size = gcd(8, d)
-
-    var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
-    var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
-    comptime if has_apple_gpu_accelerator():
-        if shared_mem_bytes > _APPLE_STATIC_SHMEM_MAX_BYTES:
-            raise Error(
-                t"shared memory of {shared_mem_bytes} exceeds static allocation"
-                t" capacity of {_APPLE_STATIC_SHMEM_MAX_BYTES} when evaluating"
-                t" topk_softmax_sample with top_k_val={top_k_val} and"
-                t" vec_size={vec_size}. Consider reducing top_k_val or using a"
-                t" smaller block_size."
-            )
-
-    var top_k_buf: DeviceBuffer[out_idx_type]
-    if top_k_arr:
-        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-    else:
-        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
-    var temp_buf: DeviceBuffer[DType.float32]
-    if temperature:
-        temp_buf = temperature.value().to_device_buffer(ctx)
-    else:
-        temp_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
-    var seed_buf: DeviceBuffer[DType.uint64]
-    if seed:
-        seed_buf = seed.value().to_device_buffer(ctx)
-    else:
-        seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
-
     @parameter
-    def launch_kernel[vec_size: Int]() raises:
-        comptime kernel = topk_softmax_sample_kernel[
-            block_size,
-            vec_size,
-            dtype,
-            out_idx_type,
-            LogitsLayoutType=logits.LayoutType,
-            logits_origin=ImmutOrigin(logits.origin),
-            SampledLayoutType=sampled_indices.LayoutType,
-            sampled_origin=sampled_indices.origin,
-        ]
-        ctx.enqueue_function[kernel, kernel](
-            logits.as_immut(),
-            sampled_indices,
-            top_k_buf,
-            top_k_val,
-            temperature_val,
-            temp_buf,
-            seed_val,
-            seed_buf,
-            d,
-            grid_dim=batch_size,
-            block_dim=block_size,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=pdl_launch_attributes(),
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("logits", shape, dtype),
+                    "top_k_val=" + String(top_k_val),
+                ]
+            )
         )
 
-    # Runtime dispatch to compile-time parameter.
-    comptime for param_vec_size in [16, 8, 4, 2, 1]:
-        if vec_size == param_vec_size:
-            return launch_kernel[param_vec_size]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_softmax_sample",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var out_shape = coord_to_index_list(
+            sampled_indices.layout.shape_coord()
+        )
+        if shape[0] != out_shape[0]:
+            raise Error("sampled_indices shape must be [batch_size]")
+
+        # Use up to 16 elements per vector to minimize the number of chunks
+        # (and therefore the number of block-level reductions in inner loops).
+        # GPU vector loads handle wider-than-native SIMD efficiently, and the
+        # per-element idx < d guard handles non-aligned tails correctly.
+        var vec_size = gcd(8, d)
+
+        var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
+        var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
+        comptime if has_apple_gpu_accelerator():
+            if shared_mem_bytes > _APPLE_STATIC_SHMEM_MAX_BYTES:
+                raise Error(
+                    t"shared memory of {shared_mem_bytes} exceeds static"
+                    t" allocation capacity of"
+                    t" {_APPLE_STATIC_SHMEM_MAX_BYTES} when evaluating"
+                    t" topk_softmax_sample with top_k_val={top_k_val}"
+                    t" and vec_size={vec_size}. Consider reducing"
+                    t" top_k_val or using a smaller block_size."
+                )
+
+        var top_k_buf: DeviceBuffer[out_idx_type]
+        if top_k_arr:
+            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+        else:
+            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+        var temp_buf: DeviceBuffer[DType.float32]
+        if temperature:
+            temp_buf = temperature.value().to_device_buffer(ctx)
+        else:
+            temp_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+        var seed_buf: DeviceBuffer[DType.uint64]
+        if seed:
+            seed_buf = seed.value().to_device_buffer(ctx)
+        else:
+            seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+
+        @parameter
+        def launch_kernel[vec_size: Int]() raises:
+            comptime kernel = topk_softmax_sample_kernel[
+                block_size,
+                vec_size,
+                dtype,
+                out_idx_type,
+                LogitsLayoutType=logits.LayoutType,
+                logits_origin=ImmutOrigin(logits.origin),
+                SampledLayoutType=sampled_indices.LayoutType,
+                sampled_origin=sampled_indices.origin,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                logits.as_immut(),
+                sampled_indices,
+                top_k_buf,
+                top_k_val,
+                temperature_val,
+                temp_buf,
+                seed_val,
+                seed_buf,
+                d,
+                grid_dim=batch_size,
+                block_dim=block_size,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+        # Runtime dispatch to compile-time parameter.
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
+            if vec_size == param_vec_size:
+                return launch_kernel[param_vec_size]()

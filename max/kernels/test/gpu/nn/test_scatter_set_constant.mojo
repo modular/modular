@@ -22,7 +22,7 @@ def test_scatter_set_constant(ctx: DeviceContext) raises:
     var data_stack = InlineArray[Float32, 9](uninitialized=True)
     var data = TileTensor(data_stack, row_major[3, 3]()).fill(0.0)
     var data_ptr_gpu = ctx.enqueue_create_buffer[DType.float32](3 * 3)
-    ctx.enqueue_copy(data_ptr_gpu, data_stack.unsafe_ptr())
+    ctx.enqueue_copy(data_ptr_gpu, Span(data_stack))
 
     var data_gpu = TileTensor(data_ptr_gpu, row_major[3, 3]())
 
@@ -59,7 +59,7 @@ def test_scatter_set_constant(ctx: DeviceContext) raises:
         data_gpu, indices_gpu, fill_value, ctx_ptr
     )
 
-    ctx.enqueue_copy(data_stack.unsafe_ptr(), data_ptr_gpu)
+    ctx.enqueue_copy(Span(data_stack), data_ptr_gpu)
 
     for i in range(3):
         for j in range(3):

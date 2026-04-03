@@ -346,7 +346,7 @@ def test_kv_cache_2m_iadd_gpu[
     )
     var a_host = TileTensor(
         a.tensor[update=False]().ptr,
-        row_major((Idx(2 * total_slice_length), Idx[num_heads * head_dim]())),
+        row_major(Idx(2 * total_slice_length), Idx[num_heads * head_dim]()),
     )
     for i in range(a_host.num_elements()):
         a_host.ptr[i] = Scalar[dtype](i)
@@ -529,7 +529,7 @@ def test_kv_cache_2m_iadd_cpu[
     var a_host_ptr = alloc[Scalar[dtype]](a_size)
     var a_host = TileTensor(
         a_host_ptr,
-        row_major((Idx(2 * total_slice_length), Idx[num_heads * head_dim]())),
+        row_major(Idx(2 * total_slice_length), Idx[num_heads * head_dim]()),
     )
     for i in range(a_host.num_elements()):
         a_host.ptr[i] = Scalar[dtype](i)

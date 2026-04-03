@@ -14,16 +14,14 @@
 from std.sys import align_of
 from std.sys.intrinsics import _type_is_eq
 
-from std.builtin.variadics import Variadic
-from buffer.dimlist import DimList
-from layout import Layout
+from std.builtin.variadics import Variadic, _ReduceVariadicAndIdxToVariadic
+from layout import IntTuple, Layout
 from layout.coord import (
     ComptimeInt,
     CoordLike,
     RuntimeInt,
-    _CoordToDimList,
-    _DimsToCoordLike,
     _IntToComptimeInt,
+    _IntTupleToCoordLike,
     coord_to_int_tuple,
 )
 from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
@@ -56,12 +54,65 @@ comptime _RowMajorTileLayout[
 """A TileLayout with row-major strides derived from the given shape types."""
 
 
-comptime _DimListToTileLayout[shape: DimList, strides: DimList] = TileLayout[
-    shape_types=_DimsToCoordLike[DType.int, shape],
-    stride_types=_DimsToCoordLike[DType.int, strides],
+comptime _IndexListToCoordLikeMapper[
+    list: IndexList,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[T=CoordLike, ComptimeInt[list[idx]]] if list[idx]
+    >= 0 else Variadic.types[T=CoordLike, RuntimeInt[]],
 ]
-"""Convert a pair of DimLists to a TileLayout, using the _DimsToCoordLike
-bridge. Static Dim values become ComptimeInt, dynamic Dims become RuntimeInt."""
+"""Maps a single IndexList element to a CoordLike type.
+Negative values (-1 = dynamic) become RuntimeInt, others become ComptimeInt."""
+
+
+comptime _IndexListToCoordLike[
+    list: IndexList
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=Variadic.types[
+        T=CoordLike,
+        *Variadic.splat_type[Trait=CoordLike, list.size, RuntimeInt[]],
+    ],
+    Reducer=_IndexListToCoordLikeMapper[list, ...],
+]
+"""Converts a compile-time IndexList to a variadic of CoordLike types.
+Negative values become RuntimeInt, non-negative become ComptimeInt."""
+
+
+comptime _IndexListToTileLayout[
+    shape: IndexList, strides: IndexList
+] = TileLayout[
+    shape_types=_IndexListToCoordLike[shape],
+    stride_types=_IndexListToCoordLike[strides],
+]
+"""Convert a pair of compile-time IndexLists to a TileLayout.
+Negative values (-1) become RuntimeInt, non-negative become ComptimeInt."""
+
+
+comptime _IntTupleToTileLayout[shape: IntTuple, strides: IntTuple] = TileLayout[
+    shape_types=_IntTupleToCoordLike[DType.int, shape],
+    stride_types=_IntTupleToCoordLike[DType.int, strides],
+]
+"""Convert a pair of IntTuples to a TileLayout.
+UNKNOWN_VALUE (-1) entries become RuntimeInt, others become ComptimeInt."""
+
+
+comptime _RowMajorIntTupleTileLayout[
+    shape: IntTuple,
+] = _RowMajorTileLayout[_IntTupleToCoordLike[DType.int, shape]]
+"""A TileLayout with row-major strides derived from an IntTuple shape."""
+
+
+comptime _IntTupleShapeIndexListStridesToTileLayout[
+    shape: IntTuple, strides: IndexList
+] = TileLayout[
+    shape_types=_IntTupleToCoordLike[DType.int, shape],
+    stride_types=_IndexListToCoordLike[strides],
+]
+"""Convert an IntTuple shape and IndexList strides to a TileLayout."""
 
 
 def __mogg_intrinsic_attr(intrin: StaticString):
@@ -80,19 +131,6 @@ def view_kernel():
     return
 
 
-def get_row_major_tensor_spec[
-    dtype: DType, rank: Int, shape: DimList
-]() -> StaticTensorSpec[
-    dtype,
-    rank,
-    static_layout=_RowMajorTileLayout[_DimsToCoordLike[DType.int, shape]],
-]:
-    """
-    Returns a row-major StaticTensorSpec with the specified shape and dtype.
-    """
-    return {align_of[dtype](), AddressSpace.GENERIC, False}
-
-
 def get_row_major_tensor_spec_static[
     dtype: DType, rank: Int, *shape_dims: Int
 ]() -> StaticTensorSpec[
@@ -102,7 +140,6 @@ def get_row_major_tensor_spec_static[
 ]:
     """Returns a row-major StaticTensorSpec from compile-time Int dimensions.
 
-    This is the DimList-free alternative to `get_row_major_tensor_spec`.
     All dimensions must be static (known at compile time).
 
     Parameters:
@@ -242,9 +279,13 @@ struct StaticTensorSpec[
     OutFusion: OutputFusion = _NoFusionOut,
     ComputeFusion: ComputeOutputFusion = _NoComputeFusion,
 ](ImplicitlyCopyable):
-    # Backward-compatible DimList aliases derived from the TileLayout types.
-    comptime shape = _CoordToDimList[*Self.static_layout._shape_types]
-    comptime strides = _CoordToDimList[*Self.static_layout._stride_types]
+    # IntTuple aliases for static shape/strides.
+    comptime shape_tuple = coord_to_int_tuple[
+        *Self.static_layout._shape_types
+    ]()
+    comptime strides_tuple = coord_to_int_tuple[
+        *Self.static_layout._stride_types
+    ]()
 
     var alignment: Int
     var address_space: AddressSpace
@@ -311,14 +352,14 @@ struct StaticTensorSpec[
     comptime get_unknown = _get_unknown_tensor_spec[Self.dtype, Self.rank]
 
     @always_inline
-    def with_layout[
-        new_rank: Int, new_shape: DimList, new_strides: DimList
+    def with_tile_layout[
+        new_layout: TensorLayout,
     ](
         self,
     ) -> StaticTensorSpec[
         Self.dtype,
-        new_rank,
-        static_layout=_DimListToTileLayout[new_shape, new_strides],
+        new_layout.rank,
+        static_layout=new_layout,
     ]:
         return {
             self.alignment,
@@ -327,15 +368,99 @@ struct StaticTensorSpec[
         }
 
     @always_inline
-    def with_layout_and_alignment[
-        new_rank: Int, new_shape: DimList, new_strides: DimList
-    ](self, new_alignment: Int) -> StaticTensorSpec[
+    def with_tile_layout[
+        new_rank: Int,
+        new_layout: TensorLayout,
+    ](
+        self,
+    ) -> StaticTensorSpec[
         Self.dtype,
         new_rank,
-        static_layout=_DimListToTileLayout[new_shape, new_strides],
+        static_layout=new_layout,
+    ]:
+        comptime assert new_rank == new_layout.rank, "rank mismatch"
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_tile_layout_and_alignment[
+        new_layout: TensorLayout,
+    ](self, new_alignment: Int) -> StaticTensorSpec[
+        Self.dtype,
+        new_layout.rank,
+        static_layout=new_layout,
     ]:
         return {
             new_alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_tile_layout_and_alignment[
+        new_rank: Int,
+        new_layout: TensorLayout,
+    ](self, new_alignment: Int) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=new_layout,
+    ]:
+        comptime assert new_rank == new_layout.rank, "rank mismatch"
+        return {
+            new_alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_int_tuple_layout[
+        new_rank: Int, new_shape: IntTuple, new_strides: IndexList
+    ](
+        self,
+    ) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=_IntTupleShapeIndexListStridesToTileLayout[
+            new_shape, new_strides
+        ],
+    ]:
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_int_tuple_layout_and_alignment[
+        new_rank: Int, new_shape: IntTuple, new_strides: IndexList
+    ](self, new_alignment: Int) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=_IntTupleShapeIndexListStridesToTileLayout[
+            new_shape, new_strides
+        ],
+    ]:
+        return {
+            new_alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_row_major_int_tuple_layout[
+        new_rank: Int, new_shape: IntTuple
+    ](
+        self,
+    ) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=_RowMajorIntTupleTileLayout[new_shape],
+    ]:
+        return {
+            self.alignment,
             self.address_space,
             self.exclusive,
         }

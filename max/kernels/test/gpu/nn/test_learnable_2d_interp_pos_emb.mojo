@@ -86,15 +86,15 @@ def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(g_dev, g_ptr)
     ctx.enqueue_copy(tw_dev, tw_ptr)
 
-    var x_d = TileTensor(x_dev.unsafe_ptr(), row_major((Idx(L), Idx(dim))))
+    var x_d = TileTensor(x_dev.unsafe_ptr(), row_major(Idx(L), Idx(dim)))
     var w_d = TileTensor(
-        w_dev.unsafe_ptr(), row_major((Idx(H), Idx(W), Idx(dim)))
+        w_dev.unsafe_ptr(), row_major(Idx(H), Idx(W), Idx(dim))
     )
-    var g_d = TileTensor(g_dev.unsafe_ptr(), row_major((Idx(N), Idx(3))))
+    var g_d = TileTensor(g_dev.unsafe_ptr(), row_major(Idx(N), Idx(3)))
     var tw_d = TileTensor(
-        tw_dev.unsafe_ptr(), row_major((Idx(num_frames), Idx(dim)))
+        tw_dev.unsafe_ptr(), row_major(Idx(num_frames), Idx(dim))
     )
-    var out_d = TileTensor(out_dev.unsafe_ptr(), row_major((Idx(L), Idx(dim))))
+    var out_d = TileTensor(out_dev.unsafe_ptr(), row_major(Idx(L), Idx(dim)))
 
     learnable_2d_interp_pos_emb(out_d, x_d, w_d, g_d, tw_d, ctx)
     ctx.enqueue_copy(out_ptr, out_dev)
@@ -176,15 +176,15 @@ def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(g_dev, g_ptr)
     ctx.enqueue_copy(tw_dev, tw_ptr)
 
-    var x_d = TileTensor(x_dev.unsafe_ptr(), row_major((Idx(L), Idx(dim))))
+    var x_d = TileTensor(x_dev.unsafe_ptr(), row_major(Idx(L), Idx(dim)))
     var w_d = TileTensor(
-        w_dev.unsafe_ptr(), row_major((Idx(H), Idx(W), Idx(dim)))
+        w_dev.unsafe_ptr(), row_major(Idx(H), Idx(W), Idx(dim))
     )
-    var g_d = TileTensor(g_dev.unsafe_ptr(), row_major((Idx(N), Idx(3))))
+    var g_d = TileTensor(g_dev.unsafe_ptr(), row_major(Idx(N), Idx(3)))
     var tw_d = TileTensor(
-        tw_dev.unsafe_ptr(), row_major((Idx(num_frames), Idx(dim)))
+        tw_dev.unsafe_ptr(), row_major(Idx(num_frames), Idx(dim))
     )
-    var out_d = TileTensor(out_dev.unsafe_ptr(), row_major((Idx(L), Idx(dim))))
+    var out_d = TileTensor(out_dev.unsafe_ptr(), row_major(Idx(L), Idx(dim)))
 
     learnable_2d_interp_pos_emb(out_d, x_d, w_d, g_d, tw_d, ctx)
     ctx.enqueue_copy(out_ptr, out_dev)
@@ -273,15 +273,15 @@ def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(g_dev, g_ptr)
     ctx.enqueue_copy(tw_dev, tw_ptr)
 
-    var x_d = TileTensor(x_dev.unsafe_ptr(), row_major((Idx(L), Idx(dim))))
+    var x_d = TileTensor(x_dev.unsafe_ptr(), row_major(Idx(L), Idx(dim)))
     var w_d = TileTensor(
-        w_dev.unsafe_ptr(), row_major((Idx(H), Idx(W), Idx(dim)))
+        w_dev.unsafe_ptr(), row_major(Idx(H), Idx(W), Idx(dim))
     )
-    var g_d = TileTensor(g_dev.unsafe_ptr(), row_major((Idx(N), Idx(3))))
+    var g_d = TileTensor(g_dev.unsafe_ptr(), row_major(Idx(N), Idx(3)))
     var tw_d = TileTensor(
-        tw_dev.unsafe_ptr(), row_major((Idx(num_frames), Idx(dim)))
+        tw_dev.unsafe_ptr(), row_major(Idx(num_frames), Idx(dim))
     )
-    var out_d = TileTensor(out_dev.unsafe_ptr(), row_major((Idx(L), Idx(dim))))
+    var out_d = TileTensor(out_dev.unsafe_ptr(), row_major(Idx(L), Idx(dim)))
 
     learnable_2d_interp_pos_emb(out_d, x_d, w_d, g_d, tw_d, ctx)
     ctx.enqueue_copy(out_ptr, out_dev)
@@ -437,15 +437,15 @@ def test_multi_video[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(g_dev, g_ptr)
     ctx.enqueue_copy(tw_dev, tw_ptr)
 
-    var x_d = TileTensor(x_dev.unsafe_ptr(), row_major((Idx(L), Idx(dim))))
+    var x_d = TileTensor(x_dev.unsafe_ptr(), row_major(Idx(L), Idx(dim)))
     var w_d = TileTensor(
-        w_dev.unsafe_ptr(), row_major((Idx(H), Idx(W), Idx(dim)))
+        w_dev.unsafe_ptr(), row_major(Idx(H), Idx(W), Idx(dim))
     )
-    var g_d = TileTensor(g_dev.unsafe_ptr(), row_major((Idx(N), Idx(3))))
+    var g_d = TileTensor(g_dev.unsafe_ptr(), row_major(Idx(N), Idx(3)))
     var tw_d = TileTensor(
-        tw_dev.unsafe_ptr(), row_major((Idx(num_frames), Idx(dim)))
+        tw_dev.unsafe_ptr(), row_major(Idx(num_frames), Idx(dim))
     )
-    var out_d = TileTensor(out_dev.unsafe_ptr(), row_major((Idx(L), Idx(dim))))
+    var out_d = TileTensor(out_dev.unsafe_ptr(), row_major(Idx(L), Idx(dim)))
 
     learnable_2d_interp_pos_emb(out_d, x_d, w_d, g_d, tw_d, ctx)
     ctx.enqueue_copy(out_ptr, out_dev)

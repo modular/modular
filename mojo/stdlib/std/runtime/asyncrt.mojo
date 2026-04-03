@@ -15,9 +15,9 @@
 from std.os import abort
 from std.os.atomic import Atomic
 from std.ffi import external_call
-from std.memory import alloc
+from std.gpu.host.device_context import _DeviceContextPtr
+from std.memory._nonnull import NonNullUnsafePointer
 
-from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.builtin.coroutine import (
     AnyCoroutine,
     _coro_resume_fn,
@@ -82,7 +82,6 @@ struct _AsyncContext(TrivialRegisterPassable):
 
 
 def _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    _ensure_current_or_global_runtime_init()
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         chain.address
     )
@@ -103,7 +102,6 @@ def _async_and_then(
 
 
 def _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
-    _ensure_current_or_global_runtime_init()
     external_call["KGEN_CompilerRT_AsyncRT_Execute", NoneType](
         _coro_resume_fn, handle, desired_worker_id
     )
@@ -137,7 +135,6 @@ def parallelism_level() -> Int:
     Returns:
         The number of worker threads available in the async runtime.
     """
-    _ensure_current_or_global_runtime_init()
     return Int(
         external_call[
             "KGEN_CompilerRT_AsyncRT_ParallelismLevel",
@@ -607,7 +604,7 @@ struct TaskGroup(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
+struct DeviceContextPtr(Defaultable, ImplicitlyCopyable, RegisterPassable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -616,7 +613,9 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
     by the graph compiler.
     """
 
-    var _handle: OpaquePointer[MutExternalOrigin]
+    var _handle: Optional[
+        NonNullUnsafePointer[NoneType, ExternalOrigin[mut=True]]
+    ]
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
@@ -627,13 +626,24 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
         """
         self._handle = {}
 
-    def __init__(out self, handle: OpaquePointer[MutExternalOrigin]):
+    def __init__(out self, handle: OpaquePointer[ExternalOrigin[mut=True]]):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 
         Args:
             handle: A raw pointer to a C++ `DeviceContext`.
         """
         self._handle = handle
+
+    @doc_hidden
+    def __init__(out self, handle: _DeviceContextPtr[mut=True]):
+        """Initialize a `DeviceContextPtr` from a raw pointer.
+
+        Args:
+            handle: A raw pointer to a C++ `DeviceContext`.
+        """
+        self._handle = UnsafePointer(to=handle).bitcast[
+            type_of(self._handle)
+        ]()[]
 
     @implicit
     def __init__(out self, device: DeviceContext):
@@ -644,7 +654,7 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
         Args:
             device: The `DeviceContext` to wrap in this pointer.
         """
-        self._handle = {device._handle.bitcast[NoneType]().address}
+        self = Self(device._handle)
 
     def __getitem__(self) -> DeviceContext:
         """Dereference the pointer to get the `DeviceContext`.
@@ -652,7 +662,11 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
         Returns:
             The `DeviceContext` that this pointer points to.
         """
-        return DeviceContext(self._handle)
+        return DeviceContext(
+            UnsafePointer(to=self._handle).bitcast[
+                _DeviceContextPtr[mut=True]
+            ]()[]
+        )
 
     def get_device_context(self) -> DeviceContext:
         """Get the `DeviceContext` that this pointer points to.
@@ -680,10 +694,10 @@ struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):
 
     @always_inline
     def __init__(out self, ptrs: StaticTuple[DeviceContextPtr, Self.size]):
-        """Initialize with a StaticTuple of `DeviceContextPtr` objects.
+        """Initialize with a InlineArray of `DeviceContextPtr`s.
 
         Args:
-            ptrs: A StaticTuple containing the `DeviceContextPtr` objects to store.
+            ptrs: An InlineArray containing the `DeviceContextPtr`s to store.
         """
         self.ptrs = ptrs
 

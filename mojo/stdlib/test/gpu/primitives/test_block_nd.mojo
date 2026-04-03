@@ -19,7 +19,7 @@ result, and that result matches the expected value computed over all linearized
 thread IDs in the block.
 """
 
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.primitives import block
 from std.gpu.globals import WARP_SIZE
@@ -47,7 +47,7 @@ def test_block_sum_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(N * (N - 1) // 2)
@@ -77,7 +77,7 @@ def test_block_max_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(N - 1)
@@ -108,7 +108,7 @@ def test_block_min_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(N):
@@ -140,7 +140,7 @@ def test_block_broadcast_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(N):
@@ -169,7 +169,7 @@ def test_block_prefix_sum_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(N):
@@ -186,7 +186,7 @@ def block_sum_2d_kernel[
     block_dim_y: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     """Each thread holds its linearized ID; the block sum is broadcast back."""
-    var linear_tid = thread_idx.x + thread_idx.y * UInt(block_dim_x)
+    var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     output[linear_tid] = block.sum[
         block_dim_x=block_dim_x, block_dim_y=block_dim_y
     ](Float32(linear_tid))
@@ -203,7 +203,7 @@ def test_block_sum_2d() raises:
             buf, grid_dim=1, block_dim=(BX, BY)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(total * (total - 1) // 2)
@@ -223,8 +223,8 @@ def block_sum_3d_kernel[
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     var linear_tid = (
         thread_idx.x
-        + thread_idx.y * UInt(block_dim_x)
-        + thread_idx.z * UInt(block_dim_x * block_dim_y)
+        + thread_idx.y * block_dim_x
+        + thread_idx.z * block_dim_x * block_dim_y
     )
     output[linear_tid] = block.sum[
         block_dim_x=block_dim_x,
@@ -245,7 +245,7 @@ def test_block_sum_3d() raises:
             buf, grid_dim=1, block_dim=(BX, BY, BZ)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(total * (total - 1) // 2)
@@ -262,7 +262,7 @@ def block_max_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
-    var linear_tid = thread_idx.x + thread_idx.y * UInt(block_dim_x)
+    var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     output[linear_tid] = block.max[
         block_dim_x=block_dim_x, block_dim_y=block_dim_y
     ](Float32(linear_tid))
@@ -279,7 +279,7 @@ def test_block_max_2d() raises:
             buf, grid_dim=1, block_dim=(BX, BY)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(total - 1)
@@ -297,7 +297,7 @@ def block_min_2d_kernel[
     block_dim_y: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     # Offset by 1 so the minimum is 1, avoiding confusion with the neutral 0.
-    var linear_tid = thread_idx.x + thread_idx.y * UInt(block_dim_x)
+    var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     output[linear_tid] = block.min[
         block_dim_x=block_dim_x, block_dim_y=block_dim_y
     ](Float32(linear_tid + 1))
@@ -314,7 +314,7 @@ def test_block_min_2d() raises:
             buf, grid_dim=1, block_dim=(BX, BY)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(total):
@@ -331,7 +331,7 @@ def block_broadcast_2d_kernel[
     block_dim_y: Int,
     src_thread: UInt,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
-    var linear_tid = thread_idx.x + thread_idx.y * UInt(block_dim_x)
+    var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     # Each thread offers its own linearized ID; only src_thread's value
     # should be broadcast to everyone.
     output[linear_tid] = block.broadcast[
@@ -352,7 +352,7 @@ def test_block_broadcast_2d() raises:
             block_broadcast_2d_kernel[BX, BY, src]
         ](buf, grid_dim=1, block_dim=(BX, BY))
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(total):
@@ -368,7 +368,7 @@ def block_prefix_sum_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
-    var linear_tid = thread_idx.x + thread_idx.y * UInt(block_dim_x)
+    var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     # All threads contribute 1, so the inclusive prefix sum at linearized
     # position k equals k+1.
     output[linear_tid] = block.prefix_sum[
@@ -387,7 +387,7 @@ def test_block_prefix_sum_2d() raises:
             buf, grid_dim=1, block_dim=(BX, BY)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(total):

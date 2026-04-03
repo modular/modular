@@ -98,6 +98,9 @@ def test_warmup_graph_capture_batch_size(
     pipeline._pipeline_config.runtime.max_batch_size = config_max_batch_size
     pipeline._kv_manager = MagicMock()
     pipeline._kv_manager.params = MagicMock()
+    pipeline._kv_manager.params.page_size = 128
+    pipeline._kv_manager._total_num_pages = 100
+    pipeline._extra_kv_managers = []
     pipeline.session = MagicMock()
 
     with patch(

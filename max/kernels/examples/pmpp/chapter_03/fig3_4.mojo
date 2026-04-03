@@ -16,7 +16,7 @@
 # Each pixel is 3 consecutive chars for the 3 channels (RGB)
 
 from std.math import ceildiv
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.itertools import product
 
@@ -39,8 +39,8 @@ def color_to_grayscale_kernel(
     """
     comptime CHANNELS = 3
 
-    var col = Int(global_idx.x)
-    var row = Int(global_idx.y)
+    var col = global_idx.x
+    var row = global_idx.y
 
     if col < width and row < height:
         # Get 1D offset for the grayscale image

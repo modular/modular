@@ -238,8 +238,9 @@ def append_amd_hints(
     var mmas_per_store = 0
     var mmas_per_store_extra = 0
     if total_stores > 0:
-        mmas_per_store = remaining_mmas // total_stores
-        mmas_per_store_extra = remaining_mmas % total_stores
+        mmas_per_store, mmas_per_store_extra = divmod(
+            remaining_mmas, total_stores
+        )
 
     @always_inline
     def _hint(mut ker: List[ScheduleEntry], mask: Int, count: Int):

@@ -476,7 +476,19 @@ class AttentionWithRope(Module, Shardable):
             wqkv = ops.concat((wq, wk, wv))
             if self.quant_config and self.quant_config.is_nvfp4:
                 return wqkv
-            if self.quant_config and self.quant_config.is_static:
+            # For both static and dynamic per-tensor fp8: re-quantize the fused
+            # QKV weight back to fp8 using the unified max scale. The rescaling
+            # above dequantizes each projection's fp8 weights to float32 using
+            # their individual per-projection scales; this step re-quantizes
+            # the fused weight under a single max scale so that _matmul_float8
+            # receives an fp8 weight tensor with a scalar weight scale.
+            if self.quant_config and (
+                self.quant_config.is_static
+                or (
+                    self.quant_config.is_dynamic
+                    and self.quant_config.weight_scale.is_tensor
+                )
+            ):
                 assert self.qkv_weight_scale is not None
 
                 wqkv, qkv_weight_scale = convert_weights_to_fp8_fnuz_if_needed(
@@ -556,11 +568,14 @@ class AttentionWithRope(Module, Shardable):
 
         weight_scale = ops.concat((q_scale, k_scale, v_scale))
 
-        if self.quant_config.is_dynamic or weight_scale.rank == 2:
-            # In the dynamic scaling case, return the weight scales directly.
+        if weight_scale.rank == 2:
+            # Per-row/per-channel scaling: each row of the fused QKV weight
+            # has its own scale, so return the concatenated per-row scales
+            # directly.
             return weight_scale
 
-        # Static case: return a scalar max QKV weight scale.
+        # Per-tensor scaling (static or dynamic): return the unified max scale
+        # used when re-quantizing the fused QKV weight in wqkv.
         return ops.max(weight_scale).reshape([])
 
     @property

@@ -14,11 +14,7 @@
 from std.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
@@ -140,11 +136,6 @@ def test_conv_miopen[
     comptime Wout = output_dim[2]
     comptime Cout = output_dim[3]
 
-    # Define layouts
-    comptime input_layout = Layout.row_major(N, H, W, C_in)
-    comptime filter_layout = Layout.row_major(R, S, C, F)
-    comptime output_layout = Layout.row_major(Nout, Hout, Wout, Cout)
-
     comptime input_dim_flattened = N * H * W * C_in
     comptime filter_dim_flattened = R * S * C * F
     comptime output_dim_flattened = Nout * Hout * Wout * Cout
@@ -155,13 +146,20 @@ def test_conv_miopen[
     var output_ref_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
     var output_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
 
-    # Create host LayoutTensors
-    var input_host = LayoutTensor[input_type, input_layout](input_host_ptr)
-    var filter_host = LayoutTensor[filter_type, filter_layout](filter_host_ptr)
-    var output_ref_host = LayoutTensor[output_type, output_layout](
-        output_ref_host_ptr
+    # Create host TileTensors
+    comptime input_tt_layout = row_major(
+        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
     )
-    var output_host = LayoutTensor[output_type, output_layout](output_host_ptr)
+    comptime filter_tt_layout = row_major(
+        (Idx[R](), Idx[S](), Idx[C](), Idx[F]())
+    )
+    comptime output_tt_layout = row_major(
+        (Idx[Nout](), Idx[Hout](), Idx[Wout](), Idx[Cout]())
+    )
+    var input_host = TileTensor(input_host_ptr, input_tt_layout)
+    var filter_host = TileTensor(filter_host_ptr, filter_tt_layout)
+    var output_ref_host = TileTensor(output_ref_host_ptr, output_tt_layout)
+    var output_host = TileTensor(output_host_ptr, output_tt_layout)
 
     random(input_host)
     random(filter_host)
@@ -201,15 +199,6 @@ def test_conv_miopen[
     )
 
     # Create device TileTensors
-    comptime input_tt_layout = row_major(
-        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
-    )
-    comptime filter_tt_layout = row_major(
-        (Idx[R](), Idx[S](), Idx[C](), Idx[F]())
-    )
-    comptime output_tt_layout = row_major(
-        (Idx[Nout](), Idx[Hout](), Idx[Wout](), Idx[Cout]())
-    )
     var input_dev_tensor = TileTensor(input_dev, input_tt_layout)
     var filter_dev_tensor = TileTensor(filter_dev, filter_tt_layout)
     var output_dev_tensor = TileTensor(output_dev, output_tt_layout)

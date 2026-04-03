@@ -1,5 +1,5 @@
 This directory contains code examples for the
-[Variables](../../../../../docs/manual/variables.mdx)
+[Variables](../../../manual/variables.mdx)
 section of the Mojo Manual.
 
 Contents:

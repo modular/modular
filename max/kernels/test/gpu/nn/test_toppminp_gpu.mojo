@@ -285,11 +285,11 @@ def test_case_sampling[
     var probs_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
     var in_logits_cpu_test = TileTensor(
         in_logits_cpu_test_ptr,
-        row_major((Idx(batch_size), Idx(vocab_size))),
+        row_major(Idx(batch_size), Idx(vocab_size)),
     )
     var probs_cpu_test = TileTensor(
         probs_cpu_test_ptr,
-        row_major((Idx(batch_size), Idx(vocab_size))),
+        row_major(Idx(batch_size), Idx(vocab_size)),
     )
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.ptr[i] = in_logits.ptr[i] / temperature
@@ -304,15 +304,17 @@ def test_case_sampling[
 
     var device_in_tensor = TileTensor(
         device_in_buf.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx(vocab_size))),
+        row_major(Idx(batch_size), Idx(vocab_size)),
     )
     var device_token_ids_tensor = TileTensor(
         device_token_ids_buf.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx(1))),
+        row_major(Idx(batch_size), Idx(1)),
     )
     var device_p_thresholds_tensor = TileTensor(
         device_p_thresholds_buf.unsafe_ptr(),
-        row_major((Idx(batch_size),)),
+        row_major(
+            Idx(batch_size),
+        ),
     )
 
     comptime if DEBUG_BENCH:

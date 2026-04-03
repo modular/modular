@@ -13,10 +13,9 @@
 """TileTensor type for structured memory access with compile-time layout information."""
 
 from std.math import ceildiv
-from std.sys import align_of, simd_width_of
+from std.sys import align_of, simd_width_of, is_gpu
 from std.os import abort
 
-from buffer import Dim, DimList
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable
 from std.builtin.variadics import (
@@ -25,6 +24,7 @@ from std.builtin.variadics import (
     _ReduceVariadicAndIdxToVariadic,
 )
 from std.builtin.int import index as _index
+from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout._fillers import BATCH_SIZE
@@ -53,7 +53,7 @@ from .coord import (
     coord,
     coord_to_int_tuple,
     coord_to_index_list,
-    _DimsToCoordLike,
+    _IntTupleToCoordLike,
     _CoordToDynamic,
     _Multiply,
     _Divide,
@@ -62,6 +62,11 @@ from .coord import (
     DynamicCoord,
     StaticCoord,
 )
+
+
+@always_inline
+def _default_invariant[mut: Bool]() -> Bool:
+    return is_gpu() and mut == False
 
 
 @fieldwise_init
@@ -294,7 +299,7 @@ struct TileTensor[
         # Create TileTensor to use on device
         var tensor = TileTensor(
              dev_buf,
-             row_major((Idx[4](), Idx[4]())),
+             row_major(Idx[4](), Idx[4]()),
         )
         ...
         ```
@@ -333,7 +338,7 @@ struct TileTensor[
 
         var tensor = TileTensor(
             host_buf,
-            row_major((Idx[4](), Idx[4]())),
+            row_major(Idx[4](), Idx[4]()),
         )
         ```
 
@@ -422,7 +427,9 @@ struct TileTensor[
         # Inline load logic to avoid constraint propagation issues
         return self.ptr.load[
             width=Self.element_size,
-            alignment=align_of[SIMD[Self.dtype, Self.element_size]](),
+            alignment=align_of[
+                SIMD[Self.dtype, Self.element_size]
+            ]() if is_gpu() else 1,
         ](self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple))
 
     @always_inline
@@ -573,7 +580,9 @@ struct TileTensor[
 
         # Inline store logic to avoid constraint propagation issues
         self.ptr.mut_cast[True]().store[
-            alignment=align_of[SIMD[Self.dtype, Self.element_size]](),
+            alignment=align_of[
+                SIMD[Self.dtype, Self.element_size]
+            ]() if is_gpu() else 1,
         ](
             self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple),
             value,
@@ -582,8 +591,8 @@ struct TileTensor[
     @always_inline("nodebug")
     def load[
         width: Int = Self.element_size,
-        alignment: Int = align_of[SIMD[Self.dtype, width]](),
-        invariant: Bool = False,
+        alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
+        invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width]:
         """Load elements from the tensor at the specified coordinates.
@@ -615,7 +624,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def store[
         width: Int = Self.element_size,
-        alignment: Int = align_of[SIMD[Self.dtype, width]](),
+        alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
         non_temporal: Bool = False,
     ](self, coord: Coord, value: SIMD[Self.dtype, width]) where Self.mut:
         """Store elements to the tensor at the specified coordinates.
@@ -674,7 +683,7 @@ struct TileTensor[
     def load_linear[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
-        invariant: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
     ](self, idx: IndexList[_, ...]) -> SIMD[Self.dtype, width]:
         """Load elements using an IndexList index (for flat layouts).
 
@@ -1969,6 +1978,30 @@ struct TileTensor[
         )
 
 
+comptime _ComptimeConditionalTileTensor[
+    mut: Bool,
+    //,
+    dtype: DType,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    *,
+    engaged: Bool = False,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
+    element_size: Int = 1,
+] = _ComptimeConditional[
+    TileTensor[
+        dtype,
+        LayoutType,
+        origin,
+        address_space=address_space,
+        linear_idx_type=linear_idx_type,
+        element_size=element_size,
+    ],
+    engaged=engaged,
+]
+
+
 @always_inline("nodebug")
 def stack_allocation[
     LayoutType: TensorLayout,
@@ -2865,47 +2898,24 @@ def flatten_leading[
 # lt_to_tt -- Convert a LayoutTensor to a TileTensor
 # ============================================================================
 
-# Note: _IntTupleToCoordLike causes a compiler crash (as of 2026-02), so we
-# use _DimsToCoordLike with rank-specialized DimList helpers instead.
-
-from .int_tuple import UNKNOWN_VALUE as _UNKNOWN_VALUE, IntTuple as _IntTuple
+from .int_tuple import IntTuple as _IntTuple, product_each as _product_each
 from .layout import Layout as _LegacyLayout
 from .layout_tensor import LayoutTensor as _LayoutTensor
 
 
-@parameter
-def _int_to_dim(value: Int) -> Dim:
-    """Convert an IntTuple value to a Dim.
-
-    UNKNOWN_VALUE becomes Dim() (dynamic), anything else becomes Dim(N)
-    (static).  Used at comptime to derive DimLists from legacy Layout
-    shapes and strides.
-    """
-    if value != _UNKNOWN_VALUE:
-        return Dim(value)
-    return Dim()
-
-
-comptime _int_to_dim_tabulator[it: _IntTuple, idx: Int]: Dim = _int_to_dim(
-    it[idx].value()
-)
-comptime _LTDims[it: _IntTuple] = DimList[
-    *Variadic.tabulate[len(it), _int_to_dim_tabulator[it, _]]
-]()
-"""Convert a flat IntTuple to a DimList.
-
-UNKNOWN_VALUE entries become dynamic Dims; known values become static Dims.
-"""
-
-
 comptime LTToTTLayout[lt_layout: _LegacyLayout] = Layout[
-    shape_types=_DimsToCoordLike[DType.int64, _LTDims[lt_layout.shape]],
-    stride_types=_DimsToCoordLike[DType.int64, _LTDims[lt_layout.stride]],
+    shape_types=_IntTupleToCoordLike[
+        DType.int64, _product_each(lt_layout.shape)
+    ],
+    stride_types=_IntTupleToCoordLike[
+        DType.int64, _product_each(lt_layout.stride)
+    ],
 ]
 """Derive a TileTensor Layout from a legacy Layout.
 
 Known dimensions become ComptimeInt, UNKNOWN_VALUE dimensions become
-RuntimeInt.  Works for flat layouts of rank 1 through 6.
+RuntimeInt.  Hierarchical layouts (e.g. from ``tile_to_shape``) are
+collapsed via ``product_each`` so each mode becomes a single value.
 
 Parameters:
     lt_layout: The legacy Layout to convert.

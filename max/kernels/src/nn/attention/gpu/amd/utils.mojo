@@ -18,19 +18,22 @@ from std.gpu import (
     thread_idx_int as thread_idx,
 )
 from std.gpu import warp_id_uint as get_warp_id, WARP_SIZE
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, TileTensor
+from std.gpu.intrinsics import AMDBufferResource
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element
 from layout.layout_tensor import ThreadScope
 from layout.tensor_core import num_matrix_reg
+from std.memory import AddressSpace as BaseAddressSpace
 from std.memory import stack_allocation
 from std.math.uutils import umod, ufloordiv
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 from layout.swizzle import Swizzle
-from std.gpu._utils import to_i32, to_i64
+from std.gpu._utils import to_i32, to_llvm_shared_mem_ptr, to_i64
 from std.itertools import product
+from std.sys._assembly import inlined_assembly
 
 
 @always_inline
@@ -58,8 +61,7 @@ def get_warp_layout[mma_shape: IndexList[3]]() -> Layout:
 @always_inline
 def get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
     comptime num_warps_n = BN // WN
-    var warp_row = get_warp_id() // UInt(num_warps_n)
-    var warp_col = get_warp_id() % UInt(num_warps_n)
+    var warp_row, warp_col = divmod(get_warp_id(), UInt(num_warps_n))
     return IndexList[2](Int(warp_row), Int(warp_col))
 
 
@@ -646,6 +648,109 @@ def copy_dram_to_sram_lds[
         comptime num_bytes_per_lane = size_of[dtype]() * simd_width_of[dtype]()
         var vector_offset_bytes = Int(src_dist.ptr) - Int(src_partitions.ptr)
         var scalar_offset_bytes = Int(src_partitions.ptr) - Int(src.ptr)
+
+        __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+            alias_scopes=_alias_scope_attr,
+            _type=None,
+        ](
+            desc_ptr_llvm,
+            shared_ptr3,
+            to_i32(Int32(num_bytes_per_lane)),
+            to_i32(Int32(vector_offset_bytes)),
+            to_i32(Int32(scalar_offset_bytes)),
+            to_i32(0),
+            to_i32(aux),
+        )
+        comptime num_bytes_per_warp = UInt32(
+            thread_layout.size() * num_bytes_per_lane
+        )
+        lds_ptr += num_bytes_per_warp
+
+
+@always_inline
+def copy_dram_to_sram_lds[
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
+](
+    dst: LayoutTensor,
+    src: TileTensor,
+    lds_base_ptr: UInt32,
+    bc: AMDBufferResource,
+):
+    """DMA from DRAM to LDS with TileTensor src and pre-computed buffer resource.
+
+    Scalar offsets are relative to bc's base pointer, so src may be a
+    sub-tile whose pointer differs from bc's base.
+    """
+    from layout.tile_layout import row_major as tt_row_major
+
+    comptime thread_layout = tt_row_major[16, 4]()
+    var worker_idx = lane_id()
+
+    var dram_base = bc.get_base_ptr()
+
+    comptime M = type_of(src).static_shape[0]
+    comptime N = type_of(src).static_shape[1]
+    comptime BM = 32
+    comptime BN = 32
+    comptime BM_SUB = 16
+
+    comptime aux = 0
+
+    var lds_ptr = lds_base_ptr
+
+    comptime for n_tile, m_tile, m_sub_tile in product(
+        range(N // BN), range(M // BM), range(BM // BM_SUB)
+    ):
+        var dst_partitions = dst.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
+            m_sub_tile, 0
+        )
+        var src_partitions = src.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
+            m_sub_tile, 0
+        )
+        comptime dst_layout = dst_partitions.layout
+        comptime assert dst_layout.stride[1].value() == 1, String(dst_layout)
+        comptime assert dst_layout.stride[0].value() == 32, String(dst_layout)
+        var worker_idx_with_offset = worker_idx + m_sub_tile * WARP_SIZE
+        var src_dist = src_partitions.vectorize[
+            1, simd_width_of[src.dtype]()
+        ]().distribute[thread_layout](
+            umod(
+                swizzle.value()(
+                    worker_idx_with_offset
+                ) if swizzle else worker_idx_with_offset,
+                WARP_SIZE,
+            )
+        )
+        comptime dtype = src.dtype
+        var ptr = dst_partitions.ptr
+        var dst_ptr = ptr.address_space_cast[AddressSpace.SHARED]()
+
+        var desc_ptr_ = UnsafePointer[
+            Scalar[DType.bfloat16],
+            MutAnyOrigin,
+            address_space=AddressSpace.BUFFER_RESOURCE,
+        ]()
+
+        var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
+        var ptr_to_simd = UnsafePointer(to=bc.desc)
+        ptr_to_ptr[0] = ptr_to_simd.bitcast[
+            UnsafePointer[
+                Scalar[DType.bfloat16],
+                MutAnyOrigin,
+                address_space=AddressSpace.BUFFER_RESOURCE,
+            ]
+        ]()[0]
+        var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=__mlir_type.`!llvm.ptr<8>`
+        ](desc_ptr_)
+
+        var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=__mlir_type.`!llvm.ptr<3>`
+        ](dst_ptr)
+
+        comptime num_bytes_per_lane = size_of[dtype]() * simd_width_of[dtype]()
+        var vector_offset_bytes = Int(src_dist.ptr) - Int(src_partitions.ptr)
+        var scalar_offset_bytes = Int(src_partitions.ptr) - dram_base
 
         __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
             alias_scopes=_alias_scope_attr,

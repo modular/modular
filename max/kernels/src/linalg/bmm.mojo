@@ -24,7 +24,7 @@ from std.sys.info import (
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
+from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import block_idx_uint as block_idx, global_idx_uint as global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -418,8 +418,8 @@ def _batched_matmul_cpu[
                 row_major(Coord(Idx(Int(b.dim[1]())), Idx(Int(b.dim[2]())))),
             )
 
-            var batch_coords = _get_start_indices_of_nth_subvolume_uint[2](
-                UInt(batch), c_shape
+            var batch_coords = _get_start_indices_of_nth_subvolume[2](
+                batch, c_shape
             )
 
             @parameter
@@ -542,8 +542,8 @@ def naive_batched_matmul_kernel[
 
     comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
-        var nd_corrds = _get_start_indices_of_nth_subvolume_uint[2](
-            UInt(z), c_buff_nd_shape
+        var nd_corrds = _get_start_indices_of_nth_subvolume[2](
+            z, c_buff_nd_shape
         )
         nd_corrds[rank - 1] = x
         nd_corrds[rank - 2] = y

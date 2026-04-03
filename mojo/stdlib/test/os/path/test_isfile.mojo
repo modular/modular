@@ -19,7 +19,7 @@ from std.testing import TestSuite, assert_false, assert_true
 
 
 def test_isfile() raises:
-    assert_true(isfile(source_location().file_name))
+    assert_true(isfile(source_location().file_name()))
     assert_false(isfile("this/file/does/not/exist"))
 
     assert_false(isfile(Path()))

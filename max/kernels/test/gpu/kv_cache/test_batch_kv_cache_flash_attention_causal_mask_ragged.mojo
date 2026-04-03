@@ -30,8 +30,6 @@ from std.testing import assert_almost_equal
 
 from std.utils import Index, IndexList
 
-from std.sys import has_amd_gpu_accelerator
-
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
 
@@ -326,10 +324,7 @@ def execute_ragged_flash_attention[
                         ragged_offset + s, h, Int(hd)
                     ]
                     try:
-                        # amd uses more aggressive split-k partitioning
-                        var rtol_bf16 = (
-                            2e-2 if has_amd_gpu_accelerator() else 1e-2
-                        )
+                        var rtol_bf16 = 1e-2
                         assert_almost_equal(
                             ref_val,
                             test_val,

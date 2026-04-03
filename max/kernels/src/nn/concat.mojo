@@ -19,11 +19,11 @@ from std.sys.info import simd_width_of, size_of
 
 from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
-    _get_start_indices_of_nth_subvolume_uint,
+    _get_start_indices_of_nth_subvolume,
     elementwise,
     sync_parallelize,
 )
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_valid_target
 from layout import (
@@ -724,7 +724,7 @@ def _concat_gpu_flat_kernel[
     uses flat pointer arithmetic to avoid multi-dimensional index decomposition
     and TileTensor coordinate-to-offset conversion overhead.
     """
-    var tid = Int(block_idx.x * UInt(block_size) + thread_idx.x)
+    var tid = block_idx.x * block_size + thread_idx.x
     if tid >= total_vec_items:
         return
 
@@ -773,11 +773,11 @@ def _concat_inner_most_single_dim[
         num_inputs,
     ],
 ):
-    var idx = block_idx.x * UInt(block_size) + thread_idx.x
-    if idx >= UInt(output.num_elements()):
+    var idx = block_idx.x * block_size + thread_idx.x
+    if idx >= output.num_elements():
         return
 
-    var index = _get_start_indices_of_nth_subvolume_uint[1](
+    var index = _get_start_indices_of_nth_subvolume[1](
         idx, coord_to_index_list(output.layout.shape_coord())
     )
     var in_coord = Coord(index)
@@ -1106,11 +1106,11 @@ def _fused_concat_inner_most_single_dim[
 ):
     comptime num_inputs = input_shapes.size
 
-    var idx = block_idx.x * UInt(block_size) + thread_idx.x
-    if idx >= UInt(product(input_shapes[0], rank)):
+    var idx = block_idx.x * block_size + thread_idx.x
+    if idx >= product(input_shapes[0], rank):
         return
 
-    var index = _get_start_indices_of_nth_subvolume_uint[1](
+    var index = _get_start_indices_of_nth_subvolume[1](
         idx, coord_to_index_list(output.layout.shape_coord())
     )
 

@@ -35,6 +35,38 @@ def test_fast_div() raises:
         )
 
 
+def test_fast_div_uint64() raises:
+    var divisor = 7
+    var fast_div = FastDiv[DType.uint64](divisor)
+
+    for i in range(1000):
+        assert_equal(
+            Scalar[fast_div.uint_type](i) / fast_div,
+            Scalar[fast_div.uint_type](i // divisor),
+            msg=String(t"uint64 mismatch for {i}/{divisor}"),
+        )
+
+    # Test with large values that exceed uint32 range.
+    comptime large_base = 1 << 40
+    for i in range(1000):
+        var val = large_base + i
+        assert_equal(
+            Scalar[fast_div.uint_type](val) / fast_div,
+            Scalar[fast_div.uint_type](val // divisor),
+            msg=String(t"uint64 large mismatch for {val}/{divisor}"),
+        )
+
+    # Test power-of-2 divisor with uint64.
+    var fast_div_pow2 = FastDiv[DType.uint64](16)
+    for i in range(1000):
+        var val = large_base + i
+        assert_equal(
+            Scalar[fast_div_pow2.uint_type](val) / fast_div_pow2,
+            Scalar[fast_div_pow2.uint_type](val // 16),
+            msg=String(t"uint64 pow2 mismatch for {val}/16"),
+        )
+
+
 def test_fast_div_print() raises:
     var fast_div = FastDiv[DType.uint32](33)
     assert_equal(
@@ -71,7 +103,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
     def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
-        comptime fast_div = FastDiv[DType.uint32](4)
+        comptime fast_div = FastDiv[type](4)
         var idx = idx0[0]
 
         out_divisors_buffer[idx] = (
@@ -102,6 +134,8 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
 
 def main() raises:
     test_fast_div()
+    test_fast_div_uint64()
     test_fast_div_print()
     with DeviceContext() as ctx:
         run_elementwise[DType.uint32](ctx)
+        run_elementwise[DType.uint64](ctx)

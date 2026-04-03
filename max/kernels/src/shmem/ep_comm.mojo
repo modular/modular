@@ -36,7 +36,7 @@ from std.gpu import (
     thread_idx_uint as thread_idx,
     warp_id_uint as warp_id,
 )
-from std.gpu.host import get_gpu_target
+from std.gpu.host import get_gpu_target, DeviceBuffer
 from std.gpu.intrinsics import Scope, load_acquire, store_release
 from std.gpu.sync import syncwarp
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
@@ -1076,6 +1076,10 @@ struct EPLocalSyncCounters[n_experts: Int](
             MutExternalOrigin
         ]().address_space_cast[AddressSpace.GENERIC]()
 
+    @always_inline
+    def __init__(out self, buffer: DeviceBuffer[DType.int32]):
+        self.ptr = buffer.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin]()
+
     def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
@@ -1943,7 +1947,7 @@ def dispatch_wait_kernel[
     maybe_input_tokens: OptionalReg[
         TileTensor[
             shared_expert_input_dtype,
-            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
             ImmutExternalOrigin,
         ]
     ],
@@ -2610,7 +2614,7 @@ def combine_async_kernel[
         TileTensor[
             mut=True,
             input_type,
-            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
             MutExternalOrigin,
         ]
     ],

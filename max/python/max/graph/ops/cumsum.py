@@ -20,6 +20,8 @@ from ..graph import Graph
 from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
+from .transfer_to import transfer_to
+from .validation import _check_device_placement
 
 
 def cumsum(
@@ -53,6 +55,10 @@ def cumsum(
           value will be excluded from the sum
         - if `reverse` is set, the sum will be computed starting at the
           back of the axis back to the front, rather than front-to-back
+
+    Raises:
+        ValueError: If ``x`` is on a non-CPU device and
+            ``strict_device_placement=DevicePlacementPolicy.Error``.
     """
     x = TensorValue(x)
 
@@ -61,10 +67,12 @@ def cumsum(
     if not 0 <= axis < x.rank:
         raise ValueError(f"Invalid {axis=} for input {x.rank=}")
 
-    # TODO(KERN-1095): Add support for GPU kernel for cumsum and remove manual transfers
-    original_device = x.type.device
-    x = x.to(DeviceRef.CPU())
-    answer = Graph.current._add_op(
+    old_device = x.device if not x.device.is_cpu() else None
+    if old_device is not None:
+        _check_device_placement("ops.cumsum", "TODO(KERN-1095).")
+        x = transfer_to(x, DeviceRef.CPU())
+    # TODO(KERN-1095): Add GPU kernel support for cumsum.
+    result = Graph.current._add_op(
         rmo.mo_cumsum,
         x.type.to_mlir(),
         x,
@@ -72,4 +80,6 @@ def cumsum(
         exclusive=mlir.IntegerAttr.get(mlir.IndexType.get(), int(exclusive)),
         reverse=mlir.IntegerAttr.get(mlir.IndexType.get(), int(reverse)),
     )[0].tensor
-    return answer.to(original_device)
+    if old_device is not None:
+        return transfer_to(result, old_device)
+    return result

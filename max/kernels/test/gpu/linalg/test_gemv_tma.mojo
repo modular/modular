@@ -17,14 +17,7 @@ from std.random import rand
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import (
-    WARP_SIZE,
-    barrier,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu.primitives import warp
@@ -78,11 +71,10 @@ def gemv_tma_kernel[
     N: UInt,
     K: UInt,
 ):
-    var tid = thread_idx.x
-    var bidx = block_idx.x
+    var bidx = UInt(block_idx.x)
     var block_row = bidx * BLOCK_SIZE_M
 
-    var warp_row_offset = warp_id() * ROWS_PER_WARP
+    var warp_row_offset = UInt(warp_id()) * ROWS_PER_WARP
     var global_row_idx = block_row + warp_row_offset
 
     comptime accum_type = get_accum_type[dtype]()
@@ -212,7 +204,7 @@ def gemv_tma_kernel[
         )[]
 
         for k_idx in range(0, Int(current_block_size), WARP_SIZE):
-            var col_idx = k_idx + Int(lane_id())
+            var col_idx = k_idx + lane_id()
             if col_idx < Int(current_block_size):
                 var b_val = current_b_tile[col_idx]
 

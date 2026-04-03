@@ -288,6 +288,7 @@ struct MatmulConfig[
     var c_swizzle: TensorMapSwizzle
 
     var k_group_size: Int
+    var prefetch_tiles_n: Int
 
     def __init__(
         out self,
@@ -300,6 +301,7 @@ struct MatmulConfig[
         block_swizzle_size: Int = 0,
         raster_order: RasterOrder = RasterOrder.AlongM,
         k_group_size: Int = 1,
+        prefetch_tiles_n: Int = 0,
         num_pipeline_stages: Optional[Int] = None,
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
@@ -315,6 +317,7 @@ struct MatmulConfig[
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
         self.k_group_size = k_group_size
+        self.prefetch_tiles_n = prefetch_tiles_n
         self.register_based_epilogue = register_based_epilogue
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
@@ -371,6 +374,7 @@ struct MatmulConfig[
             block_swizzle_size=self.block_swizzle_size,
             raster_order=self.raster_order,
             k_group_size=self.k_group_size,
+            prefetch_tiles_n=self.prefetch_tiles_n,
             num_split_k=self.num_split_k,
             register_based_epilogue=self.register_based_epilogue,
         )
@@ -563,12 +567,12 @@ def build_configs[
 
     var set = Set[config_t]()
 
-    for m in range(8, 128, 8):  # [8, 128]
+    for m in range(8, 256, 8):  # [8, 256)
         config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K)
         if config not in set:
             set.add(config)
 
-    for m in range(128, 8192 + 1, 64):  # [128, 8192]
+    for m in range(256, 8192 + 1, 64):  # [256, 8192]
         config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K)
         if config not in set:
             set.add(config)

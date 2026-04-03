@@ -54,7 +54,7 @@ from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
 from std.memory import OwnedPointer
-from std.memory._nonnull import NonNullUnsafePointer
+from std.memory._nonnull import bitcast, NonNullUnsafePointer
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
 from std.sys.intrinsics import _type_is_eq
@@ -347,6 +347,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle._get_function[result_type](cstr_name=cstr_name)
 
+    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
@@ -364,6 +365,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle.get_symbol[result_type](name)
 
+    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
@@ -386,7 +388,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     def call[
         name: StaticString,
-        return_type: TrivialRegisterPassable = NoneType,
+        return_type: RegisterPassable = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
         """Call a function with any amount of arguments.
@@ -406,7 +408,7 @@ struct OwnedDLHandle(Movable):
 
 
 @fieldwise_init
-struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
+struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     """Represents a non-owning reference to a dynamically linked library.
 
     `_DLHandle` is a lightweight, trivially copyable reference to a dynamic
@@ -422,7 +424,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: OpaquePointer[MutExternalOrigin]
+    var handle: _CPointer[NoneType, MutExternalOrigin]
     """The handle to the dynamic library."""
 
     @always_inline
@@ -510,7 +512,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         Returns:
           True if the DLHandle is not null and False otherwise.
         """
-        return self.handle.__bool__()
+        return Bool(self.handle)
 
     def get_function[
         result_type: TrivialRegisterPassable
@@ -572,6 +574,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
         return UnsafePointer(to=opaque_function_ptr).bitcast[result_type]()[]
 
+    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
@@ -592,6 +595,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
         )
 
+    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
@@ -636,6 +640,12 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             # Redo the `dlsym` call
             res = dlsym[result_type](self.handle, cstr_name)
 
+            if not res:
+                var name = StringSlice(unsafe_from_utf8_ptr=cstr_name)
+                abort(
+                    t"dlsym unexpectedly returned non-NULL result when loading"
+                    t" symbol: {name}"
+                )
             debug_assert(
                 not res,
                 (
@@ -655,7 +665,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
     @always_inline
     def call[
         name: StaticString,
-        return_type: TrivialRegisterPassable = NoneType,
+        return_type: RegisterPassable = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
         """Call a function with any amount of arguments.
@@ -692,9 +702,7 @@ def _get_dylib_function[
     var func_cache_name = String(t"{dylib_global.name}/{func_name}")
     var func_ptr = _get_global_or_null(func_cache_name)
     if func_ptr:
-        var result = UnsafePointer(to=func_ptr).bitcast[result_type]()[]
-        _ = func_ptr
-        return result
+        return UnsafePointer(to=func_ptr).bitcast[result_type]()[]
 
     var dylib = dylib_global.get_or_create_ptr()[].borrow()
     var new_func = dylib._get_function[func_name, result_type]()
@@ -845,21 +853,24 @@ struct _Global[
         pass
 
     @staticmethod
-    def _init_wrapper() -> OpaquePointer[MutExternalOrigin]:
+    def _init_wrapper() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
         #   with the ABI destination result pointer already set to `ptr`?
         var ptr = OwnedPointer(Self.init_fn())
 
-        return ptr^.steal_data().bitcast[NoneType]()
+        return NonNullUnsafePointer(
+            unsafe_from_nullable=ptr^.steal_data().bitcast[NoneType]()
+        )
 
     @staticmethod
-    def _deinit_wrapper(opaque_ptr: OpaquePointer[MutExternalOrigin]):
+    def _deinit_wrapper(
+        opaque_ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]
+    ):
         # Deinitialize and deallocate the storage.
-        _ = OwnedPointer(
-            unsafe_from_raw_pointer=opaque_ptr.bitcast[Self.StorageType]()
-        )
+        if opaque_ptr:
+            opaque_ptr.value().free()
 
     @staticmethod
     def get_or_create_ptr() raises -> Self.ResultType:
@@ -871,7 +882,7 @@ struct _Global[
             if not ptr:
                 raise Self.on_error_msg.value()()
 
-        return ptr.bitcast[Self.StorageType]()
+        return bitcast[Self.StorageType](ptr).value()
 
     # Currently known values for get_or_create_indexed_ptr. See
     # NUM_INDEXED_GLOBALS in CompilerRT.
@@ -888,7 +899,7 @@ struct _Global[
     def get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
             "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-            OpaquePointer[MutExternalOrigin],
+            _CPointer[NoneType, ExternalOrigin[mut=True]],
         ](
             idx,
             Self._init_wrapper,
@@ -899,17 +910,18 @@ struct _Global[
             if not ptr:
                 raise Self.on_error_msg.value()()
 
-        return ptr.bitcast[Self.StorageType]()
+        return bitcast[Self.StorageType](ptr).value()
 
 
 @always_inline
 def _get_global[
     name: StaticString,
-    init_fn: def() -> OpaquePointer[MutExternalOrigin],
-    destroy_fn: def(OpaquePointer[MutExternalOrigin]) -> None,
-]() -> OpaquePointer[MutExternalOrigin]:
+    init_fn: def() -> _CPointer[NoneType, ExternalOrigin[mut=True]],
+    destroy_fn: def(_CPointer[NoneType, ExternalOrigin[mut=True]]) -> None,
+]() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
     return external_call[
-        "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutExternalOrigin]
+        "KGEN_CompilerRT_GetOrCreateGlobal",
+        _CPointer[NoneType, ExternalOrigin[mut=True]],
     ](
         name,
         init_fn,
@@ -918,9 +930,12 @@ def _get_global[
 
 
 @always_inline
-def _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
+def _get_global_or_null(
+    name: StringSlice,
+) -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
     return external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
+        "KGEN_CompilerRT_GetGlobalOrNull",
+        _CPointer[NoneType, ExternalOrigin[mut=True]],
     ](name.unsafe_ptr(), name.byte_length())
 
 
@@ -931,43 +946,6 @@ def _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
 comptime _CPointer[
     mut: Bool, //, T: AnyType, origin: Origin[mut=mut]
 ] = Optional[NonNullUnsafePointer[T, origin]]
-
-
-# TODO: work around for interacting with Optional[NonNull] across
-# C-FFI until we get conditional `RegisterPassable`.
-@always_inline("nodebug")
-@doc_hidden
-def external_call[
-    T: AnyType,
-    origin: Origin,
-    //,
-    callee: StaticString,
-    return_type: type_of(Optional[NonNullUnsafePointer[T, origin]]),
-    *types: AnyType,
-](*args: *types) -> return_type:
-    comptime UnsafePointerType = UnsafePointer[T, origin]
-    comptime assert size_of[return_type]() == size_of[UnsafePointerType]()
-
-    var pointer = external_call[callee, UnsafePointerType](*args)
-    return UnsafePointer(to=pointer).bitcast[return_type]()[]
-
-
-# TODO: work around for interacting with Optional[CStringSlice] across
-# C-FFI until we get conditional `RegisterPassable`.
-@always_inline("nodebug")
-@doc_hidden
-def external_call[
-    origin: ImmutOrigin,
-    //,
-    callee: StaticString,
-    return_type: type_of(Optional[CStringSlice[origin]]),
-    *types: AnyType,
-](*args: *types) -> return_type:
-    comptime CStr = CStringSlice[origin]
-    comptime assert size_of[return_type]() == size_of[CStr]()
-
-    var cstr = external_call[callee, CStr](*args)
-    return UnsafePointer(to=cstr).bitcast[return_type]()[]
 
 
 @always_inline("nodebug")

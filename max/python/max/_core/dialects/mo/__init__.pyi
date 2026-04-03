@@ -94,6 +94,22 @@ class BufferType(max._core.Type):
     @property
     def metadata(self) -> max._core.dialects.builtin.DictionaryAttr: ...
 
+class BundleType(max._core.Type):
+    """
+    A grouping type that bundles multiple per-device tensors into a single SSA
+    value.  All elements must be `!mo.tensor` types.  Elements may have
+    different devices, shapes, or dtypes.
+
+    Example:
+    ```mlir
+    !mo.bundle<[!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>]>
+    ```
+    """
+
+    def __init__(self, element_types: Sequence[max._core.Type]) -> None: ...
+    @property
+    def element_types(self) -> Sequence[max._core.Type]: ...
+
 class ChainType(max._core.Type):
     """
     This type is used to sequence side-effecting operations. Any operation in
@@ -6322,6 +6338,28 @@ class TanhOp(max._core.Operation):
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
+
+class TensorBundleOp(max._core.Operation):
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: BundleType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+
+class TensorUnbundleOp(max._core.Operation):
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Type],
+        input: max._core.Value[BundleType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[BundleType]: ...
 
 class TileOp(max._core.Operation):
     """

@@ -19,13 +19,13 @@ This module provides a ComponentModel wrapper for Qwen3 text encoder.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max.engine import InferenceSession, Model
+from max.graph import Graph
 from max.graph.weights import Weights
 from max.pipelines.architectures.llama3.weight_adapters import (
     LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
@@ -43,6 +43,7 @@ from .qwen3 import Qwen3TextEncoderTransformer
 class Qwen3TextEncoderModel(ComponentModel):
     """Qwen3 text encoder ComponentModel wrapper."""
 
+    model: Model
     default_hidden_state_layers: tuple[int, ...] | None = None
 
     def __init__(
@@ -51,6 +52,7 @@ class Qwen3TextEncoderModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        session: InferenceSession,
         **kwargs: Any,
     ) -> None:
         """Initialize Qwen3TextEncoderModel.
@@ -60,9 +62,11 @@ class Qwen3TextEncoderModel(ComponentModel):
             encoding: Supported encoding for the model.
             devices: List of devices to use.
             weights: Model weights.
+            session: Inference session used to load the compiled graph.
             **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
         super().__init__(config, encoding, devices, weights, **kwargs)
+        self.session = session
         self.config = Qwen3TextEncoderConfig.initialize_from_config(
             config,
             encoding,
@@ -124,9 +128,11 @@ class Qwen3TextEncoderModel(ComponentModel):
             adapted_key = key
             for before, after in QWEN_SAFETENSOR_MAP.items():
                 adapted_key = adapted_key.replace(before, after)
-            # The text-encoder module uses local names without language_model prefix.
             adapted_key = adapted_key.removeprefix("language_model.")
-
+            # The Klein text encoder fuses selected hidden states before the
+            # final RMSNorm, so the checkpoint's terminal norm is unused.
+            if adapted_key == "norm.weight":
+                continue
             state_dict[adapted_key] = value.data()
         return state_dict
 
@@ -137,13 +143,25 @@ class Qwen3TextEncoderModel(ComponentModel):
             Compiled model callable.
         """
         state_dict = self._state_dict()
+        nn_model = Qwen3TextEncoderTransformer(self.config)
+        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        self.state_dict = nn_model.state_dict()
 
-        with F.lazy():
-            model = Qwen3TextEncoderTransformer(self.config)
-            model.to(self.devices[0])
+        with Graph(
+            "qwen3_text_encoder",
+            input_types=nn_model.input_types(),
+        ) as graph:
+            outputs = nn_model(*(value.tensor for value in graph.inputs))
+            if isinstance(outputs, tuple):
+                graph.output(*outputs)
+            else:
+                graph.output(outputs)
 
-        self.model = model.compile(*model.input_types(), weights=state_dict)
-        return self.model
+        self.model = self.session.load(
+            graph,
+            weights_registry=self.state_dict,
+        )
+        return self.model.execute
 
     @staticmethod
     def attention_bias_from_attention_mask_array(
@@ -155,8 +173,6 @@ class Qwen3TextEncoderModel(ComponentModel):
             [0],
             attention_mask,
         )
-        # TODO: Lift this batch_size=1 restriction if the Klein text-encoder
-        # path needs batched prompt-mask handling.
         if additive_mask.shape[0] != 1:
             raise ValueError(
                 f"batch size must be 1, got {additive_mask.shape[0]}."
@@ -173,12 +189,12 @@ class Qwen3TextEncoderModel(ComponentModel):
 
     def __call__(
         self,
-        tokens: Tensor,
+        tokens: Buffer,
         attention_mask: npt.ArrayLike | None = None,
         *,
         hidden_state_index: int | None = None,
-    ):
-        if tokens.rank == 2:
+    ) -> Buffer:
+        if len(tokens.shape) == 2:
             if int(tokens.shape[0]) != 1:
                 raise ValueError(
                     "Qwen3TextEncoderModel expects batch_size=1 for 2D token input."
@@ -197,33 +213,20 @@ class Qwen3TextEncoderModel(ComponentModel):
                 expected_seq_len=int(tokens.shape[0]),
             )
 
-        attention_bias = Tensor(
-            storage=Buffer.from_numpy(attention_bias_np).to(self.devices[0])
+        attention_bias = Buffer.from_numpy(attention_bias_np).to(
+            self.devices[0]
         )
+        outputs = self.model.execute(tokens, attention_bias)
 
-        outputs = self.model(tokens, attention_bias)
-        if isinstance(outputs, list):
-            outputs = tuple(outputs)
-
-        if hidden_state_index is None:
-            if isinstance(outputs, tuple) and len(outputs) == 1:
-                return outputs[0]
-            return outputs
-
-        if not isinstance(outputs, tuple):
+        if hidden_state_index is not None and hidden_state_index not in (0, -1):
             raise ValueError(
-                "`hidden_state_index` requires model outputs to be tuple/list "
-                f"of hidden states, got {type(outputs).__name__}."
+                "`hidden_state_index` out of range: "
+                f"{hidden_state_index}. Valid range is [-1, 0]."
             )
 
-        num_layers = len(outputs)
-        if hidden_state_index < -num_layers or hidden_state_index >= num_layers:
-            raise ValueError(
-                f"`hidden_state_index` out of range: {hidden_state_index}. "
-                f"Valid range is [{-num_layers}, {num_layers - 1}]."
-            )
-
-        return outputs[hidden_state_index]
+        if isinstance(outputs, (list, tuple)):
+            return cast(Buffer, outputs[0])
+        return cast(Buffer, outputs)
 
 
 class Qwen3TextEncoderKleinModel(Qwen3TextEncoderModel):

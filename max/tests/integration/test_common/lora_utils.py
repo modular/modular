@@ -28,6 +28,7 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.lib import KVCacheConfig, LoRAConfig, MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from safetensors.torch import save_file
 from transformers import AutoConfig
@@ -223,15 +224,18 @@ def create_pipeline_config_with_lora(
         PipelineConfig: Configuration with LoRA settings
     """
     return PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_path,
-            quantization_encoding="bfloat16",  # Use bfloat16 for GPU
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-            device_specs=[DeviceSpec(device_type="gpu", id=0)],
-            kv_cache=KVCacheConfig(
-                enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
-            ),
-            max_length=512,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    quantization_encoding="bfloat16",  # Use bfloat16 for GPU
+                    device_specs=[DeviceSpec(device_type="gpu", id=0)],
+                    kv_cache=KVCacheConfig(
+                        enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
+                    ),
+                    max_length=512,
+                )
+            }
         ),
         lora=LoRAConfig(
             enable_lora=True,
@@ -253,13 +257,16 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
         PipelineConfig: Base configuration without LoRA
     """
     return PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_path,
-            quantization_encoding="bfloat16",  # Use bfloat16 for GPU
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-            device_specs=[DeviceSpec(device_type="gpu", id=0)],
-            kv_cache=KVCacheConfig(),
-            max_length=512,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    quantization_encoding="bfloat16",  # Use bfloat16 for GPU
+                    device_specs=[DeviceSpec(device_type="gpu", id=0)],
+                    kv_cache=KVCacheConfig(),
+                    max_length=512,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=4),
     )

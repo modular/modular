@@ -658,8 +658,8 @@ def main() -> None:
         # Validate that model is provided (required for benchmark).
         if not benchmark_config.pipeline.model.model_path:
             raise ValueError(
-                "model is required. Please provide --pipeline.model.model_path argument, set it in the config file, "
-                "or set MODULAR_PIPELINE_MODEL_MODEL_PATH environment variable."
+                "model is required. Please provide --pipeline.models.main.model_path argument, set it in the config file, "
+                "or set MODULAR_PIPELINE_MODELS_MAIN_MODEL_PATH environment variable."
             )
 
         if benchmark_config.other.tokenizer is None:

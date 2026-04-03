@@ -20,6 +20,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
@@ -55,12 +56,16 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
     with pytest.raises(ValueError):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="GSAI-ML/LLaDA-8B-Instruct",
-                # This forces it to fail if we dont have it.
-                trust_remote_code=True,
-                max_length=1,
+        PipelineConfig(
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="GSAI-ML/LLaDA-8B-Instruct",
+                        # This forces it to fail if we dont have it.
+                        trust_remote_code=True,
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
@@ -73,31 +78,52 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
 ):
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
-    # Should now raise an error since HuggingFace fallback is removed
+    # Should now raise an error since this model has no 'architectures' field
     with pytest.raises(
-        ValueError, match="MAX-optimized architecture not available"
+        Exception,
+        match=r"Cannot determine architecture|no 'architectures' field",
     ):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="GSAI-ML/LLaDA-8B-Instruct",
-                trust_remote_code=True,
-                max_length=1,
+        PipelineConfig(
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="GSAI-ML/LLaDA-8B-Instruct",
+                        trust_remote_code=True,
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
 
-    @prepare_registry
-    @mock_pipeline_config_hf_dependencies
-    def test_registry__retrieve_pipeline_task_returns_text_generation() -> None:
-        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="some-model", trust_remote_code=True, max_length=1
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=1),
-        )
-        task = PIPELINE_REGISTRY.retrieve_pipeline_task(config)
-        assert task == PipelineTask.TEXT_GENERATION
+
+@prepare_registry
+def test_registry__retrieve_pipeline_task_returns_text_generation() -> None:
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task("LlamaForCausalLM")
+    assert task == PipelineTask.TEXT_GENERATION
+
+
+@prepare_registry
+def test_registry__retrieve_pipeline_task_defaults_to_text_generation_on_ambiguous_architecture() -> (
+    None
+):
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+    embedding_arch = SupportedArchitecture(
+        name="LlamaForCausalLM",
+        task=PipelineTask.EMBEDDINGS_GENERATION,
+        example_repo_ids=["dummy/embedding-model"],
+        default_encoding="bfloat16",
+        supported_encodings={"bfloat16"},
+        pipeline_model=DummyPipelineModel,
+        tokenizer=TextTokenizer,
+        context_type=TextContext,
+        default_weights_format=WeightsFormat.safetensors,
+        config=DummyLlamaArchConfig,
+    )
+    PIPELINE_REGISTRY.register(embedding_arch)
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task("LlamaForCausalLM")
+    assert task == PipelineTask.TEXT_GENERATION
 
 
 @prepare_registry

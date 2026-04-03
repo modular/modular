@@ -156,7 +156,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     ) raises:
         var length = Int(Self._calculate_buffer_length())
         var host_buffer = ctx.enqueue_create_host_buffer[DType.uint64](length)
-        ctx.enqueue_copy(host_buffer, workspace.unsafe_ptr())
+        ctx.enqueue_copy(host_buffer, workspace)
         ctx.synchronize()
 
         var host_span = host_buffer.as_span()

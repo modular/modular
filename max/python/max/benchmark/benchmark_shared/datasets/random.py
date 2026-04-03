@@ -80,6 +80,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         max_num_unique_sys_prompt: int,
         min_input_len: int = 4,
         min_output_len: int = 1,
+        randomize_starting_turn: bool = False,
     ) -> ChatSamples:
         """Generate multiturn random chat requests.
 
@@ -235,7 +236,15 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
             follow_up_turn_idx_offset += num_turns_per_session[session_id] - 1
 
-            sessions.append(ChatSession(session_id, messages))
+            total_turns = len(messages) // 2
+            prefix_turns = (
+                random.randint(0, total_turns - 1)
+                if randomize_starting_turn and total_turns > 1
+                else 0
+            )
+            sessions.append(
+                ChatSession(session_id, messages, prefix_turns=prefix_turns)
+            )
 
         return ChatSamples(chat_sessions=sessions)
 

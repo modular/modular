@@ -1070,6 +1070,155 @@ def rms_norm_kv_cache_ragged_paged[
         )
 
 
+def rms_norm_value_cache_ragged_paged[
+    dtype: DType,
+    params: KVCacheStaticParams,
+    page_size: Int,
+    cache_dtype: DType,
+    //,
+    target: StaticString,
+    multiply_before_cast: Bool,
+    per_head_norm: Bool,
+](
+    kv_collection: PagedKVCacheCollection[
+        cache_dtype,
+        params,
+        page_size,
+    ],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    layer_idx: UInt32,
+    total_seq_len: UInt32,
+    input_row_offsets: TileTensor[DType.uint32, ...],
+    context: DeviceContextPtr,
+) raises:
+    """Performs RMSNorm in place on new entries in the value cache.
+
+    Same indexing and layout as ``rms_norm_kv_cache_ragged_paged`` on the key
+    cache, but reads/writes the value cache tensor for ``layer_idx``.
+    """
+    comptime assert gamma.flat_rank == 1, "gamma must be rank 1"
+    comptime assert (
+        input_row_offsets.flat_rank == 1
+    ), "input_row_offsets must be rank 1"
+
+    comptime rank = 3 if per_head_norm else 2
+    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
+    var kv_params = v_cache.kv_params
+    comptime rms_norm_cols = gamma.static_shape[0]
+
+    comptime assert rms_norm_cols != -1, "Need static shape for gamma"
+    comptime assert (
+        rms_norm_cols <= Int(kv_collection.kv_params.head_size)
+        or not per_head_norm
+    ), "Length of gamma must be smaller or equal to head size"
+
+    var shape = IndexList[rank]()
+    shape[0] = Int(total_seq_len)
+
+    comptime if per_head_norm:
+        shape[1] = Int(kv_params.num_heads)
+        shape[2] = rms_norm_cols
+    else:
+        shape[1] = rms_norm_cols
+
+    @always_inline
+    @parameter
+    @__copy_capture(v_cache, input_row_offsets)
+    def value_cache_input_fn[
+        width: Int, rank_: Int
+    ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
+        comptime assert rank_ == rank, (
+            "rms_norm_value_cache input lambda index should have rank "
+            + String(rank)
+        )
+
+        var global_token_idx = idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
+
+        var cache_length = v_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        comptime if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // Int(params.head_size)
+            head_dim_idx = idx[1] % Int(params.head_size)
+
+        return v_cache.load[width=width](
+            bs=batch_idx,
+            tok_idx=cache_token_idx,
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
+        ).cast[dtype]()
+
+    @always_inline
+    @parameter
+    @__copy_capture(v_cache)
+    def value_cache_output_fn[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        var global_token_idx = idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
+
+        var cache_length = v_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        comptime if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // Int(params.head_size)
+            head_dim_idx = idx[1] % Int(params.head_size)
+        v_cache.store(
+            bs=batch_idx,
+            tok_idx=cache_token_idx,
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
+            val=val.cast[cache_dtype](),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "rms_norm_value_cache_ragged_paged_nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        task_id=get_safe_task_id(context),
+    ):
+        _rms_norm_impl[
+            dtype,
+            rank,
+            value_cache_input_fn,
+            value_cache_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            shape,
+            gamma,
+            epsilon,
+            weight_offset,
+            context,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # Print KV Cache
 # ===-----------------------------------------------------------------------===#
@@ -1189,52 +1338,38 @@ def print_kv_cache_cont_batch_generic_gpu[
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ) raises:
-    var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
-    var blocks_host_nd = LayoutTensor[
-        type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
-    ](
-        blocks_ptr,
-        RuntimeLayout[Layout.row_major[6]()].row_major(
-            kv_collection.blocks.runtime_layout.shape.value.canonicalize()
-        ),
-    )
+    # Create host TileTensor copies of device data.
     var dev_ctx = context.get_device_context()
-    dev_ctx.enqueue_copy(
-        blocks_host_nd.ptr,
-        kv_collection.blocks.ptr,
-        kv_collection.blocks.size(),
+
+    var n_blocks = kv_collection.blocks.num_elements()
+    var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
+    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
+    var blocks_host = type_of(kv_collection.blocks)(
+        ptr=blocks_ptr, layout=kv_collection.blocks.layout
     )
 
-    var cache_lengths_ptr = alloc[UInt32](kv_collection.cache_lengths.size())
-    var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
-        cache_lengths_ptr,
-        RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
-            kv_collection.cache_lengths.runtime_layout.shape.value.canonicalize(),
-        ),
-    )
+    var n_cache_lengths = kv_collection.cache_lengths.num_elements()
+    var cache_lengths_ptr = alloc[UInt32](n_cache_lengths)
     dev_ctx.enqueue_copy(
-        cache_lengths_host_nd.ptr,
-        kv_collection.cache_lengths.ptr,
-        kv_collection.cache_lengths.size(),
+        cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
+    )
+    var cache_lengths_host = type_of(kv_collection.cache_lengths)(
+        ptr=cache_lengths_ptr, layout=kv_collection.cache_lengths.layout
     )
 
-    var lookup_table_ptr = alloc[UInt32](kv_collection.lookup_table.size())
-    var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
-        lookup_table_ptr,
-        RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
-            kv_collection.lookup_table.runtime_layout.shape.value.canonicalize(),
-        ),
-    )
+    var n_lookup_table = kv_collection.lookup_table.num_elements()
+    var lookup_table_ptr = alloc[UInt32](n_lookup_table)
     dev_ctx.enqueue_copy(
-        lookup_table_host_nd.ptr,
-        kv_collection.lookup_table.ptr,
-        kv_collection.lookup_table.size(),
+        lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
+    )
+    var lookup_table_host = type_of(kv_collection.lookup_table)(
+        ptr=lookup_table_ptr, layout=kv_collection.lookup_table.layout
     )
 
     var host_kv_collection = type_of(kv_collection)(
-        blocks_host_nd,
-        cache_lengths_host_nd,
-        lookup_table_host_nd,
+        blocks_host,
+        cache_lengths_host,
+        lookup_table_host,
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
     )
@@ -1296,49 +1431,38 @@ def print_kv_cache_paged_generic_gpu[
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ) raises:
-    var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
-    var blocks_host_nd = LayoutTensor[
-        type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
-    ](
-        blocks_ptr,
-        RuntimeLayout[Layout.row_major[6]()].row_major(
-            kv_collection.blocks.runtime_layout.shape.value.canonicalize(),
-        ),
-    )
+    # Create host TileTensor copies of device data.
     var dev_ctx = context.get_device_context()
+
+    var n_blocks = kv_collection.blocks.num_elements()
+    var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
+    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
+    var blocks_host = type_of(kv_collection.blocks)(
+        ptr=blocks_ptr, layout=kv_collection.blocks.layout
+    )
+
+    var n_cache_lengths = kv_collection.cache_lengths.num_elements()
+    var cache_lengths_ptr = alloc[UInt32](n_cache_lengths)
     dev_ctx.enqueue_copy(
-        blocks_host_nd.ptr,
-        kv_collection.blocks.ptr,
-        kv_collection.blocks.size(),
+        cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
     )
-    var cache_lengths_ptr = alloc[UInt32](kv_collection.cache_lengths.size())
-    var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
-        cache_lengths_ptr,
-        RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
-            kv_collection.cache_lengths.runtime_layout.shape.value.canonicalize(),
-        ),
+    var cache_lengths_host = type_of(kv_collection.cache_lengths)(
+        ptr=cache_lengths_ptr, layout=kv_collection.cache_lengths.layout
     )
+
+    var n_lookup_table = kv_collection.lookup_table.num_elements()
+    var lookup_table_ptr = alloc[UInt32](n_lookup_table)
     dev_ctx.enqueue_copy(
-        cache_lengths_host_nd.ptr,
-        kv_collection.cache_lengths.ptr,
-        kv_collection.cache_lengths.size(),
+        lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
     )
-    var lookup_table_ptr = alloc[UInt32](kv_collection.lookup_table.size())
-    var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
-        lookup_table_ptr,
-        RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
-            kv_collection.lookup_table.runtime_layout.shape.value.canonicalize(),
-        ),
+    var lookup_table_host = type_of(kv_collection.lookup_table)(
+        ptr=lookup_table_ptr, layout=kv_collection.lookup_table.layout
     )
-    dev_ctx.enqueue_copy(
-        lookup_table_host_nd.ptr,
-        kv_collection.lookup_table.ptr,
-        kv_collection.lookup_table.size(),
-    )
+
     var host_kv_collection = type_of(kv_collection)(
-        blocks_host_nd,
-        cache_lengths_host_nd,
-        lookup_table_host_nd,
+        blocks_host,
+        cache_lengths_host,
+        lookup_table_host,
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
     )
@@ -1434,17 +1558,17 @@ def generic_get_paged_cache[
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
-            UInt(blocks.static_spec.shape.get[4]()),
-            UInt(blocks.static_spec.shape.get[5]()),
-            blocks.static_spec.shape.get[1]() == 1,
+            UInt(Int(blocks.static_spec.shape_tuple[4])),
+            UInt(Int(blocks.static_spec.shape_tuple[5])),
+            Int(blocks.static_spec.shape_tuple[1]) == 1,
         ),
-        blocks.static_spec.shape.get[3](),
+        Int(blocks.static_spec.shape_tuple[3]),
     ],
 ):
-    comptime page_size = blocks.static_spec.shape.get[3]()
-    comptime head_dim = blocks.static_spec.shape.get[5]()
-    comptime num_heads = blocks.static_spec.shape.get[4]()
-    comptime is_mla = blocks.static_spec.shape.get[1]() == 1
+    comptime page_size = Int(blocks.static_spec.shape_tuple[3])
+    comptime head_dim = Int(blocks.static_spec.shape_tuple[5])
+    comptime num_heads = Int(blocks.static_spec.shape_tuple[4])
+    comptime is_mla = Int(blocks.static_spec.shape_tuple[1]) == 1
     return generic_get_paged_cache[
         dtype,
         KVCacheStaticParams(UInt(num_heads), UInt(head_dim), is_mla),

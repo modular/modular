@@ -16,7 +16,7 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
 from std.complex import ComplexSIMD
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 
@@ -63,7 +63,7 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     if row >= height:
         return
 
-    var out = TileTensor(out_ptr, row_major((Idx(height), Idx(width))))
+    var out = TileTensor(out_ptr, row_major(Idx(height), Idx(width)))
 
     comptime scale_x = (max_x - min_x) / width
     comptime scale_y = (max_y - min_y) / height

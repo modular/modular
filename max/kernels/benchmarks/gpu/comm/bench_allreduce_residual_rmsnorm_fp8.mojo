@@ -95,18 +95,12 @@ def _verify_results[
     for i in range(ngpus):
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
 
-    comptime InTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
-            row_major(Coord(Index(0, num_cols))),
-        )
-    )
-    comptime OutTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
-            row_major(Coord(Index(0, num_cols))),
-        )
-    )
+    comptime InTensorType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+    ]
+    comptime OutTensorType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+    ]
     var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
@@ -335,18 +329,12 @@ def _verify_add_results[
     for i in range(ngpus):
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
 
-    comptime InTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
-            row_major(Coord(Index(0, num_cols))),
-        )
-    )
-    comptime OutTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
-            row_major(Coord(Index(0, num_cols))),
-        )
-    )
+    comptime InTensorType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+    ]
+    comptime OutTensorType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+    ]
     var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
@@ -616,18 +604,12 @@ def bench_allreduce_rmsnorm_fp8[
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # TileTensor views for allreduce.
-    comptime InTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
-            row_major(Coord(Index(0, num_cols))),
-        )
-    )
-    comptime OutTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
-            row_major(Coord(Index(0, num_cols))),
-        )
-    )
+    comptime InTensorType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+    ]
+    comptime OutTensorType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+    ]
     var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
     var ar_out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):

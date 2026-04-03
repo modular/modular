@@ -3342,7 +3342,7 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     comptime latent_dim = Int(k_latent_buffer.layout.shape[1])
     var k_latent_tile = TileTensor(
         k_latent_buffer.ptr,
-        row_major((Idx(buffer_length_int), Idx[latent_dim]())),
+        row_major(Idx(buffer_length_int), Idx[latent_dim]()),
     )
     _k_cache_to_buffer(
         lt_to_tt(buffer_row_offsets_1d),

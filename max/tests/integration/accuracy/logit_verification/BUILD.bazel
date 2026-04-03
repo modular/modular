@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -21,6 +21,14 @@ modular_py_library(
     deps = [
         requirement("pydantic"),
         requirement("pyyaml"),
+    ],
+)
+
+modular_py_binary(
+    name = "make_goldens_bazel_accessible",
+    srcs = ["make_goldens_bazel_accessible.py"],
+    deps = [
+        ":logit_verification_config",
     ],
 )
 

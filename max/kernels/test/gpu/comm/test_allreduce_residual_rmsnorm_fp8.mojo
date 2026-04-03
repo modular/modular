@@ -27,13 +27,9 @@ from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Coord,
     Idx,
-    Layout,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout._utils import ManagedLayoutTensor
 from nn.normalization import rms_norm_fused_fp8
 from std.runtime.asyncrt import DeviceContextPtr
 from std.testing import assert_true
@@ -205,15 +201,11 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     # --- Shared params ---
     var ctx = list_of_ctx[0]
-    var gamma = ManagedLayoutTensor[in_dtype, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](cols)),
-        ctx,
-    )
-    var gamma_host = gamma.tensor[update=False]()
+    var gamma_host = alloc[Scalar[in_dtype]](cols)
     for i in range(cols):
         gamma_host[i] = (Float64(i + cols) / Float64(cols)).cast[in_dtype]()
-    _ = gamma.device_tensor()
-    var gamma_dev = gamma.device_data.value()
+    var gamma_dev = ctx.enqueue_create_buffer[in_dtype](cols)
+    ctx.enqueue_copy(gamma_dev, gamma_host)
 
     comptime shape = IndexList[2](rows, cols)
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
@@ -336,6 +328,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     _assert_scales_close(ref_scales_host, fused_scales_host, rows)
 
     # Cleanup.
+    gamma_host.free()
     ref_sum_host.free()
     ref_scales_host.free()
     fused_scales_host.free()

@@ -306,6 +306,15 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         return Self._is_arch["apple-m4"]()
 
     @staticmethod
+    def is_apple_m5() -> Bool:
+        """Check if the target is an Apple M5 system.
+
+        Returns:
+            True if the host system is an Apple M5, False otherwise.
+        """
+        return Self._is_arch["apple-m5"]()
+
+    @staticmethod
     def is_apple_silicon() -> Bool:
         """Check if the host system is an Apple Silicon with AMX support.
 
@@ -318,6 +327,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             or Self.is_apple_m2()
             or Self.is_apple_m3()
             or Self.is_apple_m4()
+            or Self.is_apple_m5()
         )
 
     @staticmethod
@@ -990,7 +1000,7 @@ def align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 def bit_width_of[
-    type: TrivialRegisterPassable, target: _TargetType = _current_target()
+    type: RegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -1023,7 +1033,7 @@ def bit_width_of[
 
 @always_inline("nodebug")
 def simd_width_of[
-    type: TrivialRegisterPassable, target: _TargetType = _current_target()
+    type: RegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 

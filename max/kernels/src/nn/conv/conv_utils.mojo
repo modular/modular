@@ -168,8 +168,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
 
         elif Self.rank == 2:
             # Unpack output coordinates
-            var ho = output_flat_coord // self.wo()
-            var wo = output_flat_coord % self.wo()
+            var ho, wo = divmod(output_flat_coord, self.wo())
 
             # Input coordinates
             var h = ho * self.stride[0] - self.pad_h[0]
@@ -179,10 +178,8 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
 
         elif Self.rank == 3:
             # Unpack output coordinates
-            var doho = output_flat_coord // self.wo()
-            var wo = output_flat_coord % self.wo()
-            var do = doho // self.ho()
-            var ho = doho % self.ho()
+            var doho, wo = divmod(output_flat_coord, self.wo())
+            var do, ho = divmod(doho, self.ho())
 
             # Input coordinates
             var d = do * self.stride[0] - self.pad_d[0]
@@ -725,12 +722,9 @@ def get_partition(
     micro_kernel_height: Int,
     micro_kernel_f_size: Int,
 ) -> ConvPartition:
-    var task_id_f = task_id % num_partitions[2]
-    var quotient = task_id // num_partitions[2]
-    var task_id_c = quotient % num_partitions[1]
-    quotient = quotient // num_partitions[1]
-    var task_id_howo = quotient % num_partitions[3]
-    var task_id_ng = quotient // num_partitions[3]
+    var quotient, task_id_f = divmod(task_id, num_partitions[2])
+    var quotient2, task_id_c = divmod(quotient, num_partitions[1])
+    var task_id_ng, task_id_howo = divmod(quotient2, num_partitions[3])
 
     var ng_range = partition_work(
         task_id_ng, num_partitions[0], conv_shape.n * conv_shape.num_groups, 1

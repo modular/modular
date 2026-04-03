@@ -35,6 +35,7 @@ from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
+    MAXModelConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -42,6 +43,7 @@ from max.pipelines.lib import (
     SamplingConfig,
 )
 from max.pipelines.lib.lora import LoRAManager, LoRAModel
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
 )
@@ -272,8 +274,15 @@ def create_pipeline_with_lora(
         lora_manager=lora_manager
     )
 
-    mock_config = PipelineConfig.model_construct()
-    mock_config.model.quantization_encoding = "float32"
+    mock_config = PipelineConfig.model_construct(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig.model_construct(
+                    quantization_encoding="float32",
+                )
+            }
+        ),
+    )
     mock_config.sampling = SamplingConfig()
     mock_config.sampling.enable_structured_output = False
     mock_config.sampling.enable_variable_logits = False

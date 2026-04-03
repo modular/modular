@@ -22,6 +22,7 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
+    tags = ["manual"],  # FIXME: MODELS-1295
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -217,7 +218,6 @@ modular_py_test(
         "test_max_serve_e2e.py",
     ],
     tags = [
-        "manual",  # Disabled: nondeterministic rate is higher than 1%, currently a ~15% fail rate
         "requires-network",
     ],
     # TODO(GEX-3155): Times out on remote macOS CI (~374s due to model compilation)

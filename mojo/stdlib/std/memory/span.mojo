@@ -31,6 +31,7 @@ from std.sys import align_of
 from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
+from std.hashlib import Hasher
 from std.builtin.device_passable import DevicePassable
 from std.compile import get_type_name
 import std.format._utils as fmt
@@ -127,6 +128,7 @@ struct Span[
     Boolable,
     Defaultable,
     DevicePassable,
+    Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable,
     Iterable,
     Sized,
@@ -380,6 +382,27 @@ struct Span[
                 return True
         return False
 
+    def __contains__(
+        self, value: Self.T
+    ) -> Bool where conforms_to(Self.T, Equatable):
+        """Verify if a given value is present in the span.
+
+        Performs a linear scan over all elements comparing with `==`.
+
+        Args:
+            value: The value to find.
+
+        Returns:
+            True if the value is contained in the span, False
+            otherwise.
+        """
+        for i in range(len(self)):
+            if trait_downcast[Equatable](self[i]) == trait_downcast[Equatable](
+                value
+            ):
+                return True
+        return False
+
     def _write_self_to[
         f: def(Self.T, mut Some[Writer])
     ](self, mut writer: Some[Writer]):
@@ -421,6 +444,21 @@ struct Span[
             fmt.Named("mut", Self.mut),
             fmt.TypeNames[Self.T](),
         ).fields[FieldsFn=write_fields]()
+
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Updates hasher with the hash of each element in the span.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        hasher._update_with_simd(Int64(len(self)))
+        for i in range(len(self)):
+            trait_downcast[Hashable](self[i]).__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
     # Methods

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from std.math.uutils import ufloordiv, udivmod
 from std.sys import size_of, simd_width_of
 from std.math import ceildiv
 from layout import (
@@ -18,11 +19,10 @@ from layout import (
     RuntimeLayout,
     TensorLayout,
     TileTensor,
-    lt_to_tt,
     UNKNOWN_VALUE,
 )
 from layout.layout_tensor import ThreadScope, copy_dram_to_sram
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
@@ -88,19 +88,19 @@ def fp8_index_kernel[
 
     var batch_idx = block_idx.x
     var seq_offset = block_idx.y
-    var key_offset = block_idx.z * UInt(BM)
+    var key_offset = block_idx.z * BM
     var tid = thread_idx.x * 8 + thread_idx.y
 
     var start_of_seq = valid_length[batch_idx][0]
     var end_of_seq = valid_length[batch_idx + 1][0]
     var seq_len = end_of_seq - start_of_seq
 
-    var num_keys = k_operand.cache_length(Int(batch_idx))
+    var num_keys = k_operand.cache_length(batch_idx)
 
     comptime if not _is_cache_length_accurate:
         num_keys += Int(seq_len)
 
-    if seq_offset >= UInt(seq_len) or key_offset >= UInt(num_keys):
+    if seq_offset >= Int(seq_len) or key_offset >= num_keys:
         return
 
     ref smem_ptr = external_memory[
@@ -177,7 +177,7 @@ def fp8_index_kernel[
     var scratch = ScratchType(scratch_smem.unsafe_ptr())
 
     var q_s_frag = q_s_tile.tile[1, num_heads // thread_dim_y](
-        Int(thread_idx.x // thread_dim_x), Int(thread_idx.y)
+        ufloordiv(thread_idx.x, thread_dim_x), thread_idx.y
     )
 
     comptime for q_frag_idx in range(num_heads // thread_dim_y):
@@ -193,7 +193,7 @@ def fp8_index_kernel[
     )
 
     for i in range(BM // BN):
-        var current_key_offset = Int(key_offset) + i * Int(BN)
+        var current_key_offset = key_offset + i * BN
         if current_key_offset >= num_keys:
             break
 
@@ -202,7 +202,7 @@ def fp8_index_kernel[
             if current_key_offset + k_row >= num_keys:
                 # Zero-fill OOB rows
                 for d_idx in range(depth):
-                    if Int(tid) == k_row % 128:
+                    if tid == k_row % 128:
                         k_smem_ptr[k_row * depth + d_idx] = Scalar[dtype](0)
             else:
                 var k_ptr = k_operand.block_paged_ptr[1](
@@ -212,7 +212,7 @@ def fp8_index_kernel[
                     UInt32(0),
                 )
                 for d_idx in range(depth):
-                    if Int(tid) == k_row % 128:
+                    if tid == k_row % 128:
                         k_smem_ptr[k_row * depth + d_idx] = k_ptr[d_idx].cast[
                             dtype
                         ]()
@@ -221,20 +221,20 @@ def fp8_index_kernel[
 
         # Load K scales for current tile
         var k_s_reg: Float32 = 0.0
-        if current_key_offset + Int(tid) < num_keys:
+        if current_key_offset + tid < num_keys:
             var ks_ptr = ks_operand.block_paged_ptr[1](
                 UInt32(batch_idx),
-                UInt32(current_key_offset + Int(tid)),
+                UInt32(current_key_offset + tid),
                 UInt32(0),
                 UInt32(0),
             )
             k_s_reg = ks_ptr[0].cast[DType.float32]()
 
         q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
-            Int(thread_idx.y), 0
+            thread_idx.y, 0
         )
         k_smem_frag = k_smem_tile.tile[BN // thread_dim_x, depth](
-            Int(thread_idx.x), 0
+            thread_idx.x, 0
         )
 
         _ = logits.fill(0)
@@ -256,102 +256,71 @@ def fp8_index_kernel[
                 logits_sum[l_i, 0] += logits[l_i, l_j]
 
             scratch[
-                thread_idx.x * UInt(BN // thread_dim_x) + UInt(l_i),
+                thread_idx.x * (BN // thread_dim_x) + l_i,
                 thread_idx.y,
             ] = logits_sum[l_i, 0]
 
         barrier()
 
-        if current_key_offset + Int(tid) < num_keys:
+        if current_key_offset + tid < num_keys:
             # Sum logits across heads
             var row_sum: Float32 = 0.0
 
             for col_idx in range(thread_dim_y):
                 row_sum += scratch[tid, col_idx][0]
 
-            o_ptr[Scalar[DType.uint](i * BN) + tid] = k_s_reg * row_sum
+            o_ptr[i * BN + tid] = k_s_reg * row_sum
 
 
 @always_inline
 def fp8_index[
     dtype: DType,
-    output_layout: Layout,
-    q_layout: Layout,
-    qs_layout: Layout,
-    k_layout: Layout,
-    ks_layout: Layout,
     //,
     num_heads: Int,
     depth: Int,
 ](
-    output: LayoutTensor[
-        mut=True,
-        DType.float32,
-        output_layout,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
-    q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    k: LayoutTensor[
-        mut=False, dtype, k_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    k_s: LayoutTensor[
-        DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[DType.float32, ...],
+    q: TileTensor[dtype, ...],
+    q_s: TileTensor[DType.float32, ...],
+    k: TileTensor[dtype, ...],
+    k_s: TileTensor[DType.float32, ...],
+    valid_length: TileTensor[DType.uint32, ...],
+    cache_row_offsets: TileTensor[DType.uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
-    # Create RaggedMHAOperand wrappers for K and K_s
-    # These allow accessing ragged data via cache_row_offsets indirection
-    var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, k.origin](
-            k.ptr,
-            RuntimeLayout[k.layout].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[
-            cache_row_offsets.dtype,
-            cache_row_offsets.layout,
-            cache_row_offsets.origin,
-        ](
-            cache_row_offsets.ptr,
-            RuntimeLayout[cache_row_offsets.layout].row_major(
-                cache_row_offsets.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    # Construct LayoutTensors from TileTensor ptr + dimensions for
+    # RaggedMHAOperand, which requires LayoutTensor with Layout.row_major().
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
+    comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime cro_layout = Layout.row_major(UNKNOWN_VALUE)
+
+    var total_keys = Int(k.dim[0]())
+    var cro_size = Int(cache_row_offsets.dim[0]())
+
+    var k_lt = LayoutTensor[dtype, k_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
+        RuntimeLayout[k_layout].row_major(Index(total_keys, 1, depth)),
     )
+    var cache_row_offsets_lt = LayoutTensor[
+        DType.uint32, cro_layout, ImmutAnyOrigin
+    ](
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
+        RuntimeLayout[cro_layout].row_major(Index(cro_size)),
+    )
+
+    var k_operand = RaggedMHAOperand(k_lt, cache_row_offsets_lt)
 
     # K_s is 1D [total_keys], reshape to 3D [total_keys, 1, 1] for MHAOperand interface
     comptime ks_3d_layout = Layout.row_major(UNKNOWN_VALUE, 1, 1)
     var ks_operand = RaggedMHAOperand(
-        LayoutTensor[k_s.dtype, ks_3d_layout, ImmutAnyOrigin](
-            k_s.ptr,
-            RuntimeLayout[ks_3d_layout].row_major(
-                Index(k_s.runtime_layout.shape.value[0], 1, 1)
-            ),
+        LayoutTensor[DType.float32, ks_3d_layout, ImmutAnyOrigin](
+            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](k_s.ptr),
+            RuntimeLayout[ks_3d_layout].row_major(Index(total_keys, 1, 1)),
         ),
-        LayoutTensor[
-            cache_row_offsets.dtype,
-            cache_row_offsets.layout,
-            ImmutAnyOrigin,
-        ](
-            cache_row_offsets.ptr,
-            RuntimeLayout[cache_row_offsets.layout].row_major(
-                cache_row_offsets.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+        cache_row_offsets_lt,
     )
 
     comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
@@ -362,35 +331,29 @@ def fp8_index[
 
     comptime assert num_heads % 8 == 0, "num_heads must be a multiple of 8"
 
-    # Convert LayoutTensors to TileTensors for fp8_index_kernel.
-    var output_tt = lt_to_tt(output)
-    var q_tt = lt_to_tt(q)
-    var q_s_tt = lt_to_tt(q_s)
-    var valid_length_tt = lt_to_tt(valid_length)
-
     # RaggedMHAOperand.cache_length() returns full key length directly,
     # so _is_cache_length_accurate=True skips adding seq_len in the kernel.
     comptime kernel = fp8_index_kernel[
         dtype,
-        type_of(output_tt).LayoutType,
-        type_of(q_tt).LayoutType,
-        type_of(q_s_tt).LayoutType,
+        type_of(output).LayoutType,
+        type_of(q).LayoutType,
+        type_of(q_s).LayoutType,
         type_of(k_operand),
         type_of(ks_operand),
         block_tile_shape,
-        type_of(valid_length_tt).LayoutType,
+        type_of(valid_length).LayoutType,
         num_heads,
         depth,
         _is_cache_length_accurate=True,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        output_tt,
-        q_tt,
-        q_s_tt,
+        output,
+        q.as_immut(),
+        q_s,
         k_operand,
         ks_operand,
-        valid_length_tt,
+        valid_length.as_immut(),
         grid_dim=(
             batch_size,
             max_seq_len,
@@ -425,8 +388,7 @@ def _index_matmul_max[
     comptime num_heads = q_layout.shape[1].value()
     comptime depth = q_layout.shape[2].value()
 
-    var batch_idx = block_idx.z // UInt(num_heads)
-    var head_idx = block_idx.z % UInt(num_heads)
+    var batch_idx, head_idx = udivmod(block_idx.z, num_heads)
     var seq_idx = block_idx.x * 16 + thread_idx.x
     var key_idx = block_idx.y * 16 + thread_idx.y
 
@@ -434,10 +396,10 @@ def _index_matmul_max[
     var end_of_seq = valid_length[batch_idx + 1][0]
     var seq_len = end_of_seq - start_of_seq
 
-    var num_keys = k_lut.cache_length(Int(batch_idx))
-    var k_row_start = k_lut.row_idx(UInt32(Int(batch_idx)), 0)
+    var num_keys = k_lut.cache_length(batch_idx)
+    var k_row_start = k_lut.row_idx(UInt32(batch_idx), 0)
 
-    if key_idx >= UInt(num_keys) or seq_idx >= UInt(seq_len):
+    if key_idx >= num_keys or seq_idx >= Int(seq_len):
         return
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq, 0, 0))
@@ -464,7 +426,7 @@ def _index_matmul_max[
     )
 
     var accum = Float32(0.0)
-    for d in range(Int(depth)):
+    for d in range(depth):
         accum += (
             k_batch[key_idx, 0, d][0] * q_batch[seq_idx, head_idx, d][0]
         ).cast[DType.float32]()
@@ -496,10 +458,10 @@ def _reduce_logits[
     var end_of_seq = valid_length[batch_idx + 1][0]
     var seq_len = end_of_seq - start_of_seq
 
-    var num_keys = k_lut.cache_length(Int(batch_idx))
-    var k_row_offset = k_lut.row_idx(UInt32(Int(batch_idx)), 0)
+    var num_keys = k_lut.cache_length(batch_idx)
+    var k_row_offset = k_lut.row_idx(UInt32(batch_idx), 0)
 
-    if seq_idx >= UInt(seq_len) or key_idx >= UInt(num_keys):
+    if seq_idx >= Int(seq_len) or key_idx >= num_keys:
         return
 
     var o_ptr = output.ptr_at_offset(Index(start_of_seq, 0))
@@ -534,61 +496,75 @@ def _reduce_logits[
 @always_inline
 def fp8_index_naive[
     dtype: DType,
-    output_layout: Layout,
-    q_layout: Layout,
-    qs_layout: Layout,
-    k_layout: Layout,
-    ks_layout: Layout,
     //,
     num_heads: Int,
     depth: Int,
 ](
-    output: LayoutTensor[
-        mut=True,
-        DType.float32,
-        output_layout,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
-    q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    k: LayoutTensor[
-        mut=False, dtype, k_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    k_s: LayoutTensor[
-        DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
-    ],
-    valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[DType.float32, ...],
+    q: TileTensor[dtype, ...],
+    q_s: TileTensor[DType.float32, ...],
+    k: TileTensor[dtype, ...],
+    k_s: TileTensor[DType.float32, ...],
+    valid_length: TileTensor[DType.uint32, ...],
+    cache_row_offsets: TileTensor[DType.uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
-    var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, k.origin](
-            k.ptr,
-            RuntimeLayout[k.layout].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[
-            cache_row_offsets.dtype,
-            cache_row_offsets.layout,
-            cache_row_offsets.origin,
-        ](
-            cache_row_offsets.ptr,
-            RuntimeLayout[cache_row_offsets.layout].row_major(
-                cache_row_offsets.runtime_layout.shape.value.canonicalize()
-            ),
+    # Construct LayoutTensors from TileTensor ptr + dimensions for the
+    # internal GPU kernels (_index_matmul_max, _reduce_logits) and
+    # RaggedMHAOperand, which all require LayoutTensor with specific
+    # Layout.row_major() representations.
+    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
+    comptime qs_layout = Layout.row_major(UNKNOWN_VALUE, num_heads)
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
+    comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime output_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime vl_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime cro_layout = Layout.row_major(UNKNOWN_VALUE)
+
+    var total_seq_len = Int(q.dim[0]())
+    var total_keys = Int(k.dim[0]())
+    var vl_size = Int(valid_length.dim[0]())
+    var cro_size = Int(cache_row_offsets.dim[0]())
+
+    var q_lt = LayoutTensor[dtype, q_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr),
+        RuntimeLayout[q_layout].row_major(
+            Index(total_seq_len, num_heads, depth)
         ),
     )
+    var q_s_lt = LayoutTensor[DType.float32, qs_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Float32, MutAnyOrigin]](q_s.ptr),
+        RuntimeLayout[qs_layout].row_major(Index(total_seq_len, num_heads)),
+    )
+    var k_lt = LayoutTensor[dtype, k_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
+        RuntimeLayout[k_layout].row_major(Index(total_keys, 1, depth)),
+    )
+    var k_s_lt = LayoutTensor[DType.float32, ks_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Float32, MutAnyOrigin]](k_s.ptr),
+        RuntimeLayout[ks_layout].row_major(Index(total_keys)),
+    )
+    var output_lt = LayoutTensor[DType.float32, output_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Float32, MutAnyOrigin]](output.ptr),
+        RuntimeLayout[output_layout].row_major(
+            Index(total_seq_len, max_num_keys)
+        ),
+    )
+    var valid_length_lt = LayoutTensor[DType.uint32, vl_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr),
+        RuntimeLayout[vl_layout].row_major(Index(vl_size)),
+    )
+    var cache_row_offsets_lt = LayoutTensor[
+        DType.uint32, cro_layout, ImmutAnyOrigin
+    ](
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
+        RuntimeLayout[cro_layout].row_major(Index(cro_size)),
+    )
+
+    var k_operand = RaggedMHAOperand(k_lt, cache_row_offsets_lt)
 
     var logits_size = batch_size * max_seq_len * max_num_keys * num_heads
 
@@ -611,16 +587,16 @@ def fp8_index_naive[
         logits_layout,
         q_layout,
         qs_layout,
-        k.layout,
+        k_layout,
         type_of(k_operand),
     ]
 
     ctx.enqueue_function[mm, mm](
         logits_tensor,
-        q,
-        q_s,
-        k,
-        valid_length,
+        q_lt,
+        q_s_lt,
+        k_lt,
+        valid_length_lt,
         k_operand,
         max_seq_len,
         grid_dim=(
@@ -640,9 +616,9 @@ def fp8_index_naive[
 
     ctx.enqueue_function[reduce_logits, reduce_logits](
         logits_tensor,
-        output,
-        k_s,
-        valid_length,
+        output_lt,
+        k_s_lt,
+        valid_length_lt,
         k_operand,
         grid_dim=(
             ceildiv(max_seq_len, 16),

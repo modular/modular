@@ -21,6 +21,7 @@ import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from test_common.mocks import mock_estimate_memory_footprint
 from test_common.pipeline_model_dummy import (
@@ -39,10 +40,14 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_GPTQ_ARCH)
     # this should work
     _ = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
-            quantization_encoding="gptq",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
+                    quantization_encoding="gptq",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -52,10 +57,14 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
     # We expect this to fail.
     with pytest.raises(ValueError):
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
-                quantization_encoding="gptq",
-                device_specs=[DeviceSpec.accelerator()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
+                        quantization_encoding="gptq",
+                        device_specs=[DeviceSpec.accelerator()],
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 prefer_module_v3=True,
@@ -104,10 +113,14 @@ def test_config__update_weight_paths(
     ):
         # This first example, is requesting float32 from a gguf repository.
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding="float32",
-                max_length=512,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        quantization_encoding="float32",
+                        max_length=512,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
@@ -119,10 +132,14 @@ def test_config__update_weight_paths(
 
         # This second example, is requesting float32 from a safetensors repository.
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding="float32",
-                max_length=512,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        quantization_encoding="float32",
+                        max_length=512,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
@@ -137,21 +154,29 @@ def test_config__update_weight_paths(
             # This example, should raise, as you are requesting q6_k from a fp32
             # safetensors repo.
             config = PipelineConfig(
-                model=MAXModelConfig(
-                    model_path=llama_3_1_8b_instruct_local_path,
-                    quantization_encoding="q6_k",
-                    device_specs=[DeviceSpec.cpu()],
+                models=ModelManifest(
+                    {
+                        "main": MAXModelConfig(
+                            model_path=llama_3_1_8b_instruct_local_path,
+                            quantization_encoding="q6_k",
+                            device_specs=[DeviceSpec.cpu()],
+                        )
+                    }
                 ),
             )
 
         # This example, should pass, since using fp32 weights for bfloat16 is
         # listed as an alternate encoding for fp32.
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding="bfloat16",
-                device_specs=[DeviceSpec.accelerator()],
-                max_length=512,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        quantization_encoding="bfloat16",
+                        device_specs=[DeviceSpec.accelerator()],
+                        max_length=512,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
@@ -162,10 +187,14 @@ def test_config__update_weight_paths(
         with pytest.raises(ValueError):
             # This example, should raise as we dont have q4_k listed as supported.
             config = PipelineConfig(
-                model=MAXModelConfig(
-                    model_path=llama_3_1_8b_instruct_local_path,
-                    quantization_encoding="q4_k",
-                    max_length=512,
+                models=ModelManifest(
+                    {
+                        "main": MAXModelConfig(
+                            model_path=llama_3_1_8b_instruct_local_path,
+                            quantization_encoding="q4_k",
+                            max_length=512,
+                        )
+                    }
                 ),
                 runtime=PipelineRuntimeConfig(max_batch_size=1),
             )
@@ -176,18 +205,27 @@ def test_config__update_weight_paths(
             match="quantization_encoding of 'q4_k' not supported by MAX engine",
         ):
             config = PipelineConfig(
-                model=MAXModelConfig(
-                    model_path=llama_3_1_8b_instruct_local_path,
-                    quantization_encoding="q4_k",
-                    max_length=512,
+                models=ModelManifest(
+                    {
+                        "main": MAXModelConfig(
+                            model_path=llama_3_1_8b_instruct_local_path,
+                            quantization_encoding="q4_k",
+                            max_length=512,
+                        )
+                    }
                 ),
                 runtime=PipelineRuntimeConfig(max_batch_size=1),
             )
 
         # Test a partially complete huggingface_repo
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="neubla/tiny-random-LlamaForCausalLM", max_length=1
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="neubla/tiny-random-LlamaForCausalLM",
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )

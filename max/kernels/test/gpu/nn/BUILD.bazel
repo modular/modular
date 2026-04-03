@@ -3,6 +3,10 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    "test_mma_ws_ts.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     "test_conv2d_sm100.mojo": select({
@@ -162,7 +166,7 @@ _EXTRA_CONSTRAINTS = {
     "test_toppminp_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),  # NaN in BFloat16 top-p sampling on Apple GPU
+    }),  # FIXME: MOCO-3650 — NaN in BFloat16 top-p sampling on Apple GPU
 }
 
 _FILECHECK_TESTS = [
@@ -228,6 +232,70 @@ _FILECHECK_TESTS = [
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + [
+            "test_mha_causal_mask.mojo",
+        ],
     )
+]
+
+# test_mha_causal_mask.mojo split by depth via -D depth=N.
+# Each depth gets its own target for parallel execution.
+# Depths and their GPU constraints:
+#   64, 128: all GPUs
+#   72, 80, 96, 256: H100 and B200 only
+#   512: B200 only (prefill-only support)
+_MHA_CAUSAL_MASK_DEPTHS = {
+    "64": [],
+    "128": [],
+    "72": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "80": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "96": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "256": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "512": select({
+        "//:b200_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+}
+
+[
+    mojo_test(
+        name = "test_mha_causal_mask_depth_{}.mojo.test".format(depth),
+        size = "large",
+        srcs = ["test_mha_causal_mask.mojo"],
+        copts = [
+            "-D",
+            "depth={}".format(depth),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + constraints,
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    for depth, constraints in _MHA_CAUSAL_MASK_DEPTHS.items()
 ]

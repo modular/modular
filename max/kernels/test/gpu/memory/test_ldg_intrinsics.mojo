@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import ldg

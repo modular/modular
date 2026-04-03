@@ -21,6 +21,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from max.benchmark.benchmark_serving import (
+    _add_spec_decode_result,
     chat_session_driver,
     elide_data_uris_in_string,
     get_request,
@@ -33,8 +34,11 @@ from max.benchmark.benchmark_shared.datasets.types import (
 )
 from max.benchmark.benchmark_shared.metrics import (
     PercentileMetrics,
+    SpecDecodeMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
+    calculate_spec_decode_stats,
+    parse_spec_decode_metrics,
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
@@ -741,3 +745,253 @@ def test_chat_session_driver_forwards_sampling_params() -> None:
     assert captured_inputs[0].temperature == 0.7
     assert captured_inputs[0].top_p == 0.9
     assert captured_inputs[0].top_k == 50
+
+
+def _make_4turn_session(
+    prefix_turns: int = 0,
+    delay_ms: float = 1000.0,
+) -> ChatSession:
+    """Create a 4-turn chat session for testing prefix_turns behavior."""
+    return ChatSession(
+        id=0,
+        messages=[
+            ChatMessage(source="user", content="Turn 1", num_tokens=5),
+            ChatMessage(
+                source="assistant",
+                content="",
+                num_tokens=5,
+                delay_until_next_message=delay_ms,
+            ),
+            ChatMessage(source="user", content="Turn 2", num_tokens=5),
+            ChatMessage(
+                source="assistant",
+                content="",
+                num_tokens=5,
+                delay_until_next_message=delay_ms,
+            ),
+            ChatMessage(source="user", content="Turn 3", num_tokens=5),
+            ChatMessage(
+                source="assistant",
+                content="",
+                num_tokens=5,
+                delay_until_next_message=delay_ms,
+            ),
+            ChatMessage(source="user", content="Turn 4", num_tokens=5),
+            ChatMessage(
+                source="assistant",
+                content="",
+                num_tokens=5,
+            ),
+        ],
+        prefix_turns=prefix_turns,
+    )
+
+
+class _CapturingDriver(RequestDriver):
+    """Request driver that records all requests and returns success."""
+
+    def __init__(self) -> None:
+        self.calls: list[RequestFuncInput] = []
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> RequestFuncOutput:
+        assert isinstance(request_func_input, RequestFuncInput)
+        self.calls.append(request_func_input)
+        return RequestFuncOutput(
+            success=True,
+            latency=0.1,
+            ttft=0.05,
+            prompt_len=request_func_input.prompt_len,
+            generated_text="ok",
+        )
+
+
+def test_prefix_turns_excluded_from_results() -> None:
+    """With prefix_turns=2, a 4-turn session should return only 2 results."""
+
+    async def run_test() -> list[RequestFuncOutput]:
+        session = _make_4turn_session(prefix_turns=2)
+        counter = RequestCounter(max_requests=100)
+        driver = _CapturingDriver()
+        return await chat_session_driver(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=driver,
+            request_counter=counter,
+            chat_session=session,
+            max_chat_len=4096,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+        )
+
+    outputs = asyncio.run(run_test())
+    assert len(outputs) == 2
+
+
+def test_prefix_turns_dont_count_against_max_requests() -> None:
+    """Prefix turns should not consume max_requests budget."""
+
+    async def run_test() -> tuple[list[RequestFuncOutput], int, int]:
+        session = _make_4turn_session(prefix_turns=2)
+        counter = RequestCounter(max_requests=2)
+        driver = _CapturingDriver()
+        outputs = await chat_session_driver(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=driver,
+            request_counter=counter,
+            chat_session=session,
+            max_chat_len=4096,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+        )
+        return outputs, len(driver.calls), counter.total_sent_requests
+
+    outputs, total_calls, counter_value = asyncio.run(run_test())
+    assert total_calls == 4
+    assert counter_value == 2
+    assert len(outputs) == 2
+
+
+def test_prefix_turns_skip_delays() -> None:
+    """Prefix turns should run without inter-turn delays."""
+    sleep_calls: list[float] = []
+
+    async def mock_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    async def run_test() -> None:
+        session = _make_4turn_session(prefix_turns=2, delay_ms=5000.0)
+        counter = RequestCounter(max_requests=100)
+        driver = _CapturingDriver()
+        with patch("asyncio.sleep", side_effect=mock_sleep):
+            await chat_session_driver(
+                model_id="test",
+                api_url="http://localhost:8000/v1/chat/completions",
+                request_driver=driver,
+                request_counter=counter,
+                chat_session=session,
+                max_chat_len=4096,
+                temperature=None,
+                top_p=None,
+                top_k=None,
+            )
+
+    asyncio.run(run_test())
+    # Only turn 3 has a delay (turn 4 has no delay_until_next_message)
+    assert len(sleep_calls) == 1
+    assert sleep_calls[0] == pytest.approx(5.0)
+
+
+def test_prefix_turns_zero_is_noop() -> None:
+    """prefix_turns=0 should behave identically to the old code."""
+
+    async def run_test() -> list[RequestFuncOutput]:
+        session = _make_4turn_session(prefix_turns=0)
+        counter = RequestCounter(max_requests=100)
+        driver = _CapturingDriver()
+        return await chat_session_driver(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=driver,
+            request_counter=counter,
+            chat_session=session,
+            max_chat_len=4096,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+        )
+
+    outputs = asyncio.run(run_test())
+    assert len(outputs) == 4
+
+
+def test_parse_spec_decode_metrics_matches_vllm_format() -> None:
+    """Spec decode counters are parsed from vLLM Prometheus text."""
+    metrics_text = """# HELP vllm:spec_decode_num_drafts Number of spec decoding drafts.
+# TYPE vllm:spec_decode_num_drafts counter
+vllm:spec_decode_num_drafts 12
+# HELP vllm:spec_decode_num_draft_tokens Number of draft tokens.
+# TYPE vllm:spec_decode_num_draft_tokens counter
+vllm:spec_decode_num_draft_tokens 40
+# HELP vllm:spec_decode_num_accepted_tokens Number of accepted tokens.
+# TYPE vllm:spec_decode_num_accepted_tokens counter
+vllm:spec_decode_num_accepted_tokens 21
+# HELP vllm:spec_decode_num_accepted_tokens_per_pos Accepted tokens per position.
+# TYPE vllm:spec_decode_num_accepted_tokens_per_pos counter
+vllm:spec_decode_num_accepted_tokens_per_pos{position="0"} 12
+vllm:spec_decode_num_accepted_tokens_per_pos{position="1"} 7
+vllm:spec_decode_num_accepted_tokens_per_pos{position="2"} 2
+"""
+
+    parsed = parse_spec_decode_metrics(metrics_text)
+
+    assert parsed is not None
+    assert parsed.num_drafts == 12
+    assert parsed.num_draft_tokens == 40
+    assert parsed.num_accepted_tokens == 21
+    assert parsed.accepted_per_pos == {0: 12, 1: 7, 2: 2}
+
+
+def test_parse_spec_decode_metrics_returns_none_when_absent() -> None:
+    """Metrics parsing returns None when no spec decode counters exist."""
+    parsed = parse_spec_decode_metrics(
+        "# HELP requests Total requests\n# TYPE requests counter\nrequests 10\n"
+    )
+
+    assert parsed is None
+
+
+def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
+    """Acceptance math uses benchmark-window deltas like vLLM bench serve."""
+    before = SpecDecodeMetrics(
+        num_drafts=100,
+        num_draft_tokens=320,
+        num_accepted_tokens=150,
+        accepted_per_pos={0: 100, 1: 40, 2: 10},
+    )
+    after = SpecDecodeMetrics(
+        num_drafts=112,
+        num_draft_tokens=356,
+        num_accepted_tokens=174,
+        accepted_per_pos={0: 112, 1: 48, 2: 14},
+    )
+
+    stats = calculate_spec_decode_stats(before, after)
+
+    assert stats is not None
+    assert stats["num_drafts"] == 12
+    assert stats["draft_tokens"] == 36
+    assert stats["accepted_tokens"] == 24
+    assert stats["acceptance_rate"] == pytest.approx((24 / 36) * 100)
+    assert stats["acceptance_length"] == pytest.approx(1 + 24 / 12)
+    assert stats["per_position_acceptance_rates"] == pytest.approx(
+        [12 / 12, 8 / 12, 4 / 12]
+    )
+
+
+def test_add_spec_decode_result_uses_vllm_json_keys() -> None:
+    """Spec decode stats are serialized under vLLM-compatible keys."""
+    result: dict[str, object] = {}
+    stats = {
+        "num_drafts": 5,
+        "draft_tokens": 18,
+        "accepted_tokens": 9,
+        "acceptance_rate": 50.0,
+        "acceptance_length": 2.8,
+        "per_position_acceptance_rates": [1.0, 0.6, 0.2],
+    }
+
+    _add_spec_decode_result(result, stats)
+
+    assert result == {
+        "spec_decode_acceptance_rate": 50.0,
+        "spec_decode_acceptance_length": 2.8,
+        "spec_decode_num_drafts": 5,
+        "spec_decode_draft_tokens": 18,
+        "spec_decode_accepted_tokens": 9,
+        "spec_decode_per_position_acceptance_rates": [1.0, 0.6, 0.2],
+    }

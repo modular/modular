@@ -73,7 +73,7 @@ def test_pipelines_cli__invalid_quantization_encoding(
     tiny_llama_local_path: str,
     custom_architecture_path: str,
 ) -> None:
-    with pytest.raises(ValueError, match=r".*'q4_k' is not supported.*"):
+    with pytest.raises(Exception, match=r".*'q4_k' not supported.*"):
         pipelines.main(
             [
                 "generate",

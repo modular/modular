@@ -30,4 +30,4 @@ struct HasBadField(Hashable):
 # CHECK: Could not derive Hashable for HasBadField - member field `field: NotHashable` does not implement Hashable
 def main() raises:
     var a = HasBadField(NotHashable(1))
-    hash(a)
+    _ = hash(a)

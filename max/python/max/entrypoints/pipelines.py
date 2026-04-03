@@ -214,9 +214,7 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
 @main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
-@click.option(
-    "--task", type=str, default="text_generation", help="The task to run."
-)
+@click.option("--task", type=str, default="undefined", help="The task to run.")
 @click.option(
     "--task-arg",
     multiple=True,
@@ -280,12 +278,13 @@ def cli_serve(
         # Log Pipeline Related Info
         pipeline_config.log_pipeline_info()
 
-        # Log Default Sampling Configuration
-        sampling_params = SamplingParams.from_input_and_generation_config(
-            SamplingParamsInput(),
-            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
-        )
-        sampling_params.log_sampling_info()
+        # Log Default Sampling Configuration (only for single-model pipelines)
+        if "main" in pipeline_config.models:
+            sampling_params = SamplingParams.from_input_and_generation_config(
+                SamplingParamsInput(),
+                sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+            )
+            sampling_params.log_sampling_info()
 
         # Log API Server Related Info
         settings.log_server_info()

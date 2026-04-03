@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Configuration for Mistral3 text encoder."""
+"""Configuration for the Mistral3 Module V2 text encoder."""
 
 from __future__ import annotations
 
@@ -26,14 +26,13 @@ from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
 from typing_extensions import Self
 
-# Mapping from HuggingFace config keys to our config keys
 _HF_KEY_MAP = {
     "max_position_embeddings": "max_seq_len",
 }
 
 
 class Mistral3TextEncoderConfig(MAXModelConfigBase):
-    """Configuration for Mistral3 text encoder."""
+    """Configuration for the Mistral3 text encoder."""
 
     hidden_size: int = 5120
     num_attention_heads: int = 32
@@ -64,7 +63,7 @@ class Mistral3TextEncoderConfig(MAXModelConfigBase):
         """Initialize configuration from a dictionary.
 
         Args:
-            config_dict: Configuration dictionary (may contain text_config nested).
+            config_dict: Configuration dictionary (may contain ``text_config``).
             encoding: Encoding configuration for dtype.
             devices: List of devices.
 
@@ -79,7 +78,6 @@ class Mistral3TextEncoderConfig(MAXModelConfigBase):
             if mapped_key in cls.model_fields:
                 init_dict[mapped_key] = value
 
-        # Compute head_dim if not provided
         if "head_dim" not in init_dict:
             hidden_size = init_dict.get("hidden_size", 5120)
             num_attention_heads = init_dict.get("num_attention_heads", 32)
@@ -91,5 +89,4 @@ class Mistral3TextEncoderConfig(MAXModelConfigBase):
                 "device": DeviceRef.from_device(devices[0]),
             }
         )
-
         return cls(**init_dict)

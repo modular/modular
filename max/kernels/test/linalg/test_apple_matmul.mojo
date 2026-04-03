@@ -284,9 +284,9 @@ def test_matmul[
 
     var bp_ptr = alloc[Scalar[b_type]](padded_k * padded_n, alignment=alignment)
 
-    var bp = TileTensor(bp_ptr, row_major((Idx(padded_k), Idx(padded_n))))
-    var a = TileTensor(a_ptr, row_major((Idx(m), Idx(k))))
-    var c = TileTensor(c0_ptr, row_major((Idx(m), Idx(n))))
+    var bp = TileTensor(bp_ptr, row_major(Idx(padded_k), Idx(padded_n)))
+    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+    var c = TileTensor(c0_ptr, row_major(Idx(m), Idx(n)))
 
     for i in range(m):
         for p in range(k):

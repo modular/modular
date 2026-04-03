@@ -59,7 +59,7 @@ def welford_update(
     var delta: Float64
     var delta2: Float64
     delta = new_value - mean
-    mean += delta / count
+    mean += delta / Float64(count)
     delta2 = new_value - mean
     m2 += delta * delta2
 
@@ -162,15 +162,15 @@ def test_dispatch[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major((Idx(n_tokens_per_rank), Idx[top_k]()))
+        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major((Idx(n_tokens_per_rank), Idx[hidden_size]())),
+        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major((Idx[max_recv_num_tokens](), Idx[hidden_size]())),
+        row_major(Idx[max_recv_num_tokens](), Idx[hidden_size]()),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -180,7 +180,7 @@ def test_dispatch[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major((Idx[max_recv_num_tokens](), Idx[2]())),
+        row_major(Idx[max_recv_num_tokens](), Idx[2]()),
     )
 
     var format_handler = token_fmt_type(output_tensor)
@@ -245,7 +245,7 @@ def test_dispatch[
             send_buf,
             recv_buf_ptrs,
             recv_count_ptrs,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -262,12 +262,12 @@ def test_dispatch[
             src_token_info_tensor,
             recv_buf,
             recv_count,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             OptionalReg[
                 TileTensor[
                     input_type,
-                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
                     ImmutAnyOrigin,
                 ]
             ](),
@@ -314,7 +314,7 @@ def test_dispatch[
         var new_value: Float64
 
         # First, bench kernel overhead
-        new_value = ctx.execution_time[run_dispatch_async](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_dispatch_async](1)) * 1e-3
         welford_update(
             dispatch_async_stat_m, dispatch_async_stat_m2, i + 1, new_value
         )
@@ -322,7 +322,9 @@ def test_dispatch[
         # sleep 10 ms to make sure transfer is finished
         std.time.sleep(1e-2)
 
-        new_value = ctx.execution_time[run_dispatch_async_wait](1) * 1e-3
+        new_value = (
+            Float64(ctx.execution_time[run_dispatch_async_wait](1)) * 1e-3
+        )
         welford_update(
             dispatch_wait_stat_m, dispatch_wait_stat_m2, i + 1, new_value
         )
@@ -330,7 +332,7 @@ def test_dispatch[
 
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
-        new_value = ctx.execution_time[run_e2e](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 
@@ -406,7 +408,9 @@ def test_dispatch[
             # Then, check the output
             for expert_idx in range(n_local_experts):
                 var curr_local_expert = host_expert_ids[expert_idx]
-                var curr_expert = n_local_experts * my_rank + curr_local_expert
+                var curr_expert = (
+                    Int32(n_local_experts * my_rank) + curr_local_expert
+                )
 
                 var remote_rank = 0
 
@@ -416,7 +420,11 @@ def test_dispatch[
                 ):
                     while (
                         host_dispatch_wait_counter[
-                            2 * (curr_local_expert * n_ranks + remote_rank)
+                            2
+                            * (
+                                curr_local_expert * Int32(n_ranks)
+                                + Int32(remote_rank)
+                            )
                         ]
                         <= Int32(token_idx) + EP_DATA_READY_FLAG
                     ):
@@ -433,7 +441,7 @@ def test_dispatch[
 
                     assert_equal(
                         remote_rank_top_k_ids[
-                            remote_loc * top_k + remote_topk_id
+                            remote_loc * Int32(top_k) + remote_topk_id
                         ],
                         curr_expert,
                     )
@@ -446,10 +454,10 @@ def test_dispatch[
                     )
                     for i in range(hidden_size):
                         var remote_token_val = remote_rank_input_tokens[
-                            remote_loc * hidden_size + i
+                            remote_loc * Int32(hidden_size) + Int32(i)
                         ]
                         var curr_token_val = host_output[
-                            token_idx * hidden_size + i
+                            token_idx * UInt32(hidden_size) + UInt32(i)
                         ]
                         assert_equal(
                             remote_token_val,
@@ -464,11 +472,11 @@ def test_dispatch[
     ](
         my_rank,
         dispatch_async_stat_m,
-        sqrt(dispatch_async_stat_m2 / num_iters),
+        sqrt(dispatch_async_stat_m2 / Float64(num_iters)),
         dispatch_wait_stat_m,
-        sqrt(dispatch_wait_stat_m2 / num_iters),
+        sqrt(dispatch_wait_stat_m2 / Float64(num_iters)),
         e2e_stat_m,
-        sqrt(e2e_stat_m2 / num_iters),
+        sqrt(e2e_stat_m2 / Float64(num_iters)),
     )
 
     shmem_free(send_buf)

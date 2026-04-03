@@ -288,8 +288,7 @@ struct KVBuffer[
 
         self.warp_id = warp_id
 
-        var warp_row = self.warp_id // UInt32(4)
-        var warp_col = self.warp_id % UInt32(4)
+        var warp_row, warp_col = divmod(self.warp_id, UInt32(4))
 
         self.lds_base_ptrs = type_of(self.lds_base_ptrs)(uninitialized=True)
 
@@ -340,8 +339,9 @@ struct KVBuffer[
                 comptime tile_idx = Int(t) * num_warps
                 # Each warp's tile index
                 var warp_tile = UInt32(tile_idx) + self.warp_id
-                var warp_row = warp_tile // UInt32(num_col_groups)
-                var warp_col = warp_tile % UInt32(num_col_groups)
+                var warp_row, warp_col = divmod(
+                    warp_tile, UInt32(num_col_groups)
+                )
                 var smem_warp_tile = smem_tile.tile[
                     Self.warp_tile_rows, Self.BK
                 ](Int(warp_row), Int(warp_col))
@@ -915,8 +915,11 @@ __extension Attention:
         """
         comptime assert Self.BK == 32, "BK must be 32"
         comptime assert (
-            Self.depth == 64 or Self.depth == 128 or Self.depth == 256
-        ), "depth must be 64, 128, or 256"
+            Self.depth == 64
+            or Self.depth == 128
+            or Self.depth == 256
+            or Self.depth == 512
+        ), "depth must be 64, 128, 256, or 512"
         # Pre-scale Q by default for depth<=128 to eliminate per-element
         # scale multiply from the softmax hot loop. Disabled for depth>128
         # to work around LLVM Machine Instruction Scheduler crash (isReg

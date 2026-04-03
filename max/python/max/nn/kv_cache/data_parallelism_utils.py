@@ -52,16 +52,18 @@ def split_input_row_offsets(
 ) -> list[TensorValue]:
     """Split the input row offsets into data parallel splits.
 
-    Example:
+    .. code-block:: python
+
+        # Input
         num_replicas = 2
         input_row_offsets = [0, offset_1, offset_2, offset_3, offset_4]
         data_parallel_splits = [0, 2, 4]
 
-    Outputs:
+        # Output
         split_offsets = [0, offset_1, offset_2], [0, new_offset_3, new_offset_4]
 
-    Where the new offsets are computed by subtracting the previous offset from
-    the current offset (e.g. `new_offset_3 = offset_3 - offset_2`).
+    The method computes new offsets by subtracting the previous offset from
+    the current offset (e.g. ``new_offset_3 = offset_3 - offset_2``).
 
     Args:
         num_replicas: The number of replicas to split the input row offsets into.

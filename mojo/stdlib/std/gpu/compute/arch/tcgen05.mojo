@@ -59,7 +59,7 @@ struct TensorMemory(TrivialRegisterPassable):
         self.num_cols = num_cols
 
 
-@always_inline
+@always_inline("nodebug")
 def tcgen05_alloc[
     cta_group: Int32
 ](

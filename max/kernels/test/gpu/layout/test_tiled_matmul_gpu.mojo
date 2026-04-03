@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    block_dim,
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.compute.mma import mma
 from std.gpu.sync import barrier
 from layout import *
@@ -442,7 +438,7 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     ctx.enqueue_copy(mat_a_dev, mat_a_ptr)
     ctx.enqueue_copy(mat_b_dev, mat_b_ptr)
 
-    var mat_c = TileTensor(mat_c_dev, row_major((Idx(M), Idx(N))))
+    var mat_c = TileTensor(mat_c_dev, row_major(Idx(M), Idx(N)))
     var mat_a = TileTensor(mat_a_dev, row_major[M, K]())
     var mat_b = TileTensor(mat_b_dev, row_major[K, N]())
 

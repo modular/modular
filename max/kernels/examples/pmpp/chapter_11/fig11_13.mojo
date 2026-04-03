@@ -11,19 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    WARP_SIZE,
-)
+from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.gpu.primitives.id import (
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
-)
+from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
 from std.math import abs
@@ -71,7 +63,7 @@ def scan_kernel(
         output: Output array for scan result.
         N: Number of elements.
     """
-    var block_segment = Int(block_idx.x) * COARSE_FACTOR * BLOCK_DIM
+    var block_segment = block_idx.x * COARSE_FACTOR * BLOCK_DIM
 
     # Allocate shared memory
     var buffer_s = stack_allocation[
@@ -92,14 +84,14 @@ def scan_kernel(
 
     # Load data to shared memory
     for c in range(COARSE_FACTOR):
-        buffer_s[c * BLOCK_DIM + Int(thread_idx.x)] = input[
-            block_segment + c * BLOCK_DIM + Int(thread_idx.x)
+        buffer_s[c * BLOCK_DIM + thread_idx.x] = input[
+            block_segment + c * BLOCK_DIM + thread_idx.x
         ]
 
     barrier()
 
     # Scan thread subsegment using registers
-    var thread_segment = Int(thread_idx.x) * COARSE_FACTOR
+    var thread_segment = thread_idx.x * COARSE_FACTOR
     var buffer_r = StaticTuple[Float32, COARSE_FACTOR]()
     buffer_r[0] = buffer_s[thread_segment]
 
@@ -114,34 +106,34 @@ def scan_kernel(
 
     # Collect warp sums
     if UInt32(lane_id()) == UInt32(WARP_SIZE - 1):
-        warp_sums[Int(warp_id())] = result
+        warp_sums[warp_id()] = result
 
     barrier()
 
     # Scan warp sums (only first warp participates)
     if warp_id() == 0:
         var warp_sum = Float32(0.0)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sum = warp_sums[Int(thread_idx.x)]
+        if thread_idx.x < NUM_WARPS:
+            warp_sum = warp_sums[thread_idx.x]
         warp_sum = warp_scan(warp_sum)
-        if Int(thread_idx.x) < NUM_WARPS:
-            warp_sums[Int(thread_idx.x)] = warp_sum
+        if thread_idx.x < NUM_WARPS:
+            warp_sums[thread_idx.x] = warp_sum
 
     barrier()
 
     # Add previous warp's scanned sum
     if warp_id() > 0:
-        result += warp_sums[Int(warp_id()) - 1]
+        result += warp_sums[warp_id() - 1]
 
     # Store thread partial sums
-    thread_sums[Int(thread_idx.x)] = result
+    thread_sums[thread_idx.x] = result
 
     barrier()
 
     # Add previous thread's partial sums
     var prev_partial_sum = Float32(0.0)
     if thread_idx.x > 0:
-        prev_partial_sum = thread_sums[Int(thread_idx.x) - 1]
+        prev_partial_sum = thread_sums[thread_idx.x - 1]
 
     comptime for c in range(COARSE_FACTOR):
         buffer_s[thread_segment + c] = buffer_r[c] + prev_partial_sum
@@ -150,8 +142,8 @@ def scan_kernel(
 
     # Write output
     for c in range(COARSE_FACTOR):
-        output[block_segment + c * BLOCK_DIM + Int(thread_idx.x)] = buffer_s[
-            c * BLOCK_DIM + Int(thread_idx.x)
+        output[block_segment + c * BLOCK_DIM + thread_idx.x] = buffer_s[
+            c * BLOCK_DIM + thread_idx.x
         ]
 
 

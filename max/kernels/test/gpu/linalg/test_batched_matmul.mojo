@@ -143,8 +143,8 @@ def run_bmm_and_check_result[
                 b_device.layout.stride[0]().value()
             )
 
-            var c_buffer = TileTensor(c_ptr, row_major((Idx(m), Idx(n))))
-            var a_buffer = TileTensor(a_ptr, row_major((Idx(m), Idx(k))))
+            var c_buffer = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
+            var a_buffer = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
             var b_buffer = TileTensor(
                 b_ptr,
                 row_major(
@@ -230,16 +230,16 @@ def test_dynamic_shapes[
     var c_host_ptr = alloc[Scalar[dtype]](c_size)
     var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major((Idx(b), Idx(m), Idx(k))))
-    var c_host = TileTensor(c_host_ptr, row_major((Idx(b), Idx(m), Idx(n))))
+    var a_host = TileTensor(a_host_ptr, row_major(Idx(b), Idx(m), Idx(k)))
+    var c_host = TileTensor(c_host_ptr, row_major(Idx(b), Idx(m), Idx(n)))
     var c_host_ref = TileTensor(
-        c_host_ref_ptr, row_major((Idx(b), Idx(m), Idx(n)))
+        c_host_ref_ptr, row_major(Idx(b), Idx(m), Idx(n))
     )
 
     var b_host = TileTensor(
-        b_host_ptr, row_major((Idx(b), Idx(n), Idx(k)))
+        b_host_ptr, row_major(Idx(b), Idx(n), Idx(k))
     ) if transpose_b else TileTensor(
-        b_host_ptr, row_major((Idx(b), Idx(k), Idx(n)))
+        b_host_ptr, row_major(Idx(b), Idx(k), Idx(n))
     )
     run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
         a_host, b_host, c_host, c_host_ref, ctx, rtol
@@ -279,15 +279,15 @@ def test_static_NK[
     var c_host_ptr = alloc[Scalar[dtype]](c_size)
     var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major((Idx(b), Idx(m), Idx[K]())))
-    var c_host = TileTensor(c_host_ptr, row_major((Idx(b), Idx(m), Idx[N]())))
+    var a_host = TileTensor(a_host_ptr, row_major(Idx(b), Idx(m), Idx[K]()))
+    var c_host = TileTensor(c_host_ptr, row_major(Idx(b), Idx(m), Idx[N]()))
     var c_host_ref = TileTensor(
-        c_host_ref_ptr, row_major((Idx(b), Idx(m), Idx[N]()))
+        c_host_ref_ptr, row_major(Idx(b), Idx(m), Idx[N]())
     )
 
     comptime if transpose_b:
         var b_host = TileTensor(
-            b_host_ptr, row_major((Idx(b), Idx[N](), Idx[K]()))
+            b_host_ptr, row_major(Idx(b), Idx[N](), Idx[K]())
         )
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
@@ -295,7 +295,7 @@ def test_static_NK[
 
     else:
         var b_host = TileTensor(
-            b_host_ptr, row_major((Idx(b), Idx[K](), Idx[N]()))
+            b_host_ptr, row_major(Idx(b), Idx[K](), Idx[N]())
         )
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
@@ -347,9 +347,7 @@ def test_non_row_major_layout[
     var c_host = TileTensor(c_host_ptr, c_layout)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_layout)
 
-    var b_host = TileTensor(
-        b_host_ptr, row_major((Idx[B](), Idx[N](), Idx[K]()))
-    )
+    var b_host = TileTensor(b_host_ptr, row_major(Idx[B](), Idx[N](), Idx[K]()))
     run_bmm_and_check_result[
         transpose_b=True, lambda_fn=lambda_fn, check_against_naive_kernel=True
     ](a_host, b_host, c_host, c_host_ref, ctx, rtol)

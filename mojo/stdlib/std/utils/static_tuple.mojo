@@ -26,21 +26,36 @@ from std.compile import get_type_name
 # StaticTuple
 # ===-----------------------------------------------------------------------===#
 
+comptime _StaticTupleTraits = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
+"""The required trait conformances for a StaticTuple's element type."""
 
-def _static_tuple_construction_checks[size: Int]():
+
+def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
     """Checks if the properties in `StaticTuple` are valid.
 
     Validity right now is just ensuring the number of elements is > 0.
 
     Parameters:
+      T: The StaticTuple's element type.
       size: The number of elements.
     """
+    comptime assert (
+        T.__move_ctor_is_trivial
+        and T.__copy_ctor_is_trivial
+        and T.__del__is_trivial
+    ), String(
+        (
+            "`StaticTuple` element type must have a trivial move/copy"
+            " constructor and destructor: "
+        ),
+        get_type_name[T](),
+    )
     comptime assert (
         size >= 0
     ), "number of elements in `StaticTuple` must be >= 0"
 
 
-struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
+struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     Defaultable, DevicePassable, Sized, TrivialRegisterPassable
 ):
     """A statically sized tuple type which contains elements of homogeneous types.
@@ -80,7 +95,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
     @always_inline
     def __init__(out self):
         """Constructs an empty (undefined) tuple."""
-        _static_tuple_construction_checks[Self.size]()
+        _static_tuple_construction_checks[Self.element_type, Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
@@ -90,6 +105,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         Args:
             mlir_value: Underlying MLIR array type.
         """
+        _static_tuple_construction_checks[Self.element_type, Self.size]()
         self._mlir_value = mlir_value
 
     @always_inline
@@ -99,7 +115,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         Args:
             fill: The value to fill the tuple with.
         """
-        _static_tuple_construction_checks[Self.size]()
+        _static_tuple_construction_checks[Self.element_type, Self.size]()
         self._mlir_value = __mlir_op.`pop.array.repeat`[
             _type=__mlir_type[
                 `!pop.array<`,
@@ -117,7 +133,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         Args:
             elems: The element types.
         """
-        _static_tuple_construction_checks[Self.size]()
+        _static_tuple_construction_checks[Self.element_type, Self.size]()
         self = Self(values=elems)
 
     @always_inline
@@ -127,7 +143,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         Parameters:
             values: The list of values.
         """
-        _static_tuple_construction_checks[Self.size]()
+        _static_tuple_construction_checks[Self.element_type, Self.size]()
 
         comptime num_values = VariadicParamList[*values].size
         if num_values == 1:
@@ -149,7 +165,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         Args:
             values: The list of values.
         """
-        _static_tuple_construction_checks[Self.size]()
+        _static_tuple_construction_checks[Self.element_type, Self.size]()
 
         if len(values) == 1:
             return Self(fill=values[0])

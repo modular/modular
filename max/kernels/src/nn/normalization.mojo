@@ -37,7 +37,11 @@ from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.memory import external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from std.gpu.primitives import block
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     CoordLike,
@@ -58,7 +62,7 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from comm.rms_norm_fp8 import rms_norm_fused_fp8
-
+from std.gpu.primitives.grid_controls import PDLLevel
 from .reshape import reshape
 
 comptime _APPLE_STATIC_SHMEM_MAX_BYTES = 32 * 1024
@@ -374,10 +378,7 @@ def layer_norm_gpu_warp_tiling[
 
         if idx < UInt(num_cols):
             var gamma_val = gamma_fn[Int(simd_width)](Index(idx))
-            var beta_idx = beta.layout(Idx(idx))
-            var beta_val = beta.ptr.load[
-                width=Int(simd_width), alignment=align
-            ](beta_idx)
+            var beta_val = beta.load[width=Int(simd_width)](Coord(Idx(idx)))
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
                 accum_type
             ]() + beta_val.cast[accum_type]()
@@ -578,7 +579,7 @@ def layer_norm_gpu[
                 epsilon,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
         elif (
             cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
@@ -600,7 +601,7 @@ def layer_norm_gpu[
                 epsilon,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
         else:
             comptime kernel = layer_norm_gpu_block[
@@ -618,7 +619,7 @@ def layer_norm_gpu[
                 epsilon,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
     else:
         comptime kernel = layer_norm_gpu_block[
@@ -636,7 +637,7 @@ def layer_norm_gpu[
             epsilon,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )
 
 
@@ -1188,6 +1189,7 @@ def rms_norm_gpu[
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[dtype, ...],
@@ -1266,7 +1268,7 @@ def rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
         elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = rms_norm_gpu_warp_tiling[
@@ -1286,7 +1288,7 @@ def rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
         elif (
             cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
@@ -1309,7 +1311,7 @@ def rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
         else:
             comptime kernel = rms_norm_gpu_block[
@@ -1329,7 +1331,7 @@ def rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
     else:
         comptime kernel = rms_norm_gpu_block[
@@ -1349,7 +1351,7 @@ def rms_norm_gpu[
             cols,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
@@ -1682,6 +1684,22 @@ def rms_norm_fused_residual_add_gpu_block[
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
 
+    # Fused 3-pass implementation:
+    #   Pass 1: Read input from global → accumulate m2 for stage 1
+    #   Pass 2: Re-read input → normalize with gamma1 → add residual →
+    #           write residual output → accumulate m2 for stage 2 →
+    #           write to shmem
+    #   Pass 3: Read from shmem → normalize with gamma2 → write final output
+    #
+    # This saves 1 barrier and 1 shmem read pass vs the prior approach of
+    # calling _rms_norm_gpu_block_subkernel twice with an explicit barrier
+    # between them (5 barriers + 4 data passes → 4 barriers + 3 data passes).
+    # The first barrier inside block_reduce for m2_2 synchronizes the shmem
+    # writes from Pass 2, so no extra barrier is needed.
+
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
     var shared_mem = stack_allocation[
         _APPLE_STATIC_SHMEM_MAX_COUNT[Scalar[dtype]],
         Scalar[dtype],
@@ -1694,46 +1712,114 @@ def rms_norm_fused_residual_add_gpu_block[
     ]()
 
     with PDL():
+        var tid = thread_idx.x
+        var row = block_idx.x
+        var eps_accum1 = epsilon1.cast[accum_type]()
+        var weight_offset_accum1 = weight_offset1.cast[accum_type]()
+        var eps_accum2 = epsilon2.cast[accum_type]()
+        var weight_offset_accum2 = weight_offset2.cast[accum_type]()
 
-        @parameter
-        @always_inline
-        @__copy_capture(shared_mem)
-        def stage1_output_fn[
-            width: Int, alignment: Int
-        ](row: Int, col: Int, val: SIMD[dtype, width]):
-            residual_val = residual_input_fn[width](row, col)
-            var residual_add_val = residual_val + val
-            output_residual_fn[width, alignment](row, col, residual_add_val)
-
-            shared_mem.store[width=width, alignment=alignment](
-                col, residual_add_val
+        # Pass 1: Accumulate sum-of-squares for stage 1 from global input.
+        var thread_m2_1 = Scalar[accum_type](0)
+        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
+            var offset = x * Int(block_dim.x) * simd_width + Int(
+                tid * UInt(simd_width)
             )
+            if offset < num_cols:
+                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                    accum_type
+                ]()
+                thread_m2_1 += (vec_data**2).reduce_add()
 
-        _rms_norm_gpu_block_subkernel[
-            simd_width,
-            max_warps_per_block,
-            input_fn,
-            stage1_output_fn,
-            multiply_before_cast=multiply_before_cast,
-        ](gamma1, epsilon1, weight_offset1, num_cols)
+        var row_m2_1 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2_1
+        )
+        var norm_factor1 = rsqrt(
+            (row_m2_1 / Scalar[accum_type](num_cols)) + eps_accum1
+        )
 
-        barrier()
+        # Pass 2: Re-read input, normalize with gamma1, add residual,
+        # write residual output, accumulate m2 for stage 2, write to shmem.
+        var thread_m2_2 = Scalar[accum_type](0)
+        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
+            var offset = x * Int(block_dim.x) * simd_width + Int(
+                tid * UInt(simd_width)
+            )
+            if offset < num_cols:
+                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                    accum_type
+                ]()
+                var gamma1_val = gamma1.load[width=simd_width, alignment=align](
+                    Coord(Idx(offset))
+                )
 
-        @parameter
-        @always_inline
-        @__copy_capture(shared_mem)
-        def stage2_input_fn[
-            width: Int
-        ](row: Int, col: Int) -> SIMD[dtype, width]:
-            return shared_mem.load[width=width](col)
+                var norm1_val: SIMD[dtype, simd_width]
 
-        _rms_norm_gpu_block_subkernel[
-            simd_width,
-            max_warps_per_block,
-            stage2_input_fn,
-            output_fn,
-            multiply_before_cast=multiply_before_cast,
-        ](gamma2, epsilon2, weight_offset2, num_cols)
+                if multiply_before_cast:
+                    var gamma1_accum = (
+                        gamma1_val.cast[accum_type]() + weight_offset_accum1
+                    )
+                    norm1_val = (vec_data * norm_factor1 * gamma1_accum).cast[
+                        dtype
+                    ]()
+                else:
+                    norm1_val = (vec_data * norm_factor1).cast[dtype]() * (
+                        gamma1_val + weight_offset1
+                    )
+
+                var residual_val = residual_input_fn[simd_width](
+                    Int(row), offset
+                )
+                var residual_add_val = norm1_val + residual_val
+                output_residual_fn[simd_width, align](
+                    Int(row), offset, residual_add_val
+                )
+
+                # Accumulate for stage 2.
+                var residual_accum = residual_add_val.cast[accum_type]()
+                thread_m2_2 += (residual_accum**2).reduce_add()
+
+                # Store to shmem for stage 2 normalize pass.
+                shared_mem.store[width=simd_width, alignment=align](
+                    offset, residual_add_val
+                )
+
+        # The first barrier inside block_reduce synchronizes shmem writes.
+        var row_m2_2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2_2
+        )
+        var norm_factor2 = rsqrt(
+            (row_m2_2 / Scalar[accum_type](num_cols)) + eps_accum2
+        )
+
+        # Pass 3: Read from shmem, normalize with gamma2, write final output.
+        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
+            var offset = x * Int(block_dim.x) * simd_width + Int(
+                tid * UInt(simd_width)
+            )
+            if offset < num_cols:
+                var stage2_input = shared_mem.load[width=simd_width](
+                    offset
+                ).cast[accum_type]()
+                var gamma2_val = gamma2.load[width=simd_width, alignment=align](
+                    Coord(Idx(offset))
+                )
+
+                var norm2_val: SIMD[dtype, simd_width]
+
+                if multiply_before_cast:
+                    var gamma2_accum = (
+                        gamma2_val.cast[accum_type]() + weight_offset_accum2
+                    )
+                    norm2_val = (
+                        stage2_input * norm_factor2 * gamma2_accum
+                    ).cast[dtype]()
+                else:
+                    norm2_val = (stage2_input * norm_factor2).cast[dtype]() * (
+                        gamma2_val + weight_offset2
+                    )
+
+                output_fn[simd_width, align](Int(row), offset, norm2_val)
 
 
 def rms_norm_fused_residual_add_gpu_block_no_shmem[
@@ -2044,7 +2130,7 @@ def rms_norm_fused_residual_add_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
         else:
             comptime if has_apple_gpu_accelerator():
@@ -2077,7 +2163,7 @@ def rms_norm_fused_residual_add_gpu[
                     cols,
                     grid_dim=ceildiv(rows, max_warps_per_block),
                     block_dim=WARP_SIZE * max_warps_per_block,
-                    attributes=pdl_launch_attributes(),
+                    attributes=pdl_launch_attributes(PDLLevel(1)),
                 )
             else:
                 var shared_mem_size = (
@@ -2109,7 +2195,7 @@ def rms_norm_fused_residual_add_gpu[
                     cols,
                     grid_dim=grid_dim,
                     block_dim=block_dim,
-                    attributes=pdl_launch_attributes(),
+                    attributes=pdl_launch_attributes(PDLLevel(1)),
                     shared_mem_bytes=shared_mem_size,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(shared_mem_size)
@@ -2147,7 +2233,7 @@ def rms_norm_fused_residual_add_gpu[
                 cols,
                 grid_dim=ceildiv(rows, max_warps_per_block),
                 block_dim=WARP_SIZE * max_warps_per_block,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
         else:
             var shared_mem_size = cols * size_of[dtype]()
@@ -2177,7 +2263,7 @@ def rms_norm_fused_residual_add_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
                 shared_mem_bytes=shared_mem_size,
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(
@@ -2709,8 +2795,7 @@ def group_norm_gpu_multi_block_stats[
     comptime accum_type = get_accum_type[dtype]()
 
     var block_id = Int(block_idx.x)
-    var row = block_id // num_splits
-    var split_id = block_id % num_splits
+    var row, split_id = divmod(block_id, num_splits)
     var tid = thread_idx.x
 
     # Compute chunk boundaries (each split handles a contiguous chunk,
@@ -2761,9 +2846,9 @@ def group_norm_gpu_multi_block_stats[
         # Thread 0 writes partial stats to the global stats buffer.
         if tid == 0:
             var base_idx = block_id * 3
-            stats.ptr.store(base_idx, row_mean)
-            stats.ptr.store(base_idx + 1, row_m2)
-            stats.ptr.store(base_idx + 2, row_count)
+            stats.store(Coord(Idx(base_idx)), row_mean)
+            stats.store(Coord(Idx(base_idx + 1)), row_m2)
+            stats.store(Coord(Idx(base_idx + 2)), row_count)
 
 
 def group_norm_gpu_multi_block_norm[
@@ -2800,8 +2885,7 @@ def group_norm_gpu_multi_block_norm[
     comptime accum_type = get_accum_type[dtype]()
 
     var block_id = Int(block_idx.x)
-    var row = block_id // num_splits
-    var split_id = block_id % num_splits
+    var row, split_id = divmod(block_id, num_splits)
     var tid = thread_idx.x
 
     # Same chunk boundaries as stats kernel.
@@ -2823,9 +2907,9 @@ def group_norm_gpu_multi_block_norm[
         for s in range(num_splits):
             var base_idx = stats_row_base + s * 3
             welford_combine(
-                stats.ptr.load(base_idx),
-                stats.ptr.load(base_idx + 1),
-                stats.ptr.load(base_idx + 2),
+                stats.load[width=1](Coord(Idx(base_idx))),
+                stats.load[width=1](Coord(Idx(base_idx + 1))),
+                stats.load[width=1](Coord(Idx(base_idx + 2))),
                 row_mean,
                 row_m2,
                 row_count,
@@ -2924,24 +3008,22 @@ def group_norm_gpu[
     def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) capturing -> SIMD[dtype, simd_width]:
-        var n = row // num_groups
-        var g = row % num_groups
+        var n, g = divmod(row, num_groups)
         var c = g * channels_per_group
 
         var indices = IndexList[rank]()  # placeholder to satisfy compiler
 
         comptime if rank == 4:
             var inner_volume = shape[2] * shape[3]
-            c += col // inner_volume
-            var hw = col % inner_volume
-            var h = hw // shape[3]
-            var w = hw % shape[3]
+            var c_offset, hw = divmod(col, inner_volume)
+            c += c_offset
+            var h, w = divmod(hw, shape[3])
             indices = IndexList[rank](n, c, h, w)
 
         elif rank == 3:
             var inner_volume = shape[2]
-            c += col // inner_volume
-            var l = col % inner_volume
+            var c_offset, l = divmod(col, inner_volume)
+            c += c_offset
             indices = IndexList[rank](n, c, l)
 
         return input_fn[simd_width, rank](indices)
@@ -2991,7 +3073,7 @@ def group_norm_gpu[
                 spatial,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
             )
         else:
             # Use multi-block reduction when the grid is too small for
@@ -3057,7 +3139,7 @@ def group_norm_gpu[
                     group_size,
                     grid_dim=mb_grid_dim,
                     block_dim=mb_block_dim,
-                    attributes=pdl_launch_attributes(),
+                    attributes=pdl_launch_attributes(PDLLevel(1)),
                 )
 
                 # Kernel 2: reduce stats and normalize each chunk.
@@ -3083,7 +3165,7 @@ def group_norm_gpu[
                     group_size,
                     grid_dim=mb_grid_dim,
                     block_dim=mb_block_dim,
-                    attributes=pdl_launch_attributes(),
+                    attributes=pdl_launch_attributes(PDLLevel(1)),
                 )
 
                 _ = stats_buf^
@@ -3105,7 +3187,7 @@ def group_norm_gpu[
                     spatial,
                     grid_dim=grid_dim,
                     block_dim=block_dim,
-                    attributes=pdl_launch_attributes(),
+                    attributes=pdl_launch_attributes(PDLLevel(1)),
                 )
     else:
         comptime kernel = group_norm_gpu_block[
@@ -3125,7 +3207,7 @@ def group_norm_gpu[
             spatial,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )
 
 

@@ -18,7 +18,14 @@ from std.sys import argv
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from std.memory import memset_zero
 from nn.attention.gpu.mha import (
     _naive_attention_with_transpose,
@@ -196,57 +203,40 @@ def test[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var q_device = LayoutTensor[qkv_type, q_layout](
+    var q_device = TileTensor(
         q_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
-    comptime k_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
-    )
-    var k_device = LayoutTensor[qkv_type, k_layout](
+    var k_device = TileTensor(
         k_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
-    comptime v_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
-    )
-    var v_device = LayoutTensor[qkv_type, v_layout](
+    var v_device = TileTensor(
         v_device_ptr.unsafe_ptr(),
-        RuntimeLayout[v_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
-    var mask3d = LayoutTensor[mask_type, Layout.row_major[3]()](
+    var mask3d = TileTensor(
         mask_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size, seq_len, num_keys)
-        ),
+        row_major(Idx(batch_size), Idx(seq_len), Idx(num_keys)),
     )
-    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
+    var mask4d = TileTensor(
         mask_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
+        row_major(
+            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
         ),
     )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var output_device = LayoutTensor[qkv_type, output_layout](
+    var output_device = TileTensor(
         output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
-
-    comptime q_tile_num_rows = 32
-    comptime k_tile_num_rows = 128
 
     @parameter
     @always_inline
@@ -296,13 +286,15 @@ def test[
 
     comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        comptime output_ref_layout = Layout.row_major(
-            UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-        )
-        var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
+        var output_ref_device = TileTensor(
             output_ref_device_ptr.unsafe_ptr(),
-            RuntimeLayout[output_ref_layout].row_major(
-                Index(batch_size, seq_len, num_heads, depth)
+            row_major(
+                (
+                    Idx(batch_size),
+                    Idx(seq_len),
+                    Idx[num_heads](),
+                    Idx[depth](),
+                )
             ),
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
@@ -591,8 +583,7 @@ def test_decoding[
 
 def main() raises:
     with DeviceContext() as ctx:
-        # experimental kernel only supports depth == 128
-        comptime depths = [64, 128, 256]
+        comptime depths = [64, 128, 256, 512]
 
         comptime for i in range(len(depths)):
             comptime depth = depths[i]

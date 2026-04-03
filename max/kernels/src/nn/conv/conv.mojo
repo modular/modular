@@ -21,14 +21,17 @@ from std.sys.info import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
     cudnnConvolutionForward,
+    cudnnConvolutionFwdAlgoPerfStruct,
     cudnnConvolutionMode_t,
     cudnnConvolutionStruct,
     cudnnCreateConvolutionDescriptor,
     cudnnDestroyConvolutionDescriptor,
+    cudnnFindConvolutionForwardAlgorithmEx,
     cudnnGetConvolutionForwardWorkspaceSize,
     cudnnSetConvolution2dDescriptor,
     cudnnSetConvolutionGroupCount,
     cudnnSetConvolutionMathType,
+    cudnnSetConvolutionNdDescriptor,
     cudnnGetConvolutionForwardAlgorithm_v7,
     cudnnConvolutionFwdAlgoPerf_t,
 )
@@ -45,8 +48,10 @@ from _cudnn.infer import (
     cudnnFilterStruct,
     cudnnMathType_t,
     cudnnSetFilter4dDescriptor,
+    cudnnSetFilterNdDescriptor,
     cudnnSetStream,
     cudnnSetTensor4dDescriptor,
+    cudnnSetTensorNdDescriptorEx,
     cudnnStatus_t,
     cudnnTensorFormat_t,
     cudnnTensorStruct,
@@ -109,7 +114,7 @@ from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import has_amd_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 from std.gpu.host.info import _is_sm10x_gpu
 from std.gpu.host._amdgpu_hip import HIP
 from std.utils.index import Index, IndexList
@@ -338,9 +343,8 @@ def _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
     TODO(Fixel): This utility should be generalized into a im2col util
     class with some additional layout agnostic logic.
     """
-    var n = m // (HO * WO)
-    var ho = (m % (HO * WO)) // WO
-    var wo = m % WO
+    var n, rem = divmod(m, HO * WO)
+    var ho, wo = divmod(rem, WO)
     return Index(n, ho, wo)
 
 
@@ -618,8 +622,7 @@ struct ConvDirectNHWC[
                 self.partition.ng_offset,
                 self.partition.ng_offset + self.partition.ng_size,
             ):
-                var n = ng // self.conv_shape.num_groups
-                var g = ng % self.conv_shape.num_groups
+                var n, g = divmod(ng, self.conv_shape.num_groups)
                 self._c_tile_loop[padded](n, g, self.cf_tile_size[0])
 
         unswitch[body](self.conv_shape.padded())
@@ -926,11 +929,12 @@ struct ConvDirectNHWC[
             ):
                 # The micro tile may cover points in different rows/images.
                 # Convert the 1D index back to (n, ho, wo).
+                var ho, wo = divmod(m, self.conv_shape.wo())
                 epilogue(
                     Index(
                         n,
-                        m // self.conv_shape.wo(),
-                        m % self.conv_shape.wo(),
+                        ho,
+                        wo,
                         f_tile_offset,
                     ),
                     f_tile_size_bounded,
@@ -3319,21 +3323,20 @@ def _get_cudnn_meta(
     var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
 
     # Get or create the per-device cache dictionary.
-    if ptr_meta := _get_global_or_null(cache_key).bitcast[CuDNNConvMeta]():
-        check_cudnn_error(
-            cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
-        )
-        return ptr_meta
+    if ptr_meta := _get_global_or_null(cache_key):
+        var ptr = ptr_meta.unsafe_value().bitcast[CuDNNConvMeta]()
+        check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
+        return ptr
 
-    ptr_meta = alloc[CuDNNConvMeta](1)
-    ptr_meta.init_pointee_move(CuDNNConvMeta())
+    var new_ptr_meta = alloc[CuDNNConvMeta](1)
+    new_ptr_meta.init_pointee_move(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
-        ptr_meta.bitcast[NoneType](),
+        new_ptr_meta.bitcast[NoneType](),
     )
 
-    return ptr_meta
+    return new_ptr_meta
 
 
 def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
@@ -3435,13 +3438,10 @@ def _get_cached_cudnn_meta_nhwc_full(
 ) raises -> UnsafePointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
     var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
 
-    if ptr_meta := _get_global_or_null(cache_key).bitcast[
-        CachedCuDNNMetaNHWCFull
-    ]():
-        check_cudnn_error(
-            cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
-        )
-        return ptr_meta
+    if ptr_meta := _get_global_or_null(cache_key):
+        var ptr = ptr_meta.unsafe_value().bitcast[CachedCuDNNMetaNHWCFull]()
+        check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
+        return ptr
 
     var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull](1)
     new_ptr_meta.init_pointee_move(CachedCuDNNMetaNHWCFull())
@@ -3780,11 +3780,10 @@ def _get_cached_miopen_meta(
 ) raises -> UnsafePointer[CachedMIOpenMeta, AnyOrigin[mut=True]]:
     var cache_key = "MIOPEN_CACHED_META_" + String(ctx.id())
 
-    if ptr_meta := _get_global_or_null(cache_key).bitcast[CachedMIOpenMeta]():
-        check_miopen_error(
-            miopenSetStream(ptr_meta[].handle, HIP(ctx.stream()))
-        )
-        return ptr_meta
+    if ptr_meta := _get_global_or_null(cache_key):
+        var ptr = ptr_meta.unsafe_value().bitcast[CachedMIOpenMeta]()
+        check_miopen_error(miopenSetStream(ptr[].handle, HIP(ctx.stream())))
+        return ptr
 
     var new_ptr_meta = alloc[CachedMIOpenMeta](1)
     new_ptr_meta.init_pointee_move(CachedMIOpenMeta())
@@ -4432,6 +4431,31 @@ def conv_gpu[
                     _sm100_dispatch[]()
                 return
 
+        # AMD RDNA 3+ dispatch: im2col + WMMA matmul for supported shapes.
+        comptime if has_amd_rdna_gpu_accelerator() and input_type in (
+            DType.bfloat16,
+            DType.float16,
+        ):
+            from nn.conv.gpu.amd.rdna.dispatch import dispatch_rdna_conv2d
+
+            if dispatch_rdna_conv2d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+                maybe_epilogue_func=maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
         # AMD GPU path: use MIOpen for conv2d.
         # Note: MIOpen's miopenConvolution mode (0) is cross-correlation
         # (standard DNN conv). The old CROSS_CORRELATION (1) was actually
@@ -4623,20 +4647,32 @@ def conv_gpu[
             )
 
     elif input_lt.rank == 5:
-        var grid_dim_x = ceildiv(
-            output_lt.dim[2]() * output_lt.dim[3](), block_size
-        )  # h * w / block size for 3d
-        ctx.enqueue_function[conv_gpu_3d, conv_gpu_3d](
-            input_lt,
-            filter_lt,
-            output_lt,
-            stride,
-            dilation,
-            symmetric_padding,
-            num_groups,
-            grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
-            block_dim=(block_size, block_size),
-        )
+        comptime if filter_is_fcrs:
+            conv3d_cudnn[input_type, filter_type, output_type](
+                input_lt,
+                filter_lt,
+                output_lt,
+                rebind[IndexList[3]](stride),
+                rebind[IndexList[3]](dilation),
+                rebind[IndexList[3]](symmetric_padding),
+                num_groups,
+                ctx,
+            )
+        else:
+            var grid_dim_x = ceildiv(
+                output_lt.dim[2]() * output_lt.dim[3](), block_size
+            )  # h * w / block size for 3d
+            ctx.enqueue_function[conv_gpu_3d, conv_gpu_3d](
+                input_lt,
+                filter_lt,
+                output_lt,
+                stride,
+                dilation,
+                symmetric_padding,
+                num_groups,
+                grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+                block_dim=(block_size, block_size),
+            )
 
 
 def conv3d_gpu_naive_ndhwc_qrscf[
@@ -4691,8 +4727,7 @@ def conv3d_gpu_naive_ndhwc_qrscf[
     var x_thread_id = block_idx.x * block_dim.x + thread_idx.x
 
     # map back to separate height and width
-    var h_out_idx = x_thread_id // UInt(W_out)  # integer division to get height
-    var w_out_idx = x_thread_id % UInt(W_out)  # modulo to get width
+    var h_out_idx, w_out_idx = divmod(x_thread_id, UInt(W_out))
 
     # calculate depth from y-dimension
     var d_out_idx = block_idx.y * block_dim.y + thread_idx.y
@@ -4760,3 +4795,670 @@ def conv3d_gpu_naive_ndhwc_qrscf[
                 ),
                 value.cast[output_type](),
             )
+
+
+# ===----------------------------------------------------------------------=== #
+# GPU 3D Convolution using cuDNN (Nd APIs)                                     #
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct _Conv3dAlgoCacheEntry(Copyable, Movable):
+    """Cached cuDNN algorithm selection result for a conv3d shape."""
+
+    var algo_value: Int8
+    var workspace_size: Int
+
+    def algo(self) -> cudnnConvolutionFwdAlgo_t:
+        return rebind[cudnnConvolutionFwdAlgo_t](self.algo_value)
+
+
+def _conv3d_cudnn_depth_tiled[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
+    stride: IndexList[3],
+    dilation: IndexList[3],
+    padding: IndexList[3],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    """Depth-tiled cuDNN 3D convolution for tensors exceeding INT32_MAX elements.
+
+    Splits the computation along the depth dimension (dim[1] in NDHWC) into
+    tiles small enough for cuDNN's internal Int32 stride calculations.
+    Each tile uses a separate set of cuDNN descriptors.
+    """
+    comptime INT32_MAX_VAL = 2147483647
+    comptime FIND_WS_CAP = 256 * 1024 * 1024
+
+    var N = input.dim[0]()
+    var D_in = input.dim[1]()
+    var H = input.dim[2]()
+    var W = input.dim[3]()
+    var C = input.dim[4]()
+
+    var K_d = filter.dim[2]()  # kernel depth (Q in FCQRS)
+    var F_out = filter.dim[0]()  # output channels
+    var D_out = output.dim[1]()
+    var H_out = output.dim[2]()
+    var W_out = output.dim[3]()
+
+    var eff_k = (K_d - 1) * dilation[0] + 1  # effective kernel depth
+
+    # Calculate max input depth per tile.
+    var per_frame_in = N * H * W * C
+    var max_d_in = INT32_MAX_VAL // per_frame_in
+
+    # Also ensure output elements per tile fit in INT32.
+    var per_frame_out = N * H_out * W_out * F_out
+    var max_d_out = INT32_MAX_VAL // per_frame_out
+    # Output frames from max_d_in input frames:
+    var tile_d_out_from_in = (max_d_in + 2 * padding[0] - eff_k) // stride[
+        0
+    ] + 1
+    var tile_d_out = min(tile_d_out_from_in, max_d_out)
+    if tile_d_out < 1:
+        raise "conv3d: tensor too large even for single-frame tiling"
+
+    # Input depth needed for tile_d_out output frames.
+    var tile_d_in = (tile_d_out - 1) * stride[0] + eff_k - 2 * padding[0]
+
+    # Strides (in elements) along the depth dimension.
+    var in_d_stride = H * W * C  # elements per depth frame
+    var out_d_stride = H_out * W_out * F_out
+
+    var ptr_meta = _get_cudnn_meta(ctx)
+
+    # Descriptor arrays (reused across tiles).
+    var input_dims = alloc[Int32](5)
+    var output_dims = alloc[Int32](5)
+    var filter_dims = alloc[Int32](5)
+    var pad_a = alloc[Int32](3)
+    var stride_a = alloc[Int32](3)
+    var dilation_a = alloc[Int32](3)
+
+    # Filter dims (constant across tiles).
+    filter_dims[0] = Int32(filter.dim[0]())
+    filter_dims[1] = Int32(filter.dim[1]())
+    filter_dims[2] = Int32(filter.dim[2]())
+    filter_dims[3] = Int32(filter.dim[3]())
+    filter_dims[4] = Int32(filter.dim[4]())
+
+    check_cudnn_error(
+        cudnnSetFilterNdDescriptor(
+            ptr_meta[].ptr_filter_desc,
+            get_cudnn_dtype[filter_type](),
+            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
+            Int16(5),
+            filter_dims.bitcast[NoneType](),
+        )
+    )
+
+    # Convolution params (constant except padding for first tile).
+    stride_a[0] = Int32(stride[0])
+    stride_a[1] = Int32(stride[1])
+    stride_a[2] = Int32(stride[2])
+    dilation_a[0] = Int32(dilation[0])
+    dilation_a[1] = Int32(dilation[1])
+    dilation_a[2] = Int32(dilation[2])
+
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
+
+    var d_out_start = 0
+    while d_out_start < D_out:
+        var this_d_out = min(tile_d_out, D_out - d_out_start)
+
+        # Determine input range for this output tile.
+        # First tile gets front padding, last tile gets back padding.
+        var d_in_start: Int
+        var this_d_in: Int
+        var tile_pad_front: Int
+        var tile_pad_back: Int
+
+        if d_out_start == 0:
+            # First tile: include front padding.
+            tile_pad_front = padding[0]
+            d_in_start = 0
+            this_d_in = (
+                (this_d_out - 1) * stride[0] + eff_k - 2 * tile_pad_front
+            )
+            # Adjust: no need for more input than available
+            if this_d_in > D_in:
+                this_d_in = D_in
+            tile_pad_back = 0
+        else:
+            tile_pad_front = 0
+            # For stride=1: input frame for output d is at d (with padding=0)
+            d_in_start = d_out_start * stride[0] - padding[0]
+            if d_in_start < 0:
+                tile_pad_front = -d_in_start
+                d_in_start = 0
+            this_d_in = (this_d_out - 1) * stride[0] + eff_k - tile_pad_front
+            # Check if we need back padding
+            if d_in_start + this_d_in > D_in:
+                tile_pad_back = d_in_start + this_d_in - D_in
+                this_d_in = D_in - d_in_start
+            else:
+                tile_pad_back = 0
+
+        # --- Set up tile descriptors ---
+        # Input tile: [N, this_d_in, H, W, C]
+        input_dims[0] = Int32(N)
+        input_dims[1] = Int32(C)
+        input_dims[2] = Int32(this_d_in)
+        input_dims[3] = Int32(H)
+        input_dims[4] = Int32(W)
+
+        check_cudnn_error(
+            cudnnSetTensorNdDescriptorEx(
+                ptr_meta[].ptr_input_desc,
+                cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
+                get_cudnn_dtype[input_type](),
+                Int16(5),
+                input_dims.bitcast[NoneType](),
+            )
+        )
+
+        # Output tile: [N, this_d_out, H_out, W_out, F]
+        output_dims[0] = Int32(N)
+        output_dims[1] = Int32(F_out)
+        output_dims[2] = Int32(this_d_out)
+        output_dims[3] = Int32(H_out)
+        output_dims[4] = Int32(W_out)
+
+        check_cudnn_error(
+            cudnnSetTensorNdDescriptorEx(
+                ptr_meta[].ptr_output_desc,
+                cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
+                get_cudnn_dtype[output_type](),
+                Int16(5),
+                output_dims.bitcast[NoneType](),
+            )
+        )
+
+        # Convolution with tile-specific depth padding.
+        pad_a[0] = Int32(tile_pad_front)
+        pad_a[1] = Int32(padding[1])
+        pad_a[2] = Int32(padding[2])
+
+        check_cudnn_error(
+            cudnnSetConvolutionNdDescriptor(
+                ptr_meta[].ptr_conv_desc,
+                Int16(3),
+                pad_a.bitcast[NoneType](),
+                stride_a.bitcast[NoneType](),
+                dilation_a.bitcast[NoneType](),
+                cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
+                cudnnDataType_t.CUDNN_DATA_FLOAT,
+            )
+        )
+        check_cudnn_error(
+            cudnnSetConvolutionGroupCount(
+                ptr_meta[].ptr_conv_desc, Int16(num_groups)
+            )
+        )
+        check_cudnn_error(
+            cudnnSetConvolutionMathType(
+                ptr_meta[].ptr_conv_desc,
+                cudnnMathType_t.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION,
+            )
+        )
+
+        # --- Algorithm selection (use GetWorkspaceSize for PRECOMP_GEMM) ---
+        var algo = (
+            cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+        )
+        var ws_size: Int = 0
+        var ws_st = cudnnGetConvolutionForwardWorkspaceSize(
+            ptr_meta[].ptr_handle,
+            ptr_meta[].ptr_input_desc,
+            ptr_meta[].ptr_filter_desc,
+            ptr_meta[].ptr_conv_desc,
+            ptr_meta[].ptr_output_desc,
+            algo,
+            UnsafePointer(to=ws_size),
+        )
+        if ws_st != cudnnStatus_t.CUDNN_STATUS_SUCCESS or ws_size > FIND_WS_CAP:
+            # Fall back to IMPLICIT_GEMM (no workspace needed).
+            algo = (
+                cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM
+            )
+            ws_size = 0
+
+        # --- Execute tile ---
+        var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](ws_size)
+
+        # Compute pointer offsets for input and output tiles.
+        var in_offset = d_in_start * in_d_stride
+        var out_offset = d_out_start * out_d_stride
+        var in_ptr = input.ptr + in_offset
+        var out_ptr = output.ptr + out_offset
+
+        var fwd_status = cudnnConvolutionForward(
+            ptr_meta[].ptr_handle,
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            ptr_meta[].ptr_input_desc,
+            in_ptr.bitcast[NoneType](),
+            ptr_meta[].ptr_filter_desc,
+            filter.ptr.bitcast[NoneType](),
+            ptr_meta[].ptr_conv_desc,
+            algo,
+            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            ws_size,
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            ptr_meta[].ptr_output_desc,
+            out_ptr.bitcast[NoneType](),
+        )
+        _ = workspace_buffer^
+
+        if fwd_status != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
+            input_dims.free()
+            output_dims.free()
+            filter_dims.free()
+            pad_a.free()
+            stride_a.free()
+            dilation_a.free()
+            ctx.synchronize()
+            raise String("conv3d tiled forward failed: ", fwd_status)
+
+        d_out_start += this_d_out
+
+    # Clean up.
+    input_dims.free()
+    output_dims.free()
+    filter_dims.free()
+    pad_a.free()
+    stride_a.free()
+    dilation_a.free()
+
+
+def _conv3d_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
+    stride: IndexList[3],
+    dilation: IndexList[3],
+    padding: IndexList[3],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    """cuDNN 3D convolution using Nd descriptor APIs.
+
+    Expects:
+      - input:  NDHWC layout [N, D, H, W, C]
+      - filter: FCQRS layout [F, C/groups, Q, R, S]
+      - output: NDHWC layout [N, D_out, H_out, W_out, F]
+
+    Algorithm selection is cached per unique shape+params combination so that
+    the expensive FindEx search only runs once per shape.
+
+    When the total number of elements exceeds INT32_MAX (~2.1B), cuDNN's
+    internal stride calculations overflow. In this case we tile along the
+    depth (D) dimension, processing each tile with a separate cuDNN call.
+    """
+    comptime FIND_WS_CAP = 256 * 1024 * 1024
+    comptime INT32_MAX_VAL = 2147483647
+
+    # --- Check if depth tiling is needed (INT32 stride overflow) ---
+    var total_in = (
+        input.dim[0]()
+        * input.dim[1]()
+        * input.dim[2]()
+        * input.dim[3]()
+        * input.dim[4]()
+    )
+    if total_in > INT32_MAX_VAL:
+        _conv3d_cudnn_depth_tiled(
+            input,
+            filter,
+            output,
+            stride,
+            dilation,
+            padding,
+            num_groups,
+            ctx,
+        )
+        return
+
+    var ptr_meta = _get_cudnn_meta(ctx)
+
+    # --- Set up cuDNN descriptors (required every call — shared state) ---
+    # Input: NDHWC in memory, described as NHWC format with dims [N,C,D,H,W].
+    var input_dims = alloc[Int32](5)
+    input_dims[0] = Int32(input.dim[0]())  # N
+    input_dims[1] = Int32(input.dim[4]())  # C
+    input_dims[2] = Int32(input.dim[1]())  # D
+    input_dims[3] = Int32(input.dim[2]())  # H
+    input_dims[4] = Int32(input.dim[3]())  # W
+
+    check_cudnn_error(
+        cudnnSetTensorNdDescriptorEx(
+            ptr_meta[].ptr_input_desc,
+            cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
+            get_cudnn_dtype[input_type](),
+            Int16(5),
+            input_dims.bitcast[NoneType](),
+        )
+    )
+
+    # Filter: FCQRS layout [F, C/groups, Q, R, S], described as NCHW format.
+    var filter_dims = alloc[Int32](5)
+    filter_dims[0] = Int32(filter.dim[0]())  # F (out_channels)
+    filter_dims[1] = Int32(filter.dim[1]())  # C (in_channels / groups)
+    filter_dims[2] = Int32(filter.dim[2]())  # Q (depth)
+    filter_dims[3] = Int32(filter.dim[3]())  # R (height)
+    filter_dims[4] = Int32(filter.dim[4]())  # S (width)
+
+    check_cudnn_error(
+        cudnnSetFilterNdDescriptor(
+            ptr_meta[].ptr_filter_desc,
+            get_cudnn_dtype[filter_type](),
+            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
+            Int16(5),
+            filter_dims.bitcast[NoneType](),
+        )
+    )
+
+    # Convolution: 3 spatial dimensions.
+    var pad_a = alloc[Int32](3)
+    pad_a[0] = Int32(padding[0])
+    pad_a[1] = Int32(padding[1])
+    pad_a[2] = Int32(padding[2])
+
+    var stride_a = alloc[Int32](3)
+    stride_a[0] = Int32(stride[0])
+    stride_a[1] = Int32(stride[1])
+    stride_a[2] = Int32(stride[2])
+
+    var dilation_a = alloc[Int32](3)
+    dilation_a[0] = Int32(dilation[0])
+    dilation_a[1] = Int32(dilation[1])
+    dilation_a[2] = Int32(dilation[2])
+
+    check_cudnn_error(
+        cudnnSetConvolutionNdDescriptor(
+            ptr_meta[].ptr_conv_desc,
+            Int16(3),
+            pad_a.bitcast[NoneType](),
+            stride_a.bitcast[NoneType](),
+            dilation_a.bitcast[NoneType](),
+            cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+        )
+    )
+
+    check_cudnn_error(
+        cudnnSetConvolutionGroupCount(
+            ptr_meta[].ptr_conv_desc, Int16(num_groups)
+        )
+    )
+
+    # Output: NDHWC in memory, described as NHWC format with dims [N,C,D,H,W].
+    var output_dims = alloc[Int32](5)
+    output_dims[0] = Int32(output.dim[0]())  # N
+    output_dims[1] = Int32(output.dim[4]())  # C (out_channels)
+    output_dims[2] = Int32(output.dim[1]())  # D_out
+    output_dims[3] = Int32(output.dim[2]())  # H_out
+    output_dims[4] = Int32(output.dim[3]())  # W_out
+
+    check_cudnn_error(
+        cudnnSetTensorNdDescriptorEx(
+            ptr_meta[].ptr_output_desc,
+            cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
+            get_cudnn_dtype[output_type](),
+            Int16(5),
+            output_dims.bitcast[NoneType](),
+        )
+    )
+
+    # Allow tensor-op math with automatic type conversion — required for
+    # bfloat16 3D convolutions on modern cuDNN (matches PR #5988 approach).
+    check_cudnn_error(
+        cudnnSetConvolutionMathType(
+            ptr_meta[].ptr_conv_desc,
+            cudnnMathType_t.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION,
+        )
+    )
+
+    # --- Algorithm selection (cached per shape) ---
+    var cache_key = String(
+        "CONV3D_ALGO_",
+        ctx.id(),
+        "_",
+        input.dim[0](),
+        "_",
+        input.dim[4](),
+        "_",
+        input.dim[1](),
+        "_",
+        input.dim[2](),
+        "_",
+        input.dim[3](),
+        "_F",
+        filter.dim[0](),
+        "_",
+        filter.dim[1](),
+        "_",
+        filter.dim[2](),
+        "_",
+        filter.dim[3](),
+        "_",
+        filter.dim[4](),
+        "_p",
+        padding[0],
+        "_",
+        padding[1],
+        "_",
+        padding[2],
+        "_s",
+        stride[0],
+        "_",
+        stride[1],
+        "_",
+        stride[2],
+        "_d",
+        dilation[0],
+        "_",
+        dilation[1],
+        "_",
+        dilation[2],
+        "_g",
+        num_groups,
+    )
+
+    var algo: cudnnConvolutionFwdAlgo_t
+    var workspace_size_var: Int
+
+    if ptr_cached := _get_global_or_null(cache_key):
+        # Cache hit — reuse previously selected algorithm.
+        var entry = ptr_cached.unsafe_value().bitcast[_Conv3dAlgoCacheEntry]()
+        algo = entry[].algo()
+        workspace_size_var = entry[].workspace_size
+    else:
+        # Cache miss — run FindEx to find the fastest algorithm.
+        var find_ws = ctx.enqueue_create_buffer[DType.uint8](FIND_WS_CAP)
+
+        # CRITICAL: The Mojo cudnnConvolutionFwdAlgoPerfStruct uses Int8 for
+        # enum fields, but the C struct uses int (4 bytes). This causes a
+        # size mismatch: Mojo struct = ~32 bytes, C struct = 48 bytes.
+        # Allocating with the Mojo struct size would cause a buffer overflow
+        # when cuDNN writes 8 * 48 = 384 bytes. We allocate raw bytes with
+        # the correct C struct size and read fields at proper offsets.
+        comptime C_PERF_STRUCT_SIZE = 48  # sizeof(cudnnConvolutionFwdAlgoPerf_t)
+        comptime MAX_ALGOS = 8
+        var perf_bytes = alloc[UInt8](MAX_ALGOS * C_PERF_STRUCT_SIZE)
+
+        # returned_algo_count is int* in C (4 bytes), not Int16*.
+        # Use Int32 and bitcast the pointer.
+        var returned_count_i32 = Int32(0)
+
+        var find_status = cudnnFindConvolutionForwardAlgorithmEx(
+            ptr_meta[].ptr_handle,
+            ptr_meta[].ptr_input_desc,
+            input.ptr.bitcast[NoneType](),
+            ptr_meta[].ptr_filter_desc,
+            filter.ptr.bitcast[NoneType](),
+            ptr_meta[].ptr_conv_desc,
+            ptr_meta[].ptr_output_desc,
+            output.ptr.bitcast[NoneType](),
+            Int16(MAX_ALGOS),
+            UnsafePointer(to=returned_count_i32).bitcast[Int16](),
+            perf_bytes.bitcast[cudnnConvolutionFwdAlgoPerfStruct](),
+            find_ws.unsafe_ptr().bitcast[NoneType](),
+            FIND_WS_CAP,
+        )
+        _ = find_ws^
+
+        # Read the returned count (C int at offset 0 of returned_count_i32).
+        var returned_count = Int(returned_count_i32)
+
+        # Pick the fastest successful algorithm within workspace cap.
+        # Read fields from raw bytes at correct C struct offsets:
+        #   offset  0: algo (int32)
+        #   offset  4: status (int32)
+        #   offset  8: time (float32)
+        #   offset 16: memory (size_t / int64)
+        algo = (
+            cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM
+        )
+        workspace_size_var = 0
+
+        var find_status_val = rebind[Int8](find_status)
+        if find_status_val == 0:  # CUDNN_STATUS_SUCCESS
+            for i in range(returned_count):
+                var base = perf_bytes + i * C_PERF_STRUCT_SIZE
+                var algo_val = base.bitcast[Int32]()[]  # offset 0
+                var status_val = (base + 4).bitcast[Int32]()[]  # offset 4
+                var memory_val = (base + 16).bitcast[Int]()[]  # offset 16
+                if status_val == 0 and memory_val <= FIND_WS_CAP:
+                    algo = rebind[cudnnConvolutionFwdAlgo_t](Int8(algo_val))
+                    workspace_size_var = memory_val
+                    break
+        else:
+            print(
+                "conv3d FindEx FAILED: status=",
+                Int(find_status_val),
+                " input=[N=",
+                input.dim[0](),
+                " C=",
+                input.dim[4](),
+                " D=",
+                input.dim[1](),
+                " H=",
+                input.dim[2](),
+                " W=",
+                input.dim[3](),
+                "]",
+            )
+        perf_bytes.free()
+
+        # Fallback: if FindEx found nothing useful, try PRECOMP_GEMM via
+        # workspace size query (cheaper than FindEx).
+        if (
+            algo
+            == cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM
+            and workspace_size_var == 0
+        ):
+            var precomp = (
+                cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+            )
+            var ws_size: Int = 0
+            var ws_st = cudnnGetConvolutionForwardWorkspaceSize(
+                ptr_meta[].ptr_handle,
+                ptr_meta[].ptr_input_desc,
+                ptr_meta[].ptr_filter_desc,
+                ptr_meta[].ptr_conv_desc,
+                ptr_meta[].ptr_output_desc,
+                precomp,
+                UnsafePointer(to=ws_size),
+            )
+            if (
+                ws_st == cudnnStatus_t.CUDNN_STATUS_SUCCESS
+                and ws_size <= FIND_WS_CAP
+            ):
+                algo = precomp
+                workspace_size_var = ws_size
+
+        # Store result in global cache.
+        var ptr_entry = alloc[_Conv3dAlgoCacheEntry](1)
+        ptr_entry.init_pointee_move(
+            _Conv3dAlgoCacheEntry(
+                algo_value=rebind[Int8](algo),
+                workspace_size=workspace_size_var,
+            )
+        )
+        external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+            StringSlice(cache_key),
+            ptr_entry.bitcast[NoneType](),
+        )
+
+    # --- Execute convolution with cached/selected algorithm ---
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
+
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size_var
+    )
+    var fwd_status = cudnnConvolutionForward(
+        ptr_meta[].ptr_handle,
+        UnsafePointer(to=alpha).bitcast[NoneType](),
+        ptr_meta[].ptr_input_desc,
+        input.ptr.bitcast[NoneType](),
+        ptr_meta[].ptr_filter_desc,
+        filter.ptr.bitcast[NoneType](),
+        ptr_meta[].ptr_conv_desc,
+        algo,
+        workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+        workspace_size_var,
+        UnsafePointer(to=beta).bitcast[NoneType](),
+        ptr_meta[].ptr_output_desc,
+        output.ptr.bitcast[NoneType](),
+    )
+    # Free workspace BEFORE sync to release the buffer back to the pool.
+    _ = workspace_buffer^
+
+    # Free temporary descriptor arrays.
+    input_dims.free()
+    filter_dims.free()
+    pad_a.free()
+    stride_a.free()
+    dilation_a.free()
+    output_dims.free()
+
+    if fwd_status != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
+        # Synchronize device to flush any pending GPU operations and free
+        # temporary cuDNN allocations, preventing VRAM accumulation.
+        print("conv3d FORWARD FAILED: ", fwd_status, " algo=", algo)
+        ctx.synchronize()
+        raise String("cudnnConvolutionForward failed: ", fwd_status)
+
+
+def conv3d_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
+    stride: IndexList[3],
+    dilation: IndexList[3],
+    padding: IndexList[3],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    # Set `ctx`'s CUcontext as current to satisfy cudnn's stateful API.
+    with ctx.push_context() as ctx:
+        _conv3d_cudnn(
+            input, filter, output, stride, dilation, padding, num_groups, ctx
+        )

@@ -14,11 +14,7 @@
 
 from std.random import random_float64
 
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext, HostBuffer
 from std.testing import assert_equal, TestSuite
 
@@ -31,7 +27,7 @@ def simd_add_kernel[
     c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -47,7 +43,7 @@ def simd_mult_kernel[
     c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -63,7 +59,7 @@ def simd_fma_kernel[
     c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -126,9 +122,9 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
     var c_device_buffer = ctx.enqueue_create_buffer[DType.float32](buff_size)
 
     # Copy data from host to device
-    ctx.enqueue_copy(a_device_buffer, a_host.unsafe_ptr())
-    ctx.enqueue_copy(b_device_buffer, b_host.unsafe_ptr())
-    ctx.enqueue_copy(c_device_buffer, c_host.unsafe_ptr())
+    ctx.enqueue_copy(a_device_buffer, a_host)
+    ctx.enqueue_copy(b_device_buffer, b_host)
+    ctx.enqueue_copy(c_device_buffer, c_host)
 
     # Compute expected result on host
     var c_expected = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
@@ -174,7 +170,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
 
     # Copy result back from device to host
     var c_result = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
-    ctx.enqueue_copy(c_result.unsafe_ptr(), c_device_buffer)
+    ctx.enqueue_copy(c_result, c_device_buffer)
     ctx.synchronize()
 
     # Compare results

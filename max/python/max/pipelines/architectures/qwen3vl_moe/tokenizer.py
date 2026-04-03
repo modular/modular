@@ -43,7 +43,10 @@ from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index,
     get_seqlens,
 )
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib import (
+    TextAndVisionTokenizer,
+    max_tokens_to_generate,
+)
 from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -474,8 +477,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                         "prompt must be a string when images are provided"
                     )
                 content: list[MessageContent] = [
-                    TextContentPart(text=request.prompt),
-                ] + [ImageContentPart() for _ in request.images]
+                    TextContentPart(text=request.prompt)
+                ]
+                content.extend(ImageContentPart() for _ in request.images)
                 messages = [
                     TextGenerationRequestMessage(role="user", content=content)
                 ]
@@ -601,12 +605,6 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             else None
         )
 
-        # Determine EOS token IDs
-        if request.sampling_params.ignore_eos:
-            eos_token_ids = set()
-        else:
-            eos_token_ids = self._default_eos_token_ids
-
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 "encoded_prompt is greater than the max_length of the tokenizer"
@@ -715,7 +713,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         # images are redundant since we have the pixel values in the vision_data.
         context = Qwen3VLTextAndVisionContext(
             request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
+            eos_tracker=await self.create_eos_tracker(request),
             tokens=TokenBuffer(
                 array=encoded_prompt.astype(np.int64, copy=False),
             ),

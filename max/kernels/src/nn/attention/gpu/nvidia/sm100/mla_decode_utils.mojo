@@ -614,8 +614,9 @@ struct OffsetPosition[
         # Grid layout: block_z = batch_size * num_partitions
         # block_idx.z = batch_idx * num_partitions + split_idx
         comptime if Self.decoding_warp_split_k:
-            self.batch_idx = Int(block_idx.z) // num_partitions
-            self.split_idx = Int(block_idx.z) % num_partitions
+            self.batch_idx, self.split_idx = divmod(
+                Int(block_idx.z), num_partitions
+            )
         else:
             self.batch_idx = Int(block_idx.z)
             self.split_idx = 0
@@ -1781,6 +1782,187 @@ def bulk_mma_ws[
     )
 
 
+# ---- TS (TMEM-SMEM) .ws MMA building blocks ----
+
+
+def build_mma_ts_ws[
+    b_dtype: DType,
+    *,
+    b_BMN: Int,
+    b_BK: Int,
+    b_swizzle: TensorMapSwizzle,
+    b_is_k_major: Bool,
+](
+    kind: String,
+    *,
+    operand_size: Int,
+    num_k_mmas: Int,
+    tcgen05_mma_type: String,
+    mma_k: Int = 16,
+) -> String:
+    """Build PTX for TS (TMEM-A, SMEM-B) .ws MMA over multiple K-tiles.
+
+    Each K-tile requires a separate TMEM address operand for A passed via
+    inline assembly ($7, $8, ...).  B is an SMEM descriptor whose low-half
+    is bumped by the tile-layout offset for each K-tile.
+    """
+    layout_b = tile_layout_k_major[
+        b_dtype, b_BMN, b_BK, b_swizzle
+    ]() if b_is_k_major else tile_layout_mn_major[
+        b_dtype, b_BMN, b_BK, b_swizzle
+    ]()
+
+    # Registers:
+    #   %rdb  – 64-bit SMEM descriptor for B
+    #   %rb   – scratch for B low-half offset arithmetic
+    #   %pj   – jump predicate (elect==0 → skip)
+    #   %ps   – enable-input-d predicate (c_scale / accumulate)
+    mma = """{
+.reg .b64 %rdb;
+.reg .s32 %rb;
+.reg .pred %pj;
+.reg .pred %ps;
+setp.eq.s32 %pj, $6, 0;
+"""
+    tcgen05_mma = tcgen05_mma_type + kind
+
+    for k in range(num_k_mmas):
+        if k == 0:
+            mma += "mov.b64 %rdb, {$4, $5};\n"
+            # %ps = (c_scale != 0)
+            mma += "setp.ne.b32 %ps, $3, 0;\n"
+        else:
+            # rdb = b_desc + b_offset
+            var b_offset = (
+                layout_b(IntTuple(0, mma_k * k)) * operand_size
+            ) >> 4
+            mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
+            mma += "mov.b64 %rdb, {%rb, $5};\n"
+
+            if k == 1:
+                # after the first K-slice we always accumulate
+                mma += "setp.ne.b32 %ps, 1, 0;\n"
+
+        # tcgen05.mma.ws:
+        # [d-tmem], [a-tmem], b-desc, idesc, enable-input-d
+        mma += String("@%pj bra skip", k, ";")
+        mma += String(
+            tcgen05_mma,
+            " [$0], [$",
+            7 + k,
+            "], %rdb, $2, %ps;\n",
+        )
+
+        mma += String("skip", k, ":\n")
+    return mma + "}"
+
+
+@always_inline
+def bulk_mma_ws_ts[
+    kind: UMMAKind,
+    b_dtype: DType,
+    *,
+    b_BMN: Int,
+    b_BK: Int,
+    b_swizzle: TensorMapSwizzle,
+    b_is_k_major: Bool,
+    num_k_mmas: Int,
+    operand_size: Int,
+    tcgen05_mma_type: String,
+    mma_k: Int = 16,
+](
+    idesc: UMMAInsDescriptor[kind],
+    a: UInt32,
+    b: MMASmemDescriptorPair,
+    c_tmem: UInt32,
+    c_scale: UInt32,
+    elect: Int32,
+):
+    comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
+    comptime mma_string = build_mma_ts_ws[
+        b_dtype,
+        b_BMN=b_BMN,
+        b_BK=b_BK,
+        b_swizzle=b_swizzle,
+        b_is_k_major=b_is_k_major,
+    ](
+        String(kind),
+        operand_size=operand_size,
+        num_k_mmas=num_k_mmas,
+        tcgen05_mma_type=tcgen05_mma_type,
+        mma_k=mma_k,
+    )
+
+    comptime constraints = "r,r,r,r,r,r,r" + ",r" * num_k_mmas
+    comptime x = UInt32(mma_k * operand_size // 4)
+    # fmt: off
+    comptime if num_k_mmas == 1:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
+        )
+    elif num_k_mmas == 2:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x
+        )
+    elif num_k_mmas == 3:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x
+        )
+    elif num_k_mmas == 4:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x
+        )
+    elif num_k_mmas == 5:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x
+        )
+    elif num_k_mmas == 6:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x
+        )
+    elif num_k_mmas == 7:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x
+        )
+    elif num_k_mmas == 8:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x
+        )
+    elif num_k_mmas == 9:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x
+        )
+    elif num_k_mmas == 10:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x
+        )
+    elif num_k_mmas == 11:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x
+        )
+    elif num_k_mmas == 12:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x
+        )
+    elif num_k_mmas == 13:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x
+        )
+    elif num_k_mmas == 14:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x
+        )
+    elif num_k_mmas == 15:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x,a+14*x
+        )
+    else:
+        inlined_assembly[mma_string, NoneType, constraints=constraints](
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x,a+14*x,a+15*x
+        )
+    # fmt: on
+
+
 # ------------------------------------------------------------------------------
 # MLA decoding Tensor AccumulatorSS for QKT
 # ------------------------------------------------------------------------------
@@ -1946,6 +2128,71 @@ struct DecodeSM100PVSS[
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
         ](Self.UMMAPVSS, a, b, c, c_scale, elect)
+
+
+# ------------------------------------------------------------------------------
+# MLA decoding Tensor AccumulatorTS for QKT (TMEM Q, SMEM K)
+# ------------------------------------------------------------------------------
+struct DecodeSM100QKTTS[
+    operand_type: DType,
+    accum_type: DType,
+    *,
+    config: MLA_SM100_Decode_Config,
+](TrivialRegisterPassable):
+    comptime MMA_M = Self.config.MMA_M  # 64 rows
+    comptime MMA_N = Self.config.MMA_QK_N  # 64 cols
+    comptime MMA_K = Self.config.MMA_K  # 16
+    comptime BK = Self.config.BK0  # 576
+    comptime num_k_mmas = Self.BK // Self.MMA_K
+    comptime operand_size = size_of[Self.operand_type]()
+
+    # ----- Instruction descriptor -----
+    comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+        Self.accum_type,
+        Self.operand_type,
+        Self.operand_type,
+        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b=True,  # QKᵀ
+    ]()
+
+    @staticmethod
+    @always_inline
+    def descriptor_k_block(
+        kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
+    ) -> MMASmemDescriptorPair:
+        var base = kv_smem
+        # Layout is 64 x 576, k-major, same swizzle as k_tma
+        return smem_descriptor[
+            BMN=Self.config.BN,  # 64 rows
+            BK=Self.BK,  # 576 columns
+            swizzle_mode=Self.config.kv_mma_swizzle_mode,
+            is_k_major=True,
+        ](base)
+
+    @staticmethod
+    @always_inline
+    def mma[
+        *, stage_idx: Int = 0
+    ](
+        a: UInt32,
+        b: MMASmemDescriptorPair,
+        c: UInt32,
+        *,
+        c_scale: UInt32,
+        elect: Int32,
+    ):
+        comptime assert stage_idx == 0, "stage_idx should be 0"
+        bulk_mma_ws_ts[
+            UMMAKind.KIND_F16,
+            Self.operand_type,
+            b_BMN=Self.config.BN,
+            b_BK=Self.BK,
+            b_swizzle=Self.config.kv_mma_swizzle_mode,
+            b_is_k_major=True,
+            num_k_mmas=Self.num_k_mmas,
+            operand_size=Self.operand_size,
+            tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
+        ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
 
 # ------------------------------------------------------------------------------
@@ -2328,8 +2575,7 @@ def write_bf16x2_row_to_smem_chunked[
     var phys_offsets = StaticTuple[Int, total_groups]()
 
     comptime for i in range(total_groups):
-        comptime chunk_idx = i // groups_per_chunk
-        comptime group_idx = i % groups_per_chunk
+        comptime chunk_idx, group_idx = divmod(i, groups_per_chunk)
         comptime col_offset = chunk_idx * chunk_size + group_idx * 8
         var logical_elem = row_start * config.BN + col_start + col_offset
         phys_offsets[i] = swz(logical_elem)
@@ -2394,8 +2640,7 @@ def write_fp8_row_to_smem_chunked[
     var phys_offsets = StaticTuple[Int, total_groups]()
 
     comptime for i in range(total_groups):
-        comptime chunk_idx = i // groups_per_chunk
-        comptime group_idx = i % groups_per_chunk
+        comptime chunk_idx, group_idx = divmod(i, groups_per_chunk)
         comptime col_offset = chunk_idx * chunk_size + group_idx * 16
         var logical_elem = row_start * config.BN + col_start + col_offset
         phys_offsets[i] = swz(logical_elem)

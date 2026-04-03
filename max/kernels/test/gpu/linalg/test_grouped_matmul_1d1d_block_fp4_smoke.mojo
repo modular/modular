@@ -25,7 +25,7 @@ from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_nvfp4,
+    grouped_matmul_block_scaled,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
@@ -158,19 +158,33 @@ def _test_grouped_1d1d_block_fp4_impl[
     )
     var a_offsets_tt = TileTensor(
         a_off_buf.unsafe_ptr(),
-        row_major((Idx(Int(num_active_experts + 1)),)),
+        row_major(
+            Idx(
+                Int(num_active_experts + 1),
+            )
+        ),
     )
     var a_scale_offsets_tt = TileTensor(
         a_soff_buf.unsafe_ptr(),
-        row_major((Idx(Int(num_active_experts)),)),
+        row_major(
+            Idx(
+                Int(num_active_experts),
+            )
+        ),
     )
     var expert_ids_tt = TileTensor(
         eid_buf.unsafe_ptr(),
-        row_major((Idx(Int(num_active_experts)),)),
+        row_major(
+            Idx(
+                Int(num_active_experts),
+            )
+        ),
     )
     var expert_scales_tt = TileTensor(
         es_buf.unsafe_ptr(),
-        row_major((Idx[num_experts](),)),
+        row_major(
+            Idx[num_experts](),
+        ),
     )
 
     # Scale factor TileTensors (5D and 6D)
@@ -216,7 +230,7 @@ def _test_grouped_1d1d_block_fp4_impl[
         is_gmm=True,
     )
 
-    grouped_matmul_nvfp4[transpose_b=True, config=config](
+    grouped_matmul_block_scaled[transpose_b=True, config=config](
         c_tt,
         a_tt,
         a_offsets_tt,

@@ -170,7 +170,7 @@ class KVCacheParamInterface(Protocol):
         """Number of bytes per cache block."""
         ...
 
-    def get_symbolic_inputs(self) -> FlattenableInputSymbols:
+    def get_symbolic_inputs(self, prefix: str = "") -> FlattenableInputSymbols:
         """Returns the symbolic inputs for the KV cache."""
         ...
 
@@ -503,14 +503,14 @@ class KVCacheParams(KVCacheParamInterface):
         )
 
     def _get_symbolic_inputs_for_replica(
-        self, devices: Sequence[DeviceRef], replica_idx: int
+        self, devices: Sequence[DeviceRef], replica_idx: int, prefix: str = ""
     ) -> list[PagedCacheInputSymbols]:
         """Computes the symbolic inputs for a single replica.
 
         Returns:
             The symbolic inputs for the KV cache.
         """
-        dynamic_dim_prefix = f"replica_{replica_idx}_"
+        dynamic_dim_prefix = f"{prefix}replica_{replica_idx}_"
 
         kv_cache_scale_dtype = DType.float32
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
@@ -563,7 +563,9 @@ class KVCacheParams(KVCacheParamInterface):
             for device in devices
         ]
 
-    def get_symbolic_inputs(self) -> PagedCacheInputSymbolsByReplica:
+    def get_symbolic_inputs(
+        self, prefix: str = ""
+    ) -> PagedCacheInputSymbolsByReplica:
         """Computes the symbolic inputs for the KV cache.
 
         This method returns a list of PagedCacheInputSymbols for each replica.
@@ -580,6 +582,7 @@ class KVCacheParams(KVCacheParamInterface):
             symbols = self._get_symbolic_inputs_for_replica(
                 devices,
                 replica_idx,
+                prefix,
             )
             input_symbols.extend(symbols)
         return PagedCacheInputSymbolsByReplica(values=input_symbols)
@@ -715,10 +718,13 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """
         return sum(p.bytes_per_block for p in self.params)
 
-    def get_symbolic_inputs(self) -> MultiKVCacheInputSymbols:
+    def get_symbolic_inputs(self, prefix: str = "") -> MultiKVCacheInputSymbols:
         """Returns the symbolic inputs for the KV cache."""
         return MultiKVCacheInputSymbols(
-            [p.get_symbolic_inputs() for p in self.params]
+            [
+                p.get_symbolic_inputs(f"{prefix}cache{i}_")
+                for i, p in enumerate(self.params)
+            ]
         )
 
 

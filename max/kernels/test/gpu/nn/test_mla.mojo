@@ -16,11 +16,21 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+    row_major,
+)
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_prefill
+from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -103,34 +113,6 @@ def test[
         randn[qkv_type](q_ptr, q_size)
         randn[qkv_type](k_ptr, k_size)
 
-    # Construct buffers.
-    comptime layout_4d = Layout.row_major[4]()
-    var q = LayoutTensor[qkv_type, layout_4d](
-        q_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
-    var k = LayoutTensor[qkv_type, layout_4d](
-        k_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var output = LayoutTensor[qkv_type, layout_4d](
-        output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
-
-    var flash_output = LayoutTensor[qkv_type, layout_4d](
-        flash_output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
-
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
@@ -140,32 +122,28 @@ def test[
     ctx.enqueue_copy(q_device_ptr, q_ptr)
     ctx.enqueue_copy(k_device_ptr, k_ptr)
 
-    # Construct layout tensor buffers.
-    comptime q_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_device = LayoutTensor[qkv_type, q_layout](
+    # Construct device TileTensors.
+    var q_device = TileTensor(
         q_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-    var k_device = LayoutTensor[qkv_type, k_layout](
+    var k_device = TileTensor(
         k_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[kv_num_heads](),
+                Idx[depth](),
+            )
         ),
     )
-    comptime output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var output_device = LayoutTensor[qkv_type, output_layout](
+    var output_device = TileTensor(
         output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
 
@@ -187,14 +165,17 @@ def test[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
+        flare_mla_decoding[
+            config=MHAConfig[qkv_type](UInt(num_heads), UInt(depth)),
+            decoding_warp_split_k=decoding_warp_split_k,
+        ](
             output_device.as_any_origin(),
             q_device,
             k_device,
             CausalMask(),
             scale,
             ctx,
-            scalar_args_buf_lt,
+            lt_to_tt(scalar_args_buf_lt),
             num_partitions=num_partitions,
         )
 
@@ -219,18 +200,20 @@ def test[
 
     comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        comptime output_ref_layout = Layout.row_major(
-            Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-        )
-        var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
+        var output_ref_device = TileTensor(
             output_ref_device_ptr.unsafe_ptr(),
-            RuntimeLayout[output_ref_layout].row_major(
-                Index(batch_size, seq_len, num_heads, depth)
+            row_major(
+                (
+                    Idx(batch_size),
+                    Idx(seq_len),
+                    Idx[num_heads](),
+                    Idx[depth](),
+                )
             ),
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        var k_operand = LayoutTensorMHAOperand(k_device)
+        var k_operand = LayoutTensorMHAOperand(k_device.to_layout_tensor())
         var null_valid_length = LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE)
         ](
@@ -238,11 +221,11 @@ def test[
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
-            q_device,
+            q_device.to_layout_tensor(),
             k_operand,
             k_operand,
             CausalMask(),
-            output_ref_device,
+            output_ref_device.to_layout_tensor(),
             null_valid_length,
             scale,
             batch_size,
@@ -360,34 +343,37 @@ def test_prefill[
     cache_row_offsets[batch_size] = UInt32(batch_size * num_keys)
 
     # ragged inputs
-    var q = LayoutTensor[qkv_type, Layout.row_major[3]()](
+    var q = TileTensor(
         q_ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * seq_len, num_heads, depth)
-        ),
+        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
     )
-    var k = LayoutTensor[qkv_type, Layout.row_major[3]()](
+    var k = TileTensor(
         k_ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * num_keys, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    var v = LayoutTensor[qkv_type, Layout.row_major[3]()](
+    var v = TileTensor(
         v_ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * num_keys, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    var cache = LayoutTensor[k_rope_type, Layout.row_major[4]()](
+    var cache = TileTensor(
         cache_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, cache_num_heads, cache_depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[cache_num_heads](),
+                Idx[cache_depth](),
+            )
         ),
     )
-    var output = LayoutTensor[qkv_type, Layout.row_major[3]()](
+    var output = TileTensor(
         output_ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * seq_len, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
 
@@ -412,61 +398,47 @@ def test_prefill[
     ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
-    # construct device buffers
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
-    var q_device = LayoutTensor[qkv_type, q_layout](
+    # construct device TileTensors
+    var q_device = TileTensor(
         q_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout].row_major(
-            Index(batch_size * seq_len, num_heads, depth)
-        ),
+        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
     )
-    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
-    var k_device = LayoutTensor[qkv_type, k_layout](
+    var k_device = TileTensor(
         k_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size * num_keys, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    comptime v_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
-    var v_device = LayoutTensor[qkv_type, v_layout](
+    var v_device = TileTensor(
         v_device_ptr.unsafe_ptr(),
-        RuntimeLayout[v_layout].row_major(
-            Index(batch_size * num_keys, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    comptime cache_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, cache_num_heads, cache_depth
-    )
-    var cache_device = LayoutTensor[k_rope_type, cache_layout](
+    var cache_device = TileTensor(
         cache_device_ptr.unsafe_ptr(),
-        RuntimeLayout[cache_layout].row_major(
-            Index(batch_size, num_keys, cache_num_heads, cache_depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[cache_num_heads](),
+                Idx[cache_depth](),
+            )
         ),
     )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_heads, kv_depth
-    )
-    var output_device = LayoutTensor[qkv_type, output_layout](
+    var output_device = TileTensor(
         output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size * seq_len, num_heads, kv_depth)
+        row_major(
+            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
-    var input_row_offsets_device = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
+    var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size + 1),
-        ),
+        row_major(Idx(batch_size + 1)),
     )
-    var cache_row_offsets_device = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
+    var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size + 1),
-        ),
+        row_major(Idx(batch_size + 1)),
     )
 
     @parameter
@@ -481,14 +453,14 @@ def test_prefill[
         output_device,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank=q.rank](
-            lt_to_tt(output_device),
-            lt_to_tt(q_device),
+        flare_mla_prefill[rank=3](
+            output_device,
+            q_device,
             k_device,
             v_device,
             cache_device,
             CausalMask(),
-            lt_to_tt(input_row_offsets_device),
+            input_row_offsets_device,
             cache_row_offsets_device,
             scale,
             ctx,
@@ -537,22 +509,22 @@ def test_prefill[
     )
 
     # create reference K and V
-    var k_ref = LayoutTensor[qkv_type, Layout.row_major[4]()](
+    var k_ref = TileTensor(
         k_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
         ),
     )
-    var v_ref = LayoutTensor[qkv_type, Layout.row_major[4]()](
+    var v_ref = TileTensor(
         v_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
         ),
     )
-    var output_ref = LayoutTensor[qkv_type, Layout.row_major[4]()](
+    var output_ref = TileTensor(
         output_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
 
@@ -576,13 +548,10 @@ def test_prefill[
                     v_ref[b, s, h, d + kv_depth] = 0
 
     # view q_device as a rank 4 buffer
-    comptime q_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_device_rank4 = LayoutTensor[qkv_type, q_layout_4d](
+    var q_device_rank4 = TileTensor(
         q_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
 
@@ -596,32 +565,23 @@ def test_prefill[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
         batch_size * seq_len * num_heads * depth
     )
-    # create device buffers for K_ref and V_ref
-    comptime k_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var k_ref_device = LayoutTensor[qkv_type, k_layout_4d](
+    # create device TileTensors for K_ref and V_ref
+    var k_ref_device = TileTensor(
         k_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout_4d].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
         ),
     )
-    comptime v_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var v_ref_device = LayoutTensor[qkv_type, v_layout_4d](
+    var v_ref_device = TileTensor(
         v_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[v_layout_4d].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
         ),
     )
-    comptime output_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var output_ref_device = LayoutTensor[qkv_type, output_layout_4d](
+    var output_ref_device = TileTensor(
         output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
 
@@ -636,16 +596,16 @@ def test_prefill[
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device)
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device)
+    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device.to_layout_tensor())
+    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device.to_layout_tensor())
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_device_rank4,
+        q_device_rank4.to_layout_tensor(),
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device,
+        output_ref_device.to_layout_tensor(),
         null_valid_length,
         scale,
         batch_size,
@@ -661,10 +621,15 @@ def test_prefill[
     ctx.synchronize()
 
     # view output as a rank 4 buffer
-    var output_rank4 = LayoutTensor[qkv_type, Layout.row_major[4]()](
+    var output_rank4 = TileTensor(
         output_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, kv_depth)
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[kv_depth](),
+            )
         ),
     )
 

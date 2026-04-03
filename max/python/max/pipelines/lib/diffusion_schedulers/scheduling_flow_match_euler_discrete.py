@@ -147,6 +147,7 @@ class FlowMatchEulerDiscreteScheduler:
         image_seq_len: int,
         num_inference_steps: int,
         reverse: bool = False,
+        sigma_min: float | None = None,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         """Retrieve timesteps and sigmas for the diffusion process.
 
@@ -154,14 +155,21 @@ class FlowMatchEulerDiscreteScheduler:
             image_seq_len: Length of image sequence (H*W after packing).
             num_inference_steps: Number of inference steps.
             reverse: Whether to reverse the timesteps and sigmas.
+            sigma_min: Optional terminal sigma for the base schedule before
+                shifting. If None, defaults to legacy behavior (1 / steps).
 
         Returns:
             Tuple of timesteps and sigmas.
         """
         if not self._use_flow_sigmas:
+            min_sigma = (
+                float(sigma_min)
+                if sigma_min is not None
+                else 1.0 / num_inference_steps
+            )
             sigmas = np.linspace(
                 1.0,
-                1.0 / num_inference_steps,
+                min_sigma,
                 num_inference_steps,
                 dtype=np.float32,
             )

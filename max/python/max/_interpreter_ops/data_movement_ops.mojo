@@ -27,7 +27,7 @@ from std.runtime.asyncrt import DeviceContextPtr
 from tensor import ManagedTensorSlice
 from tensor.io_spec import Input, Output
 from compiler_internal import StaticTensorSpec
-from buffer.dimlist import DimList
+from layout import IntTuple, create_unknown_int_tuple
 from MOGGKernelAPI.MOGGKernelAPI import Slice, StaticBroadcastTo, Transpose
 from op_utils import (
     _get_dtype,
@@ -259,19 +259,18 @@ def transpose_op[
         io_spec=Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
-    # Create permutation tensor from stack data
-    var perm_ptr = UnsafePointer[Scalar[DType.int64], MutExternalOrigin](
-        unsafe_from_address=Int(UnsafePointer(to=perm_data[0]))
-    )
+    # TODO: ManagedTensorSlice should correctly propagate mutability to
+    # prevent us from needing to unsafely cast the pointer mutability here.
+    var perm_data_ptr = perm_data.unsafe_ptr().unsafe_mut_cast[True]()
     var perm_tensor = ManagedTensorSlice[io_spec=Input, static_spec=perm_spec](
-        perm_ptr, IndexList[1](MAX_RANK)
+        perm_data_ptr, IndexList[1](MAX_RANK)
     )
 
     if not ctx:
         Transpose.execute[
             target="cpu",
             _trace_name="interpreter.transpose",
-            static_permutations=DimList.create_unknown[MAX_RANK](),
+            static_permutations=create_unknown_int_tuple(MAX_RANK),
             dtype=dtype,
             rank=MAX_RANK,
         ](output_tensor, input_tensor, perm_tensor, DeviceContextPtr())
@@ -282,7 +281,7 @@ def transpose_op[
                 Transpose.execute[
                     target="gpu",
                     _trace_name="interpreter.transpose",
-                    static_permutations=DimList.create_unknown[MAX_RANK](),
+                    static_permutations=create_unknown_int_tuple(MAX_RANK),
                     dtype=dtype,
                     rank=MAX_RANK,
                 ](output_tensor, input_tensor, perm_tensor, device_ctx)
@@ -554,8 +553,8 @@ def slice_op[
         steps_ptr, IndexList[1](MAX_RANK)
     )
 
-    comptime unknown_starts = DimList.create_unknown[MAX_RANK]()
-    comptime unknown_steps = DimList.create_unknown[MAX_RANK]()
+    comptime unknown_starts = create_unknown_int_tuple(MAX_RANK)
+    comptime unknown_steps = create_unknown_int_tuple(MAX_RANK)
 
     if not ctx:
         Slice.execute[

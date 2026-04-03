@@ -213,15 +213,15 @@ def dispatch_sm100_conv2d[
 
         var act_tt = TileTensor(
             input.ptr,
-            row_major((Idx(batch), Idx(in_h), Idx(in_w), Idx(in_c))),
+            row_major(Idx(batch), Idx(in_h), Idx(in_w), Idx(in_c)),
         )
         var filter_tt = TileTensor(
             filter_krsc_ptr,
-            row_major((Idx(out_c), Idx(fh), Idx(fw), Idx(in_c))),
+            row_major(Idx(out_c), Idx(fh), Idx(fw), Idx(in_c)),
         )
         var out_tt = TileTensor(
             output.ptr,
-            row_major((Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c))),
+            row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
         )
 
         comptime config = Conv2dConfig[
@@ -231,7 +231,7 @@ def dispatch_sm100_conv2d[
         comptime if has_residual:
             var src_tt = TileTensor(
                 source_ptr,
-                row_major((Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c))),
+                row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
             )
             conv2d_fprop_with_residual[
                 config=config,
