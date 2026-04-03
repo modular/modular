@@ -37,6 +37,10 @@ def missing_colon()  # expected-error {{expected ':' in function definition}}
 def missing_colon_2()
     test_never_declared_fn()
 
+# expected-error @+1 {{function effect 'thin' is only allowed on function types}}
+def invalid_thin_effect() thin:
+    pass
+
 # expected-error @below {{expected argument name}}
 def missing_argument_name(*: Int): pass
 
