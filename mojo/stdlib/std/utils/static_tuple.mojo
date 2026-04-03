@@ -145,7 +145,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         _static_tuple_construction_checks[Self.element_type, Self.size]()
 
-        comptime num_values = VariadicParamList[*values].size
+        comptime num_values = ParameterList[*values].size
         if num_values == 1:
             return Self(fill=values[0])
 

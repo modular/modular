@@ -146,7 +146,7 @@ from std.builtin.value import (
 from std.builtin.variadics import (
     TypeList,
     Variadic,
-    VariadicParamList,
+    ParameterList,
     VariadicList,
     VariadicPack,
 )
