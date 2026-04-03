@@ -17,6 +17,9 @@ They don't otherwise make any attempt at coverage, edge cases, or correctness.
 """
 
 import os
+import threading
+from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -37,6 +40,13 @@ scatter_set_constant = F.functional(kernels.scatter_set_constant)
 @pytest.fixture
 def kernel_verification_ops_path() -> Path:
     return Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
+
+
+@pytest.fixture(autouse=True)
+def clear_eager_model_cache() -> Generator[None]:
+    rc._clear_eager_model_cache()
+    yield
+    rc._clear_eager_model_cache()
 
 
 @pytest.mark.skipif(
@@ -126,14 +136,12 @@ def test_custom_extensions_cached_across_calls(
     kernel_verification_ops_path: Path,
 ) -> None:
     """Test that identical eager custom op calls reuse compiled models."""
-    x = Tensor.ones([65], dtype=DType.float32, device=CPU())
-    y = Tensor.ones([65], dtype=DType.float32, device=CPU())
+    x = Tensor.ones([64], dtype=DType.float32, device=CPU())
+    y = Tensor.ones([64], dtype=DType.float32, device=CPU())
 
     session = rc._session()
     real_load = session.load
     load_count = 0
-    with rc._EAGER_MODEL_CACHE_LOCK:
-        rc._EAGER_MODEL_CACHE.clear()
 
     def counted_load(*args, **kwargs):  # noqa: ANN202
         nonlocal load_count
@@ -161,6 +169,99 @@ def test_custom_extensions_cached_across_calls(
             custom_extensions=kernel_verification_ops_path,
         )
         assert result2[0].real
+
+    assert load_count == 1
+
+
+def test_custom_extensions_cache_key_distinguishes_ops_and_parameters(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Test that distinct custom op signatures compile separately."""
+    session = rc._session()
+    real_load = session.load
+    load_count = 0
+
+    def counted_load(*args, **kwargs):  # noqa: ANN202
+        nonlocal load_count
+        load_count += 1
+        return real_load(*args, **kwargs)
+
+    with (
+        mock.patch.dict(os.environ, {"MAX_USE_EAGER_INTERPRETER": "0"}),
+        mock.patch.object(session, "load", side_effect=counted_load),
+    ):
+        x = Tensor.ones([64], dtype=DType.float32, device=CPU())
+        y = Tensor.ones([64], dtype=DType.float32, device=CPU())
+
+        result = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x, y],
+            out_types=[x.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result[0].real
+
+        result = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x, y],
+            out_types=[x.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result[0].real
+
+        for parameter in (1, 1, 2):
+            result = F.custom(
+                "op_with_int_parameter",
+                device=CPU(),
+                values=[x],
+                out_types=[x.type],
+                parameters={"IntParameter": parameter},
+                custom_extensions=kernel_verification_ops_path,
+            )
+            assert result[0].real
+
+    assert load_count == 3
+
+
+def test_custom_extensions_cache_is_thread_safe(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Test that concurrent identical eager custom op calls compile once."""
+    session = rc._session()
+    real_load = session.load
+    load_count = 0
+    load_count_lock = threading.Lock()
+    barrier = threading.Barrier(2)
+
+    def counted_load(*args, **kwargs):  # noqa: ANN202
+        nonlocal load_count
+        with load_count_lock:
+            load_count += 1
+        return real_load(*args, **kwargs)
+
+    def invoke() -> None:
+        x = Tensor.ones([64], dtype=DType.float32, device=CPU())
+        y = Tensor.ones([64], dtype=DType.float32, device=CPU())
+        barrier.wait()
+        result = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x, y],
+            out_types=[x.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result[0].real
+
+    with (
+        mock.patch.dict(os.environ, {"MAX_USE_EAGER_INTERPRETER": "0"}),
+        mock.patch.object(session, "load", side_effect=counted_load),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        futures = [executor.submit(invoke) for _ in range(2)]
+        for future in futures:
+            future.result()
 
     assert load_count == 1
 

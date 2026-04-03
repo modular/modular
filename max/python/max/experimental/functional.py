@@ -211,6 +211,11 @@ def functional(op: Op[..., Any]) -> Op[..., Any]:
                 )
                 stack.enter_context(ctx)
                 stack.enter_context(tensor.realization_context(ctx))
+            if isinstance(
+                tensor.current_realization_context(None),
+                rc.EagerRealizationContext,
+            ):
+                rc._clear_eager_model_cache_key(Graph.current)
             return op(*args, **kwargs)
 
     return wrapped
@@ -390,6 +395,32 @@ def _load_custom_extensions(
     graph._import_kernels(paths)
 
 
+def _eager_custom_model_cache_key(
+    name: str,
+    device: driver.Device | DeviceRef,
+    values: Sequence[Value[Any]],
+    out_types: Sequence[Type[Any]],
+    parameters: Mapping[str, bool | int | str | DType] | None,
+    custom_extensions: CustomExtensionsType | None,
+) -> tuple[object, ...] | None:
+    ctx = tensor.current_realization_context(None)
+    if (
+        not isinstance(ctx, rc.EagerRealizationContext)
+        or custom_extensions is None
+    ):
+        return None
+
+    graph = Graph.current
+    return (
+        name,
+        DeviceRef.from_device(device),
+        tuple(TensorValue(value).type for value in values),
+        tuple(out_types),
+        tuple(sorted((parameters or {}).items())),
+        tuple(str(path.resolve()) for path in graph.kernel_libraries_paths),
+    )
+
+
 @functional
 def custom(
     name: str,
@@ -450,6 +481,15 @@ def custom(
     """
     graph = Graph.current
     _load_custom_extensions(graph, custom_extensions)
+    if key := _eager_custom_model_cache_key(
+        name,
+        device,
+        values,
+        out_types,
+        parameters,
+        custom_extensions,
+    ):
+        graph._eager_model_cache_key = key
     return ops.custom(
         name=name,
         device=device,

@@ -50,8 +50,8 @@ import os
 import threading
 import weakref
 from collections import OrderedDict
+from concurrent.futures import Future
 from contextvars import ContextVar
-from pathlib import Path
 from types import TracebackType
 from typing import Any, TypeVar
 
@@ -75,11 +75,18 @@ Ex = TypeVar("Ex", bound=BaseException)
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
 _SEED: Tensor | None = None
 _EAGER_MODEL_CACHE_MAX_SIZE = 128
-_EAGER_MODEL_CACHE_LOCK = threading.Lock()
-_EAGER_MODEL_CACHE: OrderedDict[
-    tuple[int, str, tuple[str, ...]],
-    engine.Model,
-] = OrderedDict()
+_EAGER_MODEL_CACHES_LOCK = threading.Lock()
+
+
+class _SessionModelCache:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.models: OrderedDict[object, Future[engine.Model]] = OrderedDict()
+
+
+_EAGER_MODEL_CACHES: weakref.WeakKeyDictionary[
+    engine.api.InferenceSession, _SessionModelCache
+] = weakref.WeakKeyDictionary()
 
 # Environment variable to control interpreter usage.
 # Set to "0" or "false" to disable the interpreter (always compile).
@@ -169,41 +176,78 @@ def _session() -> engine.api.InferenceSession:
     return session
 
 
-def _eager_model_cache_key(
-    session: engine.api.InferenceSession, graph: Graph
-) -> tuple[int, str, tuple[str, ...]]:
-    module_asm = graph._module.operation.get_asm(
-        assume_verified=True,
-        enable_debug_info=False,
-        pretty_debug_info=False,
-        use_local_scope=True,
-    )
-    return (
-        id(session),
-        module_asm,
-        tuple(
-            str(Path(path).resolve()) for path in graph.kernel_libraries_paths
-        ),
-    )
+def _clear_eager_model_cache_key(graph: Graph) -> None:
+    if hasattr(graph, "_eager_model_cache_key"):
+        delattr(graph, "_eager_model_cache_key")
+
+
+def _clear_eager_model_cache() -> None:
+    with _EAGER_MODEL_CACHES_LOCK:
+        caches = list(_EAGER_MODEL_CACHES.values())
+        _EAGER_MODEL_CACHES.clear()
+    for cache in caches:
+        with cache.lock:
+            cache.models.clear()
+
+
+def _session_model_cache(
+    session: engine.api.InferenceSession,
+) -> _SessionModelCache:
+    with _EAGER_MODEL_CACHES_LOCK:
+        if cache := _EAGER_MODEL_CACHES.get(session):
+            return cache
+        cache = _SessionModelCache()
+        _EAGER_MODEL_CACHES[session] = cache
+        return cache
+
+
+def _trim_session_model_cache(cache: _SessionModelCache) -> None:
+    while len(cache.models) > _EAGER_MODEL_CACHE_MAX_SIZE:
+        oldest_key, oldest_future = next(iter(cache.models.items()))
+        if not oldest_future.done():
+            break
+        del cache.models[oldest_key]
 
 
 def _load_eager_model(graph: Graph) -> engine.Model:
     """Reuses compiled eager models for identical custom-extension graphs."""
     session = _session()
-    if not graph.kernel_libraries_paths:
+    if (
+        not (key := getattr(graph, "_eager_model_cache_key", None))
+        or not graph.kernel_libraries_paths
+    ):
         return session.load(graph)
 
-    key = _eager_model_cache_key(session, graph)
-    with _EAGER_MODEL_CACHE_LOCK:
-        if model := _EAGER_MODEL_CACHE.get(key):
-            _EAGER_MODEL_CACHE.move_to_end(key)
-            return model
+    cache = _session_model_cache(session)
+    should_compile = False
 
-        model = session.load(graph)
-        _EAGER_MODEL_CACHE[key] = model
-        if len(_EAGER_MODEL_CACHE) > _EAGER_MODEL_CACHE_MAX_SIZE:
-            _EAGER_MODEL_CACHE.popitem(last=False)
-        return model
+    with cache.lock:
+        if model_future := cache.models.get(key):
+            cache.models.move_to_end(key)
+        else:
+            model_future = Future()
+            cache.models[key] = model_future
+            should_compile = True
+
+    if should_compile:
+        try:
+            model = session.load(graph)
+        except BaseException as exc:
+            model_future.set_exception(exc)
+            with cache.lock:
+                if cache.models.get(key) is model_future:
+                    del cache.models[key]
+            raise
+        else:
+            model_future.set_result(model)
+            with cache.lock:
+                if cache.models.get(key) is model_future:
+                    cache.models.move_to_end(key)
+                else:
+                    cache.models[key] = model_future
+                _trim_session_model_cache(cache)
+
+    return model_future.result()
 
 
 class EagerRealizationContext(RealizationContext):
