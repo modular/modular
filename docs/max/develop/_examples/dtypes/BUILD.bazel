@@ -17,6 +17,11 @@ modular_run_binary_test(
     name = "dtype_intro_test",
     size = "large",
     binary = "dtype_intro",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # specify_dtype.py
@@ -36,6 +41,11 @@ modular_run_binary_test(
     name = "specify_dtype_test",
     size = "large",
     binary = "specify_dtype",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # check_dtype.py
@@ -55,6 +65,11 @@ modular_run_binary_test(
     name = "check_dtype_test",
     size = "large",
     binary = "check_dtype",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # cast_dtype.py
@@ -74,6 +89,11 @@ modular_run_binary_test(
     name = "cast_dtype_test",
     size = "large",
     binary = "cast_dtype",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # dtype_properties.py
@@ -91,6 +111,11 @@ modular_run_binary_test(
     name = "dtype_properties_test",
     size = "large",
     binary = "dtype_properties",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # dlpack_conversion.py
@@ -109,6 +134,11 @@ modular_run_binary_test(
     name = "dlpack_conversion_test",
     size = "large",
     binary = "dlpack_conversion",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # pytorch_to_max.py
@@ -127,6 +157,11 @@ modular_run_binary_test(
     name = "pytorch_to_max_test",
     size = "large",
     binary = "pytorch_to_max",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # calculate_memory.py
@@ -144,6 +179,11 @@ modular_run_binary_test(
     name = "calculate_memory_test",
     size = "large",
     binary = "calculate_memory",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # validate_dtypes.py
@@ -161,4 +201,9 @@ modular_run_binary_test(
     name = "validate_dtypes_test",
     size = "large",
     binary = "validate_dtypes",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )

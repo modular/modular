@@ -34,7 +34,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_pipeline_config_resolve",
-    size = "small",
+    size = "medium",
     srcs = ["test_pipeline_config_resolve.py"],
     deps = [
         "//max/python/max/driver",
