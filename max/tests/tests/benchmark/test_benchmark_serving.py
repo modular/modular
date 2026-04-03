@@ -54,10 +54,7 @@ def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:
     # Mock sys.argv to simulate running with --help flag
     test_args = ["benchmark_serving.py", "--help"]
     with patch.object(sys, "argv", test_args):
-        # The --help flag causes argparse to exit with code 0 during parse_args()
-        # We need to catch this SystemExit exception
         with pytest.raises(SystemExit) as excinfo:
-            # initialize_parser() calls parse_args() internally and will exit with --help
             args = parse_args()
 
         # Verify it exited with code 0 (success)

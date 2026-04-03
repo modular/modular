@@ -2,6 +2,7 @@
 authors = [{ name = "Modular", email = "hello@modular.com" }]
 dependencies = [
     "aiohttp>=3.10.5",
+    "cyclopts>=4.2.5",
     "datasets>=2.21.0",
     "hf-transfer>=0.1.9",
     "huggingface-hub>=0.28.0",

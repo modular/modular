@@ -32,12 +32,13 @@ import time
 import warnings
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeGuard
+from typing import TYPE_CHECKING, Annotated, Any, TypeGuard
 from urllib.parse import urlparse
 
 import numpy as np
 import yaml
+from cyclopts import App, Parameter
+from cyclopts.config import Env
 from tqdm.asyncio import tqdm
 from transformers import (
     AutoTokenizer,
@@ -57,7 +58,6 @@ from max.benchmark.benchmark_shared.config import (
     BenchmarkTask,
     Endpoint,
     ServingBenchmarkConfig,
-    parse_benchmark_args,
 )
 from max.benchmark.benchmark_shared.cpu_metrics import (
     CpuMetricsCollector,
@@ -2541,7 +2541,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
         result_json["dataset_name"] = args.dataset_name
-        result_json["client_args"] = dict(vars(args))
+        result_json["client_args"] = args.model_dump()
         # json doesn't allow infinity as numeric, so cast this to string
         result_json["client_args"]["request_rate"] = str(
             result_json["client_args"]["request_rate"]
@@ -2610,7 +2610,8 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             "top_p",
         )
         output_lens_dict = {}
-        output_lens_dict["args"] = {x: vars(args)[x] for x in args_to_save}
+        args_dict = args.model_dump()
+        output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
         output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
         with open(args.record_output_lengths, "w") as f:
             yaml.dump(output_lens_dict, f)
@@ -2622,27 +2623,83 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     logger.info("finished benchmark run: Success.")
 
 
-def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:
-    """Parse command line arguments using ServingBenchmarkConfig with enhanced cli_parse_args().
+def _extract_metadata_args(
+    args: list[str],
+) -> tuple[list[str], list[str]]:
+    """Extract --metadata values from args before passing to cyclopts.
 
-    This function uses the generalized parse_benchmark_args function to handle
-    config file inheritance and CLI argument parsing.
+    cyclopts interprets bare ``key=value`` tokens as keyword assignments. When
+    a token like ``enable_prefix_caching=True`` matches a real model field, it
+    is routed to that field rather than consumed as a ``--metadata`` list item,
+    leaving subsequent tokens as orphaned positionals (which then fail).
+
+    This function peels off all space-separated values after ``--metadata``
+    (until the next ``--flag``) and returns them separately so cyclopts never
+    sees them.
+
+    Returns:
+        A 2-tuple of (clean_args, metadata_values).
+    """
+    clean_args: list[str] = []
+    metadata_values: list[str] = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--metadata":
+            i += 1
+            while i < len(args) and not args[i].startswith("-"):
+                metadata_values.append(args[i])
+                i += 1
+        else:
+            clean_args.append(args[i])
+            i += 1
+    return clean_args, metadata_values
+
+
+def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:
+    """Parse command line arguments into a ServingBenchmarkConfig using cyclopts.
 
     Args:
         args: Command line arguments to parse. If None, parse from sys.argv.
     """
-    parsed_args = parse_benchmark_args(
-        config_class=ServingBenchmarkConfig,
-        default_config_path=Path(__file__).parent
-        / "configs/serving_config.yaml",
-        description=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
-        args=args,
+    raw_args = list(sys.argv[1:] if args is None else args)
+
+    # Pre-extract --metadata values because cyclopts interprets bare key=value
+    # tokens as keyword assignments. Tokens matching real model field names
+    # (e.g. enable_prefix_caching=True) would be routed to those fields
+    # instead of being consumed as --metadata list items.
+    clean_args, metadata_values = _extract_metadata_args(raw_args)
+
+    result: list[ServingBenchmarkConfig] = []
+
+    app = App(
+        name="benchmark_serving",
+        help=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
+        help_formatter="plain",
+        config=[Env(prefix="MODULAR_")],
+        result_action="return_value",
     )
-    slim_parsed_args = dict(vars(parsed_args))
-    # config_file is present in the parsed arguments, but isn't a part of the
-    # config proper, so remove it before constructing the config
-    slim_parsed_args.pop("config_file", None)
-    return ServingBenchmarkConfig(**slim_parsed_args)
+
+    # TODO: Parameter(name="*") flattens flags to match legacy argparse
+    # behavior (e.g. --dataset-name instead of --config.dataset-name).
+    # Remove this once callers are migrated to use the dotted names.
+    @app.default
+    def _capture(
+        config: Annotated[
+            ServingBenchmarkConfig, Parameter(name="*")
+        ] = ServingBenchmarkConfig(),
+    ) -> None:
+        result.append(config)
+
+    app(clean_args)
+    if not result:
+        # --help was requested: cyclopts printed help and returned without
+        # invoking the handler.  (Parse errors still raise SystemExit(1)
+        # via cyclopts' exit_on_error, so they never reach here.)
+        raise SystemExit(0)
+    config = result[0]
+    if metadata_values:
+        config.metadata = metadata_values
+    return config
 
 
 def main(args: Sequence[str] | None = None) -> None:

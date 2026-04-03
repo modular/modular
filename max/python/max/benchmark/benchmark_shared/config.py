@@ -230,6 +230,12 @@ class BaseBenchmarkConfig(ConfigFileModel):
     _config_file_section_name: ClassVar[str] = "benchmark_config"
     """The section name to use when loading this config from a config file."""
 
+    section_name: str | None = Field(default="benchmark_config", exclude=True)
+    """Default section name for benchmark config files.
+
+    Overrides ConfigFileModel's default to automatically extract the
+    ``benchmark_config`` section when loading YAML config files."""
+
     # Model and tokenizer configuration (common to all benchmarks)
     model: str | None = Field(
         default=None,
