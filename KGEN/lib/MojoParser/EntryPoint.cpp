@@ -569,6 +569,19 @@ OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl,
   eraseUnreachableDecls(newDeclOp, *newModule,
                         /*preserveClosureTraitMethods=*/false);
   sortValueUses(*newModule);
+
+  // Mark any lit.fn with an empty body region as external. These are lazy
+  // bytecode stubs: the LSP skips resolveBody on imported FnOps to avoid
+  // pulling in expensive transitive imports, leaving them with 0-block body
+  // regions and no `external` attribute. Normal compilation never hits this
+  // because finalizeImportedBytecodeModules erases all stubs before the
+  // pipeline runs, but the LSP clones the module and runs the pipeline on the
+  // clone, which still contains the stubs.
+  newModule->walk([](LIT::FnOp func) {
+    if (func.getBodyRegion().empty())
+      func.setExternal(true);
+  });
+
   return newModule;
 }
 
