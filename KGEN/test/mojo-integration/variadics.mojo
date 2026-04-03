@@ -104,7 +104,7 @@ struct CountBox(Bumpable, ImplicitlyCopyable):
 
 
 def takes_int_params[*args: Int]():
-    comptime args_list = VariadicParamList[*args]()
+    comptime args_list = ParameterList[*args]()
 
     # CHECK: -- Testing parameter varargs
     print("-- Testing parameter varargs")
@@ -534,7 +534,7 @@ def test_tuple():
 def takes_variadic_params[
     T: Copyable, //, *values: T
 ]() -> Span[T, StaticConstantOrigin]:
-    return VariadicParamList[*values]().get_span()
+    return ParameterList[*values]().get_span()
 
 
 def test_comptime_variadics():
