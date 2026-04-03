@@ -475,3 +475,18 @@ kgen.generator @unresolved_index_struct_gep<I: index>(%arg0: !kgen.struct<(index
   // CHECK-NEXT: kgen.return %[[LOAD]]
   kgen.return %load : index
 }
+
+
+// CHECK-LABEL: @array_offset
+kgen.func @array_offset(%arg1: !pop.array<4, index>, %arg2: index) -> index {
+  %0 = kgen.param.constant = <0>
+  %array = pop.stack_allocation 1 x array<4, index>
+  // Offset from an element should not be touched.
+  // CHECK: pop.stack_allocation 1 x array<4, index>
+  pop.store %arg1, %array : !kgen.pointer<array<4, index>>
+  %gep = pop.array.gep %array[%0] : <array<4, index>>
+  // This can access an arbitrary element.
+  %offset = pop.offset %gep[%arg2] : !kgen.pointer<index>
+  %load = pop.load %offset : !kgen.pointer<index>
+  kgen.return %load : index
+}
