@@ -120,6 +120,15 @@ def fn_hidden() -> Int:
 @doc_hidden
 comptime alias_hidden = 42
 
+
+# CHECK-NOT: hidden_field
+
+
+struct PublicStruct:
+    @doc_hidden
+    var hidden_field: Int
+
+
 # CHECK-NOT: _private_member
 
 
