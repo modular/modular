@@ -58,10 +58,15 @@ def to_numpy(t: tensor.Tensor) -> np.ndarray:
 
     Materializes distributed tensors and transfers to CPU if needed.
     """
-    from max.experimental import functional as F
+    from max.experimental.sharding import DeviceMesh, PlacementMapping
+
+    from .collectives import shard
 
     if t.is_distributed:
         t = materialize(t)
     if t.device != CPU():
-        t = F.transfer_to(t, CPU())
+        cpu_mapping = PlacementMapping(
+            DeviceMesh.single(CPU()), (Replicated(),)
+        )
+        t = shard(t, cpu_mapping)
     return np.from_dlpack(t)

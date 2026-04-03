@@ -1,0 +1,196 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Shared test logic for reduction ops.
+
+DO NOT run this file directly — it contains base classes that are
+subclassed by functional/test_reduction_simulated.py and
+functional/test_reduction_multi_gpu.py.
+
+Subclasses must define:
+    MESH_1D: DeviceMesh   — 4 devices, shape (4,), axis_names=("tp",)
+    MESH_2D: DeviceMesh   — 4 devices, shape (2,2), axis_names=("dp","tp")
+    MESH_2:  DeviceMesh   — 2 devices, shape (2,), axis_names=("tp",)
+    partial_fn: Callable   — make_partial (CPU) or gpu_partial (GPU)
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import ClassVar
+
+import numpy as np
+import pytest
+from _test_helpers import from_np, shard, to_np
+from max.experimental.distributed_functional.reduction import (
+    mean,
+    softmax,
+    sum,
+)
+from max.experimental.sharding import (
+    DeviceMesh,
+    Partial,
+    Replicated,
+    Sharded,
+)
+from max.experimental.tensor import Tensor
+
+# ── Sum ──────────────────────────────────────────────────────────────
+
+
+class _Sum:
+    """Tests for distributed sum reduction."""
+
+    MESH_1D: ClassVar[DeviceMesh]
+    MESH_2D: ClassVar[DeviceMesh]
+    MESH_2: ClassVar[DeviceMesh]
+    partial_fn: ClassVar[Callable[..., Tensor]]
+
+    def test_non_sharded_axis(self) -> None:
+        """MESH_1D: Sharded(0) + sum along axis=1 preserves placement."""
+        t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
+        t = shard(from_np(t_np), self.MESH_1D, [Sharded(0)])
+        result = sum(t, axis=1)
+        assert isinstance(result, Tensor)
+        assert result.placements == (Sharded(0),)
+        expected = t_np.sum(axis=1, keepdims=True)
+        np.testing.assert_allclose(to_np(result), expected, rtol=1e-5)
+
+    def test_sharded_axis_raises(self) -> None:
+        """MESH_1D: reducing along the sharded axis raises."""
+        t = shard(
+            from_np(np.ones((8, 4), dtype=np.float32)),
+            self.MESH_1D,
+            [Sharded(0)],
+        )
+        with pytest.raises(ValueError, match="sharded axis"):
+            sum(t, axis=0)
+
+    def test_numerics(self) -> None:
+        """MESH_1D with 4 shards: sum along non-sharded axis is correct."""
+        t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
+        t = shard(from_np(t_np), self.MESH_1D, [Sharded(0)])
+        result = sum(t, axis=1)
+        assert isinstance(result, Tensor)
+        assert result.placements == (Sharded(0),)
+        expected = t_np.sum(axis=1, keepdims=True)
+        np.testing.assert_allclose(to_np(result), expected, rtol=1e-5)
+
+    def test_partial_passthrough(self) -> None:
+        """MESH_1D: Partial placement passes through sum (linear op)."""
+        a_np = np.ones((4, 4), dtype=np.float32)
+        t = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
+        result = sum(t, axis=1)
+        assert isinstance(result, Tensor)
+        assert result.placements == (Partial(),)
+        # to_np materializes (allreduces) the Partial across N devices,
+        # so each partial sum of 4.0 becomes 4.0 * N.
+        n = self.MESH_1D.num_devices
+        result_np = to_np(result)
+        assert result_np.shape == (4, 1)
+        expected = a_np.sum(axis=1, keepdims=True) * n
+        np.testing.assert_allclose(result_np, expected, rtol=1e-5)
+
+    def test_axis_none_sharded_raises(self) -> None:
+        """MESH_1D: sum(Sharded, axis=None) raises — data is split."""
+        t = shard(
+            from_np(np.ones((8, 4), dtype=np.float32)),
+            self.MESH_1D,
+            [Sharded(0)],
+        )
+        with pytest.raises(ValueError, match="axis=None is not supported"):
+            sum(t, axis=None)
+
+    def test_axis_none_replicated_ok(self) -> None:
+        """MESH_2: sum(Replicated, axis=None) works — all shards identical."""
+        t_np = np.arange(8, dtype=np.float32).reshape(2, 4)
+        t = shard(from_np(t_np), self.MESH_2, [Replicated()])
+        result = sum(t, axis=None)
+        # axis=None flattens then reduces → scalar-like (1,) shape
+        expected = t_np.sum()
+        np.testing.assert_allclose(to_np(result).item(), expected, rtol=1e-5)
+
+
+# ── Mean ─────────────────────────────────────────────────────────────
+
+
+class _Mean:
+    """Tests for distributed mean reduction."""
+
+    MESH_1D: ClassVar[DeviceMesh]
+    MESH_2D: ClassVar[DeviceMesh]
+    MESH_2: ClassVar[DeviceMesh]
+    partial_fn: ClassVar[Callable[..., Tensor]]
+
+    def test_non_sharded_axis(self) -> None:
+        """MESH_2: Sharded(0) + mean along axis=-1 preserves placement."""
+        t_np = np.arange(24, dtype=np.float32).reshape(4, 6)
+        t = shard(from_np(t_np), self.MESH_2, [Sharded(0)])
+        result = mean(t, axis=-1)
+        assert isinstance(result, Tensor)
+        assert result.placements == (Sharded(0),)
+        expected = t_np.mean(axis=-1, keepdims=True)
+        np.testing.assert_allclose(to_np(result), expected, rtol=1e-4)
+
+    def test_axis_none_sharded_raises(self) -> None:
+        """MESH_2: mean(Sharded, axis=None) raises — data is split."""
+        t = shard(
+            from_np(np.ones((4, 6), dtype=np.float32)),
+            self.MESH_2,
+            [Sharded(0)],
+        )
+        with pytest.raises(ValueError, match="axis=None is not supported"):
+            mean(t, axis=None)
+
+
+# ── Softmax ──────────────────────────────────────────────────────────
+
+
+class _Softmax:
+    """Tests for distributed softmax."""
+
+    MESH_1D: ClassVar[DeviceMesh]
+    MESH_2D: ClassVar[DeviceMesh]
+    MESH_2: ClassVar[DeviceMesh]
+    partial_fn: ClassVar[Callable[..., Tensor]]
+
+    def test_non_sharded_axis(self) -> None:
+        """MESH_1D: softmax along non-sharded axis preserves placement."""
+        a_np = np.arange(32, dtype=np.float32).reshape(8, 4)
+        t = shard(from_np(a_np), self.MESH_1D, [Sharded(0)])
+        result = softmax(t, axis=1)
+        assert isinstance(result, Tensor)
+        assert result.placements == (Sharded(0),)
+        arr = to_np(result)
+        # Compute expected softmax along axis=1
+        e = np.exp(a_np - a_np.max(axis=1, keepdims=True))
+        expected = e / e.sum(axis=1, keepdims=True)
+        np.testing.assert_allclose(arr, expected, rtol=1e-5)
+
+    def test_sharded_axis_raises(self) -> None:
+        """MESH_1D: softmax along sharded axis raises."""
+        t = shard(
+            from_np(np.ones((8, 4), dtype=np.float32)),
+            self.MESH_1D,
+            [Sharded(0)],
+        )
+        with pytest.raises(ValueError, match="cannot reduce along sharded"):
+            softmax(t, axis=0)
+
+
+# ── Combined base class ─────────────────────────────────────────────
+
+
+class ReductionTests(_Sum, _Mean, _Softmax):
+    """Aggregates all reduction test classes for thin subclassing."""
+
+    pass
