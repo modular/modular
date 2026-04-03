@@ -897,59 +897,6 @@ kgen.func @multi_lifetimes() {
   kgen.return
 }
 
-// CHECK-LABEL: @variadic_create
-// CHECK-SAME: %[[A0:.*]]: i24, %[[B0:.*]]: i24
-kgen.func @variadic_create(%a: i24, %b: i24) {
-  // CHECK: %[[ALLOCA_SIZE:.*]] = llvm.mlir.constant(2 : i64)
-  // CHECK: %[[ALLOCA:.*]] = llvm.alloca %[[ALLOCA_SIZE]] x i24 {alignment = 4 : i64} : (i64) -> !llvm.ptr
-  // CHECK: llvm.intr.lifetime.start %[[ALLOCA]] : !llvm.ptr
-  // CHECK: %[[GEPI0:.*]] = llvm.mlir.constant(0 : i64)
-  // CHECK: %[[GEP0:.*]] = llvm.getelementptr inbounds %[[ALLOCA]][%[[GEPI0]]] : (!llvm.ptr, i64) -> !llvm.ptr
-  // CHECK: llvm.store %[[A0]], %[[GEP0]] : i24, !llvm.ptr
-  // CHECK: %[[GEPI1:.*]] = llvm.mlir.constant(1 : i64)
-  // CHECK: %[[GEP1:.*]] = llvm.getelementptr inbounds %[[ALLOCA]][%[[GEPI1]]]
-  // CHECK: llvm.store %[[B0]], %[[GEP1]]
-  // CHECK: %[[SIZE:.*]] = llvm.mlir.constant(2 : i64)
-  // CHECK: %[[STRUCT1:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, i64)>
-  // CHECK: %[[STRUCT2:.*]] = llvm.insertvalue %[[ALLOCA]], %[[STRUCT1]][0]
-  // CHECK: llvm.insertvalue %[[SIZE]], %[[STRUCT2]][1]
-  // CHECK: llvm.intr.lifetime.end %[[ALLOCA]]
-  %0 = pop.variadic.create [%a, %b] : !kgen.variadic<i24>
-  kgen.return
-}
-
-// CHECK-LABEL: @variadic_create_empty
-kgen.func @variadic_create_empty() {
-  // CHECK: llvm.mlir.undef : !llvm.struct<(ptr, i64)>
-  %0 = pop.variadic.create [] : !kgen.variadic<i32>
-  kgen.return
-}
-
-// CHECK-LABEL: @variadic_create_index
-kgen.func @variadic_create_index() {
-  %0 = index.constant 64
-  // CHECK: llvm.mlir.undef : !llvm.struct<(ptr, i64)>
-  %1 = pop.variadic.create [%0] : !kgen.variadic<index>
-  kgen.return
-}
-
-// CHECK-LABEL: @variadic_size
-kgen.func @variadic_size(%arg0: !kgen.variadic<f32>) -> index {
-  // CHECK: llvm.extractvalue %{{.*}}[1] : !llvm.struct<(ptr, i64)>
-  %0 = pop.variadic.size %arg0 : !kgen.variadic<f32>
-  kgen.return %0 : index
-}
-
-// CHECK-LABEL: @variadic_get
-kgen.func @variadic_get(%arg0: !kgen.variadic<f32>) -> f32 {
-  %0 = index.constant 3
-  // CHECK: %[[ALLOCA:.*]] = llvm.extractvalue %{{.*}}[0] : !llvm.struct<(ptr, i64)>
-  // CHECK: %[[GEP:.*]] = llvm.getelementptr inbounds %[[ALLOCA]][%{{[0-9]+}}]
-  // CHECK: %[[LOAD:.*]] = llvm.load %[[GEP]]
-  %1 = pop.variadic.get %arg0[%0] : !kgen.variadic<f32>
-  kgen.return %1 : f32
-}
-
 // CHECK-LABEL: @extract_size
 kgen.func @extract_size(%a: !kgen.string) ->  index {
   // CHECK: unrealized_conversion_cast %arg0 : !kgen.string to !llvm.struct<(ptr, i64)>

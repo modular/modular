@@ -1984,134 +1984,6 @@ struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPVariadicCreate
-//===----------------------------------------------------------------------===//
-
-/// Converts a `pop.variadic.create` to:
-/// 1. An `alloca`, to allocate space for a sequence of elements on the stack.
-/// 2. Zero or more GEP and `store`, to insert elements of the variadic sequence
-///    into the allocated space.
-/// 3. A struct that holds the pointer to allocated sequence, and the number of
-///    elements.
-static LogicalResult convertVariadicCreate(VariadicType resultType,
-                                           ValueRange operands, Operation *op,
-                                           ConversionPatternRewriter &rewriter,
-                                           const TypeConverter *typeConverter,
-                                           TargetInfoAttr target) {
-
-  // 1. Allocate space for an array of elements.
-  Type opElementType = resultType.getElementType();
-  std::optional<int64_t> typeAllocSize =
-      DataLayoutInterface::getTypeAllocSize(target, opElementType);
-  std::optional<int64_t> typeABIAlign =
-      DataLayoutInterface::getTypeABIAlign(target, opElementType);
-  if (!typeAllocSize || !typeABIAlign)
-    return op->emitError("failed to get element type size and alignment");
-
-  Type elementType = typeConverter->convertType(opElementType);
-  if (!elementType)
-    return op->emitError("failed to convert element type");
-
-  size_t count = operands.size();
-  Value ptr = materializeLLVMAlloca(rewriter, target, elementType, count, op,
-                                    *typeAllocSize, *typeABIAlign);
-
-  // 2. Store elements of the sequence into the allocated space.
-  Type indexType = typeConverter->convertType(rewriter.getIndexType());
-  auto opaquePtr = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
-  for (auto [index, operand] : llvm::enumerate(operands)) {
-    Value indexConstant = LLVM::ConstantOp::create(
-        rewriter, op->getLoc(), rewriter.getIntegerAttr(indexType, index));
-    auto destination =
-        LLVM::GEPOp::create(rewriter, op->getLoc(), /*resultType=*/opaquePtr,
-                            /*basePtrType=*/elementType, /*basePtr=*/ptr,
-                            ArrayRef<LLVM::GEPArg>{indexConstant},
-                            /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
-    LLVM::StoreOp::create(rewriter, op->getLoc(), operand, destination);
-  }
-
-  // 3. Replace the `pop.variadic.create` op with a struct containing the
-  //    pointer & the size of the sequence.
-  Type structType = typeConverter->convertType(resultType);
-  if (!structType)
-    return op->emitError("failed to convert variadic type");
-  ImplicitLocOpBuilder b(op->getLoc(), rewriter);
-
-  Value container = materializeLLVMStruct(
-      b, structType,
-      ValueRange{ptr, LLVM::ConstantOp::create(
-                          rewriter, op->getLoc(),
-                          rewriter.getIntegerAttr(indexType, count))
-
-      });
-  rewriter.replaceOp(op, container);
-  return success();
-}
-
-class ConvertPOPVariadicCreate
-    : public ConvertPOPToLLVMPattern<VariadicCreateOp> {
-public:
-  explicit ConvertPOPVariadicCreate(mlir::LLVMTypeConverter &typeConverter,
-                                    TargetInfoAttr target)
-      : ConvertPOPToLLVMPattern(typeConverter), target(target) {}
-
-  LogicalResult
-  matchAndRewrite(VariadicCreateOp op, VariadicCreateOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-
-    return convertVariadicCreate(op.getType(), adaptor.getOperands(), op,
-                                 rewriter, typeConverter, target);
-  }
-
-private:
-  /// The target info.
-  TargetInfoAttr target;
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPVariadicGet
-//===----------------------------------------------------------------------===//
-
-/// Converts a `pop.variadic.get` into LLVM ops that load one of the elements of
-/// the underlying struct that represents the `!kgen.variadic` type.
-struct ConvertPOPVariadicGet : public ConvertPOPToLLVMPattern<VariadicGetOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(VariadicGetOp op, VariadicGetOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type ptrElement =
-        typeConverter->convertType(op.getVariadic().getType().getElementType());
-    Value ptr = LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
-                                             adaptor.getVariadic(), 0);
-    auto gep =
-        LLVM::GEPOp::create(rewriter, op.getLoc(), ptr.getType(), ptrElement,
-                            ptr, adaptor.getIndex(),
-                            /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, ptrElement, gep);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPVariadicSize
-//===----------------------------------------------------------------------===//
-
-/// Converts a `pop.variadic.size` into LLVM ops that load the size member
-/// of the underlying struct representing the `!kgen.variadic` type.
-struct ConvertPOPVariadicSize : public ConvertPOPToLLVMPattern<VariadicSizeOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(VariadicSizeOp op, VariadicSizeOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getOperand(),
-                                                      1);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPCastToBuiltin
 //===----------------------------------------------------------------------===//
 
@@ -3479,8 +3351,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPUnionBitcast,
       ConvertPOPUnionUnwrap,
       ConvertPOPUnionWrap,
-      ConvertPOPVariadicGet,
-      ConvertPOPVariadicSize,
       ConvertPOPXOr,
       ConvertPOPSIMDReduceOr,
       ConvertPOPSIMDReduceAnd
@@ -3593,8 +3463,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   }
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
   mlir::populateNVVMToLLVMConversionPatterns(patterns);
-  patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate,
-                  ConvertPOPStackAllocLifetimeStart,
+  patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
   if (isPluginBackend(targetInfo.getTriple())) {
