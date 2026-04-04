@@ -32,12 +32,9 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,
-)
-from max.pipelines.lib.interfaces import PipelineModelWithKVCache
-from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
-    UnifiedEagleInputs,
     UnifiedEagleOutputs,
 )
+from max.pipelines.lib.interfaces import PipelineModelWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_weight_paths
 from max.pipelines.lib.registry import AutoConfig
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -59,14 +56,22 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     input_row_offsets: Buffer
     return_n_logits: Buffer
 
+    draft_tokens: Buffer | None = None
+    draft_kv_blocks: list[Buffer] | None = None
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        return (
+        buffers = (
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
             *(self.kv_cache_inputs or ()),
         )
+        if self.draft_tokens is not None:
+            buffers += (self.draft_tokens,)
+        if self.draft_kv_blocks is not None:
+            buffers += tuple(self.draft_kv_blocks)
+        return buffers
 
 
 class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
@@ -214,7 +219,6 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
         """Execute and return all graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedEagleInputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
 
         return UnifiedEagleOutputs(

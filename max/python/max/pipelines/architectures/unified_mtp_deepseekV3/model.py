@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import fields, replace
 from typing import Any
 
@@ -26,13 +27,10 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph, Value
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import CompilationTimer, ModelInputs
-from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
-    UnifiedEagleInputs,
-    UnifiedEagleOutputs,
-)
+from max.pipelines.core import TextContext
+from max.pipelines.lib import CompilationTimer, ModelInputs, UnifiedEagleOutputs
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
@@ -40,6 +38,22 @@ from ..deepseekV3_nextn.model_config import DeepseekV3NextNConfig
 from .unified_mtp_deepseekV3 import UnifiedMTPDeepseekV3
 
 logger = logging.getLogger("max.pipelines")
+
+
+class UnifiedMTPDeepseekV3Inputs(DeepseekV3Inputs):
+    """Inputs for the UnifiedMTPDeepseekV3 model."""
+
+    draft_tokens: Buffer | None = None
+    draft_kv_blocks: list[Buffer] | None = None
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        buffers = super().buffers
+        if self.draft_tokens is not None:
+            buffers += (self.draft_tokens,)
+        if self.draft_kv_blocks is not None:
+            buffers += tuple(self.draft_kv_blocks)
+        return buffers
 
 
 class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
@@ -285,8 +299,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
         """Execute and return all 3 graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedEagleInputs)
-
         model_outputs = self.model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (
             f"Expected 3 outputs, got {len(model_outputs)}"
@@ -298,11 +310,33 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             next_draft_tokens=model_outputs[2],
         )
 
+    def prepare_initial_token_inputs(
+        self,
+        replica_batches: Sequence[Sequence[TextContext]],
+        kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
+    ) -> UnifiedMTPDeepseekV3Inputs:
+        base = DeepseekV3Model.prepare_initial_token_inputs(
+            self, replica_batches, kv_cache_inputs, return_n_logits
+        )
+
+        return UnifiedMTPDeepseekV3Inputs(
+            tokens=base.tokens,
+            input_row_offsets=base.input_row_offsets,
+            host_input_row_offsets=base.host_input_row_offsets,
+            batch_context_lengths=base.batch_context_lengths,
+            signal_buffers=base.signal_buffers,
+            kv_cache_inputs=base.kv_cache_inputs,
+            return_n_logits=base.return_n_logits,
+            data_parallel_splits=base.data_parallel_splits,
+            ep_inputs=base.ep_inputs,
+        )
+
     def prepare_next_token_inputs(
         self,
         next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
-    ) -> DeepseekV3Inputs:
+    ) -> UnifiedMTPDeepseekV3Inputs:
         raise NotImplementedError("MTP does not support Multistep execution")
 
     def _create_draft_config(

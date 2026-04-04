@@ -125,6 +125,7 @@ from ..interfaces import (
     ModelOutputs,
     PipelineModel,
     PipelineModelWithKVCache,
+    UnifiedEagleOutputs,
 )
 from ..sampling import (
     FusedSamplingProcessor,
@@ -137,38 +138,10 @@ logger = logging.getLogger("max.pipelines")
 _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 
 
-@dataclass
-class UnifiedEagleInputs(ModelInputs):
-    """Inputs for the unified EAGLE model."""
-
-    inputs: ModelInputs
-    draft_tokens: Buffer
-    draft_kv_cache_buffers: list[Buffer]
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        """Returns the buffers for the unified EAGLE model."""
-        return (
-            *self.inputs.buffers,
-            self.draft_tokens,
-            *self.draft_kv_cache_buffers,
-        )
-
-
-@dataclass(kw_only=True)
-class UnifiedEagleOutputs(ModelOutputs):
-    """Outputs from a unified EAGLE graph execution."""
-
-    num_accepted_draft_tokens: Buffer
-    next_tokens: Buffer
-    next_draft_tokens: Buffer
-
-    # HACK: These are required to inherit from ModelOutputs but are unused
-    # for UnifiedEagleOutputs!
-    logits: Buffer | None = None  # type: ignore[assignment]
-    next_token_logits: None = None
-    logit_offsets: None = None
-    hidden_states: None = None
+@runtime_checkable
+class _UnifiedEagleInputs(Protocol):
+    draft_tokens: Buffer | None
+    draft_kv_blocks: list[Buffer] | None
 
 
 def _get_draft_kv_blocks(
@@ -1046,11 +1019,11 @@ class OverlapTextGenerationPipeline(
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
-        model_inputs = UnifiedEagleInputs(
-            inputs=model_inputs,
-            draft_tokens=Buffer.from_numpy(draft_tokens).to(self._devices[0]),
-            draft_kv_cache_buffers=self._spec_decode_state.draft_kv_blocks,
+        assert isinstance(model_inputs, _UnifiedEagleInputs)
+        model_inputs.draft_tokens = Buffer.from_numpy(draft_tokens).to(
+            self._devices[0]
         )
+        model_inputs.draft_kv_blocks = self._spec_decode_state.draft_kv_blocks
 
         # Single graph call.
         outputs = self._pipeline_model.execute(model_inputs)

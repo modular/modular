@@ -159,6 +159,22 @@ class ModelOutputs:
 
 
 @dataclass(kw_only=True)
+class UnifiedEagleOutputs(ModelOutputs):
+    """Outputs from a unified EAGLE graph execution."""
+
+    num_accepted_draft_tokens: Buffer
+    next_tokens: Buffer
+    next_draft_tokens: Buffer
+
+    # HACK: These are required to inherit from ModelOutputs but are unused
+    # for UnifiedEagleOutputs!
+    logits: Buffer | None = None  # type: ignore[assignment]
+    next_token_logits: None = None
+    logit_offsets: None = None
+    hidden_states: None = None
+
+
+@dataclass(kw_only=True)
 class ModelInputs:
     """Base class for model inputs.
 

@@ -34,10 +34,7 @@ from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
 )
 from max.pipelines.lib import CompilationTimer, ModelInputs
-from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
-    UnifiedEagleInputs,
-    UnifiedEagleOutputs,
-)
+from max.pipelines.lib.interfaces import UnifiedEagleOutputs
 from max.pipelines.lib.pipeline_variants.utils import get_weight_paths
 from typing_extensions import override
 
@@ -61,9 +58,12 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
     Same as ``KimiK2_5ModelInputs`` but skips the vision related inputs.
     """
 
+    draft_tokens: Buffer | None = None
+    draft_kv_blocks: list[Buffer] | None = None
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        return (
+        buffers = (
             self.tokens,
             self.input_row_offsets,
             self.host_input_row_offsets,
@@ -74,6 +74,11 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
+        if self.draft_tokens is not None:
+            buffers += (self.draft_tokens,)
+        if self.draft_kv_blocks is not None:
+            buffers += tuple(self.draft_kv_blocks)
+        return buffers
 
 
 class Eagle3KimiK25Model(KimiK2_5Model):
@@ -355,8 +360,6 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         """Execute and return all graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedEagleInputs)
-
         model_outputs = self.language_model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (
             f"Expected 3 outputs, got {len(model_outputs)}"
