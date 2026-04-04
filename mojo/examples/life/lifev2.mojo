@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import std.time
+from std import time
 
 from gridv2 import Grid
 from std.python import Python
@@ -74,7 +74,7 @@ def run_display(
         pygame.display.flip()
 
         # Pause to let the user appreciate the scene
-        std.time.sleep(pause)
+        time.sleep(pause)
 
         # Next generation
         grid = grid.evolve()

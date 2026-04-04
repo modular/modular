@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import std.random
+from std import random
 from std.collections import Optional
 
 from std.algorithm import parallelize
@@ -49,12 +49,12 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     @staticmethod
     def random(seed: Optional[Int] = None) -> Self:
         if seed:
-            std.random.seed(seed.value())
+            random.seed(seed.value())
         else:
-            std.random.seed()
+            random.seed()
 
         grid = Self()
-        std.random.randint(grid.data, grid.num_cells, 0, 1)
+        random.randint(grid.data, grid.num_cells, 0, 1)
 
         return grid^
 

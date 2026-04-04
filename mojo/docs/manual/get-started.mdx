@@ -827,18 +827,19 @@ can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
 To enforce this, the `String()` constructors require a type to conform to the
-[`Writable`] trait. (This type of function is sometimes referred to as a
+[`Writable`](/mojo/std/format/Writable) trait. (This type of function is
+sometimes referred to as a
 [*generic* function](/mojo/manual/parameters/#parameters-and-generics).) Each
 trait requires a conforming type to implement a `write_to()` method that writes
 its `String` representation. (To learn more, read
-[The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
+[The `Writable` trait](/mojo/manual/traits#the-writable-trait).)
 
 Notice that `write_to()` takes a `mut writer: Some[Writer]` argument. The
 `Writer` trait represents anything that can be written to—`String` buffers,
 files, network streams, and so on. By writing to a generic `Writer` instead of
 building and returning a `String`, your type works with any output destination.
 
-Our `grid_str()` method already write our `String` representation, so it looks
+Our `grid_str()` method already writes our `String` representation, so it looks
 like we'll have to rename it to `write_to()` and add the `Writer` argument to
 the function, and remove the `String` return value. We also need to indicate
 which trait `Grid` conforms to. In our case, it must be `Writable`.
@@ -856,7 +857,7 @@ struct Grid(Copyable, Writable):
       for row in range(self.rows):
           # Iterate through columns 0 through cols-1
           for col in range(self.cols):
-              if self[row, col] == 1:
+              if self.data[row][col] == 1:
                   # If cell is populated, write an asterisk
                   writer.write_string("*")
               else:
@@ -1010,7 +1011,7 @@ function. We indicate that a method is static by using the
 `@staticmethod` decorator.
 
 ```mojo title="gridv1.mojo"
-import std.random
+from std import random
 
 @fieldwise_init
 struct Grid(Copyable, Writable):
@@ -1299,7 +1300,7 @@ game UI. This requires a complete rewrite of the `run_display()` function. Take
 a look at the updated code for `life.mojo`, and we'll explain more below:
 
 ```mojo title="life.mojo"
-import std.time
+from std import time
 
 from gridv1 import Grid
 from std.python import Python
@@ -1458,7 +1459,7 @@ import ListingCards from '@site/src/components/Listing/ListingCards';
 
 :::tip
 
-**Tip:** To use AI coding assistants with Mojo, see our guide on
+To use AI coding assistants with Mojo, see our guide on
 [using Mojo AI skills](/mojo/tools/skills/).
 
 :::
