@@ -1918,6 +1918,7 @@ struct DeviceFunction[
     compile_options: StaticString = CompilationTarget[
         target
     ].default_compile_options(),
+    link_options: StaticString = "",
     _ptxas_info_verbose: Bool = False,
 ](ImplicitlyCopyable):
     """Represents a compiled device function for GPU execution.
@@ -1931,6 +1932,7 @@ struct DeviceFunction[
         declared_arg_types: An optional containing a variadic of the declared dtypes of the kernel signature.
         target: The target architecture for compilation. Defaults to the current GPU target.
         compile_options: The string of compilation options to pass to the compiler.
+        link_options: The string of linker options to pass to the linker.
         _ptxas_info_verbose: Whether to enable verbose PTX assembly output. Defaults to False.
 
     Example:
@@ -2039,6 +2041,7 @@ struct DeviceFunction[
             emission_kind=self._emission_kind,
             target=Self.target,
             compile_options=Self.compile_options,
+            link_options=Self.link_options,
         ]()
         var debug_level = String(DebugLevel)
         _checked(
@@ -2192,6 +2195,7 @@ struct DeviceFunction[
                 emission_kind="asm",
                 target=Self.target,
                 compile_options=Self.compile_options,
+                link_options=Self.link_options,
             ]().asm
 
         comptime if Self._ptxas_info_verbose:
@@ -2254,6 +2258,7 @@ struct DeviceFunction[
                 emission_kind="llvm-opt",
                 target=Self.target,
                 compile_options=Self.compile_options,
+                link_options=Self.link_options,
             ]().asm
 
             comptime if dump_llvm_val.isa[def() capturing -> Path]():
@@ -3724,11 +3729,12 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         //,
         func: func_type,
         *,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
         ].default_compile_options(),
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3740,6 +3746,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             Optional[Variadic.TypesOfTrait[AnyType]](None),
             target=Self.default_device_info.target(),
             compile_options=compile_options,
+            link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -3748,12 +3755,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Parameters:
             func_type: Type of the function.
             func: The function to compile.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
@@ -3806,11 +3814,12 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func: func_type,
         signature_func: def(* args: * declared_arg_types) -> None,
         *,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
         ].default_compile_options(),
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3821,6 +3830,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             func,
             declared_arg_types,
             compile_options=compile_options,
+            link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -3833,12 +3843,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             signature_func: The function to compile, passed in again. Used for
                 checking argument dtypes later.
                 Note: This will disappear in future versions.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
@@ -3881,11 +3892,12 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         //,
         func: def(* args: * declared_arg_types) -> None,
         *,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
         ].default_compile_options(),
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3897,6 +3909,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
+            link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -3905,12 +3918,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
@@ -3955,11 +3969,12 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func: func_type,
         signature_func: def(* args: * declared_arg_types) capturing -> None,
         *,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
         ].default_compile_options(),
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3971,6 +3986,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
+            link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -3983,12 +3999,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             signature_func: The function to compile, passed in again. Used for
                 checking argument dtypes later.
                 Note: This will disappear in future versions.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
@@ -4031,11 +4048,12 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
         *,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
         ].default_compile_options(),
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -4047,6 +4065,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
+            link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -4055,12 +4074,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
@@ -4170,6 +4190,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         //,
         func: func_type,
         *Ts: AnyType,
+        link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
@@ -4192,6 +4213,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             func_type: The dtype of the function to launch.
             func: The function to launch.
             Ts: The dtypes of the arguments being passed to the function.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4263,6 +4285,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
+            link_options=link_options,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](func_attribute=func_attribute)
@@ -4549,6 +4572,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func: func_type,
         signature_func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
+        link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
@@ -4580,6 +4604,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             signature_func: The kernel function, passed again for type checking.
                 Typically the same as `func`.
             actual_arg_types: The types of the arguments being passed (usually inferred).
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4655,6 +4680,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
+            link_options=link_options,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](func_attribute=inferred_func_attribute)
@@ -4678,6 +4704,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         //,
         func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
+        link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
@@ -4700,6 +4727,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile and launch.
             actual_arg_types: The dtypes of the arguments being passed to the function.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4775,6 +4803,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
+            link_options=link_options,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](func_attribute=inferred_func_attribute)
@@ -4800,6 +4829,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func: func_type,
         signature_func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
+        link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
@@ -4831,6 +4861,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             signature_func: The kernel function, passed again for type checking.
                 Typically the same as `func`.
             actual_arg_types: The types of the arguments being passed (usually inferred).
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4906,6 +4937,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
+            link_options=link_options,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](func_attribute=inferred_func_attribute)
@@ -5039,6 +5071,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
+        link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
@@ -5062,6 +5095,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile and launch.
             actual_arg_types: The dtypes of the arguments being passed to the function.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -5137,6 +5171,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
+            link_options=link_options,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](func_attribute=inferred_func_attribute)
