@@ -107,7 +107,7 @@ def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout, ...]) raises:
         for col in range(GRID_WIDTH):
             var v = tensor[row, col]
             if v < MAX_ITERATIONS:
-                var idx = Int(v % Int32(len(sr)))
+                var idx = Int(v % Int32(sr.byte_length()))
                 var p = sr[byte=idx]
                 print(p, end="")
             else:

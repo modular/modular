@@ -155,7 +155,7 @@ struct CodepointSliceIter[
         # NOTE: This intentionally check if the length *in bytes* is greater
         # than zero, because checking the codepoint length requires a linear
         # scan of the string, which is needlessly expensive for this purpose.
-        if len(self._slice) <= 0:
+        if self._slice.byte_length() <= 0:
             raise StopIteration()
 
         comptime if Self.forward:
@@ -213,7 +213,7 @@ struct CodepointSliceIter[
         assert_equal(iter.peek_next().value(), "2")
         ```
         """
-        if len(self._slice) > 0:
+        if self._slice.byte_length() > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
             var curr_ptr = self._slice.unsafe_ptr()
@@ -257,9 +257,11 @@ struct CodepointSliceIter[
         assert_equal(iter.peek_back().value(), "2")
         ```
         """
-        if len(self._slice) > 0:
+        if self._slice.byte_length() > 0:
             var byte_len = 1
-            var back_ptr = self._slice.unsafe_ptr() + len(self._slice) - 1
+            var back_ptr = (
+                self._slice.unsafe_ptr() + self._slice.byte_length() - 1
+            )
             # SAFETY:
             #   Guaranteed not to go out of bounds because UTF-8
             #   guarantees there is always a "start" byte eventually before any
@@ -286,7 +288,7 @@ struct CodepointSliceIter[
 
         if result:
             # SAFETY: We just checked that `result` holds a value
-            var slice_len = len(result.unsafe_value())
+            var slice_len = result.unsafe_value().byte_length()
             # Advance the pointer in _slice.
             self._slice._slice._data += slice_len
             # Decrement the byte-length of _slice.
@@ -309,7 +311,7 @@ struct CodepointSliceIter[
 
         if result:
             # SAFETY: We just checked that `result` holds a value
-            var slice_len = len(result.unsafe_value())
+            var slice_len = result.unsafe_value().byte_length()
             # Decrement the byte-length of _slice.
             self._slice._slice._len -= slice_len
 
@@ -375,7 +377,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         Raises:
             StopIteration: If the iterator is exhausted.
         """
-        if len(self._slice) <= 0:
+        if self._slice.byte_length() <= 0:
             raise StopIteration()
         return self.next().value()
 
@@ -429,7 +431,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         assert_equal(iter.peek_next().value(), Codepoint.ord("2"))
         ```
         """
-        if len(self._slice) > 0:
+        if self._slice.byte_length() > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
             codepoint, _ = Codepoint.unsafe_decode_utf8_codepoint(
@@ -473,7 +475,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     IntableRaising,
     KeyElement,
     PathLike,
-    Sized,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -736,48 +737,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
-    @always_inline
-    def __len__(self) -> Int:
-        """Get the string length in bytes.
-
-        This function returns the number of bytes in the underlying UTF-8
-        representation of the string.
-
-        To get the number of Unicode codepoints in a string, use
-        `len(str.codepoints())`.
-
-        Returns:
-            The string length in bytes.
-
-        # Examples
-
-        Query the length of a string, in bytes and Unicode codepoints:
-
-        ```mojo
-
-        from std.testing import assert_equal
-
-        var s = StringSlice("ನಮಸ್ಕಾರ")
-
-        assert_equal(len(s), 21)
-        assert_equal(len(s.codepoints()), 7)
-        ```
-
-        Strings containing only ASCII characters have the same byte and
-        Unicode codepoint length:
-
-        ```mojo
-
-        from std.testing import assert_equal
-
-        var s = StringSlice("abc")
-
-        assert_equal(len(s), 3)
-        assert_equal(len(s.codepoints()), 3)
-        ```
-        """
-        return self.byte_length()
-
     def write_to(self, mut writer: Some[Writer]):
         """Formats this string slice to the provided `Writer`.
 
@@ -845,7 +804,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_bytes(Span(ptr=self.unsafe_ptr(), length=len(self)))
+        hasher._update_with_bytes(
+            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
+        )
 
     def __fspath__(self) -> String:
         """Return the file system path representation of this string.
@@ -1023,8 +984,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             If the `StringSlice` bytes are strictly less than the input in
             overlapping content.
         """
-        var len1 = len(self)
-        var len2 = len(rhs)
+        var len1 = self.byte_length()
+        var len2 = rhs.byte_length()
         return Int(len1 < len2) > memcmp(
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
@@ -1246,7 +1207,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             ptr = self.unsafe_ptr()
             .unsafe_mut_cast[result.mut]()
             .unsafe_origin_cast[result.origin](),
-            length = len(self),
+            length = self.byte_length(),
         }
 
     @always_inline("nodebug")
@@ -1656,7 +1617,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         A byte position is considered a codepoint boundary if a valid subslice
         of the string would end (noninclusive) at `index`.
 
-        Positions `0` and `len(self)` are considered to be codepoint boundaries.
+        Positions `0` and `self.byte_length()` are considered to be codepoint boundaries.
 
         Positions beyond the length of the string slice will return False.
 
@@ -1736,8 +1697,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         # TODO: Example: Print the byte indices that are codepoints boundaries:
 
-        if index >= UInt(len(self)):
-            return index == UInt(len(self))
+        if index >= UInt(self.byte_length()):
+            return index == UInt(self.byte_length())
 
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
@@ -1784,10 +1745,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[start:end]` is suffixed by the input suffix.
         """
-        if len(suffix) > len(self):
+        if suffix.byte_length() > self.byte_length():
             return False
         if end == -1:
-            return self.rfind(suffix, start) + len(suffix) == len(self)
+            return (
+                self.rfind(suffix, start) + suffix.byte_length()
+                == self.byte_length()
+            )
         # FIXME: use normalize_index
         return StringSlice[Self.origin](
             ptr=self.unsafe_ptr() + start, length=end - start
@@ -1811,7 +1775,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         if self.startswith(prefix):
-            return self[byte = len(prefix) :]
+            return self[byte = prefix.byte_length() :]
         return self
 
     def removesuffix(self, suffix: StringSlice, /) -> Self:
@@ -1821,7 +1785,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             suffix: The suffix to remove from the string.
 
         Returns:
-            `string[:-len(suffix)]` if the string ends with the suffix string,
+            `string[:-suffix.byte_length()]` if the string ends with the suffix string,
             or a copy of the original string otherwise.
 
         Examples:
@@ -1832,7 +1796,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         if suffix and self.endswith(suffix):
-            return self[byte = : -len(suffix)]
+            return self[byte = : -suffix.byte_length()]
         return self
 
     @always_inline
@@ -1915,9 +1879,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             string.
         """
         if not substr:
-            return len(self)
+            return self.byte_length()
 
-        if len(self) < len(substr) + start:
+        if self.byte_length() < substr.byte_length() + start:
             return -1
 
         # The substring to search within, offset from the beginning if `start`
@@ -2236,7 +2200,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             The number of occurrences of `substr`.
         """
         if not substr:
-            return len(self) + 1
+            return self.byte_length() + 1
 
         var res = 0
         var offset = 0
@@ -2275,7 +2239,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             True if all cased characters in the string are uppercase and there
             is at least one cased character, False otherwise.
         """
-        return len(self) > 0 and is_uppercase(self)
+        return self.byte_length() > 0 and is_uppercase(self)
 
     def islower(self) -> Bool:
         """Returns True if all cased characters in the string are lowercase and
@@ -2285,7 +2249,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             True if all cased characters in the string are lowercase and there
             is at least one cased character, False otherwise.
         """
-        return len(self) > 0 and is_lowercase(self)
+        return self.byte_length() > 0 and is_lowercase(self)
 
     def lower(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -2351,7 +2315,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
-        return self._justify(width - len(self), width, fillchar)
+        return self._justify(width - self.byte_length(), width, fillchar)
 
     def ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice left justified in a string of specified width.
@@ -2414,7 +2378,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         print(s.center(3))         # "hello" (no padding)
         ```
         """
-        return self._justify(width - len(self) >> 1, width, fillchar)
+        return self._justify(width - self.byte_length() >> 1, width, fillchar)
 
     def _justify(
         self, start: Int, width: Int, fillchar: StaticString
@@ -2429,8 +2393,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             start: The number of fill characters to add at the beginning (left
                 padding). For left justification this is 0, for right
-                justification this is `width - len(self)`, and for center
-                justification this is `(width - len(self)) >> 1`.
+                justification this is `width - self.byte_length()`, and for center
+                justification this is `(width - self.byte_length()) >> 1`.
             width: The total width of the resulting string in bytes. If the
                 original string is already greater than or equal to this width,
                 no padding is added and the original string is returned.
@@ -2442,9 +2406,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             padding the original string, or the original string if it's already
             at least as wide as the requested width.
         """
-        if len(self) >= width:
+        if self.byte_length() >= width:
             return String(self)
-        assert len(fillchar) == 1, "fill char needs to be a one byte literal"
+        assert (
+            fillchar.byte_length() == 1
+        ), "fill char needs to be a one byte literal"
 
         var result = String(capacity=width)
         for _ in range(start):

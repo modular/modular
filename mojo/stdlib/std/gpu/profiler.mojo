@@ -93,5 +93,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
         var end_time = perf_counter_ns()
 
         _printf["@ %.*s %ld\n"](
-            len(self.name), self.name.unsafe_ptr(), self.start_time - end_time
+            self.name.byte_length(),
+            self.name.unsafe_ptr(),
+            self.start_time - end_time,
         )
