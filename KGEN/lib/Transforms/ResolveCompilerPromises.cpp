@@ -29,8 +29,8 @@ namespace {
 // CallLikeOp
 //===----------------------------------------------------------------------===//
 
-/// Op-like wrapper for call operations and capture list operations that must
-/// behave as edges in the callgraph.
+/// Op-like wrapper for call operations that must behave as edges in the
+/// callgraph.
 class CallLikeOp {
 public:
   // Required methods for LLVM-style RTTI.
@@ -38,8 +38,7 @@ public:
     assert((!op || classof(op)) && "not a call-like op");
   }
   static bool classof(Operation *op) {
-    return isa_and_nonnull<KGENCallOpInterface, CaptureListCreateOp,
-                           CaptureListCopyOp>(op);
+    return isa_and_nonnull<KGENCallOpInterface>(op);
   }
   operator bool() const { return op; }
   operator Operation *() const { return op; }
@@ -47,14 +46,7 @@ public:
   Operation *operator->() { return op; }
 
   /// Required CallGraph interface.
-  TypedAttr getCallee() {
-    // Micro-optimization: `isa` on operations is faster than interfaces.
-    if (auto create = dyn_cast<CaptureListCreateOp>(op))
-      return create.getCallee();
-    if (auto copy = dyn_cast<CaptureListCopyOp>(op))
-      return copy.getCallee();
-    return cast<KGENCallOpInterface>(op).getCallee();
-  }
+  TypedAttr getCallee() { return cast<KGENCallOpInterface>(op).getCallee(); }
 
   FlatSymbolRefAttr getCalleeSymbol() {
     return cast<FlatSymbolRefAttr>(
@@ -84,14 +76,12 @@ struct CallGraphNode : public SCCNode<CallGraphNode, FuncOp, CallLikeOp> {
 //===----------------------------------------------------------------------===//
 
 struct CallGraph : public SCCGraph<CallGraph, CallGraphNode> {
-  CallGraph(const SymbolTable &symtab, TargetInfoAttr target)
-      : symtab(symtab), target(target) {}
+  CallGraph(const SymbolTable &symtab) : symtab(symtab) {}
 
   /// Only add nodes to the graph that are to functions that are capturing,
   /// since those are the only functions we need to handle.
   bool shouldAddToGraph(CallLikeOp call, CallGraphNode *node) {
-    return node->func.getFuncTypeGenerator().getBody().isCapturing() ||
-           isa<CaptureListCreateOp, CaptureListCopyOp>(*call);
+    return node->func.getFuncTypeGenerator().getBody().isCapturing();
   }
 
   /// Lookup the call graph node for the given symbol reference.
@@ -108,100 +98,14 @@ struct CallGraph : public SCCGraph<CallGraph, CallGraphNode> {
   void doRewrite(const CallGraphNode *node);
 
   const SymbolTable &symtab;
-  TargetInfoAttr target;
 };
 } // namespace
 
-/// Propagate from `kgen.capture_list.create` the set of required promises from
-/// the callee into the current function. Query them and pack them into a
-/// heap-allocated slot.
-static void resolveCaptureListCreate(CaptureListCreateOp op,
-                                     TargetInfoAttr target) {
-  ValueRange captures = op->getOperands();
-
-  auto clType = StructType::get(
-      op.getContext(),
-      llvm::map_to_vector(captures, [](Value v) { return v.getType(); }));
-
-  ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
-  // Allocate the memory for the actual capture state.
-  Value alloc = POP::AlignedAllocOp::create(
-      b, PointerType::get(clType),
-      mlir::index::ConstantOp::create(b, *clType.getTypeAlign(target)),
-      mlir::index::ConstantOp::create(b, *clType.getTypeSize(target)));
-  for (auto [i, capture] : llvm::enumerate(captures))
-    POP::StoreOp::create(b, capture, StructGEPOp::create(b, alloc, i));
-
-  Value opaque = POP::PointerBitcastOp::create(
-      b, PointerType::get(KGEN::NoneType::get(op.getContext())), alloc);
-  op->replaceAllUsesWith(ValueRange(opaque));
-  op.erase();
-}
-
-/// Using knowledge of the required promises, emit IR for a copy of the capture
-/// list for a particular closure.
-static void resolveCaptureListCopy(CaptureListCopyOp op,
-                                   CallGraphNode *calleeNode,
-                                   TargetInfoAttr target) {
-  auto clType = StructType::get(
-      op.getContext(),
-      llvm::map_to_vector(calleeNode->requiredPromises,
-                          [](auto &promise) { return promise.second.first; }));
-
-  ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
-  // Allocate the memory for the copy.
-  Value alloc = POP::AlignedAllocOp::create(
-      b, PointerType::get(clType),
-      mlir::index::ConstantOp::create(b, *clType.getTypeAlign(target)),
-      mlir::index::ConstantOp::create(b, *clType.getTypeSize(target)));
-
-  // Emit the memcpy.
-  Value orig =
-      POP::PointerBitcastOp::create(b, PointerType::get(clType), op.getOrig());
-  POP::StoreOp::create(b, POP::LoadOp::create(b, orig), alloc);
-
-  Value opaque = POP::PointerBitcastOp::create(
-      b, PointerType::get(KGEN::NoneType::get(op.getContext())), alloc);
-  op->replaceAllUsesWith(ValueRange(opaque));
-  op.erase();
-}
-
-/// Rewrite `kgen.capture_list.expand %cl` given the current set of required
-/// promises by propagating the required promises into the node of the enclosing
-/// function.
-static void resolveCaptureListExpand(CaptureListExpandOp op) {
-  ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
-  b.setInsertionPoint(op);
-
-  // Compute the capture list type based on the set of required promises.
-  auto clType =
-      StructType::get(op.getContext(), llvm::to_vector(op->getResultTypes()));
-  Value captures = POP::PointerBitcastOp::create(b, PointerType::get(clType),
-                                                 op.getCaptureList());
-
-  for (auto [idx, value] : llvm::enumerate(op->getResults())) {
-    // Extract each captured value out of the capture state and use it as
-    // input to the call of the closure.
-    Value promise =
-        POP::LoadOp::create(b, StructGEPOp::create(b, captures, idx));
-    value.replaceAllUsesWith(promise);
-  }
-
-  // Clear the required promises set. It has been fully satisfied by this op.
-  op.erase();
-}
-
 void CallGraph::doRewrite(const CallGraphNode *node) {
   FuncOp func = node->func;
-  func.walk([this](Operation *op) {
+  func.walk([](Operation *op) {
     if (isa<POP::CompilerGlobalStoreOp>(op))
       op->erase();
-    else if (auto create = dyn_cast<CaptureListCreateOp>(op))
-      resolveCaptureListCreate(create, target);
-    else if (auto copy = dyn_cast<CaptureListCopyOp>(op))
-      resolveCaptureListCopy(copy, getCalleeNode(copy.getCallee()), target);
-    else if (auto expand = dyn_cast<CaptureListExpandOp>(op))
-      resolveCaptureListExpand(expand);
   });
 }
 
@@ -334,44 +238,6 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
           symbol.getSymbol(), callee.getFuncTypeGenerator()));
       return;
     }
-
-    if (auto create = dyn_cast<CaptureListCreateOp>(op)) {
-      CallGraphNode *calleeNode = getCalleeNode(create.getCallee());
-      unsigned fulfilled = create->getNumOperands();
-      SmallVector<Value> captures =
-          computeRequiredCaptures(create, calleeNode, fulfilled);
-      // Append any new capture values.
-      create->insertOperands(fulfilled, captures);
-      return;
-    }
-
-    if (auto expand = dyn_cast<CaptureListExpandOp>(op)) {
-      // Consume all promises.
-      auto newTypes = consumeRequiredPromises(expand->getResults());
-      if (newTypes.empty())
-        return;
-
-      // Now fulfill any new promises by append the new result types to the op.
-      OperationState state(expand.getLoc(), op->getName(), op->getOperands(),
-                           op->getResultTypes());
-      for (auto [type, _] : newTypes)
-        state.types.push_back(type);
-
-      OpBuilder b(op);
-      Operation *newOp = b.create(state);
-      op->replaceAllUsesWith(
-          llvm::drop_end(newOp->getResults(), newTypes.size()));
-      for (auto [newPromise, loads] :
-           llvm::zip(llvm::drop_begin(newOp->getResults(), op->getNumResults()),
-                     newTypes)) {
-        for (POP::CompilerGlobalLoadOp load : loads.second) {
-          load.replaceAllUsesWith(newPromise);
-          load.erase();
-        }
-      }
-      op->erase();
-      return;
-    }
   });
 
   if (!func.getFuncTypeGenerator().getBody().isCapturing())
@@ -462,7 +328,7 @@ void ResolveCompilerPromisesPass::runOnOperation() {
 
   AsyncRT::Runtime &runtime =
       *loadContext(&getContext())->get<AsyncRT::Runtime>();
-  CallGraph cg(symtab, getTargetInfo(getOperation()));
+  CallGraph cg(symtab);
   cg.build(getOperation(), symtab);
   cg.run(runtime);
 }
