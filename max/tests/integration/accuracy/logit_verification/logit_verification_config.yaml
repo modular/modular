@@ -971,7 +971,18 @@ logit_verification_pipelines:
   black-forest-labs/FLUX.2-klein-4B-t2i-bfloat16:
     pre_submit_agents: []
     post_submit_agents: []
-    pipeline: "black-forest-labs/FLUX.2-klein-4B"
+    pipeline: "black-forest-labs/FLUX.2-klein-4B-t2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation, manual]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+
+  black-forest-labs/FLUX.2-klein-4B-i2i-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-klein-4B-i2i"
     compatible_with: [gpu]
     encoding: bfloat16
     tags: [nvidia-only, image-generation, manual]
