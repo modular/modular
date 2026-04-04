@@ -1305,8 +1305,10 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
     expected_device_graph_capture: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Mock .huggingface_model_repo so that we don't reach out to HF.
-    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    # Mock architecture_name so we don't reach out to HF for the config.
+    monkeypatch.setattr(
+        MAXModelConfig, "architecture_name", property(lambda self: arch_name)
+    )
     # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch.
     arch = SimpleNamespace(name=arch_name)
     monkeypatch.setattr(
@@ -1352,8 +1354,12 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         arch_name: str,
     ) -> Generator[None, None, None]:
         with monkeypatch.context() as m:
-            # Mock .huggingface_model_repo so that we don't reach out to HF
-            m.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+            # Mock architecture_name so we don't reach out to HF for the config.
+            m.setattr(
+                MAXModelConfig,
+                "architecture_name",
+                property(lambda self: arch_name),
+            )
             # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch
             arch = SimpleNamespace(name=arch_name)
             m.setattr(
@@ -1455,8 +1461,12 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
 def test_validate_and_resolve_overlap_scheduler__validate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Mock .huggingface_model_repo so that we don't reach out to HF.
-    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    # Mock architecture_name so we don't reach out to HF for the config.
+    monkeypatch.setattr(
+        MAXModelConfig,
+        "architecture_name",
+        property(lambda self: "SomeArchitecture"),
+    )
 
     # Allow user to manually enable overlap scheduler
     config = PipelineConfig(
@@ -1488,7 +1498,8 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
 
-    # Error out if user tries to enable overlap scheduler without PrefillAndDecode
+    # prefill_only with overlap scheduler is now allowed (experimental),
+    # the runtime just logs a warning and sets max_num_steps=1.
     config = PipelineConfig(
         models=ModelManifest(
             {
@@ -1503,8 +1514,9 @@ def test_validate_and_resolve_overlap_scheduler__validate(
             enable_overlap_scheduler=True,
         ),
     )
-    with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
+    config._validate_and_resolve_overlap_scheduler()
+    assert config.runtime.enable_overlap_scheduler is True
+    assert config.runtime.max_num_steps == 1
 
     # Error out if user tries to enable overlap scheduler with AudioGenerationConfig
     config = AudioGenerationConfig(
