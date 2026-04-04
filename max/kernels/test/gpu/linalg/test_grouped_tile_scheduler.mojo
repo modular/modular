@@ -19,7 +19,9 @@ These tests verify:
 4. K-tile count is correct for each group
 """
 
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx, grid_dim, thread_idx
+from std.iter import zip
+from std.itertools import count
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, row_major as new_row_major
 from layout._utils import ManagedLayoutTensor
@@ -82,22 +84,19 @@ def test_scheduler_kernel[
 
     var work_iter = scheduler.work_iterator()
 
-    while work_iter.has_work():
-        var current = work_iter.current()
-
+    for linear_idx, current in zip(
+        count(Int(block_idx.x), Int(grid_dim.x)), work_iter
+    ):
         # Record visited tile (only thread 0 writes)
         if thread_idx.x == 0:
-            var idx = Int(work_iter.linear_tile_idx)
-            if idx < max_tiles:
-                visited_group[idx, 0] = Int32(current.group_idx)
-                visited_m[idx, 0] = Int32(current.m)
-                visited_n[idx, 0] = Int32(current.n)
-                visited_k_tiles[idx, 0] = Int32(current.k_tile_count)
-                visited_changed[idx, 0] = Int32(
+            if linear_idx < max_tiles:
+                visited_group[linear_idx, 0] = Int32(current.group_idx)
+                visited_m[linear_idx, 0] = Int32(current.m)
+                visited_n[linear_idx, 0] = Int32(current.n)
+                visited_k_tiles[linear_idx, 0] = Int32(current.k_tile_count)
+                visited_changed[linear_idx, 0] = Int32(
                     1 if current.group_changed else 0
                 )
-
-        work_iter.advance()
 
     # Record total tile count
     if thread_idx.x == 0 and block_idx.x == 0:

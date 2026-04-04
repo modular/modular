@@ -162,14 +162,26 @@ struct GroupedWorkIterator1D1D[
     cta_group: Int = 1,
     swizzle: Bool = False,
     AB_swapped: Bool = False,
-]:
+](Copyable, Iterable, Iterator):
     """Work iterator for 1D-1D grouped block-scaled matmul.
 
     Iterates through work tiles using offset-based addressing:
     - a_offsets: Prefix sum of token counts per active expert
     - expert_ids: Mapping from active expert index to actual expert ID
     - expert_scales: Per-expert output scaling factors
+
+    Yields only valid work tiles, skipping invalid ones internally.
+
+    Usage:
+        for ctx in work_iter:
+            process_tile(ctx)
     """
+
+    comptime Element = GroupedWorkContext1D1D
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
 
     # 1D TileTensor types: dynamic shape, stride 1 (flat arrays)
     comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]
@@ -234,6 +246,24 @@ struct GroupedWorkIterator1D1D[
         self.current_group_idx = 0
         self.current_dynamic_dim_cumsum = 0
         self.block_idx_start = 0
+
+    @always_inline
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> GroupedWorkContext1D1D:
+        """Return next valid work tile, skipping invalid ones.
+
+        Raises:
+            StopIteration: When all work is done.
+        """
+        while True:
+            var ctx = self.next()
+            if ctx.info.is_done():
+                raise StopIteration()
+            if ctx.info.is_valid():
+                return ctx
 
     @always_inline
     def next(mut self) -> GroupedWorkContext1D1D:

@@ -511,21 +511,14 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
         var mma_op = Self.MmaOp()
 
-        # ===== Work Iterator Setup =====
-        var work_iter = Self.WorkIterator(
-            num_active_experts, a_offsets, expert_ids, expert_scales
-        )
-
         # ===== TMA LOAD WARP =====
         if WarpRole1D1D.is_load():
-            with input_pipeline.producer() as producer:
-                while True:
-                    var ctx = work_iter.next()
-                    if ctx.info.is_done():
-                        break
-                    if not ctx.info.is_valid():
-                        continue
+            var load_iter = Self.WorkIterator(
+                num_active_experts, a_offsets, expert_ids, expert_scales
+            )
 
+            with input_pipeline.producer() as producer:
+                for ctx in load_iter:
                     var next_ready = True
                     if num_k_iters > 0:
                         next_ready = producer.try_acquire()
@@ -554,6 +547,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # Blockwise FP8: per-K synchronization (MMA writes fresh partial each K,
         # epilogue reads TMEM per-K to accumulate in registers).
         if WarpRole1D1D.is_mma():
+            var mma_iter = Self.WorkIterator(
+                num_active_experts, a_offsets, expert_ids, expert_scales
+            )
+
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
@@ -564,13 +561,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             )
 
             with mma_ctx:
-                while True:
-                    var ctx = work_iter.next()
-                    if ctx.info.is_done():
-                        break
-                    if not ctx.info.is_valid():
-                        continue
-
+                for _ in mma_iter:
                     if elect_one_cta:
                         for _ in range(num_k_iters):
                             # Per-K: acquire stage, MMA, release
@@ -587,6 +578,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
         # ===== EPILOGUE WARPS =====
         if WarpRole1D1D.is_epilogue():
+            var epi_iter = Self.WorkIterator(
+                num_active_experts, a_offsets, expert_ids, expert_scales
+            )
             Self.MmaEpilogueSync.wait()
 
             var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
@@ -599,13 +593,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             )
 
             with epi_ctx:
-                while True:
-                    var ctx = work_iter.next()
-                    if ctx.info.is_done():
-                        break
-                    if not ctx.info.is_valid():
-                        continue
-
+                for ctx in epi_iter:
                     # Blockwise FP8: accumulate across K iterations in registers
                     var accum = Self.Accumulator()
 
