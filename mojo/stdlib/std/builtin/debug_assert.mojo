@@ -396,7 +396,9 @@ def debug_assert[
         if cond:
             return
         _debug_assert_msg(
-            message.unsafe_ptr(), message.byte_length(), call_location()
+            message.unsafe_ptr(),
+            len(message) + 1,  # include null terminator
+            call_location(),
         )
     elif _use_compiler_assume:
         assume(cond)

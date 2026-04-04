@@ -62,5 +62,5 @@ def main() raises:
 
     # We don't actually need to print the results for the test,
     # but we need to use them so they don't get optimized away
-    if results.byte_length() > 0:
+    if len(results) > 0:
         pass

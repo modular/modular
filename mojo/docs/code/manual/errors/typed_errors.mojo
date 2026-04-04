@@ -22,9 +22,9 @@ struct ValidationError(Copyable, Writable):
 
 
 def validate_username(username: String) raises ValidationError -> String:
-    if username.byte_length() == 0:
+    if len(username) == 0:
         raise ValidationError(field="username", reason="cannot be empty")
-    if username.count_codepoints() < 3:
+    if len(username) < 3:
         raise ValidationError(
             field="username", reason="must be at least 3 characters"
         )
