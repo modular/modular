@@ -194,6 +194,18 @@ class DKVConnector:
         # Metrics
         self._nixl_read_blocks: int = 0
         self._nixl_write_blocks: int = 0
+        self._nixl_read_latency_total_ms: float = 0.0
+        self._nixl_read_latency_count: int = 0
+        self._nixl_write_latency_total_ms: float = 0.0
+        self._nixl_write_latency_count: int = 0
+        self._rpc_acquire_latency_total_ms: float = 0.0
+        self._rpc_acquire_latency_count: int = 0
+        self._rpc_read_latency_total_ms: float = 0.0
+        self._rpc_read_latency_count: int = 0
+        self._nixl_read_bytes: int = 0
+        self._nixl_write_bytes: int = 0
+        self._nixl_read_blocks_local: int = 0
+        self._nixl_read_blocks_remote: int = 0
 
         # Reconnection state
         self._needs_reconnect: bool = False
@@ -593,9 +605,29 @@ class DKVConnector:
         if not descriptors:
             return []
 
+        # Classify blocks as local (default remote) vs remote (hint-derived).
+        default_name = (
+            self._default_remote_metadata.name
+            if self._default_remote_metadata is not None
+            else None
+        )
+        local_count = 0
+        remote_count = 0
+        for name in grouped_transfers:
+            n_blocks = len(grouped_transfers[name][1])
+            if name == default_name:
+                local_count += n_blocks
+            else:
+                remote_count += n_blocks
+        self._nixl_read_blocks_local += local_count
+        self._nixl_read_blocks_remote += remote_count
+
         # Pin blocks in dKV for reading (increment read_ref_count).
         try:
+            t0 = time.monotonic()
             self._client.read_blocks(descriptors)
+            self._rpc_read_latency_total_ms += (time.monotonic() - t0) * 1000
+            self._rpc_read_latency_count += 1
         except (ConnectionError, TimeoutError) as exc:
             self._set_needs_reconnect(f"read_blocks transport: {exc}")
             logger.warning(
@@ -694,10 +726,13 @@ class DKVConnector:
             return
 
         try:
+            t0 = time.monotonic()
             descriptors = self._client.acquire_blocks(
                 seq_hashes=block_hashes,
                 parent_seq_hash=0,
             )
+            self._rpc_acquire_latency_total_ms += (time.monotonic() - t0) * 1000
+            self._rpc_acquire_latency_count += 1
         except (ConnectionError, TimeoutError) as exc:
             self._set_needs_reconnect(f"acquire_blocks transport: {exc}")
             logger.warning(
@@ -765,6 +800,9 @@ class DKVConnector:
                 elapsed * 1000,
                 gib_s,
             )
+            self._nixl_read_latency_total_ms += elapsed * 1000
+            self._nixl_read_latency_count += 1
+            self._nixl_read_bytes += total_bytes
             self._decrement_held_blocks(request_id)
             del self._inflight_reads[request_id]
 
@@ -893,6 +931,9 @@ class DKVConnector:
                     elapsed * 1000,
                     gib_s,
                 )
+                self._nixl_write_latency_total_ms += elapsed * 1000
+                self._nixl_write_latency_count += 1
+                self._nixl_write_bytes += total_bytes
             else:
                 still_inflight.append(write_info)
         self._inflight_writes = still_inflight
@@ -1021,6 +1062,18 @@ class DKVConnector:
         return KVCacheMetrics(
             nixl_read_blocks=self._nixl_read_blocks,
             nixl_write_blocks=self._nixl_write_blocks,
+            nixl_read_latency_total_ms=self._nixl_read_latency_total_ms,
+            nixl_read_latency_count=self._nixl_read_latency_count,
+            nixl_write_latency_total_ms=self._nixl_write_latency_total_ms,
+            nixl_write_latency_count=self._nixl_write_latency_count,
+            rpc_acquire_latency_total_ms=self._rpc_acquire_latency_total_ms,
+            rpc_acquire_latency_count=self._rpc_acquire_latency_count,
+            rpc_read_latency_total_ms=self._rpc_read_latency_total_ms,
+            rpc_read_latency_count=self._rpc_read_latency_count,
+            nixl_read_bytes=self._nixl_read_bytes,
+            nixl_write_bytes=self._nixl_write_bytes,
+            nixl_read_blocks_local=self._nixl_read_blocks_local,
+            nixl_read_blocks_remote=self._nixl_read_blocks_remote,
         )
 
     def _resolve_external_block_metadata(

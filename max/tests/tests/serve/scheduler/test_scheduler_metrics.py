@@ -47,6 +47,10 @@ def test_metric_to_string() -> None:
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
         max_acceptance_length=0,
+        nixl_read_latency_avg_ms=0.0,
+        nixl_write_latency_avg_ms=0.0,
+        rpc_acquire_latency_avg_ms=0.0,
+        rpc_read_latency_avg_ms=0.0,
     )
 
     assert (

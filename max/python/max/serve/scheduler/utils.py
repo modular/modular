@@ -80,6 +80,13 @@ class BatchMetrics:
     avg_acceptance_length: float
     max_acceptance_length: int
 
+    nixl_read_latency_avg_ms: float
+    nixl_write_latency_avg_ms: float
+    rpc_acquire_latency_avg_ms: float
+    rpc_read_latency_avg_ms: float
+    nixl_read_gib_per_s: float = 0.0
+    nixl_write_gib_per_s: float = 0.0
+
     @classmethod
     def create(
         cls,
@@ -111,6 +118,10 @@ class BatchMetrics:
         d2h_blocks_copied = 0
         disk_blocks_written = 0
         disk_blocks_read = 0
+        nixl_read_latency_avg_ms = 0.0
+        nixl_write_latency_avg_ms = 0.0
+        rpc_acquire_latency_avg_ms = 0.0
+        rpc_read_latency_avg_ms = 0.0
         num_replicas = sch_config.data_parallel_degree
         if kv_cache is not None:
             # TODO SERVOPT-939: Add some sugar
@@ -161,6 +172,19 @@ class BatchMetrics:
                     kv_cache.get_metrics(replica_idx).disk_blocks_read
                     for replica_idx in range(num_replicas)
                 )
+
+            # dKV latency metrics: sum across replicas then average.
+            agg = sum(
+                (
+                    kv_cache.get_metrics(replica_idx)
+                    for replica_idx in range(num_replicas)
+                ),
+                kv_cache.get_metrics(0).__class__(),
+            )
+            nixl_read_latency_avg_ms = agg.nixl_read_latency_avg_ms
+            nixl_write_latency_avg_ms = agg.nixl_write_latency_avg_ms
+            rpc_acquire_latency_avg_ms = agg.rpc_acquire_latency_avg_ms
+            rpc_read_latency_avg_ms = agg.rpc_read_latency_avg_ms
 
             kv_cache.reset_metrics()
 
@@ -213,6 +237,10 @@ class BatchMetrics:
             draft_tokens_accepted=draft_tokens_accepted,
             avg_acceptance_length=avg_acceptance_length,
             max_acceptance_length=max_acceptance_length,
+            nixl_read_latency_avg_ms=nixl_read_latency_avg_ms,
+            nixl_write_latency_avg_ms=nixl_write_latency_avg_ms,
+            rpc_acquire_latency_avg_ms=rpc_acquire_latency_avg_ms,
+            rpc_read_latency_avg_ms=rpc_read_latency_avg_ms,
         )
 
     def pretty_format(self) -> str:
@@ -248,6 +276,23 @@ class BatchMetrics:
         else:
             spec_decode_str = ""
 
+        dkv_str = ""
+        has_dkv = (
+            self.nixl_read_latency_avg_ms > 0
+            or self.nixl_write_latency_avg_ms > 0
+            or self.rpc_acquire_latency_avg_ms > 0
+            or self.rpc_read_latency_avg_ms > 0
+        )
+        if has_dkv:
+            dkv_str = (
+                f"dKV: read {self.nixl_read_latency_avg_ms:.1f}ms"
+                f" ({self.nixl_read_gib_per_s:.2f} GiB/s), "
+                f"write {self.nixl_write_latency_avg_ms:.1f}ms"
+                f" ({self.nixl_write_gib_per_s:.2f} GiB/s), "
+                f"acquire {self.rpc_acquire_latency_avg_ms:.1f}ms, "
+                f"pin {self.rpc_read_latency_avg_ms:.1f}ms | "
+            )
+
         return (
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
             f"Terminated: {self.terminated_reqs} reqs, "
@@ -260,6 +305,7 @@ class BatchMetrics:
             f"Execution: {to_human_readable_latency(self.batch_execution_time_s)} | "
             f"{kv_str}"
             f"{host_kv_str}"
+            f"{dkv_str}"
             f"{spec_decode_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
@@ -278,6 +324,15 @@ class BatchMetrics:
         METRICS.cache_hit_rate(self.cache_hit_rate)
         METRICS.cache_hits(self.cache_hit_tokens)
         METRICS.cache_misses(self.cache_miss_tokens)
+
+        if self.nixl_read_latency_avg_ms > 0:
+            METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)
+        if self.nixl_write_latency_avg_ms > 0:
+            METRICS.dkv_nixl_write_latency(self.nixl_write_latency_avg_ms)
+        if self.rpc_acquire_latency_avg_ms > 0:
+            METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
+        if self.rpc_read_latency_avg_ms > 0:
+            METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
 
 
 class SchedulerLogger:
