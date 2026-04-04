@@ -46,7 +46,7 @@ def takes_varargs(*args: Int):
 
 
 def test_unpack_into_varargs[*Ts: AnyType](*pack: *Ts):
-    # expected-error @+1 {{cannot unpack a variadic pack into a variadic argument}}
+    # expected-error @+1 {{value passed to 'args' cannot be converted from 'VariadicPack[False, AnyType, Ts]' to 'VariadicList[Int, False]'}}
     takes_varargs(*pack)
 
 

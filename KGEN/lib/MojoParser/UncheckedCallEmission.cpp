@@ -348,9 +348,24 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
   if (remainingOperands.front().isUnpackedPositional()) {
     assert(remainingOperands.size() == 1 &&
-           "parser should reject additional positional operands after *pack");
-    assert(calleeSig.isPack(argIdx) && "only variadic packs support unpacking");
+           "parser should reject additional positional operands after *list");
     auto &operand = remainingOperands.front();
+
+    // Splatting a variadic list is straight-forward, just pass the splat
+    // directly.
+    if (calleeSig.isPosVarArg(argIdx)) {
+      auto rvType = sugarCast<RefType>(expectedType).getElementType();
+      if (convention != ArgConvention::OwnedMem)
+        operand.ir = emitter.emitMBValue(operand, EC_CallArgValue, rvType);
+      else
+        operand.ir = emitter.emitMRValue(operand, EC_CallArgValue, rvType);
+      if (!operand.ir)
+        return failure();
+      argumentValues.push_back(operand);
+      return success();
+    }
+
+    assert(calleeSig.isPack(argIdx) && "only variadic packs support unpacking");
     ASTType actualPackType = operand.ir.getRValueTypeIfResolvable();
     assert(actualPackType &&
            actualPackType.getVariadicPackInfo(emitter.shared) &&
