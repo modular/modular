@@ -203,7 +203,7 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
       inferredType, std::move(operands), declScope);
   if (failed(initFn) || !initFn.value())
     return {};
-  return sugarCast<FnTypeGeneratorType>(initFn.value().getType())
+  return FnOrFnLiteralTypeGeneratorType::get(initFn.value().getType())
       .getUserResultType();
 }
 
@@ -730,7 +730,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // expected type.  Infer the parameters of this overload candidate against
     // the computed result type of the initializer.
     if (auto callee = pValue.value()) {
-      auto initSig = sugarCast<FnTypeGeneratorType>(callee.getType());
+      auto initSig = FnOrFnLiteralTypeGeneratorType::get(callee.getType());
       ParamMatcher::FailableScope failableScope(matcher);
       if (succeeded(
               matcher.matchTypes(initSig.getUserResultType(), expectedType))) {

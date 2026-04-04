@@ -229,10 +229,8 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   // If this is a global function or struct reference, bind it directly.
   auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
   if (!parentTrait) {
-    if (funcOp.getAsLiteral())
-      return funcOp.getFuncLiteralGenerator(shared.getEvaluationContext(),
-                                            verified);
-    return funcOp.getBoundReference(shared.getEvaluationContext(), verified);
+    return funcOp.getFuncLiteralGenerator(shared.getEvaluationContext(),
+                                          verified);
   }
 
   // Must at least have one `_Self` parameter.

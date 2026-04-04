@@ -55,7 +55,7 @@ def metatypes():
     T.bar()
 
     # COM: Test that binding to a generic type works.
-    # CHECK: bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@"anytype[::TrivialRegisterPassable]()"<:!TrivialRegisterPassable !Thing>>
+    # CHECK: bound{{.*}}: !lit.generator<<>!kgen.func.literal<{{.*}}@"anytype[::TrivialRegisterPassable]()"<:!TrivialRegisterPassable !Thing>>
     comptime bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.

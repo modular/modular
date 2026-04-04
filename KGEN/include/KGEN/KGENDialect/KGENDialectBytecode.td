@@ -44,6 +44,10 @@ def FuncType : DialectType<(type
   ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata
 )>;
 
+def FuncLiteralType : DialectType<(type
+  TypedAttr:$funcLiteral
+)>;
+
 def PointerType : DialectType<(type
   Type:$elementType,
   TypedAttr:$addressSpace,
@@ -109,6 +113,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     StringType,
     GeneratorType,
     FuncType,
+    FuncLiteralType,
     PointerType,
     VariadicType,
     NoneType,
@@ -243,6 +248,18 @@ def SymbolConstantAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
   ConcreteType<"GeneratorType">:$type
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
+
+def FuncSymbolAttr : DialectAttribute<(attr
+  ConcreteAttribute<"SymbolRefAttr">:$symbol,
+  TypedAttrArray:$paramValues,
+  ConcreteType<"FuncType">:$type
+)>;
+
+def FuncLiteralAttr : DialectAttribute<(attr
+  ConcreteType<"FuncLiteralType">:$type
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
@@ -413,6 +430,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     TypeInstanceRefAttr,
     DTypeConstantAttr,
     SymbolConstantAttr,
+    FuncSymbolAttr,
+    FuncLiteralAttr,
     GeneratorAttr,
     TargetParamAttr,
     StructDefFieldAttr,

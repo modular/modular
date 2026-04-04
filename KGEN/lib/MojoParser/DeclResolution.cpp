@@ -438,6 +438,8 @@ static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
 
   if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
     return extractFromSymbolRef(cst.getSymbol());
+  if (auto fnLiteral = dyn_cast<FnLiteralTypeGeneratorType>(attr.getType()))
+    return extractDecoratorName(fnLiteral.getTargetLiteral());
 
   if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
     // Only process if it's an Apply operator with at least one operand
@@ -497,6 +499,10 @@ void Decorators::applyBodyDecorators(
   IREmitter emitter(decl, EC_Decorator);
   for (auto *decorator : exprDecorators) {
     if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator)) {
+      // DecoVal wants the symbol constant attr.
+      if (auto fnLit = dyn_cast<FnLiteralTypeGeneratorType>(decoVal.getType()))
+        decoVal = PValue(fnLit.getTargetLiteral());
+
       if (failed(validateCompilerDecorator(decoVal))) {
         emitError(decorator->getLoc(), "unsupported compiler decorator")
             << decorator->getRange();
@@ -1536,8 +1542,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw___def,
-                            Token::kw_fn) &&
+  assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
   bool isAsync = p.consumeIf(Token::kw_async);
   // FIXME(26.4): Upgrade to an error.

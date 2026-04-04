@@ -166,7 +166,7 @@ CallEmitter::CallEmitter(RValue calleeVal, const ExprNode *callExpr,
     auto fnLiteralGenType =
         sugarCast<FnLiteralTypeGeneratorType>(callee.getRValueType());
     assert(fnLiteralGenType.getInputParamTypes().empty());
-    callee = fnLiteralGenType.getConstantTargetLiteral();
+    callee = fnLiteralGenType.getTargetLiteral();
     calleeSig = cast<FnTypeGeneratorType>(callee.getType());
   }
   assert(calleeSig);

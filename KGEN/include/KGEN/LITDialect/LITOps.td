@@ -96,12 +96,7 @@ def LIT_FnOp : LITOp<"fn", [
     // each odd corresponds to its value (zero index based)
     DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
     DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
-    OptionalAttr<AnyAttr>:$thunkKey,
-
-    // A temporary attribute to indicate that this function should be emitted
-    // with a function literal type, will be true and removed for all FnOp after
-    // fully migration.
-    UnitAttr:$asLiteral
+    OptionalAttr<AnyAttr>:$thunkKey
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

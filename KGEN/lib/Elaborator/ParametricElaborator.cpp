@@ -487,7 +487,7 @@ ParametricElaborator::getExpectedMangledName(Location errorLoc,
                                              TypedAttr symCst,
                                              bool allowParametric,
                                              bool sanitize) {
-  auto symbol = dyn_cast<SymbolConstantAttr>(symCst);
+  auto symbol = extractSymbolConstantAttr(symCst);
   if (!symbol) {
     return ErrorTree(
         errorLoc,
@@ -759,9 +759,10 @@ ElaborationState ParametricElaborator::processParamApplyOp(PImplNode *inode,
   Attribute calleeSymbol;
   HANDLE_EVALUATOR_CONC(calleeSymbol, inode, op.getLoc(), op.getCallee());
 
-  StringAttr name = cast<FlatSymbolRefAttr>(
-                        cast<SymbolConstantAttr>(calleeSymbol).getSymbol())
-                        .getAttr();
+  StringAttr name =
+      cast<FlatSymbolRefAttr>(
+          extractSymbolConstantAttr(cast<TypedAttr>(calleeSymbol)).getSymbol())
+          .getAttr();
   auto genItf = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
@@ -786,7 +787,7 @@ ElaborationState ParametricElaborator::processParamApplyOp(PImplNode *inode,
 
   // Attempt to lookup a cached value. This returns a thread local cached value.
   auto operandsAttr = cast<ParameterExprArrayAttr>(value);
-  auto calleeAttr = cast<SymbolConstantAttr>(callee);
+  auto calleeAttr = extractSymbolConstantAttr(cast<TypedAttr>(callee));
 
   TypedAttr cached = lookupCachedInterpretation(((!gen) ? func : gen),
                                                 operandsAttr, calleeAttr);
@@ -833,7 +834,8 @@ ParametricElaborator::processCallOp(PImplNode *parent,
                                     GeneratorUserOpInterface call) {
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
-  return processGeneratorUser(call, cast<SymbolConstantAttr>(symbol), parent);
+  return processGeneratorUser(
+      call, extractSymbolConstantAttr(cast<TypedAttr>(symbol)), parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1120,7 +1122,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
                           type);
 
   //// Concretize the paramfor_has_next generator function.
-  auto hasNextSymbol = cast<SymbolConstantAttr>(hasNext);
+  auto hasNextSymbol = extractSymbolConstantAttr(cast<TypedAttr>(hasNext));
   StringAttr hasNextName =
       cast<FlatSymbolRefAttr>(hasNextSymbol.getSymbol()).getAttr();
   auto hasNextGen = oldSymTab.lookup<GeneratorOp>(hasNextName);
@@ -1159,7 +1161,8 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
     return failure();
   }
 
-  auto getNextIterSymbol = cast<SymbolConstantAttr>(getNextIter);
+  auto getNextIterSymbol =
+      extractSymbolConstantAttr(cast<TypedAttr>(getNextIter));
   StringAttr getNextIterName =
       cast<FlatSymbolRefAttr>(getNextIterSymbol.getSymbol()).getAttr();
   auto getNextIterGen = oldSymTab.lookup<GeneratorOp>(getNextIterName);
@@ -1927,7 +1930,7 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   StringRef emissionLinkOptionsStr =
       cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
 
-  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(op.getFuncAttr());
+  SymbolConstantAttr symbol = extractSymbolConstantAttr(op.getFuncAttr());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(op.getLoc(), "compile_offload", symbol,
                              /*allowParametric=*/false,

@@ -1818,10 +1818,10 @@ StructMetaMetaType::bindUnbound(ArrayRef<TypedAttr> values) const {
 // Type Utilities
 //===----------------------------------------------------------------------===//
 
-Type LIT::getSignatureUserResultType(FnTypeGeneratorType sigType,
+Type LIT::getSignatureUserResultType(FnOrFnLiteralTypeGeneratorType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
   // If this function has a byref_result, return the reference element type.
-  if (sigType.getBody().hasMemoryOnlyResult())
+  if (sigType.hasMemoryOnlyResult())
     return cast<RefType>(argTypes.back()).getElementType();
   return resultType;
 }

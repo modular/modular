@@ -471,9 +471,12 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
     //    def example[T: TrivialRegisterPassable](a: T): ...
     //    example(1) # T should be Int, not IntLiteral.
     // TODO: Why is this here?  Seems like a strange place to do this.
-    if (ASTType nmTarget =
-            ASTType(actualType).getNonmaterializableTarget(shared))
-      actualType = nmTarget;
+    // FIXME: We should probably do it in `setInferredValue` here.
+    if (!sugarIsa<FnLiteralTypeGeneratorType>(actualType)) {
+      if (ASTType nmTarget =
+              ASTType(actualType).getNonmaterializableTarget(shared))
+        actualType = nmTarget;
+    }
 
     return matchParams(PValue(actualType).get(), expectedParamRef.getParam());
   }
@@ -588,6 +591,11 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   if (auto actual = dyn_cast<FnTypeGeneratorType>(actualType))
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType))
       return matchFunctionTypes(actual, expected);
+
+  // Allowing match a FnLiteralType To a FnType, but not vice versa.
+  if (auto actual = dyn_cast<FnLiteralTypeGeneratorType>(actualType))
+    if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType))
+      return matchFunctionTypes(actual.getTargetLiteral().getType(), expected);
 
   // Handle GeneratorType
   if (auto actual = dyn_cast<GeneratorType>(actualType)) {

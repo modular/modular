@@ -1214,9 +1214,9 @@ def inferCaptureOrigins[
     # CHECK-SAME: rebind(:!lit.generator<:{mut *"x`1"}:{{.*}} *"captureSomething
     closureParameterInference[captureSomething](arg)
 
-    # CHECK: lit.alias.decl *"unboundSet{{.*}} !lit.generator<<{{.*}}>:*(0,0):
+    # CHECK: lit.alias.decl *"unboundSet{{.*}}!kgen.func.literal<:!lit.fn<:*(0,0):
     comptime unboundSet = closureParameterCaptures
-    # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:rebind(:origin.set {mut *"x`1"}):
+    # CHECK: lit.alias.decl *"boundSet{{.*}}!kgen.func.literal<:!lit.fn<:rebind(:origin.set {mut *"x`1"}):
     comptime boundSet = closureParameterCaptures[captureSomething]
 
     # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}:origin<1> *(0,0)>
@@ -1224,7 +1224,7 @@ def inferCaptureOrigins[
     # CHECK: lit.alias.decl *"boundSingleParam{{.*}}:origin<1> *"lt._mlir_origin`"
     comptime boundSingleParam = explicitLifetime[param]
 
-    # CHECK: lit.alias.decl *"memberFunction{{.*}} !lit.generator<<{{.*}}>:*(0,1):
+    # CHECK: lit.alias.decl *"memberFunction{{.*}}!kgen.func.literal<:!lit.fn<:*(0,1):
     comptime memberFunction = CapturingStruct.takeClosure
 
     # CHECK: lit.fn *"captureWithClosure

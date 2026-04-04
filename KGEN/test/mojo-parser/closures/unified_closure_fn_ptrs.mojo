@@ -64,34 +64,13 @@ def wrap_fn() -> Int:
 
 # // -----
 
-# COM: Wrappers should be rebound if signatures are compatible.
-
-# CHECK: kgen.conformance @"def(x: Int) -> Int"
-# CHECK: kgen.conformance @"def(Int) -> Int"
-
-
-def top_level(x: Int) -> Int:
-    return x
-
-
-# COM: Note the lack of an argument name in the signature.
-def use_closure[Impl: def(Int) unified -> Int](cb: Impl) -> Int:
-    return cb(1)
-
-
-def wrap_fn() -> Int:
-    return use_closure(top_level)
-
-
-# // -----
-
 # COM: fn literals can be converted to closure wrappers.
 
 # CHECK: kgen.conformance @"def(x: Int) -> Int"
 # CHECK: kgen.conformance @"def(Int) -> Int"
 
 
-__def top_level(x: Int) -> Int:
+def top_level(x: Int) -> Int:
     return x
 
 

@@ -266,7 +266,7 @@ struct FN_LITERAL_RET[x: Int, y: Int]():
     pass
 
 
-__def test_fn_literal_type[x: Int, y: Int]() -> FN_LITERAL_RET[x, y]:
+def test_fn_literal_type[x: Int, y: Int]() -> FN_LITERAL_RET[x, y]:
     pass
 
 # CHECK:      lit.alias.decl *"test_fn_literal_type_type{{.*}}": {{.*}} =
@@ -306,5 +306,5 @@ trait FooTrait:
 @fieldwise_init
 struct Foo[x: Int, y: Int](FooTrait):
     # CHECK: kgen.witness "foo[::Int,::Int]($0)"
-    __def foo[q: Int, z: Int](self) -> Int:
+    def foo[q: Int, z: Int](self) -> Int:
         return Self.x + Self.y

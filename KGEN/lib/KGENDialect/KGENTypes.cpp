@@ -665,6 +665,14 @@ FuncTypeGeneratorType::get(ArrayRef<Type> inputParamTypes, FunctionType values,
       ::cast_or_null<GeneratorMetadataAttrInterface>(genMetadata)));
 }
 
+FuncTypeGeneratorType FuncTypeGeneratorType::get(ArrayRef<Type> inputParamTypes,
+                                                 FuncType sig,
+                                                 Attribute genMetadata) {
+  return FuncTypeGeneratorType(GeneratorType::get(
+      inputParamTypes, sig,
+      ::cast_or_null<GeneratorMetadataAttrInterface>(genMetadata)));
+}
+
 FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
     ArrayRef<TypedAttr> paramBindings,
     ParameterEvaluationContext *evaluationContext,
@@ -769,20 +777,23 @@ FuncLiteralTypeGeneratorType::getSpecializedGenerator(
                                              location));
 }
 
-SymbolConstantAttr FuncLiteralTypeGeneratorType::getConstantTargetLiteral() {
+SymbolConstantAttr FuncLiteralTypeGeneratorType::getTargetLiteral() {
   auto directSymbol = getBody().getTargetLiteral();
   auto sig = GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
                                 getMetadata());
 
-  SmallVector<TypedAttr> paramValues;
-  for (auto paramValue : directSymbol.getParamValues()) {
-    if (auto idxRef = dyn_cast<ParamIndexRefAttr>(paramValue);
-        idxRef && idxRef.getDepth() == 0) {
-      paramValues.push_back(UnboundAttr::get(paramValue.getType()));
-    } else {
-      paramValues.push_back(paramValue);
-    }
+  // The parameter values might have dependent type, erase the ref too in the
+  // create a evaluator to erase the dependencies too.
+  ParameterEvaluator evaluator(ArrayRef<TypedAttr>{});
+  for (auto unboundType : getInputParamTypes()) {
+    // There could be a dependent input parameter type, erase the unknown ref.
+    auto unbound = UnboundAttr::get(evaluator.replace(unboundType));
+    evaluator.appendIndexBinding(unbound);
   }
+
+  SmallVector<TypedAttr> paramValues;
+  for (auto paramValue : directSymbol.getParamValues())
+    paramValues.push_back(evaluator.replace(paramValue));
 
   return SymbolConstantAttr::get(directSymbol.getSymbol(),
                                  cast<FuncTypeGeneratorType>(sig), paramValues);

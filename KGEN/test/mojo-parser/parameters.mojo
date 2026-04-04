@@ -250,7 +250,7 @@ def infer_implicit_params():
     implicit_params_with_others[42](one, two)
 
     # CHECK: alias.decl *"partial_bind{{.*}}: !lit.generator<<?, "lhs.a`": !Int, "lhs.b`1": !Int, "rhs.a`2": !Int, "rhs.b`3": !Int>
-    # CHECK-SAME: implicit_params_with_others{{.*}}<:!Int {1}, :!Int ?, :!Int ?, :!Int ?, :!Int ?>
+    # CHECK-SAME: implicit_params_with_others{{.*}}<:!Int {1}, :!Int *(0,0), :!Int *(0,1), :!Int *(0,2), :!Int *(0,3)>>
     comptime partial_bind = implicit_params_with_others[1]
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {1}, :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     partial_bind(one, two)
@@ -320,8 +320,8 @@ def function_autoparam[f: def () capturing [_] -> None, g: def () capturing [_] 
     def function():
         pass
 
-    # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.generator<() capturing -> !kgen.none> =
-    # CHECK-SAME: <{{.*}}function_autoparam{{.*}}<:origin.set {}, :origin.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
+    # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.generator<<>!kgen.func.literal<:!lit.fn<() capturing -> !kgen.none>
+    # CHECK-SAME: function_autoparam{{.*}}<:origin.set {}, :origin.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
     comptime bind_one = function_autoparam[function, function]
 
 
@@ -485,7 +485,7 @@ def intbox_memory_result(x: Int) -> IntBox:
 # CHECK-LABEL: lit.fn @"interpret_initself_ctor
 # CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {{.*}}{x: !Int = {42}})>
 def interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
-    # CHECK-NEXT: !lit.generator<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor
+    # CHECK-NEXT: !lit.generator<<>!kgen.func.literal<{{.*}}!lit.struct<#InitSelfParam <:!InitSelfCtor
     comptime refined_fn = refine_memory_only_results[1, 2]
 
     # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{{.*}}{x: !Int = {42}})>
@@ -586,7 +586,7 @@ def takeCallable2[
 
 # CHECK-LABEL: lit.fn @"passFunctionParam2
 def passFunctionParam2():
-  # CHECK: lit.call {{.*}}@"takeCallable2{{.*}}"<
+  # CHECK: lit.call {{.*}}takeCallable2
   # CHECK-SAME: :!lit.generator<<"dt": dtype>() -> !kgen.none> rebind(:!lit.generator<<"type": dtype>() -> !kgen.none> @parameters::@"callableWithParam
   takeCallable2[callableWithParam]()
 
@@ -721,8 +721,7 @@ def useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl *"defAlias{{.*}}": !lit.generator<<"b": variadic<!Int> pos_vararg>() -> !kgen.none>
-  # CHECK-SAME: = <@parameters::@"fnWithVariadics{{.*}}">
+  # CHECK-NEXT: lit.alias.decl *"defAlias{{[^"]*}}": !lit.generator<<"b": variadic<!Int> pos_vararg>!kgen.func.literal<{{.*}}@"fnWithVariadics
   comptime defAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
@@ -819,7 +818,7 @@ def partial_parameter_overloading[param: DType, other: DType]():
 def form_reference_to_overloaded():
     # CHECK-NEXT: @"parameter_overloading[[[INT:.*Int]]]()"<:!Int {1}>
     comptime refresult = parameter_overloading[1]
-    # CHECK-NEXT: !lit.generator<<"other": !Int>() -> !kgen.none> = <{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int ?>
+    # CHECK-NEXT: !lit.generator<<"other": !Int>!kgen.func.literal<{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int *(0,0)>>
     comptime partial = partial_parameter_overloading[1, _]
 
 ##===----------------------------------------------------------------------===##
