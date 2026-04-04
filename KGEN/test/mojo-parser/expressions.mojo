@@ -1160,10 +1160,8 @@ def dependent_callee[dtype: DType](storage: UnsafePointer[SIMD[dtype, 1], AnyOri
 
 # This requires handling of VariadicAttr in parameter inference.
 def variadic_attr_caller(*inputs: Tuple[Int]):
-   variadic_attr_callee[Int](inputs)
-def variadic_attr_callee[key_type: ImplicitlyCopyable](
-       inputs: VariadicList[Tuple[key_type], _]
-    ):
+   variadic_attr_callee[Int](*inputs)
+def variadic_attr_callee[key_type: ImplicitlyCopyable](*inputs: Tuple[key_type]):
   pass
 
 # Test that parameter inference works with implicit conversions - in this case
