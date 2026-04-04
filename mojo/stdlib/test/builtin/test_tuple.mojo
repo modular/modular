@@ -198,6 +198,36 @@ def test_tuple_reverse_copy_count() raises:
     assert_equal(t2[0].copy_count, 0)
 
 
+def test_tuple_permute() raises:
+    var t = ("hi", 1, 4.5)
+    var permuted = t^.permute[Variadic.values[2, 0, 1]]()
+    assert_equal(permuted, (4.5, "hi", 1))
+
+
+def test_tuple_permute_identity() raises:
+    var t = ("hi", 1, 4.5)
+    var permuted = t^.permute[Variadic.values[0, 1, 2]]()
+    assert_equal(permuted, ("hi", 1, 4.5))
+
+
+def test_tuple_permute_swap() raises:
+    var t = (Bool(True), Int(42))
+    var permuted = t^.permute[Variadic.values[1, 0]]()
+    assert_equal(permuted, (Int(42), Bool(True)))
+
+
+def test_tuple_permute_single() raises:
+    var t = (Int(42),)
+    var permuted = t^.permute[Variadic.values[0]]()
+    assert_equal(permuted, (Int(42),))
+
+
+def test_tuple_permute_copy_count() raises:
+    var t = (CopyCounter(),)
+    var t2 = t^.permute[Variadic.values[0]]()
+    assert_equal(t2[0].copy_count, 0)
+
+
 def test_tuple_concat() raises:
     var t = ("hi", "hey", 1)
     var t2 = (4.5, "hello")

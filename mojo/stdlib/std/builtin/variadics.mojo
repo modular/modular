@@ -157,6 +157,49 @@ struct Variadic:
         element_types: The variadic sequence of types to reverse.
     """
 
+    comptime permute[
+        T: type_of(AnyType),
+        //,
+        *element_types: T,
+        perm: Variadic.ValuesOfType[Int] where Variadic.size(
+            perm
+        ) == Variadic.size(element_types),
+    ]: Variadic.TypesOfTrait[T] = _MapVariadicAndIdxToType[
+        To=T,
+        VariadicType=element_types,
+        Mapper=_PermutedVariadic[T, perm, ...],
+    ]
+    """Permute a variadic sequence of types according to the given indices.
+
+    Returns a new variadic where the element at position `i` in the result is
+    `element_types[perm[i]]`.
+
+    Parameters:
+        T: The trait that the types conform to.
+        element_types: The variadic sequence of types to permute.
+        perm: A variadic of Int indices specifying the permutation.
+
+    Constraints:
+        `perm` must be a valid permutation of `[0, len-1]`: its length must
+        equal the length of `element_types`, every index must be in range,
+        and each index must appear exactly once. Out-of-range indices will
+        produce a compile-time error from type indexing.
+
+    Examples:
+
+    ```mojo
+    from std.builtin.variadics import Variadic
+    from std.sys.intrinsics import _type_is_eq
+
+    # Given types [Int, String, Bool], permute with [2, 0, 1]
+    comptime types = Variadic.types[T=AnyType, Int, String, Bool]
+    comptime permuted = Variadic.permute[
+        *types, perm=Variadic.values[2, 0, 1]
+    ]
+    # Result: [Bool, Int, String]
+    ```
+    """
+
     comptime splat_type[
         Trait: type_of(AnyType), //, count: Int, type: Trait
     ]: Variadic.TypesOfTrait[Trait] = Self.tabulate_type[
@@ -1793,6 +1836,51 @@ Parameters:
     element_types: The variadic sequence of types to reverse.
     idx: The index of the type to generate in the reversed sequence.
 """
+
+comptime _PermutedVariadic[
+    T: type_of(AnyType),
+    perm: Variadic.ValuesOfType[Int],
+    element_types: Variadic.TypesOfTrait[T],
+    idx: Int,
+] = element_types[perm[idx]]
+"""A generator that permutes a variadic sequence of types.
+
+Parameters:
+    T: The common trait bound for the variadic types.
+    perm: The permutation indices.
+    element_types: The variadic sequence of types to permute.
+    idx: The index of the type to generate in the permuted sequence.
+"""
+
+
+comptime _IotaTabulator[idx: Int] = idx
+"""A tabulator that returns the index itself, producing [0, 1, 2, ...]."""
+
+comptime _AllIndicesPresentReducer[
+    perm: Variadic.ValuesOfType[Int],
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.ValuesOfType[Int],
+    idx: Int,
+] = Variadic.values[
+    Prev[0] and Variadic.contains_value[value=From[idx], element_values=perm]
+]
+"""Reducer that checks each index in [0, N) is present in the permutation."""
+
+comptime _is_valid_permutation[
+    perm: Variadic.ValuesOfType[Int],
+    n: Int,
+] = _ReduceValueAndIdxToValue[
+    BaseVal=Variadic.values[True],
+    VariadicType=Variadic.tabulate[n, _IotaTabulator],
+    Reducer=_AllIndicesPresentReducer[perm, ...],
+][
+    0
+]
+"""Check that `perm` is a valid permutation of [0, n).
+
+Given that `size(perm) == n` (enforced separately), this checks that every
+index in `[0, n)` appears in `perm`. By the pigeonhole principle, this
+ensures each index appears exactly once."""
 
 
 comptime _ContainsReducer[

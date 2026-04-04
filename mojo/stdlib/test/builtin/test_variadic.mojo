@@ -57,6 +57,47 @@ def test_variadic_reverse_even() raises:
     assert_true(_type_is_eq[ReversedVariadic3[1], Int]())
 
 
+def test_variadic_permute() raises:
+    var _tup = (String("hi"), Int(42), Float32(3.14))
+    comptime Permuted = Variadic.permute[
+        *type_of(_tup).element_types, perm=Variadic.values[2, 0, 1]
+    ]
+    assert_equal(Variadic.size(Permuted), 3)
+    assert_true(_type_is_eq[Permuted[0], Float32]())
+    assert_true(_type_is_eq[Permuted[1], String]())
+    assert_true(_type_is_eq[Permuted[2], Int]())
+
+
+def test_variadic_permute_identity() raises:
+    var _tup = (Int(1), String("a"), Float64(2.0))
+    comptime Permuted = Variadic.permute[
+        *type_of(_tup).element_types, perm=Variadic.values[0, 1, 2]
+    ]
+    assert_equal(Variadic.size(Permuted), 3)
+    assert_true(_type_is_eq[Permuted[0], Int]())
+    assert_true(_type_is_eq[Permuted[1], String]())
+    assert_true(_type_is_eq[Permuted[2], Float64]())
+
+
+def test_variadic_permute_swap() raises:
+    var _tup = (Int(1), String("a"))
+    comptime Permuted = Variadic.permute[
+        *type_of(_tup).element_types, perm=Variadic.values[1, 0]
+    ]
+    assert_equal(Variadic.size(Permuted), 2)
+    assert_true(_type_is_eq[Permuted[0], String]())
+    assert_true(_type_is_eq[Permuted[1], Int]())
+
+
+def test_variadic_permute_single() raises:
+    var _tup = (Int(42),)
+    comptime Permuted = Variadic.permute[
+        *type_of(_tup).element_types, perm=Variadic.values[0]
+    ]
+    assert_equal(Variadic.size(Permuted), 1)
+    assert_true(_type_is_eq[Permuted[0], Int]())
+
+
 def test_variadic_concat_empty() raises:
     var _tup = ()
     comptime ConcattedVariadic = Variadic.concat_types[

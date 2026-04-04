@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.variadics import _is_valid_permutation
 from std.format._utils import (
     write_sequence_to,
     TypeNames,
@@ -566,6 +567,51 @@ struct Tuple[*element_types: Movable](
                     UnsafePointer(
                         to=self[Variadic.size_types[Self.element_types] - 1 - i]
                     )
+                )
+            )
+
+    @always_inline("nodebug")
+    def permute[
+        perm: Variadic.ValuesOfType[Int] where (
+            Variadic.size(perm) == Self.__len__()
+        )
+    ](
+        deinit self,
+        out result: Tuple[*Variadic.permute[*Self.element_types, perm=perm]],
+    ):
+        """Return a new tuple with the elements reordered according to a
+        permutation.
+
+        Parameters:
+            perm: A variadic of Int indices specifying the permutation.
+                  `perm[i]` is the index in the original tuple that maps to
+                  position `i` in the result.
+
+        Returns:
+            A new tuple with the permuted elements.
+
+        Usage:
+
+        ```mojo
+        var t = ("a", 1, 3.14)
+        var p = t.permute[Variadic.values[2, 0, 1]]()
+        print(p[0], p[1], p[2])  # output: 3.14, a, 1
+        ```
+        """
+        comptime assert _is_valid_permutation[perm, Self.__len__()], (
+            "perm must be a valid permutation of [0, len-1]:"
+            " every index must be in range and appear exactly once"
+        )
+
+        # Mark 'result' as being initialized so we can work on it.
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+
+        comptime for i in range(type_of(result).__len__()):
+            UnsafePointer(to=result[i]).init_pointee_move_from(
+                rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
+                    UnsafePointer(to=self[perm[i]])
                 )
             )
 
