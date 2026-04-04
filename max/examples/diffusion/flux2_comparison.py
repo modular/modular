@@ -65,7 +65,7 @@ from max.interfaces.request.open_responses import (
     OutputImageContent,
     UserMessage,
 )
-from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
@@ -821,21 +821,23 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     """Load FLUX.2 pipeline via MAX."""
     model_id = args.model
 
+    manifest = ModelManifest.from_model_path(
+        model_id,
+        device_specs=[DeviceSpec.accelerator()],
+    )
+    if args.weight_path:
+        manifest = manifest.with_override(
+            "transformer",
+            weight_path=[Path(p) for p in args.weight_path],
+        )
+    if args.quantization_encoding:
+        manifest = manifest.with_override(
+            "transformer",
+            quantization_encoding=args.quantization_encoding,
+        )
+
     config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=model_id,
-                    device_specs=[DeviceSpec.accelerator()],
-                    weight_path=(
-                        [Path(p) for p in args.weight_path]
-                        if args.weight_path
-                        else []
-                    ),
-                    quantization_encoding=args.quantization_encoding,
-                )
-            }
-        ),
+        models=manifest,
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=args.prefer_module_v3,
         ),

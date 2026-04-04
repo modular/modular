@@ -28,6 +28,9 @@ This version is still a work in progress.
 - Removed the `--allow-safetensors-weights-fp32-bf16-bidirectional-cast` CLI
   flag. Float32 <-> bfloat16 safetensors weight casting is now unconditionally
   enabled.
+- Added `--model-override` CLI flag for per-component `ModelManifest` overrides
+  (e.g. `--model-override transformer.quantization_encoding=float4_e2m1fnx2`),
+  enabling mixed quantization in diffusion pipelines.
 
 ### `max` CLI {#26-3-max-cli}
 
