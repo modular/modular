@@ -1731,7 +1731,8 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   // For stdlib Bool, directly extract the _mlir_value field instead of calling
   // __mlir_i1__. This avoids unnecessary sugar wrapping that would show up in
   // diagnostics.
-  ASTType boolType = shared.getBuiltinBoolType(declScope, value.expr->getLoc());
+  ASTType boolType =
+      shared.lookupBuiltinType("Bool", declScope, value.expr->getLoc());
   if (value.ir.getRValueType().isEqualCanon(boolType)) {
     if (PValue pvalue = value.ir.getIfPValue()) {
       if (auto extractVal = ASTType::extractStructField(
@@ -1790,7 +1791,8 @@ CValue IREmitter::emitIndex(const ExprNode *expr, ExprContext context) {
 }
 
 CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
-  ASTType boolType = shared.getBuiltinBoolType(declScope, value.expr->getLoc());
+  ASTType boolType =
+      shared.lookupBuiltinType("Bool", declScope, value.expr->getLoc());
   return emitConstructorCall(
       boolType, CallOperands(CallSyntax::kImplicitConvert, value.expr, {value}),
       dest);
@@ -1822,7 +1824,7 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue,
 /// installed.
 ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
                                                 ArrayRef<Type> elements) {
-  auto tupleType = shared.getBuiltinTupleType(declScope, loc);
+  auto tupleType = shared.lookupBuiltinType("Tuple", declScope, loc);
   if (tupleType.isTypeCheckErrorType())
     return {};
   ASTDecl *typeDecl = ASTType(tupleType).getDecl(shared);
@@ -2039,7 +2041,7 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   SyntheticNode expr(loc);
 
   // Convert to Origin type, start by looking it up.
-  ASTType originType = shared.getBuiltinOriginType(declScope, loc);
+  ASTType originType = shared.lookupBuiltinType("Origin", declScope, loc);
   if (sugarIsa<TypeCheckErrorType>(originType))
     return {}; // Sanity check the returned declaration.
   auto originStructType = sugarCast<LIT::StructType>(originType);

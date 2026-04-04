@@ -1321,11 +1321,6 @@ ASTType SharedState::lookupBuiltinType(StringRef name, ASTDecl &context,
   return lookupNamedType(name, context, loc);
 }
 
-ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
-                                                llvm::SMLoc loc) {
-  return lookupBuiltinType("VariadicList", context, loc);
-}
-
 ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {
   ASTDecl &coroutineModule =
       importModule("std.builtin.coroutine", /*currentPackage=*/nullptr, loc);

@@ -668,7 +668,8 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
   auto witnessName = StringAttr::get(shared.getContext(), isTrivialHook);
   auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
 
-  ASTType boolType = shared.getBuiltinBoolType(*typeDecl->getParentDecl(), loc);
+  ASTType boolType =
+      shared.lookupBuiltinType("Bool", *typeDecl->getParentDecl(), loc);
   TypedAttr fieldIsTrivial =
       shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
           PValue(*this),
