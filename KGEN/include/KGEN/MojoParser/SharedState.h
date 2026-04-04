@@ -449,37 +449,6 @@ public:
 
   /// Get a builtin type, or emit an error and return TypeCheckErrorType if
   /// invalid. These never return null.
-  ASTType getBuiltinOriginType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("Origin", context, loc);
-  }
-  ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("Bool", context, loc);
-  }
-  ASTType getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("Tuple", context, loc);
-  }
-  ASTType getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("Error", context, loc);
-  }
-  ASTType getBuiltinStringType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("String", context, loc);
-  }
-  ASTType getBuiltinIntLiteralType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("IntLiteral", context, loc);
-  }
-  ASTType getBuiltinFloatLiteralType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("FloatLiteral", context, loc);
-  }
-  ASTType getBuiltinStringLiteralType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("StringLiteral", context, loc);
-  }
-  ASTType getBuiltinStringSliceType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("StringSlice", context, loc);
-  }
-  ASTType getBuiltinVariadicListType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinVariadicPackType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupBuiltinType("VariadicPack", context, loc);
-  }
   ASTDecl *getBuiltinCoroutineType(llvm::SMLoc loc);
   ASTDecl *getBuiltinDevicePassableTrait(llvm::SMLoc loc);
   ASTDecl *getBuiltinRaisingCoroutineType(llvm::SMLoc loc);

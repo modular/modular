@@ -482,7 +482,7 @@ Parser-specific:
   - It's a lightweight wrapper, a value type, you can directly construct one
     given an `mlir::Type`.
   - Some you can get from SharedState, for example
-    `shared.getBuiltinBoolType(declScope, loc)`.
+    `shared.lookupBuiltinType("Bool", declScope, loc)`.
   - `StructDeclOp::bindReference` creates one from a `StructDeclOp`.
 - When allocating memory that shouldn't escape the parser invocation, use
   `SharedState::allocPersistent` or `ExprParser::alloc` (which calls

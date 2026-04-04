@@ -645,16 +645,16 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   auto attr = POP::IntLiteralAttr::get(emitter.getContext(), IPInt(value));
 
   // Look up the IntLiteral type.
-  ASTType type =
-      emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
+  ASTType type = emitter.shared.lookupBuiltinType("IntLiteral",
+                                                  emitter.declScope, getLoc());
   return handleIntFPStringLiteral(attr, type, this, dest, emitter);
 }
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   IPRational value = Lexer::getFloatLiteralValue(spelling);
   auto attr = POP::FloatLiteralAttr::get(emitter.getContext(), value);
-  ASTType type =
-      emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
+  ASTType type = emitter.shared.lookupBuiltinType("FloatLiteral",
+                                                  emitter.declScope, getLoc());
   return handleIntFPStringLiteral(attr, type, this, dest, emitter);
 }
 
@@ -673,8 +673,8 @@ std::string StringLiteralNode::getValue() const {
 CValue StringLiteralNode::emitCtorCall(StringRef bytes, const ExprNode *expr,
                                        ValueDest &dest, IREmitter &emitter) {
   auto attr = StringAttr::get(bytes, StringType::get(emitter.getContext()));
-  ASTType type = emitter.shared.getBuiltinStringLiteralType(emitter.declScope,
-                                                            expr->getLoc());
+  ASTType type = emitter.shared.lookupBuiltinType(
+      "StringLiteral", emitter.declScope, expr->getLoc());
   return handleIntFPStringLiteral(attr, type, expr, dest, emitter);
 }
 
@@ -2275,8 +2275,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         return success();
       };
       if (auto valueMetaType = sugarDynCast<StructMetaType>(value.getType())) {
-        ASTType tupleType = emitter.shared.getBuiltinTupleType(
-            emitter.declScope, call.getLoc());
+        ASTType tupleType = emitter.shared.lookupBuiltinType(
+            "Tuple", emitter.declScope, call.getLoc());
         // If the _type field is a Tuple of types, then the operation
         // returns multiple results, with types specified in the list.  We
         // need to take apart the Tuple value to get the types from inside it.
@@ -2592,8 +2592,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   // Pack results into a tuple and return it.
-  auto tupleType =
-      emitter.shared.getBuiltinTupleType(emitter.declScope, call.getLoc());
+  auto tupleType = emitter.shared.lookupBuiltinType("Tuple", emitter.declScope,
+                                                    call.getLoc());
   if (tupleType.isTypeCheckErrorType())
     return {};
 
@@ -3340,7 +3340,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
     // boolean-ish.  Handle this by extracting the boolean result out of the
     // second argument and converting that to a proper Bool result.
     ASTType boolType =
-        emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
+        emitter.shared.lookupBuiltinType("Bool", emitter.declScope, getLoc());
 
     // If the RHS is already a Bool, we're good, otherwise convert to i1 then
     // back to Bool with a ctor.
@@ -4486,8 +4486,8 @@ MagicFunctionNode::emitIsRunInComptimeInterpreter(ValueDest &dest,
                                                  this->getLocation(emitter));
   // Wrap the i1 result in a Bool so callers can use it with 'not', 'and',
   // 'or', etc.
-  ASTType boolType =
-      emitter.shared.getBuiltinBoolType(emitter.getDeclScope(), getLoc());
+  ASTType boolType = emitter.shared.lookupBuiltinType(
+      "Bool", emitter.getDeclScope(), getLoc());
   AnyValue i1Value = SRValue(op.getResult());
   CallOperands ctorOps(CallSyntax::kImplicitConvert, this,
                        ArrayRef<ASTExprAnd<AnyValue>>{{i1Value, this}});
@@ -4877,8 +4877,8 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
   SmallVector<ASTType> eltTypes;
 
   ASTType expectedType = toUnpack.getType();
-  ASTType tupleType =
-      emitter.shared.getBuiltinTupleType(emitter.getDeclScope(), getLoc());
+  ASTType tupleType = emitter.shared.lookupBuiltinType(
+      "Tuple", emitter.getDeclScope(), getLoc());
 
   if (!tupleType.isEqualCanon(
           expectedType.getWithoutParameters(emitter.shared))) {
@@ -4992,7 +4992,7 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Otherwise, emit in a non-speculatively path, which could be an LValue or
   // RValue.  It could even be a type!
   ASTType tupleType =
-      emitter.shared.getBuiltinTupleType(emitter.declScope, getLoc());
+      emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, getLoc());
 
   // If the tuple has an inferred type, as in `(a, b)=foo()`, propagate the
   // element types into the subexpressions if possible to enable implicit var

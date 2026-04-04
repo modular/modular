@@ -3124,7 +3124,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
       /// source name.
       if (function.getIsStatic() &&
           function.getUserResultType() ==
-              shared.getBuiltinStringType(structDecl, structDecl.getLoc())) {
+              shared.lookupBuiltinType("String", structDecl,
+                                       structDecl.getLoc())) {
         auto [implementation, parameters, result] =
             pushBackTraitFunctionImpl(function, structDecl);
         b.setInsertionPointToStart(&implementation.getBodyRegion().front());
@@ -3136,8 +3137,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
 
         // Build a StringLiteral["closure"] value.
         auto closureStr = StringAttr::get("closure", StringType::get(ctx));
-        ASTType strLitType =
-            shared.getBuiltinStringLiteralType(structDecl, structDecl.getLoc());
+        ASTType strLitType = shared.lookupBuiltinType(
+            "StringLiteral", structDecl, structDecl.getLoc());
         auto strLitDecl =
             cast<StructDeclOp>(strLitType.getDecl(shared)->getIfOperation());
         Type boundStrLitType = strLitDecl.bindReference({closureStr});
@@ -3148,7 +3149,7 @@ void ClosureEmitter::addConformanceToDevicePassable(
 
         // Call String.__init__(literal) into the byref result slot.
         ASTType stringType =
-            shared.getBuiltinStringType(structDecl, structDecl.getLoc());
+            shared.lookupBuiltinType("String", structDecl, structDecl.getLoc());
         ValueDest resultDest(MLValue(block.getArguments().back()),
                              EC_ReturnValue);
         CallOperands ctorOperands(CallSyntax::kTypeCall, &loc);

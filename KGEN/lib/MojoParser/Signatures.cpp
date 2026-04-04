@@ -1423,8 +1423,8 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
 
   // Form a VariadicPack type.  Note that we cannot use ParamBindings to do this
   // as we have no way to "splat" the type list into the variadic list :-(.
-  ASTType variadicPackType =
-      emitter.shared.getBuiltinVariadicPackType(emitter.declScope, arg.loc);
+  ASTType variadicPackType = emitter.shared.lookupBuiltinType(
+      "VariadicPack", emitter.declScope, arg.loc);
   if (isa<TypeCheckErrorType>(variadicPackType))
     return {}; // Sanity check the returned VariadicPack declaration.
   ASTDecl *packDecl = variadicPackType.getDecl(emitter.shared);
@@ -1491,8 +1491,8 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
                             /*append=*/true, arg.loc);
 
   // Form a VariadicList type.
-  ASTType variadicListType =
-      emitter.shared.getBuiltinVariadicListType(emitter.declScope, arg.loc);
+  ASTType variadicListType = emitter.shared.lookupBuiltinType(
+      "VariadicList", emitter.declScope, arg.loc);
   if (isa<TypeCheckErrorType>(variadicListType))
     return {}; // Sanity check the returned VariadicList declaration.
   ASTDecl *listDecl = variadicListType.getDecl(emitter.shared);
@@ -1978,8 +1978,8 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
       errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr);
     }
     if (!errorType)
-      errorType = shared.getBuiltinErrorType(tcSignature.paramList.declScope,
-                                             resultArg.loc);
+      errorType = shared.lookupBuiltinType(
+          "Error", tcSignature.paramList.declScope, resultArg.loc);
 
     // Synthesize a ByRefError argument for the error.
     ParsedArgument errArg;

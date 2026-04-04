@@ -587,8 +587,9 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
         return;
       }
 
-      auto stringSliceType = shared.getBuiltinStringSliceType(decl, nodeLoc)
-                                 .getWithoutParameters(emitter.shared);
+      auto stringSliceType =
+          shared.lookupBuiltinType("StringSlice", decl, nodeLoc)
+              .getWithoutParameters(emitter.shared);
 
       if (linkageNameVal.getType().getDecl(emitter.shared) !=
           stringSliceType.getDecl(emitter.shared)) {

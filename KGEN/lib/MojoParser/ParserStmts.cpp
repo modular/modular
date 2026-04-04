@@ -1050,7 +1050,7 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
   if (messageExpr) {
     // Parse the message into an expression with std "StringSlice" type.
     auto stringSliceType =
-        shared.getBuiltinStringSliceType(*curDeclScope, kwLoc)
+        shared.lookupBuiltinType("StringSlice", *curDeclScope, kwLoc)
             .getWithoutParameters(emitter.shared);
 
     IREmitter paramEmitter = emitter.getParamEmitter(EC_ComptimeAssert);
@@ -2107,7 +2107,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   // unresolved.  Force it to Error type if so, so any uses of it complain about
   // Error.
   if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
-    if (auto errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc))
+    if (auto errorType =
+            shared.lookupBuiltinType("Error", getParentDecl(), smLoc))
       errDecl.changeElementType(errorType);
   }
 
@@ -2504,7 +2505,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // possibly confusing diagnostics downstream.
   auto errorVarDecl = nestedErrDecl ? nestedErrDecl : errDecl;
   if (isa<UnresolvedType>(errorVarDecl.getType().getElementType())) {
-    if (auto errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc))
+    if (auto errorType =
+            shared.lookupBuiltinType("Error", getParentDecl(), smLoc))
       errorVarDecl.changeElementType(errorType);
   }
 
