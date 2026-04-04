@@ -514,5 +514,43 @@ def test_inline_array_iter_bounds() raises:
     _test_inline_array_iter_bounds(reversed(arr), len(arr))
 
 
+def test_inline_array_iter_owned() raises:
+    var arr: InlineArray[Int, 3] = [10, 20, 30]
+    var result = List[Int]()
+    for elem in arr^:
+        result.append(elem)
+
+    assert_equal(len(result), 3)
+    assert_equal(result[0], 10)
+    assert_equal(result[1], 20)
+    assert_equal(result[2], 30)
+
+
+def test_inline_array_iter_owned_destroys_elements_if_not_consumed() raises:
+    # Verify that creating and immediately dropping the iterator doesn't crash.
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var _ = arr^.__iter__()
+
+
+def test_inline_array_iter_owned_destroys_elements_if_partially_consumed() raises:
+    # Verify partial consumption followed by dropping doesn't crash.
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var it = arr^.__iter__()
+    _ = it.__next__()  # consume one element
+    _ = it^  # drop iterator with remaining elements
+
+
+def test_inline_array_iter_owned_bounds() raises:
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var it = arr^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

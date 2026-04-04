@@ -14,8 +14,8 @@ This version is still a work in progress.
 
 - Added support for conditional `RegisterPassable` conformance.
 
-- Variadic packs can be forwarded through runtime calls with `*pack` when the
-  callee takes a compatible variadic pack parameter.
+- Variadic lists and packs can be forwarded through runtime calls with `*pack`
+  when the callee takes a compatible variadic list/pack.
 
   ```mojo
   def callee[*Ts: Writable](*args: *Ts):
@@ -122,6 +122,10 @@ This version is still a work in progress.
   - `Optional` now conforms to `IterableOwned`.
   - `Deque` now conforms to `IterableOwned`.
   - `LinkedList` now conforms to `IterableOwned`.
+  - `Dict` now conforms to `IterableOwned`.
+  - `Set` now conforms to `IterableOwned`.
+  - `Counter` now conforms to `IterableOwned`.
+  - `InlineArray` now conforms to `IterableOwned`.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same

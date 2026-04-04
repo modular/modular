@@ -1242,7 +1242,7 @@ def get_tool_parser(app: FastAPI) -> ToolParser | None:
 
     # Get architecture name from HuggingFace config
     hf_config = pipeline_config.model.huggingface_config
-    if hf_config is None or not hf_config.architectures:
+    if not hf_config.architectures:
         return None
 
     arch_name = hf_config.architectures[0]

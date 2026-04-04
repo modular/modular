@@ -134,7 +134,13 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
             elems: The element types.
         """
         _static_tuple_construction_checks[Self.element_type, Self.size]()
-        self = Self(values=elems)
+        if len(elems) == 1:
+            return Self(fill=elems[0])
+
+        assert Self.size == len(elems), "mismatch in the number of elements"
+        self = Self()
+        comptime for idx in range(Self.size):
+            self[idx] = elems[idx]
 
     @always_inline
     def __init__[*values: Self.element_type](out self):
@@ -145,32 +151,13 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         _static_tuple_construction_checks[Self.element_type, Self.size]()
 
-        comptime num_values = VariadicParamList[*values].size
+        comptime num_values = ParameterList[*values].size
         if num_values == 1:
             return Self(fill=values[0])
 
         comptime assert (
             Self.size == num_values
         ), "mismatch in the number of elements"
-        self = Self()
-        comptime for idx in range(Self.size):
-            self[idx] = values[idx]
-
-    @always_inline
-    def __init__(
-        out self, values: VariadicList[Self.element_type, is_owned=False]
-    ):
-        """Creates a tuple constant using the specified values.
-
-        Args:
-            values: The list of values.
-        """
-        _static_tuple_construction_checks[Self.element_type, Self.size]()
-
-        if len(values) == 1:
-            return Self(fill=values[0])
-
-        assert Self.size == len(values), "mismatch in the number of elements"
         self = Self()
         comptime for idx in range(Self.size):
             self[idx] = values[idx]

@@ -1710,7 +1710,7 @@ def blockwise_scaled_fp8_with_epilogue[
         )
 
         comptime if not elementwise_lambda_fn:
-            if not c.ptr:
+            if not c.ptr._is_not_null():
                 raise "c must be allocated!"
 
             blockwise_fp8_matmul[
@@ -1744,7 +1744,7 @@ def blockwise_scaled_fp8_with_epilogue[
 
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
-            if c.ptr:
+            if c.ptr._is_not_null():
                 var m = Int(c.dim[0]())
                 var n = Int(c.dim[1]())
 

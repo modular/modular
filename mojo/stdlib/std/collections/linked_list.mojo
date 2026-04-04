@@ -292,17 +292,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(elements).
         """
-        self = Self(elements=elements^)
-
-    def __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
-        """Construct a list from a `VariadicList`.
-
-        Args:
-            elements: The elements to add to the list.
-
-        Notes:
-            Time Complexity: O(n) in len(elements).
-        """
         self = Self()
 
         # Transfer all of the elements into the list.

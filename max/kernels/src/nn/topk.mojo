@@ -947,7 +947,7 @@ def _topk_stage1_old_no_shmem[
             partial.insert(_in_buffer[i], i)
 
         var k_batch = max_k
-        if K:
+        if K._is_not_null():
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1053,7 +1053,7 @@ def _topk_stage1_old[
             topk_sram[tid].insert(_in_buffer[i], i)
         barrier()
         var k_batch = max_k
-        if K:
+        if K._is_not_null():
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
         # Prepare for K iterations to find the local top-K elements
@@ -1134,7 +1134,7 @@ def _topk_stage1_no_shmem[
     var out_idxs = local_topk_idxs + bid * max_k
 
     var k_batch = max_k
-    if K:
+    if K._is_not_null():
         var k_raw = Int(K[batch_id])
         k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1260,7 +1260,7 @@ def _topk_stage1[
     var out_idxs = local_topk_idxs + bid * max_k
 
     var k_batch = max_k
-    if K:
+    if K._is_not_null():
         var k_raw = Int(K[batch_id])
         k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1427,7 +1427,7 @@ def _topk_stage2[
     with PDL():
         # Handle the case where stage 1 is executed with a single block
         var k_batch = max_k
-        if K:
+        if K._is_not_null():
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1504,7 +1504,7 @@ def _topk_stage2[
                     batch_i_topk_vals[k] = total.u
                     s_id[k] = total.p
                     var temp_val = Float32(1.0)
-                    if temperature:
+                    if temperature._is_not_null():
                         temp_val = temperature[batch_id]
                     total.u = exp(
                         (total.u - max_logit) / max(temp_val.cast[T](), 1e-6)
@@ -1525,7 +1525,7 @@ def _topk_stage2[
         comptime if sampling:
             if tid == 0:
                 var top_p_val = Scalar[T](1.0)
-                if top_p:
+                if top_p._is_not_null():
                     top_p_val = top_p[batch_id].cast[T]()
                 var _top_p = _adjust_top_p[T](
                     top_p_val, s_val2, k_batch, s_sum[0]
@@ -1535,7 +1535,7 @@ def _topk_stage2[
                 # generator, so that we don't use the same random number for every
                 # token in the sequence.
                 var seed_val = UInt64(0)
-                if seed:
+                if seed._is_not_null():
                     seed_val = seed[batch_id]
                 var rng_state = Random(seed=seed_val)
                 var rng = rng_state.step_uniform()
@@ -2353,11 +2353,11 @@ def apply_gumbel_noise_kernel[
 
         for tok_idx in range(group_id, Int(num_tokens), num_groups):
             var temp_val = Float32(1.0)
-            if temperature:
+            if temperature._is_not_null():
                 temp_val = temperature[tok_idx]
 
             var seed_val = UInt64(0)
-            if seed:
+            if seed._is_not_null():
                 seed_val = seed[tok_idx]
 
             var ld_ptr = input.ptr + tok_idx * N

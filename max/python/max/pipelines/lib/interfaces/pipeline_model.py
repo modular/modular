@@ -223,6 +223,22 @@ class ModelInputs:
         )
 
 
+@dataclass(kw_only=True)
+class UnifiedEagleOutputs(ModelOutputs):
+    """Outputs from a unified EAGLE graph execution."""
+
+    num_accepted_draft_tokens: Buffer
+    next_tokens: Buffer
+    next_draft_tokens: Buffer
+
+    # HACK: These are required to inherit from ModelOutputs but are unused
+    # for UnifiedEagleOutputs!
+    logits: Buffer | None = None  # type: ignore[assignment]
+    next_token_logits: None = None
+    logit_offsets: None = None
+    hidden_states: None = None
+
+
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
 

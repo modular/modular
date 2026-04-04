@@ -645,6 +645,7 @@ class PagedKVCacheManager:
         replica_batches: Sequence[Sequence[TextGenerationContext]],
         *,
         num_steps: int = 1,
+        num_speculative_steps: int = 0,
     ) -> Iterator[None]:
         """Claims, allocates, and releases contexts within a scope.
 
@@ -654,6 +655,7 @@ class PagedKVCacheManager:
         Args:
             replica_batches: Per-replica lists of contexts to reserve.
             num_steps: Number of steps to allocate for each context.
+            num_speculative_steps: Number of speculative steps to allocate for each context.
         """
         claimed: list[tuple[RequestID, int]] = []
         try:
@@ -673,6 +675,7 @@ class PagedKVCacheManager:
                         context,
                         replica_idx=replica_idx,
                         num_steps=num_steps,
+                        num_speculative_steps=num_speculative_steps,
                     )
             yield
         finally:

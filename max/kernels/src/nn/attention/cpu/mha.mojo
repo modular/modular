@@ -931,7 +931,7 @@ struct _FlashAttention[
                     o_ptr += q_seq_stride
                     oz_ptr += Self._config.o_block_n
 
-            if packed_ptr:
+            if packed_ptr._is_not_null():
                 packed_ptr.free()
 
         sync_parallelize[task_func](num_threads)

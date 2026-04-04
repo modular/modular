@@ -150,7 +150,7 @@ def bench_decode[
 
         b.iter_custom[_kernel_launch](ctx)
 
-    def compute_flops() -> Int:
+    def compute_flops() unified {read} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](
@@ -343,7 +343,7 @@ def bench_prefill[
 
         b.iter_custom[_kernel_launch](ctx)
 
-    def compute_flops() -> Int:
+    def compute_flops() unified {read} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](

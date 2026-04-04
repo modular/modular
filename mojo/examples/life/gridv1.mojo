@@ -13,7 +13,7 @@
 
 # DOC: mojo/docs/manual/get-started.mdx
 
-import std.random
+from std import random
 from std.collections import Optional
 
 
@@ -77,10 +77,10 @@ struct Grid(Copyable, Writable):
     @staticmethod
     def random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
         if seed:
-            std.random.seed(seed.value())
+            random.seed(seed.value())
         else:
             # Seed the random number generator using the current time.
-            std.random.seed()
+            random.seed()
 
         data = List[List[Int]]()
 
@@ -88,7 +88,7 @@ struct Grid(Copyable, Writable):
             row_data = List[Int]()
             for _col in range(cols):
                 # Generate a random 0 or 1 and append it to the row.
-                row_data.append(Int(std.random.random_si64(0, 1)))
+                row_data.append(Int(random.random_si64(0, 1)))
             data.append(row_data^)
 
         return Self(rows, cols, data^)

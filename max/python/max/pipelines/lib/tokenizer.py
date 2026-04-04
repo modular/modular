@@ -43,10 +43,6 @@ from PIL import Image
 from transformers import (
     AutoProcessor,
     AutoTokenizer,
-    CodeLlamaTokenizer,
-    CodeLlamaTokenizerFast,
-    LlamaTokenizer,
-    LlamaTokenizerFast,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
@@ -476,7 +472,7 @@ class TextTokenizer(
 
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
-            enable_llama_whitespace_fix and self._is_llama_tokenizer
+            enable_llama_whitespace_fix and self._strips_leading_whitespace
         )
         (
             self._llama_whitespace_fix_dummy_token_id,
@@ -714,14 +710,21 @@ class TextTokenizer(
         return context
 
     @property
-    def _is_llama_tokenizer(self) -> bool:
-        tokenizers = (
-            LlamaTokenizer,
-            LlamaTokenizerFast,
-            CodeLlamaTokenizer,
-            CodeLlamaTokenizerFast,
-        )
-        return isinstance(self.delegate, tokenizers)
+    def _strips_leading_whitespace(self) -> bool:
+        """Detect if this tokenizer strips leading whitespace on single-token decode.
+
+        SentencePiece tokenizers encode word boundaries as a ``▁`` prefix
+        which gets stripped when a single token is decoded in isolation.
+        Instead of checking for specific tokenizer class names (which change
+        across ``transformers`` versions), we test the behavior directly.
+        """
+        enc = self.delegate.encode("A B", add_special_tokens=False)
+        enc_a = self.delegate.encode("A", add_special_tokens=False)
+        b_tokens = enc[len(enc_a) :]
+        if not b_tokens:
+            return False
+        decoded = self.delegate.decode([b_tokens[0]])
+        return not decoded.startswith(" ")
 
     @property
     def _llama_whitespace_fix_dummy_token(self) -> tuple[int, int]:

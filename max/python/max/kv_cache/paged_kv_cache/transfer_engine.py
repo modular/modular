@@ -580,6 +580,113 @@ class KVTransferEngine:
             for agent_meta in replica_agents_meta:
                 self.remote_agent_to_engine[agent_meta.agent_name] = remote.name
 
+    def disconnect(self, name: str) -> None:
+        """Tear down a single remote connection.
+
+        Releases inflight transfer handles referencing this remote,
+        invalidates NIXL metadata, and removes bookkeeping entries.
+        After disconnect, ``connect()`` will accept the same name again.
+
+        Args:
+            name: The name of the remote engine to disconnect.
+
+        Raises:
+            ValueError: If the named remote is not currently connected.
+        """
+        remote = self.remote_connections.pop(name, None)
+        if remote is None:
+            raise ValueError(
+                f"Remote connection '{name}' not found; cannot disconnect"
+            )
+
+        # Release inflight send transfers targeting this remote.
+        stale_sends = [
+            tname
+            for tname, req in self.inflight_send_transfers.items()
+            if req.dst_name == name
+        ]
+        for tname in stale_sends:
+            req = self.inflight_send_transfers.pop(tname)
+            src_agents = self.tensor_agents[req.src_replica_idx]
+            for tp_idx, tid in enumerate(req.transfer_ids):
+                try:
+                    src_agents[tp_idx].agent.release_transfer_request(tid)
+                except Exception:
+                    logger.warning(
+                        "Failed to release send transfer %s tp=%d"
+                        " during disconnect of '%s'",
+                        tname,
+                        tp_idx,
+                        name,
+                        exc_info=True,
+                    )
+
+        # Release inflight read transfers sourced from this remote.
+        stale_reads = [
+            tname
+            for tname, req in self.inflight_read_transfers.items()
+            if req.src_name == name
+        ]
+        for tname in stale_reads:
+            req = self.inflight_read_transfers.pop(tname)
+            dst_agents = self.tensor_agents[req.dst_replica_idx]
+            for tp_idx, tid in enumerate(req.transfer_ids):
+                try:
+                    dst_agents[tp_idx].agent.release_transfer_request(tid)
+                except Exception:
+                    logger.warning(
+                        "Failed to release read transfer %s tp=%d"
+                        " during disconnect of '%s'",
+                        tname,
+                        tp_idx,
+                        name,
+                        exc_info=True,
+                    )
+
+        # Invalidate remote NIXL metadata on all local agents.
+        for local_agents, remote_agents_meta in itertools.product(
+            self.tensor_agents, remote.agents_meta
+        ):
+            for local_ta, remote_agent_meta in zip(
+                local_agents,
+                remote_agents_meta,
+                strict=True,
+            ):
+                try:
+                    status = local_ta.agent.invalidate_remote_metadata(
+                        remote_agent_meta.agent_name
+                    )
+                    if status != nixl.Status.SUCCESS:
+                        logger.warning(
+                            "invalidate_remote_metadata returned %s for"
+                            " agent '%s' during disconnect of '%s'",
+                            status,
+                            remote_agent_meta.agent_name,
+                            name,
+                        )
+                except Exception:
+                    logger.warning(
+                        "Failed to invalidate metadata for agent '%s'"
+                        " during disconnect of '%s'",
+                        remote_agent_meta.agent_name,
+                        name,
+                        exc_info=True,
+                    )
+
+        # Clean up agent-to-engine mapping entries for this remote.
+        stale_agent_names = [
+            agent_name
+            for agent_name, engine_name in self.remote_agent_to_engine.items()
+            if engine_name == name
+        ]
+        for agent_name in stale_agent_names:
+            del self.remote_agent_to_engine[agent_name]
+
+        # Drop completed recv transfer tracking for this remote.
+        self.completed_recv_transfers.pop(name, None)
+
+        logger.info("Disconnected remote '%s'", name)
+
     def initiate_send_transfer(
         self,
         remote_metadata: KVTransferEngineMetadata,

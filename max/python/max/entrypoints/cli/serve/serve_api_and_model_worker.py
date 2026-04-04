@@ -48,7 +48,7 @@ def serve_api_server_and_model_worker(
     # Auto-detect pipeline task from the model architecture if not explicitly set.
     if pipeline_task == PipelineTask.UNDEFINED:
         pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
-            pipeline_config.model.architecture_name,
+            pipeline_config.models.main_architecture_name,
         )
         logger.info(
             f"Auto-detected pipeline task: {pipeline_task.value} "

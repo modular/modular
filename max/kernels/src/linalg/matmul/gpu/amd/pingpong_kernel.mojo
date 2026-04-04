@@ -40,7 +40,14 @@ from std.gpu._utils import to_i64
 
 from ....structuring import SMemTile, RegTile
 from ....utils import elementwise_epilogue_type
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TensorLayout,
+    TileTensor,
+)
 from layout.swizzle import Swizzle
 from layout._utils import make_amd_buffer_resource
 from .matmul import write_output_fragments
@@ -1282,26 +1289,19 @@ struct AMDPingPongMatmul[
         )
     )
     @staticmethod
-    def matmul_ping_pong(
-        a: LayoutTensor[
-            Self.a_type,
-            Self.a_layout,
-            ImmutAnyOrigin,
-            address_space=AddressSpace.GENERIC,
-        ],
-        b: LayoutTensor[
-            Self.b_type,
-            Self.b_layout,
-            ImmutAnyOrigin,
-            address_space=AddressSpace.GENERIC,
-        ],
-        c: LayoutTensor[
-            Self.c_type,
-            Self.c_layout,
-            MutAnyOrigin,
-            address_space=AddressSpace.GENERIC,
-        ],
+    def matmul_ping_pong[
+        ALT: TensorLayout,
+        BLT: TensorLayout,
+        CLT: TensorLayout,
+    ](
+        a_tt: TileTensor[Self.a_type, ALT, ImmutAnyOrigin],
+        b_tt: TileTensor[Self.b_type, BLT, ImmutAnyOrigin],
+        c_tt: TileTensor[Self.c_type, CLT, MutAnyOrigin],
     ):
+        var a = a_tt.to_layout_tensor()
+        var b = b_tt.to_layout_tensor()
+        var c = c_tt.to_layout_tensor()
+
         var M = a.dim(0)
         # Makes enable_l2_cache_optimization useful
         # comptime M = a.layout.shape[0].value()
@@ -1650,15 +1650,12 @@ def ping_pong_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
     //,
     enable_swizzle: Bool = True,
 ](
-    a_device_tensor: LayoutTensor[a_type, a_layout, ...],
-    b_device_tensor: LayoutTensor[b_type, b_layout, ...],
-    c_device_tensor: LayoutTensor[c_type, c_layout, ...],
+    a_tt: TileTensor[mut=False, a_type, ...],
+    b_tt: TileTensor[mut=False, b_type, ...],
+    c_tt: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert a_type == b_type, "A and B must have the same type"
@@ -1669,10 +1666,15 @@ def ping_pong_matmul[
     # Select kernel based on input dtype
     comptime is_fp8 = a_type.is_float8()
 
-    var N = c_device_tensor.dim(1)
-    var M = c_device_tensor.dim(0)
+    var N = Int(c_tt.dim[1]())
+    var M = Int(c_tt.dim[0]())
 
     comptime use_swizzle = enable_swizzle
+
+    # Derive LayoutTensor layouts for AMDPingPongMatmul struct params.
+    comptime a_layout = type_of(a_tt.to_layout_tensor()).layout
+    comptime b_layout = type_of(b_tt.to_layout_tensor()).layout
+    comptime c_layout = type_of(c_tt.to_layout_tensor()).layout
 
     @always_inline
     @parameter
@@ -1686,12 +1688,16 @@ def ping_pong_matmul[
             c_layout,
             config,
             use_swizzle,
-        ].matmul_ping_pong
+        ].matmul_ping_pong[
+            a_tt.LayoutType,
+            b_tt.LayoutType,
+            c_tt.LayoutType,
+        ]
 
         ctx.enqueue_function[kernel, kernel](
-            a_device_tensor,
-            b_device_tensor,
-            c_device_tensor,
+            a_tt,
+            b_tt,
+            c_tt,
             grid_dim=(
                 ceildiv(N, config.block_shape[1]),
                 ceildiv(M, config.block_shape[0]),

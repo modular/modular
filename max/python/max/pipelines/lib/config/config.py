@@ -124,6 +124,7 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
     "Gemma4ForConditionalGeneration",
+    "UnifiedEagleLlama3ForCausalLM",
 )
 
 
@@ -411,12 +412,6 @@ class PipelineConfig(ConfigFileModel):
         self.speculative = SpeculativeConfig(**filtered_kwargs)
         # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
         if self.speculative.is_eagle() and self.draft_model is not None:
-            if self.draft_model.huggingface_config is None:
-                raise ValueError(
-                    f"EAGLE speculative decoding requires a HuggingFace config for the draft model, "
-                    f"but could not load config for '{self.draft_model.model_path}'. "
-                    "Please ensure the draft model is a standard Transformers model with a valid config.json."
-                )
             if len(self.draft_model.huggingface_config.architectures) != 1:
                 raise ValueError(
                     f"Expected exactly 1 architecture in draft model config, "
@@ -498,9 +493,12 @@ class PipelineConfig(ConfigFileModel):
             else:
                 sampling_config = config_class(**matched_kwargs)
 
+            is_standalone_spec_decoding = (
+                self.speculative and self.speculative.is_standalone()
+            )
             if (
                 "main" in self.models and self.model.enable_echo
-            ) or self.draft_model:
+            ) or is_standalone_spec_decoding:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -743,8 +741,7 @@ class PipelineConfig(ConfigFileModel):
             self.model.validate_lora_compatibility()
 
         # Override target architecture for unified EAGLE pipeline.
-        # huggingface_config is None for non-LLM pipelines (e.g. diffusion).
-        if self.speculative and self.model.huggingface_config is not None:
+        if self.speculative:
             target_archs = self.model.huggingface_config.architectures
             if target_archs[0] == "LlamaForCausalLM":
                 target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
@@ -800,7 +797,7 @@ class PipelineConfig(ConfigFileModel):
         arch: SupportedArchitecture | None = None
         if not self.runtime.force:
             arch = PIPELINE_REGISTRY.retrieve_architecture(
-                architecture_name=self.model.architecture_name,
+                architecture_name=self.models.main_architecture_name,
                 prefer_module_v3=self.runtime.prefer_module_v3,
             )
             max_batch_size = self.runtime.max_batch_size
@@ -811,6 +808,11 @@ class PipelineConfig(ConfigFileModel):
                 and max_batch_size is not None
                 and accelerator_api() == "cuda"
                 and self._is_eligible_for_overlap_serve_optimizations()
+                # TODO: Support device graph capture for num_speculative_tokens > 1
+                and (
+                    self.speculative is None
+                    or self.speculative.num_speculative_tokens == 1
+                )
             ):
                 self.runtime.device_graph_capture = True
                 logger.info(
@@ -954,14 +956,14 @@ class PipelineConfig(ConfigFileModel):
             )
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            architecture_name=self.model.architecture_name,
+            architecture_name=self.models.main_architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
         if not target_arch:
             # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
-                    architecture_name=self.model.architecture_name,
+                    architecture_name=self.models.main_architecture_name,
                     prefer_module_v3=True,
                 )
                 if v3_arch:
@@ -1218,14 +1220,6 @@ class PipelineConfig(ConfigFileModel):
             # since they don't use KV cache.
             return
 
-        # For non-diffusion pipelines, huggingface_config is required
-        if model_config.huggingface_config is None:
-            raise ValueError(
-                f"HuggingFace config is required for '{model_config.model_path}' but could not be loaded. "
-                "This model may not be a standard Transformers model. "
-                "Please ensure the model repository contains a valid config.json file."
-            )
-
         devices = load_devices(model_config.device_specs)
         arch_config = arch.config.initialize(self, model_config=model_config)
 
@@ -1298,13 +1292,13 @@ class PipelineConfig(ConfigFileModel):
         """
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            architecture_name=self.model.architecture_name,
+            architecture_name=self.models.main_architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
             raise ValueError(
-                f"No architecture found for {self.model.model_path}. "
+                f"No architecture found for {self.models.main_architecture_name}. "
                 "This should not happen after config resolution."
             )
 
@@ -1334,10 +1328,7 @@ class PipelineConfig(ConfigFileModel):
             [
                 ("max_batch_size", self.runtime.max_batch_size),
                 ("chunked_prefill", self.runtime.enable_chunked_prefill),
-                (
-                    "max_batch_input_tokens",
-                    self.runtime.max_batch_input_tokens,
-                ),
+                ("max_batch_input_tokens", self.runtime.max_batch_input_tokens),
                 (
                     "in_flight_batching",
                     self.runtime.enable_in_flight_batching,
@@ -1360,13 +1351,13 @@ class PipelineConfig(ConfigFileModel):
         """
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            architecture_name=self.model.architecture_name,
+            architecture_name=self.models.main_architecture_name,
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
             model_path = (
-                self.model.model_path
+                self.models.main_architecture_name
                 if "main" in self.models
                 else str(list(self.models.keys()))
             )

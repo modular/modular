@@ -1195,195 +1195,28 @@ def test_config__validates_lora_fails_with_multiple_devices(
     assert config.lora is None
 
 
-def test_diffusers_config_loads_for_diffusion_pipeline() -> None:
-    """Test that diffusers_config is properly loaded for diffusion pipelines."""
-    # Use a small, publicly accessible diffusion model for testing
-    # This model is from HuggingFace's internal testing organization
+def test_manifest_discovers_diffusion_components() -> None:
+    """Test that ModelManifest discovers components for a diffusion pipeline."""
+    from transformers import PretrainedConfig
+
     diffusion_model = "hf-internal-testing/tiny-stable-diffusion-torch"
 
-    # Create a model config with a diffusion pipeline
-    model_config = MAXModelConfig(
-        model_path=diffusion_model,
-        device_specs=[DeviceSpec.cpu()],
-    )
+    manifest = ModelManifest.from_model_path(diffusion_model)
 
-    # The diffusers_config should be automatically loaded
-    diffusers_config = model_config.diffusers_config
-
-    # Verify that diffusers_config is not None (indicating this is a diffusion pipeline)
-    assert diffusers_config is not None, (
-        "diffusers_config should not be None for diffusion pipelines"
-    )
-
-    # Verify that the config contains expected keys for a Stable Diffusion pipeline
-    # model_index.json typically contains pipeline class name and component mapping
-    assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
-    )
-
-    # The pipeline class name should indicate this is a Stable Diffusion pipeline
-    assert "StableDiffusion" in diffusers_config["_class_name"], (
-        f"Expected StableDiffusion pipeline, got {diffusers_config['_class_name']}"
-    )
-
-    # Verify that the config contains the "components" key
-    assert "components" in diffusers_config, (
-        "diffusers_config should contain 'components' key"
-    )
-
-    # Verify that the components dict contains expected components
-    components = diffusers_config["components"]
+    # ModelManifest should have discovered per-component configs.
     expected_components = ["vae", "unet", "text_encoder"]
     for component in expected_components:
-        assert component in components, (
-            f"components should contain {component} component"
+        assert component in manifest, (
+            f"manifest should contain {component} component"
+        )
+        # Each component should have a valid huggingface_config.
+        assert isinstance(
+            manifest[component].huggingface_config, PretrainedConfig
         )
 
-        # Verify each component has the expected structure
-        component_data = components[component]
-        assert "library" in component_data, (
-            f"{component} should have 'library' field"
-        )
-        assert "class_name" in component_data, (
-            f"{component} should have 'class_name' field"
-        )
-        assert "config_dict" in component_data, (
-            f"{component} should have 'config_dict' field"
-        )
-
-        # Print component info to see what's being downloaded
-        print(
-            f"Component {component}: library={component_data['library']}, "
-            f"class={component_data['class_name']}, "
-            f"config_dict_keys={list(component_data['config_dict'].keys()) if component_data['config_dict'] else 'empty'}"
-        )
-
-
-def test_diffusers_config_is_none_for_transformer_model(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    """Test that diffusers_config is None for non-diffusion models."""
-    # Create a model config with a standard transformer model (not a diffusion model)
-    model_config = MAXModelConfig(
-        model_path=llama_3_1_8b_instruct_local_path,
-        device_specs=[DeviceSpec.cpu()],
-    )
-
-    # The diffusers_config should be None for non-diffusion models
-    diffusers_config = model_config.diffusers_config
-
-    assert diffusers_config is None, (
-        "diffusers_config should be None for non-diffusion transformer models"
-    )
-
-
-@pytest.mark.skip(reason="SERVOPT-972, diffusers_config assertion failure")
-def test_pipeline_config_with_flux_1_dev_model() -> None:
-    """Test PipelineConfig instantiation with Flux.1-dev model."""
-    # Flux.1-dev is a diffusion model from Black Forest Labs
-    flux_model = "black-forest-labs/FLUX.1-dev"
-
-    # Create a PipelineConfig with Flux.1-dev
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=flux_model,
-                    device_specs=[DeviceSpec.cpu()],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(defer_resolve=True),
-    )
-
-    # Verify that the config was created successfully
-    assert config.model.model_path == flux_model
-
-    # Verify that diffusers_config is loaded (since Flux is a diffusion model)
-    diffusers_config = config.model.diffusers_config
-    assert diffusers_config is not None, (
-        "diffusers_config should not be None for Flux.1-dev diffusion model"
-    )
-
-    # Verify that the config contains expected pipeline information
-    assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
-    )
-
-    # Flux uses FluxPipeline class
-    assert "Flux" in diffusers_config["_class_name"], (
-        f"Expected Flux pipeline, got {diffusers_config['_class_name']}"
-    )
-
-    # Print component info to evaluate download behavior
-    if "components" in diffusers_config:
-        components = diffusers_config["components"]
-        print(f"\nFlux model has {len(components)} components:")
-        for component_name, component_data in components.items():
-            config_dict_size = len(str(component_data.get("config_dict", {})))
-            config_dict_keys = (
-                list(component_data["config_dict"].keys())
-                if component_data.get("config_dict")
-                else "empty"
-            )
-            print(
-                f"  {component_name}: library={component_data.get('library')}, "
-                f"class={component_data.get('class_name')}, "
-                f"config_dict_size={config_dict_size} chars, "
-                f"config_dict_keys={config_dict_keys}"
-            )
-
-
-def test_pipeline_config_with_tiny_stable_diffusion() -> None:
-    """Test PipelineConfig instantiation with tiny-stable-diffusion-torch model."""
-    # Use the same model as in test_diffusers_config_loads_for_diffusion_pipeline
-    # but test with PipelineConfig instead of MAXModelConfig
-    diffusion_model = "hf-internal-testing/tiny-stable-diffusion-torch"
-
-    # Create a PipelineConfig with the diffusion model
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=diffusion_model,
-                    device_specs=[DeviceSpec.cpu()],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(defer_resolve=True),
-    )
-
-    # Verify that the config was created successfully
-    assert config.model.model_path == diffusion_model
-
-    # Verify that diffusers_config is loaded
-    diffusers_config = config.model.diffusers_config
-    assert diffusers_config is not None, (
-        "diffusers_config should not be None for diffusion pipelines"
-    )
-
-    # Verify that the config contains expected keys
-    assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
-    )
-
-    # The pipeline class name should indicate this is a Stable Diffusion pipeline
-    assert "StableDiffusion" in diffusers_config["_class_name"], (
-        f"Expected StableDiffusion pipeline, got {diffusers_config['_class_name']}"
-    )
-
-    # Verify that the config contains the "components" key
-    assert "components" in diffusers_config, (
-        "diffusers_config should contain 'components' key"
-    )
-
-    # Verify that the components dict contains expected components
-    components = diffusers_config["components"]
-    expected_components = ["vae", "unet", "text_encoder"]
-    for component in expected_components:
-        assert component in components, (
-            f"components should contain {component} component"
-        )
+    # Metadata should contain the pipeline class name.
+    assert "_class_name" in manifest.metadata
+    assert "StableDiffusion" in manifest.metadata["_class_name"]
 
 
 class TestSamplingConfig:
@@ -1458,6 +1291,7 @@ class TestSamplingConfig:
         ("DeepseekV32ForCausalLM", 16, False, True, True),
         ("DeepseekV3ForCausalLMNextN", 16, False, True, True),
         ("KimiK25ForConditionalGeneration", 16, False, True, True),
+        ("UnifiedEagleLlama3ForCausalLM", 16, False, True, True),
         ("LlamaForCausalLM", 16, False, False, False),
         ("LlamaForCausalLM", None, False, True, False),
         ("LlamaForCausalLM", 16, True, True, False),
@@ -1472,8 +1306,10 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
     expected_device_graph_capture: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Mock .huggingface_model_repo so that we don't reach out to HF.
-    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    # Mock architecture_name so we don't reach out to HF for the config.
+    monkeypatch.setattr(
+        MAXModelConfig, "architecture_name", property(lambda self: arch_name)
+    )
     # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch.
     arch = SimpleNamespace(name=arch_name)
     monkeypatch.setattr(
@@ -1519,8 +1355,12 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         arch_name: str,
     ) -> Generator[None, None, None]:
         with monkeypatch.context() as m:
-            # Mock .huggingface_model_repo so that we don't reach out to HF
-            m.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+            # Mock architecture_name so we don't reach out to HF for the config.
+            m.setattr(
+                MAXModelConfig,
+                "architecture_name",
+                property(lambda self: arch_name),
+            )
             # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch
             arch = SimpleNamespace(name=arch_name)
             m.setattr(
@@ -1622,8 +1462,12 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
 def test_validate_and_resolve_overlap_scheduler__validate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Mock .huggingface_model_repo so that we don't reach out to HF.
-    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    # Mock architecture_name so we don't reach out to HF for the config.
+    monkeypatch.setattr(
+        MAXModelConfig,
+        "architecture_name",
+        property(lambda self: "SomeArchitecture"),
+    )
 
     # Allow user to manually enable overlap scheduler
     config = PipelineConfig(
@@ -1655,7 +1499,8 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
 
-    # Error out if user tries to enable overlap scheduler without PrefillAndDecode
+    # prefill_only with overlap scheduler is now allowed (experimental),
+    # the runtime just logs a warning and sets max_num_steps=1.
     config = PipelineConfig(
         models=ModelManifest(
             {
@@ -1670,8 +1515,9 @@ def test_validate_and_resolve_overlap_scheduler__validate(
             enable_overlap_scheduler=True,
         ),
     )
-    with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
+    config._validate_and_resolve_overlap_scheduler()
+    assert config.runtime.enable_overlap_scheduler is True
+    assert config.runtime.max_num_steps == 1
 
     # Error out if user tries to enable overlap scheduler with AudioGenerationConfig
     config = AudioGenerationConfig(
@@ -1707,3 +1553,52 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+@pytest.mark.parametrize(
+    "num_speculative_tokens,expected_device_graph_capture",
+    [
+        (1, True),
+        (2, False),
+        (5, False),
+    ],
+    ids=["1_spec_token", "2_spec_tokens", "5_spec_tokens"],
+)
+def test_auto_device_graph_capture_eagle_gating(
+    num_speculative_tokens: int,
+    expected_device_graph_capture: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Eagle arch auto-enables graph capture only when num_speculative_tokens <= 1."""
+    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    arch = SimpleNamespace(name="UnifiedEagleLlama3ForCausalLM")
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+    monkeypatch.setattr(
+        "max.pipelines.lib.config.config.accelerator_api",
+        Mock(return_value="cuda"),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="eagle",
+            num_speculative_tokens=num_speculative_tokens,
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=16),
+    )
+    config._validate_and_resolve_overlap_scheduler()
+
+    assert config.runtime.device_graph_capture is expected_device_graph_capture

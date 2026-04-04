@@ -227,7 +227,7 @@ def TopKMaskLogitsKernel[
 
     with PDL():
         var k = top_k_val
-        if top_k_arr:
+        if top_k_arr._is_not_null():
             k = Int(top_k_arr[bx])
 
         # Initialize pivot to negative infinity.
@@ -726,10 +726,10 @@ def TopKSamplingFromProbKernel[
     with PDL():
         var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
         var k = top_k_val
-        if top_k_arr:
+        if top_k_arr._is_not_null():
             k = Int(top_k_arr.load(bx))
         var row_idx = bx
-        if indices:
+        if indices._is_not_null():
             row_idx = Int(indices.load(bx))
 
         var probs_ptr = probs.ptr + row_idx * d
@@ -1071,7 +1071,7 @@ def TopKTopPSamplingFromProbKernel[
     var tx = thread_idx.x
 
     var row_idx = bx
-    if indices:
+    if indices._is_not_null():
         row_idx = Int(indices.load(bx))
 
     var sampled_id_sram = stack_allocation[
@@ -1083,17 +1083,19 @@ def TopKTopPSamplingFromProbKernel[
 
     with PDL():
         var seed_val = UInt64(0)
-        if rng_seed:
+        if rng_seed._is_not_null():
             seed_val = rng_seed[row_idx]
 
         var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
 
-        var k = Int(top_k_arr.load(row_idx)) if top_k_arr else top_k_val
+        var k = Int(
+            top_k_arr.load(row_idx)
+        ) if top_k_arr._is_not_null() else top_k_val
         if k == -1:
             k = top_k_val
 
         var p = top_p_val
-        if top_p_arr:
+        if top_p_arr._is_not_null():
             p = top_p_arr[row_idx]
 
         var probs_ptr = probs.ptr + row_idx * d
@@ -1457,10 +1459,10 @@ def topk_softmax_sample_kernel[
     var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
 
     var k = top_k_val
-    if top_k_arr:
+    if top_k_arr._is_not_null():
         k = Int(top_k_arr[bx])
     var temp_val = temperature_val
-    if temperature:
+    if temperature._is_not_null():
         temp_val = max(temperature[bx], 1e-6)
 
     # Allocate shared memory for caching top-k elements.
@@ -1620,7 +1622,7 @@ def topk_softmax_sample_kernel[
         # PHASE 3: Sampling (thread 0 only).
         if tx == 0:
             var seed_val = seed_val
-            if seed:
+            if seed._is_not_null():
                 seed_val = seed[bx]
             var rng_state = Random(seed=seed_val)
             var rng = rng_state.step_uniform()

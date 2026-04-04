@@ -242,7 +242,18 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
 
-        self = Self(values=elems)
+        comptime assert (
+            Self.element_type.is_integral()
+        ), "Element type must be of integral type."
+        var num_elements = len(elems)
+
+        assert (
+            Self.size == num_elements
+        ), "[IndexList] mismatch in the number of elements"
+
+        self = Self()
+        comptime for idx in range(Self.size):
+            self[idx] = elems[idx]
 
     @always_inline
     def __init__(out self, fill: Int):
@@ -255,29 +266,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         self.data = StaticTuple[_, Self.size](fill=Self._int_type(fill))
-
-    @always_inline
-    def __init__(out self, values: VariadicList[Int, is_owned=False]):
-        """Creates a tuple constant using the specified values.
-
-        Args:
-            values: The list of values.
-        """
-        comptime assert (
-            Self.element_type.is_integral()
-        ), "Element type must be of integral type."
-        var num_elements = len(values)
-
-        assert (
-            Self.size == num_elements
-        ), "[IndexList] mismatch in the number of elements"
-
-        var tup = Self()
-
-        comptime for idx in range(Self.size):
-            tup[idx] = values[idx]
-
-        self = tup
 
     @always_inline("nodebug")
     def __len__(self) -> Int:

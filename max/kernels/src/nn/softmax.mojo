@@ -967,7 +967,7 @@ def _softmax_temperature_kernel[
         for row_idx in range(bid, num_rows, gid):
             # Resolve per-row temperature, clamping to prevent division by zero.
             var temp = temperature.cast[accum_type]()
-            if temperature_arr:
+            if temperature_arr._is_not_null():
                 temp = temperature_arr[row_idx].cast[accum_type]()
             temp = max(temp, Scalar[accum_type](1e-6))
             var inv_temp = Scalar[accum_type](1) / temp

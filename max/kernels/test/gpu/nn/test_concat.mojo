@@ -190,7 +190,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_host_buffer, output_device_buffer)
     ctx.synchronize()
 
-    def validate_results() raises:
+    def validate_results() raises unified {read}:
         for i in range(d0):
             for j in range(d1):
                 for k in range(d2):

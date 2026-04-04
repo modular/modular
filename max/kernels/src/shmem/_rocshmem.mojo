@@ -487,7 +487,7 @@ def _check_rocshmem_allocation[
     func_name: StaticString,
     requested_bytes: c_size_t,
 ) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
-    if not ptr:
+    if not ptr._is_not_null():
         raise Error(
             func_name,
             " failed to allocate ",

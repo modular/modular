@@ -841,7 +841,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.model.architecture_name,
+        config.models.main_architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
@@ -849,13 +849,8 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         f"No architecture found in MAX registry for {model_id}."
     )
 
-    diffusers_config = config.model.diffusers_config
     max_length = None
-    if (
-        diffusers_config is not None
-        and (comps := diffusers_config.get("components"))
-        and comps.get("tokenizer") is not None
-    ):
+    if "tokenizer" in config.models:
         max_length = 512  # Flux2-specific override
 
     tokenizer = PixelGenerationTokenizer(

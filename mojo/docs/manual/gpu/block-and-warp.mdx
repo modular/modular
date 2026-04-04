@@ -317,8 +317,8 @@ def tiled_matmul_kernel(
         # Cooperative tile loading
         # Calculate global coordinates for tile loading
         var a_global_row = tile_row_start + thread_y
-        var a_global_col = UInt(k_tile) + thread_x
-        var b_global_row = UInt(k_tile) + thread_y
+        var a_global_col = k_tile + thread_x
+        var b_global_row = k_tile + thread_y
         var b_global_col = tile_col_start + thread_x
 
         # Bounds checking

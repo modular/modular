@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the VariadicList, VariadicParamList and VariadicPack types.
+"""Implements the VariadicList, ParameterList and VariadicPack types.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -628,15 +628,15 @@ struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
 
 
 # ===-----------------------------------------------------------------------===#
-# VariadicParamList
+# ParameterList
 # ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
-struct _VariadicParamListIter[type: Copyable, //, *values: type](
+struct _ParameterListIter[type: Copyable, //, *values: type](
     ImplicitlyCopyable, Iterable, Iterator
 ):
-    """Const Iterator for VariadicParamList.
+    """Const Iterator for ParameterList.
 
     Parameters:
         type: The type of the elements in the list.
@@ -656,7 +656,7 @@ struct _VariadicParamListIter[type: Copyable, //, *values: type](
     ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
         var index = self.index
 
-        comptime params = VariadicParamList[*Self.values]()
+        comptime params = ParameterList[*Self.values]()
         if index >= params.size:
             raise StopIteration()
         self.index = index + 1
@@ -667,26 +667,26 @@ struct _VariadicParamListIter[type: Copyable, //, *values: type](
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = VariadicParamList[*Self.values].size - self.index
+        var len = ParameterList[*Self.values].size - self.index
         return (len, {len})
 
 
 # TODO: Make this conform to Iterable when IteratorType can be conditionally
 # defined only when 'type' is Copyable.
-struct VariadicParamList[type: AnyType, //, *values: type](
+struct ParameterList[type: AnyType, //, *values: type](
     Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
 
-    `VariadicParamList` is used by homogenous variadic parameter lists. Unlike
-    `VariadicPack` (which is heterogeneous), `VariadicParamList` requires all
+    `ParameterList` is used by homogenous variadic parameter lists. Unlike
+    `VariadicPack` (which is heterogeneous), `ParameterList` requires all
     elements to have the same type.
 
-    `VariadicParamList` is only used for parameter lists, `VariadicList` is
+    `ParameterList` is only used for parameter lists, `VariadicList` is
     used for function arguments.
 
     For example, in the following function signature, `*args: Int` creates a
-    `VariadicParamList` because it uses a single type `Int` instead of a variadic type
+    `ParameterList` because it uses a single type `Int` instead of a variadic type
     parameter. The `*` before `args` indicates that `args` is a variadic argument,
     which means that the function can accept any number of arguments, but all
     arguments must have the same type `Int`.
@@ -695,7 +695,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
     def sum_values[*args: Int]() -> Int:
         var total = 0
 
-        # Can use regular for loop because args is a VariadicParamList
+        # Can use regular for loop because args is a ParameterList
         for i in range(len(args)):
             total += args[i]  # All elements are Int, so uniform access
 
@@ -715,7 +715,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
 
     @always_inline
     def __init__(out self):
-        """Constructs a VariadicParamList."""
+        """Constructs a ParameterList."""
         pass
 
     @always_inline
@@ -819,7 +819,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         def write_fields(mut w: Some[Writer]):
             self._write_elements[is_repr=True](w)
 
-        FormatStruct(writer, "VariadicParamList").params(
+        FormatStruct(writer, "ParameterList").params(
             TypeNames[Self.type](),
         ).fields[FieldsFn=write_fields]()
 
@@ -828,7 +828,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
     @always_inline
     def __iter__(
         ref self,
-    ) -> _VariadicParamListIter[
+    ) -> _ParameterListIter[
         *rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
             Self.values
         )
@@ -1146,7 +1146,7 @@ struct VariadicPack[
 
     `VariadicPack` is used when you need to accept variadic arguments where each
     argument can have a different type, but all types conform to a common trait.
-    Unlike `VariadicParamList` (which is homogeneous), `VariadicPack` allows each
+    Unlike `ParameterList` (which is homogeneous), `VariadicPack` allows each
     element to have a different concrete type.
 
     `VariadicPack` is essentially a heterogeneous tuple that gets lowered to a
@@ -1156,7 +1156,7 @@ struct VariadicPack[
     time to generate the correct memory layout and access code.
 
     Therefore, indexing into `VariadicPack` requires compile-time indices using
-    `comptime for` loops, whereas indexing into `VariadicParamList` uses runtime
+    `comptime for` loops, whereas indexing into `ParameterList` uses runtime
     indices.
 
     For example, in the following function signature, `*args: *ArgTypes` creates a

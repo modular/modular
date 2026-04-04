@@ -44,7 +44,7 @@ struct _Chain(Boolable, Defaultable, TrivialRegisterPassable):
         self.storage = {_unsafe_null = ()}
 
     def __bool__(self) -> Bool:
-        return Bool(self.storage)
+        return self.storage._is_not_null()
 
 
 struct _AsyncContext(TrivialRegisterPassable):

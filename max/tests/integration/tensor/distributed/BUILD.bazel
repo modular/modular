@@ -23,15 +23,28 @@ modular_py_library(
     name = "test_base",
     testonly = True,
     srcs = glob(
-        ["functional/_*.py"],
-        exclude = ["functional/__init__.py"],
-    ) + ["functional/__init__.py"],
+        [
+            "functional/_*.py",
+            "module/_*.py",
+        ],
+        exclude = [
+            "functional/__init__.py",
+            "module/__init__.py",
+        ],
+    ) + [
+        "functional/__init__.py",
+        "module/__init__.py",
+    ],
     imports = ["."],
     deps = [
         ":test_helpers",
         "//max/python/max:tensor",
+        "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
         requirement("numpy"),
         requirement("pytest"),
     ],
@@ -48,6 +61,7 @@ modular_py_test(
     ] + glob([
         "sharding/test_*.py",
         "functional/test_*_simulated_cpu.py",
+        "module/test_*_simulated_cpu.py",
     ]),
     args = [
         "-n",
@@ -85,6 +99,7 @@ modular_py_test(
     size = "large",
     srcs = glob([
         "functional/test_*_simulated_gpu.py",
+        "module/test_*_simulated_gpu.py",
     ]),
     exec_properties = {
         "test.resources:gpu-memory": "1",
@@ -112,7 +127,7 @@ modular_py_test(
 # accumulation across many EagerRealizationContext lifecycles.
 [
     modular_py_test(
-        name = "functional/" + src.replace("functional/", "").replace(".py", ""),
+        name = src.replace("/", "/").removesuffix(".py"),
         size = "enormous",
         srcs = [src],
         exec_properties = {
@@ -140,4 +155,36 @@ modular_py_test(
         ],
     )
     for src in glob(["functional/test_*_multi_gpu.py"])
+]
+
+[
+    modular_py_test(
+        name = src.replace("/", "/").removesuffix(".py"),
+        size = "enormous",
+        srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        gpu_constraints = ["//:has_4_gpus"],
+        ignore_extra_deps = [
+            ":test_helpers",
+            "//max/python/max/experimental",
+            "//max/python/max/experimental/nn",
+        ],
+        imports = ["."],
+        tags = ["gpu"],
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            ":test_base",
+            ":test_helpers",
+            "//max/python/max/driver",
+            "//max/python/max/experimental",
+            "//max/python/max/experimental/nn",
+        ],
+    )
+    for src in glob(["module/test_*_multi_gpu.py"])
 ]

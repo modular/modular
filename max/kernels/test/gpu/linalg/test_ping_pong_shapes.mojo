@@ -51,9 +51,9 @@ def test_shape[
 
     # Run kernel
     ping_pong_matmul[enable_swizzle=enable_swizzle](
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
-        c_tt.to_layout_tensor(),
+        a_tt,
+        b_tt,
+        c_tt,
         ctx,
     )
 

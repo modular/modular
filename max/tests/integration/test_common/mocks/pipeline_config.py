@@ -308,8 +308,15 @@ def mock_pipeline_config_hf_dependencies(
 def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        with patch(
-            "max.pipelines.lib.config.PipelineConfig.resolve", return_value=None
+        with (
+            patch(
+                "max.pipelines.lib.config.PipelineConfig.resolve",
+                return_value=None,
+            ),
+            patch(
+                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                return_value=None,
+            ),
         ):
             return func(*args, **kwargs)
 

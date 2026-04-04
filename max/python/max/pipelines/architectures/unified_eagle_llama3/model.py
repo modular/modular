@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
@@ -32,12 +32,10 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,
-)
-from max.pipelines.lib.interfaces import PipelineModelWithKVCache
-from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
-    UnifiedEagleInputs,
+    PipelineRuntimeConfig,
     UnifiedEagleOutputs,
 )
+from max.pipelines.lib.interfaces import PipelineModelWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_weight_paths
 from max.pipelines.lib.registry import AutoConfig
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -59,14 +57,41 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     input_row_offsets: Buffer
     return_n_logits: Buffer
 
+    draft_tokens: Buffer | None = None
+    draft_kv_blocks: list[Buffer] | None = None
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        return (
+        buffers = (
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
             *(self.kv_cache_inputs or ()),
         )
+        if self.draft_tokens is not None:
+            buffers += (self.draft_tokens,)
+        if self.draft_kv_blocks is not None:
+            buffers += tuple(self.draft_kv_blocks)
+        return buffers
+
+
+@dataclass
+class PersistentInputBuffers:
+    tokens: Buffer
+    input_row_offsets: Buffer
+
+    @classmethod
+    def alloc(
+        cls, max_batch_size: int, max_batch_input_tokens: int, device: Device
+    ) -> PersistentInputBuffers:
+        max_batch_input_tokens = max(max_batch_input_tokens, max_batch_size)
+        tokens = Buffer(
+            shape=(max_batch_input_tokens,), dtype=DType.int64, device=device
+        )
+        input_row_offsets = Buffer(
+            shape=(max_batch_size + 1,), dtype=DType.uint32, device=device
+        )
+        return cls(tokens, input_row_offsets)
 
 
 class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
@@ -96,6 +121,14 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
         )
         self.model = self.load_model(session)
+
+        assert isinstance(pipeline_config.runtime, PipelineRuntimeConfig)
+        assert pipeline_config.runtime.max_batch_size is not None
+        self._persistent_input_buffers = PersistentInputBuffers.alloc(
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+            device=devices[0],
+        )
 
     @classmethod
     def get_kv_params(
@@ -214,7 +247,6 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
         """Execute and return all graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedEagleInputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
 
         return UnifiedEagleOutputs(
@@ -231,27 +263,50 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
     ) -> UnifiedEagleLlama3Inputs:
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         device0 = self.devices[0]
+        buffer_type = Buffer if device0.is_host else DevicePinnedBuffer
 
-        # Build tokens from active window (all unprocessed tokens).
-        # During prefill: full prompt. During decode: includes tokens
-        # not yet marked as processed, which get reprocessed to keep
-        # the KV cache consistent.
-        tokens_np = np.concatenate([ctx.tokens.active for ctx in context_batch])
-        tokens_buf = Buffer.from_numpy(tokens_np).to(device0)
+        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
+        batch_size = len(context_batch)
 
-        offsets_np = np.cumsum(
+        persistent_tokens = self._persistent_input_buffers.tokens
+        persistent_tokens = persistent_tokens[:total_seq_len]
+        persistent_input_row_offsets = (
+            self._persistent_input_buffers.input_row_offsets
+        )
+        persistent_input_row_offsets = persistent_input_row_offsets[
+            : batch_size + 1
+        ]
+
+        tokens_host = buffer_type(
+            dtype=DType.int64,
+            shape=(total_seq_len,),
+            device=device0,
+        )
+        offsets_host = buffer_type(
+            dtype=DType.uint32,
+            shape=(batch_size + 1,),
+            device=device0,
+        )
+
+        np.concatenate(
+            [ctx.tokens.active for ctx in context_batch],
+            out=tokens_host.to_numpy(),
+        )
+        persistent_tokens.inplace_copy_from(tokens_host)
+        np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],
             dtype=np.uint32,
+            out=offsets_host.to_numpy(),
         )
-        offsets_buf = Buffer.from_numpy(offsets_np).to(device0)
+        persistent_input_row_offsets.inplace_copy_from(offsets_host)
 
         return_n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
         )
 
         return UnifiedEagleLlama3Inputs(
-            tokens=tokens_buf,
-            input_row_offsets=offsets_buf,
+            tokens=persistent_tokens,
+            input_row_offsets=persistent_input_row_offsets,
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
         )

@@ -521,5 +521,29 @@ def test_write_repr_to() raises:
     )
 
 
+def test_counter_iter_owned() raises:
+    var c = Counter[String]("a", "a", "b", "c")
+    var keys = List[String]()
+    for key in c^:
+        keys.append(key)
+
+    assert_equal(len(keys), 3)
+    assert_true(String("a") in keys)
+    assert_true(String("b") in keys)
+    assert_true(String("c") in keys)
+
+
+def test_counter_iter_owned_bounds() raises:
+    var c = Counter[String]("a", "b", "c")
+    var it = c^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

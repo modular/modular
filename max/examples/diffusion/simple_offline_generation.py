@@ -403,7 +403,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.model.architecture_name,
+        config.models.main_architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
@@ -413,33 +413,20 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Step 2: Initialize the tokenizer
     # The tokenizer handles prompt encoding and context preparation
-    has_tokenizer_2 = False
-    diffusers_config = config.model.diffusers_config
+    models = config.models
+    has_tokenizer_2 = "tokenizer_2" in models
     max_length = args.max_length
     secondary_max_length = args.secondary_max_length
-    if (
-        max_length is None
-        and diffusers_config is not None
-        and (components_config := diffusers_config.get("components", None))
-        and (components_config.get("tokenizer", None) is not None)
-    ):
-        max_length = components_config["tokenizer"]["config_dict"].get(
-            "model_max_length", None
-        )
+    if max_length is None and "tokenizer" in models:
+        tokenizer_cfg = models["tokenizer"].huggingface_config.to_dict()
+        max_length = tokenizer_cfg.get("model_max_length", None)
         if arch.name in _FLUX2_ARCH_NAMES or arch.name == "ZImagePipeline":
             max_length = 512
         print(f"Using max length: {max_length} for tokenizer")
 
-    if (
-        secondary_max_length is None
-        and diffusers_config is not None
-        and (components_config := diffusers_config.get("components", None))
-        and (components_config.get("tokenizer_2", None) is not None)
-    ):
-        has_tokenizer_2 = True
-        secondary_max_length = components_config["tokenizer_2"][
-            "config_dict"
-        ].get("model_max_length", None)
+    if secondary_max_length is None and has_tokenizer_2:
+        tokenizer_2_cfg = models["tokenizer_2"].huggingface_config.to_dict()
+        secondary_max_length = tokenizer_2_cfg.get("model_max_length", None)
         print(
             f"Using secondary max length: {secondary_max_length} for tokenizer_2"
         )

@@ -94,11 +94,12 @@ class TestPixelGenerationTokenizer:
         assert tokenizer.delegate_2 is None
         assert tokenizer._pipeline_class_name == "Flux2Pipeline"
 
-    def test_initialization_without_diffusers_config(
+    def test_initialization_without_diffusion_manifest(
         self, flux_model_path: str
     ) -> None:
-        """Test that initialization fails without diffusers_config."""
-        # Use a non-diffusion model (text-generation model) which won't have diffusers_config
+        """Test that initialization fails without a diffusion ModelManifest."""
+        # Use a non-diffusion model (text-generation model) which won't have
+        # diffusion metadata (_class_name) in its ModelManifest.
         non_diffusion_model = "gpt2"
         config = PipelineConfig(
             models=ModelManifest(
@@ -107,7 +108,9 @@ class TestPixelGenerationTokenizer:
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 
-        with pytest.raises(ValueError, match="diffusers_config cannot be None"):
+        with pytest.raises(
+            ValueError, match="metadata is missing required key"
+        ):
             PixelGenerationTokenizer(
                 model_path=flux_model_path,
                 pipeline_config=config,

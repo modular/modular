@@ -1680,7 +1680,7 @@ def _conv_transposed_cudnn[
     )
 
     # ---------------- Cleanup ---------------------------------------------
-    if workspace_ptr:
+    if workspace_ptr._is_not_null():
         workspace_ptr.free()
 
 

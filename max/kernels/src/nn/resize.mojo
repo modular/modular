@@ -399,7 +399,7 @@ def _resize[
         out_ptr = tmp_buffer2 if using_tmp1 else tmp_buffer1
         using_tmp1 = not using_tmp1
 
-    if tmp_buffer1:
+    if tmp_buffer1._is_not_null():
         tmp_buffer1.free()
-    if tmp_buffer2:
+    if tmp_buffer2._is_not_null():
         tmp_buffer2.free()

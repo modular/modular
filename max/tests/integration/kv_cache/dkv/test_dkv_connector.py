@@ -171,6 +171,9 @@ def _make_connector(
     connector._inflight_writes = []
     connector._nixl_read_blocks = 0
     connector._nixl_write_blocks = 0
+    connector._needs_reconnect = False
+    connector._last_reconnect_attempt = 0.0
+    connector._reconnect_cooldown_s = 5.0
 
     return connector
 
@@ -552,6 +555,81 @@ class TestGetFlow:
         connector.on_request_complete(ctx.request_id, [])
         assert str(ctx.request_id) not in connector._pending_loads
 
+    def test_on_request_complete_skips_decrement_when_sync_fails(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """If sync_and_release fails, on_request_complete must NOT decrement.
+
+        Decrementing while transfer handles are still active would let
+        the dKV server free memory that NIXL still references.
+        """
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        # Make sync_and_release fail (simulates dead transport).
+        assert connector._engine is not None
+        connector._engine.sync_and_release.side_effect = ValueError(
+            "stale remote"
+        )
+
+        req_id = str(ctx.request_id)
+        assert req_id in connector._inflight_reads
+
+        connector.on_request_complete(ctx.request_id, [10])
+
+        # Held blocks must NOT have been decremented.
+        assert len(mock_server.decremented_blocks) == 0
+        # Connector must be flagged for reconnection.
+        assert connector._needs_reconnect is True
+        # Transfer handles must still be in _inflight_reads so that
+        # _maybe_reconnect() / shutdown() can release them safely.
+        assert req_id in connector._inflight_reads
+        assert req_id in connector._held_blocks
+
+    def test_sync_failure_preserves_inflight_reads(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """sync() failure should leave inflight reads intact for reconnect."""
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        req_id = str(ctx.request_id)
+        assert req_id in connector._inflight_reads
+        assert req_id in connector._held_blocks
+
+        # Make sync_and_release fail.
+        assert connector._engine is not None
+        connector._engine.sync_and_release.side_effect = ValueError(
+            "stale remote"
+        )
+
+        connector.sync()
+
+        # Inflight reads and held blocks should still be present
+        # (not prematurely cleaned up).
+        assert req_id in connector._inflight_reads
+        assert req_id in connector._held_blocks
+        # No decrement should have happened.
+        assert len(mock_server.decremented_blocks) == 0
+
     def test_metrics_track_read_blocks(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
@@ -643,6 +721,111 @@ class TestShutdown:
         assert len(connector._held_blocks) == 0
         assert len(connector._pending_writes) == 0
         assert len(connector._inflight_writes) == 0
+
+    def test_shutdown_releases_handles_before_decrement_on_sync_failure(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """If sync_and_release fails during shutdown, engine.cleanup()
+        must release transfer handles before held blocks are decremented.
+        """
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc,
+                transfer_engine=remote_metadata,
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        # Make sync_and_release fail (simulates dead transport).
+        assert connector._engine is not None
+        connector._engine.sync_and_release.side_effect = ValueError(
+            "stale remote"
+        )
+
+        # Track that cleanup() is called before decrement_blocks.
+        call_order: list[str] = []
+        connector._engine.cleanup.side_effect = lambda: call_order.append(
+            "cleanup"
+        )
+        original_decrement = connector._client.decrement_blocks
+
+        def track_decrement(blocks: object) -> object:
+            call_order.append("decrement")
+            return original_decrement(blocks)
+
+        connector._client.decrement_blocks = track_decrement
+
+        connector.shutdown()
+
+        assert "cleanup" in call_order
+        assert "decrement" in call_order
+        assert call_order.index("cleanup") < call_order.index("decrement")
+        # Blocks were still decremented (just after cleanup).
+        assert len(mock_server.decremented_blocks) == 1
+
+    def test_shutdown_releases_inflight_write_blocks_on_sync_failure(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Inflight write blocks must be released when sync fails at shutdown.
+
+        If sync_and_release fails for an inflight write, the blocks are
+        stuck in FILLING state. shutdown() must release them.
+        """
+        from max.kv_cache.connectors.dkv.connector import _InflightWrite
+
+        desc = _make_descriptor(400, offset=0)
+        transfer_req = MagicMock()
+
+        connector._inflight_writes.append(
+            _InflightWrite(transfer_req=transfer_req, descriptors=[desc])
+        )
+
+        # Make sync_and_release fail.
+        assert connector._engine is not None
+        connector._engine.sync_and_release.side_effect = ValueError(
+            "dead transport"
+        )
+
+        connector.shutdown()
+
+        # The inflight write block should have been released
+        # (engine.cleanup() succeeded, so handles are gone).
+        assert len(mock_server.released_blocks) == 1
+        assert mock_server.released_blocks[0][0].seq_hash == 400
+
+    def test_shutdown_skips_release_when_cleanup_fails(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """If engine.cleanup() fails, inflight write blocks must NOT be
+        released. Transfer handles are still live, so releasing would let
+        the dKV server free memory that NIXL still references.
+        """
+        from max.kv_cache.connectors.dkv.connector import _InflightWrite
+
+        desc = _make_descriptor(500, offset=0)
+        transfer_req = MagicMock()
+
+        connector._inflight_writes.append(
+            _InflightWrite(transfer_req=transfer_req, descriptors=[desc])
+        )
+
+        # Make sync_and_release fail AND engine.cleanup() fail.
+        assert connector._engine is not None
+        connector._engine.sync_and_release.side_effect = ValueError(
+            "dead transport"
+        )
+        connector._engine.cleanup.side_effect = RuntimeError("cleanup failed")
+
+        connector.shutdown()
+
+        # Inflight write blocks must NOT have been released.
+        assert len(mock_server.released_blocks) == 0
+        # Held blocks must NOT have been decremented either.
+        assert len(mock_server.decremented_blocks) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -819,6 +1002,352 @@ class TestDPMultiReplica:
         finally:
             c1._client.close()
             c2._client.close()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: reconnection
+# ---------------------------------------------------------------------------
+
+
+class TestReconnection:
+    """Tests for disconnect/reconnect lifecycle."""
+
+    def test_transport_error_sets_reconnect_flag(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """A transport error during save() should set _needs_reconnect."""
+        mock_server.stop()
+        # With the server down, the client will raise a transport error
+        # on the next RPC (acquire_blocks). We need a very short timeout
+        # so the test doesn't hang.
+        connector._client._recv_timeout_ms = 200
+        connector._client._send_timeout_ms = 200
+        connector._client._reset_socket()
+
+        connector.save([0], [100])
+
+        assert connector._needs_reconnect is True
+
+    def test_maybe_reconnect_rate_limits(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Rapid reconnect attempts should be rate-limited by cooldown."""
+        connector._needs_reconnect = True
+        connector._reconnect_cooldown_s = 100.0  # Very long cooldown
+
+        # Make client.connect() fail so the flag stays True.
+        with patch.object(
+            connector._client,
+            "connect",
+            side_effect=ConnectionError("mock"),
+        ):
+            # First attempt proceeds (updates _last_reconnect_attempt).
+            result1 = connector._maybe_reconnect()
+            assert result1 is False  # Failed to reconnect.
+            assert connector._needs_reconnect is True
+
+            # Second attempt should be rate-limited (within cooldown).
+            result2 = connector._maybe_reconnect()
+            assert result2 is False
+
+    def test_reconnect_clears_inflight_state_and_releases_server_side(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Reconnect should release server-side state then clear local state."""
+        from max.kv_cache.connectors.dkv.connector import (
+            _InflightRead,
+            _InflightWrite,
+            _PendingLoad,
+            _PendingWrite,
+        )
+
+        remote_metadata = _make_transfer_metadata()
+        desc_held = _make_descriptor(100)
+        desc_pending = _make_descriptor(200, offset=4096)
+        desc_inflight = _make_descriptor(300, offset=8192)
+
+        # Populate state
+        connector._pending_loads["req1"] = [
+            _PendingLoad(
+                descriptor=desc_held,
+                block_hash=100,
+                transfer_engine=remote_metadata,
+            )
+        ]
+        connector._pending_writes.append(
+            _PendingWrite(device_block_id=0, descriptor=desc_pending)
+        )
+        connector._held_blocks["req1"] = [desc_held]
+        connector._inflight_reads["req1"] = _InflightRead(
+            transfers=[MagicMock()], descriptors=[desc_held]
+        )
+        connector._inflight_writes.append(
+            _InflightWrite(
+                transfer_req=MagicMock(), descriptors=[desc_inflight]
+            )
+        )
+
+        connector._needs_reconnect = True
+        connector._reconnect_cooldown_s = 0.0  # No rate limiting
+        connector._maybe_reconnect()
+
+        # All local state cleared.
+        assert len(connector._pending_loads) == 0
+        assert len(connector._pending_writes) == 0
+        assert len(connector._held_blocks) == 0
+        assert len(connector._inflight_reads) == 0
+        assert len(connector._inflight_writes) == 0
+
+        # Server-side cleanup RPCs were attempted:
+        # 1. decrement_blocks for held blocks (read pins)
+        assert len(mock_server.decremented_blocks) == 1
+        assert mock_server.decremented_blocks[0][0].seq_hash == 100
+
+        # 2. release_blocks for pending writes + inflight writes
+        assert len(mock_server.released_blocks) == 2
+        released_hashes = {
+            mock_server.released_blocks[0][0].seq_hash,
+            mock_server.released_blocks[1][0].seq_hash,
+        }
+        assert released_hashes == {200, 300}
+
+    def test_reconnect_disconnects_engine_before_decrementing(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Engine disconnect must happen before decrement_blocks.
+
+        If we decrement read pins before releasing NIXL transfer handles,
+        the dKV server could free memory while NIXL still references it.
+        """
+        from max.kv_cache.connectors.dkv.connector import _InflightRead
+
+        remote_metadata = _make_transfer_metadata("stale-remote")
+        desc = _make_descriptor(100)
+
+        # Register a fake remote connection on the mock engine.
+        assert connector._engine is not None
+        connector._engine.remote_connections["stale-remote"] = remote_metadata
+
+        # Set up held blocks with an inflight read.
+        connector._held_blocks["req1"] = [desc]
+        connector._inflight_reads["req1"] = _InflightRead(
+            transfers=[MagicMock()], descriptors=[desc]
+        )
+
+        # Track call ordering via side effects.
+        call_order: list[str] = []
+
+        original_disconnect = connector._engine.disconnect
+
+        def track_disconnect(name: str) -> None:
+            call_order.append("disconnect")
+            # Actually remove from remote_connections so the loop works.
+            connector._engine.remote_connections.pop(name, None)
+
+        connector._engine.disconnect = track_disconnect
+
+        original_decrement = connector._client.decrement_blocks
+
+        def track_decrement(blocks: object) -> object:
+            call_order.append("decrement")
+            return original_decrement(blocks)
+
+        connector._client.decrement_blocks = track_decrement
+
+        connector._needs_reconnect = True
+        connector._reconnect_cooldown_s = 0.0
+        connector._maybe_reconnect()
+
+        assert "disconnect" in call_order
+        assert "decrement" in call_order
+        assert call_order.index("disconnect") < call_order.index("decrement")
+
+    def test_reconnect_success_restores_operations(
+        self, mock_server: MockDKVServer, mock_address: str
+    ) -> None:
+        """After dKV restart, reconnect should restore save() ability."""
+        connector = _make_connector(mock_server.bound_address)
+        # Wire up the mock engine's auto-discover path to set
+        # _default_remote_metadata (simulating ExchangeMetadata success).
+        connector._engine.metadata = MagicMock()
+        connector._engine.metadata.agents_meta = [
+            [
+                TensorAgentMetadata(
+                    agent_name="local-agent",
+                    metadata=b"meta",
+                    base_addr=0,
+                    device_id=0,
+                )
+            ]
+        ]
+        connector._engine.bytes_per_page = 4096
+
+        try:
+            # Trigger reconnection flag.
+            connector._needs_reconnect = True
+            connector._reconnect_cooldown_s = 0.0
+
+            # _maybe_reconnect will call _try_auto_discover_metadata,
+            # which calls exchange_metadata on the (still-running) server.
+            result = connector._maybe_reconnect()
+
+            # Client reconnect should succeed, flag should be cleared.
+            assert connector._client._socket is not None
+            assert result is True
+            assert connector._needs_reconnect is False
+        finally:
+            connector._client.close()
+
+    def test_reconnect_rpc_only_mode_after_nixl_failure(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Reconnect should succeed in RPC-only mode when NIXL fails.
+
+        If the RPC client reconnects but NIXL auto-discover fails,
+        the connector should still clear _needs_reconnect and operate
+        in RPC-only mode (save + flush without NIXL transfers).
+        """
+        # Simulate: connector was working, then transport error happened.
+        connector._needs_reconnect = True
+        connector._reconnect_cooldown_s = 0.0
+
+        # _try_auto_discover_metadata will fail because the mock engine
+        # doesn't have real NIXL agents, so _default_remote_metadata
+        # stays None. But the RPC client reconnects fine.
+        result = connector._maybe_reconnect()
+
+        # The connector should recover to RPC-only mode.
+        assert result is True
+        assert connector._needs_reconnect is False
+        # _default_remote_metadata may or may not be set depending on
+        # the mock, but the key assertion: the flag is cleared.
+
+        # save() + flush() should work in RPC-only mode.
+        connector.save([0, 1], [100, 200])
+        connector.flush()
+
+        # Blocks were acquired and registered via RPC.
+        assert len(connector._pending_writes) == 0
+        assert connector.metrics.nixl_write_blocks == 2
+
+    def test_happy_path_no_overhead(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """When _needs_reconnect is False, _maybe_reconnect is a single bool check."""
+        assert connector._needs_reconnect is False
+
+        # Should return True immediately.
+        assert connector._maybe_reconnect() is True
+
+        # Verify no client reconnection happened (request_count unchanged).
+        initial_count = mock_server.request_count
+        connector._maybe_reconnect()
+        assert mock_server.request_count == initial_count
+
+    def test_lookup_returns_zero_when_degraded(
+        self, connector: DKVConnector
+    ) -> None:
+        """lookup() should return 0 when connector is degraded."""
+        connector._needs_reconnect = True
+        connector._reconnect_cooldown_s = 100.0  # Ensure rate-limited
+
+        # Force a past attempt so rate-limiting kicks in.
+        import time
+
+        connector._last_reconnect_attempt = time.monotonic()
+
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc, transfer_engine=remote_metadata
+            )
+        )
+
+        tokens = connector.lookup(ctx, [100])
+        assert tokens == 0
+
+    def test_save_noop_when_degraded(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """save() should be a no-op when connector is degraded."""
+        connector._needs_reconnect = True
+        connector._reconnect_cooldown_s = 100.0
+        import time
+
+        connector._last_reconnect_attempt = time.monotonic()
+
+        initial_count = mock_server.request_count
+        connector.save([0], [100])
+
+        # No RPC should have been made.
+        assert mock_server.request_count == initial_count
+        assert len(connector._pending_writes) == 0
+
+    def test_flush_noop_when_degraded(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """flush() should be a no-op when connector is degraded."""
+        connector._needs_reconnect = True
+        connector._reconnect_cooldown_s = 100.0
+        import time
+
+        connector._last_reconnect_attempt = time.monotonic()
+
+        connector.flush()
+        assert mock_server.request_count == 0
+
+    def test_sync_noop_when_degraded(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """sync() should be a no-op when connector is degraded."""
+        connector._needs_reconnect = True
+        connector._reconnect_cooldown_s = 100.0
+        import time
+
+        connector._last_reconnect_attempt = time.monotonic()
+
+        connector.sync()
+        # No engine calls should have been made.
+        assert connector._engine is not None
+        connector._engine.sync_and_release.assert_not_called()
+
+
+class TestNIXLReadLogs:
+    """Tests for NIXL READ transfer timing logs."""
+
+    def test_sync_emits_read_timing_log(
+        self,
+        connector: DKVConnector,
+        mock_server: MockDKVServer,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """sync() should emit an info log with block count, MiB, ms, GiB/s."""
+        import logging
+
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100, length=4096)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc, transfer_engine=remote_metadata
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        with caplog.at_level(logging.INFO, logger="max.pipelines"):
+            connector.sync()
+
+        read_logs = [
+            r for r in caplog.records if "NIXL READ confirmed" in r.message
+        ]
+        assert len(read_logs) == 1
+        log_msg = read_logs[0].message
+        assert "1 blocks" in log_msg
+        assert "MiB" in log_msg
+        assert "ms" in log_msg
+        assert "GiB/s" in log_msg
 
 
 # ---------------------------------------------------------------------------

@@ -16,8 +16,8 @@ Flow:
 - Model worker creates the runner and executes pre-ready warmup.
 - Warmup captures hot decode buckets, largest-first.
 - Serving path replays by (batch_token_count, num_partitions, q_max_seq_len)
-  key. Only ``q_max_seq_len=1`` graphs are captured; a ``RuntimeError`` is
-  raised for any other value.
+  key. Only ``q_max_seq_len=1 + num_speculative_tokens`` graphs are captured;
+  a ``RuntimeError`` is raised for any other value.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from max.nn.kv_cache import (
 )
 from max.profiler import traced
 
-from .interfaces import ModelInputs, ModelOutputs
+from .interfaces import ModelInputs, ModelOutputs, UnifiedEagleOutputs
 
 logger = logging.getLogger("max.pipelines")
 
@@ -240,11 +240,13 @@ class ServeGraphCaptureRunner:
         # list[AttentionDispatchResolver] to support N extra KV caches
         # generically, instead of assuming at most one extra cache.
         extra_dispatch_resolver: AttentionDispatchResolver | None = None,
+        num_speculative_tokens: int = 0,
     ) -> None:
         self._model = model
         self._execute_model = execute_model
         self._warmup_model_inputs = warmup_model_inputs
         self._extra_dispatch_resolver = extra_dispatch_resolver
+        self._num_speculative_tokens = num_speculative_tokens
         if max_cache_length_upper_bound < 1:
             raise ValueError(
                 "Decode graph capture requires a positive decode "
@@ -303,7 +305,6 @@ class ServeGraphCaptureRunner:
         )
         # Conservative/defensive warmup: capture largest-first so peak
         # allocations happen up front and oversized configs fail fast.
-        # TODO: Support q_max_seq_len > 1. We currently OOM.
         for batch_size in range(self._max_batch_size, 0, -1):
             dispatch_entries = sorted(
                 self.dispatch_metadata(batch_size, 1),
@@ -325,7 +326,7 @@ class ServeGraphCaptureRunner:
                     key = (
                         batch_token_count,
                         num_partitions,
-                        1,
+                        self._num_speculative_tokens + 1,
                     )
                     assert key not in self.graph_entries, (
                         "unexpected duplicate key"
@@ -349,7 +350,9 @@ class ServeGraphCaptureRunner:
                         and capture_inputs.extra_kv_cache_inputs
                     ):
                         extra_dispatch = self._extra_dispatch_resolver(
-                            batch_size, 1, max_cache_valid_length
+                            batch_size=batch_size,
+                            max_prompt_length=self._num_speculative_tokens + 1,
+                            max_cache_valid_length=max_cache_valid_length,
                         )
                         patched_extras: list[KVCacheInputs] = []
                         for extra_kv in capture_inputs.extra_kv_cache_inputs:
@@ -364,9 +367,18 @@ class ServeGraphCaptureRunner:
 
                     input_buffers = capture_inputs.buffers
                     packed_key = _pack_model_graph_key(key)
-                    outputs = ModelOutputs(
-                        *self._model.capture(packed_key, *input_buffers)
+                    output_buffers = self._model.capture(
+                        packed_key, *input_buffers
                     )
+                    if not self._num_speculative_tokens:
+                        outputs = ModelOutputs(*output_buffers)
+                    else:
+                        assert len(output_buffers) == 3, "Expected 3 outputs"
+                        outputs = UnifiedEagleOutputs(
+                            num_accepted_draft_tokens=output_buffers[0],
+                            next_tokens=output_buffers[1],
+                            next_draft_tokens=output_buffers[2],
+                        )
                     # Graph-capture warmup keeps many output handles alive.
                     # Drop Python-side ownership so later captures can reuse
                     # the same memory-manager-backed storage.
@@ -411,10 +423,10 @@ class ServeGraphCaptureRunner:
         synced_np = max(num_partitions for num_partitions, _ in all_metadata)
         q_max_seq_len = max(q_max_seq_len for _, q_max_seq_len in all_metadata)
 
-        if q_max_seq_len != 1:
+        if q_max_seq_len != 1 + self._num_speculative_tokens:
             raise RuntimeError(
-                f"q_max_seq_len={q_max_seq_len} != 1; only q_max_seq_len=1 "
-                "graphs are captured."
+                f"q_max_seq_len={q_max_seq_len} != 1 + {self._num_speculative_tokens}; "
+                f"only q_max_seq_len=1 + {self._num_speculative_tokens} graphs are captured."
             )
 
         final_np = self._bucket_num_partitions(
@@ -481,10 +493,11 @@ class ServeGraphCaptureRunner:
                 "Expected positive decode kernel mode (num_partitions), got "
                 f"{num_partitions}."
             )
-        if q_max_seq_len != 1:
+
+        if q_max_seq_len != 1 + self._num_speculative_tokens:
             raise RuntimeError(
-                f"q_max_seq_len={q_max_seq_len} != 1; only "
-                "q_max_seq_len=1 graphs are captured."
+                f"q_max_seq_len={q_max_seq_len} != 1 + {self._num_speculative_tokens}; "
+                f"only q_max_seq_len=1 + {self._num_speculative_tokens} graphs are captured."
             )
 
         final_np = self._bucket_num_partitions(

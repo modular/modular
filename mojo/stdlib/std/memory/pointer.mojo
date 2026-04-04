@@ -391,4 +391,4 @@ struct Pointer[
     def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
-        return not Bool(memory.bitcast[Self._NullPointerType]()[])
+        return not memory.bitcast[Self._NullPointerType]()[]._is_not_null()

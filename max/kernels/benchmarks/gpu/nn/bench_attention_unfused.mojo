@@ -99,7 +99,7 @@ def bench_flash[
         v_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
         o_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
         ctx: DeviceContext,
-    ) raises:
+    ) raises unified {read}:
         var q = TileTensor(
             q_ptr,
             row_major(
@@ -155,7 +155,7 @@ def bench_flash[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() -> Int:
+        def compute_flops() unified {read} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](
@@ -241,7 +241,7 @@ def bench_naive[
         v_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
         o_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
         ctx: DeviceContext,
-    ) raises:
+    ) raises unified {read}:
         var q = TileTensor(
             q_ptr,
             row_major(
@@ -311,7 +311,7 @@ def bench_naive[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() -> Int:
+        def compute_flops() unified {read} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](
@@ -423,7 +423,7 @@ def bench_manual[
         o_base: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
         s_base: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
         ctx: DeviceContext,
-    ) raises:
+    ) raises unified {read}:
         # Step 1: Q @ K^T * scale  (per-head 2D matmul with compute
         # epilogue so we keep TMA stores on H100).
         for h in range(total_heads):
@@ -501,7 +501,7 @@ def bench_manual[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() -> Int:
+        def compute_flops() unified {read} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](

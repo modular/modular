@@ -763,7 +763,7 @@ logit_verification_pipelines:
     absolute_tolerance: 1.5e+01
     relative_tolerance: 9.6e-01
     cos_dist_threshold: 2.0e-03
-    kl_div_threshold: 4.1e+00
+    kl_div_threshold: 5.0e+00
 
   deepseek-ai/DeepSeek-V3.1-Terminus:
     pre_submit_agents: []

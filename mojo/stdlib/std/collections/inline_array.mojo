@@ -41,7 +41,7 @@ from std.builtin.constrained import _constrained_conforms_to
 from std.compile import get_type_name
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
-from std.memory import UnsafeMaybeUninit
+from std.memory import UnsafeMaybeUninit, uninit_move_n
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -119,6 +119,93 @@ struct _InlineArrayIter[
         return (iter_len, {iter_len})
 
 
+struct _InlineArrayIterOwned[T: Copyable, size: Int](
+    IterableOwned, Iterator, Movable
+):
+    """An owning iterator for InlineArray.
+
+    Parameters:
+        T: The type of the elements in the array.
+        size: The size of the array.
+    """
+
+    comptime Element = Self.T
+    comptime IteratorOwnedType = Self
+
+    var _array: InlineArray[Self.T, Self.size]
+    var _index: Int
+
+    def __init__(out self, var array: InlineArray[Self.T, Self.size]):
+        """Consume an array and create an iterator over its elements.
+
+        Args:
+            array: The array to consume.
+        """
+        self._array = array^
+        self._index = 0
+
+    def __init__(out self, *, deinit take: Self):
+        """Move constructor that handles partially consumed array storage.
+
+        After partial iteration some array slots are uninitialized, so
+        the default fieldwise move would be unsound.  This constructor
+        moves only the unconsumed elements and marks the source
+        destroyed.
+
+        Args:
+            take: The iterator to move from.
+        """
+        self._index = take._index
+        self._array = InlineArray[Self.T, Self.size](uninitialized=True)
+        uninit_move_n[overlapping=False](
+            dest=self._array.unsafe_ptr() + take._index,
+            src=take._array.unsafe_ptr() + take._index,
+            count=Self.size - take._index,
+        )
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(take))
+
+    @always_inline
+    def __del__(deinit self):
+        _constrained_conforms_to[
+            conforms_to(Self.T, ImplicitlyDestructible),
+            Parent=Self,
+            Element=Self.T,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
+
+        # Move fields out of self so we can manage their lifetimes.
+        var idx = self._index
+        var array = self._array^
+
+        # Destroy the remaining elements that have not yet been
+        # iterated over.
+        comptime if not TDestructible.__del__is_trivial:
+            for i in range(idx, Self.size):
+                (array.unsafe_ptr() + i).bitcast[
+                    TDestructible
+                ]().destroy_pointee()
+
+        # Mark the array as destroyed so InlineArray.__del__ doesn't
+        # double-destroy the elements we already handled.
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(array))
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._index >= Self.size:
+            raise StopIteration()
+        self._index += 1
+        return (self._array.unsafe_ptr() + self._index - 1).take_pointee()
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = Self.size - self._index
+        return (remaining, {remaining})
+
+
 struct InlineArray[ElementType: Copyable, size: Int](
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
@@ -128,6 +215,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     ImplicitlyCopyable where conforms_to(ElementType, ImplicitlyCopyable),
     ImplicitlyDestructible,
     Iterable,
+    IterableOwned,
     Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -187,6 +275,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+
+    comptime IteratorOwnedType: Iterator = _InlineArrayIterOwned[
+        Self.ElementType, Self.size
+    ]
+    """The owned iterator type for this array."""
 
     def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
@@ -354,35 +447,12 @@ struct InlineArray[ElementType: Copyable, size: Int](
         var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
-        assert len(elems) == Self.size, "No. of elems must match array size"
-        self = Self(storage=elems^)
-
-    @always_inline
-    def __init__[
-        origin: MutOrigin, //
-    ](
-        out self,
-        *,
-        var storage: VariadicList[
-            elt_is_mutable=True, origin=origin, Self.ElementType, is_owned=True
-        ],
-    ):
-        """Construct an array from a low-level internal representation.
-
-        Parameters:
-            origin: The origin of the storage being passed in.
-
-        Args:
-            storage: The variadic list storage to construct from. Must match
-                array size.
-        """
-
         debug_assert[assert_mode="safe"](
-            len(storage) == Self.size,
+            len(elems) == Self.size,
             "InlineArray: expected ",
             Self.size,
             " elements, received ",
-            len(storage),
+            len(elems),
         )
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -393,13 +463,13 @@ struct InlineArray[ElementType: Copyable, size: Int](
         comptime for i in range(Self.size):
             # Safety: We own the elements in the variadic list.
             ptr.init_pointee_move_from(
-                UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
+                UnsafePointer(to=elems[i]).unsafe_mut_cast[True]()
             )
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
-        storage^._annihilate()
+        elems^._annihilate()
 
     def __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.
@@ -778,6 +848,14 @@ struct InlineArray[ElementType: Copyable, size: Int](
             fmt.TypeNames[Self.ElementType](),
             Self.size,
         ).fields[FieldsFn=write_fields]()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the array and return an iterator over its elements.
+
+        Returns:
+            An iterator that owns the array's elements.
+        """
+        return Self.IteratorOwnedType(self^)
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the array, returning immutable references.

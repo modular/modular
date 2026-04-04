@@ -248,12 +248,16 @@ def monotonic() -> UInt:
 
 
 @always_inline
-@parameter
-def time_function[func: def() raises capturing[_] -> None]() raises -> UInt:
+def time_function[
+    FuncType: def() raises unified -> None
+](func: FuncType) raises -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
-        func: The function to time.
+        FuncType: The function type to time.
+
+    Args:
+        func: The closure carrying the captured state of the timed function.
 
     Returns:
         The time elapsed in the function in ns.
@@ -268,25 +272,22 @@ def time_function[func: def() raises capturing[_] -> None]() raises -> UInt:
 
 
 @always_inline
-@parameter
-def time_function[func: def() capturing[_] -> None]() -> UInt:
+def time_function[FuncType: def() unified -> None](func: FuncType) -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
-        func: The function to time.
+        FuncType: The function type to time.
+
+    Args:
+        func: The closure carrying the captured state of the timed function.
 
     Returns:
         The time elapsed in the function in ns.
     """
-
-    @parameter
-    def raising_func() raises:
-        func()
-
-    try:
-        return time_function[raising_func]()
-    except err:
-        abort(String(err))
+    var tic = perf_counter_ns()
+    func()
+    var toc = perf_counter_ns()
+    return toc - tic
 
 
 # ===-----------------------------------------------------------------------===#

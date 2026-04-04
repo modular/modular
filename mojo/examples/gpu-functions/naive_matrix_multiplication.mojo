@@ -105,6 +105,6 @@ def naive_matrix_multiplication(
     var n_dim = p.dim(1)
     var k_dim = m.dim(1)
 
-    if row < UInt(m_dim) and col < UInt(n_dim):
+    if row < m_dim and col < n_dim:
         for j_index in range(k_dim):
             p[row, col] = p[row, col] + m[row, j_index] * n[j_index, col]
