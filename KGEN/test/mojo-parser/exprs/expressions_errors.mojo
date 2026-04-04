@@ -164,7 +164,7 @@ def some_fn_ret_int() -> Int: return 42
 
 # Issue #11288
 def test_overload_set():
-  # expected-error @+1 {{invalid call to 'some_fn_take_int': value passed to 'a' cannot be converted from 'def() -> Int' to 'Int'}}
+  # expected-error @+1 {{invalid call to 'some_fn_take_int': value passed to 'a' cannot be converted from 'def some_fn_ret_int() -> Int' to 'Int'}}
   some_fn_take_int(some_fn_ret_int)
 
 def overloaded_arg(x: Int): pass # expected-note {{candidate declared here}}
@@ -215,7 +215,7 @@ def test_func_type():
     comptime f7: def [*, Int] -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
     comptime f8 = def [Int, b: Int] capturing -> Int
-    # expected-error @below {{'def() raises Int -> None' value to 'def() raises String -> None'}}
+    # expected-error @below {{'def throws_int() raises Int -> None' value to 'def() raises String -> None'}}
     comptime f9: def () raises String = throws_int
 
     def has_foo_kw(*, foo: Int): pass
@@ -842,7 +842,7 @@ def take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntPar
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 def test_signature():
-  # expected-error @+1 {{cannot implicitly convert 'def() -> HasIntParam[1]' value to 'def(x: HasIntParam[1]) -> None' in 'var' initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'def __init__() -> HasIntParam[1]' value to 'def(x: HasIntParam[1]) -> None' in 'var' initializer}}
   var x : def(x: HasIntParam[1])->None = HasIntParam[1].__init__
 
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}

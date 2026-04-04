@@ -1670,7 +1670,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     elementType = getter.getType().getSignatureUserResultType();
 
     // Also look through ref results.
-    if (sugarCast<FnTypeGeneratorType>(getter.getType()).isRefResult())
+    if (FnOrFnLiteralTypeGeneratorType::get(getter.getType()).isRefResult())
       elementType = sugarCast<RefType>(elementType).getElementType();
   }
 
@@ -1702,7 +1702,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       lookupError();
       return {}; // Getter invalid.
     }
-    auto sigType = sugarCast<FnTypeGeneratorType>(directSymbolAttr.getType());
+    auto sigType =
+        FnOrFnLiteralTypeGeneratorType::get(directSymbolAttr.getType());
     // Check basic sanity.
     size_t setValueIdx = operands.getNumPositional();
     if (sigType.getNumArguments() <= setValueIdx) {

@@ -297,6 +297,10 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     exportedSymbols.insert(
         {ref.getSymbol().getRootReference(), ExportKind::NotExported});
   });
+  walker.addWalk([&](FuncSymbolAttr ref) {
+    exportedSymbols.insert(
+        {ref.getSymbol().getRootReference(), ExportKind::NotExported});
+  });
   for (TypedAttr attr : symbol.getParamValues())
     walker.walk(attr);
 
@@ -530,14 +534,18 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       // references.
       if (!symToRename.empty()) {
         mlir::AttrTypeReplacer replacer;
-        replacer.addReplacement([&symToRename](SymbolConstantAttr attr) {
+        auto replaceSymbol = [&symToRename](auto attr) {
           auto iter = symToRename.find(attr.getSymbol());
           if (iter != symToRename.end()) {
-            return SymbolConstantAttr::get(iter->second, attr.getType(),
-                                           attr.getParamValues());
+            return decltype(attr)::get(iter->second, attr.getType(),
+                                       attr.getParamValues());
           }
           return attr;
-        });
+        };
+        replacer.addReplacement(
+            [&](SymbolConstantAttr attr) { return replaceSymbol(attr); });
+        replacer.addReplacement(
+            [&](FuncSymbolAttr attr) { return replaceSymbol(attr); });
 
         replacer.recursivelyReplaceElementsIn(*module, /*replaceAttrs=*/true,
                                               /*replaceLocs=*/true,

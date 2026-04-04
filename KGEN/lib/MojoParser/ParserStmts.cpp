@@ -101,7 +101,6 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_with:
   case Token::kw_async:
   case Token::kw_def:
-  case Token::kw___def:
   case Token::kw_fn:
   case Token::kw_struct:
   case Token::kw_class:
@@ -534,11 +533,11 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // If this type is a function with no formal arguments and an ignorable type,
   // we emit a warning with a fix it hint suggesting that it get called.
   // TODO: This is incorrect for default arguments and varargs.
-  if (auto sig = sugarDynCast<FnTypeGeneratorType>(valueType)) {
+  if (auto sig = FnOrFnLiteralTypeGeneratorType::tryGet(valueType)) {
     // Get the result type without any error handling in the way.
-    Type resultType = sig.getUserResultType();
-    if ((sig.getNumArguments() ==
-         ((unsigned)sig.hasMemoryOnlyResult() + (unsigned)sig.isThrows())) &&
+    Type resultType = sig->getUserResultType();
+    if ((sig->getNumArguments() ==
+         ((unsigned)sig->hasMemoryOnlyResult() + (unsigned)sig->isThrows())) &&
         isImplicitlyIgnorableType(resultType)) {
       shared.emitWarning(expr->getLoc())
           << "function pointer was formed but not called, did you forget '()'s?"
@@ -715,7 +714,6 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return parseWithStmt(stmtIndent);
   case Token::kw_async:
   case Token::kw_def:
-  case Token::kw___def:
   case Token::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseDefFnStmt(startCursor, stmtIndent);
@@ -1702,7 +1700,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
 
   // Determine if we're modern or legacy structure.
   bool isThrowsCase =
-      sugarCast<FnTypeGeneratorType>(nextFn.getType()).isThrows();
+      FnOrFnLiteralTypeGeneratorType::get(nextFn.getType()).isThrows();
 
   // Create the LoopOp
   auto loopOp = LIT::LoopOp::create(builder, forLocation);
@@ -1875,7 +1873,10 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     // have a strong enough memory model to handle "mut" arguments to next.
     OverloadSet call(name, paramForImpl, std::move(bindings),
                      CallSyntax::kDirectCall);
-    return call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
+    PValue literal = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
+    // Must resolved to a function literal. Extract the literal target.
+    return sugarCast<FnLiteralTypeGeneratorType>(literal.getType())
+        .getTargetLiteral();
   };
 
   PValue hasNext = getMutFnWrapper("paramfor_has_next");
@@ -2324,9 +2325,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           contextRVType, "__enter__", enterOperands, enterEmitter)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self 'mut'.
-    auto signature = sugarDynCast<FuncTypeGeneratorType>(enterMethod.getType());
-    if (signature && !signature.getBody().getArgConventions().empty()) {
-      auto firstArgConvention = signature.getBody().getArgConventions()[0];
+    auto sig = FnOrFnLiteralTypeGeneratorType::tryGet(enterMethod.getType());
+    if (sig.has_value() && !sig->getArgConventions().empty()) {
+      auto firstArgConvention = sig->getArgConventions()[0];
       if (firstArgConvention != ArgConvention::Mut && !hasExitMethod)
         contextVal = MRValue(contextMgrDecl);
 
@@ -2446,7 +2447,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // If it is something generic, then allow the try to resolve it, and the
       // exit call can conform to it.
       ASTType errorType = UnresolvedType::get(shared.getContext());
-      auto sigType = sugarCast<FnTypeGeneratorType>(conditionalExit.getType());
+      auto sigType =
+          FnOrFnLiteralTypeGeneratorType::get(conditionalExit.getType());
       assert(sigType.getNumArguments() >= 2 &&
              "expected a receiver and an error");
       auto argType = RefType::stripRefConvention(sigType.getArgument(1),
@@ -2540,9 +2542,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
             contextRVType, "__exit__", operands, exitEmitter)) {
       // Pass the argument as an RValue so the exit method can consume the
       // value... unless it takes self 'mut'.
-      auto signature = sugarCast<FuncTypeGeneratorType>(exitMethod.getType());
-      if (signature && !signature.getBody().getArgConventions().empty())
-        if (signature.getBody().getArgConventions()[0] != ArgConvention::Mut) {
+      auto signature =
+          FnOrFnLiteralTypeGeneratorType::tryGet(exitMethod.getType());
+      if (signature.has_value() && !signature->getArgConventions().empty())
+        if (signature->getArgConventions()[0] != ArgConvention::Mut) {
           contextVal = MRValue(contextMgrDecl);
         }
     }
@@ -3291,7 +3294,7 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   consumeIf(Token::kw_async);
-  Token defToken = consumeToken(); // Consume either 'def' or 'fn'.
+  consumeToken(); // Consume either 'def' or 'fn'.
 
   SMLoc loc;
   StringAttr baseName;
@@ -3318,9 +3321,6 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   auto emptyStr = StringAttr::get(ctx, "");
   auto fnOp = FnOp::create(builder, translateLocation(loc), emptyStr, emptyStr,
                            signatureType);
-
-  if (defToken.is(Token::kw___def))
-    fnOp.setAsLiteral(true);
 
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
   // 'sym_name' because we don't /know/ the symbol name on construction and need

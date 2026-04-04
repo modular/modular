@@ -25,7 +25,7 @@ def bar(x: Int):
 # correctly resolves signatures that are declared after the call.
 
 # CHECK: lit.alias.decl {{.*}}#Tuple <:variadic<!Movable> [[[TYPE1]], [[TYPE2]], [[TYPE3]], [[TYPE4]], [[TYPE5]]]>
-# CHECK-SAME: <store_to_mem(@functions_in_module::@"foo()"), store_to_mem(@functions_in_module::@"bar(::Int)"), store_to_mem(@functions_in_module::@"bar(::Int,::Int)"), store_to_mem(@functions_in_module::@"baz()"), store_to_mem(@functions_in_module::@"take[::Movable,$0]()")>))
+# CHECK-SAME: <store_to_mem(@functions_in_module::@"foo()"), store_to_mem(@functions_in_module::@"bar(::Int)"), store_to_mem(@functions_in_module::@"bar(::Int,::Int)"), store_to_mem(@functions_in_module::@"baz()"), store_to_mem(@functions_in_module::@"take[::Movable,$0]()"{{.*}})>))
 comptime funcs = __functions_in_module()
 
 

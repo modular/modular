@@ -22,6 +22,23 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
+// Utils
+//===----------------------------------------------------------------------===//
+
+SymbolConstantAttr KGEN::extractSymbolConstantAttr(TypedAttr attr) {
+  if (auto literal = dyn_cast<FuncLiteralTypeGeneratorType>(attr.getType()))
+    return literal.getTargetLiteral();
+  if (auto literal = dyn_cast<FuncLiteralType>(attr.getType())) {
+    auto funcSymbol = cast<FuncSymbolAttr>(literal.getFuncLiteral());
+    return SymbolConstantAttr::get(
+        funcSymbol.getSymbol(),
+        FuncTypeGeneratorType::get({}, funcSymbol.getType(), nullptr),
+        funcSymbol.getParamValues());
+  }
+
+  return dyn_cast<SymbolConstantAttr>(attr);
+}
+//===----------------------------------------------------------------------===//
 // ImplNodeBase
 //===----------------------------------------------------------------------===//
 
@@ -92,8 +109,7 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
     }
 
     // Parametric linkage name — resolve via the evaluator.
-    if (auto symbol =
-            dyn_cast<SymbolConstantAttr>(getLinkageNameAttr.getFunc())) {
+    if (auto symbol = extractSymbolConstantAttr(getLinkageNameAttr.getFunc())) {
       FailureOr<TypedAttr> result = concretizeLinkageName(generator, symbol);
       if (succeeded(result)) {
         if (!*result)
@@ -116,8 +132,7 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
 
 FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
     GetSourceNameAttr getSourceNameAttr) {
-
-  auto symbol = dyn_cast<SymbolConstantAttr>(getSourceNameAttr.getFunc());
+  auto symbol = extractSymbolConstantAttr(getSourceNameAttr.getFunc());
   if (!symbol) {
     emitError({*errorLoc, "'get_source_name' function argument did not resolve "
                           "to a concrete function"});
@@ -266,7 +281,7 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
   StringRef emissionOptionsStr =
       cast<StringAttr>(attr.getEmissionOptions()).getValue();
   bool propagateError = cast<BoolAttr>(attr.getPropagateError()).getValue();
-  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(attr.getFunc());
+  SymbolConstantAttr symbol = extractSymbolConstantAttr(attr.getFunc());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(*errorLoc, "compile_assembly", symbol,
                              /*allowParametric=*/false);
@@ -369,8 +384,8 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   // ones here.
   if (Attribute linkageNameAttr = generator.getLinkageNameAttr()) {
     if (!isa<StringAttr>(linkageNameAttr)) {
-      if (auto symbol = dyn_cast<SymbolConstantAttr>(
-              compileOffloadClosureAttr.getFunc())) {
+      if (auto symbol =
+              extractSymbolConstantAttr(compileOffloadClosureAttr.getFunc())) {
         FailureOr<TypedAttr> resolved =
             concretizeLinkageName(generator, symbol);
         if (succeeded(resolved)) {

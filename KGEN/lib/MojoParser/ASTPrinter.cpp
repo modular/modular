@@ -586,6 +586,11 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto genAttr = dyn_cast<FuncLiteralAttr>(param)) {
+    os << "fn_literal";
+    return;
+  }
+
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
     printSymbol(os, symbolCst.getSymbol(), diagShared);
     if (!symbolCst.getParamValues().empty())
@@ -1644,15 +1649,21 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     os << "Variadic[";
     ASTType(variadic.getElementType()).print(os, diagShared);
     os << "]";
-  } else if (auto sigGen = dyn_cast<FnTypeGeneratorType>(type)) {
+  } else if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(type)) {
+    auto sigGen = FnOrFnLiteralTypeGeneratorType::get(type);
     if (sigGen.isAsync())
       os << "async ";
     os << "def";
-    FnType sig = sigGen.getBody();
-    if (!sigGen.getInputParamTypes().empty()) {
-      sig =
-          printGeneratorInterface(os, sigGen.getInputParamTypes(),
-                                  sigGen.getParamListAttrs(), diagShared, sig);
+    if (auto fnLiteralGen = sigGen.getIfFnLiteralTypeGenerator()) {
+      os << " "
+         << getNameFromSymbolRef(fnLiteralGen.getTargetLiteral().getSymbol());
+    }
+
+    FnType sig = sigGen.getBodyFnType();
+    auto paramTypes = sugarCast<LITGeneratorType>(type).getInputParamTypes();
+    if (!paramTypes.empty()) {
+      sig = printGeneratorInterface(os, paramTypes, sigGen.getParamListAttrs(),
+                                    diagShared, sig);
     }
     os << '(';
     PassingKindPrinter passingKindPrinter(os, sig.getArgListAttrs());

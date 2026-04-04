@@ -116,7 +116,7 @@ def takesClosure[T: def(Int) unified -> Int](cb: T, x: Int) -> Int:
 
 
 def useTopLevelClosure():
-    # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'def(Int) -> Int' type, but value has type 'def(x: String) -> String'}}
+    # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'def(Int) -> Int' type, but value has type 'def topLevel(x: String) -> String'}}
     takesClosure[topLevel](topLevel, 1)
 
 

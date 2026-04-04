@@ -250,6 +250,12 @@ private:
   concretizeLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) = 0;
 };
 
+//===----------------------------------------------------------------------===//
+// Utils
+//===----------------------------------------------------------------------===//
+
+SymbolConstantAttr extractSymbolConstantAttr(TypedAttr attr);
+
 } // namespace M::KGEN
 
 #endif // KGEN_ELABORATOR_IREVALUATORCONTEXT_H

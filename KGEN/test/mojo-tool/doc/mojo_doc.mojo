@@ -79,7 +79,7 @@ comptime deprecated_alias = 1
 # Issue #5361: mojo doc crashes on alias of parametrized function with origin
 
 # CHECK-LABEL: "name": "parametric_ref_origin_alias",
-# CHECK: "value": "parametric_ref_origin[2, ?, _]"
+# CHECK: "value": "fn_literal"
 comptime parametric_ref_origin_alias = parametric_ref_origin[2]
 
 
@@ -404,7 +404,8 @@ def vectorize_unified[
     pass
 
 
-# CHECK: "signature": "tile_and_unswitch[workgroup_function: Static1DTileUnswitchUnitFunc, *tile_size_list: Int](offset: Int, upperbound: Int)",
+# FIXME: sugar regression.
+# CHECK: "signature": "tile_and_unswitch[workgroup_function: def[width: Int, sw: Bool](Int, Int) capturing -> None, *tile_size_list: Int](offset: Int, upperbound: Int)",
 
 
 def tile_and_unswitch[

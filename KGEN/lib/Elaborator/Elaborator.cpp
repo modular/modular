@@ -579,7 +579,7 @@ ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
 Elaborator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
                                    TypedAttr symCst, bool allowParametric,
                                    bool sanitize) {
-  auto symbol = dyn_cast<SymbolConstantAttr>(symCst);
+  auto symbol = extractSymbolConstantAttr(symCst);
   if (!symbol) {
     return ErrorTree(
         errorLoc,
@@ -896,7 +896,8 @@ ElaborationState Elaborator::processCallOp(ImplNode *parent,
                                            GeneratorUserOpInterface call) {
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
-  return processGeneratorUser(call, cast<SymbolConstantAttr>(symbol), parent);
+  return processGeneratorUser(
+      call, extractSymbolConstantAttr(cast<TypedAttr>(symbol)), parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1185,14 +1186,15 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
                           type);
 
   // Concretize the paramfor_has_next generator function.
-  if (!isa<SymbolConstantAttr>(hasNext)) {
+  auto hasNextSymbol = extractSymbolConstantAttr(cast<TypedAttr>(hasNext));
+  if (!hasNextSymbol) {
     parent->setToError(ErrorTree(op.getLoc(),
                                  "INTERNAL ERROR: paramfor_has_next should "
                                  "resolve to a concrete function"));
     return failure();
   }
-  ErrorTreeOr<FuncOp> hasNextFunc = getConcreteFunction(
-      parent, op.getLoc(), cast<SymbolConstantAttr>(hasNext));
+  ErrorTreeOr<FuncOp> hasNextFunc =
+      getConcreteFunction(parent, op.getLoc(), hasNextSymbol);
   if (hasNextFunc.isError()) {
     parent->setToError(hasNextFunc.takeError());
     return failure();
@@ -1201,14 +1203,16 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     return ElaborationState::skipNode();
 
   // Concretize the sequence generator function.
-  if (!isa<SymbolConstantAttr>(getNextIter)) {
+  auto getNextIterSymbol =
+      extractSymbolConstantAttr(cast<TypedAttr>(getNextIter));
+  if (!getNextIterSymbol) {
     parent->setToError(
         ErrorTree(op.getLoc(), "INTERNAL ERROR: paramfor_get_next_iter should "
                                "resolve to a concrete function"));
     return failure();
   }
-  ErrorTreeOr<FuncOp> getNextIterFunc = getConcreteFunction(
-      parent, op.getLoc(), cast<SymbolConstantAttr>(getNextIter));
+  ErrorTreeOr<FuncOp> getNextIterFunc =
+      getConcreteFunction(parent, op.getLoc(), getNextIterSymbol);
   if (getNextIterFunc.isError()) {
     parent->setToError(getNextIterFunc.takeError());
     return failure();
@@ -1941,7 +1945,7 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   StringRef emissionLinkOptionsStr =
       cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
 
-  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(op.getFuncAttr());
+  SymbolConstantAttr symbol = extractSymbolConstantAttr(op.getFuncAttr());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(op.getLoc(), "compile_offload", symbol,
                              /*allowParametric=*/false,
@@ -1992,6 +1996,14 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
         [&](SymbolConstantAttr ref)
+            -> std::optional<std::pair<Attribute, WalkResult>> {
+          if (ref != symbol)
+            exportedSymbols.insert(
+                {ref.getSymbol().getRootReference(), ExportKind::NotExported});
+          return std::nullopt;
+        });
+    replacer.addReplacement(
+        [&](FuncSymbolAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {
           if (ref != symbol)
             exportedSymbols.insert(

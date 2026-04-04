@@ -226,7 +226,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
   // Attempt to concretize the function first.
   ErrorTreeOr<FuncOp> funcOr = elaborator->getConcreteFunction(
-      parent, *errorLoc, cast<SymbolConstantAttr>(op.getOperands().front()));
+      parent, *errorLoc, extractSymbolConstantAttr(op.getOperands().front()));
   if (funcOr.isError()) {
     emitError(funcOr.takeError());
     return failure();

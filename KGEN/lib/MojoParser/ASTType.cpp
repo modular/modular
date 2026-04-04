@@ -527,7 +527,12 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
             dyn_cast_or_null<StructDeclOp>(structDecl->getIfOperation()))
       if (TypeAttr targetMlirType = structOp.getNonmaterializableTargetAttr())
         return ASTType(targetMlirType.getValue());
+  } else if (auto f = sugarDynCast<FnLiteralTypeGeneratorType>(mlirType)) {
+    // A function literal is non-materializable, the nonmaterializable target is
+    // the function pointer type.
+    return f.getTargetLiteral().getType();
   }
+
   return {};
 }
 
@@ -939,7 +944,7 @@ ASTType ASTType::getKwargsDictRefValueType() const {
 /// Returns the user-defined result type, looking through implicit memory
 /// results and stripping off the variant from error throwing results if needed.
 ASTType ASTType::getSignatureUserResultType() const {
-  auto sigGenType = cast<FnTypeGeneratorType>(mlirType);
+  auto sigGenType = FnOrFnLiteralTypeGeneratorType::get(mlirType);
   return LIT::getSignatureUserResultType(sigGenType, sigGenType.getArguments(),
                                          sigGenType.getResults().front());
 }

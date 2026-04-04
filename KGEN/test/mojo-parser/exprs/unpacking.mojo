@@ -57,7 +57,7 @@ def test_unbound_pack():
     # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": meta<!lit.struct<#StructWithVariadic <:!Int ?, :variadic<!Int> ?>
     comptime unbound_variadic = StructWithVariadic[...]
 
-    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a": variadic<!Int> pos_vararg>() -> !kgen.none>
+    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a": variadic<!Int> pos_vararg>!kgen.func.literal<{{.*}}() -> !kgen.none>
     comptime unpack_variadic = variadic_params[...]
 
     # CHECK: lit.call {{.*}}variadic_params{{.*}}<:variadic<!Int> []>()

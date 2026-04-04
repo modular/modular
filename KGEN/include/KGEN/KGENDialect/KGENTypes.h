@@ -55,6 +55,9 @@ public:
       ArrayRef<ArgConvention> argConvs = {}, FnEffects effects = {},
       Attribute fnMetadata = {}, Attribute genMetadata = {});
 
+  static FuncTypeGeneratorType get(ArrayRef<Type> inputParamTypes, FuncType sig,
+                                   Attribute genMetadata);
+
   /// Get this GeneratorType with some parameters bound.
   FuncTypeGeneratorType
   getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
@@ -107,7 +110,7 @@ public:
                           Location location);
 
   // Unwrap the target literal from the literal type.
-  SymbolConstantAttr getConstantTargetLiteral();
+  SymbolConstantAttr getTargetLiteral();
 
   FuncLiteralType getBody();
   FuncLiteralType getInstantiatedBody();

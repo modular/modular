@@ -363,10 +363,20 @@ class FnOrFnLiteralTypeGeneratorType
 
 public:
   using FnTypeWrapperGeneratorType::FnTypeWrapperGeneratorType;
-  FnOrFnLiteralTypeGeneratorType(FnTypeGeneratorType gen)
-      : FnTypeWrapperGeneratorType(gen) {}
-  FnOrFnLiteralTypeGeneratorType(FnLiteralTypeGeneratorType gen)
-      : FnTypeWrapperGeneratorType(gen) {}
+  /*implicit*/ FnOrFnLiteralTypeGeneratorType(FuncTypeGeneratorType gen)
+      : FnTypeWrapperGeneratorType(sugarCast<FnTypeGeneratorType>(gen)) {}
+  /*implicit*/ FnOrFnLiteralTypeGeneratorType(FuncLiteralTypeGeneratorType gen)
+      : FnTypeWrapperGeneratorType(sugarCast<FnLiteralTypeGeneratorType>(gen)) {
+  }
+
+  static std::optional<FnOrFnLiteralTypeGeneratorType> tryGet(Type gen) {
+    if (auto fnTypeGen = sugarDynCast<FnTypeGeneratorType>(gen))
+      return fnTypeGen;
+    else if (auto fnLiteralGen = sugarDynCast<FnLiteralTypeGeneratorType>(gen))
+      return fnLiteralGen;
+    return std::nullopt;
+  }
+  static FnOrFnLiteralTypeGeneratorType get(Type gen) { return *tryGet(gen); }
 
   // Delegates to SmartVariant
   FnTypeGeneratorType getIfFnTypeGenerator() {
@@ -388,6 +398,14 @@ public:
     if (auto fnGen = getIfFnTypeGenerator())
       return fnGen.getMetadata();
     return getIfFnLiteralTypeGenerator().getMetadata();
+  }
+
+  // Debug Util.
+  void dump() {
+    if (auto fnGen = getIfFnTypeGenerator())
+      fnGen.dump();
+
+    getIfFnLiteralTypeGenerator().dump();
   }
 };
 
@@ -483,7 +501,7 @@ public:
 /// Returns the user-defined result type of a signature, looking through
 /// implicit memory results and stripping off the variant from error throwing
 /// results if needed.
-Type getSignatureUserResultType(FnTypeGeneratorType sigType,
+Type getSignatureUserResultType(FnOrFnLiteralTypeGeneratorType sigType,
                                 ArrayRef<Type> argTypes, Type resultType);
 
 /// The Lit parser and KGEN have different semantics for binding function

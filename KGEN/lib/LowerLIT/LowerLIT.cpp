@@ -816,6 +816,27 @@ static void lowerAttributesAndTypes(
 
   auto *debugInfoDialect =
       op->getContext()->getLoadedDialect<DebugInfo::DebugInfoDialect>();
+
+  auto removeSingletonParams = [&](auto attr) -> decltype(attr) {
+    SymbolRefAttr flatRef =
+        cast<SymbolRefAttr>(replacer.replace(attr.getSymbol()));
+    // Check the name & the number of params to ensure we don't operate on
+    // SymbolConstantAttrs/FuncSymbolAttr that have already been processed.
+    if (auto it = symbolDroppedParamDecls.find(flatRef.getLeafReference());
+        it != symbolDroppedParamDecls.end() &&
+        it->second.size() == attr.getParamValues().size()) {
+      SmallVector<TypedAttr> remainingParams;
+      for (auto [idx, value] : llvm::enumerate(attr.getParamValues()))
+        if (!it->second[idx])
+          remainingParams.push_back(cast<TypedAttr>(replacer.replace(value)));
+      return decltype(attr)::get(
+          flatRef,
+          cast<decltype(attr.getType())>(replacer.replace(attr.getType())),
+          remainingParams);
+    }
+    return nullptr;
+  };
+
   replacer.addReplacement(
       [&](TypedAttr attr) -> std::optional<std::pair<TypedAttr, WalkResult>> {
         if (&attr.getDialect() == debugInfoDialect)
@@ -827,28 +848,14 @@ static void lowerAttributesAndTypes(
           return std::make_pair(value, WalkResult::advance());
 
         // Remove singleton parameter values from SymbolConstantAttr.
-        if (auto symCst = dyn_cast<SymbolConstantAttr>(attr)) {
-          SymbolRefAttr flatRef =
-              cast<SymbolRefAttr>(replacer.replace(symCst.getSymbol()));
-          // Check the name & the number of params to ensure we don't operate on
-          // SymbolConstantAttrs that have already been processed.
-          if (auto it =
-                  symbolDroppedParamDecls.find(flatRef.getLeafReference());
-              it != symbolDroppedParamDecls.end() &&
-              it->second.size() == symCst.getParamValues().size()) {
-            SmallVector<TypedAttr> remainingParams;
-            for (auto [idx, value] : llvm::enumerate(symCst.getParamValues()))
-              if (!it->second[idx])
-                remainingParams.push_back(
-                    cast<TypedAttr>(replacer.replace(value)));
-            return std::make_pair(
-                SymbolConstantAttr::get(flatRef,
-                                        cast<FuncTypeGeneratorType>(
-                                            replacer.replace(symCst.getType())),
-                                        remainingParams),
-                WalkResult::skip());
-          }
-        }
+        if (auto symCst = dyn_cast<SymbolConstantAttr>(attr))
+          if (auto newSymCst = removeSingletonParams(symCst))
+            return std::make_pair(newSymCst, WalkResult::skip());
+
+        // Remove singleton parameter values from FuncSymbolAttr.
+        if (auto funcSym = dyn_cast<FuncSymbolAttr>(attr))
+          if (auto newFuncSym = removeSingletonParams(funcSym))
+            return std::make_pair(newFuncSym, WalkResult::skip());
 
         // Remove singleton parameter values from BindParamsAttr.
         if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {

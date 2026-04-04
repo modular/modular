@@ -492,6 +492,10 @@ FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
 
 TypedAttr FnOp::getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
                                         ParameterExprArrayAttr bindings) {
+  // legacy @parameter closure is not a function literal.
+  if (getParamDeclAttr())
+    return getBoundReference(evalContext, bindings);
+
   SmallVector<TypedAttr> paramValues;
   FnTypeGeneratorType fullSig = getFullSignature();
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
@@ -505,8 +509,30 @@ TypedAttr FnOp::getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
                                        fullSig.getMetadata());
-  if (!bindings)
+  if (!bindings || llvm::all_of(bindings, [](TypedAttr binding) {
+        return isa<UnboundAttr>(binding);
+      })) {
+    // If all the provided bindings are unbound, return the original generator.
+    // FIXME: this is a hack to avoid the bug when UnboundAttr erased type
+    // dependencies, which results in BindParamsAttr being folded in a wrong
+    // way.
+    //
+    // E.g.,
+    //
+    // def takeClosure[
+    //     origins: OriginSet,
+    //     //,
+    //     f: def() capturing[origins] -> None,
+    // ]():
+    //     pass
+    //
+    // where
+    //
+    // `f: def() capturing[origins]` will be replaced to
+    // `f: def() capturing[  ?    ]`. This will make the type dependency on
+    // `origins` unrecoverable.
     return unboundGen;
+  }
   return BindParamsAttr::get(unboundGen, bindings, &evalContext);
 }
 
@@ -955,8 +981,7 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         StringAttr(), DocStringAttr(),
         /*deprecationInfo=*/{},
         /*hasStableDecorator=*/none, /*stableSinceVersion=*/{},
-        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute(),
-        /*asLiteral=*/none);
+        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
   result.regions[0]->push_back(new Block());
 }
 

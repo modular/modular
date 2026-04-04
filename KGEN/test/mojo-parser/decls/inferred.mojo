@@ -91,15 +91,15 @@ def test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: inferred_dependent_param{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y, :!lit.struct<#DependentParam <:!Int x, :!lit.struct<#ParamType <:!Int x>> y>> z>()
     inferred_dependent_param[x=x, z]()
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +>("z": !lit.struct<#ParamType <:!Int *(0,0)>>)
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +>!kgen.func.literal<{{.*}}("z": !lit.struct<#ParamType <:!Int *(0,0)>>)
     comptime partially_bound = inferred_partial[1]
     # CHECK: lit.call tail @inferred::@"inferred_partial{{.*}}"<:!Int x, :!Int {1}>(
     partially_bound(y)
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +, "z": !lit.struct<#ParamType <:!Int *(0,0)>>
-    # CHECK-SAME: inferred_partial_dependent{{.*}}<:!Int ?, :!Int {1}, :!lit.struct<#ParamType <:!Int ?>> ?>>
+    # CHECK-SAME: inferred_partial_dependent{{.*}}<:!Int *(0,0), :!Int {1}, :!lit.struct<#ParamType <:!Int *(0,0)>> *(0,1)>>
     comptime partially_bound_dependent = inferred_partial_dependent[1, ...]
-    # CHECK-NEXT: !lit.generator<() -> !kgen.none> = <{{.*}}inferred_partial_dependent{{.*}}<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
+    # CHECK-NEXT: !lit.generator<<>!kgen.func.literal<{{.*}}inferred_partial_dependent{{.*}}<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound = partially_bound_dependent[y]
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: meta<!lit.struct<#InferredStruct <:!Int ?, :!Int {1}, :!lit.struct<#ParamType <:!Int ?>> ?>,

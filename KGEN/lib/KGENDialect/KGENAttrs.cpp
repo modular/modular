@@ -1333,9 +1333,10 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   SmallVector<Operation *> symbolOps;
   {
     VerboseCompilerTimeTraceScope traceScope("lookupSymbolIn");
-    if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps)))
+    if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps))) {
       return emitError(loc)
              << symbol << " does not reference a KGEN declaration";
+    }
   }
 
   // The leaf symbol must refer to a function.

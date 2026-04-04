@@ -440,7 +440,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
 /// will succeed.
 static LogicalResult emitOperandsNeedingOriginsToMemory(
     const OperandsNeedingOriginsList &operandsNeedingOrigins,
-    FnTypeGeneratorType expectedSig, CallOperands &operands,
+    FnOrFnLiteralTypeGeneratorType expectedSig, CallOperands &operands,
     IREmitter &emitter) {
   assert(!operandsNeedingOrigins.empty() && "should emit something");
 
@@ -790,8 +790,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       // loop because there is a forward progress guarantee here.
       if (failed(emitOperandsNeedingOriginsToMemory(
               bestFitness.getOperandsNeedingOrigins(),
-              cast<FnTypeGeneratorType>(boundFunction.getType()), operands,
-              emitter)))
+              FnOrFnLiteralTypeGeneratorType::get(boundFunction.getType()),
+              operands, emitter)))
         return {};
 
       // Now that we mutated the operand list by introducing some new memory
@@ -835,7 +835,8 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
-  if (!sugarIsa<FnTypeGeneratorType>(functionType)) {
+  if (!sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(
+          functionType)) {
     if (emitError && !sugarIsa<TypeCheckErrorType>(functionType)) {
       auto &diag = emitError(getExprLoc())
                    << "cannot convert function to non-function type "
@@ -856,8 +857,8 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
   //
   // TODO: We could also support generating a lambda for fancy implicit
   // conversions and subtyping some day.
-  auto getBindingsAndBoundCandidateType = [&](FnTypeGeneratorType candidateType)
-      -> std::pair<ParameterExprArrayAttr, FnTypeGeneratorType> {
+  auto getBindingsAndBoundCandidateType = [&](LITGeneratorType candidateType)
+      -> std::pair<ParameterExprArrayAttr, LITGeneratorType> {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
@@ -879,7 +880,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     return {newBindings, candidateType};
   };
   auto getBindingsIfValidCandidate =
-      [&](FnTypeGeneratorType candidateType) -> ParameterExprArrayAttr {
+      [&](LITGeneratorType candidateType) -> ParameterExprArrayAttr {
     auto [newBindings, boundCandidateType] =
         getBindingsAndBoundCandidateType(candidateType);
     if (!boundCandidateType)
@@ -898,13 +899,18 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
   SmallVector<ParameterExprArrayAttr> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
     // Skip functions explicitly marked as 'disabled'.
-    if (candidate->isDisabled())
+    if (candidate->isDisabled() ||
+        // FIXME: This candidate should not be put into the overload set at the
+        // first place! There must be some bugs...
+        candidate->resolvedness < DeclResolvedness::signature)
       continue;
 
-    FnTypeGeneratorType candidateType =
-        cast<FnOp>(candidate->getIfOperation()).getFullSignature();
-    if (ParameterExprArrayAttr bindings =
-            getBindingsIfValidCandidate(candidateType)) {
+    Type candidateType =
+        cast<FnOp>(candidate->getIfOperation())
+            .getFuncLiteralGenerator(getShared().getEvaluationContext())
+            .getType();
+    if (ParameterExprArrayAttr bindings = getBindingsIfValidCandidate(
+            sugarCast<LITGeneratorType>(candidateType))) {
       validCandidates.push_back(candidate);
       candidateBindings.push_back(bindings);
     }
@@ -1218,7 +1224,7 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
   [[maybe_unused]] auto calleeSignature =
-      cast<FnTypeGeneratorType>(directSymbolAttr.getType().mlirType);
+      FnOrFnLiteralTypeGeneratorType::get(directSymbolAttr.getType().mlirType);
 
   if (!calleeSignature.getArguments().empty())
     assert(!calleeSignature.isAnyVarArg(0) &&
@@ -1251,7 +1257,7 @@ CValue IREmitter::emitIndirectCallInTryBlock(
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
   ValueDest callDest(dest.getContext());
 
-  auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
+  auto calleeSig = FnOrFnLiteralTypeGeneratorType::get(callee.getRValueType());
   auto callExpr = operands.callExpr;
   auto loc = translateLocation(callExpr->getLoc());
 
@@ -1362,6 +1368,14 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
 
 CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
                                    ValueDest &dest) {
+  if (auto calleeSig =
+          sugarDynCast<FuncLiteralTypeGeneratorType>(callee.getRValueType())) {
+    // An indirect call to a function literal typed candidate becomes a direct
+    // call to the literal itself.
+    auto target = calleeSig.getTargetLiteral();
+    return emitIndirectCall(target, std::move(operands), dest);
+  }
+
   auto callExpr = operands.callExpr;
   auto calleeSig = sugarDynCast<FuncTypeGeneratorType>(callee.getRValueType());
   if (!calleeSig) {
@@ -1623,8 +1637,8 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   // it returns the right thing we were expecting.  It is possible that
   // conditional conformances constrain the result type more than we were
   // expecting.
-  auto resultTy =
-      cast<FnTypeGeneratorType>(result.get().getType()).getUserResultType();
+  auto resultTy = FnOrFnLiteralTypeGeneratorType::get(result.get().getType())
+                      .getUserResultType();
   auto &shared = paramEmitter.shared;
   if (!requiredType.isEqualCanon(resultTy)) {
     // It is ok if the self type has different parameters than the

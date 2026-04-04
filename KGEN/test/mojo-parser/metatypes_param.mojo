@@ -60,7 +60,7 @@ def unbound_alias():
     comptime unbound_value = Unbound[2].value
     # CHECK: call {{.*}}@Param::@"foo()"<:!Int {2}>
     Unbound[2].foo()
-    # CHECK: unbound_function{{.*}}: !lit.generator<<"x": !Int, +>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<:!Int ?>>
+    # CHECK: unbound_function{{.*}}: !lit.generator<<"x": !Int, +>!kgen.func.literal<{{.*}}@Param::@"foo()"<:!Int *(0,0)>>
     comptime unbound_function = Unbound.foo
 
     # COM: Test fully unbound alias can be fully bound.
@@ -76,9 +76,9 @@ def partially_bound_alias():
     comptime PartiallyBound = TwoParam[1, _]
 
     # COM: Test taking a function from a partially bound type.
-    # CHECK: [[PBOUND_FN:\*"PartiallyBounddef.*]]: !lit.generator<<"y": !Int, +>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int ?>>
+    # CHECK: [[PBOUND_FN:\*"PartiallyBounddef.*]]: !lit.generator<<"y": !Int, +>!kgen.func.literal<{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int *(0,0)>>
     comptime PartiallyBounddef = PartiallyBound.foo
-    # CHECK: FullyBounddef{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
+    # CHECK: FullyBounddef{{.*}}@metatypes_param::@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
     comptime FullyBounddef = PartiallyBounddef[y=2]
 
     # COM: Test fully binding a partially bound type.
@@ -89,7 +89,7 @@ def partially_bound_alias():
     comptime first = BoundFromPartial.first
     # CHECK: second{{.*}} = <sugar_member_alias(!alias_BoundFromPartial1, "second", {2})>
     comptime second = BoundFromPartial.second
-    # CHECK: def_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
+    # CHECK: def_from_bound{{.*}}@metatypes_param::@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
     comptime def_from_bound = BoundFromPartial.foo
 
 

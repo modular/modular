@@ -79,7 +79,7 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::interpretGeneratorWithResultSlot(
 
   ParametricIREvaluator nestedEvaluator(*this);
   nestedEvaluator.setErrorLoc(loc);
-  auto callee = cast<SymbolConstantAttr>(calleeAttr);
+  auto callee = extractSymbolConstantAttr(cast<TypedAttr>(calleeAttr));
   ErrorOr<std::pair<Region *, Operation *>> bodyOr =
       nestedEvaluator.lookupParametricFunctionBody(callee.getSymbol());
 
@@ -127,7 +127,7 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::interpretGenerator(
   ParametricIREvaluator nestedEvaluator(*this);
   nestedEvaluator.setErrorLoc(loc);
 
-  auto callee = cast<SymbolConstantAttr>(calleeAttr);
+  auto callee = extractSymbolConstantAttr(cast<TypedAttr>(calleeAttr));
   auto bodyOr =
       nestedEvaluator.lookupParametricFunctionBody(callee.getSymbol());
   if (bodyOr.isError())
@@ -574,7 +574,7 @@ FailureOr<TypedAttr>
 ParametricIREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot) {
   auto symbol =
-      cast<SymbolConstantAttr>(getReboundAttribute(op.getOperands().front()));
+      extractSymbolConstantAttr(getReboundAttribute(op.getOperands().front()));
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   auto gen = elaborator->oldSymTab.lookup<GeneratorOp>(name);
 

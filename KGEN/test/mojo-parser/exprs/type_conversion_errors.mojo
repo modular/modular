@@ -60,7 +60,7 @@ struct Constructible:
 
 
 def init_self_conversion():
-    # expected-error @below {{cannot implicitly convert 'def(arg: Int) -> Constructible' value to 'def() -> None'}}
+    # expected-error @below {{cannot implicitly convert 'def __init__(arg: Int) -> Constructible' value to 'def() -> None'}}
     comptime f: def () -> None = Constructible.__init__
 
 

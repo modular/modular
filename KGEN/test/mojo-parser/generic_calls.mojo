@@ -14,6 +14,7 @@
 struct RegPassable(ImplicitlyCopyable, RegisterPassable):
     pass
 
+
 @fieldwise_init
 struct MemOnly(ImplicitlyCopyable):
     pass
@@ -76,5 +77,5 @@ def test_borrowed(x: RegPassable, y: MemOnly):
 
 # CHECK-LABEL: lit.fn @"function_reference
 def function_reference():
-    # CHECK: create_closure[{{.*}}@"function_reference
+    # CHECK: kgen.param.constant: {{.*}}#kgen.func.symbol<@generic_calls::@"function_reference()"
     borrowed_generic(function_reference)
