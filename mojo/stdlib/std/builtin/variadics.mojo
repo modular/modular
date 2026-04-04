@@ -26,7 +26,7 @@ struct Variadic:
     """A namespace for variadic utilities."""
 
     comptime ValuesOfType[type: AnyType] = __mlir_type[
-        `!kgen.variadic<`, type, `>`
+        `!kgen.param_list<`, type, `>`
     ]
     """Represents a raw variadic sequence of values of the specified type.
 
@@ -35,7 +35,7 @@ struct Variadic:
     """
 
     comptime TypesOfTrait[T: type_of(AnyType)] = __mlir_type[
-        `!kgen.variadic<`, T, `>`
+        `!kgen.param_list<`, T, `>`
     ]
     """Represents a raw variadic sequence of types that satisfy the specified trait.
 
@@ -82,7 +82,7 @@ struct Variadic:
     # ===-----------------------------------------------------------------------===#
 
     comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+        `#kgen.variadic<>: !kgen.param_list<`, T, `>`
     ]
     """Empty comptime variadic of type values.
 
@@ -91,7 +91,7 @@ struct Variadic:
     """
 
     comptime empty_of_type[T: AnyType] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+        `#kgen.variadic<>: !kgen.param_list<`, T, `>`
     ]
     """Empty comptime variadic of values.
 
@@ -368,7 +368,7 @@ struct Variadic:
     ] = __mlir_attr[
         `#kgen.variadic.zip<`,
         types,
-        `> : !kgen.variadic<`,
+        `> : !kgen.param_list<`,
         Variadic.TypesOfTrait[Trait],
         `>`,
     ]
@@ -385,7 +385,7 @@ struct Variadic:
     ] = __mlir_attr[
         `#kgen.variadic.zip<`,
         values,
-        `> : !kgen.variadic<`,
+        `> : !kgen.param_list<`,
         Variadic.ValuesOfType[type],
         `>`,
     ]
@@ -1194,7 +1194,7 @@ struct VariadicPack[
     """
 
     comptime _mlir_type = __mlir_type[
-        `!lit.ref.pack<:variadic<`,
+        `!lit.ref.pack<:param_list<`,
         Self.element_trait,
         `> `,
         Self.element_types,
@@ -1357,7 +1357,7 @@ struct VariadicPack[
     references.
     """
     comptime _kgen_pack_with_pointer_type = __mlir_type[
-        `!kgen.pack<:variadic<type> `, Self._variadic_pointer_types, `>`
+        `!kgen.pack<:param_list<type> `, Self._variadic_pointer_types, `>`
     ]
     """This is the !kgen.pack type with pointer elements."""
 
@@ -1376,7 +1376,9 @@ struct VariadicPack[
         Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
-        `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`
+        `!kgen.pack<:param_list<type> `,
+        Self._variadic_with_pointers_removed,
+        `>`,
     ]
     """This is the `!kgen.pack` type that happens if one loads all the elements
     of the pack.
@@ -1520,7 +1522,7 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
-    `, "From": !kgen.variadic<`,
+    `, "From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -1579,7 +1581,7 @@ comptime _ReduceValueIdxGeneratorTypeGenerator[
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
-    `, "From": !kgen.variadic<`,
+    `, "From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -1710,7 +1712,7 @@ comptime _TypeToTypeGenerator[
 comptime _VariadicIdxToTypeGeneratorTypeGenerator[
     From: type_of(AnyType), To: type_of(AnyType)
 ] = __mlir_type[
-    `!lit.generator<<"From": !kgen.variadic<`,
+    `!lit.generator<<"From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -1759,7 +1761,7 @@ Parameters:
 comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
     From: AnyType, To: type_of(AnyType)
 ] = __mlir_type[
-    `!lit.generator<<"From": !kgen.variadic<`,
+    `!lit.generator<<"From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,

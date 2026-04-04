@@ -733,7 +733,7 @@ def wgmma_async[
         _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
                 width._mlir_value,
@@ -860,7 +860,7 @@ def wgmma_async[
         _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
                 width._mlir_value,

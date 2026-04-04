@@ -167,7 +167,7 @@ comptime llvm_struct_splat[
 ] = __mlir_type[
     `!llvm.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         +field_type,
         `, `,
         repeat._mlir_value,
@@ -181,7 +181,7 @@ comptime kgen_struct_splat[
 ] = __mlir_type[
     `!kgen.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         +field_type,
         `, `,
         repeat._mlir_value,
