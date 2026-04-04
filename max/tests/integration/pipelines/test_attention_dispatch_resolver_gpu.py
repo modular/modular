@@ -217,7 +217,12 @@ def test_mha_dispatch_resolver_matches_reference_graph(
     np.testing.assert_array_equal(
         metadata,
         np.array(
-            [batch_size, 1, expected_num_partitions, max_cache_valid_length],
+            [
+                batch_size,
+                max_prompt_length,
+                expected_num_partitions,
+                max_cache_valid_length,
+            ],
             dtype=np.int64,
         ),
     )

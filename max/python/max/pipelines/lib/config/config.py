@@ -124,6 +124,7 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
     "Gemma4ForConditionalGeneration",
+    "UnifiedEagleLlama3ForCausalLM",
 )
 
 
@@ -492,9 +493,12 @@ class PipelineConfig(ConfigFileModel):
             else:
                 sampling_config = config_class(**matched_kwargs)
 
+            is_standalone_spec_decoding = (
+                self.speculative and self.speculative.is_standalone()
+            )
             if (
                 "main" in self.models and self.model.enable_echo
-            ) or self.draft_model:
+            ) or is_standalone_spec_decoding:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -804,6 +808,11 @@ class PipelineConfig(ConfigFileModel):
                 and max_batch_size is not None
                 and accelerator_api() == "cuda"
                 and self._is_eligible_for_overlap_serve_optimizations()
+                # TODO: Support device graph capture for num_speculative_tokens > 1
+                and (
+                    self.speculative is None
+                    or self.speculative.num_speculative_tokens == 1
+                )
             ):
                 self.runtime.device_graph_capture = True
                 logger.info(

@@ -1291,6 +1291,7 @@ class TestSamplingConfig:
         ("DeepseekV32ForCausalLM", 16, False, True, True),
         ("DeepseekV3ForCausalLMNextN", 16, False, True, True),
         ("KimiK25ForConditionalGeneration", 16, False, True, True),
+        ("UnifiedEagleLlama3ForCausalLM", 16, False, True, True),
         ("LlamaForCausalLM", 16, False, False, False),
         ("LlamaForCausalLM", None, False, True, False),
         ("LlamaForCausalLM", 16, True, True, False),
@@ -1552,3 +1553,52 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+@pytest.mark.parametrize(
+    "num_speculative_tokens,expected_device_graph_capture",
+    [
+        (1, True),
+        (2, False),
+        (5, False),
+    ],
+    ids=["1_spec_token", "2_spec_tokens", "5_spec_tokens"],
+)
+def test_auto_device_graph_capture_eagle_gating(
+    num_speculative_tokens: int,
+    expected_device_graph_capture: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Eagle arch auto-enables graph capture only when num_speculative_tokens <= 1."""
+    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    arch = SimpleNamespace(name="UnifiedEagleLlama3ForCausalLM")
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+    monkeypatch.setattr(
+        "max.pipelines.lib.config.config.accelerator_api",
+        Mock(return_value="cuda"),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="eagle",
+            num_speculative_tokens=num_speculative_tokens,
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=16),
+    )
+    config._validate_and_resolve_overlap_scheduler()
+
+    assert config.runtime.device_graph_capture is expected_device_graph_capture

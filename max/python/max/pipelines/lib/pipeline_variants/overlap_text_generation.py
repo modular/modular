@@ -91,6 +91,7 @@ from max.interfaces import (
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
+    SpecDecodingState,
     TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -98,6 +99,7 @@ from max.interfaces import (
 )
 from max.interfaces.tokens import TokenBuffer
 from max.kv_cache import PagedKVCacheManager
+from max.kv_cache.paged_kv_cache.cache_manager import _contiguous_prefix_2d
 from max.kv_cache.registry import load_multi_kv_managers
 from max.nn import kernels
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
@@ -186,6 +188,11 @@ class SpecDecodeState:
     metrics: SpeculativeDecodingMetrics
     """The metrics for speculative decoding."""
 
+    persistent_draft_tokens: Buffer
+    """Persistent input buffer for draft tokens.
+
+    A stable buffer must be used for inputs to device graphs."""
+
     @classmethod
     def load(
         cls,
@@ -229,11 +236,22 @@ class SpecDecodeState:
             num_speculative_tokens=num_speculative_tokens
         )
 
+        assert pipeline_config.runtime.max_batch_size is not None
+        persistent_draft_tokens = Buffer(
+            dtype=DType.int64,
+            shape=(
+                pipeline_config.runtime.max_batch_size,
+                num_speculative_tokens,
+            ),
+            device=model.devices[0],
+        )
+
         return SpecDecodeState(
             num_speculative_tokens=num_speculative_tokens,
             target_kv_manager=target_kv_manager,
             draft_kv_blocks=draft_kv_blocks,
             metrics=spec_decoding_metrics,
+            persistent_draft_tokens=persistent_draft_tokens,
         )
 
 
@@ -700,6 +718,17 @@ class OverlapTextGenerationPipeline(
     ) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
+
+        num_speculative_tokens = (
+            self._spec_decode_state.num_speculative_tokens
+            if self._spec_decode_state is not None
+            else 0
+        )
+        if num_speculative_tokens > 1:
+            raise ValueError(
+                "Speculative decoding with multiple tokens is not supported with Device Graph Capture."
+            )
+
         for _replica_idx in range(dp_size):
             replica_batches.append(
                 [
@@ -710,6 +739,9 @@ class OverlapTextGenerationPipeline(
                         ),
                         eos_tracker=EOSTracker(),
                         model_name=self._pipeline_config.model.model_name,
+                        _spec_decoding_state=SpecDecodingState(
+                            saved_draft_tokens=[0] * num_speculative_tokens,
+                        ),
                     )
                     for idx in range(batch_size)
                 ]
@@ -719,23 +751,62 @@ class OverlapTextGenerationPipeline(
         # all caches, replace with a plain `with` statement.
         with ExitStack() as stack:
             stack.enter_context(
-                self._kv_manager.reserve(replica_batches, num_steps=1)
+                self._kv_manager.reserve(
+                    replica_batches,
+                    num_steps=1,
+                    num_speculative_steps=num_speculative_tokens,
+                )
             )
             for ekm in self._extra_kv_managers:
-                stack.enter_context(ekm.reserve(replica_batches, num_steps=1))
+                stack.enter_context(
+                    ekm.reserve(
+                        replica_batches,
+                        num_steps=1,
+                        num_speculative_steps=num_speculative_tokens,
+                    )
+                )
             max_cache_length = self._effective_max_cache_length
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
                 num_steps=1,
                 max_cache_length=max_cache_length,
+                num_speculative_steps=num_speculative_tokens,
+            )
+
+            return_n_logits = (
+                num_speculative_tokens + 1
+                if self._spec_decode_state is not None
+                else 0
             )
             with Tracer("prepare_initial_token_inputs"):
                 model_inputs = (
                     self._pipeline_model.prepare_initial_token_inputs(
                         replica_batches=replica_batches,
                         kv_cache_inputs=kv_cache_inputs,
+                        return_n_logits=return_n_logits,
                     )
                 )
+
+            if self._spec_decode_state is not None:
+                assert isinstance(model_inputs, _UnifiedEagleInputs)
+                draft_tokens = Buffer.from_numpy(
+                    np.zeros(
+                        (batch_size, num_speculative_tokens),
+                        dtype=np.int64,
+                    )
+                )
+                persistent_draft_tokens = (
+                    self._spec_decode_state.persistent_draft_tokens
+                )
+                persistent_draft_tokens = _contiguous_prefix_2d(
+                    persistent_draft_tokens, batch_size, num_speculative_tokens
+                )
+                persistent_draft_tokens.inplace_copy_from(draft_tokens)
+                model_inputs.draft_tokens = persistent_draft_tokens
+                model_inputs.draft_kv_blocks = (
+                    self._spec_decode_state.draft_kv_blocks
+                )
+
             yield model_inputs
 
     def warmup_graph_capture(self) -> None:
@@ -775,6 +846,12 @@ class OverlapTextGenerationPipeline(
             if self._extra_kv_managers
             else None
         )
+
+        num_speculative_tokens = (
+            self._spec_decode_state.num_speculative_tokens
+            if self._spec_decode_state is not None
+            else 0
+        )
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
             execute_model=self._pipeline_model.execute,
@@ -784,6 +861,7 @@ class OverlapTextGenerationPipeline(
             max_cache_length_upper_bound=self._effective_max_cache_length,
             max_batch_size=max_capture_batch_size,
             extra_dispatch_resolver=extra_resolver,
+            num_speculative_tokens=num_speculative_tokens,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size
@@ -807,9 +885,27 @@ class OverlapTextGenerationPipeline(
             )
 
     def _run_forward(
-        self, inputs: TextGenerationInputs[TextGenerationContextType]
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+        draft_tokens: Buffer | None = None,
     ) -> ModelOutputs:
-        """Runs the forward pass for the provided inputs and returns the ModelOutputs."""
+        """Runs the forward pass for the provided inputs and returns the ModelOutputs.
+
+        This handles both the non spec-decode and spec-decode paths. When running
+        with spec-decode, you must provide the draft tokens even when there are
+        no draft tokens to verify. In which case the shape is (batch_size, 0).
+        """
+        if draft_tokens is not None:
+            assert self._spec_decode_state is not None
+            num_speculative_steps = (
+                self._spec_decode_state.num_speculative_tokens
+            )
+            num_draft_tokens_to_verify = draft_tokens.shape[1]
+        else:
+            assert self._spec_decode_state is None
+            num_speculative_steps = 0
+            num_draft_tokens_to_verify = 0
+
         runner = self._graph_capture_runner
         batch_per_rank = max((len(b) for b in inputs.batches), default=0)
         use_graph_capture_replay = (
@@ -817,6 +913,7 @@ class OverlapTextGenerationPipeline(
             and bool(inputs)
             and inputs.batch_type == BatchType.TG
             and batch_per_rank <= self._max_graph_capture_batch_size
+            and (draft_tokens is None or num_draft_tokens_to_verify > 0)
         )
         debug_verify_replay_enabled = (
             use_graph_capture_replay
@@ -834,17 +931,24 @@ class OverlapTextGenerationPipeline(
                     inputs.batches,
                     num_steps=1,
                     max_cache_length=self._graph_capture_runner._max_cache_length_upper_bound,
+                    num_speculative_steps=num_speculative_steps,
                 )
         else:
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 inputs.batches,
                 num_steps=1,
+                num_speculative_steps=num_speculative_steps,
             )
+
+        return_n_logits = (
+            num_draft_tokens_to_verify + 1 if draft_tokens is not None else 0
+        )
 
         with Tracer("prepare_initial_token_inputs"):
             model_inputs = self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=inputs.batches,
                 kv_cache_inputs=kv_cache_inputs,
+                return_n_logits=return_n_logits,
             )
 
         if debug_verify_replay_enabled:
@@ -853,7 +957,9 @@ class OverlapTextGenerationPipeline(
             debug_verify_model_inputs = copy.copy(model_inputs)
             debug_verify_model_inputs.update(
                 kv_cache_inputs=self._kv_manager.runtime_inputs(
-                    inputs.batches, num_steps=1
+                    inputs.batches,
+                    num_steps=1,
+                    num_speculative_steps=num_speculative_steps,
                 )
             )
 
@@ -877,6 +983,15 @@ class OverlapTextGenerationPipeline(
             model_inputs.tokens = new_ragged_input_tokens
             if debug_verify_model_inputs is not None:
                 debug_verify_model_inputs.tokens = new_ragged_input_tokens
+
+        # Wrap the model inputs when speculative decoding is enabled.
+        if draft_tokens is not None:
+            assert self._spec_decode_state is not None
+            assert isinstance(model_inputs, _UnifiedEagleInputs)
+            model_inputs.draft_tokens = draft_tokens
+            model_inputs.draft_kv_blocks = (
+                self._spec_decode_state.draft_kv_blocks
+            )
 
         # Execute the model and get next tokens.
         try:
@@ -995,38 +1110,25 @@ class OverlapTextGenerationPipeline(
                     ctx.spec_decoding_state.saved_draft_tokens = []
 
         # Load or create draft tokens.
-        draft_tokens = np.zeros(
-            (len(context_batch), num_draft_tokens_to_verify), dtype=np.int64
+        draft_tokens_pinned = DevicePinnedBuffer(
+            shape=(len(context_batch), num_draft_tokens_to_verify),
+            dtype=DType.int64,
+            device=self._devices[0],
         )
+        draft_tokens_np = draft_tokens_pinned.to_numpy()
         if num_draft_tokens_to_verify:
             for i, ctx in enumerate(context_batch):
                 tokens = ctx.spec_decoding_state.saved_draft_tokens
                 assert len(tokens) == num_draft_tokens_to_verify
-                draft_tokens[i, :] = tokens
+                draft_tokens_np[i, :] = tokens
 
-        kv_cache_inputs = self._kv_manager.runtime_inputs(
-            inputs.batches,
-            num_steps=1,
-            num_speculative_steps=num_speculative_tokens,
+        draft_tokens_device = self._spec_decode_state.persistent_draft_tokens
+        draft_tokens_device = _contiguous_prefix_2d(
+            draft_tokens_device, len(context_batch), num_draft_tokens_to_verify
         )
+        draft_tokens_device.inplace_copy_from(draft_tokens_pinned)
 
-        return_n_logits = (
-            num_speculative_tokens + 1 if verify_draft_tokens else 1
-        )
-
-        model_inputs = self._pipeline_model.prepare_initial_token_inputs(
-            replica_batches=inputs.batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
-        assert isinstance(model_inputs, _UnifiedEagleInputs)
-        model_inputs.draft_tokens = Buffer.from_numpy(draft_tokens).to(
-            self._devices[0]
-        )
-        model_inputs.draft_kv_blocks = self._spec_decode_state.draft_kv_blocks
-
-        # Single graph call.
-        outputs = self._pipeline_model.execute(model_inputs)
+        outputs = self._run_forward(inputs, draft_tokens=draft_tokens_device)
         assert isinstance(outputs, UnifiedEagleOutputs)
 
         # Do the copy to host for each model output using pinned memory.
@@ -1080,7 +1182,7 @@ class OverlapTextGenerationPipeline(
         for batch_idx, ctx in enumerate(context_batch):
             for token_idx in range(num_accepted_draft_tokens_np[batch_idx]):
                 if not ctx.is_done:
-                    ctx.update(draft_tokens[batch_idx, token_idx])
+                    ctx.update(draft_tokens_np[batch_idx, token_idx])
             if not ctx.is_done:
                 ctx.update(next_tokens_np[batch_idx])
                 # Save the generated draft tokens for verification in next iteration.

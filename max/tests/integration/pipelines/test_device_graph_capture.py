@@ -28,6 +28,7 @@ from max.pipelines.lib import ModelInputs, ModelOutputs
 from max.pipelines.lib.graph_capture import (
     ServeGraphCaptureRunner,
 )
+from max.pipelines.lib.interfaces import UnifiedEagleOutputs
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
     mock_huggingface_config,
@@ -255,6 +256,7 @@ def _make_runner_for_resolve(
     *,
     data_parallel_degree: int = 1,
     is_mla: bool = False,
+    num_speculative_tokens: int = 0,
 ) -> ServeGraphCaptureRunner:
     """Creates a runner suitable for ``_resolve_replay_key`` tests."""
     output_buffer = Buffer.zeros((4,), dtype=DType.float32)
@@ -273,6 +275,7 @@ def _make_runner_for_resolve(
         warmup_model_inputs=MagicMock(),
         max_cache_length_upper_bound=1,
         max_batch_size=1,
+        num_speculative_tokens=num_speculative_tokens,
     )
 
 
@@ -415,3 +418,154 @@ def test_resolve_replay_key_q_seq_len_only_1_captured() -> None:
         inputs = _make_mock_inputs_with_kv(1, [kv])
         with pytest.raises(RuntimeError, match=rf"q_max_seq_len={q} != 1"):
             runner._resolve_replay_key(inputs)
+
+
+# ---------------------------------------------------------------------------
+# Tests for speculative token support in graph capture
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_replay_key_with_spec_tokens() -> None:
+    """With num_speculative_tokens=1, q_max_seq_len=2 resolves; =1 raises."""
+    runner = _make_runner_for_resolve(num_speculative_tokens=1)
+    dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
+    expected_q = 2  # 1 + num_speculative_tokens
+    runner.graph_entries[(1, 5, expected_q)] = (
+        (),
+        ModelOutputs(logits=dummy_buf),
+    )
+
+    kv_ok = _make_kv_per_device(
+        max_cache_len=100, num_partitions=5, q_max_seq_len=expected_q
+    )
+    inputs_ok = _make_mock_inputs_with_kv(1, [kv_ok])
+    assert runner._resolve_replay_key(inputs_ok) == (1, 5, expected_q)
+
+    kv_bad = _make_kv_per_device(
+        max_cache_len=100, num_partitions=5, q_max_seq_len=1
+    )
+    inputs_bad = _make_mock_inputs_with_kv(1, [kv_bad])
+    with pytest.raises(RuntimeError, match=r"q_max_seq_len=1 != 1"):
+        runner._resolve_replay_key(inputs_bad)
+
+
+def test_resolve_replay_key_zero_spec_tokens_backward_compat() -> None:
+    """Default (num_speculative_tokens=0) keeps original q_max_seq_len=1 behavior."""
+    runner = _make_runner_for_resolve(num_speculative_tokens=0)
+    dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
+    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=dummy_buf))
+
+    kv = _make_kv_per_device(
+        max_cache_len=100, num_partitions=5, q_max_seq_len=1
+    )
+    inputs = _make_mock_inputs_with_kv(1, [kv])
+    assert runner._resolve_replay_key(inputs) == (1, 5, 1)
+
+    kv_bad = _make_kv_per_device(
+        max_cache_len=100, num_partitions=5, q_max_seq_len=2
+    )
+    inputs_bad = _make_mock_inputs_with_kv(1, [kv_bad])
+    with pytest.raises(RuntimeError, match=r"q_max_seq_len=2 != 1"):
+        runner._resolve_replay_key(inputs_bad)
+
+
+class EagleDummyModel(DummyModel):
+    """DummyModel that returns 3 output buffers for Eagle capture."""
+
+    def capture(self, graph_key: int, *buffers: Buffer) -> list[Buffer]:
+        self.capture_calls.append((graph_key, list(buffers)))
+        return [
+            self.output_buffer,
+            self.output_buffer,
+            self.output_buffer,
+        ]
+
+
+def test_warmup_eagle_outputs_vs_model_outputs() -> None:
+    """Warmup produces UnifiedEagleOutputs when spec tokens > 0, else ModelOutputs."""
+    for num_spec, expected_type in [
+        (1, UnifiedEagleOutputs),
+        (0, ModelOutputs),
+    ]:
+        model: DummyModel
+        if num_spec > 0:
+            model = EagleDummyModel(Buffer.zeros((4,), dtype=DType.float32))
+        else:
+            model = DummyModel(Buffer.zeros((4,), dtype=DType.float32))
+
+        kv_params = MagicMock()
+        kv_params.devices = [DeviceRef.CPU()]
+        kv_params.n_kv_heads_per_device = 1
+        kv_params.is_mla = False
+        kv_params.data_parallel_degree = 1
+        kv_params.num_q_heads_per_device = 1
+        kv_params.is_fp8_kv_dtype = False
+
+        mock_inputs = MockModelInputs(
+            active_batch_size=1,
+            eos_prob=0.0,
+            kv_cache_inputs=KVCacheInputs(
+                inputs=[_make_kv_per_device(max_cache_len=10, num_partitions=1)]
+            ),
+        )
+
+        from collections.abc import Iterator
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _warmup_ctx(
+            batch_size: int,
+            num_steps: int,
+            _mi: MockModelInputs = mock_inputs,
+        ) -> Iterator[MockModelInputs]:
+            yield _mi
+
+        runner = ServeGraphCaptureRunner(
+            model=cast(Model, model),
+            execute_model=lambda mi: ModelOutputs(logits=mi.buffers[0]),
+            session=MagicMock(),
+            kv_params=kv_params,
+            warmup_model_inputs=_warmup_ctx,
+            max_cache_length_upper_bound=10,
+            max_batch_size=1,
+            num_speculative_tokens=num_spec,
+        )
+        runner.warmup_pre_ready()
+
+        assert len(runner.graph_entries) > 0
+        for key, (_inputs, outputs) in runner.graph_entries.items():
+            assert isinstance(outputs, expected_type), (
+                f"num_spec={num_spec}: expected {expected_type.__name__}, "
+                f"got {type(outputs).__name__}"
+            )
+            assert key[2] == 1 + num_spec
+
+
+def test_replay_returns_correct_output_type() -> None:
+    """replay() returns UnifiedEagleOutputs when num_speculative_tokens > 0."""
+    runner = _make_runner_for_resolve(num_speculative_tokens=1)
+    expected_q = 2
+    buf = Buffer.zeros((4,), dtype=DType.float32)
+    eagle_outputs = UnifiedEagleOutputs(
+        num_accepted_draft_tokens=buf,
+        next_tokens=buf,
+        next_draft_tokens=buf,
+    )
+
+    kv = _make_kv_per_device(
+        max_cache_len=100, num_partitions=5, q_max_seq_len=expected_q
+    )
+    capture_inputs = _make_mock_inputs_with_kv(1, [kv])
+    runner.graph_entries[(1, 5, expected_q)] = (
+        capture_inputs.buffers,
+        eagle_outputs,
+    )
+
+    replay_kv = _make_kv_per_device(
+        max_cache_len=100, num_partitions=5, q_max_seq_len=expected_q
+    )
+    replay_inputs = _make_mock_inputs_with_kv(1, [replay_kv])
+    output = runner.replay(model_inputs=replay_inputs)
+
+    assert isinstance(output, UnifiedEagleOutputs)
+    assert output.num_accepted_draft_tokens is buf
