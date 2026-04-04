@@ -20,7 +20,7 @@ from std.algorithm import map_reduce
 """
 
 from std.collections import OptionalReg
-from std.math import align_down, ceildiv
+from std.math import align_down, ceildiv, clamp
 from std.sys.info import align_of, simd_width_of, size_of
 
 from std.algorithm import sync_parallelize, vectorize
@@ -833,8 +833,7 @@ def map_reduce[
     Returns:
         The final reduced scalar value.
     """
-    comptime unroll_factor = 8  # TODO: search
-    # TODO: explicitly unroll like vectorize_unroll does.
+    comptime unroll_factor = clamp(simd_width // 4, 1, 8)
     comptime unrolled_simd_width = simd_width * unroll_factor
     var unrolled_vector_end = align_down(length, unrolled_simd_width)
     var vector_end = align_down(length, simd_width)
@@ -959,8 +958,7 @@ def reduce_boolean[
         The computed reduction value.
     """
     comptime simd_width = simd_width_of[dtype]()
-    comptime unroll_factor = 8  # TODO: search
-    # TODO: explicitly unroll like vectorize_unroll does.
+    comptime unroll_factor = clamp(simd_width // 4, 1, 8)
     comptime unrolled_simd_width = simd_width * unroll_factor
 
     var length = len(src)
