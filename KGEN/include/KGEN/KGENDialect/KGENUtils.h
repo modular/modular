@@ -553,4 +553,6 @@ inline ConstraintAttr getUnconditionalConstraint(MLIRContext *ctx) {
 
 } // namespace M::KGEN
 
+#include "Support/ADT/DenseStringMap.h" // IWYU pragma: keep
+
 #endif // KGEN_KGENDIALECT_KGENUTILS_H
