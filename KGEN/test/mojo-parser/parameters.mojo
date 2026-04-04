@@ -173,16 +173,16 @@ struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`]:
 
 # Test that parameter decls can refine subsequent ones in the same param list.
 # CHECK-LABEL: lit.struct.decl @ParamSubst
-# CHECK-SAME: <T: {{.*}}, shape: variadic<:!TrivialRegisterPassable T>>
+# CHECK-SAME: <T: {{.*}}, shape: param_list<:!TrivialRegisterPassable T>>
 struct ParamSubst[
     T: TrivialRegisterPassable,
-    shape: __mlir_type[`!kgen.variadic<`, T,`>`],
+    shape: __mlir_type[`!kgen.param_list<`, T,`>`],
   ]: pass
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 def testParamSubst():
-  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:variadic<index> [1, 2]>>,
-  var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
+  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:param_list<index> [1, 2]>>,
+  var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.param_list<index>`]
 
 
 # Test parameter substitution.
@@ -260,7 +260,7 @@ def implicit_params_with_var_params[*Ts: Int](s: TwoParams[1, _]): pass
 # CHECK-LABEL: lit.fn @"test_implicit_params_with_var_params
 def test_implicit_params_with_var_params():
     # CHECK: [[VAL0:%.*]] = lit.call {{.*}}@TwoParams::@"__init__{{.*}}<:!Int {1}, :!Int {2}>() :
-    # CHECK: call {{.*}}@"implicit_params_with_var_params{{.*}}<:variadic<!Int> [], :!Int {2}>([[VAL0]])
+    # CHECK: call {{.*}}@"implicit_params_with_var_params{{.*}}<:param_list<!Int> [], :!Int {2}>([[VAL0]])
     implicit_params_with_var_params(TwoParams[1, 2]())
 
 # CHECK-LABEL: lit.fn @"explicit_autoparameterization
@@ -332,7 +332,7 @@ def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () -> None]():
 
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
-# CHECK-SAME: <["f.__origins__`"]*"f.__origins__`": origin.set, +, f: {{.*}}, x: variadic<!Int> pos_vararg>
+# CHECK-SAME: <["f.__origins__`"]*"f.__origins__`": origin.set, +, f: {{.*}}, x: param_list<!Int> pos_vararg>
 def autoparam_param_vararg[f: def () [_] -> None, *x: Int]():
     pass
 
@@ -631,7 +631,7 @@ def bind_overloaded_fn[f: def[f: def () -> None] () -> None]():
     # CHECK-NEXT: bind_twice{{.*}}<:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.generator<(!Int, |) -> !kgen.none> {{.*}}overloaded_function(::Int)")>
     comptime bound = bind_twice[overloaded_function, overloaded_function]
 
-    # CHECK-NEXT: variadic_func_param{{.*}}<:variadic<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
+    # CHECK-NEXT: variadic_func_param{{.*}}<:param_list<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
     comptime bind_variadic = variadic_func_param[overloaded_function, overloaded_function]
 
 # Make sure overload resolution can overload things based on parameter bindings.
@@ -700,11 +700,11 @@ struct UnqualAliasLookup[param: Int]:
 # Variadic parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.fn @"fnWithVariadics{{.*}}"<b: variadic<!Int> pos_vararg>
+# CHECK-LABEL: lit.fn @"fnWithVariadics{{.*}}"<b: param_list<!Int> pos_vararg>
 def fnWithVariadics[*b: Int]():
   pass
 
-# CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: variadic<!Int> pos_vararg>
+# CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: param_list<!Int> pos_vararg>
 struct StructWithVariadics[*b: Int]:
     @implicit
     def __init__(out self, i: Int):
@@ -712,60 +712,60 @@ struct StructWithVariadics[*b: Int]:
 
 # CHECK-LABEL: lit.fn @"useParamVariadics
 def useParamVariadics():
-  # CHECK-NEXT: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:variadic<!Int> []>()
+  # CHECK-NEXT: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> []>()
   fnWithVariadics()
 
-  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:variadic<!Int> [{1}]>()
+  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> [{1}]>()
   fnWithVariadics[1]()
-  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:variadic<!Int> [{1}, {2}]>()
+  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> [{1}, {2}]>()
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl *"defAlias{{[^"]*}}": !lit.generator<<"b": variadic<!Int> pos_vararg>!kgen.func.literal<{{.*}}@"fnWithVariadics
+  # CHECK-NEXT: lit.alias.decl *"defAlias{{[^"]*}}": !lit.generator<<"b": param_list<!Int> pos_vararg>!kgen.func.literal<{{.*}}@"fnWithVariadics
   comptime defAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
-  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
+  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
   # HECK-NEXT: %defLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
   # HECK-NEXT: lit.ref.store [[TMP]], %defLet
   # var defLet = fnWithVariadics
 
-  # CHECK-NEXT: %a = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> []>
+  # CHECK-NEXT: %a = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> []>
   var a: StructWithVariadics[]
-  # CHECK-NEXT: %b = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> [{1}]>
+  # CHECK-NEXT: %b = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> [{1}]>
   var b: StructWithVariadics[1]
-  # CHECK-NEXT: %c = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> [{1}, {2}]>
+  # CHECK-NEXT: %c = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> [{1}, {2}]>
   var c: StructWithVariadics[1, 2]
 
   # TODO(16040): fix symbol name mangling to erase parameter name 'b'
-  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:variadic<!Int> [{1}]>
+  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:param_list<!Int> [{1}]>
   var d = StructWithVariadics[1](2)
-  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:variadic<!Int> []>
+  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:param_list<!Int> []>
   var e = StructWithVariadics(3)
 
 
 # CHECK-LABEL: lit.fn @"unpack_variadic
 def unpack_variadic[*a: Int]():
-    # CHECK-NEXT: @StructWithVariadics<:variadic<!Int> a>
+    # CHECK-NEXT: @StructWithVariadics<:param_list<!Int> a>
     comptime T = StructWithVariadics[*a]
-    # CHECK-NEXT: fnWithVariadics{{.*}}<:variadic<!Int> a>
+    # CHECK-NEXT: fnWithVariadics{{.*}}<:param_list<!Int> a>
     comptime f = fnWithVariadics[*a]
 
 
-# CHECK-LABEL: lit.fn @"variadic_parameter{{.*}}"<elems: variadic<index>>
-def variadic_parameter[elems: __mlir_type.`!kgen.variadic<index>`]() -> Int:
+# CHECK-LABEL: lit.fn @"variadic_parameter{{.*}}"<elems: param_list<index>>
+def variadic_parameter[elems: __mlir_type.`!kgen.param_list<index>`]() -> Int:
     return 3
 
 def dependent_variadic_parameter[
     type: TrivialRegisterPassable, *values: type
 ](): pass
 
-# CHECK-LABEL: lit.fn @"pass_variadic{{.*}}"<elems: variadic<index>>
-def pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
-    # CHECK-NEXT: lit.call {{.*}}@"variadic_parameter{{.*}}"<:variadic<index> elems>
+# CHECK-LABEL: lit.fn @"pass_variadic{{.*}}"<elems: param_list<index>>
+def pass_variadic[elems: __mlir_type.`!kgen.param_list<index>`]():
+    # CHECK-NEXT: lit.call {{.*}}@"variadic_parameter{{.*}}"<:param_list<index> elems>
     _ = variadic_parameter[elems]()
-    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!TrivialRegisterPassable !Int, :variadic<!Int>
+    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!TrivialRegisterPassable !Int, :param_list<!Int>
     _ = dependent_variadic_parameter[Int, 1, 2]()
 
 
@@ -937,11 +937,11 @@ def tail_types[T: TrivialRegisterPassable, *U: AnyType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
 def call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [], :origin<0> {},
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :param_list<!AnyType> [], :origin<0> {},
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [!FloatDyn]
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :param_list<!AnyType> [!FloatDyn]
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [!Int]
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :param_list<!AnyType> [!Int]
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -989,7 +989,7 @@ def out_of_order_kw[x: Int, y: IndexParam[x]]():
 
 # CHECK-LABEL: lit.fn @"test_deduce_kw_only
 def test_deduce_kw_only(a: Abstraction[3]):
-    # CHECK: call {{.*}}@"deduce_kw_only{{.*}}<:variadic<!Int> [{1}, {2}], :!Int {3}>(%a)
+    # CHECK: call {{.*}}@"deduce_kw_only{{.*}}<:param_list<!Int> [{1}, {2}], :!Int {3}>(%a)
     deduce_kw_only[1, 2](a)
 
 # Make sure the +1 in the 'a' argument doesn't break inference.
@@ -1676,7 +1676,7 @@ struct DepUser[b: Int]:
 # parameter-value.
 
 def infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, Movable, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.param_list<`, Movable, `>`], //,
     T: type_of(Tuple[*ArgTypes]),
 ]():
     pass
@@ -1684,9 +1684,9 @@ def infer_variadic[
 
 # CHECK-LABEL:     lit.fn @"test_infer_variadic()"
 def test_infer_variadic():
-    # CHECK: lit.call {{.*}}@"infer_variadic{{.*}}"<:variadic<!Movable>
+    # CHECK: lit.call {{.*}}@"infer_variadic{{.*}}"<:param_list<!Movable>
     # CHECK-SAME: [!Int, !Bool]
-    # CHECK-SAME: :meta<!lit.struct<#Tuple <:variadic<!Movable>
+    # CHECK-SAME: :meta<!lit.struct<#Tuple <:param_list<!Movable>
     infer_variadic[Tuple[Int, Bool]]()
 
 # Make sure we can store RP types with different sugars correctly.
@@ -1793,7 +1793,7 @@ struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()]:
     pass
 
 
-# CHECK-LABEL: lit.alias.decl *"WithDefaultParam{{.*}}": meta<!lit.struct<#HasDefaultParam <:variadic<!Int> [{4}], :!lit.struct<#HasParamList <:variadic<!Int> [{4}]>>
+# CHECK-LABEL: lit.alias.decl *"WithDefaultParam{{.*}}": meta<!lit.struct<#HasDefaultParam <:param_list<!Int> [{4}], :!lit.struct<#HasParamList <:param_list<!Int> [{4}]>>
 comptime WithDefaultParam = HasDefaultParam[]
 
 
@@ -1812,7 +1812,7 @@ def _get_element_idx2(buff: NDBuffer[_]):
 
 def _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
     # CHECK:      lit.call tail @parameters::@"_get_element_idx2
-    # CHECK-SAME: <:variadic<!Int> *"shape.values`", :!lit.struct<#DimList <:variadic<!Int> *"shape.values`">> shape>
+    # CHECK-SAME: <:param_list<!Int> *"shape.values`", :!lit.struct<#DimList <:param_list<!Int> *"shape.values`">> shape>
     _get_element_idx2(src)
 
 

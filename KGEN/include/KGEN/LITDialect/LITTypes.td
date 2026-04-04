@@ -159,7 +159,7 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     !lit.type_signature
     !lit.type_signature<index, |>
     !lit.type_signature<"dt": dtype = f32>
-    !lit<type_signature<"i": variadic<index>>>
+    !lit<type_signature<"i": param_list<index>>>
     ```
   }];
 
@@ -654,7 +654,7 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
     // Pack with 'Ts' elements, with a parametric origin and addrspace=42.
     !lit.ref.pack<Ts, origin, 42>
 
-    lit.fn @pack<Ts: variadic<!kgen.type>>(
+    lit.fn @pack<Ts: param_list<!kgen.type>>(
       %0: !lit.ref.pack<Ts, origin, 42>
     )
     ```

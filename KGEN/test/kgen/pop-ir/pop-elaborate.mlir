@@ -188,7 +188,7 @@ kgen.generator @malloc_and_free(%arg0: i16) -> i16 {
   kgen.return %2 : i16
 }
 
-kgen.generator @variant_discr_gep<Ts: variadic<type>>(%arg0: !kgen.pointer<variant<[Ts]>>) -> !kgen.pointer<scalar<ui8>> {
+kgen.generator @variant_discr_gep<Ts: param_list<type>>(%arg0: !kgen.pointer<variant<[Ts]>>) -> !kgen.pointer<scalar<ui8>> {
   %0 = pop.variant.discr_gep %arg0 : <variant<[Ts]>> as <scalar<ui8>>
   kgen.return %0 : !kgen.pointer<scalar<ui8>>
 }
@@ -402,8 +402,8 @@ kgen.generator export @do_it() {
     :(!kgen.string) -> !kgen.string @store_load<:type string>, "")>
 
   // CHECK-NEXT: <[3, 4, 5]>
-  kgen.param.constant: variadic<i32> = <apply(
-    :(!kgen.variadic<i32>) -> !kgen.variadic<i32> @store_load<:type variadic<i32>>, [3, 4, 5])>
+  kgen.param.constant: param_list<i32> = <apply(
+    :(!kgen.param_list<i32>) -> !kgen.param_list<i32> @store_load<:type param_list<i32>>, [3, 4, 5])>
 
   // CHECK-NEXT: <index>
   kgen.param.constant: type = <apply(
@@ -414,10 +414,10 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <8>
   kgen.param.constant: pointer<scalar<ui8>> = <apply(:(!kgen.pointer<variant<i24, i48>>) -> !kgen.pointer<scalar<ui8>>
-    @variant_discr_gep<:variadic<type> [i24, i48]>, 0)>
+    @variant_discr_gep<:param_list<type> [i24, i48]>, 0)>
   // CHECK-NEXT: <16>
   kgen.param.constant: pointer<scalar<ui8>> = <apply(:(!kgen.pointer<variant<i24, i48>>) -> !kgen.pointer<scalar<ui8>>
-    @variant_discr_gep<:variadic<type> [simd<4, f32>, i8]>, 0)>
+    @variant_discr_gep<:param_list<type> [simd<4, f32>, i8]>, 0)>
 
   // CHECK-NEXT: <42>
   kgen.param.constant: i32 = <apply(:(!pop.union<i32>) -> i32 @store_union, {:i32 42})>

@@ -1295,7 +1295,7 @@ Type StructType::parse(AsmParser &p) {
       variadicType = VariadicType::get(TypeType::get(p.getContext()));
     }
 
-    // Parametric case - parse param value with implicit variadic<!kgen.type>.
+    // Parametric case - parse param value with implicit param_list<!kgen.type>.
     if (parseParamValue(p, variadic, variadicType))
       return {};
   }
@@ -1327,7 +1327,7 @@ void StructType::print(AsmPrinter &p) const {
   auto attr = dyn_cast<VariadicAttr>(variadic);
   if (!attr || !isa<TypeType>(attr.getType().getElementType())) {
     // Parametric expression or complex metatype - print without parens.  We
-    // print :variadic<Movable> if the elements are not TypeType metatype.
+    // print :param_list<Movable> if the elements are not TypeType metatype.
     if (!isa<TypeType>(cast<VariadicType>(variadic.getType()).getElementType()))
       printColonTypeParamValue(p, variadic);
     else

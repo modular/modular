@@ -112,7 +112,7 @@ def POP_UnionType : POPType<"Union", "union", [
     !pop.union<i32>                                // single-element union
     !pop.union<i32, i64>                           // multi-element union
     !pop.union<[Ts]>                               // variadic reference
-    !pop.union<[rebind(:!kgen.variadic<type> Ts)]> // rebound variadic
+    !pop.union<[rebind(:!kgen.param_list<type> Ts)]> // rebound variadic
     ```
   }];
 

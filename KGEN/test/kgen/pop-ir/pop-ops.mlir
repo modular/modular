@@ -863,7 +863,7 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.param<T>)
 }
 
 // CHECK-LABEL: kgen.generator @pack
-kgen.generator @pack<Ts: variadic<!kgen.type>, T: type, I: index>(
+kgen.generator @pack<Ts: param_list<!kgen.type>, T: type, I: index>(
   %arg0: !kgen.pack<Ts>,
   %arg1: !kgen.pack<[i32, T]>,
   %arg2: f32,
@@ -895,7 +895,7 @@ kgen.generator @pack<Ts: variadic<!kgen.type>, T: type, I: index>(
 
 
 // CHECK-LABEL: kgen.generator @pack
-kgen.generator @pack_ptr<Ts: variadic<!kgen.type>, T: type, I: index>(
+kgen.generator @pack_ptr<Ts: param_list<!kgen.type>, T: type, I: index>(
   %arg0: !kgen.pointer<!kgen.pack<Ts>>,
   %arg1: !kgen.pointer<!kgen.pack<[i32, T]>>
 )  {
@@ -1086,7 +1086,7 @@ kgen.func @stack_lifetime() {
 }
 
 // CHECK-LABEL: @variant_bitcast
-kgen.generator @variant_bitcast<idx, Ts: variadic<type>>(%arg0: !kgen.pointer<variant<i32, i64>>, %arg1: !kgen.pointer<variant<[Ts]>>) -> (!kgen.pointer<i64>, !kgen.pointer<i32>) {
+kgen.generator @variant_bitcast<idx, Ts: param_list<type>>(%arg0: !kgen.pointer<variant<i32, i64>>, %arg1: !kgen.pointer<variant<[Ts]>>) -> (!kgen.pointer<i64>, !kgen.pointer<i32>) {
   // CHECK-NEXT: pop.variant.bitcast %arg0, <1> : <variant<i32, i64>> as <i64>
   %0 = pop.variant.bitcast %arg0, <1> : <variant<i32, i64>> as <i64>
   // CHECK-NEXT: pop.variant.bitcast %arg1, <idx> : <variant<[Ts]>> as <i32>
@@ -1095,7 +1095,7 @@ kgen.generator @variant_bitcast<idx, Ts: variadic<type>>(%arg0: !kgen.pointer<va
 }
 
 // CHECK-LABEL: @variant_discr_gep
-kgen.generator @variant_discr_gep<Ts: variadic<type>, dt: dtype>(%arg0: !kgen.pointer<variant<i8, i16, i32>>, %arg1: !kgen.pointer<variant<[Ts]>>) {
+kgen.generator @variant_discr_gep<Ts: param_list<type>, dt: dtype>(%arg0: !kgen.pointer<variant<i8, i16, i32>>, %arg1: !kgen.pointer<variant<[Ts]>>) {
   // CHECK-NEXT: pop.variant.discr_gep %arg0 : <variant<i8, i16, i32>> as <scalar<ui8>>
   %0 = pop.variant.discr_gep %arg0 : <variant<i8, i16, i32>> as <scalar<ui8>>
   // CHECK-NEXT: pop.variant.discr_gep %arg1 : <variant<[Ts]>> as <scalar<dt>>

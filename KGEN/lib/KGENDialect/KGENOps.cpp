@@ -1478,10 +1478,10 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
       if (elementTypes.size() != 1) {
         // TODO: Support multiple types within `!kgen.struct`.
         return op->emitOpError(
-            "only single `!kgen.variadic_splat` type allowed");
+            "only single `!kgen.param_list_splat` type allowed");
       }
-      // `!kgen.variadic_splat` type is not yet concretized, therefore we cannot
-      // verify correctness of this operation
+      // `!kgen.param_list_splat` type is not yet concretized, therefore we
+      // cannot verify correctness of this operation
       return success();
     }
     // If the index is concrete then we can verify it and the result type.

@@ -45,7 +45,7 @@ def foo():
 # expected-note @below {{'ParamSubst' declared here}}
 struct ParamSubst[
     T: TrivialRegisterPassable,
-    shape: __mlir_type[`!kgen.variadic<`, T, `>`],
+    shape: __mlir_type[`!kgen.param_list<`, T, `>`],
 ]:
     pass
 
@@ -55,5 +55,5 @@ def main():
     # expected-error @below {{'ParamSubst' parameter 'shape' has 'Variadic[Int]' type, but value has type 'Variadic[__mlir_type.index]'}}
     var _: ParamSubst[
         Int,
-        __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`,
+        __mlir_attr.`#kgen.variadic<1, 2> : !kgen.param_list<index>`,
     ]

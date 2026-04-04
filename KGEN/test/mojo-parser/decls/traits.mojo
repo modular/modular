@@ -354,7 +354,7 @@ struct VariadicTrait[*I: Int](RegisterPassable, SimpleTraitMethod):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}SimpleTraitMethod
-    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}}<:variadic<!Int> I>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:variadic<!Int> I>
+    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}}<:param_list<!Int> I>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:param_list<!Int> I>
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 def test_bind_variadic():
@@ -362,7 +362,7 @@ def test_bind_variadic():
     def bind_trait[T: SimpleTraitMethod]():
         pass
 
-    # CHECK: call{{.*}}@VariadicTrait<:variadic<!Int> []>
+    # CHECK: call{{.*}}@VariadicTrait<:param_list<!Int> []>
     bind_trait[VariadicTrait[]]()
 
 
@@ -861,7 +861,7 @@ def test_anytrait_subtyping[ty: type_of(AnyType)]():
 
 # CHECK-LABEL: lit.fn @"take_many_things_of_specified_trait
 # CHECK-SAME: <element_type: !lit.anytrait<!AnyType>,
-# CHECK-SAME: element_types: variadic<:!lit.anytrait<!AnyType> element_type> pos_vararg>()
+# CHECK-SAME: element_types: param_list<:!lit.anytrait<!AnyType> element_type> pos_vararg>()
 def take_many_things_of_specified_trait[element_type: type_of(AnyType),
                                        *element_types: element_type]():
     pass
@@ -870,17 +870,17 @@ def take_many_things_of_specified_trait[element_type: type_of(AnyType),
 # CHECK-LABEL: lit.fn @"call_many_things_of_specified_trait
 def call_many_things_of_specified_trait(a: TraitStruct):
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!TraitStruct]
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [!TraitStruct]
     take_many_things_of_specified_trait[AnyType, TraitStruct]()
 
     # Int is movable.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :variadic<!Movable> [!Int]
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :param_list<!Movable> [!Int]
     take_many_things_of_specified_trait[Movable, Int]()
 
     # TraitStruct conforms to SimpleTrait.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :variadic<!SimpleTrait> [!TraitStruct, !TraitStruct]
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :param_list<!SimpleTrait> [!TraitStruct, !TraitStruct]
     take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
 
 

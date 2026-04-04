@@ -706,7 +706,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       //  *elt : elt_trait
       // ] : ...
       //
-      // foo() # we infer elt : !kgen.variadic<!AnyType & !Foo>
+      // foo() # we infer elt : !kgen.param_list<!AnyType & !Foo>
       auto metaType = paramTp.getParam().getType();
       // TODO: should we make AnyTraitType a `MetaType`?.
       if (auto anyTrait = sugarDynCast<AnyTraitType>(metaType))

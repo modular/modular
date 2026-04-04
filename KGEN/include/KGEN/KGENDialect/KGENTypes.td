@@ -478,13 +478,13 @@ class PointerOf<Type type> : ConfinedType<PointerType,
 // VariadicType
 //===----------------------------------------------------------------------===//
 
-def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
+def KGEN_VariadicType : KGENType<"Variadic", "param_list", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized variadic type";
   let description = [{
-    The `!kgen.variadic` type represents a homogeneously typed variadic sequence
+    The `!kgen.param_list` type represents a homogeneously typed variadic sequence
     of zero or more elements.  It also includes the original argument convention
     so clients know if the input argument is supposed to be owned, read,
     mut, etc.
@@ -493,10 +493,10 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
 
     ```mlir
     // A variadic sequence of scalar floats.
-    !kgen.variadic<scalar<f32>>
+    !kgen.param_list<scalar<f32>>
 
     // A parameterized variadic sequence.
-    !kgen.variadic<type>
+    !kgen.param_list<type>
     ```
   }];
 
@@ -625,7 +625,7 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     !kgen.struct<(type, array<size, scalar<dtype>>)>
 
     // A struct parameterized on a variadic sequence of element types.
-    kgen.generator @example<Ts: variadic<!kgen.type>>(
+    kgen.generator @example<Ts: param_list<!kgen.type>>(
       %0: !kgen.struct<(Ts)>,
     ) { kgen.return }
     ```
@@ -812,7 +812,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
     // A concrete pack type with two element types.
     !kgen.pack<[i32, i64]>
 
-    kgen.generator @pack<Ts: variadic<!kgen.type>, T0: type, T1: type>(
+    kgen.generator @pack<Ts: param_list<!kgen.type>, T0: type, T1: type>(
       // A pack type parameterized on a variadic sequence of elements.
       %0: !kgen.pack<Ts>,
       // A pack type parameterized on two element types.
@@ -1025,16 +1025,16 @@ def KGEN_NeverType : KGENType<"Never", "never"> {
 // VariadicSplatType
 //===----------------------------------------------------------------------===//
 
-def KGEN_VariadicSplatType : KGENType<"VariadicSplat", "variadic_splat"> {
+def KGEN_VariadicSplatType : KGENType<"VariadicSplat", "param_list_splat"> {
   let summary = "Spalt the element type specified number of times";
   let description = [{
-    The `!kgen.variadic_splat` type represents deferred type that splats
+    The `!kgen.param_list_splat` type represents deferred type that splats
     element type specified number of times. The type cannot be used standalone
     and has to be used either within `!kgen.struct` or `!llvm.struct` types.
 
     ```mlir
-    !kgen.struct<(!kgen.variadic_splat<index, 3>)>
-    !llvm.struct<(!kgen.variadic_splat<index, 5>)>
+    !kgen.struct<(!kgen.param_list_splat<index, 3>)>
+    !llvm.struct<(!kgen.param_list_splat<index, 5>)>
     ```
 
     will be concretized to

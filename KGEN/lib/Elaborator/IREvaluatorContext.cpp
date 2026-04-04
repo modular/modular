@@ -685,7 +685,7 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateDataToStr(ParamOperatorAttr op,
     return failure();
 
   // Extra string parts, which will be a VariadicAttr of type
-  // !kgen.variadic<>
+  // !kgen.param_list<>
   VariadicAttr extrasAttr = dyn_cast<VariadicAttr>(op.getOperand(1));
   if (!extrasAttr) {
     emitError(

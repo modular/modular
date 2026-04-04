@@ -44,10 +44,10 @@ kgen.generator @array_constants<T: type, A: !kgen.param<T>>() {
 
 // CHECK-LABEL: @variadic_constants
 kgen.generator @variadic_constants<T: type, value: si32>() {
-  // CHECK: variadic<si32> = <[1, value]>
-  kgen.param.constant: variadic<si32> = <[1, value]>
-  // CHECK: variadic<T> = <[]>
-  kgen.param.constant: variadic<T> = <[]>
+  // CHECK: param_list<si32> = <[1, value]>
+  kgen.param.constant: param_list<si32> = <[1, value]>
+  // CHECK: param_list<T> = <[]>
+  kgen.param.constant: param_list<T> = <[]>
   kgen.return
 }
 
@@ -108,12 +108,12 @@ kgen.func @union_constants() {
 // CHECK: f0 = #pop.simd_shr<#kgen.unknown : !pop.simd<4, si32>, #pop<simd 1> : !pop.simd<4, si32>> : !pop.simd<4, si32>
 "simd_shr.attr"() { f0 = #pop.simd_shr<#kgen.unknown : !pop.simd<4, si32>, #pop<simd 1> : !pop.simd<4, si32>> } : () -> ()
 
-// CHECK: f0 = #pop.variadic_to_array<:variadic<index> v> : !pop.array<#kgen.variadic.size<:variadic<index> v>, index>
-"variadic_to_array.attr"() { f0 = #pop.variadic_to_array<:!kgen.variadic<index> #kgen.param.decl.ref<"v">>
-      : !pop.array<#kgen.variadic.size<:!kgen.variadic<index> #kgen.param.decl.ref<"v">>, index> } : () -> ()
+// CHECK: f0 = #pop.variadic_to_array<:param_list<index> v> : !pop.array<#kgen.variadic.size<:param_list<index> v>, index>
+"variadic_to_array.attr"() { f0 = #pop.variadic_to_array<:!kgen.param_list<index> #kgen.param.decl.ref<"v">>
+      : !pop.array<#kgen.variadic.size<:!kgen.param_list<index> #kgen.param.decl.ref<"v">>, index> } : () -> ()
 
 // CHECK: f0 = #pop.array<1, 2, 3> : !pop.array<3, index>
-"variadic_to_array_fold.attr"() { f0 = #pop.variadic_to_array<:!kgen.variadic<index> #kgen.variadic<1, 2, 3> > : !pop.array<3, index> } : () -> ()
+"variadic_to_array_fold.attr"() { f0 = #pop.variadic_to_array<:!kgen.param_list<index> #kgen.variadic<1, 2, 3> > : !pop.array<3, index> } : () -> ()
 
 // CHECK:      a0 = #pop<simd 0>
 // CHECK-SAME: a1 = #pop<simd 1>

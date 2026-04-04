@@ -68,7 +68,7 @@ kgen.generator @type_printing() {
 // CHECK-LABEL: kgen.generator @variadic_variant
 // CHECK-SAME: !kgen.variant<[values]>
 // CHECK-SAME-LITERAL: !kgen.variant<[[]]>
-kgen.generator @variadic_variant<values: variadic<type>>(%arg0: !kgen.variant<[values]>, %arg1: !kgen.variant<[[]]>) {
+kgen.generator @variadic_variant<values: param_list<type>>(%arg0: !kgen.variant<[values]>, %arg1: !kgen.variant<[[]]>) {
   kgen.return
 }
 
@@ -76,7 +76,7 @@ kgen.generator @variadic_variant<values: variadic<type>>(%arg0: !kgen.variant<[v
 // CHECK-SAME: !kgen.struct<Ts>
 // CHECK-SAME: !kgen.struct<Ts memoryOnly>
 // CHECK-SAME-LITERAL: !kgen.struct<[index, f32]>
-kgen.generator @parametric_struct<Ts: variadic<type>>(
+kgen.generator @parametric_struct<Ts: param_list<type>>(
   %arg0: !kgen.struct<Ts>,
   %arg1: !kgen.struct<Ts memoryOnly>,
   %arg2: !kgen.struct<[index, f32]>

@@ -1560,7 +1560,7 @@ def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure,
     Example:
 
     ```mlir
-    kgen.generator @pack<Ts: variadic<!kgen.type>>(
+    kgen.generator @pack<Ts: param_list<!kgen.type>>(
       %arg0: f32, %arg1: si8
     ) {
       // Create a pack of two elements.
@@ -1603,7 +1603,7 @@ def KGEN_PackExtractOp : KGENOp<"pack.extract", [Pure, InferTypeOpAdaptor,
     Example:
 
     ```mlir
-    kgen.generator @pack<Ts: variadic<!kgen.type>, T: type, I: index>(
+    kgen.generator @pack<Ts: param_list<!kgen.type>, T: type, I: index>(
       %arg0: !kgen.pack<i32, T>
       %arg1: Ts,
     ) {

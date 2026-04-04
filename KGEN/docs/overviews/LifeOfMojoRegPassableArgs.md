@@ -587,7 +587,7 @@ Coming out of the parser, the signature ends up looking like this:
 ```mlir
     lit.fn @example4
       # Declared parameter Ts
-      <Ts: variadic<!AnyType> pos_vararg>
+      <Ts: param_list<!AnyType> pos_vararg>
       # Implicit origin: one for the `origin` param of the pack and one for the
       # pack itself.
       [imm *"args`", imm *"args`1"]
@@ -596,7 +596,7 @@ Coming out of the parser, the signature ends up looking like this:
           @VariadicPack<
              :!Bool {:i1 0},
              :@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = *"args`"},
-             :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>, imm *"args`1"
+             :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> Ts>, imm *"args`1"
           > read_mem|pack) {
 ```
 
@@ -627,22 +627,22 @@ ends up lowering:
       %5 = kgen.rebind %3 : !lit.ref<!MyRPType, muttoimm *"my_rp`1">
          to !lit.ref<!MyRPType, imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>
       // Create a lit.ref.pack with the two !lit.ref references.
-      %6 = lit.ref.pack.create(%4, %5) : !lit.ref.pack<:variadic<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>
+      %6 = lit.ref.pack.create(%4, %5) : !lit.ref.pack<:param_list<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>
       %7 = kgen.param.constant: !Bool = <{:i1 0}>
       // Create an instance of the VariadicPack with __init__.
-      %8 = lit.call @VariadicPack::@__init__<:!Bool {:i1 0}, :Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>(%6, %7) : !lit.generator<("value": !lit.ref.pack<:variadic<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>, "is_owned": !Bool) -> !lit.struct<#VariadicPack <:!Bool {:i1 0}, :@std::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>>>
+      %8 = lit.call @VariadicPack::@__init__<:!Bool {:i1 0}, :Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [#String1, #MyRPType1]>(%6, %7) : !lit.generator<("value": !lit.ref.pack<:param_list<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>, "is_owned": !Bool) -> !lit.struct<#VariadicPack <:!Bool {:i1 0}, :@std::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [#String1, #MyRPType1]>>>
       // We need to pass this by-ref into the callee, so create a stack temp.
       // This will be eliminated when argument lowering turns this into a
       // register passable thing.
       %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<@VariadicPack<...
-      lit.ref.store %8, %anonymous2A : <@VariadicPack<:!Bool {:i1 0}, :@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>, mut *"anonymous*`2">
+      lit.ref.store %8, %anonymous2A : <@VariadicPack<:!Bool {:i1 0}, :@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [#String1, #MyRPType1]>, mut *"anonymous*`2">
 
       // Pass the temporary as immutable to the callee.
-      %9 = lit.ref.immut %anonymous2A : <@std::@builtin::@list_literal::@VariadicPack<:!Bool {:i1 0}, :@std::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>, mut *"anonymous*`2">
+      %9 = lit.ref.immut %anonymous2A : <@std::@builtin::@list_literal::@VariadicPack<:!Bool {:i1 0}, :@std::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [#String1, #MyRPType1]>, mut *"anonymous*`2">
       %10 = lit.call @example4[
          # Bind the implicit origins for the callee.
          imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")},
-         muttoimm *"anonymous*`2"]<:variadic<!AnyType> [#String1, #MyRPType1
+         muttoimm *"anonymous*`2"]<:param_list<!AnyType> [#String1, #MyRPType1
        ]>(%9)
 
 ```

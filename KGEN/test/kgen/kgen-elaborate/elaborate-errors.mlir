@@ -395,7 +395,7 @@ kgen.generator @test_field_type_not_found() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator @test_non_struct_type() {
   // expected-note @+1 {{struct_field_types requires a struct type}}
-  kgen.param.constant: variadic<type> = <#kgen.struct_field_types<i32>>
+  kgen.param.constant: param_list<type> = <#kgen.struct_field_types<i32>>
   kgen.return
 }
 

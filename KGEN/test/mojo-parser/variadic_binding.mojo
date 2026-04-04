@@ -22,7 +22,7 @@ def only_copyable[T: Copyable](t: T):
     pass
 
 
-# CHECK: @"f0{{.*}}"<elt_type: variadic<!Copyable>{{.*}}(%t: !lit.ref<!lit.struct<#SomeVA <:variadic<!AnyType> upcast(:variadic<!Copyable> elt_type)>
+# CHECK: @"f0{{.*}}"<elt_type: param_list<!Copyable>{{.*}}(%t: !lit.ref<!lit.struct<#SomeVA <:param_list<!AnyType> upcast(:param_list<!Copyable> elt_type)>
 def f0[*elt_type: Copyable](t: SomeVA[*elt_type]):
     # Should be able to call only_copyable without an downcast.
 
@@ -32,14 +32,14 @@ def f0[*elt_type: Copyable](t: SomeVA[*elt_type]):
 
 
 # CHECK-LABEL: lit.fn @"f1
-# CHECK-SAME: <elt_type: variadic<!mt_Int>{{.*}}(%t: !lit.ref<!lit.struct<#SomeVA <:variadic<!AnyType> upcast(:variadic<!mt_Int> elt_type)>
+# CHECK-SAME: <elt_type: param_list<!mt_Int>{{.*}}(%t: !lit.ref<!lit.struct<#SomeVA <:param_list<!AnyType> upcast(:param_list<!mt_Int> elt_type)>
 def f1[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
     pass
 
 # CHECK-LABEL: lit.fn @"foo
 def foo():
-    # CHECK: lit.call {{.*}}::@"f0{{.*}}"[{{.*}}]<:variadic<!Copyable> [!SomeCopyable, !SomeCopyable]>
+    # CHECK: lit.call {{.*}}::@"f0{{.*}}"[{{.*}}]<:param_list<!Copyable> [!SomeCopyable, !SomeCopyable]>
     f0(SomeVA[SomeCopyable, SomeCopyable]())
 
-    # CHECK: lit.call {{.*}}::@"f1{{.*}}"[{{.*}}]<:variadic<!mt_Int> [!Int, !Int]>
+    # CHECK: lit.call {{.*}}::@"f1{{.*}}"[{{.*}}]<:param_list<!mt_Int> [!Int, !Int]>
     f1(SomeVA[Int, Int]())

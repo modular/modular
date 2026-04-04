@@ -7,10 +7,10 @@
 
 struct Variadic:
     comptime ValuesOfType[type: AnyType] = __mlir_type[
-        `!kgen.variadic<`, type, `>`
+        `!kgen.param_list<`, type, `>`
     ]
     comptime TypesOfTrait[T: type_of(AnyType)] = __mlir_type[
-        `!kgen.variadic<`, T, `>`
+        `!kgen.param_list<`, T, `>`
     ]
 
     comptime size[T: AnyType, //, seq: Self.ValuesOfType[T]]: Int = Int(
@@ -40,10 +40,10 @@ struct Variadic:
     # ===-----------------------------------------------------------------------===#
 
     comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+        `#kgen.variadic<>: !kgen.param_list<`, T, `>`
     ]
     comptime empty_of_type[T: AnyType] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+        `#kgen.variadic<>: !kgen.param_list<`, T, `>`
     ]
     comptime types[T: type_of(AnyType), //, *Ts: T] = Ts
     comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
@@ -160,7 +160,7 @@ struct Variadic:
     ] = __mlir_attr[
         `#kgen.variadic.zip<`,
         types,
-        `> : !kgen.variadic<`,
+        `> : !kgen.param_list<`,
         Variadic.TypesOfTrait[Trait],
         `>`,
     ]
@@ -169,7 +169,7 @@ struct Variadic:
     ] = __mlir_attr[
         `#kgen.variadic.zip<`,
         values,
-        `> : !kgen.variadic<`,
+        `> : !kgen.param_list<`,
         Variadic.ValuesOfType[type],
         `>`,
     ]
@@ -264,7 +264,7 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
-    `, "From": !kgen.variadic<`,
+    `, "From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -306,7 +306,7 @@ comptime _ReduceValueIdxGeneratorTypeGenerator[
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
-    `, "From": !kgen.variadic<`,
+    `, "From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -374,7 +374,7 @@ comptime _TypeToTypeGenerator[
 comptime _VariadicIdxToTypeGeneratorTypeGenerator[
     From: type_of(AnyType), To: type_of(AnyType)
 ] = __mlir_type[
-    `!lit.generator<<"From": !kgen.variadic<`,
+    `!lit.generator<<"From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -408,7 +408,7 @@ comptime MapVariadicAndIdxToType = _MapVariadicAndIdxToType
 comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
     From: AnyType, To: type_of(AnyType)
 ] = __mlir_type[
-    `!lit.generator<<"From": !kgen.variadic<`,
+    `!lit.generator<<"From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,

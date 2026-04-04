@@ -74,7 +74,7 @@ def variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
 # CHECK-SAME: <{{.*}}, Ts:
 
 # CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:i1 0}, :origin<0> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :variadic<!ImplicitlyCopyable> Ts>>, imm *"rest`3"> read_mem|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :param_list<!ImplicitlyCopyable> Ts>>, imm *"rest`3"> read_mem|pack_vararg)
 def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
 
@@ -154,13 +154,13 @@ def callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}Int]()"
     paramOverload[a]()
 
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:variadic<!Int> [a, b, c]>()
+    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b, c]>()
     paramOverload[a, b, c]()
 
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload({{.*}}Int)"
     paramOverload(x)
 
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:variadic<!Int> [a, b]>(%x)
+    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b]>(%x)
     paramOverload[a, b](x)
 
 struct VariadicStruct[*Ts: TrivialRegisterPassable]:
@@ -178,9 +178,9 @@ def take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 def variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<!TrivialRegisterPassable> [!Int, !FloatDyn], :!Int {4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn], :!Int {4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<!TrivialRegisterPassable> [!Int, !FloatDyn]>>
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn]>>
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
 
 
@@ -501,9 +501,9 @@ def callVariadic[p: Int](x: Int):
     parameterizedVariadic(1, 2)
     # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__{{.*}}<:!TrivialRegisterPassable !Int
     _ = ParameterizedStruct(3)
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:variadic<!Int> [{4}, {5}]
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:param_list<!Int> [{4}, {5}]
     _ = VarArgsParameterizedStruct[4, 5]()
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:variadic<!Int> []
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:param_list<!Int> []
     _ = VarArgsParameterizedStruct()
 
 

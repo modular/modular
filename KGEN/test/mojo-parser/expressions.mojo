@@ -1004,7 +1004,7 @@ def function_types[
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() raises -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0},  :origin<0> *(0,1){{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>>, imm *[0,0]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": param_list<!AnyType> pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0},  :origin<0> *(0,1){{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> *(0,0)>>, imm *[0,0]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   p2: async def[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
@@ -1056,13 +1056,13 @@ def func_with_decorator(): pass
 struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
     pass
 
-# CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> pos_vararg
+# CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: param_list<!Int> pos_vararg
 def variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.variadic.get<:variadic<!Int> a, 2>>
+    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.variadic.get<:param_list<!Int> a, 2>>
     comptime v0 = a[2]
 
     # CHECK: %v1 = lit.var.decl "v1"
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <#kgen.variadic.get<:variadic<!Int> a, 3>>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <#kgen.variadic.get<:param_list<!Int> a, 3>>
     # CHECK: lit.ref.store [[TMP]], %v1
     var v1 = a[3]
     # CHECK: {{.*}}__getitem__{{.*}}(%b, %{{.*}})
@@ -1071,8 +1071,8 @@ def variadic_subscript[idx: Int, *a: Int](*b: Int):
 
 # CHECK-LABEL: lit.fn @"variadic_memory_subscript
 # CHECK-SAME: !lit.ref<{{.*}}TwoParamsStruct
-# CHECK-SAME:   #kgen.variadic.get<:variadic<!Int> a, 0>
-# CHECK-SAME:   #kgen.variadic.get<:variadic<!Int> a, 1>
+# CHECK-SAME:   #kgen.variadic.get<:param_list<!Int> a, 0>
+# CHECK-SAME:   #kgen.variadic.get<:param_list<!Int> a, 1>
 def variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}(%b,
     # CHECK: %v0 = lit.var.decl

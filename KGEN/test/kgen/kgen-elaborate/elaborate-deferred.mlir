@@ -39,7 +39,7 @@ kgen.generator @test_elaborate_deferred_op(%arg0: index, %arg1: index, %arg2: !k
 }
 
 kgen.generator @select_pred_concat<*"pred`2x": struct<(pointer<none>, index)>>() -> !kgen.deferred {
-  %0 = kgen.param.constant: !kgen.deferred = <#kgen<attr_ctor_deferred("#index<cmp_predicate ", #kgen<to_string_deferred(#kgen.param.expr<data_to_str, #kgen.param.decl.ref<"pred`2x"> : !kgen.struct<(pointer<none>, index)>, #kgen.variadic<> : !kgen.variadic<struct<(pointer<none>, index)>>> : !kgen.string) elide_type unit>, ">")>>
+  %0 = kgen.param.constant: !kgen.deferred = <#kgen<attr_ctor_deferred("#index<cmp_predicate ", #kgen<to_string_deferred(#kgen.param.expr<data_to_str, #kgen.param.decl.ref<"pred`2x"> : !kgen.struct<(pointer<none>, index)>, #kgen.variadic<> : !kgen.param_list<struct<(pointer<none>, index)>>> : !kgen.string) elide_type unit>, ">")>>
   kgen.return %0 : !kgen.deferred
 }
 
@@ -78,14 +78,14 @@ kgen.generator export @test(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1>
 // CHECK-SAME: %arg1: !llvm.struct<(f32, f32, f32, f32, f32)>)
 // CHECK-SAME: -> (!kgen.struct<(f32, f32, f32)>, !llvm.struct<(f32, f32, f32, f32, f32)>) {
 kgen.generator export @concretize_variadic_splaut(
-    %kgen_struct: !kgen.struct<(!kgen.variadic_splat<f32, 3>)>,
-    %llvm_struct: !llvm.struct<(!kgen.variadic_splat<f32, 5>)>) ->
-    (!kgen.struct<(!kgen.variadic_splat<f32, 3>)>,
-     !llvm.struct<(!kgen.variadic_splat<f32, 5>)>)
+    %kgen_struct: !kgen.struct<(!kgen.param_list_splat<f32, 3>)>,
+    %llvm_struct: !llvm.struct<(!kgen.param_list_splat<f32, 5>)>) ->
+    (!kgen.struct<(!kgen.param_list_splat<f32, 3>)>,
+     !llvm.struct<(!kgen.param_list_splat<f32, 5>)>)
 {
   // CHECK-NEXT: kgen.return %arg0, %arg1 :
   // CHECK-SAME: !kgen.struct<(f32, f32, f32)>, !llvm.struct<(f32, f32, f32, f32, f32)>
   kgen.return %kgen_struct, %llvm_struct :
-   !kgen.struct<(!kgen.variadic_splat<f32, 3>)>,
-   !llvm.struct<(!kgen.variadic_splat<f32, 5>)>
+   !kgen.struct<(!kgen.param_list_splat<f32, 3>)>,
+   !llvm.struct<(!kgen.param_list_splat<f32, 5>)>
 }

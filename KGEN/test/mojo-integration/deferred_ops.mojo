@@ -64,7 +64,7 @@ def simd_to_kgen_struct[
 ](simd: SIMD[dtype, n]) -> __mlir_type[
     `!kgen.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
         `, `,
         n._mlir_value,
@@ -76,7 +76,7 @@ def simd_to_kgen_struct[
         _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 dtype_to_llvm_type_i32[dtype],
                 `, `,
                 n._mlir_value,
@@ -90,7 +90,7 @@ def simd_to_kgen_struct[
         _type=__mlir_type[
             `!kgen.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
                 `, `,
                 n._mlir_value,
@@ -106,7 +106,7 @@ def simd_to_kgen_struct[
             _type=__mlir_type[
                 `!kgen.struct<(`,
                 __mlir_type[
-                    `!kgen.variadic_splat<`,
+                    `!kgen.param_list_splat<`,
                     __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
                     `, `,
                     n._mlir_value,
@@ -129,7 +129,7 @@ def kgen_struct_to_simd_reverse[
     st: __mlir_type[
         `!kgen.struct<(`,
         __mlir_type[
-            `!kgen.variadic_splat<`,
+            `!kgen.param_list_splat<`,
             __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
             `, `,
             n._mlir_value,

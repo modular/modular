@@ -38,17 +38,17 @@ def takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
 # CHECK-LABEL: lit.fn @"takeOwnedAnyTypePack[*::AnyType
 
 # Test implicit lifetimes / param list.
-# CHECK-SAME: <Ts: variadic<!AnyType> pos_vararg
+# CHECK-SAME: <Ts: param_list<!AnyType> pos_vararg
 
 # Check the argument pack.
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, :origin<1> *"rest.origin._mlir_origin``"
-# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, mut *"rest{{.*}}"> owned_in_mem|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> Ts>>, mut *"rest{{.*}}"> owned_in_mem|pack_vararg)
 
 
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeOwnedSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>>, mut *"rest`2"> owned_in_mem|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :param_list<!SomeTrait> Ts>>, mut *"rest`2"> owned_in_mem|pack_vararg)
 def takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
     pass
 
@@ -106,7 +106,7 @@ def test_owned_trait():
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>>, imm *"rest`2"> mut|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :param_list<!SomeTrait> Ts>>, imm *"rest`2"> mut|pack_vararg)
 def takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
     pass
 
@@ -170,7 +170,7 @@ def test_empty_pack():
 
 
 # CHECK-LABEL: lit.struct.decl @MyTuple
-# CHECK-SAME: <Ts: variadic<!AnyType> pos_vararg>
+# CHECK-SAME: <Ts: param_list<!AnyType> pos_vararg>
 struct MyTuple[*Ts: AnyType]:
     @implicit
     def __init__(out self, *args: * Self.Ts):
@@ -178,15 +178,15 @@ struct MyTuple[*Ts: AnyType]:
 
 
 # CHECK-LABEL: lit.fn @"pack
-# CHECK-SAME: Ts: variadic<!AnyType> pos_vararg
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *"args.origin{{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, imm *"args`2"> read_mem|pack_vararg)
+# CHECK-SAME: Ts: param_list<!AnyType> pos_vararg
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *"args.origin{{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> Ts>>, imm *"args`2"> read_mem|pack_vararg)
 def pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"packBorrowed[
-# CHECK-SAME: Ts: variadic<!AnyType> pos_vararg
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *"args.origin{{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, imm *"args`2"> read_mem|pack_vararg)
+# CHECK-SAME: Ts: param_list<!AnyType> pos_vararg
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *"args.origin{{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> Ts>>, imm *"args`2"> read_mem|pack_vararg)
 def packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 
@@ -200,15 +200,15 @@ def variadicParameter[*Ts: TrivialRegisterPassable](x: Int):
 # CHECK-SAME: [[ARGX:%.*]]: !FloatDyn
 # CHECK-SAME: [[ARGY:%.*]]: !Int
 def usePacks(x: FloatDyn, y: Int):
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int]>
     var a: MyTuple[Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!Int, !FloatDyn, !Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int, !FloatDyn, !Int]>
     var b: MyTuple[Int, FloatDyn, Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int]>
     var c = MyTuple[Int](1)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!FloatDyn, [{{.*}}@__MLIRType<:non_struct_type index>, index]]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!FloatDyn, [{{.*}}@__MLIRType<:non_struct_type index>, index]]>
     var d = MyTuple(3.14, Int(6)._mlir_value)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> []>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> []>
     var e = MyTuple()
 
     pack(Int(1)._mlir_value)
@@ -220,9 +220,9 @@ def usePacks(x: FloatDyn, y: Int):
 
     packBorrowed(Int(1)._mlir_value, x, y)
 
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<!TrivialRegisterPassable> [!Int, !FloatDyn]>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn]>
     variadicParameter[Int, FloatDyn](1)
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<!TrivialRegisterPassable> []>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!TrivialRegisterPassable> []>
     variadicParameter(Int(2))
 
 
@@ -230,7 +230,7 @@ def usePacks(x: FloatDyn, y: Int):
 def test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.generator<[1](
-    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> #lit.comptime.origin, {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!Int]>>, imm #lit.comptime.origin> read_mem|pack_vararg)
+    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> #lit.comptime.origin, {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [!Int]>>, imm #lit.comptime.origin> read_mem|pack_vararg)
     # CHECK-SAME: <store_to_mem(a)>))
     comptime foo = pack(a)
 

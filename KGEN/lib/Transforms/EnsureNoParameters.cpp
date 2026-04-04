@@ -28,10 +28,10 @@ static LogicalResult legalizeOp(Operation *op) {
 
   // FuncTypeGeneratorType must not be parameterized anymore.
   legalizer.addWalk([&](Type type) {
-    // At this point `!kgen.variadic_splat` should have been concretized.
+    // At this point `!kgen.param_list_splat` should have been concretized.
     if (isa<VariadicSplatType>(type)) {
       mlir::emitError(op->getLoc(),
-                      "`!kgen.variadic_splat` was not concretized. "
+                      "`!kgen.param_list_splat` was not concretized. "
                       "Concretization is only allowed within `!kgen.struct` or "
                       "`!llvm.struct`");
       return WalkResult::interrupt();

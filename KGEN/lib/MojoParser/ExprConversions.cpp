@@ -1791,7 +1791,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
       // The source is not resolved yet, this is a simple upcast.
       // For example, we upcast a variadic of `Copyable`s to `AnyTypes` by
-      // `#upcast<:variadic<!Copyable> T> :!variadic<!AnyType>`
+      // `#upcast<:param_list<!Copyable> T> :!param_list<!AnyType>`
       return emitCResult(UpcastAttr::get(requiredType, srcVal), expr, dest);
     }
   }

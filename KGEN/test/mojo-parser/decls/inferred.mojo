@@ -78,7 +78,7 @@ def test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     inferred_param_from_arg(y)
     # CHECK: inferred_param_from_param{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y>
     inferred_param_from_param[y]()
-    # CHECK: inferred_param_variadic{{.*}}<:!Int x, :variadic<!lit.struct<#ParamType <:!Int x>>> [y, y]>
+    # CHECK: inferred_param_variadic{{.*}}<:!Int x, :param_list<!lit.struct<#ParamType <:!Int x>>> [y, y]>
     inferred_param_variadic[y, y]()
     # CHECK: inferred_trait{{.*}}<:!SomeTrait @inferred::@ParamType<:!Int x>, :!lit.struct<#ParamType <:!Int x>> y>
     inferred_trait[y]()
