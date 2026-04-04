@@ -33,7 +33,7 @@ struct Impl2(Trait):
     var x: String
 
     def get(self) -> Int:
-        return self.x.__len__()
+        return self.x.byte_length()
 
 
 # COM: Ensure parametric closures are supported
