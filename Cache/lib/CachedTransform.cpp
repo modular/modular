@@ -18,6 +18,8 @@
 #include "Support/RCRef.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/IR/AttrTypeSubElements.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/DebugStringHelper.h"
@@ -229,6 +231,28 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
             AsyncValueRef<std::vector<Diagnostic>> &&pmResult) mutable {
           if (pmResult.isError())
             return std::move(out).setToError(pmResult.takeDiagnostic());
+
+          // Workaround for https://linear.app/modularml/issue/MOCO-3656
+          // The bytecode reader for FusedLoc (no-metadata, code 12) calls
+          // FusedLoc::get(ctx, locs) which applies a deduplication
+          // optimization that returns a non-FusedLoc when locs.size()==1,
+          // causing cast<FusedLoc> to crash.  Prevent writing such degenerate
+          // FusedLocs (1 location, null metadata) by collapsing them to their
+          // single inner location before serialization.
+          // TODO(MOCO-3656): remove once the upstream MLIR fix lands in
+          // BuiltinDialectBytecode.td.
+          {
+            mlir::AttrTypeReplacer replacer;
+            replacer.addReplacement(
+                [](mlir::FusedLoc loc) -> mlir::LocationAttr {
+                  if (loc.getLocations().size() == 1 && !loc.getMetadata())
+                    return mlir::cast<mlir::LocationAttr>(
+                        loc.getLocations()[0]);
+                  return loc;
+                });
+            replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/false,
+                                                  /*replaceLocs=*/true);
+          }
 
           // Write out the bytecode.
           TimeTraceScope traceScope(
