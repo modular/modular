@@ -389,7 +389,63 @@ def _elementwise_impl[
 # ===-----------------------------------------------------------------------===#
 
 comptime stencil = _stencil_impl_cpu
-"""CPU implementation of stencil computation."""
+"""Computes stencil operation in parallel.
+
+Computes output as a function that processes input stencils, stencils are
+computed as a continuous region for each output point that is determined
+by map_fn : map_fn(y) -> lower_bound, upper_bound. The boundary conditions
+for regions that fail out of the input domain are handled by load_fn.
+
+
+Parameters:
+    shape_element_type: The element dtype of the shape.
+    input_shape_element_type: The element dtype of the input shape.
+    rank: Input and output domain rank.
+    stencil_rank: Rank of stencil subdomain slice.
+    stencil_axis: Stencil subdomain axes.
+    simd_width: The SIMD vector width to use.
+    dtype: The input and output data dtype.
+    map_fn: A function that a point in the output domain to the input co-domain.
+    map_strides: A function that returns the stride for the dim.
+    load_fn: A function that loads a vector of simd_width from input.
+    compute_init_fn: A function that initializes vector compute over the stencil.
+    compute_fn: A function the process the value computed for each point in the stencil.
+    compute_finalize_fn: A function that finalizes the computation of a point in the output domain given a stencil.
+
+Args:
+    shape: The shape of the output buffer.
+    input_shape: The shape of the input buffer.
+    map_fn_closure: Closure mapping output points to input co-domain bounds.
+    map_strides_closure: Closure returning the stride for a given dimension.
+    load_fn_closure: Closure loading a SIMD vector from input.
+    compute_init_fn_closure: Closure initializing the stencil accumulator.
+    compute_fn_closure: Closure processing each stencil point.
+    compute_finalize_fn_closure: Closure finalizing the output value.
+"""
 
 comptime stencil_gpu = _stencil_impl_gpu
-"""GPU implementation of stencil computation."""
+"""(Naive implementation) Computes stencil operation in parallel on GPU.
+
+Parameters:
+    shape_element_type: The element dtype of the shape.
+    input_shape_element_type: The element dtype of the input shape.
+    rank: Input and output domain rank.
+    stencil_rank: Rank of stencil subdomain slice.
+    stencil_axis: Stencil subdomain axes.
+    simd_width: The SIMD vector width to use.
+    dtype: The input and output data dtype.
+    map_fn: A function that a point in the output domain to the input co-domain.
+    map_strides: A function that returns the stride for the dim.
+    load_fn: A function that loads a vector of simd_width from input.
+    compute_init_fn: A function that initializes vector compute over the stencil.
+    compute_fn: A function the process the value computed for each point in the stencil.
+    compute_finalize_fn: A function that finalizes the computation of a point in the output domain given a stencil.
+
+Args:
+    ctx: The DeviceContext to use for GPU execution.
+    shape: The shape of the output buffer.
+    input_shape: The shape of the input buffer.
+
+Raises:
+    If the GPU kernel launch fails.
+"""

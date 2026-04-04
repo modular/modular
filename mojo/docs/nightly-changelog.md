@@ -30,6 +30,16 @@ This version is still a work in progress.
 
 ## Language changes
 
+- All Mojo functions now has a unique "function literal type". In practice, it
+  means that:
+
+  ```mojo
+  # type_of(foo) != type_of(bar)
+
+  def foo(): pass
+  def bar(): pass
+  ```
+
 - Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
   this will upgrade to an error in the future.
 
