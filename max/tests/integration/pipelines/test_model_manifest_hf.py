@@ -245,10 +245,8 @@ class TestDiffusionMultiComponentHF:
         "transformer",
         "vae",
         "text_encoder",
-        "text_encoder_2",
         "scheduler",
         "tokenizer",
-        "tokenizer_2",
     }
 
     @pytest.fixture()
@@ -299,7 +297,7 @@ class TestDiffusionMultiComponentHF:
         repo = HuggingFaceRepo(repo_id=self.REPO)
         result = ModelManifest._load_model_index(repo)
         assert result is not None
-        assert result["_class_name"] == "FluxPipeline"
+        assert result["_class_name"] == "Flux2Pipeline"
         assert "transformer" in result
         assert "vae" in result
 
@@ -399,7 +397,7 @@ class TestFlux2ComponentResolution:
     ) -> None:
         cfg = resolved_manifest["vae"]
         assert cfg.quantization_encoding is not None
-        assert cfg.quantization_encoding == "bfloat16"
+        assert cfg.quantization_encoding == "float32"
 
     def test_vae_weight_path_resolved(
         self, resolved_manifest: ModelManifest
