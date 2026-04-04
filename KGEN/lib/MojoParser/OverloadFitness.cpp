@@ -916,6 +916,13 @@ OverloadFitness OverloadFitness::evaluate(
     // If we have a varargs argument, then it will eat the rest of the
     // positional arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
+      if (operands[posOperandIdx].isUnpackedPositional()) {
+        // Fully checked by ParamInf.
+        ++posOperandIdx;
+        result.payload.passesVarArgArgument = true;
+        continue;
+      }
+
       ASTType expectedRVType =
           RefType::stripRefConvention(expectedType, expectedConvention);
       auto varArgsEltType =

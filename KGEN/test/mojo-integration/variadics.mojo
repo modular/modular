@@ -106,7 +106,7 @@ struct CountBox(Bumpable, ImplicitlyCopyable):
 def takes_int_params[*args: Int]():
     comptime args_list = ParameterList[*args]()
 
-    # CHECK: -- Testing parameter varargs
+    # CHECK-LABEL: -- Testing parameter varargs
     print("-- Testing parameter varargs")
 
     # can dynamically index the parameter list.
@@ -139,11 +139,11 @@ def test_param_varargs():
 
 
 def test_mut_varargs():
-    # CHECK: -- Testing mut varargs
+    # CHECK-LABEL: -- Testing mut varargs
     print("-- Testing mut varargs")
-    var s1: String = "hello"
-    var s2: String = "konnichiwa"
-    var s3: String = "bonjour"
+    var s1 = "hello"
+    var s2 = "konnichiwa"
+    var s3 = "bonjour"
 
     def make_worldly(mut *strs: String):
         for i in range(len(strs)):
@@ -167,6 +167,23 @@ def test_mut_varargs():
     # CHECK-NEXT: destroying 2
     # CHECK-NEXT: destroying 4
 
+    # CHECK-NEXT: test forwarding
+    print("test forwarding")
+
+    var s4 = "first"
+    var s5 = "second"
+
+    def take_forwarded(mut *strs: String):
+        for ref s in strs:
+            s += " item"
+
+    def pass_forwarded(mut *strs: String):
+        take_forwarded(*strs)
+
+    pass_forwarded(s4, s5)
+    print(s4)  # CHECK-NEXT: first item
+    print(s5)  # CHECK-NEXT: second item
+
 
 # ===----------------------------------------------------------------------=== #
 # Owned varargs
@@ -174,12 +191,15 @@ def test_mut_varargs():
 
 
 def test_owned_varargs():
-    # CHECK: -- testing owned mem varargs
+    # CHECK-LABEL: -- testing owned mem varargs
     print("\n-- testing owned mem varargs")
 
     var v1 = TalkativeMem(1)  # CHECK-NEXT: initializing 1
     var v2 = TalkativeMem(2)  # CHECK-NEXT: initializing 2
     var v3 = TalkativeMem(3)  # CHECK-NEXT: initializing 3
+
+    # CHECK-NEXT: first test
+    print("first test")
 
     def handle_owned_mem(var *strs: TalkativeMem):
         # owned arguments are mutable and live as long as they are used.
@@ -196,12 +216,34 @@ def test_owned_varargs():
 
     handle_owned_mem(v1^, v2^, v3^)
 
+    # CHECK-NEXT: test forwarding
+    print("test forwarding")
+
+    v1 = TalkativeMem(5)  # CHECK-NEXT: initializing 5
+    v2 = TalkativeMem(10)  # CHECK-NEXT: initializing 10
+
+    def take_forwarded(var *strs: TalkativeMem):
+        for ref s in strs:
+            s.state *= 2
+
+        # So they should die here, after the loop, before the print.
+        # CHECK-NEXT: destroying 20
+        # CHECK-NEXT: destroying 10
+
+        # CHECK-NEXT: after last use
+        print("after last use")
+
+    def pass_forwarded(var *strs: TalkativeMem):
+        take_forwarded(*strs^)
+
+    pass_forwarded(v1^, v2^)
+
     # CHECK-NEXT: after call
     print("after call")
 
 
 def test_owned_reg_varargs():
-    # CHECK: -- testing owned reg varargs
+    # CHECK-LABEL: -- testing owned reg varargs
     print("\n-- testing owned reg varargs")
 
     var v1 = TalkativeReg(1)  # CHECK-NEXT: initializing 1
@@ -228,7 +270,7 @@ def test_owned_reg_varargs():
 
 
 def test_non_trivial_reg_varargs():
-    # CHECK: -- test_non_trivial_reg_varargs
+    # CHECK-LABEL: -- test_non_trivial_reg_varargs
     print("\n-- test_non_trivial_reg_varargs")
 
     def callee(*args: TalkativeCopableReg):
@@ -276,7 +318,7 @@ def owned_variadic_pack[*Ts: Writable](var *pack: *Ts):
 
 
 def test_owned_variadic_pack():
-    # CHECK: -- testing owned variadic pack with 0 elements
+    # CHECK-LABEL: -- testing owned variadic pack with 0 elements
     owned_variadic_pack()
     # CHECK-NEXT: owned_variadic_pack done
     # CHECK-NEXT: done zero
@@ -316,7 +358,7 @@ def inout_variadic_pack[*Ts: Writable](mut *pack: *Ts):
 
 
 def test_inout_variadic_pack():
-    # CHECK: -- testing mut variadic pack with 2 elements
+    # CHECK-LABEL: -- testing mut variadic pack with 2 elements
     # CHECK: hello foo
     # CHECK: hello 42
     var string = "foo"
@@ -368,7 +410,7 @@ def borrowed_variadic_pack[*Ts: Writable](*pack: *Ts):
 
 
 def test_borrowed_variadic_pack():
-    # CHECK: -- testing read-only variadic pack with 2 elements
+    # CHECK-LABEL: -- testing read-only variadic pack with 2 elements
     # CHECK: hello foo
     # CHECK: hello 42
     borrowed_variadic_pack("foo", 42)

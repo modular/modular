@@ -1284,6 +1284,21 @@ LogicalResult ParamInf::inferForCall(
           cast<OriginType>(variadicListInfo.origin.getType());
       auto argConvention = signature.getVariadicConvention(expectedArgIdx);
 
+      // Support forwarding an entire list with "*list".
+      if (posOperandIdx != numOperands &&
+          operands[posOperandIdx].isUnpackedPositional()) {
+
+        if (failed(inferOneOperand(operands[posOperandIdx], posOperandIdx,
+                                   expectedArgIdx, expectedType,
+                                   expectedConvention, argPogs, operands.syntax,
+                                   operandsNeedingOrigins)))
+          return failure();
+        ++posOperandIdx;
+        continue;
+      }
+
+      // Otherwise, we're binding a sequence of values into the list.
+
       // TODO: This is subtly wrong in a way that doesn't matter. We're passing
       // the ultimate origin in as the origin for the RefType, but we need to
       // infer the union all of the arg origins: not just the first arg's
@@ -1305,7 +1320,7 @@ LogicalResult ParamInf::inferForCall(
 
         if (operand.isUnpackedPositional()) {
           getMojoDiag(operand.expr->getLoc())
-              << "cannot unpack a variadic pack into a variadic argument";
+              << "cannot unpack a value into a variadic argument";
           return failure();
         }
 
@@ -1342,7 +1357,7 @@ LogicalResult ParamInf::inferForCall(
       // Support forwarding an entire pack with "*pack".
       if (posOperandIdx != numOperands &&
           operands[posOperandIdx].isUnpackedPositional()) {
-        ASTType actualPackType =
+        ASTType actualPackType = // FIXME: This is wrong for UValues.
             operands[posOperandIdx].ir.getRValueTypeIfResolvable();
         assert(actualPackType &&
                "unpacked positional operand must have a resolvable type");
