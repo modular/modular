@@ -530,7 +530,7 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
   } else if (auto f = sugarDynCast<FnLiteralTypeGeneratorType>(mlirType)) {
     // A function literal is non-materializable, the nonmaterializable target is
     // the function pointer type.
-    return f.getTargetLiteral().getType();
+    return f.getSymbolConstantAttr().getType();
   }
 
   return {};

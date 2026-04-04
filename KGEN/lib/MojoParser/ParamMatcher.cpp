@@ -595,7 +595,8 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // Allowing match a FnLiteralType To a FnType, but not vice versa.
   if (auto actual = dyn_cast<FnLiteralTypeGeneratorType>(actualType))
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType))
-      return matchFunctionTypes(actual.getTargetLiteral().getType(), expected);
+      return matchFunctionTypes(actual.getSymbolConstantAttr().getType(),
+                                expected);
 
   // Handle GeneratorType
   if (auto actual = dyn_cast<GeneratorType>(actualType)) {

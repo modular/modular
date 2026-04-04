@@ -27,7 +27,7 @@ using namespace KGEN;
 
 SymbolConstantAttr KGEN::extractSymbolConstantAttr(TypedAttr attr) {
   if (auto literal = dyn_cast<FuncLiteralTypeGeneratorType>(attr.getType()))
-    return literal.getTargetLiteral();
+    return literal.getSymbolConstantAttr();
   if (auto literal = dyn_cast<FuncLiteralType>(attr.getType())) {
     auto funcSymbol = cast<FuncSymbolAttr>(literal.getFuncLiteral());
     return SymbolConstantAttr::get(

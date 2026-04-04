@@ -372,7 +372,7 @@ public:
   static std::optional<FnOrFnLiteralTypeGeneratorType> tryGet(Type gen) {
     if (auto fnTypeGen = sugarDynCast<FnTypeGeneratorType>(gen))
       return fnTypeGen;
-    else if (auto fnLiteralGen = sugarDynCast<FnLiteralTypeGeneratorType>(gen))
+    if (auto fnLiteralGen = sugarDynCast<FnLiteralTypeGeneratorType>(gen))
       return fnLiteralGen;
     return std::nullopt;
   }

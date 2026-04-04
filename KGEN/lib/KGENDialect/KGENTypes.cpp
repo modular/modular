@@ -777,7 +777,7 @@ FuncLiteralTypeGeneratorType::getSpecializedGenerator(
                                              location));
 }
 
-SymbolConstantAttr FuncLiteralTypeGeneratorType::getTargetLiteral() {
+SymbolConstantAttr FuncLiteralTypeGeneratorType::getSymbolConstantAttr() {
   auto directSymbol = getBody().getTargetLiteral();
   auto sig = GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
                                 getMetadata());

@@ -110,7 +110,7 @@ public:
                           Location location);
 
   // Unwrap the target literal from the literal type.
-  SymbolConstantAttr getTargetLiteral();
+  SymbolConstantAttr getSymbolConstantAttr();
 
   FuncLiteralType getBody();
   FuncLiteralType getInstantiatedBody();

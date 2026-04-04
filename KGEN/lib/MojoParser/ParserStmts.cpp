@@ -1876,7 +1876,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     PValue literal = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
     // Must resolved to a function literal. Extract the literal target.
     return sugarCast<FnLiteralTypeGeneratorType>(literal.getType())
-        .getTargetLiteral();
+        .getSymbolConstantAttr();
   };
 
   PValue hasNext = getMutFnWrapper("paramfor_has_next");
