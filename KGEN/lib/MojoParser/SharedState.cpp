@@ -1360,12 +1360,6 @@ ASTType SharedState::getStandardCollectionType(llvm::SMLoc loc,
   return lookupNamedType(name, collectionsModule, loc);
 }
 
-ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {
-  ASTDecl &closureModule =
-      importModule("std.builtin._closure", /*currentPackage=*/nullptr, loc);
-  return lookupNamedType("__ParameterClosureCaptureList", closureModule, loc);
-}
-
 ASTType SharedState::getBuiltinStubsMLIRType(llvm::SMLoc loc) {
   ASTDecl &stubsModule =
       importModule("std.builtin._stubs", /*currentPackage=*/nullptr, loc);

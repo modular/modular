@@ -484,7 +484,6 @@ public:
   ASTDecl *getBuiltinDevicePassableTrait(llvm::SMLoc loc);
   ASTDecl *getBuiltinRaisingCoroutineType(llvm::SMLoc loc);
   ASTType getStandardCollectionType(llvm::SMLoc loc, StringRef name);
-  ASTType getBuiltinCaptureListType(llvm::SMLoc loc);
   ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
 
   /// Lookup a builtin special function overload set.

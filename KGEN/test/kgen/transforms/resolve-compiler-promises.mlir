@@ -124,71 +124,11 @@ kgen.func @cyclic() {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
-
-// CHECK-LABEL: kgen.func @call_fn
-// CHECK-SAME: (%arg0: !kgen.pointer<none>)
-kgen.func @call_fn(%arg0: !kgen.pointer<none>) -> index {
-  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index)>>
-  // CHECK-NEXT: %1 = kgen.struct.gep %0[0]
-  // CHECK-NEXT: %2 = pop.load %1
-  kgen.capture_list.expand %arg0
-  %0 = pop.compiler.global_load "foo" : index
-  // CHECK-NEXT: return %2
-  kgen.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @init_fn
-// CHECK-SAME: (%arg0: index)
-kgen.func @init_fn() capturing -> !kgen.pointer<none> {
-  // CHECK: %0 = pop.aligned_alloc %idx8, %idx8
-  // CHECK-NEXT: %1 = kgen.struct.gep %0[0] : <struct<(index)>>
-  // CHECK-NEXT: store %arg0, %1
-  // CHECK-NEXT: %2 = pop.pointer.bitcast
-  %cl = kgen.capture_list.create :(!kgen.pointer<none>) -> index @call_fn
-  // CHECK-NEXT: return %2
-  kgen.return %cl : !kgen.pointer<none>
-}
-
-// CHECK-LABEL: kgen.func @call_it
-// CHECK-SAME: (%arg0: !kgen.pointer<none>)
-kgen.func @call_it(%arg0: !kgen.pointer<none>) {
-  // CHECK-NEXT: call @call_fn(%arg0)
-  kgen.call @call_fn(%arg0) : (!kgen.pointer<none>) -> index
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @copy_fn
-// CHECK-SAME: (%arg0: !kgen.pointer<none>)
-kgen.func @copy_fn(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
-  // CHECK: %0 = pop.aligned_alloc %idx8, %idx8
-  // CHECK-NEXT: %1 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index)>>
-  // CHECK-NEXT: %2 = pop.load %1
-  // CHECK-NEXT: pop.store %2, %0
-  // CHECK-NEXT: %3 = pop.pointer.bitcast %0
-  %ptr = kgen.capture_list.copy %arg0 :(!kgen.pointer<none>) -> index @call_fn
-  // CHECK-NEXT: return %3
-  kgen.return %ptr : !kgen.pointer<none>
-}
-
-}
-
-// -----
-
 // COM: Test that an empty callgraph does not crash.
 
 // -----
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
-
-// CHECK-LABEL: kgen.func @init_fn
-kgen.func @init_fn(%arg0: i64, %arg1: i32) capturing -> !kgen.pointer<none> {
-  // CHECK: store %arg2
-  // CHECK: store %arg3
-  // CHECK: bitcast %{{.*}} : !kgen.pointer<struct<(i64, i32)>>
-  %cl = kgen.capture_list.create :(!kgen.pointer<none>) -> () @call_fn
-  kgen.return %cl : !kgen.pointer<none>
-}
 
 kgen.func @closure1() capturing {
   %0 = pop.compiler.global_load "cap1" : i32
@@ -200,19 +140,18 @@ kgen.func @closure2() capturing {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @join(%arg0: i64, %arg1: i32) capturing
 kgen.func @join() capturing {
+  // CHECK-NEXT: call @closure1(%arg1)
+  // CHECK-NEXT: call @closure2(%arg0)
   kgen.call @closure1() : () capturing -> ()
   kgen.call @closure2() : () capturing -> ()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @call_fn
-// CHECK-SAME: (%arg0: !kgen.pointer<none>)
-kgen.func @call_fn(%cl: !kgen.pointer<none>) {
-  // CHECK: [[C0:%.*]] = pop.load
-  // CHECK: [[C1:%.*]] = pop.load
-  kgen.capture_list.expand %cl
-  // CHECK: call @join([[C0]], [[C1]])
+// CHECK-LABEL: kgen.func @call_fn(%arg0: i64, %arg1: i32)
+kgen.func @call_fn(%arg0: i64, %arg1: i32) {
+  // CHECK: kgen.call @join(%{{.*}}, %{{.*}}) : (i64, i32) capturing -> ()
   kgen.call @join() : () capturing -> ()
   kgen.return
 }
