@@ -13,6 +13,8 @@
 
 from std.collections import Optional
 from std.collections.string._utf8 import _is_valid_utf8
+from std.collections.string._to_lower import lower_utf8
+from std.collections.string._to_upper import upper_utf8
 from std.collections.string.string_slice import _split
 from std.os import abort
 from std.pathlib import _dir_of_current_file
@@ -180,6 +182,23 @@ def bench_string_lower[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string lower_utf8
+# ===-----------------------------------------------------------------------===#
+@parameter
+def bench_string_lower_2[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    def call_fn() unified {read}:
+        var res = lower_utf8(black_box(items))
+        keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark string upper
 # ===-----------------------------------------------------------------------===#
 @parameter
@@ -191,6 +210,23 @@ def bench_string_upper[
     @always_inline
     def call_fn() unified {read}:
         var res = black_box(items).upper()
+        keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string upper_utf8
+# ===-----------------------------------------------------------------------===#
+@parameter
+def bench_string_upper_2[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    def call_fn() unified {read}:
+        var res = upper_utf8(black_box(items))
         keep(res)
 
     b.iter(call_fn)
@@ -461,6 +497,12 @@ def main() raises:
             )
             m.bench_function[bench_string_upper[length, fname]](
                 BenchId(String("bench_string_upper", suffix))
+            )
+            m.bench_function[bench_string_lower_2[length, fname]](
+                BenchId(String("bench_string_lower_2", suffix))
+            )
+            m.bench_function[bench_string_upper_2[length, fname]](
+                BenchId(String("bench_string_upper_2", suffix))
             )
             m.bench_function[bench_string_replace[length, fname, old, new]](
                 BenchId(String("bench_string_replace", suffix))
