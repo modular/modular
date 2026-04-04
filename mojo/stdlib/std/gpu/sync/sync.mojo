@@ -141,6 +141,39 @@ def barrier():
         ]()
 
 
+@always_inline("nodebug")
+def barrier_count(predicate: Bool) -> Int32:
+    """Counts threads in the block with `predicate` true and synchronizes.
+
+    All threads in the block participate; this performs a block-wide barrier
+    reduction and returns the number of threads whose `predicate` evaluated to
+    true. Available on NVIDIA GPUs only and maps to PTX `bar.red.popc`.
+
+    Args:
+        predicate: Boolean flag for the calling thread to contribute to the
+            population count.
+
+    Returns:
+        The count of threads in the block with `predicate` true, broadcast to
+        all threads.
+    """
+
+    comptime if is_nvidia_gpu():
+        return rebind[Int32](
+            __mlir_op.`nvvm.barrier0.popc`[_type=__mlir_type.i32](
+                to_i32(Int32(predicate))
+            )
+        )
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
+            note=(
+                "barrier_count() is currently only available when targeting"
+                " NVIDIA GPUs"
+            ),
+        ]()
+
+
 @fieldwise_init
 struct AMDScheduleBarrierMask(
     Equatable, Intable, TrivialRegisterPassable, Writable
