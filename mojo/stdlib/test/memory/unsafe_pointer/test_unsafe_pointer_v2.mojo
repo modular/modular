@@ -417,6 +417,14 @@ def test_offset() raises:
     ptr2.free()
 
 
+def test_pointer_subtract() raises:
+    var ptr = alloc[Int](5)
+    assert_equal(ptr - ptr, 0)
+    assert_equal((ptr + 4) - ptr, 4)
+    assert_equal(ptr - (ptr + 4), -4)
+    ptr.free()
+
+
 def test_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):
