@@ -39,7 +39,7 @@ def might_throw(cond: Bool) -> Int:
 
         result = 4
     except e:
-        return String(e).byte_length() * 4
+        return len(String(e)) * 4
 
     else:
         result += 1
