@@ -381,7 +381,7 @@ struct Layout(
         # Result: Layout with shape (3,4) and stride (1,3)
         ```
         """
-        var shape = IntTuple(dims)
+        var shape = IntTuple(*dims)
         return Self.col_major(shape)
 
     @staticmethod
@@ -483,7 +483,7 @@ struct Layout(
         # Result: Layout with shape (3,4) and stride (4,1)
         ```
         """
-        var shape = IntTuple(dims)
+        var shape = IntTuple(*dims)
         return Self.row_major(shape)
 
     @staticmethod

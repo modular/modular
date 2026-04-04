@@ -114,7 +114,7 @@ struct RuntimeTuple[
         Args:
             values: Variadic number of integer values to initialize the tuple with.
         """
-        self.value = type_of(self.value)(values)
+        self.value = type_of(self.value)(*values)
 
     @always_inline
     @implicit

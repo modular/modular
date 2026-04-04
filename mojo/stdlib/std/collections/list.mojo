@@ -425,18 +425,8 @@ struct List[T: Copyable](
             values: The values to populate the list with.
             __list_literal__: Tell Mojo to use this method for list literals.
         """
-        self = Self(elements=values^)
-
-    def __init__(out self, *, var elements: VariadicList[Self.T, _]):
-        """Constructs a list from the given values.
-
-        Args:
-            elements: The values to populate the list with.
-        """
-        var length = len(elements)
-
+        var length = len(values)
         self = Self(capacity=length)
-
         self._annotate_increase(length)
 
         # Transfer all of the elements into the List.
@@ -444,9 +434,9 @@ struct List[T: Copyable](
         def init_elt(idx: Int, var elt: Self.T):
             (self._data + idx).init_pointee_move(elt^)
 
-        elements^.consume_elements[init_elt]()
+        values^.consume_elements[init_elt]()
 
-        # Remember how many elements we have.
+        # Remember how many values we have.
         self._len = length
 
     def __init__[

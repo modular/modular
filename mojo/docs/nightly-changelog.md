@@ -14,8 +14,8 @@ This version is still a work in progress.
 
 - Added support for conditional `RegisterPassable` conformance.
 
-- Variadic packs can be forwarded through runtime calls with `*pack` when the
-  callee takes a compatible variadic pack parameter.
+- Variadic lists and packs can be forwarded through runtime calls with `*pack`
+  when the callee takes a compatible variadic list/pack.
 
   ```mojo
   def callee[*Ts: Writable](*args: *Ts):

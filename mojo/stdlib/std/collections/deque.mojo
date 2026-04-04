@@ -161,15 +161,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             values: The values to populate the deque with.
             __list_literal__: Tell Mojo to use this method for list literals.
         """
-        self = Self(elements=values^)
-
-    def __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
-        """Constructs a deque from the given values.
-
-        Args:
-             elements: The values to populate the deque with.
-        """
-        args_length = len(elements)
+        args_length = len(values)
 
         if args_length < self.default_capacity:
             capacity = self.default_capacity
@@ -178,14 +170,14 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         self = Self(capacity=capacity)
 
-        # Transfer all of the elements into the deque.
+        # Transfer all of the values into the deque.
         @parameter
         def init_elt(idx: Int, var elt: Self.ElementType):
             (self._data + idx).init_pointee_move(elt^)
 
-        elements^.consume_elements[init_elt]()
+        values^.consume_elements[init_elt]()
 
-        # Remember how many elements we have.
+        # Remember how many values we have.
         self._tail = args_length
 
     def __init__(out self, *, copy: Self):

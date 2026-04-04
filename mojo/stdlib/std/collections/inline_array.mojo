@@ -354,35 +354,12 @@ struct InlineArray[ElementType: Copyable, size: Int](
         var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
-        assert len(elems) == Self.size, "No. of elems must match array size"
-        self = Self(storage=elems^)
-
-    @always_inline
-    def __init__[
-        origin: MutOrigin, //
-    ](
-        out self,
-        *,
-        var storage: VariadicList[
-            elt_is_mutable=True, origin=origin, Self.ElementType, is_owned=True
-        ],
-    ):
-        """Construct an array from a low-level internal representation.
-
-        Parameters:
-            origin: The origin of the storage being passed in.
-
-        Args:
-            storage: The variadic list storage to construct from. Must match
-                array size.
-        """
-
         debug_assert[assert_mode="safe"](
-            len(storage) == Self.size,
+            len(elems) == Self.size,
             "InlineArray: expected ",
             Self.size,
             " elements, received ",
-            len(storage),
+            len(elems),
         )
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -393,13 +370,13 @@ struct InlineArray[ElementType: Copyable, size: Int](
         comptime for i in range(Self.size):
             # Safety: We own the elements in the variadic list.
             ptr.init_pointee_move_from(
-                UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
+                UnsafePointer(to=elems[i]).unsafe_mut_cast[True]()
             )
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
-        storage^._annihilate()
+        elems^._annihilate()
 
     def __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.

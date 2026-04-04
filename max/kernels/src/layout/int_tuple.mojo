@@ -403,7 +403,7 @@ struct IntTuple(
 
     @staticmethod
     @always_inline("nodebug")
-    def elements_size(elements: VariadicList[IntTuple, ...]) -> Int:
+    def elements_size(*elements: IntTuple) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
@@ -488,17 +488,6 @@ struct IntTuple(
 
         Args:
             elements: Variable number of integer values to store in the tuple.
-        """
-        self = Self(elements)
-
-    @always_inline
-    def __init__(out self, elements: VariadicList[Int, is_owned=False]):
-        """Initialize an `IntTuple` with a list of integers.
-
-        Creates an `IntTuple` containing the provided integer values.
-
-        Args:
-            elements: List of integer values to store in the tuple.
 
         Notes:
             - Pre-allocates exact memory needed for efficiency.
@@ -584,7 +573,7 @@ struct IntTuple(
             __list_literal__: Specifies that this constructor can be used for
               list literals.
         """
-        var size = Self.elements_size(elements)
+        var size = Self.elements_size(*elements)
         self._store = IntArray(size + 1)
         var num_elems = len(elements)
         self._store[0] = num_elems
@@ -938,7 +927,7 @@ struct IntTuple(
 
         var old_len = len(self)
         var old_size = self.size()
-        var new_size = old_size + Self.elements_size(elements)
+        var new_size = old_size + Self.elements_size(*elements)
         var new_len = old_len + len(elements)
         var new_store = IntArray(new_size)
         new_store[0] = new_len
