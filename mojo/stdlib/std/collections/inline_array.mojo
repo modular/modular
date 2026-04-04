@@ -505,6 +505,10 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 Self.size,
             )
 
+            if comptime_idx < 0:
+                comptime_idx += Self.size
+            return self.unsafe_get(comptime_idx)
+
         var normalized_index = normalize_index["InlineArray"](idx, len(self))
         return self.unsafe_get(normalized_index)
 
