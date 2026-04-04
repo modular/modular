@@ -121,8 +121,9 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
   if (auto actualType = sugarDynCast<FnLiteralTypeGeneratorType>(actual)) {
     if (auto expectedType = sugarDynCast<FnTypeGeneratorType>(expected)) {
       // See if the literal itself has a compatible type.
-      return canConvertFunctionTypes(actualType.getTargetLiteral().getType(),
-                                     expectedType, valueExpr.expr, declScope);
+      return canConvertFunctionTypes(
+          actualType.getSymbolConstantAttr().getType(), expectedType,
+          valueExpr.expr, declScope);
     }
   }
 
@@ -501,7 +502,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     // because this could be a zero cost conversion without needing to generate
     // a thunk.
     return emitter.emitImplicitConversionToType(
-        {PValue(fnLiteralType.getTargetLiteral()), expr}, expected, dest);
+        {PValue(fnLiteralType.getSymbolConstantAttr()), expr}, expected, dest);
   }
 
   // Strip all sugar so we don't bind parameters wrong.
@@ -905,8 +906,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
 
   if (auto actual = sugarDynCast<FnLiteralTypeGeneratorType>(fromType))
     if (auto expected = sugarDynCast<FnTypeGeneratorType>(toType))
-      return canZeroCostConvert(actual.getTargetLiteral().getType(), expected,
-                                shared);
+      return canZeroCostConvert(actual.getSymbolConstantAttr().getType(),
+                                expected, shared);
 
   // Otherwise handle function conversions.
   auto from = sugarDynCast<FnTypeGeneratorType>(fromType);
@@ -1244,7 +1245,8 @@ PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
 
   if (auto actual = sugarDynCast<FnLiteralTypeGeneratorType>(value.getType()))
     if (auto expected = sugarDynCast<FnTypeGeneratorType>(toType))
-      return ParamOperatorAttr::getRebind(actual.getTargetLiteral(), expected);
+      return ParamOperatorAttr::getRebind(actual.getSymbolConstantAttr(),
+                                          expected);
 
   return ParamOperatorAttr::getRebind(value.get(), toType);
 }
@@ -1436,7 +1438,7 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
                        fromType)) {
       TraitType closureTrait = anyTrait.getTraitType();
       if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
-        TypedAttr fnPValue = fnGen.getType().getTargetLiteral();
+        TypedAttr fnPValue = fnGen.getType().getSymbolConstantAttr();
         Type concreteWrapperType = getConcreteClosureWrapperTypeForFnSymbol(
             shared, *declScope, loc, fnPValue);
         return succeeded(shared.getClosureEmitter().isCompatibleWith(
@@ -1574,7 +1576,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       StructType structTy = structMeta.getType();
       PValue target = value.ir.getIfPValue();
       if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
-        target = PValue(fnLiteral.getTargetLiteral());
+        target = PValue(fnLiteral.getSymbolConstantAttr());
       if (isClosureWrapperStruct(shared, target, structTy))
         return cacheAndReturnVal(rvType, requiredType, true);
     }
@@ -1677,7 +1679,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       if (auto fnGen =
               sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(fromType)) {
         if (auto traitDecl = getClosureTraitDecl(shared, trait)) {
-          TypedAttr fnPValue = fnGen.getType().getTargetLiteral();
+          TypedAttr fnPValue = fnGen.getType().getSymbolConstantAttr();
           ASTType structWrapper = getConcreteClosureWrapperTypeForFnSymbol(
               shared, declScope, valueExpr.expr->getLoc(), fnPValue);
           (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
@@ -1735,7 +1737,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       StructType structTy = structMeta.getType();
       auto target = valueExpr.ir.getIfPValue();
       if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
-        target = PValue(fnLiteral.getTargetLiteral());
+        target = PValue(fnLiteral.getSymbolConstantAttr());
       if (isClosureWrapperStruct(shared, target, structTy)) {
         auto module = getDeclScope().getNearestDeclOfType<FileModuleOp>();
         assert(builder);

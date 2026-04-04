@@ -439,7 +439,7 @@ static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
   if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
     return extractFromSymbolRef(cst.getSymbol());
   if (auto fnLiteral = dyn_cast<FnLiteralTypeGeneratorType>(attr.getType()))
-    return extractDecoratorName(fnLiteral.getTargetLiteral());
+    return extractDecoratorName(fnLiteral.getSymbolConstantAttr());
 
   if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
     // Only process if it's an Apply operator with at least one operand
@@ -501,7 +501,7 @@ void Decorators::applyBodyDecorators(
     if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator)) {
       // DecoVal wants the symbol constant attr.
       if (auto fnLit = dyn_cast<FnLiteralTypeGeneratorType>(decoVal.getType()))
-        decoVal = PValue(fnLit.getTargetLiteral());
+        decoVal = PValue(fnLit.getSymbolConstantAttr());
 
       if (failed(validateCompilerDecorator(decoVal))) {
         emitError(decorator->getLoc(), "unsupported compiler decorator")

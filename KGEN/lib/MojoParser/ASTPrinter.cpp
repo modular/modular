@@ -1656,7 +1656,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     os << "def";
     if (auto fnLiteralGen = sigGen.getIfFnLiteralTypeGenerator()) {
       os << " "
-         << getNameFromSymbolRef(fnLiteralGen.getTargetLiteral().getSymbol());
+         << getNameFromSymbolRef(
+                fnLiteralGen.getSymbolConstantAttr().getSymbol());
     }
 
     FnType sig = sigGen.getBodyFnType();
