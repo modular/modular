@@ -8,7 +8,7 @@
 
 from std.builtin.variadics import *
 
-# CHECK-LABEL: lit.alias.decl *"T`0x": meta<!lit.struct<#Tuple <:variadic<!Movable>
+# CHECK-LABEL: lit.alias.decl *"T`0x": meta<!lit.struct<#Tuple <:param_list<!Movable>
 # CHECH-SAME: [!Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int]
 comptime T = Tuple[*Variadic.splat_type[10, Int]]
 
@@ -21,7 +21,7 @@ comptime AddOne[i: Int] : Int = i + 1
 
 # Tabulate: [0, 1, 2, 3, 4] from index identity
 comptime TabulateIndices = Variadic.tabulate[5, AddOne]
-# CHECK: lit.alias.decl *"TabulateIndices`{{.*}}": variadic<!Int> = <[{1}, {2}, {3}, {4}, {5}]>
+# CHECK: lit.alias.decl *"TabulateIndices`{{.*}}": param_list<!Int> = <[{1}, {2}, {3}, {4}, {5}]>
 
 # CHECK-LABEL: lit.fn @"foo
 def foo(

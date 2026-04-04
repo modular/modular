@@ -169,11 +169,11 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <add(mul_no_wrap(p1, 37919), -37919)>
   kgen.param.constant = <mul_no_wrap(add(p1, -1), 37919)>
 
-  kgen.param.declare args: variadic<si32> = <[1, 2]>
-  // CHECK: constant: si32 = <#kgen.variadic.get<:variadic<si32> args, 2>>
-  kgen.param.constant: si32 = <#kgen.variadic.get<:!kgen.variadic<si32> args, 2>>
+  kgen.param.declare args: param_list<si32> = <[1, 2]>
+  // CHECK: constant: si32 = <#kgen.variadic.get<:param_list<si32> args, 2>>
+  kgen.param.constant: si32 = <#kgen.variadic.get<:!kgen.param_list<si32> args, 2>>
   // CHECK: constant = <2>
-  kgen.param.constant = <#kgen.variadic.get<:!kgen.variadic<index> [1, 2], 1>>
+  kgen.param.constant = <#kgen.variadic.get<:!kgen.param_list<index> [1, 2], 1>>
 
   // CHECK: kgen.param.constant = <cond(int1, p1, p2)>
   kgen.param.constant = <cond(int1, p1, p2)>
@@ -217,8 +217,8 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: declare concat_str: string = <"hello world">
   kgen.param.declare concat_str: string = <str_concat("hello ", "world")>
 
-  // CHECK: constant: variadic<type> = <[index, f32]>
-  kgen.param.constant: variadic<!kgen.type> = <function_get_arg_types(:type (index,f32)->())>
+  // CHECK: constant: param_list<type> = <[index, f32]>
+  kgen.param.constant: param_list<!kgen.type> = <function_get_arg_types(:type (index,f32)->())>
 
   kgen.return
 }
@@ -363,12 +363,12 @@ kgen.generator @eq_compare_anything() {
 }
 
 // CHECK-LABEL: @eq_compare_sub_elements
-kgen.generator @eq_compare_sub_elements<a: !kgen.variadic<index>, b: !kgen.variadic<index>, x: index, y: index>() {
-  // CHECK-NEXT: <and(eq(#kgen.variadic.size<:variadic<index> a>, 2), eq(#kgen.variadic.size<:variadic<index> b>, 2))>
+kgen.generator @eq_compare_sub_elements<a: !kgen.param_list<index>, b: !kgen.param_list<index>, x: index, y: index>() {
+  // CHECK-NEXT: <and(eq(#kgen.variadic.size<:param_list<index> a>, 2), eq(#kgen.variadic.size<:param_list<index> b>, 2))>
   kgen.param.constant: i1 = <and(
-    eq(:index #kgen.variadic.size<:!kgen.variadic<index> b>, 2),
-    eq(:index #kgen.variadic.size<:!kgen.variadic<index> a>, 2),
-    eq(:index #kgen.variadic.size<:!kgen.variadic<index> b>, 2)
+    eq(:index #kgen.variadic.size<:!kgen.param_list<index> b>, 2),
+    eq(:index #kgen.variadic.size<:!kgen.param_list<index> a>, 2),
+    eq(:index #kgen.variadic.size<:!kgen.param_list<index> b>, 2)
   )>
 
   kgen.return

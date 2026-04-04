@@ -2308,7 +2308,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   // Return true if any attribute or type is deferred. If type is
-  // `!kgen.variadic_splat`, the operation has to be deferred, because it's
+  // `!kgen.param_list_splat`, the operation has to be deferred, because it's
   // expected it's used in struct type and operation is expecting fully valid
   // struct type.
   auto useDeferredOp = [&]() {
@@ -2327,7 +2327,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
                                                : WalkResult::advance();
     });
 
-    // If either result type or operands have `!kgen.variadic_splat` type, the
+    // If either result type or operands have `!kgen.param_list_splat` type, the
     // operation has to be deferred.
     // TODO: Try to avoid this if possible. For example, if operation has no
     // InferTypeOpInterface, this is probably not needed.
@@ -2862,7 +2862,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
   }
 
-  // Support subscripting a !kgen.variadic value, which are used in parameter
+  // Support subscripting a !kgen.param_list value, which are used in parameter
   // lists.  This enables us to work with parameter backs in a more natural way,
   // e.g. def thing[*Ts: Copyable & Movable]():
   //      type = Ts[123]

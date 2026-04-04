@@ -68,7 +68,7 @@ def test3[
     x: __mlir_type[
         `!kgen.struct<(`,
         __mlir_type[
-            `!kgen.variadic_splat<`,
+            `!kgen.param_list_splat<`,
             __mlir_type[`!pop.scalar<`, dtype.value, `>`],
             `, `,
             n._mlir_value,
@@ -77,21 +77,21 @@ def test3[
         `)>`,
     ]
 ):
-    # CHECK: kgen.deferred "kgen.struct.extract"(%x : !kgen.struct<(!kgen.variadic_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 0 : index} : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>
+    # CHECK: kgen.deferred "kgen.struct.extract"(%x : !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 0 : index} : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>
     var e0 = __mlir_op.`kgen.struct.extract`[
         _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
         index = __mlir_attr.`0:index`,
     ](x)
 
-    # CHECK: kgen.deferred "kgen.struct.replace"(%1, %x : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, !kgen.struct<(!kgen.variadic_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 0 : index} : !kgen.struct<(!kgen.variadic_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>
+    # CHECK: kgen.deferred "kgen.struct.replace"(%1, %x : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 0 : index} : !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>
     _ = __mlir_op.`kgen.struct.replace`[index = __mlir_attr.`0:index`](e0, x)
 
-    # CHECK: kgen.deferred "kgen.struct.replace"(%3, %x : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, !kgen.struct<(!kgen.variadic_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 1 : index} : !kgen.struct<(!kgen.variadic_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>
+    # CHECK: kgen.deferred "kgen.struct.replace"(%3, %x : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 1 : index} : !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>
     _ = __mlir_op.`kgen.struct.replace`[
         _type = __mlir_type[
             `!kgen.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 __mlir_type[`!pop.scalar<`, dtype.value, `>`],
                 `, `,
                 n._mlir_value,

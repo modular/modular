@@ -111,7 +111,7 @@ def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
     Example:
 
     ```mlir
-    #kgen.variadic<1, 2> : !kgen.variadic<index>
+    #kgen.variadic<1, 2> : !kgen.param_list<index>
     ```
   }];
 
@@ -161,9 +161,9 @@ def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "variadic.zip"> {
 
     Example:
     ```mlir
-    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !variadic<!variadic<!AnyType>>
+    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
     // ->
-    #kgen.variadic<[[Int, Float], [Int, Float]]> : !variadic<!variadic<!AnyType>>
+    #kgen.variadic<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
     ```
 
     At the moment, when the provided variadics are of different lengths, we zip
@@ -205,9 +205,9 @@ def KGEN_VariadicTabulateAttr : KGEN_ExprAttr<"VariadicTabulate", "variadic.tabu
 
     Example:
     ```mlir
-    #kgen.variadic.tabulate<:!kgen.variadic<f32> 3, fn(i: index) -> f32> : !kgen.variadic<f32>
+    #kgen.variadic.tabulate<:!kgen.param_list<f32> 3, fn(i: index) -> f32> : !kgen.param_list<f32>
     // ->
-    #kgen.variadic<0, 1, 2> : !kgen.variadic<f32>
+    #kgen.variadic<0, 1, 2> : !kgen.param_list<f32>
     ```
   }];
 
@@ -293,9 +293,9 @@ def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "variadic.concat">
 
     Example:
     ```mlir
-    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !variadic<!AnyType>
+    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !param_list<!AnyType>
     // ->
-    #kgen.variadic<[Int, Int, Float, Float]> : !variadic<!AnyType>
+    #kgen.variadic<[Int, Int, Float, Float]> : !param_list<!AnyType>
     ```
   }];
 
@@ -955,7 +955,7 @@ def KGEN_StructFieldTypesAttr : KGEN_ExprAttr<"StructFieldTypes",
     Example:
 
     ```mlir
-    #kgen.struct_field_types<#MyStruct> : !kgen.variadic<!kgen.type>
+    #kgen.struct_field_types<#MyStruct> : !kgen.param_list<!kgen.type>
     ```
   }];
 
@@ -983,7 +983,7 @@ def KGEN_StructFieldNamesAttr : KGEN_ExprAttr<"StructFieldNames",
     Example:
 
     ```mlir
-    #kgen.struct_field_names<#MyStruct> : !kgen.variadic<!kgen.string>
+    #kgen.struct_field_names<#MyStruct> : !kgen.param_list<!kgen.string>
     ```
   }];
 

@@ -49,7 +49,7 @@ kgen.generator @struct<size, dtype: dtype, ty: type>(
 }
 
 // CHECK-LABEL: @pack
-kgen.generator @pack<Ts: variadic<!kgen.type>, T0: type, T1: type>(
+kgen.generator @pack<Ts: param_list<!kgen.type>, T0: type, T1: type>(
   // CHECK-SAME: !kgen.pack<Ts>
   %arg0: !kgen.pack<Ts>,
   // CHECK-SAME: !kgen.pack<[T0, T1]>
@@ -64,10 +64,10 @@ kgen.generator @pack<Ts: variadic<!kgen.type>, T0: type, T1: type>(
 
 // CHECK-LABEL: @variadic
 kgen.generator @variadic<ty: type>(
-  // CHECK-SAME: !kgen.variadic<scalar<f32>>
-  %arg0: !kgen.variadic<!pop.scalar<f32>>,
-  // CHECK-SAME: !kgen.variadic<ty>
-  %arg1: !kgen.variadic<ty>
+  // CHECK-SAME: !kgen.param_list<scalar<f32>>
+  %arg0: !kgen.param_list<!pop.scalar<f32>>,
+  // CHECK-SAME: !kgen.param_list<ty>
+  %arg1: !kgen.param_list<ty>
 ) {
   kgen.return
 }
@@ -83,7 +83,7 @@ kgen.func @union(%arg0: !pop.union<>, %arg1: !pop.union<i32>, %arg2: !pop.union<
 // CHECK-LABEL: kgen.generator @variadic_union
 // CHECK-SAME: !pop.union<[Ts]>
 // CHECK-SAME: !pop.union<T0, T1>
-kgen.generator @variadic_union<Ts: variadic<type>, T0: type, T1: type>(
+kgen.generator @variadic_union<Ts: param_list<type>, T0: type, T1: type>(
   %arg0: !pop.union<[Ts]>,
   %arg1: !pop.union<[[T0, T1]]>
 ) {

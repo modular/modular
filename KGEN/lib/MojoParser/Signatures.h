@@ -272,7 +272,7 @@ public:
   ASTType resultType;
 
   /// This is the type checked argument types with argument conventions and
-  /// origins applied, e.g. "!lit.ref<String>" or "!kgen.variadic<Int>"
+  /// origins applied, e.g. "!lit.ref<String>" or "!kgen.param_list<Int>"
   SmallVector<Type> fullArgTypes;
   SmallVector<ParamDeclAttr> implicitOriginDecls;
 

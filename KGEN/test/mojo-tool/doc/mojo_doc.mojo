@@ -587,15 +587,15 @@ def variadic_arg_hack[
     element_type: AnyType
 ](
     vals: __mlir_type[
-        `!kgen.variadic<!lit.ref<`,
+        `!kgen.param_list<!lit.ref<`,
         element_type,
         `, #lit.any.origin<0>: !lit.origin<0>, 0>>`,
     ]
 ):
-    """Test hacky use case of `!kgen.variadic` argument type printing.
+    """Test hacky use case of `!kgen.param_list` argument type printing.
 
     Args:
-        vals: !kgen.variadic arguments.
+        vals: !kgen.param_list arguments.
     """
     pass
 

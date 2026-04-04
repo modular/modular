@@ -1086,14 +1086,14 @@ def POP_SIMDReduceAndAttr : POP_SIMDReduceAttr<"And">;
 def POP_VariadicToArrayAttr : POP_ExprAttr<"VariadicToArray", "variadic_to_array"> {
   let summary = "Convert a variadic to an array.";
   let description = [{
-    The `#pop.variadic_to_array` attribute converts a `!kgen.variadic` into a
+    The `#pop.variadic_to_array` attribute converts a `!kgen.param_list` into a
     `!pop.array` whose length equals the variadic size and whose elements are
     the variadic's elements.
 
     Example:
 
     ```mlir
-    #pop.variadic_to_array<:!kgen.variadic<index> #kgen.variadic<1, 2, 3>>
+    #pop.variadic_to_array<:!kgen.param_list<index> #kgen.variadic<1, 2, 3>>
       : !pop.array<3, index>
     ```
   }];

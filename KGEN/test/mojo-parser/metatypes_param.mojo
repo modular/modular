@@ -113,21 +113,21 @@ def partial_autoparam(value: TwoParam[y=1, ...]):
     comptime second = value.y
 
 
-# CHECK-LABEL: lit.struct.decl @ParamVarArg<F: !Int, I: variadic<!Int> pos_vararg>
+# CHECK-LABEL: lit.struct.decl @ParamVarArg<F: !Int, I: param_list<!Int> pos_vararg>
 @fieldwise_init
 struct ParamVarArg[F: Int, *I: Int](TrivialRegisterPassable):
     # CHECK-LABEL: lit.fn @"self_type
-    # CHECK-SAME: #ParamVarArg <:!Int F, :variadic<!Int> I>
+    # CHECK-SAME: #ParamVarArg <:!Int F, :param_list<!Int> I>
     @staticmethod
     def self_type() -> Self:
-        # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <:!Int ?, :variadic<!Int> ?>, <"F": !Int, "I": variadic<!Int> pos_vararg>>
+        # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <:!Int ?, :param_list<!Int> ?>, <"F": !Int, "I": param_list<!Int> pos_vararg>>
         comptime Unbound = ParamVarArg
-        # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> ?>
+        # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :param_list<!Int> ?>
         comptime BoundSome = Unbound[1, ...]
-        # CHECK: lit.alias.decl {{.*}}BoundFinal{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> [{3}, {4}]>
+        # CHECK: lit.alias.decl {{.*}}BoundFinal{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :param_list<!Int> [{3}, {4}]>
         comptime BoundFinal = BoundSome[3, 4]
 
-        # CHECK: BoundMore{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> [{2}, {1}]>
+        # CHECK: BoundMore{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :param_list<!Int> [{2}, {1}]>
         comptime BoundMore = Unbound[1, 2, 1]
 
 

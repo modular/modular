@@ -1044,7 +1044,7 @@ struct VariadicPack[
     *element_types: element_trait,
 ](RegisterPassable):
     comptime _mlir_pack_type = __mlir_type[
-        `!lit.ref.pack<:variadic<`,
+        `!lit.ref.pack<:param_list<`,
         Self.element_trait,
         `> `,
         Self.element_types,

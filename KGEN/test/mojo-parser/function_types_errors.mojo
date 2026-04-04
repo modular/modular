@@ -29,7 +29,7 @@ comptime read_ship_fn_alias: def(read MemType) -> None = mut_ship_function
 
 # expected-note @below {{function declared here}}
 def infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`],
+    ArgTypes: __mlir_type[`!kgen.param_list<`, AnyType, `>`],
     //,
     func: def(x: Int, y: Int, * args: * ArgTypes) -> None,
 ]():
@@ -63,7 +63,7 @@ trait Sprongling:
 
 # expected-note @below {{function declared here}}
 def infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, Sprongling, `>`],
+    ArgTypes: __mlir_type[`!kgen.param_list<`, Sprongling, `>`],
     //,
     func: def(* args: * ArgTypes) -> None,
 ]():
@@ -95,7 +95,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 def compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
+    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
     func: def(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -130,7 +130,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 # expected-note @below {{function declared here}}
 def compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
+    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
     func: def(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -165,7 +165,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 def compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
+    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
     func: def(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -190,7 +190,7 @@ def device_func(a: Int, b: Bool) raises -> Int:
 
 # expected-note @below {{function declared here}}
 def compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
+    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
     func: def(* args: * ArgTypes) -> Int,
 ]():
@@ -287,7 +287,7 @@ def kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
 
 
 def compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
+    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
     func: def(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:

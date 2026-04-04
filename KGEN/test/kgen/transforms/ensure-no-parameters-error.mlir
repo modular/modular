@@ -42,7 +42,7 @@ kgen.func @create_closure(%arg0: index) {
 // -----
 
 kgen.func @unexpected_variadic_splat() {
-  // expected-error @below {{`!kgen.variadic_splat` was not concretized. Concretization is only allowed within `!kgen.struct` or `!llvm.struct`}}
-  %0 = "unknown.ptr"() : () -> !kgen.pointer<!kgen.variadic_splat<index, 3>>
+  // expected-error @below {{`!kgen.param_list_splat` was not concretized. Concretization is only allowed within `!kgen.struct` or `!llvm.struct`}}
+  %0 = "unknown.ptr"() : () -> !kgen.pointer<!kgen.param_list_splat<index, 3>>
   kgen.return
 }

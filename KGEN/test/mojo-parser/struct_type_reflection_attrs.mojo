@@ -75,7 +75,7 @@ def main():
     comptime fieldType0 = __struct_field_types(MyWrapper[37])[0]
     # CHECK: lit.alias.decl *"fieldType1`{{[0-9]*}}": !AnyType = <@struct_type_reflection_attrs::@MyParam<:!Int {37}>>
     comptime fieldType1 = __struct_field_types(MyWrapper[37])[1]
-    # CHECK: lit.alias.decl *"nestedParamFields`{{[0-9]*}}": variadic<!AnyType> = <[]>
+    # CHECK: lit.alias.decl *"nestedParamFields`{{[0-9]*}}": param_list<!AnyType> = <[]>
     comptime nestedParamFields = __struct_field_types(fieldType1)
 
     # Test struct_field_names folding

@@ -293,19 +293,19 @@ lit.fn @does_memcpy<l: !lit.origin<1>, l2: !lit.origin<1>>
 // Reference Pack Lowering
 //===----------------------------------------------------------------------===//
 
-// CHECK-LABEL: kgen.generator @takes_pack<types: variadic<type>>
+// CHECK-LABEL: kgen.generator @takes_pack<types: param_list<type>>
 lit.fn @takes_pack
-<life: !lit.origin<1>, types: !kgen.variadic<!kgen.type>>
-// CHECK-SAME: (%arg0: !kgen.pack<variadic_ptr_map(:variadic<type> types, 42)>) {
-(%args: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>) {
+<life: !lit.origin<1>, types: !kgen.param_list<!kgen.type>>
+// CHECK-SAME: (%arg0: !kgen.pack<variadic_ptr_map(:param_list<type> types, 42)>) {
+(%args: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>) {
 
-  // CHECK-NEXT: [[E:%.*]] = kgen.pack.extract %arg0[0] : <variadic_ptr_map(:variadic<type> types, 42)>
+  // CHECK-NEXT: [[E:%.*]] = kgen.pack.extract %arg0[0] : <variadic_ptr_map(:param_list<type> types, 42)>
   // CHECK-NEXT: kgen.rebind [[E]] : !kgen.param<{{.*}}> to !kgen.pointer
-  %v1 = lit.ref.pack.extract %args[0]: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>
+  %v1 = lit.ref.pack.extract %args[0]: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>
 
-  // CHECK-NEXT: [[E:%.*]] = kgen.pack.extract %arg0[1] : <variadic_ptr_map(:variadic<type> types, 42)>
+  // CHECK-NEXT: [[E:%.*]] = kgen.pack.extract %arg0[1] : <variadic_ptr_map(:param_list<type> types, 42)>
   // CHECK-NEXT: kgen.rebind [[E]] : !kgen.param<{{.*}}> to !kgen.pointer
-  %v2 = lit.ref.pack.extract %args[1]: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>
+  %v2 = lit.ref.pack.extract %args[1]: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>
 
   kgen.return
 }
@@ -317,13 +317,13 @@ lit.fn @pass_pack<life: !lit.origin<1>>
 
   // CHECK-NEXT: kgen.pack.create(%arg0, %arg1) : !kgen.pack<[pointer<index, 42>, pointer<f32, 42>]>
   %pack = lit.ref.pack.create(%index, %float) :
-    !lit.ref.pack<:variadic<!kgen.type> [index, f32], mut life, 42>
-  // CHECK-NEXT: kgen.call @takes_pack<:variadic<type> [index, f32]>(%0)
-  kgen.call @takes_pack<:origin<1> life, :variadic<!kgen.type> [index, f32]>(%pack)
-     : (!lit.ref.pack<:variadic<!kgen.type> [index, f32], mut life, 42>) -> ()
+    !lit.ref.pack<:param_list<!kgen.type> [index, f32], mut life, 42>
+  // CHECK-NEXT: kgen.call @takes_pack<:param_list<type> [index, f32]>(%0)
+  kgen.call @takes_pack<:origin<1> life, :param_list<!kgen.type> [index, f32]>(%pack)
+     : (!lit.ref.pack<:param_list<!kgen.type> [index, f32], mut life, 42>) -> ()
 
   // CHECK-NEXT: kgen.param.constant: !kgen.pack<[pointer<i8>, pointer<ui4>, pointer<i32>]> = <<store_to_mem(3), store_to_mem(1), store_to_mem(4)>>
-  %3 = kgen.param.constant: !lit.ref.pack<:variadic<!kgen.type> [i8, ui4, i32], mut life, 0>
+  %3 = kgen.param.constant: !lit.ref.pack<:param_list<!kgen.type> [i8, ui4, i32], mut life, 0>
      = <<store_to_mem(3), store_to_mem(1), store_to_mem(4)>>
 
   kgen.return
@@ -335,12 +335,12 @@ lit.fn @pass_pack<life: !lit.origin<1>>
 // CHECK-SAME: %arg0: !kgen.pack<[pointer<index, 4>, pointer<f32, 4>]>) -> !kgen.pack<[pointer<index, 4>, pointer<f32, 4>]>
 kgen.func @ref_pack_from_pointer_pack(
     %pack: !kgen.pack<[!kgen.pointer<index, 4>, !kgen.pointer<f32, 4>]>)
-    -> !lit.ref.pack<:variadic<!kgen.type> [index, f32], imm #lit.any.origin, 4> {
+    -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin, 4> {
   // CHECK-NEXT: kgen.return %arg0 : !kgen.pack<[pointer<index, 4>, pointer<f32, 4>]>
   %0 = lit.ref.pack.from_pointer_pack %pack
     : !kgen.pack<[!kgen.pointer<index, 4>, !kgen.pointer<f32, 4>]>
-   -> !lit.ref.pack<:variadic<!kgen.type> [index, f32], imm #lit.any.origin, 4>
-  kgen.return %0 : !lit.ref.pack<:variadic<!kgen.type> [index, f32], imm #lit.any.origin, 4>
+   -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin, 4>
+  kgen.return %0 : !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin, 4>
 }
 
 // -----

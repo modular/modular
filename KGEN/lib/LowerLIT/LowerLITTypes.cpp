@@ -330,7 +330,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         return PackAttr::get(loweredElts, type);
       });
 
-  // !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42>
+  // !lit.ref.pack<:param_list<!kgen.type> types, owned_in_mem, mut life, 42>
   // => !kgen.pack<variadic_ptr_map(types), 42>
   replacer.addInferredDomainNonRecursiveReplacement(
       [&replacer](RefPackType ref) -> FailureOr<Type> {

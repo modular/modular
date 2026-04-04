@@ -174,9 +174,9 @@ kgen.generator @anystruct() {
 }
 
 // CHECK-LABEL: kgen.generator @unpacked
-kgen.generator @unpacked<a: variadic<index>>() {
-  // CHECK-NEXT: constant = <#lit.unpacked<:variadic<index> a, kw>>
-  %c = kgen.param.constant = <#lit.unpacked<:variadic<index> a, kw>>
+kgen.generator @unpacked<a: param_list<index>>() {
+  // CHECK-NEXT: constant = <#lit.unpacked<:param_list<index> a, kw>>
+  %c = kgen.param.constant = <#lit.unpacked<:param_list<index> a, kw>>
   kgen.return
 }
 

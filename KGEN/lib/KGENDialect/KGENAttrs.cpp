@@ -2023,7 +2023,7 @@ verifyVariadicPtrMap(ArrayRef<TypedAttr> operands, Type type,
   if (!srcVariadic || !isa<TypeType, ParamType>(srcVariadic.getElementType()) ||
       type != srcVariadic)
     return emitError() << "'variadic_ptr_map' operand should have "
-                          "!kgen.variadic<!kgen.type> type, not "
+                          "!kgen.param_list<!kgen.type> type, not "
                        << operands[0].getType();
   if (!operands[1].getType().isIndex())
     return emitError()
@@ -2042,12 +2042,12 @@ verifyVariadicPtrRemoveMap(ArrayRef<TypedAttr> operands, Type type,
   if (!srcVariadic || // May still be parametric
       !isa<TypeType>(srcVariadic.getElementType()))
     return emitError() << "'variadic_ptrremove_map' operand should have "
-                          "!kgen.variadic<!kgen.type> type, not "
+                          "!kgen.param_list<!kgen.type> type, not "
                        << operands[0].getType();
   auto dstVariadic = dyn_cast<VariadicType>(type);
   if (!dstVariadic || !isa<TypeType>(dstVariadic.getElementType()))
     return emitError() << "'variadic_ptrremove_map' result should be "
-                          "!kgen.variadic<!kgen.type> type, not "
+                          "!kgen.param_list<!kgen.type> type, not "
                        << type;
   return success();
 }
