@@ -33,3 +33,24 @@ pub struct TextGenerationContext<T> {
     pub request_id: RequestID,
     pub request: T,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_id_generate_returns_unique_non_empty_ids() {
+        let first = RequestID::generate();
+        let second = RequestID::generate();
+        assert!(!first.0.is_empty());
+        assert!(!second.0.is_empty());
+        assert_ne!(first.0, second.0);
+    }
+
+    #[test]
+    fn generate_zmq_ipc_path_uses_ipc_prefix_and_tmp_dir() {
+        let path = generate_zmq_ipc_path();
+        assert!(path.starts_with("ipc://"));
+        assert!(path.contains(&std::env::temp_dir().display().to_string()));
+    }
+}

@@ -1,11 +1,69 @@
 load("@crates//:defs.bzl", "all_crate_deps")
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 
 package(default_visibility = ["//max:consumers"])
 
 rust_binary(
     name = "max-serve-rust",
     srcs = glob(["src/*.rs"]),
+    edition = "2021",
+    deps = all_crate_deps(),
+)
+
+rust_test(
+    name = "max-serve-rust-test-config",
+    size = "small",
+    timeout = "short",
+    srcs = glob(["src/*.rs"]),
+    args = ["config::tests::"],
+    crate_root = "src/main.rs",
+    edition = "2021",
+    deps = all_crate_deps(),
+)
+
+rust_test(
+    name = "max-serve-rust-test-core",
+    size = "small",
+    timeout = "short",
+    srcs = glob(["src/*.rs"]),
+    args = [
+        "types::tests::",
+        "metrics::tests::",
+        "error::tests::",
+        "openai::tests::",
+        "kserve::tests::",
+    ],
+    crate_root = "src/main.rs",
+    edition = "2021",
+    deps = all_crate_deps(),
+)
+
+rust_test(
+    name = "max-serve-rust-test-zmq",
+    size = "small",
+    timeout = "short",
+    srcs = glob(["src/*.rs"]),
+    args = ["zmq_interface::tests::"],
+    crate_root = "src/main.rs",
+    edition = "2021",
+    deps = all_crate_deps(),
+)
+
+test_suite(
+    name = "max-serve-rust-test",
+    tests = [
+        ":max-serve-rust-test-config",
+        ":max-serve-rust-test-core",
+        ":max-serve-rust-test-zmq",
+    ],
+)
+
+rust_test(
+    name = "max-serve-rust-test-all",
+    size = "small",
+    timeout = "short",
+    srcs = glob(["src/*.rs"]),
+    crate_root = "src/main.rs",
     edition = "2021",
     deps = all_crate_deps(),
 )

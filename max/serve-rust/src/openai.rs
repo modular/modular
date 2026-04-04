@@ -201,3 +201,17 @@ async fn list_models() -> Json<serde_json::Value> {
 async fn rust_metrics(State(state): State<Arc<AppState>>) -> Json<RustMetricsSnapshot> {
     Json(state.proxy.metrics_snapshot())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn list_models_returns_expected_shape() {
+        let Json(payload) = list_models().await;
+        assert_eq!(payload["object"], "list");
+        assert_eq!(payload["data"][0]["id"], "max-model");
+        assert_eq!(payload["data"][0]["object"], "model");
+        assert_eq!(payload["data"][0]["owned_by"], "modular");
+    }
+}

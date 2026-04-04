@@ -1,4 +1,5 @@
 mod config;
+mod error;
 mod kserve;
 mod metrics;
 mod openai;
@@ -7,6 +8,7 @@ mod types;
 mod zmq_interface;
 
 use crate::config::Settings;
+use crate::error::AppError;
 use crate::kserve::kserve_routes;
 use crate::metrics::RustMetrics;
 use crate::openai::{openai_routes, AppState};
@@ -63,6 +65,7 @@ async fn main() {
         .route("/version", get(version))
         .nest("/v1", openai_routes())
         .nest("/v2", kserve_routes())
+        .fallback(not_found)
         .with_state(state);
 
     // run our app with hyper, listening globally on configured port
@@ -89,4 +92,8 @@ async fn health() -> &'static str {
 
 async fn version() -> &'static str {
     "0.1.0"
+}
+
+async fn not_found() -> Result<&'static str, AppError> {
+    Err(AppError::NotFound)
 }

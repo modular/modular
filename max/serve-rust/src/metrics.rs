@@ -145,3 +145,60 @@ fn avg(total: u64, count: u64) -> f64 {
         total as f64 / count as f64
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn snapshot_defaults_to_zero() {
+        let metrics = RustMetrics::default();
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.requests_started, 0);
+        assert_eq!(snapshot.requests_completed, 0);
+        assert_eq!(snapshot.decode_calls, 0);
+        assert_eq!(snapshot.first_token_latency_us_avg, 0.0);
+    }
+
+    #[test]
+    fn snapshot_reports_counts_and_averages() {
+        let metrics = RustMetrics::default();
+        metrics.record_request_started();
+        metrics.record_request_started();
+        metrics.record_requests_completed(1);
+        metrics.record_requests_cancelled(1);
+        metrics.record_request_rejected();
+        metrics.record_first_token_latency(Duration::from_micros(10));
+        metrics.record_first_token_latency(Duration::from_micros(30));
+        metrics.record_end_to_end_latency(Duration::from_micros(50));
+        metrics.record_decode(4, Duration::from_micros(20));
+        metrics.record_decode(6, Duration::from_micros(40));
+        metrics.record_request_batch(2);
+        metrics.record_request_batch(4);
+        metrics.record_ingress_parse(Duration::from_micros(5));
+        metrics.record_ingress_parse(Duration::from_micros(15));
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.requests_started, 2);
+        assert_eq!(snapshot.requests_completed, 1);
+        assert_eq!(snapshot.requests_cancelled, 1);
+        assert_eq!(snapshot.requests_rejected, 1);
+        assert_eq!(snapshot.first_token_count, 2);
+        assert_eq!(snapshot.first_token_latency_us_total, 40);
+        assert_eq!(snapshot.first_token_latency_us_avg, 20.0);
+        assert_eq!(snapshot.end_to_end_count, 1);
+        assert_eq!(snapshot.end_to_end_latency_us_total, 50);
+        assert_eq!(snapshot.end_to_end_latency_us_avg, 50.0);
+        assert_eq!(snapshot.decode_calls, 2);
+        assert_eq!(snapshot.decode_tokens_total, 10);
+        assert_eq!(snapshot.decode_latency_us_total, 60);
+        assert_eq!(snapshot.decode_latency_us_avg, 30.0);
+        assert_eq!(snapshot.request_batches, 2);
+        assert_eq!(snapshot.request_batch_items_total, 6);
+        assert_eq!(snapshot.request_batch_items_avg, 3.0);
+        assert_eq!(snapshot.ingress_parse_count, 2);
+        assert_eq!(snapshot.ingress_parse_latency_us_total, 20);
+        assert_eq!(snapshot.ingress_parse_latency_us_avg, 10.0);
+    }
+}

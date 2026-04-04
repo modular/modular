@@ -79,3 +79,91 @@ impl Settings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn clear_env() {
+        for key in [
+            "MAX_SERVE_HOST",
+            "MAX_SERVE_PORT",
+            "MAX_SERVE_METRICS_ENDPOINT_PORT",
+            "MAX_SERVE_API_TYPES",
+            "MAX_SERVE_DISABLE_TELEMETRY",
+            "MAX_SERVE_OFFLINE_INFERENCE",
+            "MAX_SERVE_HEADLESS",
+            "MAX_SERVE_LOGS_CONSOLE_LEVEL",
+            "MAX_SERVE_RUST_REQUEST_QUEUE_CAPACITY",
+            "MAX_SERVE_RUST_CANCEL_QUEUE_CAPACITY",
+            "MAX_SERVE_RUST_REQUEST_BATCH_MAX_SIZE",
+            "MAX_SERVE_RUST_REQUEST_BATCH_WAIT_US",
+        ] {
+            std::env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn from_env_uses_defaults_when_unset() {
+        let _guard = env_lock().lock().expect("env lock poisoned");
+        clear_env();
+
+        let settings = Settings::from_env();
+        assert_eq!(settings.host, "0.0.0.0");
+        assert_eq!(settings.port, 8000);
+        assert_eq!(settings.metrics_port, 8001);
+        assert_eq!(settings.rust_request_queue_capacity, 4096);
+        assert_eq!(settings.rust_cancel_queue_capacity, 1024);
+        assert_eq!(settings.rust_request_batch_max_size, 32);
+        assert_eq!(settings.rust_request_batch_wait_us, 200);
+        assert_eq!(settings.api_types.len(), 2);
+    }
+
+    #[test]
+    fn from_env_parses_custom_values() {
+        let _guard = env_lock().lock().expect("env lock poisoned");
+        clear_env();
+        std::env::set_var("MAX_SERVE_HOST", "127.0.0.1");
+        std::env::set_var("MAX_SERVE_PORT", "9000");
+        std::env::set_var("MAX_SERVE_METRICS_ENDPOINT_PORT", "9001");
+        std::env::set_var("MAX_SERVE_API_TYPES", "openai,kserve,responses");
+        std::env::set_var("MAX_SERVE_DISABLE_TELEMETRY", "1");
+        std::env::set_var("MAX_SERVE_OFFLINE_INFERENCE", "1");
+        std::env::set_var("MAX_SERVE_HEADLESS", "1");
+        std::env::set_var("MAX_SERVE_LOGS_CONSOLE_LEVEL", "DEBUG");
+        std::env::set_var("MAX_SERVE_RUST_REQUEST_QUEUE_CAPACITY", "128");
+        std::env::set_var("MAX_SERVE_RUST_CANCEL_QUEUE_CAPACITY", "64");
+        std::env::set_var("MAX_SERVE_RUST_REQUEST_BATCH_MAX_SIZE", "8");
+        std::env::set_var("MAX_SERVE_RUST_REQUEST_BATCH_WAIT_US", "500");
+
+        let settings = Settings::from_env();
+        assert_eq!(settings.host, "127.0.0.1");
+        assert_eq!(settings.port, 9000);
+        assert_eq!(settings.metrics_port, 9001);
+        assert!(settings.disable_telemetry);
+        assert!(settings.offline_inference);
+        assert!(settings.headless);
+        assert_eq!(settings.logs_console_level, "DEBUG");
+        assert_eq!(settings.rust_request_queue_capacity, 128);
+        assert_eq!(settings.rust_cancel_queue_capacity, 64);
+        assert_eq!(settings.rust_request_batch_max_size, 8);
+        assert_eq!(settings.rust_request_batch_wait_us, 500);
+        assert_eq!(settings.api_types.len(), 3);
+    }
+
+    #[test]
+    fn from_env_falls_back_when_port_is_invalid() {
+        let _guard = env_lock().lock().expect("env lock poisoned");
+        clear_env();
+        std::env::set_var("MAX_SERVE_PORT", "not-a-number");
+
+        let settings = Settings::from_env();
+        assert_eq!(settings.port, 8000);
+    }
+}
