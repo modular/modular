@@ -31,6 +31,7 @@ import asyncio
 import base64
 import gc
 import io
+import json
 import os
 import random
 import shutil
@@ -65,7 +66,7 @@ from max.interfaces.request.open_responses import (
     OutputImageContent,
     UserMessage,
 )
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
@@ -483,6 +484,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Skip saving generated images to disk.",
     )
+    parser.add_argument(
+        "--model-override",
+        type=str,
+        action="append",
+        default=None,
+        help=(
+            "Per-component overrides in 'component.field=value' format. "
+            "Repeatable. Example: "
+            "'transformer.quantization_encoding=float4_e2m1fnx2'."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -835,6 +847,48 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
             "transformer",
             quantization_encoding=args.quantization_encoding,
         )
+
+    # Apply flexible per-component overrides from --model-override.
+    if args.model_override:
+        from pydantic import TypeAdapter
+
+        for override in args.model_override:
+            dot_pos = override.find(".")
+            if dot_pos < 1:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            eq_pos = override.find("=", dot_pos)
+            if eq_pos < dot_pos + 2:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            component = override[:dot_pos]
+            field_name = override[dot_pos + 1 : eq_pos]
+            raw_value = override[eq_pos + 1 :]
+
+            if field_name not in MAXModelConfig.model_fields:
+                raise ValueError(
+                    f"Unknown MAXModelConfig field: {field_name!r}. "
+                    f"Valid fields: "
+                    f"{sorted(MAXModelConfig.model_fields.keys())}"
+                )
+            if component not in manifest:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(manifest.keys())}"
+                )
+
+            field_info = MAXModelConfig.model_fields[field_name]
+            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+            try:
+                parsed = json.loads(raw_value)
+            except (json.JSONDecodeError, ValueError):
+                parsed = raw_value
+            value = adapter.validate_python(parsed)
+            manifest = manifest.with_override(component, **{field_name: value})
 
     config = PipelineConfig(
         models=manifest,
