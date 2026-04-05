@@ -171,6 +171,9 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
+- `math.hypot()` now supports variadic and `Span` overloads for computing the
+  Euclidean norm of N values, matching Python's `math.hypot(*coordinates)`.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
