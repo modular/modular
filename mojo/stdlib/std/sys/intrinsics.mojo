@@ -237,7 +237,6 @@ def scatter[
         return
 
     comptime if is_gpu():
-
         comptime for i in range(size):
             if mask[i]:
                 UnsafePointer[Scalar[dtype], MutExternalOrigin](
