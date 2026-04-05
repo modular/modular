@@ -130,6 +130,10 @@ build --test_env=MODULAR_CRASH_REPORTING_ENABLED=false
 build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TELEMETRY_ENABLED=false
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
 
+# PyO3 0.21 rejects Python >3.12 by default; allow forward-compat ABI3 builds
+# while we remain on this version in crate_universe.
+build --action_env=PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 --host_action_env=PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+
 # Fix parallel tests competing for a single CPU on graviton
 build --test_env=KMP_AFFINITY=none
 

@@ -95,6 +95,13 @@ building them.
     randomness and diversity of text generation by determining how the
     next token is selected from probability distributions.
 
+- [Rust Serving Layer and Model Worker Orchestration](rust-serving-layer.md)
+
+    This design document explains the current `max/serve-rust` frontend,
+    traces where MAX model workers are started today, and proposes a concrete
+    Rust-managed process orchestration contract for launching and supervising
+    the Python model worker directly.
+
 - [WGMMA Programming](wgmma-programming.md)
 
     This document explains the WGMMA (Warp Group MMA) tensor core instruction

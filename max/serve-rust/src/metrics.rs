@@ -1,0 +1,204 @@
+use serde::Serialize;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+#[derive(Default)]
+pub struct RustMetrics {
+    requests_started: AtomicU64,
+    requests_completed: AtomicU64,
+    requests_cancelled: AtomicU64,
+    requests_rejected: AtomicU64,
+    first_token_count: AtomicU64,
+    first_token_latency_us_total: AtomicU64,
+    end_to_end_count: AtomicU64,
+    end_to_end_latency_us_total: AtomicU64,
+    decode_calls: AtomicU64,
+    decode_tokens_total: AtomicU64,
+    decode_latency_us_total: AtomicU64,
+    request_batches: AtomicU64,
+    request_batch_items_total: AtomicU64,
+    ingress_parse_count: AtomicU64,
+    ingress_parse_latency_us_total: AtomicU64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RustMetricsSnapshot {
+    pub requests_started: u64,
+    pub requests_completed: u64,
+    pub requests_cancelled: u64,
+    pub requests_rejected: u64,
+    pub first_token_count: u64,
+    pub first_token_latency_us_total: u64,
+    pub first_token_latency_us_avg: f64,
+    pub end_to_end_count: u64,
+    pub end_to_end_latency_us_total: u64,
+    pub end_to_end_latency_us_avg: f64,
+    pub decode_calls: u64,
+    pub decode_tokens_total: u64,
+    pub decode_latency_us_total: u64,
+    pub decode_latency_us_avg: f64,
+    pub request_batches: u64,
+    pub request_batch_items_total: u64,
+    pub request_batch_items_avg: f64,
+    pub ingress_parse_count: u64,
+    pub ingress_parse_latency_us_total: u64,
+    pub ingress_parse_latency_us_avg: f64,
+}
+
+impl RustMetrics {
+    pub fn record_request_started(&self) {
+        self.requests_started.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_requests_completed(&self, count: u64) {
+        self.requests_completed.fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub fn record_requests_cancelled(&self, count: u64) {
+        self.requests_cancelled.fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub fn record_request_rejected(&self) {
+        self.requests_rejected.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_first_token_latency(&self, duration: Duration) {
+        self.first_token_count.fetch_add(1, Ordering::Relaxed);
+        self.first_token_latency_us_total
+            .fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_end_to_end_latency(&self, duration: Duration) {
+        self.end_to_end_count.fetch_add(1, Ordering::Relaxed);
+        self.end_to_end_latency_us_total
+            .fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_decode(&self, tokens: usize, duration: Duration) {
+        self.decode_calls.fetch_add(1, Ordering::Relaxed);
+        self.decode_tokens_total
+            .fetch_add(tokens as u64, Ordering::Relaxed);
+        self.decode_latency_us_total
+            .fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_request_batch(&self, batch_size: usize) {
+        self.request_batches.fetch_add(1, Ordering::Relaxed);
+        self.request_batch_items_total
+            .fetch_add(batch_size as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_ingress_parse(&self, duration: Duration) {
+        self.ingress_parse_count.fetch_add(1, Ordering::Relaxed);
+        self.ingress_parse_latency_us_total
+            .fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+    }
+
+    pub fn snapshot(&self) -> RustMetricsSnapshot {
+        let requests_started = self.requests_started.load(Ordering::Relaxed);
+        let requests_completed = self.requests_completed.load(Ordering::Relaxed);
+        let requests_cancelled = self.requests_cancelled.load(Ordering::Relaxed);
+        let requests_rejected = self.requests_rejected.load(Ordering::Relaxed);
+        let first_token_count = self.first_token_count.load(Ordering::Relaxed);
+        let first_token_latency_us_total =
+            self.first_token_latency_us_total.load(Ordering::Relaxed);
+        let end_to_end_count = self.end_to_end_count.load(Ordering::Relaxed);
+        let end_to_end_latency_us_total = self.end_to_end_latency_us_total.load(Ordering::Relaxed);
+        let decode_calls = self.decode_calls.load(Ordering::Relaxed);
+        let decode_tokens_total = self.decode_tokens_total.load(Ordering::Relaxed);
+        let decode_latency_us_total = self.decode_latency_us_total.load(Ordering::Relaxed);
+        let request_batches = self.request_batches.load(Ordering::Relaxed);
+        let request_batch_items_total = self.request_batch_items_total.load(Ordering::Relaxed);
+        let ingress_parse_count = self.ingress_parse_count.load(Ordering::Relaxed);
+        let ingress_parse_latency_us_total =
+            self.ingress_parse_latency_us_total.load(Ordering::Relaxed);
+
+        RustMetricsSnapshot {
+            requests_started,
+            requests_completed,
+            requests_cancelled,
+            requests_rejected,
+            first_token_count,
+            first_token_latency_us_total,
+            first_token_latency_us_avg: avg(first_token_latency_us_total, first_token_count),
+            end_to_end_count,
+            end_to_end_latency_us_total,
+            end_to_end_latency_us_avg: avg(end_to_end_latency_us_total, end_to_end_count),
+            decode_calls,
+            decode_tokens_total,
+            decode_latency_us_total,
+            decode_latency_us_avg: avg(decode_latency_us_total, decode_calls),
+            request_batches,
+            request_batch_items_total,
+            request_batch_items_avg: avg(request_batch_items_total, request_batches),
+            ingress_parse_count,
+            ingress_parse_latency_us_total,
+            ingress_parse_latency_us_avg: avg(ingress_parse_latency_us_total, ingress_parse_count),
+        }
+    }
+}
+
+fn avg(total: u64, count: u64) -> f64 {
+    if count == 0 {
+        0.0
+    } else {
+        total as f64 / count as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn snapshot_defaults_to_zero() {
+        let metrics = RustMetrics::default();
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.requests_started, 0);
+        assert_eq!(snapshot.requests_completed, 0);
+        assert_eq!(snapshot.decode_calls, 0);
+        assert_eq!(snapshot.first_token_latency_us_avg, 0.0);
+    }
+
+    #[test]
+    fn snapshot_reports_counts_and_averages() {
+        let metrics = RustMetrics::default();
+        metrics.record_request_started();
+        metrics.record_request_started();
+        metrics.record_requests_completed(1);
+        metrics.record_requests_cancelled(1);
+        metrics.record_request_rejected();
+        metrics.record_first_token_latency(Duration::from_micros(10));
+        metrics.record_first_token_latency(Duration::from_micros(30));
+        metrics.record_end_to_end_latency(Duration::from_micros(50));
+        metrics.record_decode(4, Duration::from_micros(20));
+        metrics.record_decode(6, Duration::from_micros(40));
+        metrics.record_request_batch(2);
+        metrics.record_request_batch(4);
+        metrics.record_ingress_parse(Duration::from_micros(5));
+        metrics.record_ingress_parse(Duration::from_micros(15));
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.requests_started, 2);
+        assert_eq!(snapshot.requests_completed, 1);
+        assert_eq!(snapshot.requests_cancelled, 1);
+        assert_eq!(snapshot.requests_rejected, 1);
+        assert_eq!(snapshot.first_token_count, 2);
+        assert_eq!(snapshot.first_token_latency_us_total, 40);
+        assert_eq!(snapshot.first_token_latency_us_avg, 20.0);
+        assert_eq!(snapshot.end_to_end_count, 1);
+        assert_eq!(snapshot.end_to_end_latency_us_total, 50);
+        assert_eq!(snapshot.end_to_end_latency_us_avg, 50.0);
+        assert_eq!(snapshot.decode_calls, 2);
+        assert_eq!(snapshot.decode_tokens_total, 10);
+        assert_eq!(snapshot.decode_latency_us_total, 60);
+        assert_eq!(snapshot.decode_latency_us_avg, 30.0);
+        assert_eq!(snapshot.request_batches, 2);
+        assert_eq!(snapshot.request_batch_items_total, 6);
+        assert_eq!(snapshot.request_batch_items_avg, 3.0);
+        assert_eq!(snapshot.ingress_parse_count, 2);
+        assert_eq!(snapshot.ingress_parse_latency_us_total, 20);
+        assert_eq!(snapshot.ingress_parse_latency_us_avg, 10.0);
+    }
+}

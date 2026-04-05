@@ -74,8 +74,10 @@ modular_py_binary(
         "@nvshmem_prebuilt//:host",
     ],
     env = {
+        "MODULAR_CANNOT_DEBUG": "1",
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        "PYTHONNOUSERSITE": "1",
     },
     mojo_deps = PROD_MOJOPKGS,
     deps = [
@@ -102,6 +104,7 @@ modular_py_binary(
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        "PYTHONNOUSERSITE": "1",
     },
     ignore_extra_deps = [
         requirement("lmcache"),
