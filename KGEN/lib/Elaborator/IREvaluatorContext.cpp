@@ -391,8 +391,10 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
         if (succeeded(resolved)) {
           if (!*resolved)
             return TypedAttr(); // Not ready yet — signal retry.
-          if (auto resolvedStr = dyn_cast<StringAttr>(*resolved))
-            name = resolvedStr;
+          if (auto resolvedStr = dyn_cast<StringAttr>(*resolved)) {
+            name = target.isGPU() ? sanitizeSymbolToAlnum(resolvedStr)
+                                  : resolvedStr;
+          }
         }
       }
     }
