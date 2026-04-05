@@ -3176,6 +3176,50 @@ def factorial(n: Int) -> Int:
     return table[n]
 
 
+def factorial[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes the factorial of a `Scalar` integer value.
+
+    Parameters:
+        dtype: The integer data type of the argument and result.
+
+    Args:
+        n: The input value. Must be non-negative and small enough that `n!`
+           fits in `dtype` (e.g. at most 12 for 32-bit types, 20 for 64-bit).
+
+    Returns:
+        The factorial `n!` as `Scalar[dtype]`. Asserts if `n` is negative
+        (for signed dtypes) or if the result would overflow the dtype.
+
+    Examples:
+
+    ```mojo
+    from std.math import factorial
+    print(factorial(Int32(5)))   # 120
+    print(factorial(UInt64(10))) # 3628800
+    ```
+    """
+    comptime assert dtype.is_integral(), "factorial() requires an integer dtype"
+    comptime if not dtype.is_unsigned():
+        assert n >= 0, "factorial() requires non-negative input"
+    # Determine the largest n whose factorial fits in dtype.
+    comptime bits = size_of[dtype]() * 8
+    comptime max_n_hi = 12 if bits <= 32 else 20
+    comptime max_n = 5 if bits <= 8 else (
+        (7 if dtype.is_signed() else 8) if bits <= 16 else max_n_hi
+    )
+    # Compare in the scalar domain to avoid narrowing n through Int on
+    # 32-bit platforms, which would incorrectly reject valid 64-bit inputs.
+    assert n <= Scalar[dtype](
+        max_n
+    ), "factorial() input causes overflow for the given dtype"
+    var result = Scalar[dtype](1)
+    var i = Scalar[dtype](2)
+    while i <= n:
+        result *= i
+        i += 1
+    return result
+
+
 def comb(n: Int, k: Int) -> Int:
     """Computes the number of ways to choose `k` items from `n` items without
     repetition and without order (binomial coefficient).
@@ -3199,24 +3243,64 @@ def comb(n: Int, k: Int) -> Int:
     print(comb(3, 5))  # 0
     ```
     """
-    assert n >= 0, "n must be non-negative"
-    assert k >= 0, "k must be non-negative"
+    return Int(comb(Scalar[DType.int](n), Scalar[DType.int](k)))
+
+
+def comb[dtype: DType, //](n: Scalar[dtype], k: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes the number of ways to choose `k` items from `n` items without
+    repetition and without order (binomial coefficient).
+
+    Equivalent to Python's `math.comb(n, k)`.
+
+    Parameters:
+        dtype: The integer data type of the arguments and result.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to choose. Must be non-negative.
+
+    Returns:
+        The binomial coefficient C(n, k). Returns 0 if `k > n`. Asserts if
+        either argument is negative (for signed dtypes).
+
+    Examples:
+
+    ```mojo
+    from std.math import comb
+    print(comb(Int32(5), Int32(2)))  # 10
+    print(comb(Int64(10), Int64(3))) # 120
+    print(comb(Int32(3), Int32(5)))  # 0
+    ```
+    """
+    comptime assert dtype.is_integral(), "comb() requires an integer dtype"
+    comptime if not dtype.is_unsigned():
+        assert n >= 0, "n must be non-negative"
+        assert k >= 0, "k must be non-negative"
     if k > n:
         return 0
     # Use the smaller of k and n-k to minimise the number of iterations.
     var k2 = k if k <= n - k else n - k
-    var result = 1
-    for i in range(k2):
+    var result = Scalar[dtype](1)
+    var i = Scalar[dtype](0)
+    while i < k2:
         # Reduce (n-i) and (i+1) by their gcd before multiplying to avoid
-        # intermediate overflow when the final result fits in Int.
+        # intermediate overflow when the final result fits in the dtype.
         var num = n - i
         var den = i + 1
-        var g = gcd(num, den)
+        # Inline Euclidean gcd for Scalar[dtype].
+        var a = num
+        var b = den
+        while b != 0:
+            var tmp = b
+            b = a % b
+            a = tmp
+        var g = a
         num //= g
         den //= g
         # After removing gcd(num, den), the remaining den divides result
         # exactly (since C(n, i+1) is always an integer).
         result = (result // den) * num
+        i += 1
     return result
 
 
@@ -3244,13 +3328,73 @@ def perm(n: Int, k: Int = -1) -> Int:
     print(perm(5, 0))  # 1
     ```
     """
-    assert n >= 0, "n must be non-negative"
     if k == -1:
         return factorial(n)
-    assert 0 <= k <= n, "k must be between 0 and n"
-    var result = 1
-    for i in range(k):
+    return Int(perm(Scalar[DType.int](n), Scalar[DType.int](k)))
+
+
+def perm[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes `n!` (all permutations of `n` items).
+
+    Equivalent to Python's `math.perm(n)` with no `k` argument.
+
+    Parameters:
+        dtype: The integer data type of the argument and result.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+
+    Returns:
+        The factorial `n!`. Asserts if `n` is negative (for signed dtypes) or
+        if the result would overflow the dtype.
+
+    Examples:
+
+    ```mojo
+    from std.math import perm
+    print(perm(Int32(5)))  # 120
+    print(perm(Int64(0)))  # 1
+    ```
+    """
+    comptime assert dtype.is_integral(), "perm() requires an integer dtype"
+    return factorial(n)
+
+
+def perm[dtype: DType, //](n: Scalar[dtype], k: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes the number of ways to arrange `k` items from `n` items without
+    repetition (permutations).
+
+    Equivalent to Python's `math.perm(n, k)`.
+
+    Parameters:
+        dtype: The integer data type of the arguments and result.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to arrange. Must be non-negative and at most `n`.
+
+    Returns:
+        The number of permutations P(n, k) = n! / (n-k)!. Asserts if `n` is
+        negative, `k` is negative, or `k > n` (for signed dtypes).
+
+    Examples:
+
+    ```mojo
+    from std.math import perm
+    print(perm(Int32(5), Int32(2)))  # 20
+    print(perm(Int64(5), Int64(0)))  # 1
+    ```
+    """
+    comptime assert dtype.is_integral(), "perm() requires an integer dtype"
+    comptime if not dtype.is_unsigned():
+        assert n >= 0, "n must be non-negative"
+        assert k >= 0, "k must be non-negative"
+    assert k <= n, "k must be between 0 and n"
+    var result = Scalar[dtype](1)
+    var i = Scalar[dtype](0)
+    while i < k:
         result *= n - i
+        i += 1
     return result
 
 
