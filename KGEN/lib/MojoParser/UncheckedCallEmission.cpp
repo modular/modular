@@ -243,6 +243,11 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
 
   refValue = emitter.emitRebindOpIfNeeded(refValue, compatibleRefType,
                                           operand.expr->getLoc());
+
+  // If the value coming in is owned, then so is our result.
+  if (operand.ir.getIfRValue() && actualRefType.isMutableKnown(true))
+    return MRValue(refValue);
+
   return CValue::getMValueForRef(refValue);
 }
 
