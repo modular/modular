@@ -62,7 +62,7 @@ struct OwnedPointer[T: AnyType](
             value: The value to move into the `OwnedPointer`.
         """
         self._inner = alloc[_T](1)
-        self._inner.init_pointee_move(value^)
+        self._inner.init_pointee(take=value^)
 
     def __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
         """Construct a new `OwnedPointer` by explicitly copying the passed value into a new backing allocation.
@@ -75,7 +75,7 @@ struct OwnedPointer[T: AnyType](
             copy_value: The value to explicitly copy into the `OwnedPointer`.
         """
         self._inner = alloc[_T](1)
-        self._inner.init_pointee_copy(copy_value)
+        self._inner.init_pointee(copy=copy_value)
 
     def __init__[
         _T: Copyable, U: NoneType = None
@@ -90,7 +90,7 @@ struct OwnedPointer[T: AnyType](
             value: The value to copy into the `OwnedPointer`.
         """
         self._inner = alloc[_T](1)
-        self._inner.init_pointee_copy(value)
+        self._inner.init_pointee(copy=value)
 
     def __init__[
         _T: Copyable

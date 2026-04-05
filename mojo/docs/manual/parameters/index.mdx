@@ -207,7 +207,7 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
         self.size = len(elements)
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_move(elements[i].copy())
+            (self.data + i).init_pointee(take=elements[i].copy())
 
     def __del__(deinit self):
         for i in range(self.size):

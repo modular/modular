@@ -590,8 +590,8 @@ struct HashableOnly(Hashable, ImplicitlyDestructible, Movable):
 
 def test_span_hashable_non_copyable() raises:
     var ptr = alloc[HashableOnly](2)
-    ptr.init_pointee_move(HashableOnly(1))
-    (ptr + 1).init_pointee_move(HashableOnly(2))
+    ptr.init_pointee(take=HashableOnly(1))
+    (ptr + 1).init_pointee(take=HashableOnly(2))
     var span = Span(ptr=ptr, length=2)
     _ = hash(span)
     (ptr + 1).destroy_pointee()
@@ -601,7 +601,7 @@ def test_span_hashable_non_copyable() raises:
 
 def test_span_with_move_only_type() raises:
     var ptr = alloc[MoveOnly[Int]](1)
-    ptr.init_pointee_move(MoveOnly(42))
+    ptr.init_pointee(take=MoveOnly(42))
     var span = Span(ptr=ptr, length=1)
     assert_equal(span[0].data, 42)
     ptr.destroy_pointee()

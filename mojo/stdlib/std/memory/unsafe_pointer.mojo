@@ -390,7 +390,7 @@ struct UnsafePointer[
     - `destroy_pointee()` / `take_pointee()`:
       Explicitly end the lifetime of the current pointee, or move it out, taking
       ownership.
-    - `init_pointee_move()` / `init_pointee_move_from()` / `init_pointee_copy()`
+    - `init_pointee(take=...)` / `init_pointee(copy=...)` / `init_pointee_move_from()`:
       Initialize a pointee that is currently uninitialized, by moving an existing
       value, moving from another pointee, or by copying an existing value.
       Use these to manage lifecycles when working with uninitialized memory.
@@ -1152,7 +1152,7 @@ struct UnsafePointer[
                 return
             var tmp = self.take_pointee()
             self.init_pointee_move_from(other)
-            other.init_pointee_move(tmp^)
+            other.init_pointee(take=tmp^)
 
     @always_inline("nodebug")
     def as_noalias_ptr(self) -> Self._UnsafePointerType:
@@ -1909,8 +1909,9 @@ struct UnsafePointer[
 
         This performs a _consuming_ move, ending the origin of the value stored
         in this pointer memory location. Subsequent reads of this pointer are
-        not valid. If a new valid value is stored using `init_pointee_move()`, then
-        reading from this pointer becomes valid again.
+        not valid. If a new valid value is stored using
+        `init_pointee(take=...)`, then reading from this pointer becomes valid
+        again.
 
         Parameters:
             T: The type the pointer points to, which must be `Movable`.
@@ -1920,6 +1921,7 @@ struct UnsafePointer[
         """
         return __get_address_as_owned_value(self.address)
 
+    @deprecated("use `init_pointee(take=...)`")
     @always_inline
     def init_pointee_move[
         T: Movable,
@@ -1941,8 +1943,9 @@ struct UnsafePointer[
         Args:
             value: The value to emplace.
         """
-        __get_address_as_uninit_lvalue(self.address) = value^
+        self.init_pointee(take=value^)
 
+    @deprecated("use `init_pointee(copy=...)`")
     @always_inline
     def init_pointee_copy[
         T: Copyable,
@@ -1964,7 +1967,53 @@ struct UnsafePointer[
         Args:
             value: The value to emplace.
         """
-        __get_address_as_uninit_lvalue(self.address) = value.copy()
+        self.init_pointee(copy=value)
+
+    @always_inline
+    def init_pointee[
+        T: Movable,
+        //,
+    ](self: UnsafePointer[T, _], *, var take: T) where type_of(self).mut:
+        """Emplace a new value into the pointer location, moving from `take`.
+
+        The pointer memory location is assumed to contain uninitialized data,
+        and consequently the current contents of this pointer are not destructed
+        before writing `take`. Similarly, ownership of `take` is logically
+        transferred into the pointer location.
+
+        When compared to `init_pointee(copy=...)`, this avoids an extra copy on
+        the caller side when the value is an rvalue.
+
+        Parameters:
+            T: The type the pointer points to, which must be `Movable`.
+
+        Args:
+            take: The value to emplace by moving from it.
+        """
+        __get_address_as_uninit_lvalue(self.address) = take^
+
+    @always_inline
+    def init_pointee[
+        T: Copyable,
+        //,
+    ](self: UnsafePointer[T, _], *, copy: T) where type_of(self).mut:
+        """Emplace a copy of `copy` into the pointer location.
+
+        The pointer memory location is assumed to contain uninitialized data,
+        and consequently the current contents of this pointer are not destructed
+        before writing `copy`. Similarly, ownership of `copy` is logically
+        transferred into the pointer location.
+
+        When compared to `init_pointee(take=...)`, this avoids an extra move on
+        the callee side when the value must be copied.
+
+        Parameters:
+            T: The type the pointer points to, which must be `Copyable`.
+
+        Args:
+            copy: The value to emplace by copying from it.
+        """
+        __get_address_as_uninit_lvalue(self.address) = copy.copy()
 
     @always_inline
     def init_pointee_move_from[
@@ -1988,7 +2037,7 @@ struct UnsafePointer[
         uninitialized data. Subsequent reads of or destructor calls on the `src`
         pointee value are invalid, unless and until a new valid value has been
         moved into the `src` pointer's memory location using an
-        `init_pointee_*()` operation.
+        `init_pointee(...)` operation.
 
         This transfers the value out of `src` and into `self` using at most one
         move constructor call.
@@ -2000,7 +2049,7 @@ struct UnsafePointer[
         var b_ptr = alloc[String](2)
 
         # Initialize A pointee
-        a_ptr.init_pointee_move("foo")
+        a_ptr.init_pointee(take="foo")
 
         # Perform the move
         b_ptr.init_pointee_move_from(a_ptr)

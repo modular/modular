@@ -1314,8 +1314,8 @@ def check_and_get_or_convert_arg[
     try:
         return check_and_get_arg[T](func_name, py_args, index)
     except e:
-        converted_arg_ptr.init_pointee_move(
-            _try_convert_arg[T](
+        converted_arg_ptr.init_pointee(
+            take=_try_convert_arg[T](
                 func_name,
                 py_args,
                 index,

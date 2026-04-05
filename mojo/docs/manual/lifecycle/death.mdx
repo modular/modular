@@ -164,7 +164,7 @@ struct HeapArray(Writable):
         self.size = len(values)
         self.data = alloc[Int](self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(values[i])
+            (self.data + i).init_pointee(copy=values[i])
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("[")

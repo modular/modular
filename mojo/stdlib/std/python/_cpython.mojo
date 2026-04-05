@@ -2817,7 +2817,7 @@ struct CPython(Defaultable, Movable):
         # NOTE: See https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
         # for what we want to do here.
         var module_def_ptr = alloc[PyModuleDef](1)
-        module_def_ptr.init_pointee_move(PyModuleDef(name))
+        module_def_ptr.init_pointee(take=PyModuleDef(name))
 
         # TODO: set gil stuff
         # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule

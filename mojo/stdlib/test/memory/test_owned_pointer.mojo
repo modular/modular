@@ -36,8 +36,8 @@ def test_basic_ref() raises:
 def test_from_unsafe_pointer_constructor() raises:
     var deleted = False
     var unsafe_ptr = alloc[ObservableDel[]](1)
-    unsafe_ptr.init_pointee_move(
-        ObservableDel(UnsafePointer(to=deleted).as_any_origin())
+    unsafe_ptr.init_pointee(
+        take=ObservableDel(UnsafePointer(to=deleted).as_any_origin())
     )
 
     var ptr = OwnedPointer(unsafe_from_raw_pointer=unsafe_ptr)

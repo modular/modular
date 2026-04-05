@@ -129,7 +129,7 @@ struct Tuple[*element_types: Movable](
         # Move each element into the tuple storage.
         @parameter
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
-            UnsafePointer(to=self[idx]).init_pointee_move(elt^)
+            UnsafePointer(to=self[idx]).init_pointee(take=elt^)
 
         args^.consume_elements[init_elt]()
 
@@ -165,9 +165,9 @@ struct Tuple[*element_types: Movable](
         comptime for i in range(Self.__len__()):
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            UnsafePointer(
-                to=trait_downcast[Copyable](self[i])
-            ).init_pointee_copy(trait_downcast[Copyable](copy[i]))
+            UnsafePointer(to=trait_downcast[Copyable](self[i])).init_pointee(
+                copy=trait_downcast[Copyable](copy[i])
+            )
 
     @always_inline("nodebug")
     def __init__(out self, *, deinit take: Self):

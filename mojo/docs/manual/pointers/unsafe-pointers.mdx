@@ -31,7 +31,7 @@ value pointed to by a pointer is sometimes called a *pointee*.
 # Allocate memory to hold a value
 var ptr = alloc[Int](1)
 # Initialize the allocated memory
-ptr.init_pointee_copy(100)
+ptr.init_pointee(copy=100)
 ```
 
 <figure>
@@ -95,9 +95,9 @@ At any given time, a pointer can be in one of several states:
   keyword argument.
 
   ```mojo
-  ptr.init_pointee_copy(value)
+  ptr.init_pointee(copy=value)
   # or
-  ptr.init_pointee_move(value^)
+  ptr.init_pointee(take=value^)
   # or
   ptr = UnsafePointer(to=value)
   ```
@@ -146,20 +146,20 @@ not initialized.
 ### Initializing the pointee
 
 To initialize allocated memory, `UnsafePointer` provides the
-[`init_pointee_copy()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
+[`init_pointee(copy=...)`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee)
 and
-[`init_pointee_move()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
+[`init_pointee(take=...)`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee)
 methods. For example:
 
 ```mojo
-ptr.init_pointee_copy(my_value)
+ptr.init_pointee(copy=my_value)
 ```
 
 To move a value into the pointer's memory location, use
-`init_pointee_move()`:
+`init_pointee(take=...)`:
 
 ```mojo
-str_ptr.init_pointee_move(my_string^)
+str_ptr.init_pointee(take=my_string^)
 ```
 
 Note that to move the value, you usually need to add the transfer sigil
@@ -168,7 +168,7 @@ type](/mojo/manual/traits#register-passable) (like `Int`) or a
 newly-constructed, "owned" value:
 
 ```mojo
-str_ptr.init_pointee_move("Owned string")
+str_ptr.init_pointee(take="Owned string")
 ```
 
 Alternately, you can get a pointer to an existing value by calling the
@@ -218,7 +218,7 @@ constructor or copy constructor).
 ```mojo
 var str_ptr = alloc[String](1)
 # str_ptr[] = "Testing" # Undefined behavior!
-str_ptr.init_pointee_move("Testing")
+str_ptr.init_pointee(take="Testing")
 str_ptr[] += " pointers" # Works now
 ```
 
@@ -307,7 +307,7 @@ values, and initializes them all to zero.
 ```mojo
 var float_ptr = alloc[Float64](6)
 for offset in range(6):
-    (float_ptr+offset).init_pointee_copy(0.0)
+    (float_ptr+offset).init_pointee(copy=0.0)
 ```
 
 Once the values are initialized, you can access them using subscript syntax:

@@ -228,7 +228,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
-        self._get_ptr[T]().init_pointee_move(value^)
+        self._get_ptr[T]().init_pointee(take=value^)
 
     def __init__(out self, *, copy: Self):
         """Creates a bitwise copy of the union.
@@ -398,7 +398,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
-        self._get_ptr[T]().init_pointee_move(value^)
+        self._get_ptr[T]().init_pointee(take=value^)
 
     @always_inline("nodebug")
     def unsafe_ptr[
