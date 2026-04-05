@@ -109,7 +109,7 @@ comptime _IntToWithValueMapper[
 
 comptime IntToWithValue[*values: Int] = _ReduceValueAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[HasStaticValue],
-    VariadicType=values,
+    ParamListType=values,
     Reducer=_IntToWithValueMapper,
 ]
 

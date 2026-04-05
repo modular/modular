@@ -190,7 +190,7 @@ def _printf_cpu[
         # FIXME: external_call should handle this
         _ = __mlir_op.`pop.external_call`[
             func="KGEN_CompilerRT_fprintf".value,
-            variadicType=__mlir_attr[
+            fnType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<none>,`,
                 `!kgen.pointer<scalar<si8>>`,
@@ -343,7 +343,7 @@ def _snprintf[
     return Int(
         __mlir_op.`pop.external_call`[
             func="snprintf".value,
-            variadicType=__mlir_attr[
+            fnType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<scalar<si8>>,`,
                 `!pop.scalar<index>, `,

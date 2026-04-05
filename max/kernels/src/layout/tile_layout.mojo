@@ -488,10 +488,10 @@ struct Layout[
                 var sub_stride = stride_t[i].tuple()
                 comptime for j in range(sub_rank):
                     var divided = _divide_by_stride[
-                        Self.stride_types[i].VariadicType[j]
+                        Self.stride_types[i].ParamListType[j]
                     ](idx, sub_stride[j].value())
                     var coord_val = _mod_by_shape[
-                        Self.shape_types[i].VariadicType[j]
+                        Self.shape_types[i].ParamListType[j]
                     ](divided, sub_shape[j].value())
                     UnsafePointer(to=sub_result[j]).init_pointee_copy(
                         rebind[SubResultType.element_types[j]](
@@ -727,7 +727,7 @@ def _type_to_int_tuple[T: CoordLike]() -> IntTuple:
     comptime if not T.is_tuple:
         return IntTuple(T.static_value)
     else:
-        return _types_to_int_tuple[T.VariadicType]()
+        return _types_to_int_tuple[T.ParamListType]()
 
 
 def _types_to_int_tuple[Types: Variadic.TypesOfTrait[CoordLike]]() -> IntTuple:
@@ -766,7 +766,7 @@ comptime _StaticCosize[
     Strides: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[1],
-    VariadicType=Shapes,
+    ParamListType=Shapes,
     Reducer=_StaticCosizeReducer[Strides=Strides, ...],
 ][
     0
@@ -775,14 +775,14 @@ comptime _StaticCosize[
 
 comptime _RowMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.reverse[*_UnwrapSingleTuple[*element_types]],
+    ParamListType=Variadic.reverse[*_UnwrapSingleTuple[*element_types]],
     Reducer=_RowMajorMapper,
 ]
 
 
 comptime _UnwrapSingleTuple[*element_types: CoordLike] = element_types[
     0
-].VariadicType if Variadic.size_types[element_types] == 1 and element_types[
+].ParamListType if Variadic.size_types[element_types] == 1 and element_types[
     0
 ].is_tuple else element_types
 
@@ -958,7 +958,7 @@ Parameters:
 
 comptime _ColMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.types[
+    ParamListType=Variadic.types[
         *_UnwrapSingleTuple[*element_types]
     ],  # Process in forward order
     Reducer=_ColMajorMapper,
@@ -1251,7 +1251,7 @@ comptime _BlockedProductShapeTypes[
     TilerLayoutType: TensorLayout,
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=BlockLayoutType._shape_types,
+    ParamListType=BlockLayoutType._shape_types,
     Reducer=_BlockedProductShapeReducer[
         BlockLayoutType,
         TilerLayoutType,
@@ -1284,7 +1284,7 @@ comptime _BlockedProductStrideTypes[
     TilerLayoutType: TensorLayout,
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=BlockLayoutType._stride_types,
+    ParamListType=BlockLayoutType._stride_types,
     Reducer=_BlockedProductStrideReducer[
         BlockLayoutType,
         TilerLayoutType,
@@ -1298,7 +1298,7 @@ comptime _CoalescedBlockedProductShapeTypes[
     TilerLayoutType: TensorLayout,
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=BlockLayoutType._shape_types,
+    ParamListType=BlockLayoutType._shape_types,
     Reducer=_CoalescedBlockedShapeReducer[
         BlockLayoutType,
         TilerLayoutType,
@@ -1312,7 +1312,7 @@ comptime _CoalescedBlockedProductStrideTypes[
     TilerLayoutType: TensorLayout,
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=BlockLayoutType._stride_types,
+    ParamListType=BlockLayoutType._stride_types,
     Reducer=_CoalescedBlockedStrideReducer[
         BlockLayoutType,
         TilerLayoutType,
@@ -1641,7 +1641,7 @@ comptime _UpcastStrideTypes[
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=stride_types,
+    ParamListType=stride_types,
     Reducer=_UpcastStrideReducer[factor, stride_types, ...],
 ]
 """The stride types after upcast by ``factor``."""
@@ -1683,7 +1683,7 @@ comptime _UpcastShapeTypes[
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=shape_types,
+    ParamListType=shape_types,
     Reducer=_UpcastShapeReducer[factor, shape_types, stride_types, ...],
 ]
 """The shape types after upcast by ``factor``."""
@@ -1849,7 +1849,7 @@ comptime _DropLast2[
     types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=types,
+    ParamListType=types,
     Reducer=_DropLast2Reducer,
 ]
 """Remove the last two elements from a variadic."""
@@ -1917,7 +1917,7 @@ comptime _CoalescedInterleaved[
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[0]],
-    VariadicType=_Flattened[*shape_types],
+    ParamListType=_Flattened[*shape_types],
     Reducer=_CoalesceReducer[
         _Flattened[*shape_types],
         _Flattened[*stride_types],
@@ -1962,7 +1962,7 @@ comptime _CoalescedShapeTypes[
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=_HalfSizeDriver[
+    ParamListType=_HalfSizeDriver[
         Variadic.size_types[_CoalescedInterleaved[shape_types, stride_types]]
     ],
     Reducer=_ExtractEvenReducer[
@@ -1977,7 +1977,7 @@ comptime _CoalescedStrideTypes[
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=_HalfSizeDriver[
+    ParamListType=_HalfSizeDriver[
         Variadic.size_types[_CoalescedInterleaved[shape_types, stride_types]]
     ],
     Reducer=_ExtractOddReducer[
@@ -2067,8 +2067,8 @@ def coalesce[
 comptime _WCPair3[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            Variadic.size_types[L.VariadicType]
-            == Variadic.size_types[C.VariadicType]
+            Variadic.size_types[L.ParamListType]
+            == Variadic.size_types[C.ParamListType]
         )
     )
 )
@@ -2089,13 +2089,13 @@ comptime _WCReducer3[
 comptime _WCPair2[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            False if Variadic.size_types[L.VariadicType]
+            False if Variadic.size_types[L.ParamListType]
             != Variadic.size_types[
-                C.VariadicType
+                C.ParamListType
             ] else _ReduceVariadicAndIdxToValue[
                 BaseVal=Variadic.values[True],
-                VariadicType=C.VariadicType,
-                Reducer=_WCReducer3[L.VariadicType, C.VariadicType, ...],
+                ParamListType=C.ParamListType,
+                Reducer=_WCReducer3[L.ParamListType, C.ParamListType, ...],
             ][
                 0
             ]
@@ -2118,13 +2118,13 @@ comptime _WCReducer2[
 comptime _WCPair1[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            False if Variadic.size_types[L.VariadicType]
+            False if Variadic.size_types[L.ParamListType]
             != Variadic.size_types[
-                C.VariadicType
+                C.ParamListType
             ] else _ReduceVariadicAndIdxToValue[
                 BaseVal=Variadic.values[True],
-                VariadicType=C.VariadicType,
-                Reducer=_WCReducer2[L.VariadicType, C.VariadicType, ...],
+                ParamListType=C.ParamListType,
+                Reducer=_WCReducer2[L.ParamListType, C.ParamListType, ...],
             ][
                 0
             ]
@@ -2151,7 +2151,7 @@ comptime _WeaklyCompatible[
     False if Variadic.size_types[layout_types]
     != Variadic.size_types[coord_types] else _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[True],
-        VariadicType=coord_types,
+        ParamListType=coord_types,
         Reducer=_WCReducer1[layout_types, coord_types, ...],
     ][0]
 )

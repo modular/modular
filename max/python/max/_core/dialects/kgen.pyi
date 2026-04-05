@@ -1298,12 +1298,12 @@ class StructFieldNamesAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        type: VariadicType,
+        type: ParamListType,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def type(self) -> VariadicType: ...
+    def type(self) -> ParamListType: ...
 
 class StructFieldOffsetByIndexAttr(max._core.Attribute):
     """
@@ -1410,12 +1410,12 @@ class StructFieldTypesAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        type: VariadicType,
+        type: ParamListType,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def type(self) -> VariadicType: ...
+    def type(self) -> ParamListType: ...
 
 class SugarAttr(max._core.Attribute):
     """
@@ -1796,18 +1796,18 @@ class VariadicAttr(max._core.Attribute):
     def __init__(
         self,
         values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: VariadicType,
+        type: ParamListType,
     ) -> None: ...
     @overload
     def __init__(
         self,
         values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: VariadicType,
+        type: ParamListType,
     ) -> None: ...
     @property
     def values(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
     @property
-    def type(self) -> VariadicType: ...
+    def type(self) -> ParamListType: ...
 
 class VariadicConcatAttr(max._core.Attribute):
     """
@@ -1825,17 +1825,17 @@ class VariadicConcatAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
-        type: VariadicType,
+        type: ParamListType,
         variadics: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
-        type: VariadicType,
+        type: ParamListType,
         variadics: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
-    def type(self) -> VariadicType: ...
+    def type(self) -> ParamListType: ...
     @property
     def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
 
@@ -1915,19 +1915,19 @@ class VariadicTabulateAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
-        type: VariadicType,
+        type: ParamListType,
         count: max._core.dialects.builtin.TypedAttr,
         generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
-        type: VariadicType,
+        type: ParamListType,
         count: max._core.dialects.builtin.TypedAttr,
         generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
-    def type(self) -> VariadicType: ...
+    def type(self) -> ParamListType: ...
     @property
     def count(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
@@ -1953,17 +1953,17 @@ class VariadicZipAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
-        type: VariadicType,
+        type: ParamListType,
         input_type_value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
-        type: VariadicType,
+        type: ParamListType,
         input_type_value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
-    def type(self) -> VariadicType: ...
+    def type(self) -> ParamListType: ...
     @property
     def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
 
@@ -4644,6 +4644,60 @@ class ParamClosureType(max._core.Type):
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
 
+class ParamListSplatType(max._core.Type):
+    """
+    The `!kgen.param_list_splat` type represents deferred type that splats
+    element type specified number of times. The type cannot be used standalone
+    and has to be used either within `!kgen.struct` or `!llvm.struct` types.
+
+    ```mlir
+    !kgen.struct<(!kgen.param_list_splat<index, 3>)>
+    !llvm.struct<(!kgen.param_list_splat<index, 5>)>
+    ```
+
+    will be concretized to
+
+    ```mlir
+    !kgen.struct<(index, index, index)>
+    !llvm.struct<(index, index, index, index, index)>
+    ```
+    """
+
+    def __init__(
+        self,
+        element_type: max._core.Type,
+        count: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def element_type(self) -> max._core.Type | None: ...
+    @property
+    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class ParamListType(max._core.Type):
+    """
+    The `!kgen.param_list` type represents a homogeneously typed list
+    of zero or more elements.  It also includes the original argument convention
+    so clients know if the input argument is supposed to be owned, read,
+    mut, etc.
+
+    Example:
+
+    ```mlir
+    // A param_list of scalar floats.
+    !kgen.param_list<scalar<f32>>
+
+    // A parameterized param_list of types.
+    !kgen.param_list<type>
+    ```
+    """
+
+    @overload
+    def __init__(self, element_type: max._core.Type) -> None: ...
+    @overload
+    def __init__(self, element_type: max._core.Type) -> None: ...
+    @property
+    def element_type(self) -> max._core.Type | None: ...
+
 class ParamType(max._core.Type):
     """
     This is a symbolic type represented with a parameter expression that is
@@ -4852,60 +4906,6 @@ class TypeValueType(max._core.Type):
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
-
-class VariadicSplatType(max._core.Type):
-    """
-    The `!kgen.param_list_splat` type represents deferred type that splats
-    element type specified number of times. The type cannot be used standalone
-    and has to be used either within `!kgen.struct` or `!llvm.struct` types.
-
-    ```mlir
-    !kgen.struct<(!kgen.param_list_splat<index, 3>)>
-    !llvm.struct<(!kgen.param_list_splat<index, 5>)>
-    ```
-
-    will be concretized to
-
-    ```mlir
-    !kgen.struct<(index, index, index)>
-    !llvm.struct<(index, index, index, index, index)>
-    ```
-    """
-
-    def __init__(
-        self,
-        element_type: max._core.Type,
-        count: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
-    @property
-    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
-
-class VariadicType(max._core.Type):
-    """
-    The `!kgen.param_list` type represents a homogeneously typed variadic sequence
-    of zero or more elements.  It also includes the original argument convention
-    so clients know if the input argument is supposed to be owned, read,
-    mut, etc.
-
-    Example:
-
-    ```mlir
-    // A variadic sequence of scalar floats.
-    !kgen.param_list<scalar<f32>>
-
-    // A parameterized variadic sequence.
-    !kgen.param_list<type>
-    ```
-    """
-
-    @overload
-    def __init__(self, element_type: max._core.Type) -> None: ...
-    @overload
-    def __init__(self, element_type: max._core.Type) -> None: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
 
 class VariantType(max._core.Type):
     """

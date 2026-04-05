@@ -2704,7 +2704,7 @@ comptime _ToRuntimeInts[
     element_types: Variadic.TypesOfTrait[CoordLike], dtype: DType
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
-    VariadicType=element_types,
+    ParamListType=element_types,
     Mapper=_ToRuntimeMapper[dtype, ...],
 ]
 """Convert all shape types to RuntimeInt for slicing operations.
@@ -2728,7 +2728,7 @@ comptime _Slice[
     element_types: Variadic.TypesOfTrait[CoordLike],
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
-    VariadicType=element_types,
+    ParamListType=element_types,
     Mapper=_SliceMapper[slices=slices, ...],
 ]
 
@@ -2770,7 +2770,7 @@ comptime _SelectKeptShape[
     shape_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=shape_types,
+    ParamListType=shape_types,
     Reducer=_SelectKeptShapeReducer[index_types, shape_types, ...],
 ]
 """Filters shape_types to only dimensions where the corresponding index is _All."""
@@ -2796,7 +2796,7 @@ comptime _SelectKeptStride[
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=stride_types,
+    ParamListType=stride_types,
     Reducer=_SelectKeptStrideReducer[index_types, stride_types, ...],
 ]
 """Filters stride_types to only dimensions where the corresponding index is _All."""
@@ -2818,7 +2818,7 @@ comptime _IsRowMajorHelper[
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
-    VariadicType=stride_types,
+    ParamListType=stride_types,
     Mapper=_IsRowMajorMapper[expected_strides=_RowMajor[*shape_types], ...],
 ]
 """Returns variadic of ComptimeInt[1] if strides match, ComptimeInt[0] if not."""
