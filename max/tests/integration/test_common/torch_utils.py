@@ -343,6 +343,128 @@ def _is_flux2_pipeline(pipeline: Any) -> bool:
     return config_class_name == "Flux2Pipeline"
 
 
+def _is_z_image_pipeline(pipeline: Any) -> bool:
+    """Detect diffusers Z-Image pipelines (latents are BCHW, full transformer.in_channels)."""
+    class_name = pipeline.__class__.__name__
+    if class_name in ("ZImagePipeline", "ZImageImg2ImgPipeline"):
+        return True
+
+    config = getattr(pipeline, "config", None)
+    if config is None:
+        return False
+
+    config_class_name = None
+    if isinstance(config, dict):
+        config_class_name = config.get("_class_name")
+    elif hasattr(config, "get"):
+        config_class_name = config.get("_class_name")
+    else:
+        config_class_name = getattr(config, "_class_name", None)
+
+    return config_class_name in ("ZImagePipeline", "ZImageImg2ImgPipeline")
+
+
+def _is_z_image_img2img_pipeline(pipeline: Any) -> bool:
+    """True when the torch reference is diffusers ``ZImageImg2ImgPipeline``."""
+    if pipeline.__class__.__name__ == "ZImageImg2ImgPipeline":
+        return True
+    config = getattr(pipeline, "config", None)
+    if config is None:
+        return False
+    if isinstance(config, dict):
+        return config.get("_class_name") == "ZImageImg2ImgPipeline"
+    if hasattr(config, "get"):
+        return config.get("_class_name") == "ZImageImg2ImgPipeline"
+    return getattr(config, "_class_name", None) == "ZImageImg2ImgPipeline"
+
+
+def _z_image_img2img_starting_latents(
+    pipeline: Any,
+    *,
+    input_image: Image.Image,
+    height: int,
+    width: int,
+    num_inference_steps: int,
+    strength: float,
+    seed: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Match MAX ``prepare_img2img_latents``: VAE mode + numpy noise + scheduler.scale_noise.
+
+    ``ZImageImg2ImgPipeline.prepare_latents`` skips image encoding when ``latents``
+    is passed; we precompute the same noisy latents diffusers would build so the
+    noise tensor matches ``_canonical_randn_tensor`` (and MAX).
+    """
+    from diffusers.pipelines.z_image.pipeline_z_image_img2img import (
+        calculate_shift,
+        retrieve_latents,
+        retrieve_timesteps,
+    )
+
+    vae_scale = int(pipeline.vae_scale_factor) * 2
+    if height % vae_scale != 0 or width % vae_scale != 0:
+        raise ValueError(
+            f"Height and width must be divisible by {vae_scale}; got {height}x{width}"
+        )
+
+    latent_height = 2 * (int(height) // (pipeline.vae_scale_factor * 2))
+    latent_width = 2 * (int(width) // (pipeline.vae_scale_factor * 2))
+    num_channels_latents = int(pipeline.transformer.config.in_channels)
+    image_seq_len = (latent_height // 2) * (latent_width // 2)
+
+    init_image = pipeline.image_processor.preprocess(
+        input_image,
+        height=height,
+        width=width,
+    )
+    init_image = init_image.to(device=device, dtype=torch.float32)
+
+    encode_dtype = next(pipeline.vae.parameters()).dtype
+    image_tensor = init_image.to(dtype=encode_dtype)
+    encoder_output = pipeline.vae.encode(image_tensor)
+    image_latents = retrieve_latents(
+        encoder_output, generator=None, sample_mode="argmax"
+    )
+    shift = float(getattr(pipeline.vae.config, "shift_factor", 0.0) or 0.0)
+    scale = float(pipeline.vae.config.scaling_factor)
+    image_latents = (image_latents - shift) * scale
+    image_latents = image_latents.to(device=device, dtype=torch.float32)
+
+    sch_cfg = pipeline.scheduler.config
+    mu = calculate_shift(
+        image_seq_len,
+        getattr(sch_cfg, "base_image_seq_len", 256),
+        getattr(sch_cfg, "max_image_seq_len", 4096),
+        getattr(sch_cfg, "base_shift", 0.5),
+        getattr(sch_cfg, "max_shift", 1.15),
+    )
+    pipeline.scheduler.sigma_min = 0.0
+    retrieve_timesteps(
+        pipeline.scheduler,
+        num_inference_steps,
+        device,
+        sigmas=None,
+        mu=mu,
+    )
+    timesteps, _ = pipeline.get_timesteps(num_inference_steps, strength, device)
+    if timesteps.shape[0] < 1:
+        raise ValueError(
+            "After strength adjustment, num_inference_steps is < 1 for Z-Image img2img."
+        )
+    batch_size = int(init_image.shape[0])
+    latent_timestep = timesteps[:1].repeat(batch_size)
+
+    latents_np = _canonical_randn_tensor(
+        batch_size,
+        num_channels_latents,
+        latent_height,
+        latent_width,
+        seed,
+    )
+    noise = torch.from_numpy(latents_np).to(device=device, dtype=torch.float32)
+    return pipeline.scheduler.scale_noise(image_latents, latent_timestep, noise)
+
+
 def _load_input_image(image_uri: str) -> Image.Image:
     """Load an input image for image-to-image generation."""
     if image_uri.startswith("s3://"):
@@ -380,6 +502,8 @@ def run_image_generation(
 
     pipeline.to(device)  # type: ignore[attr-defined]
     is_flux2 = _is_flux2_pipeline(pipeline)
+    is_z_image = _is_z_image_pipeline(pipeline)
+    is_z_image_img2img = _is_z_image_img2img_pipeline(pipeline)
 
     for mock_request in requests:
         prompt = mock_request.prompt
@@ -403,17 +527,39 @@ def run_image_generation(
             if mock_request.input_image is not None
             else None
         )
+        strength = (
+            float(mock_request.strength)
+            if mock_request.strength is not None
+            else 0.6
+        )
 
         # Prepare latents using the same approach as MAX pipeline
         # This ensures deterministic and comparable outputs
-        num_channels_latents = pipeline.transformer.config.in_channels // 4  # type: ignore[attr-defined]
+        transformer_in_ch = pipeline.transformer.config.in_channels  # type: ignore[attr-defined]
+        num_channels_latents = (
+            transformer_in_ch if is_z_image else transformer_in_ch // 4
+        )
         vae_scale_factor = pipeline.vae_scale_factor  # type: ignore[attr-defined]
         latent_height = 2 * (height // (vae_scale_factor * 2))
         latent_width = 2 * (width // (vae_scale_factor * 2))
 
+        # Z-Image img2img: diffusers ignores the input image when ``latents`` is set.
+        # Build the same flow-matching noisy latents as MAX (VAE mode + canonical noise).
+        if is_z_image_img2img and input_image is not None:
+            latents = _z_image_img2img_starting_latents(
+                pipeline,
+                input_image=input_image,
+                height=height,
+                width=width,
+                num_inference_steps=inference_steps,
+                strength=strength,
+                seed=seed,
+                device=device,
+            )
         # Generate latents using numpy RandomState (same as MAX).
         # Flux2 expects patchified latents shaped (B, C*4, H//2, W//2).
-        if is_flux2:
+        # Z-Image matches MAX pixel_tokenizer: (B, in_channels, H, W), no packing.
+        elif is_flux2:
             latents_np = _canonical_randn_tensor(
                 batch_size=1,
                 num_channels_latents=num_channels_latents,
@@ -422,6 +568,15 @@ def run_image_generation(
                 seed=seed,
             )
             latents_np = _patchify_latents_numpy(latents_np)
+            latents = torch.from_numpy(latents_np)
+        elif is_z_image:
+            latents_np = _canonical_randn_tensor(
+                batch_size=1,
+                num_channels_latents=num_channels_latents,
+                latent_height=latent_height,
+                latent_width=latent_width,
+                seed=seed,
+            )
             latents = torch.from_numpy(latents_np)
         else:
             latents = torch.from_numpy(
@@ -449,6 +604,8 @@ def run_image_generation(
 
         if input_image is not None:
             pipeline_kwargs["image"] = input_image
+            if is_z_image_img2img:
+                pipeline_kwargs["strength"] = strength
 
         # Add negative prompt if provided
         if mock_request.negative_prompt:
