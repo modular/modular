@@ -1038,9 +1038,9 @@ struct VariadicList[
 struct VariadicPack[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable],
+    element_trait: type_of(AnyType),
     //,
     is_owned: Bool,
-    element_trait: type_of(AnyType),
     *element_types: element_trait,
 ](RegisterPassable):
     comptime _mlir_pack_type = __mlir_type[

@@ -221,12 +221,13 @@ public:
 
   /// Return the RefPackType that corresponds to the VariadicPack instance.
   RefPackType getVariadicPackInfo(SharedState &shared) const;
-  /// Return the type list for the variadic argument in a VariadicPack.  This
-  /// will be a VariadicAttr when concrete (e.g. on the caller side) or a
-  /// parameter on the callee side.
-  TypedAttr getVariadicPackTypeList() const;
-  /// Return the `is_owned` parameter for the VariadicPack.
-  TypedAttr getVariadicPackIsOwned() const;
+
+  struct VariadicPackInfo {
+    TypedAttr typeList; // This is the !kgen.param_type of types.
+    TypedAttr isOwned;  // This is the value of the is_owned parameter.
+  };
+  /// Decode the parameters list of VariadicPack.
+  VariadicPackInfo getVariadicPackInfo() const;
 
   /// Given a variadic keyword dictionary type, return the dictionary's value
   /// type as an ASTType.

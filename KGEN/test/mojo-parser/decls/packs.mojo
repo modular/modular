@@ -42,13 +42,13 @@ def takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
 
 # Check the argument pack.
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, :origin<1> *"rest.origin._mlir_origin``"
-# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> Ts>>, mut *"rest{{.*}}"> owned_in_mem|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, {{.*}}, :param_list<!AnyType> Ts>>, mut *"rest{{.*}}"> owned_in_mem|pack_vararg)
 
 
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeOwnedSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :param_list<!SomeTrait> Ts>>, mut *"rest`2"> owned_in_mem|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, {{.*}}, :param_list<!SomeTrait> Ts>>, mut *"rest`2"> owned_in_mem|pack_vararg)
 def takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
     pass
 
@@ -106,7 +106,7 @@ def test_owned_trait():
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :param_list<!SomeTrait> Ts>>, imm *"rest`2"> mut|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, {{.*}}, :param_list<!SomeTrait> Ts>>, imm *"rest`2"> mut|pack_vararg)
 def takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
     pass
 
@@ -179,14 +179,14 @@ struct MyTuple[*Ts: AnyType]:
 
 # CHECK-LABEL: lit.fn @"pack
 # CHECK-SAME: Ts: param_list<!AnyType> pos_vararg
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *"args.origin{{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> Ts>>, imm *"args`2"> read_mem|pack_vararg)
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *"args.origin{{.*}}, :!lit.anytrait<!AnyType> !AnyType, :!Bool {:i1 0}, :param_list<!AnyType> Ts>>, imm *"args`2"> read_mem|pack_vararg)
 def pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"packBorrowed[
 # CHECK-SAME: Ts: param_list<!AnyType> pos_vararg
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *"args.origin{{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> Ts>>, imm *"args`2"> read_mem|pack_vararg)
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *"args.origin{{.*}}, :!lit.anytrait<!AnyType> !AnyType, {{.*}}, :param_list<!AnyType> Ts>>, imm *"args`2"> read_mem|pack_vararg)
 def packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 
@@ -230,7 +230,7 @@ def usePacks(x: FloatDyn, y: Int):
 def test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.generator<[1](
-    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> #lit.comptime.origin, {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [!Int]>>, imm #lit.comptime.origin> read_mem|pack_vararg)
+    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> #lit.comptime.origin, {{.*}}, :!lit.anytrait<!AnyType> !AnyType, :!Bool {:i1 0}, :param_list<!AnyType> [!Int]>>, imm #lit.comptime.origin> read_mem|pack_vararg)
     # CHECK-SAME: <store_to_mem(a)>))
     comptime foo = pack(a)
 
@@ -245,7 +245,7 @@ def create_pack_direct(x: MyMemoryStruct, y: String):
     # Create Tuple
     var ptr_tuple = Tuple(UnsafePointer(to=x), UnsafePointer(to=y))
     comptime PackType = VariadicPack[
-        origin=origin_of(x, y), False, AnyType, MyMemoryStruct, String
+        origin=origin_of(x, y), element_trait=AnyType, False, MyMemoryStruct, String
     ]
     # CHECK: %[[PACK:.*]] = lit.ref.pack.from_pointer_pack
     # CHECK: lit.call {{.*}}@VariadicPack::@"__init__(!lit.ref.pack{{.*}}(%[[PACK]])
@@ -262,7 +262,7 @@ def create_pack_indirect(x: MyMemoryStruct, y: String):
     # Create Tuple
     var ptr_tuple = Tuple(UnsafePointer(to=x), UnsafePointer(to=y))
     comptime PackType = VariadicPack[
-        origin=origin_of(x, y), False, AnyType, MyMemoryStruct, String
+        origin=origin_of(x, y), element_trait=AnyType, False, MyMemoryStruct, String
     ]
     # CHECK: %[[PACK:.*]] = lit.ref.pack.from_pointer_pack
     # CHECK: %[[VAR_RAW_PACK:.*]] = lit.var.decl "raw_pack" var

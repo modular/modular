@@ -1455,10 +1455,11 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr,
                UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
                StringAttr::get(emitter.getContext(), "origin"));
+  bindings.add(arg.typeExpr, PValue(elementType),
+               StringAttr::get(emitter.getContext(), "element_trait"));
 
   bool isVar = arg.convention == ParsedArgument::kConventionVar;
   bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isVar));
-  bindings.add(arg.typeExpr, PValue(elementType));
   bindings.add(arg.typeExpr,
                UnpackedAttr::get(param.get(), /*kwOnly=*/false, elementType));
 

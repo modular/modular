@@ -591,7 +591,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // Pack arguments are fulfilled with an empty #lit.ref.pack.
     if (calleeSig.isPack(argIdx)) {
       ASTType packType = RefType::stripRefConvention(expectedType, convention);
-      assert(sugarCast<VariadicAttr>(packType.getVariadicPackTypeList())
+      assert(sugarCast<VariadicAttr>(packType.getVariadicPackInfo().typeList)
                  .getValues()
                  .empty() &&
              "pack type already checked against operand count");

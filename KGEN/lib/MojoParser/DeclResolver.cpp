@@ -1714,7 +1714,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       numStars = 1;
     } else if (fullSig.isPack(argNo)) {
       TypedAttr packVariadic = ASTType(fullSig.getIfVariadicListOrPack(argNo))
-                                   .getVariadicPackTypeList();
+                                   .getVariadicPackInfo()
+                                   .typeList;
       mangledName += '*';
       ASTType::printParam(os, packVariadic, /*diags=*/nullptr);
       continue;

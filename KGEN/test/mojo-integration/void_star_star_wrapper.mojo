@@ -80,8 +80,8 @@ def wrapped_entry_point[
 
     comptime PackType = VariadicPack[
         origin=MutExternalOrigin,
+        element_trait=AnyType,
         False,
-        AnyType,
         *kernel.declared_arg_types,
     ]
     var raw_pack = __mlir_op.`lit.ref.pack.from_pointer_pack`[
