@@ -13,17 +13,49 @@
 
 import math
 
+from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
-
-from ...flux2_modulev3.layers.embeddings import apply_rotary_emb
+from max.nn.kernels import (
+    rope_ragged_with_position_ids as _rope_ragged_with_position_ids,
+)
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
+rope_ragged_with_position_ids = F.functional(_rope_ragged_with_position_ids)
+
+
+def _apply_zimage_qk_rope(
+    query: Tensor,
+    key: Tensor,
+    freqs_cis: Tensor,
+) -> tuple[Tensor, Tensor]:
+    """Apply RoPE using precomputed interleaved [cos, sin] frequencies."""
+    batch_size = query.shape[0]
+    seq_len = query.shape[1]
+    num_heads = query.shape[2]
+    head_dim = query.shape[3]
+
+    query_ragged = F.reshape(query, [batch_size * seq_len, num_heads, head_dim])
+    key_ragged = F.reshape(key, [batch_size * seq_len, num_heads, head_dim])
+
+    position_ids = F.arange(0, seq_len, dtype=DType.uint32, device=query.device)
+    position_ids = F.broadcast_to(position_ids[None, :], [batch_size, seq_len])
+    position_ids = F.reshape(position_ids, [batch_size * seq_len])
+
+    query_out = rope_ragged_with_position_ids(
+        query_ragged, freqs_cis, position_ids, interleaved=True
+    )
+    key_out = rope_ragged_with_position_ids(
+        key_ragged, freqs_cis, position_ids, interleaved=True
+    )
+    return (
+        F.reshape(query_out, [batch_size, seq_len, num_heads, head_dim]),
+        F.reshape(key_out, [batch_size, seq_len, num_heads, head_dim]),
+    )
 
 
 class ZImageAttention(Module[..., Tensor]):
@@ -45,13 +77,12 @@ class ZImageAttention(Module[..., Tensor]):
         self.norm_q = RMSNorm(self.head_dim, eps=eps) if qk_norm else None
         self.norm_k = RMSNorm(self.head_dim, eps=eps) if qk_norm else None
 
-        # Keep ModuleList naming for diffusers-compatible key loading.
-        self.to_out = ModuleList([Linear(dim, dim, bias=False)])
+        self.to_out = Linear(dim, dim, bias=False)
 
     def forward(
         self,
         hidden_states: Tensor,
-        freqs_cis: tuple[Tensor, Tensor],
+        freqs_cis: Tensor,
     ) -> Tensor:
         batch_size = hidden_states.shape[0]
         seq_len = hidden_states.shape[1]
@@ -73,22 +104,7 @@ class ZImageAttention(Module[..., Tensor]):
         if self.norm_k is not None:
             key = self.norm_k(key)
 
-        query = apply_rotary_emb(
-            query,
-            freqs_cis,
-            use_real=True,
-            use_real_unbind_dim=-1,
-            sequence_dim=1,
-        )
-        key = apply_rotary_emb(
-            key,
-            freqs_cis,
-            use_real=True,
-            use_real_unbind_dim=-1,
-            sequence_dim=1,
-        )
-        query = query.cast(value.dtype)
-        key = key.cast(value.dtype)
+        query, key = _apply_zimage_qk_rope(query, key, freqs_cis)
 
         out = flash_attention_gpu(
             query,
@@ -99,4 +115,4 @@ class ZImageAttention(Module[..., Tensor]):
         )
 
         out = F.reshape(out, [batch_size, seq_len, self.inner_dim])
-        return self.to_out[0](out)
+        return self.to_out(out)

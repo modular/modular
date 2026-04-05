@@ -46,6 +46,7 @@ def convert_z_image_transformer_state_dict(
         key = _replace_prefix(key, "cap_embedder.0.", "cap_norm.")
         key = _replace_prefix(key, "cap_embedder.1.", "cap_proj.")
         key = key.replace("adaLN_modulation.0.", "adaLN_modulation.")
+        key = key.replace(".to_out.0.", ".to_out.")
         key = _replace_prefix(
             key,
             "final_layer.adaLN_modulation.1.",
