@@ -406,6 +406,36 @@ def test_sub() raises:
     assert_equal(c2["c"], 3)
 
 
+def test_keep_positive_removes_keys() raises:
+    # Verify that __iadd__ and __isub__ actually delete non-positive entries
+    # from the counter, not just leave them with a zero value.
+    var c1 = Counter[String]()
+    c1["a"] = 3
+    c1["b"] = 1
+
+    var c2 = Counter[String]()
+    c2["a"] = 3
+    c2["b"] = 5
+
+    c1 -= c2  # "a" → 0, "b" → -4: both should be removed
+    assert_equal(len(c1), 0)
+    assert_false("a" in c1)
+    assert_false("b" in c1)
+
+    var c3 = Counter[String]()
+    c3["x"] = 1
+    c3["y"] = -2
+
+    var c4 = Counter[String]()
+    c4["x"] = 2
+    # After c3 += c4: x=1+2=3 (kept), y=-2+0=-2 (removed)
+    c3 += c4
+    assert_equal(len(c3), 1)
+    assert_true("x" in c3)
+    assert_equal(c3["x"], 3)
+    assert_false("y" in c3)
+
+
 def test_counter_setitem() raises:
     c = Counter[Int]()
     c[1] = 1

@@ -171,6 +171,9 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
+- Added `Dict.unsafe_pop()` which returns `Optional[V]` instead of raising,
+  enabling non-raising key removal patterns.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
