@@ -540,9 +540,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         Args:
             args: Values for each element.
         """
-        var t = _RegTuple(*args^)
-
-        self._storage = rebind[_RegTuple[*Self.element_types]](t)
+        self._storage = _RegTuple(*args^)
 
     @implicit
     @always_inline("nodebug")

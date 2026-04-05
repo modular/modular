@@ -44,7 +44,7 @@ struct TString[
     """
 
     comptime _InjectedValues = VariadicPack[
-        origin=Self.origins, False, Writable, *Self.Ts
+        origin=Self.origins, element_trait=Writable, False, *Self.Ts
     ]
     var _values: Self._InjectedValues
 

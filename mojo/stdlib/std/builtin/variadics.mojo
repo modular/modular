@@ -1137,9 +1137,9 @@ struct VariadicList[
 struct VariadicPack[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable],
+    element_trait: type_of(AnyType),
     //,
     is_owned: Bool,
-    element_trait: type_of(AnyType),
     *element_types: element_trait,
 ](Copyable, RegisterPassable, Sized):
     """A utility class to access heterogeneous variadic function arguments.
@@ -1187,9 +1187,9 @@ struct VariadicPack[
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument pack.
         origin: The origin of the underlying elements.
+        element_trait: The trait that each element of the pack conforms to.
         is_owned: Whether the elements are owned by the pack. If so, the pack
                   will release the elements when it is destroyed.
-        element_trait: The trait that each element of the pack conforms to.
         element_types: The list of types held by the argument pack.
     """
 
