@@ -769,6 +769,16 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         description="Ratio to determine the system prompt length, used only for random sampling.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
+    fit_distributions: bool = Field(
+        default=False,
+        description=(
+            "With --num-chat-sessions on instruct-coder or agentic-code, reshape "
+            "workloads to match random_* and delay_between_chat_turns (same "
+            "semantics as random multiturn). Unsupported for code-debug multiturn. "
+            "Random/synthetic datasets already follow these distributions."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
+    )
     sonnet_input_len: int = Field(
         default=550,
         description="Number of input tokens per request, used only for sonnet dataset.",

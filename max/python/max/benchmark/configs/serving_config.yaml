@@ -82,6 +82,7 @@ benchmark_config:
   random_num_turns: 1
   random_output_len: 128
   random_sys_prompt_ratio: 0.0
+  fit_distributions: false
   sonnet_input_len: 550
   sonnet_prefix_len: 200
 
