@@ -171,6 +171,16 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
+- `String` and `StringSlice` now have `is_ascii_alpha()`, `is_ascii_alnum()`,
+  `capitalize()`, and `title()` methods:
+
+  ```mojo
+  String("hello world").capitalize()        # "Hello world"
+  StringSlice("hello world").title()        # "Hello World"
+  String("abc").is_ascii_alpha()            # True
+  StringSlice("abc123").is_ascii_alnum()    # True
+  ```
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
