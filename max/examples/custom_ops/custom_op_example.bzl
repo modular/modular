@@ -19,7 +19,6 @@ def custom_op_example_py_binary(
         mojo_deps = [
             "//max:compiler",
             "//max:layout",
-            "//max:MOGGKernelAPI",
             "//max:tensor",
             "@mojo//:std",
         ],

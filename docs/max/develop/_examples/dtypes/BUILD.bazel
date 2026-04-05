@@ -7,7 +7,6 @@ modular_py_binary(
     name = "dtype_intro",
     srcs = ["dtype_intro.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/dtype",
     ],
@@ -29,7 +28,6 @@ modular_py_binary(
     name = "specify_dtype",
     srcs = ["specify_dtype.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -53,7 +51,6 @@ modular_py_binary(
     name = "check_dtype",
     srcs = ["check_dtype.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -77,7 +74,6 @@ modular_py_binary(
     name = "cast_dtype",
     srcs = ["cast_dtype.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -101,7 +97,6 @@ modular_py_binary(
     name = "dtype_properties",
     srcs = ["dtype_properties.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/dtype",
     ],
@@ -123,7 +118,6 @@ modular_py_binary(
     name = "dlpack_conversion",
     srcs = ["dlpack_conversion.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         requirement("numpy"),
@@ -146,7 +140,6 @@ modular_py_binary(
     name = "pytorch_to_max",
     srcs = ["pytorch_to_max.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/experimental/torch",
         requirement("torch"),
@@ -169,7 +162,6 @@ modular_py_binary(
     name = "calculate_memory",
     srcs = ["calculate_memory.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/dtype",
     ],
@@ -191,7 +183,6 @@ modular_py_binary(
     name = "validate_dtypes",
     srcs = ["validate_dtypes.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/dtype",
     ],

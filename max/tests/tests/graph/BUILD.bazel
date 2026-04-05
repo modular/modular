@@ -46,7 +46,6 @@ modular_py_test(
     ],
     imports = ["."],
     mojo_deps = [
-        "//max:MOGGKernelAPI",
         "//max/tests/integration/Inputs/test_user_op",
         "@mojo//:std",
     ],
@@ -77,7 +76,6 @@ modular_py_test(
     },
     imports = ["."],
     mojo_deps = [
-        "//max:MOGGKernelAPI",
         "@mojo//:std",
     ],
     deps = [

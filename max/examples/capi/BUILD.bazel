@@ -33,7 +33,6 @@ modular_py_test(
     env = {
         "GRAPH_EXECUTOR": "$(location :example)",
     },
-    mojo_deps = ["//max:MOGGKernelAPI"],
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
@@ -63,7 +62,6 @@ modular_py_test(
     env = {
         "WEIGHTS_EXECUTOR": "$(location :weights_example)",
     },
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         requirement("numpy"),
         "//max/python/max/driver",
@@ -82,7 +80,6 @@ modular_py_test(
     env = {
         "GRAPH_EXECUTOR": "$(location :graph_capture)",
     },
-    mojo_deps = ["//max:MOGGKernelAPI"],
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
