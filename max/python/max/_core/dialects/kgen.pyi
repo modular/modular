@@ -3449,6 +3449,7 @@ class ParamDeclareRegionOp(max._core.Operation):
         function_type: max._core.dialects.builtin.TypeAttr,
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
+        linkage_name: max._core.dialects.builtin.TypedAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         isolated: max._core.dialects.builtin.UnitAttr,
@@ -3483,6 +3484,12 @@ class ParamDeclareRegionOp(max._core.Operation):
     def inline_level(self) -> InlineLevel: ...
     @inline_level.setter
     def inline_level(self, arg: InlineLevelAttr, /) -> None: ...
+    @property
+    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @linkage_name.setter
+    def linkage_name(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
     @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
