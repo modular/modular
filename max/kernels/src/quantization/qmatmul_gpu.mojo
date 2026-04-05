@@ -1217,17 +1217,9 @@ def repack_GPTQ_for_sm8x[
         raw_scales_ptr.bitcast[Scalar[raw_scales_type]](),
     ).transpose()
 
-    # Define 4-bit weights and scales for the repacked buffer
-    comptime repacked_weights_layout = Layout(
-        IntTuple(
-            IntTuple(64, N // 64),
-            IntTuple(2, uint_K // 2),
-        ),
-        IntTuple(
-            IntTuple(2, 128 * (uint_K // 2)),
-            IntTuple(1, 128),
-        ),
-    )
+    # The packed qmatmul kernel consumes weights as a flat row-major uint32
+    # matrix with one row per 64-channel output block.
+    comptime repacked_weights_layout = Layout.row_major(N // 64, uint_K * 64)
     var repack_weights = LayoutTensor[DType.uint32, repacked_weights_layout](
         out_tensor.ptr.bitcast[UInt32](),
     )
@@ -1267,13 +1259,6 @@ def repack_GPTQ_for_sm8x[
         BN, 2, axis=1
     ](0, 0)
 
-    var repacked_weights_gmem_tile = repack_weights.tile[BN, uint_BK](
-        block_idx[0], block_idx[1]
-    )
-    var repacked_weights_gmem_iter = repacked_weights_gmem_tile.tiled_iterator[
-        BN, 2 * group_size // pack_factor, axis=1
-    ](0, 0)
-
     var repacked_scales_gmem_tile = repack_scales.tile[BK_groups, BN](
         block_idx[1], block_idx[0]
     )
@@ -1300,9 +1285,14 @@ def repack_GPTQ_for_sm8x[
             barrier()
 
         if (BK_groups * block_idx[1] + i * 2 + Int(warp_y)) < K_groups:
-            var repacked_warp_tile = repacked_weights_gmem_iter[].tile[
-                repack_tile[0], group_size // pack_factor
-            ](Int(warp_x), Int(warp_y))
+            var repacked_row = Int(block_idx[0]) * 2 + Int(warp_x)
+            var repacked_warp_tile_col = (
+                Int(block_idx[1]) * BK * repack_tile[0] // pack_factor
+                + (2 * i + Int(warp_y))
+                * group_size
+                * repack_tile[0]
+                // pack_factor
+            )
 
             comptime for i_Q_tile in range(group_size // repack_tile[1]):
                 var tmp: SIMD[DType.uint8, 16] = 0
@@ -1353,14 +1343,26 @@ def repack_GPTQ_for_sm8x[
                     comptime for i_e in range(16):
                         tmp[i_e] = thread_tile.load[1](i_e // 2, i_e % 2)
 
-                var repacked_Q_tile = repacked_warp_tile.tile[
-                    repack_tile[0], repack_tile[1] // pack_factor
-                ](0, i_Q_tile)
-                repacked_Q_tile.vectorize[2, 2]().store[4](
-                    lane_id, 0, pack_Q_tile(tmp)
+                var packed_Q_tile = pack_Q_tile(tmp)
+                var repacked_col = (
+                    repacked_warp_tile_col
+                    + i_Q_tile
+                    * repack_tile[0]
+                    * (repack_tile[1] // pack_factor)
+                    + lane_id * 4
                 )
-
-            repacked_weights_gmem_iter._incr()
+                repack_weights[repacked_row, repacked_col + 0] = packed_Q_tile[
+                    0
+                ]
+                repack_weights[repacked_row, repacked_col + 1] = packed_Q_tile[
+                    1
+                ]
+                repack_weights[repacked_row, repacked_col + 2] = packed_Q_tile[
+                    2
+                ]
+                repack_weights[repacked_row, repacked_col + 3] = packed_Q_tile[
+                    3
+                ]
 
             # cast scales to bf16 before storing back
             var scales_warp_tile = repacked_scales_gmem_iter[].tile[1, 64](

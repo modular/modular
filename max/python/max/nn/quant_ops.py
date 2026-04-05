@@ -21,10 +21,8 @@ from .kernels import (
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul_fp4,
     dynamic_scaled_matmul,
-    grouped_dynamic_scaled_fp8_matmul,
-    grouped_matmul_ragged,
+    grouped_matmul_ragged_quantized,
     matmul_static_scaled_float8,
-    mxfp4_dequant,
     quantize_dynamic_block_scaled_fp4,
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
@@ -417,71 +415,13 @@ def quantized_grouped_matmul(
     usage_stats: TensorValue,
     quant_config: QuantConfig,
 ) -> TensorValue:
-    """Single entry point for quantized grouped matmuls (MoE).
-
-    Dispatches to the appropriate kernel based on the quantization format.
-    Handles weight dequant (MXFP4) or input quantization + transpose (FP8)
-    internally.
-
-    Args:
-        x: The input tensor in bf16.
-        weight: The weight tensor in storage layout
-            (MXFP4: ``[E, out, in//2]``, FP8: ``[E, in, out]``).
-        weight_scale: The weight scale tensor in storage layout.
-        expert_start_indices: Starting index of each expert's token group.
-        expert_ids: Expert identifier for each token group.
-        usage_stats: Per-expert usage statistics (will be moved to CPU).
-        quant_config: The quantization configuration.
-
-    Returns:
-        The grouped matmul output tensor in bf16.
-    """
-    cpu_usage_stats = usage_stats.to(DeviceRef.CPU())
-
-    match quant_config.format:
-        case QuantFormat.MXFP4:
-            dequanted = mxfp4_dequant(
-                weight, weight_scale, out_type=DType.bfloat16
-            )
-            return grouped_matmul_ragged(
-                x,
-                dequanted,
-                expert_start_indices,
-                expert_ids,
-                cpu_usage_stats,
-            )
-        case (
-            QuantFormat.COMPRESSED_TENSORS_FP8
-            | QuantFormat.FBGEMM_FP8
-            | QuantFormat.BLOCKSCALED_FP8
-        ):
-            assert quant_config.input_scale.block_size is not None
-            input_block_size = quant_config.input_scale.block_size[1]
-
-            weight_t = weight.transpose(1, 2)
-            scale_t = weight_scale.transpose(1, 2)
-
-            x_fp8, x_scales = quantize_dynamic_scaled_float8(
-                x,
-                quant_config.input_scale,
-                quant_config.weight_scale,
-                group_size_or_per_token=input_block_size,
-                out_type=weight.dtype,
-                scales_type=quant_config.weight_scale.dtype,
-            )
-
-            return grouped_dynamic_scaled_fp8_matmul(
-                x_fp8,
-                weight_t,
-                x_scales,
-                scale_t,
-                expert_start_indices,
-                expert_ids,
-                cpu_usage_stats,
-                quant_config.input_scale,
-                quant_config.weight_scale,
-            )
-        case _:
-            raise ValueError(
-                f"Unsupported quantization format for grouped matmul: {quant_config.format}"
-            )
+    """Compatibility wrapper around the kernel-layer grouped MoE entry point."""
+    return grouped_matmul_ragged_quantized(
+        x=x,
+        weight=weight,
+        weight_scale=weight_scale,
+        expert_start_indices=expert_start_indices,
+        expert_ids=expert_ids,
+        usage_stats=usage_stats,
+        quant_config=quant_config,
+    )

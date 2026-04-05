@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable
+from functools import partial
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.kernels import (
@@ -27,10 +29,11 @@ from max.nn.kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
+from max.nn.linear import GPTQLinear, Linear
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.nn.quant_ops import quantized_fused_qkv_matmul
@@ -436,5 +439,131 @@ class Qwen3Attention(Module, Shardable):
         )
 
         # Output projection
+        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+        return self.o_proj(attn_out)
+
+
+class Qwen3GPTQAttention(Module):
+    """Qwen3 attention with GPTQ weights executed through dense fallbacks."""
+
+    def __init__(
+        self,
+        *,
+        rope: RotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        dtype: DType,
+        devices: list[DeviceRef],
+        quantization_config: QuantizationConfig,
+        scale: float | None = None,
+        qk_norm_eps: float = 1e-6,
+        norm_dtype: DType | None = None,
+    ) -> None:
+        super().__init__()
+        self.rope = rope
+        self.n_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
+        self.kv_params = kv_params
+        self.hidden_size = hidden_size
+        self.dtype = dtype
+        self.devices = devices
+        self.quantization_config = quantization_config
+        self.norm_dtype = norm_dtype if norm_dtype is not None else dtype
+        self.qk_norm_eps = qk_norm_eps
+        self.scale = (
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
+        )
+        linear_cls = partial(
+            GPTQLinear,
+            quantization_encoding=QuantizationEncoding.GPTQ,
+            quantization_config=quantization_config,
+        )
+
+        self.q_norm = RMSNorm(
+            self.kv_params.head_dim,
+            dtype=self.norm_dtype,
+            eps=self.qk_norm_eps,
+            multiply_before_cast=False,
+        )
+        self.k_norm = RMSNorm(
+            self.kv_params.head_dim,
+            dtype=self.norm_dtype,
+            eps=self.qk_norm_eps,
+            multiply_before_cast=False,
+        )
+
+        q_weight_dim = self.kv_params.head_dim * num_attention_heads
+        self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
+
+        self.q_proj = linear_cls(
+            in_dim=hidden_size,
+            out_dim=q_weight_dim,
+            dtype=dtype,
+            device=self.devices[0],
+        )
+        self.k_proj = linear_cls(
+            in_dim=hidden_size,
+            out_dim=self.kv_weight_dim,
+            dtype=dtype,
+            device=self.devices[0],
+        )
+        self.v_proj = linear_cls(
+            in_dim=hidden_size,
+            out_dim=self.kv_weight_dim,
+            dtype=dtype,
+            device=self.devices[0],
+        )
+        self.o_proj = linear_cls(
+            in_dim=q_weight_dim,
+            out_dim=hidden_size,
+            dtype=dtype,
+            device=self.devices[0],
+        )
+
+    def __call__(
+        self,
+        layer_idx: TensorValue,
+        x: TensorValue,
+        kv_collection: PagedCacheValues,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
+    ) -> TensorValue:
+        total_seq_len = x.shape[0]
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+        q = self.q_norm(q.reshape((-1, self.kv_params.head_dim))).reshape(
+            q.shape
+        )
+        k = self.k_norm(k.reshape((-1, self.kv_params.head_dim))).reshape(
+            k.shape
+        )
+        qkv = ops.concat((q, k, v), axis=-1)
+
+        freqs_cis = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
+            input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            n_heads=self.n_heads,
+            interleaved=self.rope.interleaved,
+        )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+        attn_out = flash_attention_ragged(
+            self.kv_params,
+            input=xq,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            input_row_offsets=input_row_offsets,
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=self.scale,
+        )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         return self.o_proj(attn_out)

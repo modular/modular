@@ -36,7 +36,12 @@ from max.graph import (
 from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    WeightScaleSpec,
+)
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import (
@@ -3592,6 +3597,177 @@ def grouped_matmul_ragged(
     )[0].tensor
 
     return output
+
+
+def _gather_expert_tensor(
+    stacked: TensorValue, expert_id: TensorValue
+) -> TensorValue:
+    """Select one expert tensor from a stacked expert tensor."""
+    selected = ops.gather(stacked, expert_id.reshape((1,)), axis=0)
+    return ops.squeeze(selected, axis=0)
+
+
+def grouped_matmul_ragged_gptq(
+    x: TensorValue,
+    weight: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    usage_stats: TensorValue,
+    quantization_config: QuantizationConfig,
+    perm_idx: TensorValue | None = None,
+) -> TensorValue:
+    """Grouped GPTQ matmul for routed MoE activations.
+
+    This keeps the existing MoE routing contract and executes each active expert
+    segment with ``ops.qmatmul`` using GPTQ-packed expert weights.
+    """
+    if weight.rank != 3:
+        raise ValueError(
+            "Grouped GPTQ matmul expects stacked expert packed-weight tensors"
+        )
+
+    active_experts = usage_stats[1]
+    outputs: list[TensorValue] = []
+    zero_u32 = ops.constant(
+        0, DType.uint32, expert_start_indices.device or DeviceRef.CPU()
+    )
+    zero_i32 = ops.constant(
+        0, DType.int32, expert_ids.device or DeviceRef.CPU()
+    )
+    for slot in range(int(expert_ids.shape[0])):
+        is_active = active_experts > slot
+        start = ops.where(
+            is_active,
+            expert_start_indices[slot],
+            zero_u32,
+        )
+        end = ops.where(
+            is_active,
+            expert_start_indices[slot + 1],
+            zero_u32,
+        )
+        expert_id = ops.where(
+            is_active,
+            expert_ids[slot],
+            zero_i32,
+        )
+
+        expert_input = ops.slice_tensor(
+            x,
+            [
+                (
+                    slice(
+                        start.cast(DType.int64).to(DeviceRef.CPU()),
+                        end.cast(DType.int64).to(DeviceRef.CPU()),
+                    ),
+                    f"gptq_grouped_slot_{slot}",
+                ),
+                ...,
+            ],
+        )
+
+        packed_weight = _gather_expert_tensor(weight, expert_id).to(x.device)
+
+        expert_perm_idx: TensorValue | None = None
+        if perm_idx is not None:
+            expert_perm_idx = _gather_expert_tensor(perm_idx, expert_id).to(
+                x.device
+            )
+            expert_input = ops.gather(
+                expert_input,
+                expert_perm_idx,
+                axis=(expert_input.rank - 1),
+            )
+
+        outputs.append(
+            ops.qmatmul(
+                QuantizationEncoding.GPTQ,
+                quantization_config,
+                expert_input,
+                packed_weight,
+                *((expert_perm_idx,) if expert_perm_idx is not None else ()),
+            )
+        )
+
+    return ops.concat(outputs, axis=0)
+
+
+def grouped_matmul_ragged_quantized(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    usage_stats: TensorValue,
+    quant_config: QuantConfig,
+) -> TensorValue:
+    """Single entry point for quantized grouped matmuls used by MoE layers.
+
+    Dispatches to the appropriate grouped matmul implementation based on
+    ``quant_config.format``.
+
+    Args:
+        x: Input activations in BF16.
+        weight: Expert weight tensor in storage layout.
+        weight_scale: Weight scale tensor in storage layout.
+        expert_start_indices: Starting index of each expert's token group.
+        expert_ids: Expert identifier for each active expert group.
+        usage_stats: Per-expert usage statistics.
+        quant_config: Quantization configuration for the expert weights.
+
+    Returns:
+        The grouped matmul output tensor in BF16.
+    """
+    cpu_usage_stats = usage_stats.to(DeviceRef.CPU())
+
+    match quant_config.format:
+        case QuantFormat.MXFP4:
+            dequantized = mxfp4_dequant(
+                weight, weight_scale, out_type=DType.bfloat16
+            )
+            return grouped_matmul_ragged(
+                x,
+                dequantized,
+                expert_start_indices,
+                expert_ids,
+                cpu_usage_stats,
+            )
+        case (
+            QuantFormat.COMPRESSED_TENSORS_FP8
+            | QuantFormat.FBGEMM_FP8
+            | QuantFormat.BLOCKSCALED_FP8
+        ):
+            assert quant_config.input_scale.block_size is not None
+            input_block_size = quant_config.input_scale.block_size[1]
+
+            weight_t = weight.transpose(1, 2)
+            scale_t = weight_scale.transpose(1, 2)
+
+            x_fp8, x_scales = quantize_dynamic_scaled_float8(
+                x,
+                quant_config.input_scale,
+                quant_config.weight_scale,
+                group_size_or_per_token=input_block_size,
+                out_type=weight.dtype,
+                scales_type=quant_config.weight_scale.dtype,
+            )
+
+            return grouped_dynamic_scaled_fp8_matmul(
+                x_fp8,
+                weight_t,
+                x_scales,
+                scale_t,
+                expert_start_indices,
+                expert_ids,
+                cpu_usage_stats,
+                quant_config.input_scale,
+                quant_config.weight_scale,
+            )
+        case _:
+            raise ValueError(
+                "Unsupported quantization format for grouped matmul: "
+                f"{quant_config.format}"
+            )
 
 
 def grouped_dynamic_scaled_nvfp4_matmul(
