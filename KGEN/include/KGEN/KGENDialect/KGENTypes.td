@@ -475,16 +475,16 @@ class PointerOf<Type type> : ConfinedType<PointerType,
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicType
+// ParamListType
 //===----------------------------------------------------------------------===//
 
-def KGEN_VariadicType : KGENType<"Variadic", "param_list", [
+def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized variadic type";
   let description = [{
-    The `!kgen.param_list` type represents a homogeneously typed variadic sequence
+    The `!kgen.param_list` type represents a homogeneously typed list
     of zero or more elements.  It also includes the original argument convention
     so clients know if the input argument is supposed to be owned, read,
     mut, etc.
@@ -492,10 +492,10 @@ def KGEN_VariadicType : KGENType<"Variadic", "param_list", [
     Example:
 
     ```mlir
-    // A variadic sequence of scalar floats.
+    // A param_list of scalar floats.
     !kgen.param_list<scalar<f32>>
 
-    // A parameterized variadic sequence.
+    // A parameterized param_list of types.
     !kgen.param_list<type>
     ```
   }];
@@ -516,9 +516,9 @@ def KGEN_VariadicType : KGENType<"Variadic", "param_list", [
 //===----------------------------------------------------------------------===//
 // Type Constraints
 
-class VariadicElementType<string lhs, string rhs> : TypesMatchWith<
+class ParamListElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches variadic element type", lhs, rhs,
-    "llvm::cast<KGEN::VariadicType>($_self).getElementType()",
+    "llvm::cast<KGEN::ParamListType>($_self).getElementType()",
     "typeRangeMatches">;
 
 //===----------------------------------------------------------------------===//
@@ -1022,10 +1022,10 @@ def KGEN_NeverType : KGENType<"Never", "never"> {
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicSplatType
+// ParamListSplatType
 //===----------------------------------------------------------------------===//
 
-def KGEN_VariadicSplatType : KGENType<"VariadicSplat", "param_list_splat"> {
+def KGEN_ParamListSplatType : KGENType<"ParamListSplat", "param_list_splat"> {
   let summary = "Spalt the element type specified number of times";
   let description = [{
     The `!kgen.param_list_splat` type represents deferred type that splats

@@ -128,7 +128,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     return success();
   }
 
-  if (auto variadic = dyn_cast<VariadicType>(t)) {
+  if (auto variadic = dyn_cast<ParamListType>(t)) {
     types.push_back("void *");
     types.push_back("ssize_t");
     return success();

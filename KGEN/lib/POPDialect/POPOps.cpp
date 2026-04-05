@@ -40,7 +40,7 @@ using namespace M;
 using namespace KGEN;
 using namespace POP;
 
-/// This is used by the `ArrayElementType` and `VariadicElementType`
+/// This is used by the `ArrayElementType` and `ParamListElementType`
 /// constraints to match a type range against a single type.
 static bool typeRangeMatches(Type type, TypeRange range) {
   return llvm::all_of(range, [&](Type e) { return type == e; });
@@ -596,7 +596,7 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 LogicalResult ExternalCallOp::verify() {
   if (mlir::ArrayAttr argAttrs = getArgAttrsAttr()) {
     size_t numArgs;
-    if (std::optional<FunctionType> fnType = getVariadicType())
+    if (std::optional<FunctionType> fnType = getFnType())
       numArgs = fnType->getNumInputs();
     else
       numArgs = getNumOperands();

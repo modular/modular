@@ -395,7 +395,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
         expectedFnTp.getIfVariadicListOrPack(expectedVariadicArgIndex);
     RefPackType refPackType =
         expectedArgVariadicPackType.getVariadicPackInfo(shared);
-    ASTType variadicElType = refPackType.getVariadicElementType();
+    ASTType variadicElType = refPackType.getParamListElementType();
 
     // This works because VariadicPack's element type is always a trait.
     auto expectedTraitType = cast<TraitType>(variadicElType.mlirType);
@@ -441,7 +441,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
     // Now assemble the kgen.variadic parameter value and match it against the
     // expected one.
-    auto varType = VariadicType::get(variadicElType);
+    auto varType = ParamListType::get(variadicElType);
     auto variadicAttr = VariadicAttr::get(elements, varType);
     PROP(matchParams(variadicAttr, variadic));
   }
@@ -574,9 +574,9 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
                                   expected.getAddressSpace());
     }
 
-  // Handle VariadicType.
-  if (auto actual = dyn_cast<VariadicType>(actualType))
-    if (auto expected = dyn_cast<VariadicType>(expectedType))
+  // Handle ParamListType.
+  if (auto actual = dyn_cast<ParamListType>(actualType))
+    if (auto expected = dyn_cast<ParamListType>(expectedType))
       return matchTypes(actual.getElementType(), expected.getElementType());
 
   // Handle RefPackType.
@@ -694,7 +694,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
   expectedAttr = UpcastAttr::strip(expectedAttr);
 
   auto getTargetMetaTypeForTypeValue = [](Type targetMetaTp) -> Type {
-    if (auto vaTp = sugarDynCast<VariadicType>(targetMetaTp))
+    if (auto vaTp = sugarDynCast<ParamListType>(targetMetaTp))
       targetMetaTp = vaTp.getElementType();
 
     if (auto paramTp = sugarDynCast<ParamType>(targetMetaTp)) {
@@ -784,7 +784,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
               });
 
           if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
-            actualAttr = VariadicAttr::get(casted, VariadicType::get(targetMT));
+            actualAttr =
+                VariadicAttr::get(casted, ParamListType::get(targetMT));
           else
             actualAttr = casted.front();
 

@@ -660,7 +660,7 @@ void SROAPass::runOnOperation() {
         if (!elementTypes)
           return;
         if (llvm::any_of(*elementTypes,
-                         [](Type t) { return isa<VariadicSplatType>(t); })) {
+                         [](Type t) { return isa<ParamListSplatType>(t); })) {
           // TODO: Support variadic splat type. For now just disable it and
           // expect post-elaborated SROA to handle that struct.
           return;

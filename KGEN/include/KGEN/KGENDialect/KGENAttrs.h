@@ -34,7 +34,7 @@ class GeneratorOp;
 class KGENDType;
 class ParameterEvaluator;
 class TargetType;
-class VariadicType;
+class ParamListType;
 class VariadicAttr;
 } // namespace KGEN
 } // namespace M

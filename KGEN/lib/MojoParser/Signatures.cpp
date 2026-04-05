@@ -959,7 +959,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 
     if (variadicKind == VariadicKind::PosVarArg) {
       if (!type.isTypeCheckErrorType())
-        type = VariadicType::get(type);
+        type = ParamListType::get(type);
       else
         variadicKind = VariadicKind::None;
     }
@@ -1405,14 +1405,14 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
     return {};
 
   // Make sure the param value is a variadic list of types.
-  auto paramVariadicType = dyn_cast<VariadicType>(param.getRValueType());
-  if (!paramVariadicType) {
+  auto paramParamListType = dyn_cast<ParamListType>(param.getRValueType());
+  if (!paramParamListType) {
     emitter.emitError(arg.typeExpr->getLoc(),
                       "pack argument type list must reference a variadic list")
         << arg.typeExpr->getRange();
     return {};
   }
-  Type elementType = paramVariadicType.getElementType();
+  Type elementType = paramParamListType.getElementType();
   if (sugarIsa<NonStructTypeType, TypeType>(elementType)) {
     emitter.emitError(arg.loc)
         << "variadic pack elements declared as '__TypeOfAllTypes' are removed,"

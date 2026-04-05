@@ -19,16 +19,16 @@
 using namespace M;
 using namespace M::KGEN;
 
-static Type tryReplaceVariadicSplat(Type type) {
+static Type tryReplaceParamListSplat(Type type) {
   if (!isa<mlir::LLVM::LLVMStructType, StructType>(type)) {
     return nullptr;
   }
 
-  auto processVariadicSplatType = [&](ArrayRef<Type> types) {
+  auto processParamListSplatType = [&](ArrayRef<Type> types) {
     SmallVector<Type> newTypes;
     bool changed = false;
     for (Type type : types) {
-      auto splatType = dyn_cast<VariadicSplatType>(type);
+      auto splatType = dyn_cast<ParamListSplatType>(type);
       if (!splatType) {
         newTypes.push_back(type);
         continue;
@@ -53,7 +53,7 @@ static Type tryReplaceVariadicSplat(Type type) {
         structType.getElementTypes();
     if (!elementTypes)
       return type;
-    SmallVector<Type> newTypes = processVariadicSplatType(*elementTypes);
+    SmallVector<Type> newTypes = processParamListSplatType(*elementTypes);
     if (newTypes.empty())
       return type;
     return StructType::get(context, newTypes);
@@ -62,7 +62,7 @@ static Type tryReplaceVariadicSplat(Type type) {
   // Handle `!llvm.struct`.
   if (auto llvmStructType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
     SmallVector<Type> newTypes =
-        processVariadicSplatType(llvmStructType.getBody());
+        processParamListSplatType(llvmStructType.getBody());
     if (newTypes.empty())
       return type;
     return mlir::LLVM::LLVMStructType::getLiteral(context, newTypes);
@@ -440,7 +440,7 @@ Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
     return nullptr;
   if (changed)
     result = type.replaceImmediateSubElements(newAttrs, newTypes);
-  if (auto newType = tryReplaceVariadicSplat(result))
+  if (auto newType = tryReplaceParamListSplat(result))
     result = newType;
 
   // If an evaluatable type persists, try to simplify it with additional

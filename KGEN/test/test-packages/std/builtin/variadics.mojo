@@ -67,7 +67,7 @@ struct Variadic:
     comptime reverse[
         T: type_of(AnyType), //, *element_types: T
     ] = _MapVariadicAndIdxToType[
-        To=T, VariadicType=element_types, Mapper=_ReversedVariadic[T, ...]
+        To=T, ParamListType=element_types, Mapper=_ReversedVariadic[T, ...]
     ]
     comptime splat_type[
         Trait: type_of(AnyType), //, count: Int, type: Trait
@@ -125,7 +125,7 @@ struct Variadic:
         element_types: Variadic.TypesOfTrait[Trait],
     ] = _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[False],
-        VariadicType=element_types,
+        ParamListType=element_types,
         #  Curry `_ContainsMapper` to fit the reducer signature
         Reducer=_ContainsReducer[Trait=Trait, Type=type, ...],
     ][
@@ -139,7 +139,7 @@ struct Variadic:
         Mapper: _TypeToTypeGenerator[From, To],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[To],
-        VariadicType=element_types,
+        ParamListType=element_types,
         Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
     ]
     comptime slice_types[
@@ -152,7 +152,7 @@ struct Variadic:
         ) = Variadic.size_types[element_types],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
-        VariadicType=element_types,
+        ParamListType=element_types,
         Reducer=_SliceReducer[T, start, end, ...],
     ]
     comptime zip_types[
@@ -180,7 +180,7 @@ struct Variadic:
         predicate: _TypePredicateGenerator[T],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
-        VariadicType=element_types,
+        ParamListType=element_types,
         Reducer=_FilterReducer[T, predicate, ...],
     ]
     comptime _ValueIdxToValueGeneratorType[
@@ -287,7 +287,7 @@ comptime _ReduceVariadicAndIdxToVariadic[
     //,
     *,
     BaseVal: Variadic.TypesOfTrait[To],
-    VariadicType: Variadic.TypesOfTrait[From],
+    ParamListType: Variadic.TypesOfTrait[From],
     Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
         Variadic.TypesOfTrait[To], From
     ],
@@ -295,7 +295,7 @@ comptime _ReduceVariadicAndIdxToVariadic[
     `#kgen.variadic.reduce<`,
     BaseVal,
     `,`,
-    VariadicType,
+    ParamListType,
     `,`,
     _IndexToIntWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
     `> : `,
@@ -330,7 +330,7 @@ comptime _ReduceValueAndIdxToVariadic[
     //,
     *,
     BaseVal: Variadic.TypesOfTrait[To],
-    VariadicType: Variadic.ValuesOfType[From],
+    ParamListType: Variadic.ValuesOfType[From],
     Reducer: _ReduceValueIdxGeneratorTypeGenerator[
         Variadic.TypesOfTrait[To], From
     ],
@@ -338,7 +338,7 @@ comptime _ReduceValueAndIdxToVariadic[
     `#kgen.variadic.reduce<`,
     BaseVal,
     `,`,
-    VariadicType,
+    ParamListType,
     `,`,
     _IndexToIntValueWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
     `> : `,
@@ -350,7 +350,7 @@ comptime _ReduceVariadicAndIdxToValue[
     //,
     *,
     BaseVal: Variadic.ValuesOfType[To],
-    VariadicType: Variadic.TypesOfTrait[From],
+    ParamListType: Variadic.TypesOfTrait[From],
     Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
         Variadic.ValuesOfType[To], From
     ],
@@ -358,7 +358,7 @@ comptime _ReduceVariadicAndIdxToValue[
     `#kgen.variadic.reduce<`,
     BaseVal,
     `,`,
-    VariadicType,
+    ParamListType,
     `,`,
     _IndexToIntWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
     `> : `,
@@ -397,11 +397,11 @@ comptime _MapVariadicAndIdxToType[
     //,
     *,
     To: type_of(AnyType),
-    VariadicType: Variadic.TypesOfTrait[From],
+    ParamListType: Variadic.TypesOfTrait[From],
     Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[To],  # reduce from a empty variadic
-    VariadicType=VariadicType,
+    ParamListType=ParamListType,
     Reducer=_WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper, ...],
 ]
 comptime MapVariadicAndIdxToType = _MapVariadicAndIdxToType

@@ -1540,7 +1540,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (succeeded(canUpCast))
     return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
 
-  if (sugarIsa<VariadicType>(rvType) && sugarIsa<VariadicType>(requiredType)) {
+  if (sugarIsa<ParamListType>(rvType) &&
+      sugarIsa<ParamListType>(requiredType)) {
     // If the element types of the variadic is meta type (AnyStruct/AnyTrait),
     // we allow them to be implicitly converted.
     //
@@ -1549,8 +1550,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     //
     // Notably, this does NOT support implicit conversion between from
     // `Variadic[Int]` to `Variadic[UInt]`
-    ASTType toEltTp = sugarCast<VariadicType>(requiredType).getElementType();
-    ASTType fromEltTp = sugarCast<VariadicType>(rvType).getElementType();
+    ASTType toEltTp = sugarCast<ParamListType>(requiredType).getElementType();
+    ASTType fromEltTp = sugarCast<ParamListType>(rvType).getElementType();
     // Reuse assumptions from above for variadic element upcast.
     FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
         shared, value.expr->getLoc(), fromEltTp, toEltTp, &declScope);
@@ -1749,7 +1750,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     }
   }
 
-  if (sugarIsa<VariadicType>(rvType) && sugarIsa<VariadicType>(requiredType)) {
+  if (sugarIsa<ParamListType>(rvType) &&
+      sugarIsa<ParamListType>(requiredType)) {
     auto emitVariadicError = [&]() -> CValue {
       shared.emitError(valueExpr.expr->getLoc(), "can not convert ")
           << rvType << " to " << requiredType << valueExpr.expr->getRange();
@@ -1757,8 +1759,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       return {};
     };
 
-    auto dstVATp = sugarCast<VariadicType>(requiredType);
-    ASTType fromEltTp = sugarCast<VariadicType>(rvType).getElementType();
+    auto dstVATp = sugarCast<ParamListType>(requiredType);
+    ASTType fromEltTp = sugarCast<ParamListType>(rvType).getElementType();
     ASTType toEltTp = dstVATp.getElementType();
     TypedAttr srcVal = valueExpr.ir.getIfPValue().get();
     if (auto vVal = sugarDynCast<VariadicAttr>(srcVal)) {

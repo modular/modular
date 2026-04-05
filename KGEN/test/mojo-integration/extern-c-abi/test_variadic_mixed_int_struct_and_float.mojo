@@ -32,7 +32,7 @@ def test_variadic_mixed_int_struct_and_float():
     # IntStruct8 forces ABI coercion; FloatStruct4 is flattened to f32
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_mixed_int_struct_and_float".value,
-        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
         _type=FloatStruct4,
     ](Int(999), s_int, s_float)
     print("variadic_mixed_int_struct_and_float:", result.a)

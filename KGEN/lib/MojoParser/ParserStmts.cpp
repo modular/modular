@@ -1082,7 +1082,7 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
     message = ParamOperatorAttr::get(
         POC::DataToStr,
         {messagePVal,
-         VariadicAttr::get({}, VariadicType::get(messagePVal.getType()))});
+         VariadicAttr::get({}, ParamListType::get(messagePVal.getType()))});
   } else {
     message = StringAttr::get({}, KGEN::StringType::get(builder.getContext()));
   }

@@ -890,7 +890,7 @@ RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
          sugarIsa<LIT::StructType>(bindings[2].getType()) &&
          sugarIsa<LIT::StructType>(bindings[3].getType()) &&
          sugarIsa<AnyTraitType>(bindings[4].getType()) &&
-         sugarIsa<VariadicType>(bindings[5].getType()) &&
+         sugarIsa<ParamListType>(bindings[5].getType()) &&
          "Not a VariadicPack struct?");
   return RefPackType::get(
       /*variadicList*/ bindings[5], /*mlirOrigin*/ bindings[1],
@@ -911,7 +911,7 @@ TypedAttr ASTType::getVariadicPackTypeList() const {
          sugarIsa<LIT::StructType>(bindings[2].getType()) &&
          sugarIsa<LIT::StructType>(bindings[3].getType()) &&
          sugarIsa<AnyTraitType>(bindings[4].getType()) &&
-         sugarIsa<VariadicType>(bindings[5].getType()) &&
+         sugarIsa<ParamListType>(bindings[5].getType()) &&
          "Not a VariadicPack struct?");
   return bindings[5];
 }
@@ -928,7 +928,7 @@ TypedAttr ASTType::getVariadicPackIsOwned() const {
          sugarIsa<LIT::StructType>(bindings[2].getType()) &&
          sugarIsa<LIT::StructType>(bindings[3].getType()) &&
          sugarIsa<AnyTraitType>(bindings[4].getType()) &&
-         sugarIsa<VariadicType>(bindings[5].getType()) &&
+         sugarIsa<ParamListType>(bindings[5].getType()) &&
          "Not a VariadicPack struct?");
   // TODO: This should be part of RefPackType?
   return bindings[3];

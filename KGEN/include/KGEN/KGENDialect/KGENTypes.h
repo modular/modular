@@ -31,7 +31,7 @@ class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
 class StructDefFieldAttr;
 class SymbolConstantAttr;
-class VariadicType;
+class ParamListType;
 class VariadicAttr;
 
 /// Create an uninitialized TypedAttr instance of the type.

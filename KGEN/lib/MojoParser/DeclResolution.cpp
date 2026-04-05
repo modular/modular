@@ -624,7 +624,7 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
           POC::DataToStr,
           {linkageNamePVal,
            VariadicAttr::get({},
-                             VariadicType::get(linkageNamePVal.getType()))});
+                             ParamListType::get(linkageNamePVal.getType()))});
       if (!linkageName) {
         shared.emitError(nodeLoc) << "failure to create linkage name";
         return;
@@ -1286,7 +1286,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
       // For variadic packs, we don't have a type instance but we have the
       // metatype.
       Type metatype =
-          rvType.getVariadicPackInfo(shared).getVariadicElementType();
+          rvType.getVariadicPackInfo(shared).getParamListElementType();
       type = ParamType::get(UnknownAttr::get(metatype));
       conv = ArgConvention::ReadReg;
     }

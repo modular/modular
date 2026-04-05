@@ -54,7 +54,7 @@ def PointerType : DialectType<(type
   Bool:$isNonNull
 )>;
 
-def VariadicType : DialectType<(type
+def ParamListType : DialectType<(type
   Type:$elementType
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
@@ -115,7 +115,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     FuncType,
     FuncLiteralType,
     PointerType,
-    VariadicType,
+    ParamListType,
     NoneType,
     TargetType,
     BuildInfoType,
@@ -147,7 +147,7 @@ def ParameterExprArrayAttr : DialectAttribute<(attr
 
 def VariadicAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
-  ConcreteType<"VariadicType">:$type
+  ConcreteType<"ParamListType">:$type
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
@@ -160,12 +160,12 @@ def VariadicReduceAttr : DialectAttribute<(attr
 )>;
 
 def VariadicZipAttr : DialectAttribute<(attr
-  ConcreteType<"VariadicType">:$type,
+  ConcreteType<"ParamListType">:$type,
   TypedAttr:$variadics
 )>;
 
 def VariadicTabulateAttr : DialectAttribute<(attr
-  ConcreteType<"VariadicType">:$type,
+  ConcreteType<"ParamListType">:$type,
   TypedAttr:$count,
   TypedAttr:$generator
 )>;
@@ -182,7 +182,7 @@ def VariadicGetAttr : DialectAttribute<(attr
 )>;
 
 def VariadicConcatAttr : DialectAttribute<(attr
-  ConcreteType<"VariadicType">:$type,
+  ConcreteType<"ParamListType">:$type,
   TypedAttr:$variadics
 )>;
 

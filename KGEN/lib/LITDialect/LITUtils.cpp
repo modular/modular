@@ -40,7 +40,7 @@ bool LIT::isMetaType(Type type) {
   return false;
 }
 bool LIT::isVariadicOfMetaType(Type type) {
-  auto va = sugarDynCast<VariadicType>(type);
+  auto va = sugarDynCast<ParamListType>(type);
   return va && LIT::isMetaType(va.getElementType());
 }
 

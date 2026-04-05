@@ -1645,7 +1645,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   } else if (auto ref = dyn_cast<RefType>(type)) {
     printRef(ref);
     ASTType(ref.getElementType()).print(os, diagShared);
-  } else if (auto variadic = dyn_cast<VariadicType>(type)) {
+  } else if (auto variadic = dyn_cast<ParamListType>(type)) {
     os << "Variadic[";
     ASTType(variadic.getElementType()).print(os, diagShared);
     os << "]";

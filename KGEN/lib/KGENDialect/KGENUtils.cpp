@@ -925,7 +925,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return success();
   case (uint32_t)POC::DataToStr:
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
-        parseParamValue(p, operands.emplace_back(), VariadicType::get(type)))
+        parseParamValue(p, operands.emplace_back(), ParamListType::get(type)))
       return failure();
 
     return success();

@@ -1210,8 +1210,8 @@ RefType RefPackType::getElementRefTypeFor(Type elementType) {
 
 /// This returns the element type of the variadic list parameter, typically
 /// something like !kgen.type or a trait type.
-Type RefPackType::getVariadicElementType() {
-  return ::cast<VariadicType>(getVariadic().getType()).getElementType();
+Type RefPackType::getParamListElementType() {
+  return ::cast<ParamListType>(getVariadic().getType()).getElementType();
 }
 
 //===----------------------------------------------------------------------===//

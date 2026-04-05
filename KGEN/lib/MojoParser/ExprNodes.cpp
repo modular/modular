@@ -1388,7 +1388,7 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
     PValue value = emitter.emitExprPValue(unpackExpr->subExpr, context);
     if (!value)
       return {};
-    auto variadicType = sugarDynCast<VariadicType>(value.getType());
+    auto variadicType = sugarDynCast<ParamListType>(value.getType());
     if (!variadicType) {
       emitter.emitError(unpackExpr->getLoc(),
                         "cannot unpack non-variadic type ")
@@ -2323,8 +2323,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     }
     mlir::AttrTypeWalker walker;
     walker.addWalk([](Type type) {
-      return sugarIsa<VariadicSplatType>(type) ? WalkResult::interrupt()
-                                               : WalkResult::advance();
+      return sugarIsa<ParamListSplatType>(type) ? WalkResult::interrupt()
+                                                : WalkResult::advance();
     });
 
     // If either result type or operands have `!kgen.param_list_splat` type, the
@@ -2870,7 +2870,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   //
   // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
   // a standard library type that implements `__getitem__` and `__setitem__`.
-  if (auto variadic = sugarDynCast<VariadicType>(baseType)) {
+  if (auto variadic = sugarDynCast<ParamListType>(baseType)) {
     // Attempt to convert the index.
     if (operands.size() != 1 || operands[0].isKeywordOrUnpackedKeyword()) {
       emitter.emitError(getLoc()) << "variadic can only be subscripted with a "
@@ -4616,7 +4616,7 @@ AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
   // Create the struct_field_types attribute. It will be evaluated during
   // elaboration to return the actual field types.
   MLIRContext *ctx = emitter.getContext();
-  auto variadicType = VariadicType::get(anyTypeTraitType);
+  auto variadicType = ParamListType::get(anyTypeTraitType);
   auto attr =
       emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
           ctx, typeArg->get(), variadicType);
@@ -4632,7 +4632,7 @@ AnyValue MagicFunctionNode::emitStructFieldNames(ValueDest &dest,
   // Create the struct_field_names attribute. It will be evaluated during
   // elaboration to return the actual field names.
   MLIRContext *ctx = emitter.getContext();
-  auto variadicType = VariadicType::get(StringType::get(ctx));
+  auto variadicType = ParamListType::get(StringType::get(ctx));
   auto attr =
       emitter.shared.getEvaluationContext().getAndFold<StructFieldNamesAttr>(
           ctx, typeArg->get(), variadicType);
@@ -4681,7 +4681,7 @@ MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
     return {};
 
   // Create StructFieldTypesAttr: wrap the inner type with TypeParamAttr
-  auto variadicType = VariadicType::get(anyTypeTraitType);
+  auto variadicType = ParamListType::get(anyTypeTraitType);
   TypedAttr structTypeAttr = TypeParamAttr::get(innerType, anyTypeTraitType);
   auto fieldTypesAttr =
       emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
@@ -4803,7 +4803,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
     // as VariadicGet(StructFieldTypes(T), index). The origin is the container's
     // origin (not field-sensitive until canonicalization to field name access).
     RefType containerRefType = cast<RefType>(structRef.getType().mlirType);
-    auto variadicType = VariadicType::get(anyTypeTraitType);
+    auto variadicType = ParamListType::get(anyTypeTraitType);
     TypedAttr structTypeAttr;
     if (structType) {
       structTypeAttr = TypeParamAttr::get(structType, anyTypeTraitType);
