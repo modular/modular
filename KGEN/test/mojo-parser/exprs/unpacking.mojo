@@ -69,3 +69,11 @@ def test_unbound_pack():
     #
     # which I think is the right error message that should be reported.
     # variadic_params[...]()
+
+
+def take_var_pack[*Ts: AnyType](var *values: *Ts):
+    pass
+
+# Make sure we can transfer an owned pack.
+def pass_var_pack[*Ts: AnyType](var *values: *Ts):
+    take_var_pack(*values^)
