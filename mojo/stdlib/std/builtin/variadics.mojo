@@ -1400,7 +1400,7 @@ struct VariadicPack[
         *,
         is_repr: Bool = False,
     ](
-        self: VariadicPack[_, Writable, ...],
+        self: VariadicPack[element_trait=Writable, _, ...],
         mut writer: Some[Writer],
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
@@ -1439,7 +1439,8 @@ struct VariadicPack[
 
     @no_inline
     def write_to(
-        self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]
+        self: VariadicPack[element_trait=Writable, _, ...],
+        mut writer: Some[Writer],
     ):
         """Writes the elements of this pack to a writer.
 
@@ -1454,7 +1455,8 @@ struct VariadicPack[
 
     @no_inline
     def write_repr_to(
-        self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]
+        self: VariadicPack[element_trait=Writable, _, ...],
+        mut writer: Some[Writer],
     ):
         """Writes the repr of the elements of this pack to a writer.
 

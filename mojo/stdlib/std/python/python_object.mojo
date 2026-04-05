@@ -324,7 +324,7 @@ struct PythonObject(
         Raises:
             If the list construction fails.
         """
-        self = Python._list(values)
+        self = Python.list(*values^)
 
     @always_inline
     def __init__[

@@ -18,7 +18,6 @@ from std.utils import IndexList
 
 from std.builtin.variadics import (
     Variadic,
-    VariadicPack,
     _ReduceVariadicAndIdxToVariadic,
     _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
@@ -541,7 +540,9 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         Args:
             args: Values for each element.
         """
-        self = Self(storage=args^)
+        var t = _RegTuple(*args^)
+
+        self._storage = rebind[_RegTuple[*Self.element_types]](t)
 
     @implicit
     @always_inline("nodebug")
@@ -555,31 +556,6 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         comptime for i in range(Self.rank):
             self._storage[i] = tuple[i]
-
-    @always_inline("nodebug")
-    def __init__(
-        out self,
-        *,
-        var storage: VariadicPack[_, CoordLike, *Self.element_types],
-    ):
-        """Construct from a low-level variadic pack.
-
-        Args:
-            storage: The variadic pack storage to construct from.
-        """
-        var t = _RegTuple(
-            storage=rebind_var[
-                VariadicPack[
-                    elt_is_mutable=type_of(storage).elt_is_mutable,
-                    origin=type_of(storage).origin,
-                    type_of(storage).is_owned,
-                    TrivialRegisterPassable,
-                    *Self.element_types,
-                ]
-            ](storage^)
-        )
-
-        self._storage = rebind[_RegTuple[*Self.element_types]](t)
 
     @always_inline("nodebug")
     def __getitem_param__[
@@ -1973,22 +1949,6 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         Args:
             args: Initial values.
         """
-        self = Self(storage=args^)
-
-    @always_inline("nodebug")
-    def __init__(
-        out self,
-        *,
-        var storage: VariadicPack[
-            _, TrivialRegisterPassable, *Self.element_types
-        ],
-    ):
-        """Construct the tuple from a low-level internal representation.
-
-        Args:
-            storage: The variadic pack storage to construct from.
-        """
-
         # Mark 'self._mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
@@ -1999,7 +1959,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
             UnsafePointer(to=self[idx]).init_pointee_move(elt)
 
-        storage^.consume_elements[init_elt]()
+        args^.consume_elements[init_elt]()
 
     @always_inline("builtin")
     @staticmethod

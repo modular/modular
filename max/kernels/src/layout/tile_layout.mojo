@@ -924,7 +924,7 @@ def row_major[
                     )
                 )
 
-    return Layout(Coord(storage=elements^), Coord(strides^))
+    return Layout(Coord(*elements^), Coord(strides^))
 
 
 @always_inline("nodebug")
@@ -1010,7 +1010,7 @@ def col_major[
     Returns:
         A Layout with column-major strides.
     """
-    return col_major(Coord(storage=elements^))
+    return col_major(Coord(*elements^))
 
 
 @always_inline
