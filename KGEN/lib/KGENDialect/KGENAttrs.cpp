@@ -144,7 +144,7 @@ bool VariadicAttr::isConstant() const {
 
 LogicalResult VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                    ArrayRef<TypedAttr> values,
-                                   VariadicType type) {
+                                   ParamListType type) {
   Type elementType = type.getElementType();
   for (auto [idx, value] : llvm::enumerate(values))
     if (value.getType() != elementType)
@@ -155,14 +155,14 @@ LogicalResult VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 static ParseResult parseVariadicValue(AsmParser &p,
                                       SmallVector<TypedAttr> &values,
-                                      VariadicType type) {
+                                      ParamListType type) {
   return p.parseCommaSeparatedList([&] {
     return parseParamValue(p, values.emplace_back(), type.getElementType());
   });
 }
 
-OptionalParseResult VariadicType::parseValue(AsmParser &p,
-                                             TypedAttr &value) const {
+OptionalParseResult ParamListType::parseValue(AsmParser &p,
+                                              TypedAttr &value) const {
   if (failed(p.parseOptionalLSquare()))
     return std::nullopt;
   if (succeeded(p.parseOptionalRSquare())) {
@@ -176,7 +176,7 @@ OptionalParseResult VariadicType::parseValue(AsmParser &p,
   return p.parseRSquare();
 }
 
-LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto variadic = ::dyn_cast<VariadicAttr>(value);
   if (!variadic)
     return failure();
@@ -209,7 +209,7 @@ VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        << type << ", got: " << base.getType();
 
   auto toApply = dyn_cast<GeneratorType>(mapper.getType());
-  auto srcTp = dyn_cast<VariadicType>(variadic.getType());
+  auto srcTp = dyn_cast<ParamListType>(variadic.getType());
 
   if (!toApply || !srcTp)
     return emitError()
@@ -243,17 +243,17 @@ VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 LogicalResult
 VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                        VariadicType type, TypedAttr variadics) {
+                        ParamListType type, TypedAttr variadics) {
   if (variadics.getType() != type)
     return emitError() << "expected same input/output type, input type: "
                        << type << ", output type: " << variadics.getType();
-  if (!isa<VariadicType>(type.getElementType()))
+  if (!isa<ParamListType>(type.getElementType()))
     return emitError() << "expected to zip a variadic of variadic values";
 
   return success();
 }
 
-TypedAttr VariadicZipAttr::get(VariadicType type, TypedAttr variadics) {
+TypedAttr VariadicZipAttr::get(ParamListType type, TypedAttr variadics) {
   auto va = sugarDynCast<VariadicAttr>(variadics);
   if (!va || va.getValues().empty())
     return Base::get(type.getContext(), type, variadics);
@@ -273,7 +273,7 @@ TypedAttr VariadicZipAttr::get(VariadicType type, TypedAttr variadics) {
     return Base::get(type.getContext(), type, variadics);
 
   // Fold the attribute aggressively whenever possible upon creation.
-  auto eltVATps = cast<VariadicType>(type.getElementType());
+  auto eltVATps = cast<ParamListType>(type.getElementType());
 
   // return <[[]]>
   if (zipLen == 0)
@@ -291,7 +291,7 @@ TypedAttr VariadicZipAttr::get(VariadicType type, TypedAttr variadics) {
 }
 
 TypedAttr VariadicZipAttr::getChecked(
-    function_ref<::mlir::InFlightDiagnostic()> emitError, VariadicType type,
+    function_ref<::mlir::InFlightDiagnostic()> emitError, ParamListType type,
     TypedAttr variadics) {
   if (failed(verify(emitError, type, variadics)))
     return {};
@@ -300,7 +300,7 @@ TypedAttr VariadicZipAttr::getChecked(
 
 LogicalResult
 VariadicTabulateAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                             VariadicType type, TypedAttr count,
+                             ParamListType type, TypedAttr count,
                              TypedAttr generator) {
   if (!isa<IndexType>(count.getType()))
     return emitError() << "expected 'index' type for count, got: "
@@ -327,7 +327,7 @@ VariadicTabulateAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-TypedAttr VariadicTabulateAttr::get(VariadicType type, TypedAttr count,
+TypedAttr VariadicTabulateAttr::get(ParamListType type, TypedAttr count,
                                     TypedAttr generator) {
   // We can always fold an empty tabulate.
   auto cntAttr = sugarDynCast<IntegerAttr>(count);
@@ -340,7 +340,7 @@ TypedAttr VariadicTabulateAttr::get(VariadicType type, TypedAttr count,
 }
 
 TypedAttr VariadicTabulateAttr::getChecked(
-    function_ref<::mlir::InFlightDiagnostic()> emitError, VariadicType type,
+    function_ref<::mlir::InFlightDiagnostic()> emitError, ParamListType type,
     TypedAttr count, TypedAttr generator) {
   if (failed(verify(emitError, type, count, generator)))
     return {};
@@ -350,7 +350,7 @@ TypedAttr VariadicTabulateAttr::getChecked(
 LogicalResult
 VariadicSizeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                          TypedAttr variadic) {
-  if (!isa<VariadicType>(variadic.getType()))
+  if (!isa<ParamListType>(variadic.getType()))
     return emitError() << "expected a 'variadic' type for the count, got: "
                        << variadic.getType();
   return success();
@@ -375,7 +375,7 @@ TypedAttr VariadicSizeAttr::getChecked(
 LogicalResult
 VariadicGetAttr::verify(function_ref<InFlightDiagnostic()> emitError, Type type,
                         TypedAttr variadic, TypedAttr index) {
-  auto variadicType = dyn_cast<VariadicType>(variadic.getType());
+  auto variadicType = dyn_cast<ParamListType>(variadic.getType());
   if (!variadicType)
     return emitError()
            << "expected a 'variadic' type for the variadic operand, "
@@ -406,14 +406,14 @@ TypedAttr VariadicGetAttr::get(TypedAttr variadic, TypedAttr index) {
     }
   }
 
-  auto resultType = cast<VariadicType>(variadic.getType()).getElementType();
+  auto resultType = cast<ParamListType>(variadic.getType()).getElementType();
 
   // Canonicalize upcast out of the variadic list:
   //   From: variadic_get<upcast<!Copyable> : !AnyType> : !AnyType
   // To: upcast<variadic_get<Copyable> : !Copyable> : !AnyType
   if (auto upcast = sugarDynCast<UpcastAttr>(variadic)) {
     TypedAttr originalVA = upcast.getInputTypeValue();
-    assert(isa<VariadicType>(originalVA.getType()) &&
+    assert(isa<ParamListType>(originalVA.getType()) &&
            "must casted from a variadic type to a variadic type");
     auto beforeCast = VariadicGetAttr::get(originalVA, index);
     return UpcastAttr::get(resultType, beforeCast);
@@ -432,9 +432,9 @@ TypedAttr VariadicGetAttr::getChecked(
 
 LogicalResult
 VariadicConcatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                           VariadicType type, TypedAttr variadics) {
+                           ParamListType type, TypedAttr variadics) {
 
-  auto toConcatVA = dyn_cast<VariadicType>(variadics.getType());
+  auto toConcatVA = dyn_cast<ParamListType>(variadics.getType());
   if (!toConcatVA)
     return emitError() << "expected to concat a variadic of variadic values";
 
@@ -446,7 +446,7 @@ VariadicConcatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-TypedAttr VariadicConcatAttr::get(VariadicType type, TypedAttr variadics) {
+TypedAttr VariadicConcatAttr::get(ParamListType type, TypedAttr variadics) {
   auto va = sugarDynCast<VariadicAttr>(variadics);
   if (!va)
     return Base::get(type.getContext(), type, variadics);
@@ -474,7 +474,7 @@ TypedAttr VariadicConcatAttr::get(VariadicType type, TypedAttr variadics) {
 }
 
 TypedAttr VariadicConcatAttr::getChecked(
-    function_ref<::mlir::InFlightDiagnostic()> emitError, VariadicType type,
+    function_ref<::mlir::InFlightDiagnostic()> emitError, ParamListType type,
     TypedAttr variadics) {
   if (failed(verify(emitError, type, variadics)))
     return {};
@@ -630,7 +630,7 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
 
   // This is a constant variadic of type value, fold each elements.
   if (auto variadicAttr = sugarDynCast<VariadicAttr>(inputTypeValue)) {
-    auto dstVATp = cast<VariadicType>(type);
+    auto dstVATp = cast<ParamListType>(type);
     Type elemTp = dstVATp.getElementType();
 
     SmallVector<TypedAttr> converted;
@@ -665,8 +665,8 @@ template <typename CastAttr>
 static LogicalResult
 verifyCastAttr(function_ref<mlir::InFlightDiagnostic()> emitError, Type type,
                TypedAttr inputTypeValue) {
-  bool isInputVA = isa<VariadicType>(inputTypeValue.getType());
-  bool isResultVA = isa<VariadicType>(type);
+  bool isInputVA = isa<ParamListType>(inputTypeValue.getType());
+  bool isResultVA = isa<ParamListType>(type);
   if (isInputVA != isResultVA)
     return emitError()
            << "must be casting from a variadic type to a variadic type";
@@ -2019,7 +2019,7 @@ verifyVariadicPtrMap(ArrayRef<TypedAttr> operands, Type type,
   if (operands.size() != 2)
     return emitError() << "'variadic_ptr_map' requires 2 operands";
 
-  auto srcVariadic = dyn_cast<VariadicType>(operands[0].getType());
+  auto srcVariadic = dyn_cast<ParamListType>(operands[0].getType());
   if (!srcVariadic || !isa<TypeType, ParamType>(srcVariadic.getElementType()) ||
       type != srcVariadic)
     return emitError() << "'variadic_ptr_map' operand should have "
@@ -2038,13 +2038,13 @@ verifyVariadicPtrRemoveMap(ArrayRef<TypedAttr> operands, Type type,
   if (operands.size() != 1)
     return emitError() << "'variadic_ptrremove_map' requires 1 operand";
 
-  auto srcVariadic = dyn_cast<VariadicType>(operands[0].getType());
+  auto srcVariadic = dyn_cast<ParamListType>(operands[0].getType());
   if (!srcVariadic || // May still be parametric
       !isa<TypeType>(srcVariadic.getElementType()))
     return emitError() << "'variadic_ptrremove_map' operand should have "
                           "!kgen.param_list<!kgen.type> type, not "
                        << operands[0].getType();
-  auto dstVariadic = dyn_cast<VariadicType>(type);
+  auto dstVariadic = dyn_cast<ParamListType>(type);
   if (!dstVariadic || !isa<TypeType>(dstVariadic.getElementType()))
     return emitError() << "'variadic_ptrremove_map' result should be "
                           "!kgen.param_list<!kgen.type> type, not "
@@ -2243,7 +2243,7 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'data_to_str' expects two operands, one "
                             "string slice and a variadic of string slices";
 
-    if (!isEqualCanon(VariadicType::get(operands[0].getType()),
+    if (!isEqualCanon(ParamListType::get(operands[0].getType()),
                       operands[1].getType()))
       return emitError() << "'data_to_str' expects two operands, one "
                             "string slice and a variadic of string slices\n"
@@ -3302,7 +3302,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
 // it.
 static void simplifyDataToStr(MutableArrayRef<TypedAttr> operands) {
   assert(operands.size() == 2);
-  auto op1Type = VariadicType::get(operands[0].getType());
+  auto op1Type = ParamListType::get(operands[0].getType());
   assert(isEqualCanon(operands[1].getType(), op1Type));
   if (operands[1].getType() != op1Type)
     operands[1] = ParamOperatorAttr::getRebind(operands[1], op1Type);
@@ -3514,7 +3514,7 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
   if (!variadic)
     return {};
 
-  auto resultEltType = cast<VariadicType>(resultType).getElementType();
+  auto resultEltType = cast<ParamListType>(resultType).getElementType();
 
   SmallVector<TypedAttr> results;
   // Map each type to PointerType of their type, retaining their metatype.
@@ -3525,7 +3525,7 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
     results.push_back(TypeParamAttr::get(typeValue, mlirType, resultEltType));
   }
 
-  return VariadicAttr::get(results, cast<VariadicType>(resultType));
+  return VariadicAttr::get(results, cast<ParamListType>(resultType));
 }
 
 static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
@@ -3535,7 +3535,7 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
   if (!variadic)
     return {};
 
-  auto resultEltType = cast<VariadicType>(resultType).getElementType();
+  auto resultEltType = cast<ParamListType>(resultType).getElementType();
 
   SmallVector<TypedAttr> results;
   // Map each type from a PointerType of the element type.
@@ -3549,7 +3549,7 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
         cast<PointerType>(eltCst.getMlirType()).getElementType(),
         resultEltType));
   }
-  return VariadicAttr::get(results, cast<VariadicType>(resultType));
+  return VariadicAttr::get(results, cast<ParamListType>(resultType));
 }
 
 static TypedAttr simplifyStrConcat(TypedAttr lhs, TypedAttr rhs) {
@@ -3572,9 +3572,9 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
                                              Type resultType) {
   assert(resultType && "function_get_arg_types requires a result type");
 
-  if (!::isa<VariadicType>(resultType))
+  if (!::isa<ParamListType>(resultType))
     return {};
-  auto variadicType = sugarDynCast<VariadicType>(resultType);
+  auto variadicType = sugarDynCast<ParamListType>(resultType);
   auto traitType = variadicType.getElementType();
 
   Type mlirType;

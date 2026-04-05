@@ -248,8 +248,8 @@ public:
 
     // Determine number of fixed arguments (for variadic functions)
     size_t numFixedArgs = adaptor.getOperands().size();
-    if (auto variadicType = op.getVariadicType()) {
-      numFixedArgs = variadicType->getNumInputs();
+    if (auto fnType = op.getFnType()) {
+      numFixedArgs = fnType->getNumInputs();
       // Validate that the declared fixed arg count doesn't exceed actual
       // operands. A malformed op would cause out-of-bounds access in argument
       // classification.
@@ -277,7 +277,7 @@ public:
       llvmReturnType =
           getTypeConverter()->convertType(op.getResult().getType());
     }
-    bool isVariadic = op.getVariadicType().has_value();
+    bool isVariadic = op.getFnType().has_value();
     auto [signature, usesSRet] = cabi.buildFunctionType(
         argClassifications, returnClassification, adaptor.getOperands(),
         llvmReturnType, numFixedArgs, isVariadic);
@@ -339,7 +339,7 @@ public:
       // Only needed on x86-64 (ARM64 doesn't use byval).
       if (triple.isX86()) {
         addByvalAttrsToFunc(func, argClassifications, op, numFixedArgs,
-                            usesSRet, op.getVariadicType().has_value());
+                            usesSRet, op.getFnType().has_value());
       }
 
       // resAttrs: skip when sret is active (no LLVM-level return value)
@@ -361,7 +361,7 @@ public:
     // integers). Linux AAPCS64 has a separate VR save area; floats stay as
     // floats and land in SIMD registers where va_arg for HFA structs reads
     // them.
-    if (op.getVariadicType().has_value() && triple.isAArch64() &&
+    if (op.getFnType().has_value() && triple.isAArch64() &&
         triple.isOSDarwin()) {
       applyARM64VariadicFloatBitcast(callArgs, argClassifications, numFixedArgs,
                                      usesSRet, loc, rewriter);
@@ -371,7 +371,7 @@ public:
     LLVM::CallOp call = createLLVMCall(rewriter, loc, func, callArgs);
 
     // Add byval on call for variadic indirect args (x86-64 only)
-    if (op.getVariadicType().has_value() && triple.isX86()) {
+    if (op.getFnType().has_value() && triple.isX86()) {
       addByvalAttrsToCall(call, argClassifications, op, numFixedArgs, usesSRet,
                           rewriter);
     }

@@ -683,7 +683,7 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
 
     /// This returns the element type of the variadic list parameter, typically
     /// something like !kgen.type or a trait type.
-    Type getVariadicElementType();
+    Type getParamListElementType();
 
     /// Return the effective type (always a reference) of each element given
     /// the type according to the type list.

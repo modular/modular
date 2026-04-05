@@ -35,7 +35,7 @@ class PackType;
 class PointerType;
 class StringType;
 class StructType;
-class VariadicType;
+class ParamListType;
 class VariantType;
 } // namespace M::KGEN
 

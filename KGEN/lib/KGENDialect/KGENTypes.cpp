@@ -86,7 +86,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<PointerType>();
   registerMnemonicType<NoneType>();
   registerMnemonicType<StringType>();
-  registerMnemonicType<VariadicType>();
+  registerMnemonicType<ParamListType>();
   registerMnemonicType<TargetType>();
   registerMnemonicType<BuildInfoType>();
   registerMnemonicType<StructType>();
@@ -582,7 +582,7 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
 
     Type type = argType;
     // Verify variadics.
-    if (auto variadic = dyn_cast<VariadicType>(type))
+    if (auto variadic = dyn_cast<ParamListType>(type))
       type = variadic.getElementType();
     // Verify argument conventions.  Before lit lowering, they need to be
     // !lit.ref type, after lowering, they should have !kgen.pointer type.
@@ -1144,14 +1144,14 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicType
+// ParamListType
 //===----------------------------------------------------------------------===//
 
 /// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
 /// contiguous sequence, and the size of that sequence. So, its size would be
 /// the size of a pointer, plus the size of the size type (which has the same
 /// size and alignment as a pointer type).
-std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t> ParamListType::getTypeSize(TargetInfoAttr target) const {
   // We use this size to allocate in the interpreter memory space
   // to store the pointer points to the start of the contiguous sequence
   // and its size.
@@ -1160,12 +1160,13 @@ std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
 }
 
 /// The alignment of the variadic type is that its pointer and size.
-std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t>
+ParamListType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
-ErrorOrSuccess VariadicType::writeTo(TypedAttr value, int64_t addr,
-                                     InterpreterState &state) const {
+ErrorOrSuccess ParamListType::writeTo(TypedAttr value, int64_t addr,
+                                      InterpreterState &state) const {
   // A variadic is a pointer and a size, where the pointer refers to
   // stack-allocated memory.
   auto vv = dyn_cast_if_present<VariadicAttr>(value);
@@ -1204,8 +1205,8 @@ ErrorOrSuccess VariadicType::writeTo(TypedAttr value, int64_t addr,
   return writePointerAndSize(addr, baseAddr, values.size(), state);
 }
 
-ErrorOr<TypedAttr> VariadicType::readFrom(int64_t addr,
-                                          InterpreterState &state) const {
+ErrorOr<TypedAttr> ParamListType::readFrom(int64_t addr,
+                                           InterpreterState &state) const {
   // Read the pointer and size.
   ErrorOr<std::pair<int64_t, int64_t>> ptrSize =
       readPointerAndSize(addr, state);
@@ -1266,7 +1267,7 @@ Type StructType::parse(AsmParser &p) {
   // Check for `(` which indicates concrete types.
   if (succeeded(p.parseOptionalLParen())) {
     auto metatype = TypeType::get(p.getContext());
-    auto variadicType = VariadicType::get(metatype);
+    auto variadicType = ParamListType::get(metatype);
     // Check for empty struct case.
     if (succeeded(p.parseOptionalRParen())) {
       // Empty struct.
@@ -1292,7 +1293,7 @@ Type StructType::parse(AsmParser &p) {
       if (parseKGENType(p, variadicType))
         return {};
     } else {
-      variadicType = VariadicType::get(TypeType::get(p.getContext()));
+      variadicType = ParamListType::get(TypeType::get(p.getContext()));
     }
 
     // Parametric case - parse param value with implicit param_list<!kgen.type>.
@@ -1328,7 +1329,8 @@ void StructType::print(AsmPrinter &p) const {
   if (!attr || !isa<TypeType>(attr.getType().getElementType())) {
     // Parametric expression or complex metatype - print without parens.  We
     // print :param_list<Movable> if the elements are not TypeType metatype.
-    if (!isa<TypeType>(cast<VariadicType>(variadic.getType()).getElementType()))
+    if (!isa<TypeType>(
+            cast<ParamListType>(variadic.getType()).getElementType()))
       printColonTypeParamValue(p, variadic);
     else
       printParamValue(p, variadic, variadic.getType());
@@ -1378,8 +1380,8 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (!sugarIsa<IndexType>(minAlignment.getType()))
     return emitError() << "alignment must have index type, but got "
                        << minAlignment.getType();
-  // Accept any VariadicType (for concrete cases).
-  if (llvm::isa<VariadicType>(variadic.getType()))
+  // Accept any ParamListType (for concrete cases).
+  if (llvm::isa<ParamListType>(variadic.getType()))
     return success();
   // Accept any TypeType-based expression (for parametric single-type cases).
   if (llvm::isa<TypeType>(variadic.getType()))
@@ -1554,7 +1556,7 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
 static TypedAttr convertTypesToVariadicAttr(MLIRContext *context,
                                             ArrayRef<Type> types) {
   auto metatype = TypeType::get(context);
-  auto variadicType = VariadicType::get(metatype);
+  auto variadicType = ParamListType::get(metatype);
   SmallVector<TypedAttr> elements;
   elements.reserve(types.size());
   for (Type type : types)
@@ -1779,7 +1781,7 @@ LogicalResult StructInstanceType::verify(
 //===----------------------------------------------------------------------===//
 
 static void printPackType(AsmPrinter &p, TypedAttr value) {
-  if (auto variadic = dyn_cast<VariadicType>(value.getType())) {
+  if (auto variadic = dyn_cast<ParamListType>(value.getType())) {
     if (isa<TypeType>(variadic.getElementType())) {
       printParamValue(p, value);
       return;
@@ -1794,7 +1796,7 @@ static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
     if (parseKGENType(p, packType))
       return failure();
   } else {
-    packType = VariadicType::get(TypeType::get(p.getContext()));
+    packType = ParamListType::get(TypeType::get(p.getContext()));
   }
 
   return parseParamValue(p, value, packType);
@@ -1804,7 +1806,7 @@ static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
 /// type expression.
 LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr variadic) {
-  if (::isa<VariadicType>(variadic.getType()))
+  if (::isa<ParamListType>(variadic.getType()))
     return success();
   return emitError() << "expected an operand of variadic type, but got "
                      << variadic.getType();
@@ -1898,7 +1900,7 @@ ErrorOr<TypedAttr> PackType::readFrom(int64_t addr,
 
 static ParseResult parseVariantTypes(AsmParser &p, TypedAttr &variadic) {
   auto metatype = TypeType::get(p.getContext());
-  auto variadicType = VariadicType::get(metatype);
+  auto variadicType = ParamListType::get(metatype);
 
   // Special case `[<variadic>]` to parse the variadic parameter directly.
   if (succeeded(p.parseOptionalLSquare())) {
@@ -1965,7 +1967,7 @@ VariantType VariantType::get(MLIRContext *ctx, TypedAttr variadic) {
     for (TypedAttr value : attr.getValues()) {
       values.push_back(TypeParamAttr::get(ParamType::get(value), metatype));
     }
-    variadic = VariadicAttr::get(values, VariadicType::get(metatype));
+    variadic = VariadicAttr::get(values, ParamListType::get(metatype));
   }
   return Base::get(ctx, variadic);
 }
@@ -1977,7 +1979,7 @@ VariantType VariantType::get(ArrayRef<Type> types) {
   auto metatype = TypeType::get(ctx);
   for (Type type : types)
     values.push_back(TypeParamAttr::get(type, metatype));
-  return get(ctx, VariadicAttr::get(values, VariadicType::get(metatype)));
+  return get(ctx, VariadicAttr::get(values, ParamListType::get(metatype)));
 }
 
 VariantType VariantType::getFromBytecode(TypedAttr variadic) {
@@ -2185,18 +2187,18 @@ std::optional<int64_t> DeferredType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicSplatType
+// ParamListSplatType
 //===----------------------------------------------------------------------===//
 
-std::optional<uint64_t> VariadicSplatType::getResolvedCount() const {
+std::optional<uint64_t> ParamListSplatType::getResolvedCount() const {
   if (auto intAttr = dyn_cast<IntegerAttr>(getCount()))
     return intAttr.getInt();
   return {};
 }
 
 LogicalResult
-VariadicSplatType::verify(function_ref<InFlightDiagnostic()> emitError,
-                          Type elementType, TypedAttr count) {
+ParamListSplatType::verify(function_ref<InFlightDiagnostic()> emitError,
+                           Type elementType, TypedAttr count) {
   if (auto intAttr = dyn_cast<IntegerAttr>(count);
       intAttr && intAttr.getInt() <= 0)
     return emitError() << "expected count > 0, but got " << intAttr.getInt();

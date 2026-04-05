@@ -1013,7 +1013,7 @@ LogicalResult ParamInf::inferFromParamList() {
 
       // Unpacked variadics (`Tuple[*elts]` where elts is a variadic list) can
       // be passed directly as a whole variadic parameter.
-      auto expectedVA = sugarCast<VariadicType>(expectedType);
+      auto expectedVA = sugarCast<ParamListType>(expectedType);
       if (auto unpacked = dyn_cast_or_null<UnpackedAttr>(
               givenBindings[posIdx].ir.getIfPValue().get())) {
         // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
@@ -1069,7 +1069,7 @@ LogicalResult ParamInf::inferFromParamList() {
       }
 
       if (!isDeferred) {
-        expectedVA = cast<VariadicType>(evaluator.getReboundType(expectedVA));
+        expectedVA = cast<ParamListType>(evaluator.getReboundType(expectedVA));
         auto paramVA = VariadicAttr::get(elements, expectedVA);
         if (failed(applyBinding(idx, paramVA)))
           return failure();
@@ -1401,9 +1401,9 @@ LogicalResult ParamInf::inferForCall(
                                        expectedRefPackType.getOrigin()))) {
           auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
           diag << "cannot unpack a pack of type "
-               << actualRefPackType.getVariadicElementType()
+               << actualRefPackType.getParamListElementType()
                << " into a call that expects a pack of type "
-               << expectedRefPackType.getVariadicElementType();
+               << expectedRefPackType.getParamListElementType();
           matcher.failureReason->addExplanation(diag);
           return failure();
         }
@@ -1417,7 +1417,7 @@ LogicalResult ParamInf::inferForCall(
 
       // Figure out that the element type of the list is, e.g. AnyType or
       // Stringable.
-      Type elementType = packType.getVariadicElementType();
+      Type elementType = packType.getParamListElementType();
       auto expectedOriginType = packType.getOriginType();
 
       // It is possible the pack element types are not being inferred - for
@@ -1520,7 +1520,7 @@ LogicalResult ParamInf::inferForCall(
 
       // Infer the value of type list from the types we have.
       auto variadicType =
-          sugarCast<VariadicType>(packType.getVariadic().getType());
+          sugarCast<ParamListType>(packType.getVariadic().getType());
 
       // If there are no arguments for the pack, use the location of the call.
       if (!packArgExpr)
@@ -1856,7 +1856,7 @@ LogicalResult ParamInf::inferFromDefaults() {
       // prepending contextual parameters such that we don't need the check
       // here? But on the other hand, what does it mean to have a
       // inferred-pos-var-arg parameter?
-      if (isa<VariadicType>(declaredParamTypes[idx]) &&
+      if (isa<ParamListType>(declaredParamTypes[idx]) &&
           pog.getPassingKind() == PassingKind::Inferred)
         return !isInferForStruct;
 
@@ -1865,7 +1865,7 @@ LogicalResult ParamInf::inferFromDefaults() {
 
     if (isInferableVA) {
       auto type = evaluator.getReboundType(declaredParamTypes[idx]);
-      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
+      auto empty = VariadicAttr::get({}, sugarCast<ParamListType>(type));
       if (failed(setInferredValue(idx, empty)))
         return failure();
     }

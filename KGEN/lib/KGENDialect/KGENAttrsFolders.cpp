@@ -63,7 +63,7 @@ FailureOr<TypedAttr> VariadicTabulateAttr::evaluateWithContext(
   if (n < 0)
     return failure();
 
-  VariadicType resultType = getType();
+  ParamListType resultType = getType();
   SmallVector<TypedAttr> values;
   values.reserve(n);
   for (int64_t i = 0; i < n; ++i) {

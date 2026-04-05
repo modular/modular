@@ -1443,7 +1443,7 @@ LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
 ///
 /// This uses VariadicGetAttr to extract from the struct's type list, which
 /// automatically folds when both the struct and index are constant. For
-/// parametric cases (including structs with VariadicSplatType elements or
+/// parametric cases (including structs with ParamListSplatType elements or
 /// parametric indices), it returns a ParamType that will be resolved during
 /// elaboration.
 static Type getStructFieldTypeAtIndex(StructType structType, TypedAttr index) {
@@ -1474,7 +1474,7 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
       return success(); // Cannot verify without resolved element types.
     SmallVector<Type> elementTypes = *elementTypesOpt;
     if (llvm::any_of(elementTypes,
-                     [](Type type) { return isa<VariadicSplatType>(type); })) {
+                     [](Type type) { return isa<ParamListSplatType>(type); })) {
       if (elementTypes.size() != 1) {
         // TODO: Support multiple types within `!kgen.struct`.
         return op->emitOpError(

@@ -17,7 +17,7 @@
 def test_variadic_ints():
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_sum_ints".value,
-        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
         _type=Int,
     ](Int(3), Int(10), Int(20), Int(30))
     print("variadic_sum:", result)
@@ -37,7 +37,7 @@ def test_variadic_struct4():
     var s = Struct4(1, 2, 3, 4)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_struct4".value,
-        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
         _type=Struct4,
     ](Int(999), s)
     print(
@@ -61,7 +61,7 @@ def test_variadic_struct16():
     var s = Struct16(100, 200)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_struct16".value,
-        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
         _type=Struct16,
     ](Int(999), s)
     print("variadic_struct16:", Int(result.a), Int(result.b))
@@ -80,7 +80,7 @@ def test_variadic_struct17():
     var s = Struct17(10, 20, 30)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_struct17".value,
-        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
         _type=Struct17,
     ](Int(999), s)
     print("variadic_struct17:", Int(result.a), Int(result.b), Int(result.c))
@@ -91,7 +91,7 @@ def test_variadic_struct17():
 def test_variadic_mixed():
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_mixed".value,
-        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
+        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
         _type=Float64,
     ](Int(2), Int(10), Float64(20.5))
     print("variadic_mixed:", result)

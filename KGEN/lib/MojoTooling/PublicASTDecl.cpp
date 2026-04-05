@@ -305,7 +305,7 @@ generateTypeString(SharedState &shared, ASTType type, VariadicKind varKind,
       type = RefType::stripRefConvention(type, *convention);
       type = type.getVariadicListInfo().elementType;
       convention = ArgConvention::ReadReg;
-    } else if (auto variadicType = sugarDynCast<VariadicType>(type)) {
+    } else if (auto variadicType = sugarDynCast<ParamListType>(type)) {
       // Variadic in a parameter list.
       type = variadicType.getElementType();
     }
@@ -325,7 +325,7 @@ generateTypeString(SharedState &shared, ASTType type, VariadicKind varKind,
     // In some cases variadics are passed directly (which is a hack, but okay).
     // The ABI in these cases is that we pass a variadic of refs. We leave these
     // as is, since eventually (with unpacking) this hack won't be needed.
-    if (!isa<VariadicType>(type))
+    if (!isa<ParamListType>(type))
       type = type.getReferenceElementType();
   }
 

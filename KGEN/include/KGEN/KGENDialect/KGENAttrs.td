@@ -116,7 +116,7 @@ def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
   }];
 
   let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
-                        AttributeSelfTypeParameter<"", "VariadicType">:$type);
+                        AttributeSelfTypeParameter<"", "ParamListType">:$type);
 
   let assemblyFormat = [{
     `<` (`>`) : (custom<SequenceElements>($values, ref($type))^ `>`)?
@@ -124,7 +124,7 @@ def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
-                                        "VariadicType":$type), [{
+                                        "ParamListType":$type), [{
       return $_get(type.getContext(), values, type);
     }]>
   ];
@@ -172,7 +172,7 @@ def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "variadic.zip"> {
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    AttributeSelfTypeParameter<"", "ParamListType">:$type,
     "TypedAttr":$variadics
   );
 
@@ -180,10 +180,10 @@ def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "variadic.zip"> {
     // Override the default builder used by the generated parser because this
     // may not return an variadic.zip.
     AttrBuilderWithInferredContext<(ins
-       "VariadicType":$type, "TypedAttr":$inputTypeValue), "", "TypedAttr">,
+       "ParamListType":$type, "TypedAttr":$inputTypeValue), "", "TypedAttr">,
 
     // Verbose form with MLIRContext, needed for ODS constructors.
-    AttrBuilder<(ins "VariadicType":$type, "TypedAttr":$inputTypeValue), [{
+    AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$inputTypeValue), [{
       return get(type, inputTypeValue);
     }], "TypedAttr">,
   ];
@@ -212,15 +212,15 @@ def KGEN_VariadicTabulateAttr : KGEN_ExprAttr<"VariadicTabulate", "variadic.tabu
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    AttributeSelfTypeParameter<"", "ParamListType">:$type,
     "TypedAttr":$count,
     "TypedAttr":$generator
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-       "VariadicType":$type, "TypedAttr":$count, "TypedAttr":$generator), "", "TypedAttr">,
-    AttrBuilder<(ins "VariadicType":$type, "TypedAttr":$count, "TypedAttr":$generator), [{
+       "ParamListType":$type, "TypedAttr":$count, "TypedAttr":$generator), "", "TypedAttr">,
+    AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$count, "TypedAttr":$generator), [{
       return get(type, count, generator);
     }], "TypedAttr">,
   ];
@@ -300,7 +300,7 @@ def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "variadic.concat">
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    AttributeSelfTypeParameter<"", "ParamListType">:$type,
     "TypedAttr":$variadics
   );
 
@@ -308,10 +308,10 @@ def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "variadic.concat">
     // Override the default builder used by the generated parser because this
     // may not return an variadic.concat.
     AttrBuilderWithInferredContext<(ins
-       "VariadicType":$type, "TypedAttr":$variadics), "", "TypedAttr">,
+       "ParamListType":$type, "TypedAttr":$variadics), "", "TypedAttr">,
 
     // Verbose form with MLIRContext, needed for ODS constructors.
-    AttrBuilder<(ins "VariadicType":$type, "TypedAttr":$variadics), [{
+    AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$variadics), [{
       return get(type, variadics);
     }], "TypedAttr">,
   ];
@@ -961,7 +961,7 @@ def KGEN_StructFieldTypesAttr : KGEN_ExprAttr<"StructFieldTypes",
 
   let parameters = (ins
     "TypedAttr":$typeValue,
-    AttributeSelfTypeParameter<"", "VariadicType">:$type
+    AttributeSelfTypeParameter<"", "ParamListType">:$type
   );
 
   let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `>`";
@@ -989,7 +989,7 @@ def KGEN_StructFieldNamesAttr : KGEN_ExprAttr<"StructFieldNames",
 
   let parameters = (ins
     "TypedAttr":$typeValue,
-    AttributeSelfTypeParameter<"", "VariadicType">:$type
+    AttributeSelfTypeParameter<"", "ParamListType">:$type
   );
 
   let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `>`";

@@ -200,7 +200,7 @@ TEST_F(StructTypeTest, UniquingConsistency) {
 
   // Create via VariadicAttr with TypeParamAttrs
   auto metatype = TypeType::get(&ctx);
-  auto variadicType = VariadicType::get(metatype);
+  auto variadicType = ParamListType::get(metatype);
   SmallVector<TypedAttr> elements = {TypeParamAttr::get(i32Type, metatype),
                                      TypeParamAttr::get(i64Type, metatype)};
   VariadicAttr variadic = VariadicAttr::get(elements, variadicType);
@@ -226,7 +226,7 @@ TEST_F(StructTypeTest, UniquingWithParamTypes) {
   EXPECT_EQ(fromTypes, fromTypes2);
 
   // Create via VariadicAttr using TypeParamAttr::get - should get same type.
-  auto variadicType = VariadicType::get(metatype);
+  auto variadicType = ParamListType::get(metatype);
   SmallVector<TypedAttr> elements = {
       cast<TypedAttr>(TypeParamAttr::get(paramType, metatype))};
   VariadicAttr variadic = VariadicAttr::get(elements, variadicType);
@@ -252,7 +252,7 @@ TEST_F(StructTypeTest, UniquingWithCanonicalizingTypeParamAttr) {
   // Create struct via VariadicAttr using TypeParamAttr::get() directly.
   // TypeParamAttr::get(paramType, metatype) may return a ParamOperatorAttr
   // instead of a TypeParamAttr due to canonicalization.
-  auto variadicType = VariadicType::get(metatype);
+  auto variadicType = ParamListType::get(metatype);
   TypedAttr typeParamResult = TypeParamAttr::get(paramType, metatype);
 
   // Note: typeParamResult might be a ParamOperatorAttr, not a TypeParamAttr!

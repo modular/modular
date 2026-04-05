@@ -2205,7 +2205,7 @@ TypedAttr SIMDShrAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
 bool VariadicToArrayAttr::isConstant() const { return false; }
 
 Type VariadicToArrayAttr::getElementType() const {
-  return cast<VariadicType>(getVariadic().getType()).getElementType();
+  return cast<ParamListType>(getVariadic().getType()).getElementType();
 }
 
 POP::ArrayType VariadicToArrayAttr::getType() const {
@@ -2227,7 +2227,7 @@ TypedAttr VariadicToArrayAttr::get(TypedAttr variadic) {
 LogicalResult
 VariadicToArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                             TypedAttr variadic) {
-  auto variadicType = dyn_cast<VariadicType>(variadic.getType());
+  auto variadicType = dyn_cast<ParamListType>(variadic.getType());
   if (!variadicType)
     return emitError() << "expected a 'variadic' type for the input, got: "
                        << variadic.getType();

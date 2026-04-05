@@ -1656,14 +1656,14 @@ def POP_ExternalCallOp : POPOp<"external_call", [
 
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$func, Variadic<AnyType>:$operands,
-    OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
+    OptionalAttr<TypeAttrOf<FunctionType>>:$fnType,
     OptionalAttr<ArrayAttr>:$funcAttrs, OptionalAttr<DictArrayAttr>:$argAttrs,
     OptionalAttr<DictionaryAttr>:$resAttrs, OptionalAttr<AnyAttr>:$memory);
   let results = (outs Optional<AnyType>:$result);
 
   let assemblyFormat = [{
     custom<ExternalCallee>($func) `(` operands `)`
-    ($variadicType^)? attr-dict-with-keyword `:`
+    ($fnType^)? attr-dict-with-keyword `:`
     functional-type(operands, results)
   }];
 
@@ -1677,7 +1677,7 @@ def POP_ExternalCallOp : POPOp<"external_call", [
     OpBuilder<(ins "Type":$result, "StringRef":$func,
                    "ValueRange":$operands)>,
     OpBuilder<(ins "Type":$result, "StringRef":$func,
-                   "ValueRange":$operands, "FunctionType":$variadicType)>
+                   "ValueRange":$operands, "FunctionType":$fnType)>
   ];
 
   let hasVerifier = 1;

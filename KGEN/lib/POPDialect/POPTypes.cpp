@@ -150,7 +150,7 @@ Type UnionType::parse(AsmParser &p) {
     return {};
 
   auto metatype = TypeType::get(p.getContext());
-  auto variadicType = VariadicType::get(metatype);
+  auto variadicType = ParamListType::get(metatype);
   TypedAttr variadic;
 
   // Special case `[<variadic>]` to parse the variadic parameter directly.
@@ -195,7 +195,7 @@ void UnionType::print(AsmPrinter &p) const {
 
 UnionType UnionType::get(MLIRContext *ctx, ArrayRef<Type> types) {
   auto metatype = TypeType::get(ctx);
-  auto variadicType = VariadicType::get(metatype);
+  auto variadicType = ParamListType::get(metatype);
   SmallVector<TypedAttr> elements;
   for (Type type : types)
     elements.push_back(TypeParamAttr::get(type, metatype));
