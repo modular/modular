@@ -1651,6 +1651,11 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
   promotedFn.setSymName(
       moduleDecl->mangleParamName(nestedFn.getSymName()->str()));
   promotedFn.setFuncTypeGenerator(promotedSignature);
+  // Transfer the linkage name to the promoted op: the mangled sym_name
+  // above overwrites the original name, so preserve it so it survives
+  // into elaboration.
+  if (auto linkageName = nestedFn.getLinkageNameAttr())
+    promotedFn.setLinkageNameAttr(linkageName);
   auto &decl = shared.declResolver->addFullyResolvedDecl(
       promotedFn, nestedFn.getSourceNameAttr(), loc, moduleDecl);
   // Transfer child decls from the original to the promoted decl. Since the op

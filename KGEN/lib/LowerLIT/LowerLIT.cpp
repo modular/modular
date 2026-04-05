@@ -353,8 +353,8 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
     sourceName = decl.getName();
   auto region = ParamDeclareRegionOp::create(
       b, decl, sourceName, func.getFuncTypeGenerator(), func.getFunctionType(),
-      inputParams, func.getInlineLevel(), func.getLLVMMetadataArray(),
-      func.getLLVMArgMetadataArray());
+      inputParams, func.getInlineLevel(), func.getLinkageNameAttr(),
+      func.getLLVMMetadataArray(), func.getLLVMArgMetadataArray());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }

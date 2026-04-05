@@ -836,6 +836,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_InlineLevelAttr:$inlineLevel,
+    OptionalAttr<AttrOfType<KGEN_StringType>>:$linkageName,
     // To be able to store pre-elaborated names of the `llvm_metadata`,
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
