@@ -147,6 +147,65 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
         return (iter_len, {iter_len})
 
 
+@fieldwise_init
+struct _ListTakeIter[
+    T: Copyable,
+    origin: MutOrigin,
+](Movable, IterableOwned, Iterator):
+    """Iterator over List elements that moves elements out of the list.
+
+    This iterator drains the list as it iterates, moving elements out using
+    `take_pointee()`. The list's length is set to 0 immediately when the
+    iterator is created to prevent double-free issues. Remaining elements
+    are destroyed by the iterator's destructor if not fully consumed.
+
+    Parameters:
+        T: The type of the elements in the list.
+        origin: The mutable origin of the List.
+    """
+
+    comptime IteratorType: Iterator = Self
+    comptime Element = Self.T
+
+    var _index: Int
+    var _list: Pointer[List[Self.T], Self.origin]
+    var _original_len: Int
+
+    def __init__(out self, ref[Self.origin] list: List[Self.T]):
+        self._index = 0
+        self._list = Pointer(to=list)
+        # Store original length and immediately set list length to 0
+        # to prevent double-free when list destructor runs
+        self._original_len = len(list)
+        list._len = 0
+
+    @always_inline
+    def __iter__(owned self) -> Self:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._index >= self._original_len:
+            raise StopIteration()
+
+        # Move the element out
+        var element = (self._list[].unsafe_ptr() + self._index).take_pointee()
+        self._index += 1
+        return element^
+
+    def __del__(deinit self):
+        """Destroy any remaining elements that weren't iterated over."""
+        # Destroy remaining elements from current index to original length
+        while self._index < self._original_len:
+            (self._list[].unsafe_ptr() + self._index).destroy_pointee()
+            self._index += 1
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len = self._original_len - self._index
+        return (iter_len, {iter_len})
+
+
 struct List[T: Copyable](
     Boolable,
     Copyable,
@@ -673,6 +732,44 @@ struct List[T: Copyable](
         return _ListIter[forward=False](
             index=len(self), src=self.unsafe_ptr(), length=self._len
         )
+
+    def take_items(mut self) -> _ListTakeIter[Self.T, origin_of(self)]:
+        """Iterate over the list's elements and move them out of the list,
+        effectively draining the list.
+
+        This method returns an iterator that moves elements out of the list
+        using `take_pointee()`, updating the list's length as it drains. The
+        list will be empty after complete iteration.
+
+        Returns:
+            An iterator of owned elements that moves them out of the list.
+
+        Examples:
+
+        ```mojo
+        var my_list = List[String]("a", "b", "c")
+
+        for element in my_list.take_items():
+            print(element[])  # prints a, then b, then c
+
+        print(len(my_list))  # prints 0
+        ```
+
+        This is useful for efficiently transferring elements from a list
+        to another data structure without copying:
+
+        ```mojo
+        var keys = List[String]("x", "y", "z")
+        var values = List[Int](1, 2, 3)
+        var dict = Dict[String, Int]()
+
+        # Transfer elements without copying
+        for key in keys.take_items():
+            var value = values.take_items().__next__()
+            dict[key[]] = value[]
+        ```
+        """
+        return _ListTakeIter(self)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
