@@ -249,8 +249,10 @@ def test_slice_static_dims(
             (slice(None, None, 2),),
         ),
         # x[::-1]
-        # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
-        # (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, -1),)),
+        (
+            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            (slice(None, None, -1),),
+        ),
         # x[:, None, :]
         (
             TensorType(
@@ -289,11 +291,14 @@ def test_slice_static_dims(
             (Ellipsis, slice(1, None)),
         ),
         # x[1, ..., ::-1]
-        # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
-        # (
-        #     TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
-        #     (1, Ellipsis, slice(None, None, -1)),
-        # ),
+        (
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
+            (1, Ellipsis, slice(None, None, -1)),
+        ),
     ],
 )
 def test_slice_symbolic_tensor(

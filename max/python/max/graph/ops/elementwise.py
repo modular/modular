@@ -12,15 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Elementwise ops."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from itertools import zip_longest
 
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
+from ..dim import Dim
 from ..graph import Graph
+from ..shape import Shape
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
+from .broadcast_to import broadcast_to
 from .cast import cast
 from .constant import constant
 from .custom import custom
@@ -66,6 +70,60 @@ def _elementwise_binary(op):  # noqa: ANN001, ANN202
 
     elementwise_op.__name__ = op.__name__
     return elementwise_op
+
+
+def _require_bool_dtype(*values: TensorValue) -> None:
+    if any(value.dtype != DType.bool for value in values):
+        dtypes = ", ".join(str(value.dtype) for value in values)
+        raise ValueError(f"logical ops require boolean tensors, got {dtypes}")
+
+
+def _require_bitwise_dtype(*values: TensorValue) -> None:
+    if any(
+        not (value.dtype == DType.bool or value.dtype.is_integral())
+        for value in values
+    ):
+        dtypes = ", ".join(str(value.dtype) for value in values)
+        raise TypeError(
+            f"bitwise ops require boolean or integral tensors, got {dtypes}"
+        )
+
+
+def _broadcast_shape(
+    lhs_shape: Sequence[Dim], rhs_shape: Sequence[Dim]
+) -> Shape:
+    one = Dim(1)
+    result: list[Dim] = []
+
+    for lhs_dim, rhs_dim in zip_longest(
+        reversed(lhs_shape), reversed(rhs_shape), fillvalue=one
+    ):
+        if lhs_dim == rhs_dim:
+            result.append(lhs_dim)
+        elif lhs_dim == one:
+            result.append(rhs_dim)
+        elif rhs_dim == one:
+            result.append(lhs_dim)
+        else:
+            raise ValueError(
+                "bitwise operands could not be broadcast together with shapes "
+                f"{list(lhs_shape)} and {list(rhs_shape)}"
+            )
+
+    return Shape(reversed(result))
+
+
+def _broadcast_binary_operands(
+    lhs: TensorValue, rhs: TensorValue
+) -> tuple[TensorValue, TensorValue, Shape]:
+    result_shape = _broadcast_shape(lhs.shape, rhs.shape)
+
+    if list(lhs.shape) != list(result_shape):
+        lhs = broadcast_to(lhs, result_shape)
+    if list(rhs.shape) != list(result_shape):
+        rhs = broadcast_to(rhs, result_shape)
+
+    return lhs, rhs, result_shape
 
 
 add = _elementwise_binary(rmo.add)
@@ -251,7 +309,23 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-mul = _elementwise_binary(rmo.mul)
+
+
+def mul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Multiplies two tensors with PyTorch-style int-float promotion."""
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    assert_same_device(lhs=lhs, rhs=rhs)
+
+    # PyTorch-style mixed integer x floating multiply should promote to the
+    # floating dtype rather than failing because no exact shared input dtype exists.
+    if lhs.dtype.is_integral() and rhs.dtype.is_float():
+        lhs = cast(lhs, rhs.dtype)
+    elif rhs.dtype.is_integral() and lhs.dtype.is_float():
+        rhs = cast(rhs, lhs.dtype)
+
+    return Graph.current._add_op(rmo.mul, lhs, rhs)[0].tensor
+
+
 """
 Computes the elementwise multiplication of two symbolic tensors.
 
@@ -498,7 +572,15 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_and = _elementwise_binary(rmo.and_)
+
+def logical_and(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Computes the elementwise logical AND of boolean tensors."""
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    _require_bool_dtype(lhs, rhs)
+    assert_same_device(lhs=lhs, rhs=rhs)
+    return Graph.current._add_op(rmo.and_, lhs, rhs)[0].tensor
+
+
 """
 Computes the logical and between two symbolic tensors.
 
@@ -521,7 +603,15 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_or = _elementwise_binary(rmo.or_)
+
+def logical_or(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Computes the elementwise logical OR of boolean tensors."""
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    _require_bool_dtype(lhs, rhs)
+    assert_same_device(lhs=lhs, rhs=rhs)
+    return Graph.current._add_op(rmo.or_, lhs, rhs)[0].tensor
+
+
 """
 Computes the logical or between two symbolic tensors.
 
@@ -544,7 +634,81 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_xor = _elementwise_binary(rmo.xor)
+
+def logical_xor(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Computes the elementwise logical XOR of boolean tensors."""
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    _require_bool_dtype(lhs, rhs)
+    assert_same_device(lhs=lhs, rhs=rhs)
+    return Graph.current._add_op(rmo.xor, lhs, rhs)[0].tensor
+
+
+def bitwise_and(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Computes the elementwise bitwise AND of integral or boolean tensors."""
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    if lhs.dtype == DType.bool and rhs.dtype == DType.bool:
+        return logical_and(lhs, rhs)
+    _require_bitwise_dtype(lhs, rhs)
+    assert_same_device(lhs=lhs, rhs=rhs)
+    lhs, rhs, result_shape = _broadcast_binary_operands(lhs, rhs)
+    return custom(
+        "mo.and",
+        lhs.device,
+        [lhs, rhs],
+        out_types=[
+            TensorType(
+                dtype=lhs.dtype,
+                shape=result_shape,
+                device=DeviceRef.from_device(lhs.device),
+            )
+        ],
+    )[0].tensor
+
+
+def bitwise_or(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Computes the elementwise bitwise OR of integral or boolean tensors."""
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    if lhs.dtype == DType.bool and rhs.dtype == DType.bool:
+        return logical_or(lhs, rhs)
+    _require_bitwise_dtype(lhs, rhs)
+    assert_same_device(lhs=lhs, rhs=rhs)
+    lhs, rhs, result_shape = _broadcast_binary_operands(lhs, rhs)
+    return custom(
+        "mo.or",
+        lhs.device,
+        [lhs, rhs],
+        out_types=[
+            TensorType(
+                dtype=lhs.dtype,
+                shape=result_shape,
+                device=DeviceRef.from_device(lhs.device),
+            )
+        ],
+    )[0].tensor
+
+
+def bitwise_xor(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Computes the elementwise bitwise XOR of integral or boolean tensors."""
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    if lhs.dtype == DType.bool and rhs.dtype == DType.bool:
+        return logical_xor(lhs, rhs)
+    _require_bitwise_dtype(lhs, rhs)
+    assert_same_device(lhs=lhs, rhs=rhs)
+    lhs, rhs, result_shape = _broadcast_binary_operands(lhs, rhs)
+    return custom(
+        "mo.xor",
+        lhs.device,
+        [lhs, rhs],
+        out_types=[
+            TensorType(
+                dtype=lhs.dtype,
+                shape=result_shape,
+                device=DeviceRef.from_device(lhs.device),
+            )
+        ],
+    )[0].tensor
+
+
 """
 Computes the logical xor between two symbolic tensors.
 

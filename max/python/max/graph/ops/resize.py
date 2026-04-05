@@ -19,6 +19,7 @@ from max._core.dialects import builtin, kgen, mo, rmo
 from ..graph import Graph
 from ..type import Shape, ShapeLike, TensorType
 from ..value import TensorValue, TensorValueLike
+from .custom import custom
 from .shape_to_tensor import shape_to_tensor
 
 
@@ -134,7 +135,6 @@ def resize(
     Raises:
         ValueError: If the input doesn't have rank 4, shape has wrong number
             of elements, or unsupported interpolation mode is specified.
-        NotImplementedError: If ``InterpolationMode.NEAREST`` is specified.
     """
     input = TensorValue(input)
     shape = Shape(shape)
@@ -151,24 +151,33 @@ def resize(
             f" (batch, channels, height, width), but got {len(shape)} elements"
         )
 
-    if interpolation == InterpolationMode.NEAREST:
-        raise NotImplementedError(
-            "InterpolationMode.NEAREST is not yet supported."
-        )
-
     if interpolation == InterpolationMode.BILINEAR:
         # Delegate to resize_linear with default half_pixel coordinate mode.
         return resize_linear(input, shape)
 
     # NOTE: half_pixel is the default coordinate transform mode.
     # This matches the behavior of torchvision and other libraries.
-
     # Create the result type with the new shape.
     result_type = TensorType(
         dtype=input.dtype, shape=shape, device=input.device
     )
 
-    # Stage bicubic resize op.
+    if interpolation == InterpolationMode.NEAREST:
+        # PyTorch-style nearest interpolation duplicates source pixels for
+        # integer upscale factors and matches floor(asymmetric) sampling.
+        return custom(
+            "mo.resize.nearest",
+            input.device,
+            [input, shape_to_tensor(shape)],
+            out_types=[result_type],
+            parameters={
+                "coordinate_transform_mode": int(
+                    mo.CoordinateTransformMode.asymmetric.value
+                ),
+                "round_mode": 2,
+            },
+        )[0].tensor
+
     return Graph.current._add_op_generated(
         rmo.MoResizeBicubicOp,
         result_type.to_mlir(),
