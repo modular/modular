@@ -192,7 +192,7 @@ void OutlineClosuresPass::runOnOperation() {
           b, uniqueName, regionDecl.getSourceNameAttr(), wrapperSignature,
           regionDecl.getFunctionType(), inputParamDecls,
           regionDecl.getInlineLevel(), /*inlinedForm=*/nullptr,
-          /*linkageNameAttr=*/TypedAttr(), regionDecl.getLLVMMetadataArray(),
+          regionDecl.getLinkageNameAttr(), regionDecl.getLLVMMetadataArray(),
           regionDecl.getLLVMArgMetadataArray());
       symtab.insert(liftedWrapper);
       outlinedGenerators.insert(liftedWrapper);
