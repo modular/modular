@@ -315,7 +315,7 @@ generateTypeString(SharedState &shared, ASTType type, VariadicKind varKind,
     if (convention)
       type = RefType::stripRefConvention(type, *convention);
 
-    ASTType::printParam(os, type.getVariadicPackTypeList(),
+    ASTType::printParam(os, type.getVariadicPackInfo().typeList,
                         /*forDiag=*/&shared);
     return os.str();
   }

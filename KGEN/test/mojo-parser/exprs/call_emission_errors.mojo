@@ -297,7 +297,7 @@ def forward_borrowed_pack_to_mut_pack[*Ts: AnyType](*outer: *Ts):
     mutate_pack(*outer)
 
 
-def forward_unknown_mut_pack_to_mut_pack[*Ts: AnyType](outer: VariadicPack[origin=_, _, AnyType, *Ts]):
+def forward_unknown_mut_pack_to_mut_pack[*Ts: AnyType](outer: VariadicPack[origin=_, element_trait=AnyType, _, *Ts]):
     # expected-error @below {{cannot unpack a variadic pack into a call that requires a different ownership}}
     mutate_pack(*outer)
 
@@ -307,7 +307,7 @@ def forward_borrowed_pack_to_owned_pack[*Ts: AnyType](*outer: *Ts):
     consume_owned_variadic_pack(*outer)
 
 
-def forward_unknown_ownership_pack[*Ts: AnyType, owned: Bool](outer: VariadicPack[origin=_, owned, AnyType, *Ts]):
+def forward_unknown_ownership_pack[*Ts: AnyType, owned: Bool](outer: VariadicPack[origin=_, element_trait=AnyType, owned, *Ts]):
     # expected-error @below {{cannot unpack a variadic pack into a call that requires a different ownership}}
     consume_owned_variadic_pack(*outer)
 

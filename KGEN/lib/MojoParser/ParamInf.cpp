@@ -66,7 +66,8 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature,
   // _must_ be provided positional operands explicitly, and therefore the
   // preceding defaults won't be used anyway.
   VariadicAttr packed = // See if resolved.
-      sugarDynCast<VariadicAttr>(variadicPackType.getVariadicPackTypeList());
+      sugarDynCast<VariadicAttr>(
+          variadicPackType.getVariadicPackInfo().typeList);
 
   // The caller should know the concrete type list unless we bound the pack
   // directly as a parameter.  This is an unpack like situation.
@@ -1362,8 +1363,9 @@ LogicalResult ParamInf::inferForCall(
         assert(actualPackType &&
                "unpacked positional operand must have a resolvable type");
 
-        TypedAttr actualOwned = actualPackType.getVariadicPackIsOwned();
-        TypedAttr expectedOwned = variadicPackType.getVariadicPackIsOwned();
+        TypedAttr actualOwned = actualPackType.getVariadicPackInfo().isOwned;
+        TypedAttr expectedOwned =
+            variadicPackType.getVariadicPackInfo().isOwned;
         if (actualOwned != expectedOwned) {
           auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
           diag << "cannot unpack a variadic pack into a call that requires a "

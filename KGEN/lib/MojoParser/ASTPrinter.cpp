@@ -1702,8 +1702,9 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
           os << ' ';
         os << '*';
 
-        TypedAttr variadic =
-            ASTType(sig.getIfVariadicListOrPack(idx)).getVariadicPackTypeList();
+        TypedAttr variadic = ASTType(sig.getIfVariadicListOrPack(idx))
+                                 .getVariadicPackInfo()
+                                 .typeList;
         printParam(os, variadic, diagShared);
       } else {
         printConvention(convention);
