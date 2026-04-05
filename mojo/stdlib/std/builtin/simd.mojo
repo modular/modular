@@ -42,7 +42,7 @@ domain-specific libraries for machine learning and scientific computing.
 
 import std.math
 from std.collections import InlineArray
-from std.collections.string.string import _calc_initial_buffer_size
+from std.collections.string.string import _calc_initial_buffer_size, StringSlice
 from std.hashlib.hasher import Hasher
 from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.math.math import _call_ptx_intrinsic, trunc
@@ -99,6 +99,33 @@ from .dtype import (
 # ===----------------------------------------------------------------------=== #
 # Type Aliases
 # ===----------------------------------------------------------------------=== #
+
+
+# Compute a scalar alias name for `SIMD[dtype, 1]`.
+# Maps the DType string name to a more readable form (e.g. "uint32" -> "UInt32", "float32" -> "Float32")
+@always_inline("nodebug")
+fn _scalar_alias_from_dtype(dtype: DType) -> String:
+    var name = String()
+    dtype.write_to(name)
+
+    if len(name) == 0:
+        return name
+
+    if name == "uint":
+        return String("UInt")
+    elif name == "int":
+        return String("Int")
+
+    var result = name.replace("uint", "UInt").replace("int", "Int")
+
+    if result == name:
+        var first_char = StringSlice(ptr=name.unsafe_ptr(), length=1)
+        var first_upper = first_char.upper()
+        var rest = StringSlice(ptr=name.unsafe_ptr() + 1, length=len(name) - 1)
+        return String(first_upper, rest)
+
+    return result
+
 
 comptime Scalar = SIMD[_, size=1]
 """Represents a scalar dtype."""
@@ -2169,6 +2196,14 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             writer: The value to write to.
         """
+
+        comptime if Self.size == 1:
+            writer.write_string(
+                StringSlice(_scalar_alias_from_dtype(Self.dtype))
+            )
+            writer.write("(", self[0], ")")
+            return
+
         writer.write_string("SIMD[")
         Self.dtype.write_repr_to(writer)
         writer.write(", ", Self.size, "](")
