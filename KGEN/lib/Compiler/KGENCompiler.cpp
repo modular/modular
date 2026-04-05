@@ -96,21 +96,21 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   }
 
   sliced.setNotExported();
-  // Save and remove the linkage name from the original before cloning. Only
-  // the wrapper should carry the linkage name so that the elaborator's
-  // linkage name resolution doesn't create duplicate names when both the
-  // stub and wrapper exist.
+  // Save the linkage name before modifying sliced. Only the wrapper should
+  // carry the linkage name so that the elaborator's linkage name resolution
+  // doesn't create duplicate names when both the stub and wrapper exist.
   auto linkageNameAttr = sliced.getLinkageNameAttr();
-  if (linkageNameAttr)
-    sliced.removeLinkageNameAttr();
   sliced.setInlineLevel(InlineLevel::Always);
   if (symtab) {
+    // Clone first so the original retains its linkage name for any subsequent
+    // stubs generated from the same generator (e.g. two instantiations of the
+    // same kernel with different type parameters).
     sliced = sliced.clone();
-    sliced.setSymNameAttr(stubName);
     symtab->insert(sliced);
-  } else {
-    sliced.setSymNameAttr(stubName);
   }
+  sliced.setSymNameAttr(stubName);
+  if (linkageNameAttr)
+    sliced.removeLinkageNameAttr();
 
   auto wrapper = GeneratorOp::create(b, name, sigGen);
   wrapper.setExported();
