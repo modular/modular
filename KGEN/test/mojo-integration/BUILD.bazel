@@ -19,7 +19,7 @@ lit_tests(
     name = "test",
     srcs = glob(
         [
-            "*.mlir",
+            "**/*.mlir",
             "**/*.mojo",
         ],
         exclude = _DATA,
