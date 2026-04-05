@@ -862,7 +862,7 @@ struct SIMD[dtype: DType, size: Int](
 
         comptime if Self.dtype.is_floating_point():
             ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(py._obj_ptr)
+            var float_value = cpy.PyFloat_AsDouble(py._as_py_object_ptr())
             if float_value == -1.0 and cpy.PyErr_Occurred():
                 # Note that -1.0 does not guarantee an error, it just means we
                 # need to check if there was an exception.

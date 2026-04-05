@@ -231,7 +231,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
         """
         var self_ptr = Self._get_self_ptr(py_self)
         var total = 0
-        if py_kwargs._obj_ptr:
+        if Bool(py_kwargs):
             for entry in py_kwargs.values():
                 total += Int(py=entry)
         self_ptr[].age += total
