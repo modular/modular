@@ -26,7 +26,7 @@ from std.sys.info import size_of
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import get_type_name
 from std.memory import OpaquePointer, stack_allocation
-from std.python import Python, PythonObject
+from std.python import Python, PythonException, PythonObject
 from std.python._cpython import (
     GILAcquired,
     Py_TPFLAGS_DEFAULT,
@@ -233,23 +233,33 @@ def _tp_repr_wrapper[
 # Builders
 # ===-----------------------------------------------------------------------===#
 
+comptime PyFunctionResult = Variant[PythonException, PythonObject]
+"""The result type for Python functions that can return either a value or an exception.
+
+This replaces the previous approach of returning NULL to indicate exceptions,
+which could cause segfaults. Instead, functions return a Variant that explicitly
+contains either a valid PythonObject or a PythonException.
+"""
+
 comptime PyFunctionRaising = def(
     mut PythonObject, mut PythonObject
-) raises -> PythonObject
+) raises -> PyFunctionResult
 """The generic function type for raising Python bindings.
 
 The first argument is the self object, and the second argument is a tuple of the
-positional arguments. These functions always return a Python object (could be a
-`None` object).
+positional arguments. These functions return a Variant containing either a valid
+Python object or a PythonException if an error occurred.
 """
 
 comptime PyFunctionWithKeywordsRaising = def(
     mut PythonObject, mut PythonObject, mut PythonObject
-) raises -> PythonObject
+) raises -> PyFunctionResult
 """The generic function type for raising Python bindings with keyword arguments.
 
 The first argument is the self object, the second argument is a tuple of the
 positional arguments, and the third argument is a dictionary of the keyword arguments.
+These functions return a Variant containing either a valid Python object or a
+PythonException if an error occurred.
 """
 
 comptime GenericPyFunction = Variant[
@@ -1060,22 +1070,47 @@ def _py_c_function_wrapper[
 
     var py_self = PythonObject(from_borrowed=py_self_ptr)
     var args = PythonObject(from_borrowed=args_ptr)
+    
+    # Canonicalize NULL kwargs to an empty dict to avoid NULL pointer issues
+    # PyCFunctionWithKeywords receives NULL kwargs when no keyword args are passed
+    ref cpython = Python().cpython()
+    var kwargs_obj: PythonObject
+    if not kwargs_ptr:
+        # Create an empty dict for NULL kwargs
+        kwargs_obj = PythonObject(from_owned=cpython.PyDict_New())
+    else:
+        kwargs_obj = PythonObject(from_borrowed=kwargs_ptr)
 
     # SAFETY:
     #   Call the user provided function, and take ownership of the
     #   PyObjectPtr of the returned PythonObject.
 
-    ref cpython = Python().cpython()
-
     with GILAcquired(Python(cpython)):
         try:
+            var result: PyFunctionResult
             if user_func.isa[PyFunctionRaising]():
-                return user_func[PyFunctionRaising](py_self, args).steal_data()
+                result = user_func[PyFunctionRaising](py_self, args)
             else:
-                var kwargs = PythonObject(from_borrowed=kwargs_ptr)
-                return user_func[PyFunctionWithKeywordsRaising](
-                    py_self, args, kwargs
-                ).steal_data()
+                result = user_func[PyFunctionWithKeywordsRaising](
+                    py_self, args, kwargs_obj
+                )
+            
+            # Check if result is a PythonException or PythonObject
+            if result.isa[PythonException]():
+                # An exception was returned - set the Python error indicator
+                var exc = result[PythonException]
+                var exc_obj = exc.get_exception_object()
+                var error_type = cpython.get_error_global("PyExc_Exception")
+                # Use the exception object's string representation as the message
+                var exc_str = String(exc_obj)
+                cpython.PyErr_SetString(
+                    error_type, exc_str.as_c_string_slice().unsafe_ptr()
+                )
+                # Return NULL to indicate exception
+                return PyObjectPtr()
+            else:
+                # Success - return the PythonObject
+                return result[PythonObject].steal_data()
         except e:
             var error_message = String(e)
             var error_type = cpython.get_error_global("PyExc_Exception")
