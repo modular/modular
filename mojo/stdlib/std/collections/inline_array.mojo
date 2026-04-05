@@ -560,6 +560,25 @@ struct InlineArray[ElementType: Copyable, size: Int](
             negative indices counting backwards from the end of the array. The
             index is bounds-checked at runtime.
         """
+        if __is_run_in_comptime_interpreter:
+            var comptime_idx = index(idx)
+            debug_assert[assert_mode="safe", cpu_only=True](
+                -Self.size <= comptime_idx < Self.size,
+                (
+                    "InlineArray index out of bounds during compile-time"
+                    " evaluation: index ("
+                ),
+                comptime_idx,
+                ") valid range: -",
+                Self.size,
+                " <= index < ",
+                Self.size,
+            )
+
+            if comptime_idx < 0:
+                comptime_idx += Self.size
+            return self.unsafe_get(comptime_idx)
+
         var normalized_index = normalize_index["InlineArray"](idx, len(self))
         return self.unsafe_get(normalized_index)
 
@@ -591,9 +610,10 @@ struct InlineArray[ElementType: Copyable, size: Int](
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        comptime assert (
-            -Self.size <= index(idx) < Self.size
-        ), "Index must be within bounds."
+        comptime assert -Self.size <= index(idx) < Self.size, (
+            "InlineArray index out of bounds: index must satisfy -size <= index"
+            " < size."
+        )
         comptime normalized_index = normalize_index["InlineArray"](
             idx, Self.size
         )
