@@ -31,33 +31,29 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 def _elementwise_impl_cpu[
     rank: Int,
     //,
-    *,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
     simd_width: Int,
+    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) unified register_passable -> None,
+    *,
     use_blocking_impl: Bool = False,
-](*, shape: IndexList[rank, ...]):
+](func: FuncType, *, shape: IndexList[rank, ...]):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
 
     Parameters:
         rank: The rank of the buffer.
-        func: The body function.
         simd_width: The SIMD vector width to use.
+        FuncType: The body function type.
         use_blocking_impl: If true the function executes without sub-tasks.
 
     Args:
+        func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
     """
 
-    def func_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) unified register_passable {}:
-        func[width, rank, alignment](indices)
-
     comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
-    impl[simd_width, use_blocking_impl=use_blocking_impl](func_unified, shape)
+    impl[simd_width, use_blocking_impl=use_blocking_impl](func, shape)
 
 
 @always_inline

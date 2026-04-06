@@ -3356,6 +3356,11 @@ def _k_cache_to_buffer[
     )
     comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
-        shape=launch_shape, ctx=context
+    def copy_fn_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]) unified register_passable {}:
+        copy_fn[width, rank, alignment](idx)
+
+    _elementwise_impl_gpu[simd_width=target_simd_width](
+        copy_fn_unified, shape=launch_shape, ctx=context
     )

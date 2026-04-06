@@ -1424,10 +1424,14 @@ def convert_bf16_to_fp8_e4m3fn(
         DType.bfloat16, target=get_gpu_target()
     ]()
 
+    def convert_kernel_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]) unified register_passable {}:
+        convert_kernel[width, rank, alignment](idx)
+
     comptime if input_buffer.rank == 2:
-        _elementwise_impl_gpu[
-            func=convert_kernel, simd_width=target_simd_width
-        ](
+        _elementwise_impl_gpu[simd_width=target_simd_width](
+            convert_kernel_unified,
             shape=IndexList[2](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
@@ -1435,9 +1439,8 @@ def convert_bf16_to_fp8_e4m3fn(
             ctx=context,
         )
     else:
-        _elementwise_impl_gpu[
-            func=convert_kernel, simd_width=target_simd_width
-        ](
+        _elementwise_impl_gpu[simd_width=target_simd_width](
+            convert_kernel_unified,
             shape=IndexList[3](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),

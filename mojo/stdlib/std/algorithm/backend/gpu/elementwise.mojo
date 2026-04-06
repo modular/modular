@@ -109,6 +109,8 @@ def _elementwise_impl_gpu_clc[
         IndexList[rank]
     ) unified register_passable -> None,
     elems_per_thread: Int,
+    *,
+    pdl_level: PDLLevel = _PDL_LEVEL,
 ](func: FuncType, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` on SM100+ GPUs using Cluster Launch Control
     work-stealing.
@@ -127,6 +129,7 @@ def _elementwise_impl_gpu_clc[
         elems_per_thread: Number of packed elements each thread processes per
             tile. Higher values increase instruction-level parallelism and
             reduce CLC cancel frequency.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         func: The closure carrying the captured state of the body function.
@@ -279,14 +282,14 @@ def _elementwise_impl_gpu_clc[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=num_tiles,
             block_dim=block_size,
-            attributes=pdl_launch_attributes(_PDL_LEVEL),
+            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = _kernel[handle_uneven_simd=True]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=num_tiles,
             block_dim=block_size,
-            attributes=pdl_launch_attributes(_PDL_LEVEL),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
@@ -308,6 +311,8 @@ def _elementwise_impl_gpu_grid_stride[
         IndexList[rank]
     ) unified register_passable -> None,
     elems_per_thread: Int,
+    *,
+    pdl_level: PDLLevel = _PDL_LEVEL,
 ](func: FuncType, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` using a grid-stride loop.
 
@@ -321,6 +326,7 @@ def _elementwise_impl_gpu_grid_stride[
         FuncType: The body function type.
         elems_per_thread: Number of packed elements each thread processes per
             stride iteration for instruction-level parallelism.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         func: The closure carrying the captured state of the body function.
@@ -410,14 +416,14 @@ def _elementwise_impl_gpu_grid_stride[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=num_blocks,
             block_dim=block_size,
-            attributes=pdl_launch_attributes(_PDL_LEVEL),
+            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = _kernel[handle_uneven_simd=True]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=num_blocks,
             block_dim=block_size,
-            attributes=pdl_launch_attributes(_PDL_LEVEL),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
@@ -430,32 +436,30 @@ def _elementwise_impl_gpu_grid_stride[
 def _elementwise_impl_gpu[
     rank: Int,
     //,
-    *,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
     simd_width: Int,
-](*, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
+    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) unified register_passable -> None,
+    *,
+    pdl_level: PDLLevel = PDLLevel(1),
+](func: FuncType, *, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
     Parameters:
         rank: The rank of the buffer.
-        func: The body function.
         simd_width: The SIMD vector width to use.
+        FuncType: The body function type.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
+        func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
         ctx: The pointer to DeviceContext.
 
     Raises:
         If the GPU kernel launch fails.
     """
-
-    def func_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) unified register_passable {}:
-        func[width, rank, alignment](indices)
 
     comptime hw_info = ctx.default_device_info
 
@@ -516,7 +520,8 @@ def _elementwise_impl_gpu[
                     sm_count=sm_count,
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
-                ](func=func_unified, shape=shape.cast[DType.uint32](), ctx=ctx)
+                    pdl_level=pdl_level,
+                ](func=func, shape=shape.cast[DType.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_grid_stride[
                     simd_width=simd_width,
@@ -525,20 +530,23 @@ def _elementwise_impl_gpu[
                     sm_count=sm_count,
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
-                ](func=func_unified, shape=shape.cast[DType.uint64](), ctx=ctx)
+                    pdl_level=pdl_level,
+                ](func=func, shape=shape.cast[DType.uint64](), ctx=ctx)
         else:
             if use_32bit:
                 _elementwise_impl_gpu_clc[
                     simd_width=simd_width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
-                ](func=func_unified, shape=shape.cast[DType.uint32](), ctx=ctx)
+                    pdl_level=pdl_level,
+                ](func=func, shape=shape.cast[DType.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_clc[
                     simd_width=simd_width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
-                ](func=func_unified, shape=shape.cast[DType.uint64](), ctx=ctx)
+                    pdl_level=pdl_level,
+                ](func=func, shape=shape.cast[DType.uint64](), ctx=ctx)
     else:
         if use_32bit:
             _elementwise_impl_gpu_grid_stride[
@@ -548,7 +556,8 @@ def _elementwise_impl_gpu[
                 sm_count=sm_count,
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
-            ](func=func_unified, shape=shape.cast[DType.uint32](), ctx=ctx)
+                pdl_level=pdl_level,
+            ](func=func, shape=shape.cast[DType.uint32](), ctx=ctx)
         else:
             _elementwise_impl_gpu_grid_stride[
                 simd_width=simd_width,
@@ -557,4 +566,5 @@ def _elementwise_impl_gpu[
                 sm_count=sm_count,
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
-            ](func=func_unified, shape=shape.cast[DType.uint64](), ctx=ctx)
+                pdl_level=pdl_level,
+            ](func=func, shape=shape.cast[DType.uint64](), ctx=ctx)
