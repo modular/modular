@@ -19,6 +19,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.pipelines.architectures.gemma3.layers.rms_norm import (
     Gemma3RMSNorm as MaxRMSNorm,
+    gemma3_rms_norm_fused_residual_add,
 )
 from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
@@ -72,6 +73,99 @@ def generate_max_outputs(
     )
 
 
+def generate_torch_fused_residual_add_outputs(
+    text_config: Gemma3TextConfig,
+    input_tensor: torch.Tensor,
+    residual_tensor: torch.Tensor,
+    first_rms_weight: torch.Tensor,
+    second_rms_weight: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    first_norm = TorchRMSNorm(
+        dim=text_config.hidden_size,
+        eps=1e-6,
+    ).to(dtype=torch.bfloat16, device="cuda")
+    second_norm = TorchRMSNorm(
+        dim=text_config.hidden_size,
+        eps=1e-6,
+    ).to(dtype=torch.bfloat16, device="cuda")
+    first_norm.weight.data = first_rms_weight.to(
+        dtype=torch.float32, device="cuda"
+    )
+    second_norm.weight.data = second_rms_weight.to(
+        dtype=torch.float32, device="cuda"
+    )
+
+    residual_output = residual_tensor.to("cuda") + first_norm(
+        input_tensor.to("cuda")
+    )
+    fused_output = second_norm(residual_output)
+    return fused_output, residual_output
+
+
+def generate_max_fused_residual_add_outputs(
+    text_config: Gemma3TextConfig,
+    input_tensor: torch.Tensor,
+    residual_tensor: torch.Tensor,
+    first_rms_weight: torch.Tensor,
+    second_rms_weight: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    first_norm = MaxRMSNorm(
+        dim=text_config.hidden_size,
+        dtype=DType.float32,
+        eps=1e-6,
+    )
+    second_norm = MaxRMSNorm(
+        dim=text_config.hidden_size,
+        dtype=DType.float32,
+        eps=1e-6,
+    )
+    first_norm.weight.name = "first_rms_weight"
+    second_norm.weight.name = "second_rms_weight"
+
+    session = InferenceSession(devices=[Accelerator()])
+    input_type = TensorType(
+        dtype=DType.bfloat16,
+        shape=Shape(input_tensor.shape),
+        device=DeviceRef.GPU(),
+    )
+    residual_type = TensorType(
+        dtype=DType.bfloat16,
+        shape=Shape(residual_tensor.shape),
+        device=DeviceRef.GPU(),
+    )
+
+    with Graph(
+        "Gemma3RMSNormFusedResidualAdd",
+        input_types=(input_type, residual_type),
+    ) as graph:
+        x, residual = graph.inputs
+        graph_fused_output, graph_residual_output = (
+            gemma3_rms_norm_fused_residual_add(
+                x.tensor,
+                residual.tensor,
+                first_norm,
+                second_norm,
+            )
+        )
+        graph.output(graph_fused_output, graph_residual_output)
+
+    compiled = session.load(
+        graph,
+        weights_registry={
+            "first_rms_weight": first_rms_weight.cpu(),
+            "second_rms_weight": second_rms_weight.cpu(),
+        },
+    )
+    compiled_outputs = compiled.execute(
+        input_tensor.to("cuda"),
+        residual_tensor.to("cuda"),
+    )
+    return (
+        from_dlpack(compiled_outputs[0]).to(torch.bfloat16),
+        from_dlpack(compiled_outputs[1]).to(torch.bfloat16),
+    )
+
+
 def test_gemma3_rms_norm(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
@@ -87,6 +181,44 @@ def test_gemma3_rms_norm(
     torch.testing.assert_close(
         torch_output,
         max_output,
+        rtol=2 * torch.finfo(torch.bfloat16).eps,
+        atol=8 * torch.finfo(torch.bfloat16).eps,
+    )
+
+
+def test_gemma3_rms_norm_fused_residual_add(
+    text_config: Gemma3TextConfig,
+    input_tensor: torch.Tensor,
+    rms_weight: torch.Tensor,
+) -> None:
+    torch.manual_seed(7)
+    residual_tensor = torch.randn_like(input_tensor)
+    second_rms_weight = torch.roll(rms_weight, shifts=17).contiguous()
+
+    torch_output, torch_residual = generate_torch_fused_residual_add_outputs(
+        text_config,
+        input_tensor,
+        residual_tensor,
+        rms_weight,
+        second_rms_weight,
+    )
+    max_output, max_residual = generate_max_fused_residual_add_outputs(
+        text_config,
+        input_tensor,
+        residual_tensor,
+        rms_weight,
+        second_rms_weight,
+    )
+
+    torch.testing.assert_close(
+        torch_output,
+        max_output,
+        rtol=2 * torch.finfo(torch.bfloat16).eps,
+        atol=8 * torch.finfo(torch.bfloat16).eps,
+    )
+    torch.testing.assert_close(
+        torch_residual,
+        max_residual,
         rtol=2 * torch.finfo(torch.bfloat16).eps,
         atol=8 * torch.finfo(torch.bfloat16).eps,
     )
