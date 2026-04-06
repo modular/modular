@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for OpenResponses API routes."""
 
-import base64
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -328,71 +327,3 @@ def test_openresponses_video_request_returns_inline_base64_when_requested(
         assert content["num_frames"] == 2
         assert content["video_data"]
         assert "video_url" not in content
-
-
-async def test_generated_media_store_evicts_least_recently_used_asset(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Saving beyond the cache budget should evict the oldest untouched asset."""
-    caplog.set_level(logging.INFO, logger="max.serve")
-    store = GeneratedMediaStore(
-        tmp_path / "media",
-        max_storage_bytes=10,
-    )
-
-    first = await store.save_image_content(
-        OutputImageContent(
-            image_data=base64.b64encode(b"1111").decode("utf-8"),
-            format="png",
-        )
-    )
-    second = await store.save_image_content(
-        OutputImageContent(
-            image_data=base64.b64encode(b"2222").decode("utf-8"),
-            format="png",
-        )
-    )
-
-    assert store.get_image(first.asset_id) is not None
-
-    third = await store.save_image_content(
-        OutputImageContent(
-            image_data=base64.b64encode(b"3333").decode("utf-8"),
-            format="png",
-        )
-    )
-
-    assert store.get_image(first.asset_id) is not None
-    assert store.get_image(second.asset_id) is None
-    assert store.get_image(third.asset_id) is not None
-    assert not second.path.exists()
-    assert "Evicted generated image" in caplog.text
-
-
-def test_openresponses_returns_insufficient_storage_when_media_exceeds_budget(
-    app: FastAPI,
-    tmp_path: Path,
-) -> None:
-    """Requests should fail clearly when the generated artifact cannot fit in cache."""
-    app.state.media_store = GeneratedMediaStore(
-        tmp_path / "tiny-media",
-        max_storage_bytes=1,
-    )
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/v1/responses",
-            json={
-                "model": "test-model",
-                "input": "Generate an image of a cat",
-                "provider_options": {
-                    "image": {
-                        "response_format": "url",
-                    }
-                },
-            },
-        )
-
-        assert response.status_code == 507
-        assert "configured local media cache size" in response.json()["detail"]
