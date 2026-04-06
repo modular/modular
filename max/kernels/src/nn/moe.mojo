@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.algorithm import elementwise
 from std.collections import OptionalReg
 
 from std.math import align_up, ceildiv
@@ -35,12 +36,14 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
+from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_gpu
 from layout import (
     Coord,
     Idx,
     TensorLayout,
     TileTensor,
+    coord_to_index_list,
     row_major,
     stack_allocation as tensor_alloc,
 )
@@ -50,6 +53,7 @@ from std.runtime.tracing import Trace, TraceLevel
 from std.utils.index import IndexList, StaticTuple
 from std.builtin.dtype import _uint_type_of_width
 
+from nn.normalization import rms_norm_gpu
 from nn.topk import TopK_2
 
 
@@ -750,13 +754,9 @@ def moe_create_indices[
 
         var num_experts = expert_ids.dim(0)
 
-        var expert_usage_stats_host = cuda_ctx.enqueue_create_host_buffer[
-            DType.uint32
-        ](2)
-        expert_usage_stats_host.enqueue_fill(0)
-        cuda_ctx.enqueue_copy[DType.uint32](
-            expert_usage_stats.ptr,
-            expert_usage_stats_host,
+        cuda_ctx.enqueue_memset(
+            expert_usage_stats.to_device_buffer(cuda_ctx),
+            UInt32(0),
         )
 
         comptime kernel = moe_create_indices_bucket_group_kernel[
@@ -784,7 +784,6 @@ def moe_create_indices[
         )
 
         _ = lock_buffer^
-        _ = expert_usage_stats_host^
 
 
 # Function to perform warp-level sorting
@@ -1131,4 +1130,166 @@ def router_group_limited[
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel(1)),
+        )
+
+
+@always_inline
+def routed_expert_combine[
+    dtype: DType,
+    //,
+    target: StaticString,
+](
+    output: TileTensor[mut=True, dtype, ...],
+    top_k_weights: TileTensor[dtype, ...],
+    down_output: TileTensor[dtype, ...],
+    context: DeviceContextPtr,
+) raises:
+    """Combines routed expert outputs directly into the final `[seq, hidden]` tensor.
+
+    This keeps the float32 multiply-then-reduce numerics used by Gemma4 MoE
+    prefill, but writes the reduced result straight to the output tensor so the
+    graph does not need chunk assembly via `ops.concat`.
+    """
+    comptime assert output.flat_rank == 2
+    comptime assert top_k_weights.flat_rank == 2
+    comptime assert down_output.flat_rank == 3
+    comptime assert is_gpu[
+        target
+    ](), "routed expert combine is only supported on GPU"
+
+    var seq_len = Int(output.dim(0))
+    var hidden_dim = Int(output.dim(1))
+    if Int(top_k_weights.dim(0)) != seq_len:
+        raise Error("top_k_weights and output must agree on seq_len")
+    if Int(down_output.dim(0)) != seq_len:
+        raise Error("down_output and output must agree on seq_len")
+    if Int(top_k_weights.dim(1)) != Int(down_output.dim(1)):
+        raise Error(
+            "top_k_weights and down_output must agree on routed experts"
+        )
+    if Int(down_output.dim(2)) != hidden_dim:
+        raise Error("down_output and output must agree on hidden_dim")
+    if seq_len == 0 or hidden_dim == 0:
+        return
+
+    var gpu_ctx = context.get_device_context()
+    var routed_experts = Int(top_k_weights.dim(1))
+
+    @parameter
+    @always_inline
+    @__copy_capture(output, top_k_weights, down_output, routed_experts)
+    def combine_fn[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
+        comptime assert rank == 2, "expected [seq, hidden] output coordinates"
+
+        var accum = SIMD[DType.float32, width](0)
+        for expert_idx in range(routed_experts):
+            var weight = top_k_weights.load[width=1](
+                (Idx(idx[0]), Idx(expert_idx))
+            ).cast[DType.float32]()
+            var expert_vals = down_output.load[width=width](
+                Coord(Idx(idx[0]), Idx(expert_idx), Idx(idx[1]))
+            ).cast[DType.float32]()
+            accum += expert_vals * SIMD[DType.float32, width](weight)
+
+        output.store[width=width](Coord(idx), accum.cast[dtype]())
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.routed_expert_combine",
+        task_id=Int(gpu_ctx.id()),
+    ):
+        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+        elementwise[combine_fn, simd_width, target=target](
+            coord_to_index_list(output.layout.shape_coord()),
+            gpu_ctx,
+        )
+
+
+@always_inline
+def routed_expert_combine_then_rms_norm[
+    dtype: DType,
+    //,
+    target: StaticString,
+    multiply_before_cast: Bool = True,
+](
+    output: TileTensor[mut=True, dtype, ...],
+    top_k_weights: TileTensor[dtype, ...],
+    down_output: TileTensor[dtype, ...],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    context: DeviceContextPtr,
+) raises:
+    """Combines routed expert outputs and immediately applies weighted RMSNorm."""
+    comptime assert output.flat_rank == 2
+    comptime assert top_k_weights.flat_rank == 2
+    comptime assert down_output.flat_rank == 3
+    comptime assert gamma.flat_rank == 1
+    comptime assert is_gpu[
+        target
+    ](), "routed expert combine is only supported on GPU"
+
+    var seq_len = Int(output.dim(0))
+    var hidden_dim = Int(output.dim(1))
+    if Int(top_k_weights.dim(0)) != seq_len:
+        raise Error("top_k_weights and output must agree on seq_len")
+    if Int(down_output.dim(0)) != seq_len:
+        raise Error("down_output and output must agree on seq_len")
+    if Int(top_k_weights.dim(1)) != Int(down_output.dim(1)):
+        raise Error(
+            "top_k_weights and down_output must agree on routed experts"
+        )
+    if Int(down_output.dim(2)) != hidden_dim:
+        raise Error("down_output and output must agree on hidden_dim")
+    if Int(gamma.dim(0)) != hidden_dim:
+        raise Error("gamma and output must agree on hidden_dim")
+    if seq_len == 0 or hidden_dim == 0:
+        return
+
+    var gpu_ctx = context.get_device_context()
+    var routed_experts = Int(top_k_weights.dim(1))
+
+    @parameter
+    @always_inline
+    @__copy_capture(top_k_weights, down_output, routed_experts)
+    def combine_input_fn[
+        width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
+        comptime assert rank == 2, "expected [seq, hidden] output coordinates"
+
+        var accum = SIMD[DType.float32, width](0)
+        for expert_idx in range(routed_experts):
+            var weight = top_k_weights.load[width=1](
+                (Idx(idx[0]), Idx(expert_idx))
+            ).cast[DType.float32]()
+            var expert_vals = down_output.load[width=width](
+                Coord(Idx(idx[0]), Idx(expert_idx), Idx(idx[1]))
+            ).cast[DType.float32]()
+            accum += expert_vals * SIMD[DType.float32, width](weight)
+
+        return accum.cast[dtype]()
+
+    @parameter
+    @always_inline
+    @__copy_capture(output)
+    def output_fn[
+        width: Int, alignment: Int
+    ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
+        output.store[width=width](Coord(idx), val)
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.routed_expert_combine_then_rms_norm",
+        task_id=Int(gpu_ctx.id()),
+    ):
+        rms_norm_gpu[
+            combine_input_fn,
+            output_fn,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            IndexList[2](seq_len, hidden_dim),
+            gamma,
+            epsilon,
+            weight_offset,
+            gpu_ctx,
         )

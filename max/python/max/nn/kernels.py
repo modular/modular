@@ -422,7 +422,6 @@ def _fused_qkv_ragged_matmul_scaled_float8(
         scales_granularity_mnk = quant_config.scales_granularity_mnk
     else:
         # with out quant_config, we either use per-tensor or per-channel quantization
-        # both dynamic and static tensor wise quantization have weight shape [1, 1]
         if (
             input_scale.shape[0] == 1
             and input_scale.shape[1] == 1
@@ -3396,12 +3395,16 @@ def rms_norm_value_cache(
 def moe_create_indices(
     topk_ids: TensorValue,
     num_local_experts: int,
+    expected_count: int = 8192,
 ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
     """Creates indices for the MoE layer.
 
     Args:
         topk_ids: The expert assignments for each token from the router.
         num_local_experts: The number of experts on this device.
+        expected_count: Compile-time estimate for the maximum number of routed
+            tokens expected per expert before spilling from shared memory to
+            global memory in the GPU kernel.
 
     Returns:
         A tuple of five tensors:
@@ -3414,12 +3417,20 @@ def moe_create_indices(
         - expert_usage_stats: The maximum number of tokens assigned to any expert,
             and the number of active experts.
     """
+    if expected_count <= 0:
+        raise ValueError(
+            f"expected_count must be positive, got {expected_count}"
+        )
+
     results = ops.custom(
         "mo.moe.create.indices",
         device=topk_ids.device,
         values=[
             topk_ids,
         ],
+        parameters={
+            "expected_count": expected_count,
+        },
         out_types=[
             TensorType(
                 dtype=DType.uint32,
@@ -3534,6 +3545,118 @@ def moe_router_group_limited(
     )
 
     return (results[0].tensor, results[1].tensor)
+
+
+def routed_expert_combine(
+    top_k_weights: TensorValue,
+    down_output: TensorValue,
+) -> TensorValue:
+    """Combines routed expert outputs into the final `[seq_len, hidden_dim]`.
+
+    This custom op preserves Gemma4's float32 multiply-then-reduce numerics
+    without materializing graph-level chunk assembly tensors.
+    """
+    _validate_routed_expert_combine_inputs(top_k_weights, down_output)
+
+    return ops.custom(
+        "mo.routed.expert.combine",
+        device=down_output.device,
+        values=[top_k_weights, down_output],
+        out_types=[
+            TensorType(
+                dtype=down_output.dtype,
+                shape=[down_output.shape[0], down_output.shape[2]],
+                device=down_output.device,
+            )
+        ],
+    )[0].tensor
+
+
+def _validate_routed_expert_combine_inputs(
+    top_k_weights: TensorValue,
+    down_output: TensorValue,
+) -> None:
+    if top_k_weights.rank != 2:
+        raise ValueError(
+            f"expected top_k_weights of rank 2 but got {top_k_weights.rank}"
+        )
+    if down_output.rank != 3:
+        raise ValueError(
+            f"expected down_output of rank 3 but got {down_output.rank}"
+        )
+    if top_k_weights.dtype != down_output.dtype:
+        raise ValueError(
+            "top_k_weights and down_output must have the same dtype, got "
+            f"{top_k_weights.dtype} and {down_output.dtype}"
+        )
+    if top_k_weights.device != down_output.device:
+        raise ValueError(
+            "top_k_weights and down_output must be on the same device, got "
+            f"{top_k_weights.device} and {down_output.device}"
+        )
+    if top_k_weights.shape[0] != down_output.shape[0]:
+        raise ValueError(
+            "top_k_weights and down_output must agree on seq_len, got "
+            f"{top_k_weights.shape[0]} and {down_output.shape[0]}"
+        )
+    if top_k_weights.shape[1] != down_output.shape[1]:
+        raise ValueError(
+            "top_k_weights and down_output must agree on routed experts, got "
+            f"{top_k_weights.shape[1]} and {down_output.shape[1]}"
+        )
+
+
+def routed_expert_combine_then_rms_norm(
+    top_k_weights: TensorValue,
+    down_output: TensorValue,
+    gamma: TensorValue,
+    epsilon: float | np.floating[Any],
+    weight_offset: float | np.floating[Any] = 0.0,
+    multiply_before_cast: bool = True,
+) -> TensorValue:
+    """Fuses routed expert combine with the following weighted RMSNorm."""
+
+    _validate_routed_expert_combine_inputs(top_k_weights, down_output)
+
+    if gamma.rank != 1:
+        raise ValueError(f"expected gamma of rank 1 but got {gamma.rank}")
+    if gamma.dtype != down_output.dtype:
+        raise ValueError(
+            "gamma and down_output must have the same dtype, got "
+            f"{gamma.dtype} and {down_output.dtype}"
+        )
+    if gamma.device != down_output.device:
+        raise ValueError(
+            "gamma and down_output must be on the same device, got "
+            f"{gamma.device} and {down_output.device}"
+        )
+    if gamma.shape[0] != down_output.shape[2]:
+        raise ValueError(
+            "gamma and down_output must agree on hidden_dim, got "
+            f"{gamma.shape[0]} and {down_output.shape[2]}"
+        )
+
+    return ops.custom(
+        "mo.routed.expert.combine.then.rms_norm",
+        device=down_output.device,
+        values=[
+            top_k_weights,
+            down_output,
+            gamma,
+            ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
+            ops.constant(
+                weight_offset, gamma.dtype, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=down_output.dtype,
+                shape=[down_output.shape[0], down_output.shape[2]],
+                device=down_output.device,
+            )
+        ],
+        parameters={"multiply_before_cast": multiply_before_cast},
+    )[0].tensor
 
 
 def grouped_matmul_ragged(
@@ -4084,70 +4207,50 @@ def quantize_static_scaled_float8(
 
 
 def quantize_tensor_dynamic_scaled_float8(
-    input: TensorValue,
-    input_scale_spec: InputScaleSpec,
-    weight_scale_spec: WeightScaleSpec,
-    scale_ub: float = 1200.0,
-    group_size_or_per_token: int = -1,
+    x: TensorValue,
     out_type: DType = DType.float8_e4m3fn,
-    scales_type: DType = DType.bfloat16,
 ) -> tuple[TensorValue, TensorValue]:
     """Quantizes a rank-2 tensor to float8 using a dynamic per-tensor scale.
 
+    The scale is computed as ``max(|x|) / max_finite(out_type)`` over the full
+    tensor, written to a length-1 float32 tensor on the same
+    device as ``x``, then used to quantize ``x`` to FP8.
+
     Args:
-        input: The input tensor to quantize.
-        scale_ub: The upper bound of the scale factor.
-        group_size_or_per_token: The group size for quantization. When set to -1,
-            the quantization is column-wise.
-        out_type: The type of the output tensor.
-        scales_type: The type of the scales tensor.
+        x: Input tensor to quantize. Must be rank 2 with dtype ``float16``,
+            ``bfloat16``, or ``float32``. Must reside on a GPU device.
+        out_type: Output dtype. Defaults to ``DType.float8_e4m3fn``.
 
     Returns:
-        The quantized tensor and the scales.
+        A pair ``(quantized, scale)`` where ``quantized`` has the same shape as
+        ``x`` and dtype ``out_type``, and ``scale`` has shape ``[1]`` and dtype
+        ``float32`` on ``x.device`` holding the computed scale.
+
+    Raises:
+        ValueError: If ``x`` is not rank 2, ``x`` dtype is unsupported, or
+            ``out_type`` is not a supported float8 dtype.
     """
-    if input.rank != 2:
-        raise ValueError("input must be rank 2 tensor")
-
-    if out_type not in (DType.float8_e4m3fn,):
-        raise ValueError("out_type must be float8_e4m3fn")
-
-    if not isinstance(input.shape[1], StaticDim):
+    if x.dtype not in [DType.float16, DType.bfloat16, DType.float32]:
         raise ValueError(
-            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
+            f"expected input dtype to be float16, bfloat16, or float32, but got {x.dtype}"
         )
 
-    if not (input_scale_spec.is_tensor and weight_scale_spec.is_tensor):
-        raise ValueError(
-            "both input and weight must be tensor scaled for tensor scaling"
-        )
+    if x.rank != 2:
+        raise ValueError(f"expected input rank to be 2, but got {x.rank}")
 
-    if group_size_or_per_token != -1:
+    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
         raise ValueError(
-            "group_size_or_per_token should be -1 for dynamic tensor scaling so group_size == num_cols == input.shape[1]"
+            f"out_type must be float8_e4m3fn or float8_e4m3fnuz, but got {out_type}"
         )
 
     result = ops.custom(
         "mo.quantize_tensor_dynamic_scaled_float8",
-        device=input.device,
-        values=[
-            input,
-            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
-        ],
+        device=x.device,
+        values=[x],
         out_types=[
-            TensorType(
-                dtype=out_type,
-                shape=[input.shape[0], input.shape[1]],
-                device=input.device,
-            ),
-            TensorType(
-                dtype=scales_type,
-                shape=[1, input.shape[0]],
-                device=input.device,
-            ),
+            TensorType(dtype=out_type, shape=x.shape, device=x.device),
+            TensorType(dtype=DType.float32, shape=[1], device=x.device),
         ],
-        parameters={
-            "group_size_or_per_token": group_size_or_per_token,
-        },
     )
 
     return result[0].tensor, result[1].tensor
@@ -4346,22 +4449,16 @@ def dynamic_scaled_matmul(
         )
 
     if input_scale_spec.is_tensor and weight_scale_spec.is_tensor:
-        if input_scale_spec.origin.is_dynamic:
-            if not (b_scales.shape[0] == b_scales.shape[1] == 1):
-                raise ValueError(
-                    "scaler weight tensors must be of shape [1, 1] for dynamic tensor scaling"
-                )
-        else:
-            if not (
-                a_scales.shape[0]
-                == a_scales.shape[1]
-                == b_scales.shape[0]
-                == b_scales.shape[1]
-                == 1
-            ):
-                raise ValueError(
-                    "scaler tensors must be of shape [1, 1] for tensor scaling"
-                )
+        if not (
+            a_scales.shape[0]
+            == a_scales.shape[1]
+            == b_scales.shape[0]
+            == b_scales.shape[1]
+            == 1
+        ):
+            raise ValueError(
+                "scaler tensors must be of shape [1, 1] for tensor scaling"
+            )
 
     elif input_scale_spec.is_colwise and weight_scale_spec.is_rowwise:
         if a_scales.shape[0] != 1:

@@ -22,7 +22,7 @@ from nn.moe import moe_create_indices, router_group_limited
 
 
 def bench_moe_create_indices[
-    num_tokens: Int, num_experts: Int
+    num_tokens: Int, num_experts: Int, expected_count: Int
 ](ctx: DeviceContext, mut b: Bench) raises:
     var topk_h = ctx.enqueue_create_host_buffer[DType.uint32](num_tokens)
     for i in range(num_tokens):
@@ -73,7 +73,11 @@ def bench_moe_create_indices[
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            moe_create_indices[input_type=DType.uint32, target="gpu"](
+            moe_create_indices[
+                input_type=DType.uint32,
+                target="gpu",
+                expected_count=expected_count,
+            ](
                 token_expert_order,
                 expert_start_indices,
                 restore_token_order,
@@ -213,10 +217,13 @@ def main() raises:
     comptime n_experts_per_tok = get_defined_int["n_experts_per_tok", 8]()
     comptime n_groups = get_defined_int["n_groups", 8]()
     comptime topk_group = get_defined_int["topk_group", 4]()
+    comptime expected_count = get_defined_int["expected_count", 8192]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
-        bench_moe_create_indices[num_tokens, num_experts](ctx, m)
+        bench_moe_create_indices[num_tokens, num_experts, expected_count](
+            ctx, m
+        )
         bench_router_group_limited[
             num_tokens, num_experts, n_experts_per_tok, n_groups, topk_group
         ](ctx, m)
