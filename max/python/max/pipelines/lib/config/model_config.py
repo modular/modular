@@ -32,6 +32,7 @@ from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.device_specs import coerce_device_specs_input
 from max.pipelines.lib.hf_utils import (
     HuggingFaceRepo,
+    download_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
@@ -1292,6 +1293,30 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"Unexpected repository type encountered: {repo.repo_type}"
             )
             return None
+
+    def resolved_weight_paths(self) -> list[Path]:
+        """Resolve weight paths to absolute local paths, downloading if needed.
+
+        For online repos, downloads weight files from HuggingFace Hub.
+        For local repos, constructs absolute paths from the repo root.
+
+        Returns:
+            Absolute paths to weight files on disk.
+        """
+        if not self.weight_path:
+            return []
+
+        weight_repo = self.huggingface_weight_repo
+        if weight_repo.repo_type == "online":
+            return download_weight_files(
+                huggingface_model_id=weight_repo.repo_id,
+                filenames=[str(x) for x in self.weight_path],
+                revision=self.huggingface_weight_revision,
+                force_download=self.force_download,
+            )
+        else:
+            local_path = Path(weight_repo.repo_id)
+            return [local_path / x for x in self.weight_path]
 
     @property
     def default_device_spec(self) -> DeviceSpec:

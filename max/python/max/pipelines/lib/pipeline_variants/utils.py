@@ -16,8 +16,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
@@ -28,11 +26,6 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from transformers import AutoConfig
-
-from ..hf_utils import download_weight_files
-
-if TYPE_CHECKING:
-    from ..config.model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -175,27 +168,3 @@ def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
         msg = f"eos_token_id in huggingface_config is neither int or list: {hf_eos_tokens}"
         logger.warning(msg)
         return set([eos_token_id])
-
-
-def get_weight_paths(model_config: MAXModelConfig) -> list[Path]:
-    """Resolves local paths or downloads weight files for the model config.
-
-    Args:
-        model_config: Model configuration containing weight repo and paths.
-
-    Returns:
-        List of paths to weight files (local or downloaded).
-    """
-    weight_repo = model_config.huggingface_weight_repo
-    if weight_repo.repo_type == "online":
-        # Download weight files if not existent.
-        return download_weight_files(
-            huggingface_model_id=weight_repo.repo_id,
-            filenames=[str(x) for x in model_config.weight_path],
-            revision=model_config.huggingface_weight_revision,
-            force_download=model_config.force_download,
-        )
-    else:
-        # Use the resolved repo_id (which points to local cache in offline mode)
-        local_path = Path(weight_repo.repo_id)
-        return [local_path / x for x in model_config.weight_path]

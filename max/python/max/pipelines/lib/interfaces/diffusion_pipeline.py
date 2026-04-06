@@ -255,22 +255,7 @@ class DiffusionPipeline(ABC):
         ``weight_path`` and ``huggingface_weight_repo`` resolved after
         ``ModelManifest.resolve()``).
         """
-        from ..hf_utils import download_weight_files
-
-        weight_repo = component_config.huggingface_weight_repo
-        if not component_config.weight_path:
-            return []
-
-        if weight_repo.repo_type == "online":
-            return download_weight_files(
-                huggingface_model_id=weight_repo.repo_id,
-                filenames=[str(x) for x in component_config.weight_path],
-                revision=component_config.huggingface_weight_revision,
-                force_download=component_config.force_download,
-            )
-        else:
-            local_path = Path(weight_repo.repo_id)
-            return [local_path / x for x in component_config.weight_path]
+        return component_config.resolved_weight_paths()
 
     # -----------------------------------------------------------------
     # Denoising cache support (FBCache + TaylorSeer)

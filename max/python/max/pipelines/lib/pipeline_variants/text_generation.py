@@ -64,7 +64,6 @@ from transformers import PreTrainedTokenizerFast
 from .utils import (
     calculate_num_steps,
     get_eos_tokens,
-    get_weight_paths,
     update_context_and_prepare_responses,
 )
 
@@ -206,7 +205,7 @@ class TextGenerationPipeline(
             raise ValueError("quantization_encoding must not be None")
 
         # Retrieve the weights repo id (falls back to model_path when unset).
-        weight_paths: list[Path] = get_weight_paths(model_config)
+        weight_paths: list[Path] = model_config.resolved_weight_paths()
 
         if not issubclass(pipeline_model, PipelineModelWithKVCache):
             raise ValueError(

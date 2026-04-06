@@ -35,7 +35,6 @@ from max.pipelines.architectures.kimik2_5.context import (
 )
 from max.pipelines.lib import CompilationTimer, ModelInputs
 from max.pipelines.lib.interfaces import UnifiedEagleOutputs
-from max.pipelines.lib.pipeline_variants.utils import get_weight_paths
 from typing_extensions import override
 
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -169,7 +168,7 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
         assert self.pipeline_config.draft_model is not None
         draft_model_config = self.pipeline_config.draft_model
-        draft_weight_paths = get_weight_paths(draft_model_config)
+        draft_weight_paths = draft_model_config.resolved_weight_paths()
         draft_weights = load_weights(draft_weight_paths)
 
         draft_state_dict = convert_eagle3_draft_state_dict(

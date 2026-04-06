@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 
 from max.support.algorithm import flatten2d
 
-from .hf_utils import download_weight_files
 from .interfaces import PipelineModel
 
 logger = logging.getLogger("max.pipelines")
@@ -81,16 +80,8 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         if not self._pipeline_config.model.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
-        # Download weight files if not existent
-        weight_model_id = self._pipeline_config.model.huggingface_weight_repo_id
-
-        # Download weight files.
-        weight_paths = download_weight_files(
-            huggingface_model_id=weight_model_id,
-            filenames=[str(x) for x in self._pipeline_config.model.weight_path],
-            revision=self._pipeline_config.model.huggingface_weight_revision,
-            force_download=self._pipeline_config.model.force_download,
-        )
+        # Resolve weight paths (downloads from HF if needed).
+        weight_paths = self._pipeline_config.model.resolved_weight_paths()
 
         # Load weights
         weights = load_weights(weight_paths)
