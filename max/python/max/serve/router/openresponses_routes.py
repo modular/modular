@@ -191,6 +191,8 @@ async def _persist_generated_media(
     ):
         video_response_format = video_options.response_format
         video_content = final_output.output[0]
+        frames = video_content.frames
+        assert frames is not None
 
         # Return the video content as a base64-encoded string
         if video_response_format == GeneratedMediaResponseFormat.b64_json:
@@ -206,7 +208,7 @@ async def _persist_generated_media(
                             format="mp4",
                             frames_per_second=video_options.frames_per_second
                             or 16,
-                            num_frames=video_content.frames.shape[0],
+                            num_frames=frames.shape[0],
                             frames=None,
                         )
                     ]
@@ -231,7 +233,7 @@ async def _persist_generated_media(
                         video_url=video_url,
                         format="mp4",
                         frames_per_second=video_options.frames_per_second or 16,
-                        num_frames=video_content.frames.shape[0],
+                        num_frames=frames.shape[0],
                         frames=None,
                     )
                 ]
