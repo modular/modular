@@ -46,6 +46,9 @@ from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..deepseekV3.model_config import DeepseekV3Config
+from ..unified_mtp_deepseekV3.unified_mtp_deepseekV3 import (
+    compute_host_merged_offsets,
+)
 from .eagle3_kimi_k25 import Eagle3KimiK25
 
 
@@ -89,8 +92,8 @@ class Eagle3KimiK25Unified(Module):
             tokens, input_row_offsets, draft_tokens
         )
 
-        host_merged_offsets = merged_offsets.cast(DType.uint32).to(
-            DeviceRef.CPU()
+        host_merged_offsets = compute_host_merged_offsets(
+            host_input_row_offsets, draft_tokens
         )
 
         target_outputs = self.target(

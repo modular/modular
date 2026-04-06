@@ -50,6 +50,31 @@ from ..deepseekV3_nextn.deepseekV3_nextn import DeepseekV3NextN
 from ..deepseekV3_nextn.model_config import DeepseekV3NextNConfig
 
 
+def compute_host_merged_offsets(
+    host_input_row_offsets: TensorValue,
+    draft_tokens: TensorValue,
+) -> TensorValue:
+    """Computes merged offsets on CPU, avoiding D2H copies.
+
+    merged_offsets[i] = host_input_row_offsets[i] + i * K where K is the
+    number of draft tokens per request. This mirrors the GPU-side merger
+    logic but stays on CPU so CUDA graph capture is not blocked by a
+    device-to-host transfer.
+    """
+    K = ops.shape_to_tensor([draft_tokens.shape[1]])[0].cast(DType.uint32)
+    batch_size_plus_one = ops.shape_to_tensor(
+        [host_input_row_offsets.shape[0]]
+    )[0]
+    indices = ops.range(
+        start=0,
+        stop=batch_size_plus_one,
+        out_dim=host_input_row_offsets.shape[0],
+        device=DeviceRef.CPU(),
+        dtype=DType.uint32,
+    )
+    return host_input_row_offsets + indices * K
+
+
 class UnifiedMTPDeepseekV3(Module):
     """Fused nn.Module: merge + target forward + greedy rejection + shift.
 
@@ -89,8 +114,8 @@ class UnifiedMTPDeepseekV3(Module):
             tokens, input_row_offsets, draft_tokens
         )
 
-        host_merged_offsets = merged_offsets.cast(DType.uint32).to(
-            DeviceRef.CPU()
+        host_merged_offsets = compute_host_merged_offsets(
+            host_input_row_offsets, draft_tokens
         )
 
         target_outputs = self.target(
@@ -128,10 +153,6 @@ class UnifiedMTPDeepseekV3(Module):
             corrected_merged,
             corrected_offsets,
             bonus.reshape((-1,)),
-        )
-
-        host_merged_offsets = merged_offsets.cast(DType.uint32).to(
-            DeviceRef.CPU()
         )
 
         assert draft_kv_collections is not None
