@@ -26,6 +26,7 @@ from .cache_mixin import (
 )
 from .component_model import ComponentModel
 from .diffusion_pipeline import DiffusionPipeline, DiffusionPipelineOutput
+from .first_block_cache import FirstBlockCache, FirstBlockCacheState
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
@@ -49,6 +50,8 @@ __all__ = [
     "DenoisingCacheState",
     "DiffusionPipeline",
     "DiffusionPipelineOutput",
+    "FirstBlockCache",
+    "FirstBlockCacheState",
     "GenerateMixin",
     "ModelInputs",
     "ModelOutputs",

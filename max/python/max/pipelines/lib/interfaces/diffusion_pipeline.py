@@ -37,6 +37,7 @@ from max.interfaces import PixelGenerationContext
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from tqdm import tqdm
 
+from .first_block_cache import FirstBlockCache
 from .taylorseer import TaylorSeer
 
 if TYPE_CHECKING:
@@ -263,6 +264,7 @@ class DiffusionPipeline(ABC):
     # -----------------------------------------------------------------
 
     _taylorseer: TaylorSeer | None = None
+    _fbc: FirstBlockCache | None = None
     _cache_dtype: DType
     _cache_device: Device
 
@@ -280,6 +282,10 @@ class DiffusionPipeline(ABC):
                 dtype=dtype,
                 device=device,
             )
+
+        self._fbc = None
+        if self.cache_config.first_block_caching:
+            self._fbc = FirstBlockCache(dtype=dtype, device=device)
 
         self._cache_dtype = dtype
         self._cache_device = device
@@ -338,10 +344,12 @@ class DiffusionPipeline(ABC):
             )
 
         if self.cache_config.first_block_caching:
-            state.prev_residual = _device_zeros(
-                (batch_size, seq_len, residual_dim)
+            assert self._fbc is not None
+            fbc_state = self._fbc.create_state(
+                batch_size, seq_len, residual_dim, output_dim
             )
-            state.prev_output = _device_zeros((batch_size, seq_len, output_dim))
+            state.prev_residual = fbc_state.prev_residual
+            state.prev_output = fbc_state.prev_output
 
         if self.cache_config.taylorseer:
             assert self._taylorseer is not None
