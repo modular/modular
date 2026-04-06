@@ -131,10 +131,10 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
   if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
     if (TypedAttr folded = LIT::foldDowncastToStructType(downcast))
       return folded;
-    auto fromType = ASTType(downcast.getInputTypeValue());
     // If we are downcasting a more-refined trait to a less-refined trait, use
     // the more refined trait.
     if (TraitType toTrait = sugarDynCast<TraitType>(downcast.getType())) {
+      auto fromType = ASTType(downcast.getInputTypeValue());
       bool fromImpliesTo = fromType.checkConformance(toTrait, shared, {}) ==
                            ConformanceResult::Yes;
       if (fromImpliesTo)

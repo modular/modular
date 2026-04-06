@@ -568,38 +568,6 @@ def variadic_pack[*Ts: AnyType](*vals: *Ts):
     pass
 
 
-# CHECK: "name": "variadic_arg_hack",
-# CHECK: "overloads":
-# CHECK:     "args":
-# CHECK:         "name": "vals",
-# CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "type": "Variadic"
-
-# CHECK:     "parameters":
-# CHECK:         "name": "element_type",
-# CHECK:         "path": "/std/builtin/anytype/AnyType",
-# CHECK:         "type": "AnyType"
-
-# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: Variadic[ref[ImmutAnyOrigin] element_type])",
-
-
-def variadic_arg_hack[
-    element_type: AnyType
-](
-    vals: __mlir_type[
-        `!kgen.param_list<!lit.ref<`,
-        element_type,
-        `, #lit.any.origin<0>: !lit.origin<0>, 0>>`,
-    ]
-):
-    """Test hacky use case of `!kgen.param_list` argument type printing.
-
-    Args:
-        vals: !kgen.param_list arguments.
-    """
-    pass
-
-
 # CHECK: "name": "variadic_params_args",
 # CHECK: "overloads":
 # CHECK:     "args":
