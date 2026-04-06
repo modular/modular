@@ -61,6 +61,8 @@ from std.utils.numerics import get_accum_type
 from .._utils import (
     to_i16,
     to_i32,
+    to_i64,
+    to_llvm_global_mem_ptr,
     to_llvm_ptr,
     to_llvm_shared_mem_ptr,
     to_llvm_shared_cluster_mem_ptr,
@@ -972,6 +974,199 @@ def fence_mbarrier_init():
     synchronization semantics.
     """
     __mlir_op.`nvvm.fence.mbarrier.init`[_type=None]()
+
+
+# ===-----------------------------------------------------------------------===#
+# cp.async.bulk (1D, non-tensor)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+def cp_async_bulk_shared_cta_global[
+    dst_type: AnyType,
+    src_type: AnyType,
+    mbr_type: AnyType,
+    /,
+    *,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[
+        mut=True, dst_type, _, address_space=AddressSpace.SHARED
+    ],
+    src_mem: UnsafePointer[src_type, ...],
+    size: Int32,
+    mem_bar: UnsafePointer[
+        mut=True, mbr_type, _, address_space=AddressSpace.SHARED
+    ],
+):
+    """Initiates an asynchronous bulk copy from global memory to shared CTA
+    memory.
+
+    Performs a non-blocking copy of `size` bytes from global memory to shared
+    memory using the `cp.async.bulk` PTX instruction. Completion is signaled
+    via the mbarrier specified by `mem_bar`.
+
+    Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
+    multiple of 16. Requires sm_90 or higher.
+
+    Parameters:
+        dst_type: The element type of the destination shared memory.
+        src_type: The element type of the source global memory.
+        mbr_type: The element type of the mbarrier object in shared memory.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        dst_mem: Destination pointer in shared CTA memory (16-byte aligned).
+        src_mem: Source pointer in global or generic memory (16-byte aligned).
+        size: Number of bytes to copy (must be a multiple of 16).
+        mem_bar: Pointer to the mbarrier object in shared memory used to
+            signal completion.
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert src_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "src_mem must be in GLOBAL or GENERIC address space"
+
+    var src_global = src_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime if cache_hint:
+        __mlir_op.`nvvm.cp.async.bulk.shared.cluster.global`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1>}`,
+        ](
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_global_mem_ptr(src_global),
+            to_llvm_shared_mem_ptr(mem_bar),
+            to_i32(size),
+            to_i64(Int64(Int(_mark_eviction[eviction_policy]()))),
+        )
+    else:
+        __mlir_op.`nvvm.cp.async.bulk.shared.cluster.global`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0>}`,
+        ](
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_global_mem_ptr(src_global),
+            to_llvm_shared_mem_ptr(mem_bar),
+            to_i32(size),
+        )
+
+
+@always_inline("nodebug")
+def cp_async_bulk_global_shared_cta[
+    dst_type: AnyType,
+    src_type: AnyType,
+    /,
+    *,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[mut=True, dst_type, ...],
+    src_mem: UnsafePointer[src_type, _, address_space=AddressSpace.SHARED],
+    size: Int32,
+):
+    """Initiates an asynchronous bulk copy from shared CTA memory to global
+    memory.
+
+    Performs a non-blocking copy of `size` bytes from shared memory to global
+    memory using the `cp.async.bulk` PTX instruction with the `.bulk_group`
+    completion mechanism. Use `cp_async_bulk_commit_group` and
+    `cp_async_bulk_wait_group` from `std.gpu.sync` to synchronize.
+
+    Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
+    multiple of 16. Requires sm_90 or higher.
+
+    Parameters:
+        dst_type: The element type of the destination global memory.
+        src_type: The element type of the source shared memory.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        dst_mem: Destination pointer in global or generic memory (16-byte
+            aligned).
+        src_mem: Source pointer in shared CTA memory (16-byte aligned).
+        size: Number of bytes to copy (must be a multiple of 16).
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert dst_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "dst_mem must be in GLOBAL or GENERIC address space"
+
+    var dst_global = dst_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime if cache_hint:
+        __mlir_op.`nvvm.cp.async.bulk.global.shared.cta`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0>}`,
+        ](
+            to_llvm_global_mem_ptr(dst_global),
+            to_llvm_shared_mem_ptr(src_mem),
+            to_i32(size),
+            to_i64(Int64(Int(_mark_eviction[eviction_policy]()))),
+        )
+    else:
+        __mlir_op.`nvvm.cp.async.bulk.global.shared.cta`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,0,0>}`,
+        ](
+            to_llvm_global_mem_ptr(dst_global),
+            to_llvm_shared_mem_ptr(src_mem),
+            to_i32(size),
+        )
+
+
+@always_inline("nodebug")
+def cp_async_bulk_prefetch[
+    src_type: AnyType,
+    /,
+    *,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](src_mem: UnsafePointer[src_type, ...], size: Int32):
+    """Initiates an asynchronous prefetch from global memory to L2 cache.
+
+    Performs a non-blocking prefetch of `size` bytes from global memory into
+    the L2 cache. This is a hint to the memory subsystem and does not
+    guarantee the data will be in cache when accessed.
+
+    `src_mem` must be 16-byte aligned and `size` must be a multiple of 16.
+    Requires sm_90 or higher.
+
+    Parameters:
+        src_type: The element type of the source global memory.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        src_mem: Source pointer in global or generic memory (16-byte aligned).
+        size: Number of bytes to prefetch (must be a multiple of 16).
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert src_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "src_mem must be in GLOBAL or GENERIC address space"
+
+    var src_global = src_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime if cache_hint:
+        __mlir_op.`nvvm.cp.async.bulk.prefetch`(
+            to_llvm_global_mem_ptr(src_global),
+            to_i32(size),
+            to_i64(Int64(Int(_mark_eviction[eviction_policy]()))),
+        )
+    else:
+        __mlir_op.`nvvm.cp.async.bulk.prefetch`(
+            to_llvm_global_mem_ptr(src_global),
+            to_i32(size),
+        )
 
 
 @always_inline("nodebug")
