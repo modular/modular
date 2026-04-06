@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import random_float64
-from std.sys import get_defined_dtype
+from std.sys import get_defined_bool, get_defined_dtype
+from std.sys.info import align_of
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, Idx, TileTensor, row_major
-from nn.normalization import layer_norm_gpu, rms_norm_gpu
+from nn.normalization import layer_norm_gpu, rms_norm
 
 from std.utils.index import Index, IndexList
 
@@ -64,8 +65,46 @@ def bench_layer_norm_gpu[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
+        comptime a = align_of[SIMD[dtype, width]]()
+        return data_buf.ptr.load[width=width, alignment=a](idx)
 
-        return data_buf.ptr.load[width=width](idx)
+    @__copy_capture(data_buf, cols)
+    @always_inline
+    @parameter
+    def input_pair_fn_rank2_direct[
+        width: Int
+    ](
+        row: Int, col0: Int, col1: Int
+    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        var row_offset = row * cols
+        return (
+            data_buf.ptr.load[width=width, alignment=a](row_offset + col0),
+            data_buf.ptr.load[width=width, alignment=a](row_offset + col1),
+        )
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def input_fn_flat_direct[
+        width: Int
+    ](flat: Int) -> SIMD[dtype, width]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        return data_buf.ptr.load[width=width, alignment=a](flat)
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def input_pair_fn_flat_direct[
+        width: Int
+    ](
+        flat0: Int, flat1: Int
+    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        return (
+            data_buf.ptr.load[width=width, alignment=a](flat0),
+            data_buf.ptr.load[width=width, alignment=a](flat1),
+        )
 
     @__copy_capture(gamma)
     @always_inline
@@ -153,17 +192,74 @@ def bench_rms_norm_gpu[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
+        comptime a = align_of[SIMD[dtype, width]]()
+        return data_buf.ptr.load[width=width, alignment=a](idx)
 
-        return data_buf.ptr.load[width=width](idx)
+    @__copy_capture(data_buf, cols)
+    @always_inline
+    @parameter
+    def input_pair_fn_rank2_direct[
+        width: Int
+    ](
+        row: Int, col0: Int, col1: Int
+    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        var row_offset = row * cols
+        return (
+            data_buf.ptr.load[width=width, alignment=a](row_offset + col0),
+            data_buf.ptr.load[width=width, alignment=a](row_offset + col1),
+        )
 
     @always_inline
     @__copy_capture(data_buf)
     @parameter
-    def identity_output_fn[
-        width: Int, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
+    def input_fn_flat_direct[
+        width: Int
+    ](flat: Int) -> SIMD[dtype, width]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        return data_buf.ptr.load[width=width, alignment=a](flat)
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def input_pair_fn_flat_direct[
+        width: Int
+    ](
+        flat0: Int, flat1: Int
+    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        return (
+            data_buf.ptr.load[width=width, alignment=a](flat0),
+            data_buf.ptr.load[width=width, alignment=a](flat1),
+        )
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def identity_output_fn_ranked[
+        width: Int, _rank: Int, alignment: Int
+    ](coords: IndexList[_rank], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))
         data_buf.ptr.store[width=width, alignment=alignment](idx, val)
+
+    @always_inline
+    @__copy_capture(data_buf, cols)
+    @parameter
+    def output_fn_rank2_direct[
+        width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, width]) -> None:
+        var row_offset = row * cols
+        data_buf.ptr.store[width=width, alignment=alignment](
+            row_offset + col, val
+        )
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def output_fn_flat_direct[
+        width: Int, alignment: Int
+    ](flat: Int, val: SIMD[dtype, width]) -> None:
+        data_buf.ptr.store[width=width, alignment=alignment](flat, val)
 
     @always_inline
     @__copy_capture(shape, gamma, epsilon, weight_offset)
@@ -172,9 +268,53 @@ def bench_rms_norm_gpu[
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            rms_norm_gpu[
-                input_fn, identity_output_fn, multiply_before_cast=True
-            ](shape, gamma, epsilon, weight_offset, ctx)
+            comptime if get_defined_bool[
+                "disable_public_direct_io", False
+            ]():
+                rms_norm[
+                    dtype,
+                    rank,
+                    input_fn,
+                    identity_output_fn_ranked,
+                    target="gpu",
+                    multiply_before_cast=True,
+                ](shape, gamma, epsilon, weight_offset, ctx)
+            elif get_defined_bool["pair_flat_only_public_direct_io", False]():
+                rms_norm[
+                    dtype,
+                    rank,
+                    input_fn,
+                    identity_output_fn_ranked,
+                    target="gpu",
+                    multiply_before_cast=True,
+                    input_pair_fn_flat_direct=input_pair_fn_flat_direct,
+                    output_fn_flat_direct=output_fn_flat_direct,
+                ](shape, gamma, epsilon, weight_offset, ctx)
+            elif get_defined_bool["rank2_only_public_direct_io", False]():
+                rms_norm[
+                    dtype,
+                    rank,
+                    input_fn,
+                    identity_output_fn_ranked,
+                    target="gpu",
+                    multiply_before_cast=True,
+                    input_pair_fn_rank2_direct=input_pair_fn_rank2_direct,
+                    output_fn_rank2_direct=output_fn_rank2_direct,
+                ](shape, gamma, epsilon, weight_offset, ctx)
+            else:
+                rms_norm[
+                    dtype,
+                    rank,
+                    input_fn,
+                    identity_output_fn_ranked,
+                    target="gpu",
+                    multiply_before_cast=True,
+                    input_pair_fn_rank2_direct=input_pair_fn_rank2_direct,
+                    output_fn_rank2_direct=output_fn_rank2_direct,
+                    input_fn_flat_direct=input_fn_flat_direct,
+                    input_pair_fn_flat_direct=input_pair_fn_flat_direct,
+                    output_fn_flat_direct=output_fn_flat_direct,
+                ](shape, gamma, epsilon, weight_offset, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -197,12 +337,34 @@ def main() raises:
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "256x256"]()
     ]()
+    comptime disable_public_direct_io = get_defined_bool[
+        "disable_public_direct_io", False
+    ]()
+    comptime pair_flat_only_public_direct_io = get_defined_bool[
+        "pair_flat_only_public_direct_io", False
+    ]()
+    comptime rank2_only_public_direct_io = get_defined_bool[
+        "rank2_only_public_direct_io", False
+    ]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
         comptime if len(shape) == 2:
             bench_layer_norm_gpu[dtype, shape](ctx, m, "layer_norm_gpu")
         elif len(shape) == 3:
-            bench_rms_norm_gpu[dtype, shape](ctx, m, "rms_norm_gpu")
+            comptime if disable_public_direct_io:
+                bench_rms_norm_gpu[
+                    dtype, shape
+                ](ctx, m, "rms_norm_gpu_no_public_direct_io")
+            elif pair_flat_only_public_direct_io:
+                bench_rms_norm_gpu[
+                    dtype, shape
+                ](ctx, m, "rms_norm_gpu_pair_flat_only_public_direct_io")
+            elif rank2_only_public_direct_io:
+                bench_rms_norm_gpu[
+                    dtype, shape
+                ](ctx, m, "rms_norm_gpu_rank2_only_public_direct_io")
+            else:
+                bench_rms_norm_gpu[dtype, shape](ctx, m, "rms_norm_gpu")
 
     m.dump_report()

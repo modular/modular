@@ -262,6 +262,9 @@ def main() raises:
         run_rms_norm_fused_residual_add_gpu[DType.bfloat16](
             ctx, Index(2, 16385)
         )
+        run_rms_norm_fused_residual_add_gpu[DType.bfloat16](
+            ctx, Index(1, 4096, 4096), rtol=2e-2
+        )
 
         # TODO(KERN-1951): the following fails with CUDA_ERROR_INVALID_VALUE, not sure why
         # run_rms_norm_fused_residual_add_gpu[DType.float32](ctx, Index(2, 16384))
