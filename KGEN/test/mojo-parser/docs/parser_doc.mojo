@@ -95,3 +95,32 @@ struct StructWithExamples:
         ```
         """
         pass
+
+
+# MOTO-1120: Summaries ending with '!' or '?' should pass validation.
+struct StructWithExclamationSummary:
+    """This struct has an exciting summary!"""
+
+    pass
+
+
+struct StructWithQuestionSummary:
+    """Does this struct have a valid summary?"""
+
+    pass
+
+
+# MOTO-1120: '!' and '?' should also be valid in section bodies and arg descriptions.
+def fn_with_punctuated_sections(arg: Int) raises -> Int:
+    """Tests non-period terminators in section bodies.
+
+    Args:
+        arg: Pass any integer here!
+
+    Returns:
+        Did you really need to ask?
+
+    Raises:
+        Basically never!
+    """
+    pass
