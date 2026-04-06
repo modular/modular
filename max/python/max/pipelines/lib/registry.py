@@ -737,6 +737,16 @@ class PipelineRegistry:
 
             # Use the first component's config for model_path and revision.
             first_config = next(iter(pipeline_config.models.values()))
+
+            # Determine tokenizer max_length based on pipeline type.
+            # Default to arch_config.get_max_seq_len(); override per-arch as needed.
+            if arch.name in {
+                "QwenImagePipeline",
+                "QwenImageEditPipeline",
+                "QwenImageEditPlusPipeline",
+            }:
+                # QwenImage uses Qwen2 tokenizer with chat template (34 prefix tokens)
+                max_length = 1024 + 34
             tokenizer_kwargs = {
                 "model_path": first_config.model_path,
                 "pipeline_config": pipeline_config,
