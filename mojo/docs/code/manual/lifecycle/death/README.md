@@ -1,4 +1,6 @@
-This directory contains code examples for the
+# Code examples and tests for death of a value
+
+This directory contains Code examples and tests for the
 [Death of a value](../../../../../docs/manual/lifecycle/death.mdx) section of
 the Mojo Manual.
 

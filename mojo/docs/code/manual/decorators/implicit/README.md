@@ -1,4 +1,6 @@
-This directory contains code examples for the
+# Code examples and tests for the implicit decorator
+
+This directory contains Code examples and tests for the
 [@implicit decorator](../../../../../docs/manual/gpu/fundamentals.mdx)
 reference page.
 

@@ -491,14 +491,14 @@ def consume_and_use():
     # balloons.__del__() runs here (and only if the object is whole)
 ```
 
-Notice that the code transfers ownership of the `name` field to `consume()`.
-For a period of time after that, the `name` field is uninitialized.
-Then `name` is reinitialized before it is passed to the `use()` function. If you
-try calling `use()` before `name` is re-initialized, Mojo rejects the code
-with an uninitialized field error.
+Notice that the code transfers ownership of the `color` field to `consume()`.
+For a period of time after that, the `color` field is uninitialized. Then
+`color` is reinitialized before it is passed to the `use()` function. If you try
+calling `use()` before `color` is re-initialized, Mojo rejects the code with an
+uninitialized field error.
 
-Also, if you don't re-initialize the name by the end of the `pet` lifetime, the
-compiler complains because it's unable to destroy a partially initialized
+Also, if you don't re-initialize `color` by the end of the `balloons` lifetime,
+the compiler complains because it's unable to destroy a partially initialized
 object.
 
 Mojo's policy here is powerful and intentionally straight-forward: fields can

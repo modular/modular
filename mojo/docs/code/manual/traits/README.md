@@ -1,4 +1,6 @@
-This directory contains code examples for the
+# Code examples and tests for traits
+
+This directory contains Code examples and tests for the
 [Traits](../../../../docs/manual/traits.mdx) section of the Mojo
 Manual.
 

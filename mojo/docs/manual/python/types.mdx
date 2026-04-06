@@ -25,7 +25,7 @@ from std.python import Python
 
 def main() raises:
     py_module = """
-def type_printer(value) raises:
+def type_printer(value):
     print(type(value))
 """
     py_utils = Python.evaluate(py_module, file=True, name="py_utils")

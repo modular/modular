@@ -1,4 +1,6 @@
-This directory contains code examples for the
+# Code examples and tests for "deprecated" decorator
+
+This directory contains Code examples and tests for the
 [Deprecated](../../../../../docs/manual/decorators/deprecated.mdx)
 section of the Mojo Manual.
 
