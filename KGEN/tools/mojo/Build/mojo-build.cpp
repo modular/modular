@@ -290,8 +290,8 @@ static int printEffectiveTarget(TargetInfoAttr targetInfo) {
 static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
                                     CompilationOptions &compilationOptions,
-                                    MLIRContext &ctx, TargetInfoAttr &target) {
-  BuildOptTable options;
+                                    MLIRContext &ctx, TargetInfoAttr &target,
+                                    BuildOptTable &options) {
 
   // First, parse arguments to check for help flags.
   // We need to do this separately because help text is command-specific.
@@ -880,6 +880,7 @@ static int linkOutput(OutputType outputType, const State &state,
 /// failure code.
 static int build(const State &subcommandState) {
   CompilationOptions options;
+  BuildOptTable optTable;
 
   // Parse arguments.
   State state = subcommandState;
@@ -888,7 +889,7 @@ static int build(const State &subcommandState) {
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceMgr;
   if (std::optional<int> exitCode =
-          parseArgs(state, args, sourceMgr, options, mlirCtx, target))
+          parseArgs(state, args, sourceMgr, options, mlirCtx, target, optTable))
     return *exitCode;
 
 #ifdef KGEN_ENABLE_PASS_OPTIONS
