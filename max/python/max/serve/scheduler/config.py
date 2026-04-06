@@ -42,7 +42,7 @@ class TokenGenerationSchedulerConfig:
     """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
     each batch contains exactly `target_tokens_per_batch_ce` tokens."""
 
-    enable_in_flight_batching: bool = True
+    enable_in_flight_batching: bool = False
     """When enabled, prioritizes token generation by batching it with context encoding requests."""
 
     data_parallel_degree: int = 1
