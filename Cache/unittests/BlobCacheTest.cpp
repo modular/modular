@@ -8,6 +8,7 @@
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/FileSystemExtras.h"
@@ -50,7 +51,7 @@ protected:
 
   BlobCacheTest()
       : tempDir(createTempDir()),
-        runtime(createRuntime(
+        runtime(getOrCreateRuntime(
             AsyncRT::RuntimeSource::Test,
             AsyncRT::RuntimeOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
@@ -429,9 +430,10 @@ static AsyncRT::EncodedLocation unknownLoc() {
 }
 
 static AsyncRT::RuntimeRef makeRuntime() {
-  return AsyncRT::createRuntime(
-      AsyncRT::RuntimeSource::Test,
-      AsyncRT::RuntimeOptions().withLeakCheckedAllocator());
+  return AsyncRT::getOrCreateRuntime(AsyncRT::RuntimeSource::Test,
+                                     AsyncRT::RuntimeOptions()
+                                         .withLeakCheckedAllocator()
+                                         .withMainWillNotDonate());
 }
 
 TEST(FilesystemBackend, Hammer) {
