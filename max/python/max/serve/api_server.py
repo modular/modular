@@ -128,7 +128,12 @@ async def lifespan(
                 tempfile.TemporaryDirectory(prefix="max_serve_media_")
             )
         )
-        app.state.media_store = GeneratedMediaStore(media_root)
+        app.state.media_store = GeneratedMediaStore(
+            media_root,
+            max_storage_bytes=(
+                settings.generated_media_storage_mb * 1024 * 1024
+            ),
+        )
 
         # start telemetry worker and configure Metrics to use it
 
