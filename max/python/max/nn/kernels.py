@@ -422,7 +422,6 @@ def _fused_qkv_ragged_matmul_scaled_float8(
         scales_granularity_mnk = quant_config.scales_granularity_mnk
     else:
         # with out quant_config, we either use per-tensor or per-channel quantization
-        # both dynamic and static tensor wise quantization have weight shape [1, 1]
         if (
             input_scale.shape[0] == 1
             and input_scale.shape[1] == 1
@@ -1086,6 +1085,276 @@ def fused_qk_ragged_rope(
         op_name,
         device=input.device,
         values=values,
+        out_types=[
+            TensorType(
+                dtype=input.dtype, shape=input.shape, device=input.device
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def rope_k_cache_ragged(
+    kv_params: KVCacheParams,
+    total_seq_len: Dim,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    freqs_cis: TensorValue,
+    layer_idx: TensorValue,
+    interleaved: bool = False,
+) -> None:
+    """Applies RoPE only to the new paged key-cache rows for ragged input."""
+    if interleaved:
+        raise NotImplementedError(
+            "rope_k_cache_ragged currently supports non-interleaved RoPE only"
+        )
+    if kv_params.dtype != DType.bfloat16:
+        raise NotImplementedError(
+            "rope_k_cache_ragged currently supports BF16 KV cache only"
+        )
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+    if input_row_offsets.rank != 1:
+        raise ValueError(
+            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        )
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+        "cache_dtype": kv_params.dtype,
+    }
+
+    ops.inplace_custom(
+        "mo.rope_k_cache.ragged.paged",
+        device=input_row_offsets.device,
+        values=[
+            *kv_collection,
+            freqs_cis,
+            layer_idx,
+            ops.cast(TensorValue(total_seq_len), DType.uint32),
+            input_row_offsets,
+        ],
+        parameters=parameters,
+    )
+
+
+def k_rms_norm_rope_ragged(
+    kv_params: KVCacheParams,
+    total_seq_len: Dim,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    freqs_cis: TensorValue,
+    gamma: TensorValue,
+    epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    weight_offset: float | np.floating[Any],
+    interleaved: bool = False,
+) -> None:
+    """Applies Gemma-style key RMSNorm and RoPE in one op."""
+    if interleaved:
+        raise NotImplementedError(
+            "k_rms_norm_rope_ragged currently supports non-interleaved RoPE only"
+        )
+    if kv_params.dtype != DType.bfloat16 or gamma.dtype != DType.bfloat16:
+        raise NotImplementedError(
+            "k_rms_norm_rope_ragged currently supports BF16 gamma and KV cache only"
+        )
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+    if input_row_offsets.rank != 1:
+        raise ValueError(
+            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        )
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
+    if gamma.rank != 1:
+        raise ValueError(f"expected gamma to have rank 1, was {gamma.rank}")
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+        "cache_dtype": kv_params.dtype,
+    }
+
+    ops.inplace_custom(
+        "mo.k_rms_norm_rope.ragged.paged",
+        device=input_row_offsets.device,
+        values=[
+            *kv_collection,
+            freqs_cis,
+            gamma,
+            ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.cast(TensorValue(total_seq_len), DType.uint32),
+            input_row_offsets,
+            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
+        ],
+        parameters=parameters,
+    )
+
+
+def q_rms_norm_rope_ragged(
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    start_pos: TensorValue,
+    freqs_cis: TensorValue,
+    gamma: TensorValue,
+    epsilon: float | np.floating[Any],
+    weight_offset: float | np.floating[Any],
+    interleaved: bool = False,
+) -> TensorValue:
+    """Applies Gemma-style query RMSNorm and RoPE in one op."""
+    if interleaved:
+        raise NotImplementedError(
+            "q_rms_norm_rope_ragged currently supports non-interleaved RoPE only"
+        )
+    if input.dtype != DType.bfloat16 or gamma.dtype != DType.bfloat16:
+        raise NotImplementedError(
+            "q_rms_norm_rope_ragged currently supports BF16 inputs and gamma only"
+        )
+    if input.rank != 3:
+        raise ValueError(f"expected input to have rank 3, was {input.rank}")
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+    if input_row_offsets.rank != 1:
+        raise ValueError(
+            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        )
+    if start_pos.dtype != DType.uint32:
+        raise ValueError(
+            f"expected start_pos to have dtype uint32, was {start_pos.dtype}"
+        )
+    if start_pos.rank != 1:
+        raise ValueError(
+            f"expected start_pos to have rank 1, was {start_pos.rank}"
+        )
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
+    if gamma.rank != 1:
+        raise ValueError(f"expected gamma to have rank 1, was {gamma.rank}")
+
+    return ops.custom(
+        "mo.q_rms_norm_rope.ragged",
+        device=input.device,
+        values=[
+            input,
+            input_row_offsets,
+            start_pos,
+            freqs_cis,
+            gamma,
+            ops.constant(epsilon, input.dtype, device=DeviceRef.CPU()),
+            ops.constant(weight_offset, input.dtype, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype, shape=input.shape, device=input.device
+            )
+        ],
+    )[0].tensor
+
+
+def q_rms_norm_fused_qk_ragged_rope(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    freqs_cis: TensorValue,
+    q_gamma: TensorValue,
+    k_gamma: TensorValue,
+    epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    weight_offset: float | np.floating[Any],
+    interleaved: bool = False,
+) -> TensorValue:
+    """Applies Gemma-style Q/K RMSNorm and RoPE in one op.
+
+    The BF16/128 path normalizes both query and key rows before applying
+    non-interleaved RoPE in a single launch. BF16/256 decode rows use a wide
+    single-launch kernel, while non-decode wide rows pair the dedicated
+    `q_rms_norm_rope_ragged` and `k_rms_norm_rope_ragged` helpers so the live
+    fallback no longer pays separate Q RMSNorm and Q RoPE launches.
+    """
+    if interleaved:
+        raise NotImplementedError(
+            "q_rms_norm_fused_qk_ragged_rope currently supports "
+            "non-interleaved RoPE only"
+        )
+    if kv_params.dtype != DType.bfloat16 or input.dtype != DType.bfloat16:
+        raise NotImplementedError(
+            "q_rms_norm_fused_qk_ragged_rope currently supports BF16 "
+            "inputs and KV cache only"
+        )
+    if input.rank != 3:
+        raise ValueError(f"expected input to have rank 3, was {input.rank}")
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+    if input_row_offsets.rank != 1:
+        raise ValueError(
+            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        )
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
+    if q_gamma.rank != 1:
+        raise ValueError(
+            f"expected q_gamma to have rank 1, was {q_gamma.rank}"
+        )
+    if k_gamma.rank != 1:
+        raise ValueError(
+            f"expected k_gamma to have rank 1, was {k_gamma.rank}"
+        )
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+        "cache_dtype": kv_params.dtype,
+    }
+
+    return ops.inplace_custom(
+        "mo.q_rms_norm_fused_qk_rope.ragged.paged",
+        device=input.device,
+        values=[
+            input,
+            input_row_offsets,
+            *kv_collection,
+            freqs_cis,
+            q_gamma,
+            k_gamma,
+            ops.constant(epsilon, input.dtype, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.constant(weight_offset, input.dtype, device=DeviceRef.CPU()),
+        ],
         out_types=[
             TensorType(
                 dtype=input.dtype, shape=input.shape, device=input.device
@@ -3331,68 +3600,6 @@ def rms_norm_key_cache(
     )
 
 
-def rms_norm_value_cache(
-    kv_params: KVCacheParams,
-    kv_collection: PagedCacheValues,
-    gamma: TensorValue,
-    epsilon: float | np.floating[Any],
-    layer_idx: TensorValue,
-    total_seq_len: Dim,
-    input_row_offsets: TensorValue,
-    weight_offset: float | np.floating[Any],
-    rms_norm_cols: int | None = None,
-    multiply_before_cast: bool = True,
-    per_head_norm: bool = True,
-) -> None:
-    """Applies RMSNorm in place to the _new_ entries in the value cache.
-    Semantics match :func:`rms_norm_key_cache`, but updates the value tensor
-    for the layer instead of the key tensor.
-    """
-    gamma_rank_expected = 1
-    if gamma.rank != gamma_rank_expected:
-        raise ValueError(
-            f"expected gamma of rank {gamma_rank_expected} but got {gamma.rank}"
-        )
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
-        )
-    if gamma.shape[0] != kv_params.head_dim and per_head_norm:
-        if rms_norm_cols is None:
-            raise ValueError(
-                "Size of gamma doesn't match head_dim. Please pass rms_norm_cols "
-                "explicitly if you intend to apply RMSNorm to only a subset of "
-                "head dimensions"
-            )
-        elif rms_norm_cols != gamma.shape[0]:
-            raise ValueError(
-                f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
-            )
-    if gamma.dtype != kv_params.dtype:
-        raise TypeError(
-            f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
-        )
-    parameters: dict[str, int | str | DType | bool] = {
-        "multiply_before_cast": multiply_before_cast,
-        "per_head_norm": per_head_norm,
-    }
-    assert kv_params.page_size is not None
-    ops.inplace_custom(
-        "mo.rms_norm_value_cache.ragged.paged",
-        device=input_row_offsets.device,
-        values=[
-            *kv_collection,
-            gamma,
-            ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
-            layer_idx,
-            ops.cast(TensorValue(total_seq_len), DType.uint32),
-            input_row_offsets,
-            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
-        ],
-        parameters=parameters,
-    )
-
-
 def moe_create_indices(
     topk_ids: TensorValue,
     num_local_experts: int,
@@ -4083,76 +4290,6 @@ def quantize_static_scaled_float8(
     )[0].tensor
 
 
-def quantize_tensor_dynamic_scaled_float8(
-    input: TensorValue,
-    input_scale_spec: InputScaleSpec,
-    weight_scale_spec: WeightScaleSpec,
-    scale_ub: float = 1200.0,
-    group_size_or_per_token: int = -1,
-    out_type: DType = DType.float8_e4m3fn,
-    scales_type: DType = DType.bfloat16,
-) -> tuple[TensorValue, TensorValue]:
-    """Quantizes a rank-2 tensor to float8 using a dynamic per-tensor scale.
-
-    Args:
-        input: The input tensor to quantize.
-        scale_ub: The upper bound of the scale factor.
-        group_size_or_per_token: The group size for quantization. When set to -1,
-            the quantization is column-wise.
-        out_type: The type of the output tensor.
-        scales_type: The type of the scales tensor.
-
-    Returns:
-        The quantized tensor and the scales.
-    """
-    if input.rank != 2:
-        raise ValueError("input must be rank 2 tensor")
-
-    if out_type not in (DType.float8_e4m3fn,):
-        raise ValueError("out_type must be float8_e4m3fn")
-
-    if not isinstance(input.shape[1], StaticDim):
-        raise ValueError(
-            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
-        )
-
-    if not (input_scale_spec.is_tensor and weight_scale_spec.is_tensor):
-        raise ValueError(
-            "both input and weight must be tensor scaled for tensor scaling"
-        )
-
-    if group_size_or_per_token != -1:
-        raise ValueError(
-            "group_size_or_per_token should be -1 for dynamic tensor scaling so group_size == num_cols == input.shape[1]"
-        )
-
-    result = ops.custom(
-        "mo.quantize_tensor_dynamic_scaled_float8",
-        device=input.device,
-        values=[
-            input,
-            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
-        ],
-        out_types=[
-            TensorType(
-                dtype=out_type,
-                shape=[input.shape[0], input.shape[1]],
-                device=input.device,
-            ),
-            TensorType(
-                dtype=scales_type,
-                shape=[1, input.shape[0]],
-                device=input.device,
-            ),
-        ],
-        parameters={
-            "group_size_or_per_token": group_size_or_per_token,
-        },
-    )
-
-    return result[0].tensor, result[1].tensor
-
-
 def quantize_dynamic_scaled_float8(
     input: TensorValue,
     input_scale_spec: InputScaleSpec,
@@ -4346,22 +4483,16 @@ def dynamic_scaled_matmul(
         )
 
     if input_scale_spec.is_tensor and weight_scale_spec.is_tensor:
-        if input_scale_spec.origin.is_dynamic:
-            if not (b_scales.shape[0] == b_scales.shape[1] == 1):
-                raise ValueError(
-                    "scaler weight tensors must be of shape [1, 1] for dynamic tensor scaling"
-                )
-        else:
-            if not (
-                a_scales.shape[0]
-                == a_scales.shape[1]
-                == b_scales.shape[0]
-                == b_scales.shape[1]
-                == 1
-            ):
-                raise ValueError(
-                    "scaler tensors must be of shape [1, 1] for tensor scaling"
-                )
+        if not (
+            a_scales.shape[0]
+            == a_scales.shape[1]
+            == b_scales.shape[0]
+            == b_scales.shape[1]
+            == 1
+        ):
+            raise ValueError(
+                "scaler tensors must be of shape [1, 1] for tensor scaling"
+            )
 
     elif input_scale_spec.is_colwise and weight_scale_spec.is_rowwise:
         if a_scales.shape[0] != 1:

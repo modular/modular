@@ -48,7 +48,7 @@ def _get_run_name[
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
-](batch_size: Int, seq_len: Int, cache_len: Int, use_random_seq_lengths: Bool, use_decode_fastpath: Bool,) -> String:
+](batch_size: Int, seq_len: Int, use_random_seq_lengths: Bool,) -> String:
     # fmt: off
     return String(
         "fused_qkv_ragged_rope(", dtype, ") : ",
@@ -60,9 +60,7 @@ def _get_run_name[
 
         "batch_size=", batch_size, ", ",
         "seq_len=", seq_len, ", ",
-        "cache_len=", cache_len, ", ",
         "use_random_seq_lengths=", use_random_seq_lengths, ", ",
-        "use_decode_fastpath=", use_decode_fastpath, ", ",
     )
     # fmt: on
 
@@ -74,9 +72,7 @@ def execute_kv_cache_ragged_rope[
     mut m: Bench,
     batch_size: Int,
     seq_len: Int,
-    cache_len: Int,
     use_random_seq_lengths: Bool,
-    use_decode_fastpath: Bool,
 ) raises:
     comptime max_seq_len = 2048
     var num_blocks = batch_size * 2
@@ -96,7 +92,7 @@ def execute_kv_cache_ragged_rope[
     )
     var max_prompt_length = 0
     var total_seq_len: UInt32 = 0
-    var cache_len_u32 = UInt32(cache_len)
+    var cache_len: UInt32 = 10
 
     var flop_count = 0
     with cache_lengths_device.map_to_host() as cache_lengths_host:
@@ -115,11 +111,11 @@ def execute_kv_cache_ragged_rope[
                 if curr_seq_length > UInt32(max_prompt_length):
                     max_prompt_length = Int(curr_seq_length)
 
-                cache_lengths_host[i] = cache_len_u32
+                cache_lengths_host[i] = cache_len
                 running_offset += curr_seq_length
 
             total_seq_len = running_offset
-            max_context_length = UInt32(max_prompt_length) + cache_len_u32
+            max_context_length = UInt32(max_prompt_length) + cache_len
 
             input_row_offsets_host[batch_size] = total_seq_len
 
@@ -135,7 +131,7 @@ def execute_kv_cache_ragged_rope[
         random(q_tensor)
     ctx.enqueue_copy(output_device, q_device)
     var output_device_tensor = TileTensor(
-        output_device.unsafe_ptr(),
+        output_device,
         row_major(Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]()),
     )
 
@@ -143,7 +139,7 @@ def execute_kv_cache_ragged_rope[
         num_blocks,
         2,
         num_layers,
-        Int(UInt32(max_prompt_length) + cache_len_u32),
+        Int(UInt32(max_prompt_length) + cache_len),
         num_kv_heads,
         head_dim,
     )
@@ -172,13 +168,13 @@ def execute_kv_cache_ragged_rope[
         LayoutTensor[
             kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
         ](
-            kv_block_device.unsafe_ptr(),
+            kv_block_device,
             RuntimeLayout[Layout.row_major[6]()].row_major(kv_block_shape),
         ),
         LayoutTensor[
             cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
         ](
-            cache_lengths_device.unsafe_ptr(),
+            cache_lengths_device,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](batch_size)
             ),
@@ -186,7 +182,7 @@ def execute_kv_cache_ragged_rope[
         LayoutTensor[
             lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
         ](
-            lookup_table_device.unsafe_ptr(),
+            lookup_table_device,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](batch_size)
             ),
@@ -217,50 +213,22 @@ def execute_kv_cache_ragged_rope[
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            if use_decode_fastpath:
-                fused_qk_rope_ragged[
-                    CollectionType.CacheType,
-                    interleaved=False,
-                    target="gpu",
-                    allow_decode_fastpath=True,
-                ](
-                    TileTensor(q_device.unsafe_ptr(), q_layout),
-                    TileTensor(
-                        input_row_offsets_device.unsafe_ptr(),
-                        row_major(Idx(batch_size + 1)),
-                    ),
-                    kv_collection_device,
-                    TileTensor(
-                        freqs_cis_table_device.unsafe_ptr(),
-                        freqs_cis_table_layout,
-                    ),
-                    None,
-                    0,
-                    output_device_tensor,
-                    ctx,
-                )
-            else:
-                fused_qk_rope_ragged[
-                    CollectionType.CacheType,
-                    interleaved=False,
-                    target="gpu",
-                    allow_decode_fastpath=False,
-                ](
-                    TileTensor(q_device.unsafe_ptr(), q_layout),
-                    TileTensor(
-                        input_row_offsets_device.unsafe_ptr(),
-                        row_major(Idx(batch_size + 1)),
-                    ),
-                    kv_collection_device,
-                    TileTensor(
-                        freqs_cis_table_device.unsafe_ptr(),
-                        freqs_cis_table_layout,
-                    ),
-                    None,
-                    0,
-                    output_device_tensor,
-                    ctx,
-                )
+            fused_qk_rope_ragged[
+                CollectionType.CacheType,
+                interleaved=True,
+                target="gpu",
+            ](
+                TileTensor(q_device, q_layout),
+                TileTensor(
+                    input_row_offsets_device, row_major(Idx(batch_size + 1))
+                ),
+                kv_collection_device,
+                TileTensor(freqs_cis_table_device, freqs_cis_table_layout),
+                None,
+                0,
+                output_device_tensor,
+                ctx,
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -269,9 +237,7 @@ def execute_kv_cache_ragged_rope[
             _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
                 batch_size,
                 seq_len,
-                cache_len,
                 use_random_seq_lengths,
-                use_decode_fastpath,
             )
         ),
         [ThroughputMeasure(BenchMetric.flops, flop_count)],
@@ -286,9 +252,7 @@ def main() raises:
     comptime num_kv_heads = get_defined_int["num_kv_heads", 8]()
 
     var batch_size = arg_parse("batch_size", 1)
-    var cache_len = arg_parse("cache_len", 10)
     var use_random_seq_lengths = arg_parse("use_random_lengths", False)
-    var use_decode_fastpath = arg_parse("use_decode_fastpath", True)
     var seq_len = arg_parse("seq_len", 1)
 
     seed(0)
@@ -306,9 +270,7 @@ def main() raises:
             m,
             batch_size,
             seq_len,
-            cache_len,
             use_random_seq_lengths,
-            use_decode_fastpath,
         )
 
     m.dump_report()

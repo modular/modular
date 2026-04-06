@@ -12,12 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import OptionalReg
-from std.math import gcd
+from std.math import ceildiv, gcd
 from std.sys.info import _current_target, align_of, simd_width_of
 
 from std.algorithm.functional import elementwise
 from std.utils.numerics import get_accum_type
 from std.complex import ComplexSIMD
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
@@ -33,6 +39,28 @@ from layout import (
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from std.utils import IndexList
+from std.utils.static_tuple import StaticTuple
+
+
+
+@always_inline
+def _rope_complex_mul_half[
+    dtype: DType,
+    freq_dtype: DType,
+    width_2: Int,
+    freq_width: Int,
+](
+    x_re: SIMD[dtype, width_2],
+    x_im: SIMD[dtype, width_2],
+    freq: SIMD[freq_dtype, freq_width],
+) -> Tuple[SIMD[dtype, width_2], SIMD[dtype, width_2]]:
+    var f_re = rebind[SIMD[freq_dtype, width_2]](freq.deinterleave()[0])
+    var f_im = rebind[SIMD[freq_dtype, width_2]](freq.deinterleave()[1])
+    var xr = x_re.cast[freq_dtype]()
+    var xi = x_im.cast[freq_dtype]()
+    var res_re = (xr * f_re - xi * f_im).cast[dtype]()
+    var res_im = (xr * f_im + xi * f_re).cast[dtype]()
+    return (res_re, res_im)
 
 
 @always_inline
@@ -105,23 +133,14 @@ def rope_q_proj[
 
     comptime if interleaved:
         val = q_proj.load[width=width, alignment=alignment](coord)
-    else:
-        val = rebind[SIMD[dtype, width]](
-            q_proj.load[width=width_2, alignment=half_alignment](
-                coord_re
-            ).interleave(
-                q_proj.load[width=width_2, alignment=half_alignment](coord_im)
-            )
-        )
-
-    var res = rope_value(val, freq_val).cast[output_dtype]()
-
-    comptime if interleaved:
+        var res = rope_value(val, freq_val).cast[output_dtype]()
         output.store[alignment=alignment](coord, res)
     else:
-        output_re, output_im = res.deinterleave()
-        output.store[alignment=half_alignment](coord_re, output_re)
-        output.store[alignment=half_alignment](coord_im, output_im)
+        var q_re = q_proj.load[width=width_2, alignment=half_alignment](coord_re)
+        var q_im = q_proj.load[width=width_2, alignment=half_alignment](coord_im)
+        var q_result = _rope_complex_mul_half(q_re, q_im, freq_val)
+        output.store[alignment=half_alignment](coord_re, q_result[0].cast[output_dtype]())
+        output.store[alignment=half_alignment](coord_im, q_result[1].cast[output_dtype]())
 
 
 @always_inline
@@ -148,25 +167,14 @@ def rope_k_cache[
         val = k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx).cast[
             accum_type
         ]()
-    else:
-        val = rebind[SIMD[accum_type, width]](
-            k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re)
-            .cast[accum_type]()
-            .interleave(
-                k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im).cast[
-                    accum_type
-                ]()
-            )
-        )
-
-    var res = rope_value(val, freq_val).cast[cache_type]()
-
-    comptime if interleaved:
+        var res = rope_value(val, freq_val).cast[cache_type]()
         k_cache.store(b_idx, h_idx, s_idx, d_idx, res)
     else:
-        output_re, output_im = res.deinterleave()
-        k_cache.store(b_idx, h_idx, s_idx, h_re, output_re)
-        k_cache.store(b_idx, h_idx, s_idx, h_im, output_im)
+        var k_re = k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re).cast[accum_type]()
+        var k_im = k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im).cast[accum_type]()
+        var k_result = _rope_complex_mul_half(k_re, k_im, freq_val)
+        k_cache.store(b_idx, h_idx, s_idx, h_re, k_result[0].cast[cache_type]())
+        k_cache.store(b_idx, h_idx, s_idx, h_im, k_result[1].cast[cache_type]())
 
 
 @always_inline
@@ -292,6 +300,115 @@ def fused_qk_rope[
         )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
+def _fused_qk_rope_decode_ragged_kernel[
+    dtype: DType,
+    freq_dtype: DType,
+    KCacheType: KVCacheT,
+    QLayoutType: TensorLayout,
+    OutputLayoutType: TensorLayout,
+    FreqLayoutType: TensorLayout,
+    block_size: Int,
+    warps_per_block: Int,
+](
+    q_proj: TileTensor[dtype, QLayoutType, MutAnyOrigin],
+    output: TileTensor[mut=True, dtype, OutputLayoutType, MutAnyOrigin],
+    k_cache: KCacheType,
+    freqs_cis: TileTensor[freq_dtype, FreqLayoutType, MutAnyOrigin],
+    total_rows: Int,
+):
+    comptime assert q_proj.flat_rank == 3
+    comptime assert output.flat_rank == 3
+    comptime assert freqs_cis.flat_rank == 2
+
+    comptime cache_dtype = KCacheType.dtype
+    comptime num_q_heads = Int(q_proj.static_shape[1])
+    comptime num_k_heads = Int(KCacheType.kv_params.num_heads)
+    comptime head_dim = Int(q_proj.static_shape[2])
+    comptime assert head_dim == 128, "Only 128-column BF16 rows are supported"
+    comptime assert head_dim == Int(KCacheType.kv_params.head_size)
+    comptime assert freqs_cis.static_shape[1] == head_dim
+
+    comptime simd_width = simd_width_of[dtype]()
+    comptime vec_width = simd_width // 2
+    comptime half_align = align_of[SIMD[dtype, vec_width]]()
+    comptime accum_type = get_accum_type[cache_dtype]()
+    comptime half_warp_size = WARP_SIZE // 2
+    comptime total_heads = num_q_heads + num_k_heads
+    comptime assert head_dim == half_warp_size * simd_width
+
+    var tid = thread_idx.x
+    var warp_idx = tid // UInt(WARP_SIZE)
+    var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
+    var local_tid = tid % UInt(half_warp_size)
+    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+
+    if row < UInt(total_rows):
+        var flat_row = Int(row)
+        var global_token_idx = flat_row // total_heads
+        var head_idx = flat_row % total_heads
+        var batch_idx = global_token_idx
+        var post_seq_idx = Int(k_cache.cache_length(batch_idx))
+        var re_offset = Int(local_tid) * vec_width
+        var im_offset = re_offset + head_dim // 2
+        var freq_offset = Int(local_tid) * simd_width
+        var freq = freqs_cis.load[width=simd_width, alignment=1](
+            Coord(Idx(post_seq_idx), Idx(freq_offset))
+        )
+
+        if head_idx < num_q_heads:
+            var q_re = q_proj.load[width=vec_width, alignment=half_align](
+                Coord(Idx(global_token_idx), Idx(head_idx), Idx(re_offset))
+            )
+            var q_im = q_proj.load[width=vec_width, alignment=half_align](
+                Coord(Idx(global_token_idx), Idx(head_idx), Idx(im_offset))
+            )
+            var q_rope = _rope_complex_mul_half[
+                dtype,
+                freq_dtype,
+                vec_width,
+                simd_width,
+            ](q_re, q_im, freq)
+            output.store[alignment=half_align](
+                Coord(Idx(global_token_idx), Idx(head_idx), Idx(re_offset)),
+                q_rope[0],
+            )
+            output.store[alignment=half_align](
+                Coord(Idx(global_token_idx), Idx(head_idx), Idx(im_offset)),
+                q_rope[1],
+            )
+        else:
+            var k_head_idx = head_idx - num_q_heads
+            var k_re = k_cache.load[width=vec_width](
+                batch_idx, k_head_idx, post_seq_idx, re_offset
+            ).cast[accum_type]()
+            var k_im = k_cache.load[width=vec_width](
+                batch_idx, k_head_idx, post_seq_idx, im_offset
+            ).cast[accum_type]()
+            var k_rope = _rope_complex_mul_half[
+                accum_type,
+                freq_dtype,
+                vec_width,
+                simd_width,
+            ](k_re, k_im, freq)
+            k_cache.store(
+                batch_idx,
+                k_head_idx,
+                post_seq_idx,
+                re_offset,
+                k_rope[0].cast[cache_dtype](),
+            )
+            k_cache.store(
+                batch_idx,
+                k_head_idx,
+                post_seq_idx,
+                im_offset,
+                k_rope[1].cast[cache_dtype](),
+            )
+
+
 @always_inline
 def fused_qk_rope_ragged[
     dtype: DType,
@@ -302,6 +419,7 @@ def fused_qk_rope_ragged[
     *,
     interleaved: Bool,
     target: StaticString,
+    allow_decode_fastpath: Bool = True,
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
@@ -366,6 +484,42 @@ def fused_qk_rope_ragged[
     )
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    var total_tokens = Int(q_proj.dim(0))
+    var total_rows = total_tokens * (num_q_heads + Int(num_k_heads))
+
+    comptime if (
+        allow_decode_fastpath
+        and not interleaved
+        and dtype == DType.bfloat16
+        and cache_t.dtype == DType.bfloat16
+        and q_head_size == 128
+        and Int(k_head_size) == 128
+        and rope_dim == 128
+    ):
+        var is_decode_uniform = total_tokens == Int(batch_size)
+        if is_decode_uniform and not position_ids:
+            comptime block_size = 64
+            comptime warps_per_block = 2
+            comptime kernel = _fused_qk_rope_decode_ragged_kernel[
+                dtype,
+                freq_dtype,
+                cache_t,
+                q_proj.LayoutType,
+                output.LayoutType,
+                freqs_cis.LayoutType,
+                block_size,
+                warps_per_block,
+            ]
+            context.value().enqueue_function[kernel, kernel](
+                q_proj,
+                output,
+                k_cache,
+                freqs_cis,
+                total_rows,
+                grid_dim=ceildiv(total_rows, warps_per_block * 2),
+                block_dim=block_size,
+            )
+            return
 
     @always_inline
     @parameter

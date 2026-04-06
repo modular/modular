@@ -27,7 +27,14 @@ from internal_utils import arg_parse
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
-from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
+from nn.topk import (
+    _default_num_blocks_per_input,
+    _default_topk_block_size,
+    _top_k_cpu,
+    _topk_gpu,
+    _topk_topp_sampling_fi,
+    topk_gpu,
+)
 from std.testing import assert_almost_equal, assert_equal
 
 from std.utils import IndexList
@@ -103,8 +110,18 @@ def bench_topk_batched[
         device_out_idxs_buffer, row_major(Idx(batch_size), Idx(out_idx_len))
     )
 
+    var effective_block_size = (
+        block_size if block_size > 0 else
+        _default_topk_block_size(in_size, batch_size, sampling)
+    )
+
     if not num_blocks_per_input:
-        num_blocks_per_input = min(ceildiv(N, block_size), 8)
+        num_blocks_per_input = (
+            min(ceildiv(N, effective_block_size), 32) if sampling else
+            _default_num_blocks_per_input(
+                batch_size, N, effective_block_size, K
+            )
+        )
 
     var local_topk_size = batch_size * num_blocks_per_input * K
     var device_local_topk_vals_buffer = ctx.enqueue_create_buffer[dtype](
@@ -170,7 +187,7 @@ def bench_topk_batched[
                 k=TileTensor(k.ptr, row_major(Idx(Int64(batch_size))))
                 .as_any_origin()
                 .as_immut(),
-                block_size=block_size,
+                block_size=effective_block_size,
                 num_blocks_per_input=num_blocks_per_input,
                 top_p=top_p_tt.as_any_origin().as_immut(),
             )
@@ -261,9 +278,7 @@ def bench_topk_multi_rank[
     # var input_shape = test_case.input_shape
     var K = test_case.K
     var block_size = test_case.block_size
-    var num_blocks_per_input: Int = min(
-        ceildiv(input_shape.flattened_length(), block_size), 8
-    ) if not test_case.num_blocks_per_input else test_case.num_blocks_per_input
+    var num_blocks_per_input = test_case.num_blocks_per_input
 
     comptime largest = test_case.largest
     comptime sampling = test_case.sampling
@@ -317,6 +332,19 @@ def bench_topk_multi_rank[
         var last_dim = input_shape[rank - 1]
         batch_size = input_shape.flattened_length() // last_dim
 
+    var row_size = input_shape[rank - 1]
+    var effective_block_size = (
+        block_size if block_size > 0 else
+        _default_topk_block_size(in_size, batch_size, sampling)
+    )
+    if not num_blocks_per_input:
+        num_blocks_per_input = (
+            min(ceildiv(row_size, effective_block_size), 32) if sampling else
+            _default_num_blocks_per_input(
+                batch_size, row_size, effective_block_size, K
+            )
+        )
+
     var K_host_ptr = alloc[Int64](batch_size)
     var K_host_buffer = TileTensor(K_host_ptr, row_major(Idx(batch_size)))
     for i in range(batch_size):
@@ -348,7 +376,7 @@ def bench_topk_multi_rank[
                 k=TileTensor(k.ptr, row_major(Idx(Int64(batch_size))))
                 .as_any_origin()
                 .as_immut(),
-                block_size=block_size,
+                block_size=effective_block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
 
@@ -425,10 +453,22 @@ def bench_topk_fi[
     fill_fn_name: String,
     top_p: Float32 = 1.0,
     temperature: Float32 = 1.0,
+    use_k_arr: Bool = True,
+    use_temperature_arr: Bool = True,
+    use_top_p_arr: Bool = True,
+    softmax_block_size: Int = 0,
 ) raises:
     var batch_size = test_case.batch_size
     var N = test_case.N
     var K = test_case.K
+    var fi_block_size = (
+        Optional[Int](test_case.block_size) if test_case.block_size > 0 else
+        Optional[Int]()
+    )
+    var fi_softmax_block_size = (
+        Optional[Int](softmax_block_size) if softmax_block_size > 0 else
+        Optional[Int]()
+    )
 
     var in_size = batch_size * N
 
@@ -444,7 +484,11 @@ def bench_topk_fi[
     var device_out_idxs_buffer = ctx.enqueue_create_buffer[out_idx_type](
         batch_size
     )
+    var device_k_buffer = ctx.enqueue_create_buffer[out_idx_type](batch_size)
     var device_temp_buffer = ctx.enqueue_create_buffer[DType.float32](
+        batch_size
+    )
+    var device_top_p_buffer = ctx.enqueue_create_buffer[DType.float32](
         batch_size
     )
 
@@ -455,8 +499,14 @@ def bench_topk_fi[
         device_out_idxs_buffer.unsafe_ptr(),
         row_major(Idx(batch_size), Idx(1)),
     )
+    var k_tt = TileTensor(
+        device_k_buffer.unsafe_ptr(), row_major(Idx(batch_size))
+    )
     var temp_tt = TileTensor(
         device_temp_buffer.unsafe_ptr(), row_major(Idx(batch_size))
+    )
+    var top_p_tt = TileTensor(
+        device_top_p_buffer.unsafe_ptr(), row_major(Idx(batch_size))
     )
 
     ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
@@ -466,6 +516,16 @@ def bench_topk_fi[
     for i in range(batch_size):
         temp_host_ptr[i] = temperature
     ctx.enqueue_copy(device_temp_buffer, temp_host_ptr)
+
+    var top_p_host_ptr = alloc[Float32](batch_size)
+    for i in range(batch_size):
+        top_p_host_ptr[i] = top_p
+    ctx.enqueue_copy(device_top_p_buffer, top_p_host_ptr)
+
+    var k_host_ptr = alloc[Scalar[out_idx_type]](batch_size)
+    for i in range(batch_size):
+        k_host_ptr[i] = Scalar[out_idx_type](K)
+    ctx.enqueue_copy(device_k_buffer, k_host_ptr)
 
     # Create per-row seed buffer on device.
     var seed_device_buffer = ctx.enqueue_create_buffer[DType.uint64](batch_size)
@@ -484,15 +544,108 @@ def bench_topk_fi[
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            _topk_topp_sampling_fi[dtype, out_idx_type](
-                ctx,
-                K,
-                top_p,
-                device_in,
-                device_out_idxs,
-                temperature=temp_tt.as_any_origin().as_immut(),
-                rng_seed=seed_tt.as_any_origin().as_immut(),
-            )
+            if use_k_arr:
+                if use_temperature_arr and use_top_p_arr:
+                    _topk_topp_sampling_fi[dtype, out_idx_type](
+                        ctx,
+                        K,
+                        top_p,
+                        device_in,
+                        device_out_idxs,
+                        block_size=fi_block_size,
+                        softmax_block_size=fi_softmax_block_size,
+                        k=k_tt.as_any_origin().as_immut(),
+                        temperature=temp_tt.as_any_origin().as_immut(),
+                        top_p=top_p_tt.as_any_origin().as_immut(),
+                        rng_seed=seed_tt.as_any_origin().as_immut(),
+                    )
+                elif use_temperature_arr:
+                    _topk_topp_sampling_fi[dtype, out_idx_type](
+                        ctx,
+                        K,
+                        top_p,
+                        device_in,
+                        device_out_idxs,
+                        block_size=fi_block_size,
+                        softmax_block_size=fi_softmax_block_size,
+                        k=k_tt.as_any_origin().as_immut(),
+                        temperature=temp_tt.as_any_origin().as_immut(),
+                        rng_seed=seed_tt.as_any_origin().as_immut(),
+                    )
+                elif use_top_p_arr:
+                    _topk_topp_sampling_fi[dtype, out_idx_type](
+                        ctx,
+                        K,
+                        top_p,
+                        device_in,
+                        device_out_idxs,
+                        block_size=fi_block_size,
+                        softmax_block_size=fi_softmax_block_size,
+                        k=k_tt.as_any_origin().as_immut(),
+                        top_p=top_p_tt.as_any_origin().as_immut(),
+                        rng_seed=seed_tt.as_any_origin().as_immut(),
+                    )
+                else:
+                    _topk_topp_sampling_fi[dtype, out_idx_type](
+                        ctx,
+                        K,
+                        top_p,
+                        device_in,
+                        device_out_idxs,
+                        block_size=fi_block_size,
+                        softmax_block_size=fi_softmax_block_size,
+                        k=k_tt.as_any_origin().as_immut(),
+                        rng_seed=seed_tt.as_any_origin().as_immut(),
+                    )
+            else:
+                if use_temperature_arr and use_top_p_arr:
+                    _topk_topp_sampling_fi[dtype, out_idx_type](
+                        ctx,
+                        K,
+                        top_p,
+                        device_in,
+                        device_out_idxs,
+                        block_size=fi_block_size,
+                        softmax_block_size=fi_softmax_block_size,
+                        temperature=temp_tt.as_any_origin().as_immut(),
+                        top_p=top_p_tt.as_any_origin().as_immut(),
+                        rng_seed=seed_tt.as_any_origin().as_immut(),
+                    )
+                elif use_temperature_arr:
+                    _topk_topp_sampling_fi[dtype, out_idx_type](
+                        ctx,
+                        K,
+                        top_p,
+                        device_in,
+                        device_out_idxs,
+                        block_size=fi_block_size,
+                        softmax_block_size=fi_softmax_block_size,
+                        temperature=temp_tt.as_any_origin().as_immut(),
+                        rng_seed=seed_tt.as_any_origin().as_immut(),
+                    )
+                elif use_top_p_arr:
+                    _topk_topp_sampling_fi[dtype, out_idx_type](
+                        ctx,
+                        K,
+                        top_p,
+                        device_in,
+                        device_out_idxs,
+                        block_size=fi_block_size,
+                        softmax_block_size=fi_softmax_block_size,
+                        top_p=top_p_tt.as_any_origin().as_immut(),
+                        rng_seed=seed_tt.as_any_origin().as_immut(),
+                    )
+                else:
+                    _topk_topp_sampling_fi[dtype, out_idx_type](
+                        ctx,
+                        K,
+                        top_p,
+                        device_in,
+                        device_out_idxs,
+                        block_size=fi_block_size,
+                        softmax_block_size=fi_softmax_block_size,
+                        rng_seed=seed_tt.as_any_origin().as_immut(),
+                    )
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -504,8 +657,18 @@ def bench_topk_fi[
         K,
         "/batch_size=",
         batch_size,
+        "/block_size=",
+        test_case.block_size,
         "/top_p=",
         top_p,
+        "/softmax_block_size=",
+        softmax_block_size,
+        "/use_k_arr=",
+        use_k_arr,
+        "/use_temperature_arr=",
+        use_temperature_arr,
+        "/use_top_p_arr=",
+        use_top_p_arr,
     )
 
     var num_bytes = device_in.num_elements() * size_of[dtype]()
@@ -516,11 +679,15 @@ def bench_topk_fi[
 
     # Cleanup.
     in_buffer_ptr.free()
+    k_host_ptr.free()
     temp_host_ptr.free()
+    top_p_host_ptr.free()
     seed_host_ptr.free()
     _ = device_in_buffer^
     _ = device_out_idxs_buffer^
+    _ = device_k_buffer^
     _ = device_temp_buffer^
+    _ = device_top_p_buffer^
     _ = seed_device_buffer^
 
 
@@ -582,17 +749,23 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
 def main() raises:
     var N = arg_parse("N", -1)
     var K = arg_parse("K", -1)
-    var block_size = arg_parse("block_size", 256)
+    var block_size = arg_parse("block_size", 0)
     var batch_size = arg_parse("batch_size", -1)
     var num_blocks_per_input = arg_parse("num_blocks_per_input", 0)
     var fill_fn_name = arg_parse("fill_fn_name", "fill_random")
+    var top_p = Float32(arg_parse("top_p", 1.0))
+    var temperature = Float32(arg_parse("temperature", 1.0))
+    var use_fi = arg_parse("use_fi", False)
+    var use_k_arr = arg_parse("use_k_arr", True)
+    var use_temperature_arr = arg_parse("use_temperature_arr", True)
+    var use_top_p_arr = arg_parse("use_top_p_arr", True)
+    var softmax_block_size = arg_parse("softmax_block_size", 0)
 
     comptime dtype = get_defined_dtype["dtype", DType.float32]()
     comptime rank = get_defined_int["rank", 2]()
     comptime out_idx_type = get_defined_dtype["out_idx_type", DType.int]()
     comptime sampling = get_defined_bool["sampling", False]()
     comptime largest = get_defined_bool["largest", True]()
-    comptime use_fi = get_defined_bool["USE_FI_TOPK_KERNEL", False]()
 
     var m = Bench()
     with DeviceContext() as ctx:
@@ -604,8 +777,19 @@ def main() raises:
             num_blocks_per_input=num_blocks_per_input,
         )
 
-        comptime if use_fi:
-            bench_topk_fi[dtype, out_idx_type](ctx, m, test_case, fill_fn_name)
+        if use_fi:
+            bench_topk_fi[dtype, out_idx_type](
+                ctx,
+                m,
+                test_case,
+                fill_fn_name,
+                top_p=top_p,
+                temperature=temperature,
+                use_k_arr=use_k_arr,
+                use_temperature_arr=use_temperature_arr,
+                use_top_p_arr=use_top_p_arr,
+                softmax_block_size=softmax_block_size,
+            )
         else:
             bench_topk_batched[dtype, out_idx_type, rank](
                 ctx, m, test_case, fill_fn_name

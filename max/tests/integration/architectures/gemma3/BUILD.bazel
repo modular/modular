@@ -13,6 +13,42 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+_PROFILE_DATA = [
+    "//max/tests/integration/architectures/gemma3/testdata",
+]
+
+_PROFILE_DEPS = [
+    "//max/python/max:_core",
+    "//max/python/max/driver",
+    "//max/python/max/dtype",
+    "//max/python/max/engine",
+    "//max/python/max/graph",
+    "//max/python/max/interfaces",
+    "//max/python/max/kv_cache",
+    "//max/python/max/nn",
+    "//max/python/max/pipelines/architectures",
+    "//max/python/max/pipelines/core",
+    requirement("numpy"),
+    requirement("torch"),
+    requirement("transformers"),
+]
+
+_PROFILE_GPU_CONSTRAINTS = ["//:has_gpu"] + select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+_PROFILE_TAGS = [
+    "gpu",
+    "no-sandbox",
+]
+
+_PROFILE_ENV = {
+    "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+    "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+}
+
+
 modular_py_test(
     name = "gemma3",
     size = "large",
@@ -50,4 +86,777 @@ modular_py_test(
         requirement("torch"),
         requirement("transformers"),
     ],
+)
+
+modular_py_test(
+    name = "profile_k_norm_rope_prefill",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_k_norm_rope_prefill.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_k_norm_rope_decode",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_k_norm_rope_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_q_norm_rope_prefill",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_q_norm_rope_prefill.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_q_norm_rope_decode",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_q_norm_rope_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_qk_norm_rope_decode",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_qk_norm_rope_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_qk_norm_rope_prefill",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_qk_norm_rope_prefill.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_qkv_qk_prefill_bridge",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_qkv_qk_prefill_bridge.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_flash_attention_prefill_bridge",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_flash_attention_prefill_bridge.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_flash_attention_prefill_bridge_global",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_flash_attention_prefill_bridge.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_LAYER_IDX": "5",
+        "PROFILE_ATTENTION_LAYER_TYPE": "global",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_tail_prefill_bridge_global",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_tail_prefill_bridge.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_LAYER_IDX": "5",
+        "PROFILE_ATTENTION_LAYER_TYPE": "global",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_composed_prefill_bridge",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_composed_prefill_bridge.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_composed_prefill_bridge_global",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_composed_prefill_bridge.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_LAYER_IDX": "5",
+        "PROFILE_ATTENTION_LAYER_TYPE": "global",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_composed_prefill_bridge_global_output_only",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_composed_prefill_bridge.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_LAYER_IDX": "5",
+        "PROFILE_ATTENTION_LAYER_TYPE": "global",
+        "PROFILE_ATTENTION_COMPOSED_OUTPUT_MODE": "attention_output_only",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_prefill",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_prefill.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_prefill_global",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_prefill.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_LAYER_IDX": "5",
+        "PROFILE_ATTENTION_LAYER_TYPE": "global",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_prefill_fused_parity_global",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_prefill.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_LAYER_IDX": "5",
+        "PROFILE_ATTENTION_LAYER_TYPE": "global",
+        "PROFILE_ATTENTION_PREFILL_COMPARE_MODE": "manual_fused_graph_vs_attention_fused",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_prefill_baseline_parity_global",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_prefill.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_LAYER_IDX": "5",
+        "PROFILE_ATTENTION_LAYER_TYPE": "global",
+        "PROFILE_ATTENTION_PREFILL_COMPARE_MODE": "manual_baseline_graph_vs_attention_baseline",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_prefill_pair_matrix_global",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_prefill.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_LAYER_IDX": "5",
+        "PROFILE_ATTENTION_LAYER_TYPE": "global",
+        "PROFILE_ATTENTION_PREFILL_COMPARE_MODE": "manual_and_attention_pair_matrix",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_decode",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_decode_k_only",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_DECODE_FUSED_VARIANT": "k_only",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_decode_q_only",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_DECODE_FUSED_VARIANT": "q_only",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_attention_decode_qk_incremental",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_attention_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_ATTENTION_DECODE_BASELINE_GRAPH_VARIANT": "q_only",
+        "PROFILE_ATTENTION_DECODE_FUSED_GRAPH_VARIANT": "full",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_local_compile_smoke",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_COMPILE_ONLY": "residual_ladder_pre_ffn_norm",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_local_residual_only_pre_ffn_norm",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "0",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "local",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "pre_ffn_norm",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_local_post_attention_residual_only_pre_ffn_norm",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "0",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "local",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_attention_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "pre_ffn_norm",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_local_post_mlp_residual_only_pre_ffn_norm",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "0",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "local",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "pre_ffn_norm",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only_pre_ffn_producer",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "pre_ffn",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only_down_proj_producer",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "down_proj",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only_gate_up_activation_producer",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "gate_up_activation",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only_materialized_mlp_producer",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "materialized_mlp",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only_permuted_mlp_producer",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "permuted_mlp",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only_hidden_permuted_mlp_producer",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "hidden_permuted_mlp",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only_upstream_permuted_mlp_producer",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "upstream_permuted_mlp",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_transformer_block_decode_global_post_mlp_residual_only_native_upstream_permuted_mlp_producer",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer_block_decode.py",
+    ],
+    data = _PROFILE_DATA,
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_IDX": "5",
+        "PROFILE_TRANSFORMER_BLOCK_LAYER_TYPE": "global",
+        "PROFILE_TRANSFORMER_BLOCK_BASELINE_VARIANT": "post_mlp_residual_only",
+        "PROFILE_TRANSFORMER_BLOCK_PRODUCER_VARIANT": "native_upstream_permuted_mlp",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
+)
+
+modular_py_test(
+    name = "profile_post_mlp_boundary",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_profile_post_mlp_boundary.py",
+    ],
+    data = _PROFILE_DATA,
+    env = _PROFILE_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
+    tags = _PROFILE_TAGS,
+    deps = _PROFILE_DEPS,
 )
