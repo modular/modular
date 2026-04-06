@@ -1,0 +1,12 @@
+{
+    "patch_size": 2,
+    "in_channels": 64,
+    "num_layers": 60,
+    "attention_head_dim": 128,
+    "num_attention_heads": 24,
+    "joint_attention_dim": 3584,
+    "guidance_embeds": false,
+    "axes_dims_rope": [16, 56, 56],
+    "rope_theta": 10000,
+    "eps": 1e-6
+}
