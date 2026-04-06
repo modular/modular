@@ -942,7 +942,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return printParam(os, upcast.getInputTypeValue(), diagShared);
 
   if (auto downcast = dyn_cast<DowncastAttr>(param)) {
-    ASTType(downcast.getInputTypeValue()).print(os, diagShared);
+    printParam(os, downcast.getInputTypeValue(), diagShared);
     os << "(";
     ASTType(downcast.getType()).print(os, diagShared);
     os << ")";
@@ -1646,7 +1646,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     printRef(ref);
     ASTType(ref.getElementType()).print(os, diagShared);
   } else if (auto variadic = dyn_cast<ParamListType>(type)) {
-    os << "Variadic[";
+    os << "KGENParamList[";
     ASTType(variadic.getElementType()).print(os, diagShared);
     os << "]";
   } else if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(type)) {
