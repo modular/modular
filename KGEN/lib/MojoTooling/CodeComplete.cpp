@@ -14,6 +14,7 @@
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "Support/Filesystem/Paths.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -52,6 +53,11 @@ struct BaseCompletionListener : public ParserListener {
 
   /// The current parser context.
   MojoParserContext *parserContext = nullptr;
+
+  /// The buffer ID of the completion buffer within the source manager. In the
+  /// in-context path the source manager may contain other buffers (e.g.,
+  /// replayed REPL modules), so getMainFileID() is not reliable.
+  unsigned completionBufferId = 0;
 };
 } // namespace
 
@@ -129,7 +135,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
 
     // Compute the viable imports for the given location.
     for (const std::string &dir :
-         parserContext->getModuleSearchDirectories(sourceMgr.getMainFileID())) {
+         parserContext->getModuleSearchDirectories(completionBufferId)) {
       std::error_code ec;
       for (const auto &it : std::filesystem::directory_iterator(dir, ec)) {
         if (ec)
@@ -241,9 +247,9 @@ struct SignatureHelpListener : public BaseCompletionListener {
   /// Returns true if the listener is interested in being notified for the given
   /// location.
   bool isInterestedInLoc(SMLoc loc) override {
-    // Filter at a high level for locations in the main document, we'll filter
-    // further when examining calls.
-    return sourceMgr.getMainFileID() == sourceMgr.FindBufferContainingLoc(loc);
+    // Filter at a high level for locations in the completion buffer, we'll
+    // filter further when examining calls.
+    return completionBufferId == sourceMgr.FindBufferContainingLoc(loc);
   }
 
   void onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
@@ -356,34 +362,13 @@ struct SignatureHelpListener : public BaseCompletionListener {
 // Entrypoint
 //===----------------------------------------------------------------------===//
 
-/// Parse the given buffer for completion results using the given listener
-/// implementation.
-static void parseCompletionImpl(
-    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-    MLIRContext *context, const KGEN::CompilationOptions &options,
-    function_ref<void(MojoParserContext &, int)> parserCallback,
-    BaseCompletionListener &listener, bool disableModuleCaching) {
-  if (buffer.getBufferSize() < completionPosition)
-    return;
-  listener.sourceMgr.AddNewSourceBuffer(
-      llvm::MemoryBuffer::getMemBuffer(buffer), SMLoc());
-
-  // Add a diagnostic handler that consumes anything emitted during parsing. We
-  // don't care about diagnostics here, there will almost always be a diagnostic
-  // emitted when grabbing completion results from a partial file.
-  listener.sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
-
-  ParserConfig config(context, options);
-  config.parserListener = &listener;
-
-  // Disable as much of the diagnostic machinery as possible, we don't care
-  // about diagnostics for completion results.
-  config.maxNotesPerDiagnostic = 0;
-
-  // Build the parser context with our listener.
-  MojoParserContext parserContext(listener.sourceMgr, config);
-  listener.parserContext = &parserContext;
-
+/// Compute the completion range for the given buffer and position. The start
+/// is trimmed back to the beginning of any partial identifier, and the end is
+/// advanced to the start of the next token.
+static void computeCompletionRange(SharedState &sharedState,
+                                   llvm::MemoryBufferRef buffer,
+                                   uint64_t completionPosition,
+                                   BaseCompletionListener &listener) {
   // Compute the start completion location. We first trim the buffer to the
   // last non-whitespace, and then to the start of any identifier. We often get
   // completion requests for lookups that are partially formed already (e.g. a
@@ -403,9 +388,36 @@ static void parseCompletionImpl(
   // input completion position.
   completionPosStr = buffer.getBuffer().drop_front(completionPosition);
   listener.completionRange.End =
-      findStartOfNextToken(parserContext.getSharedState(), completionPosStr);
+      findStartOfNextToken(sharedState, completionPosStr);
+}
 
-  parserCallback(parserContext, listener.sourceMgr.getMainFileID());
+/// Parse the given buffer for completion results using the given listener
+/// implementation. Creates a fresh MojoParserContext.
+static void parseCompletionImpl(
+    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+    MLIRContext *context, const KGEN::CompilationOptions &options,
+    function_ref<void(MojoParserContext &, int)> parserCallback,
+    BaseCompletionListener &listener, bool disableModuleCaching) {
+  if (buffer.getBufferSize() < completionPosition)
+    return;
+  int bufId = listener.sourceMgr.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBuffer(buffer), SMLoc());
+  listener.completionBufferId = bufId;
+
+  // Suppress diagnostics during completion.
+  listener.sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
+
+  ParserConfig config(context, options);
+  config.parserListener = &listener;
+  config.maxNotesPerDiagnostic = 0;
+
+  MojoParserContext parserContext(listener.sourceMgr, config);
+  listener.parserContext = &parserContext;
+
+  computeCompletionRange(parserContext.getSharedState(), buffer,
+                         completionPosition, listener);
+
+  parserCallback(parserContext, bufId);
 }
 
 //===----------------------------------------------------------------------===//
@@ -454,5 +466,58 @@ std::optional<SignatureHelpResult> MojoParserContext::signatureHelp(
   SignatureHelpListener listener(sourceMgr, result);
   parseCompletionImpl(buffer, completionPosition, context, options,
                       parserCallback, listener, disableModuleCaching);
+  return result.signatures.empty() ? std::nullopt : std::optional(result);
+}
+
+//===----------------------------------------------------------------------===//
+// In-Context Completion (for REPL caching)
+
+/// Set up a completion listener on an existing context, add the buffer, compute
+/// the completion range, invoke the callback, and restore the listener.
+static void parseCompletionInContextImpl(
+    MojoParserContext &context, llvm::MemoryBufferRef buffer,
+    uint64_t completionPosition, BaseCompletionListener &listener,
+    function_ref<void(int)> parserCallback) {
+  if (buffer.getBufferSize() < completionPosition)
+    return;
+
+  auto &sourceMgr = context.getSourceMgr();
+  int bufId = sourceMgr.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBuffer(buffer), SMLoc());
+  listener.completionBufferId = bufId;
+
+  // Suppress diagnostics during completion.
+  sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
+
+  // Temporarily override the parser listener.
+  auto *oldListener = context.getSharedState().parserListener;
+  context.getSharedState().parserListener = &listener;
+  listener.parserContext = &context;
+  auto restoreListener = llvm::scope_exit(
+      [&] { context.getSharedState().parserListener = oldListener; });
+
+  computeCompletionRange(context.getSharedState(), buffer, completionPosition,
+                         listener);
+
+  parserCallback(bufId);
+}
+
+std::vector<CodeCompletionResult> MojoParserContext::codeCompleteInContext(
+    MojoParserContext &context, llvm::MemoryBufferRef buffer,
+    uint64_t completionPosition, function_ref<void(int)> parserCallback) {
+  std::vector<CodeCompletionResult> results;
+  CodeCompletionListener listener(results, context.getSourceMgr());
+  parseCompletionInContextImpl(context, buffer, completionPosition, listener,
+                               parserCallback);
+  return results;
+}
+
+std::optional<SignatureHelpResult> MojoParserContext::signatureHelpInContext(
+    MojoParserContext &context, llvm::MemoryBufferRef buffer, uint64_t position,
+    function_ref<void(int)> parserCallback) {
+  SignatureHelpResult result;
+  SignatureHelpListener listener(context.getSourceMgr(), result);
+  parseCompletionInContextImpl(context, buffer, position, listener,
+                               parserCallback);
   return result.signatures.empty() ? std::nullopt : std::optional(result);
 }
