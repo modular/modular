@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Literal
 
 import max.driver as md
 from max.dtype import DType
@@ -85,6 +86,15 @@ class Conv2d(Module, Shardable):
     PyTorch order is: (out_channels, in_channels / num_groups, height, width)
     Max API order: (height, width, in_channels / num_groups, out_channels)."""
 
+    io_layout: Literal["nchw", "nhwc"]
+    """Controls the activation layout exposed by the wrapper.
+
+    When ``permute=True``, weights are still loaded in PyTorch's FCRS layout.
+    ``io_layout="nchw"`` preserves the historical wrapper behavior of
+    permuting activations around the NHWC conv op. ``io_layout="nhwc"``
+    keeps activations in NHWC while still accepting PyTorch/FCRS weights.
+    """
+
     def __init__(
         self,
         kernel_size: int | tuple[int, int],
@@ -98,6 +108,7 @@ class Conv2d(Module, Shardable):
         device: DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
+        io_layout: Literal["nchw", "nhwc"] | None = None,
         name: str | None = None,
     ) -> None:
         """Initializes the Conv2d layer with weights and optional bias.
@@ -125,8 +136,25 @@ class Conv2d(Module, Shardable):
                 PyTorch order: (out_channels, in_channels / num_groups, height, width).
                 MAX API order: (height, width, in_channels / num_groups, out_channels).
                 Defaults to :obj:`False`.
+            io_layout: Activation layout exposed by the wrapper. When unset,
+                defaults to ``"nchw"`` if ``permute=True`` and ``"nhwc"``
+                otherwise. ``permute=False`` only supports ``"nhwc"`` because
+                the raw MAX conv op consumes NHWC activations.
         """
         super().__init__()
+
+        resolved_io_layout = (
+            ("nchw" if permute else "nhwc") if io_layout is None else io_layout
+        )
+        if resolved_io_layout not in ("nchw", "nhwc"):
+            raise ValueError(
+                "io_layout must be one of 'nchw' or 'nhwc'. "
+                f"Got {resolved_io_layout!r}."
+            )
+        if not permute and resolved_io_layout != "nhwc":
+            raise ValueError(
+                "Conv2d with permute=False only supports io_layout='nhwc'."
+            )
 
         # Store configuration for easy reconstruction
         self.in_channels = in_channels
@@ -134,6 +162,7 @@ class Conv2d(Module, Shardable):
         self.dtype = dtype
         self.device = device
         self.permute = permute
+        self.io_layout = resolved_io_layout
         self.num_groups = num_groups
         self.has_bias = has_bias
         self.name = name
@@ -255,6 +284,7 @@ class Conv2d(Module, Shardable):
                 device=device,
                 has_bias=self.has_bias,
                 permute=self.permute,
+                io_layout=self.io_layout,
                 name=self.name,
             )
 
@@ -271,13 +301,14 @@ class Conv2d(Module, Shardable):
         """Apply 2D convolution to input `x`. Permutes pytorch weights to match max API if permute=True.
 
         Args:
-            x: a tensor of shape [batch_size, height, width, in_channels]
-            if self.permute, then input is of shape: [batch_size, in_channels, height, width]
-            and will be permuted to match max's expected input shape.
+            x: Input tensor.
+            If ``io_layout="nhwc"``, the expected shape is
+            ``[batch_size, height, width, in_channels]``.
+            If ``io_layout="nchw"``, the expected shape is
+            ``[batch_size, in_channels, height, width]``.
 
         Returns:
-            a tensor of shape [batch_size, new_height, new_width, out_channels]
-            if self.permute, then output shape will be [batch_size, out_channels, new_height, new_width]
+            Output tensor in the configured ``io_layout``.
         """
         weight: TensorValue = self.filter
 
@@ -287,16 +318,16 @@ class Conv2d(Module, Shardable):
             and md.accelerator_api() == "cuda"
         )
 
-        if self.permute:
+        if self.permute and self.io_layout == "nchw":
             # Input: [batch_size, in_channels, height, width] -> [batch_size, height, width, in_channels]
             x = ops.permute(x, [0, 2, 3, 1])
 
             # GPU supports FCRS but CPU doesn't. On CPU, permute from
             # FCRS to RSCF format.
-            if not is_nvidia_gpu:
-                # Permute weight from [out_channels, in_channels // num_groups, height, width]
-                # to [height, width, in_channels // num_groups, out_channels] (RSCF)
-                weight = ops.permute(weight, [2, 3, 1, 0])
+        if self.permute and not is_nvidia_gpu:
+            # Permute weight from [out_channels, in_channels // num_groups, height, width]
+            # to [height, width, in_channels // num_groups, out_channels] (RSCF)
+            weight = ops.permute(weight, [2, 3, 1, 0])
 
         output = ops.conv2d(
             x,
@@ -311,7 +342,7 @@ class Conv2d(Module, Shardable):
             else FilterLayout.RSCF,
         )
 
-        if self.permute:
+        if self.permute and self.io_layout == "nchw":
             # Output: [batch_size, new_height, new_width, out_channels] -> [batch_size, out_channels, new_height, new_width]
             output = ops.permute(output, [0, 3, 1, 2])
 

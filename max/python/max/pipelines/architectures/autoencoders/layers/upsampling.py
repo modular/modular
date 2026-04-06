@@ -13,6 +13,8 @@
 
 """Upsampling utilities for MAX framework."""
 
+from typing import Literal
+
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.conv import Conv2d
@@ -22,6 +24,7 @@ from max.nn.layer import Module
 def interpolate_2d_nearest(
     x: TensorValue,
     scale_factor: int = 2,
+    io_layout: Literal["nchw", "nhwc"] = "nchw",
 ) -> TensorValue:
     """Upsamples a 2D tensor using nearest-neighbor interpolation.
 
@@ -42,15 +45,32 @@ def interpolate_2d_nearest(
             f"Only scale_factor=2 is currently supported, got {scale_factor}"
         )
 
-    batch, channels, height, width = x.shape
-    x = ops.reshape(x, [batch, channels, height, 1, width, 1])
+    if io_layout == "nchw":
+        batch, channels, height, width = x.shape
+        x = ops.reshape(x, [batch, channels, height, 1, width, 1])
+        ones = ops.broadcast_to(
+            ops.constant(1.0, dtype=x.dtype, device=x.device),
+            [1, 1, 1, scale_factor, 1, scale_factor],
+        )
+        return ops.reshape(
+            x * ones,
+            [batch, channels, height * scale_factor, width * scale_factor],
+        )
+
+    if io_layout != "nhwc":
+        raise ValueError(
+            f"io_layout must be one of 'nchw' or 'nhwc'. Got {io_layout!r}."
+        )
+
+    batch, height, width, channels = x.shape
+    x = ops.reshape(x, [batch, height, 1, width, 1, channels])
     ones = ops.broadcast_to(
         ops.constant(1.0, dtype=x.dtype, device=x.device),
-        [1, 1, 1, scale_factor, 1, scale_factor],
+        [1, 1, scale_factor, 1, scale_factor, 1],
     )
     return ops.reshape(
         x * ones,
-        [batch, channels, height * scale_factor, width * scale_factor],
+        [batch, height * scale_factor, width * scale_factor, channels],
     )
 
 
@@ -72,6 +92,7 @@ class Upsample2D(Module):
         padding: int = 1,
         bias: bool = True,
         interpolate: bool = True,
+        io_layout: Literal["nchw", "nhwc"] = "nchw",
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
@@ -105,6 +126,7 @@ class Upsample2D(Module):
         self.interpolate = interpolate
         self.use_conv = use_conv
         self.use_conv_transpose = use_conv_transpose
+        self.io_layout = io_layout
         self.device = device
         self.dtype = dtype
         self.name = name
@@ -120,6 +142,7 @@ class Upsample2D(Module):
                 has_bias=bias,
                 device=device,
                 permute=True,
+                io_layout=io_layout,
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -132,7 +155,9 @@ class Upsample2D(Module):
             Upsampled tensor, optionally convolved.
         """
         if self.interpolate:
-            x = interpolate_2d_nearest(x, scale_factor=2)
+            x = interpolate_2d_nearest(
+                x, scale_factor=2, io_layout=self.io_layout
+            )
         if self.use_conv and self.conv is not None:
             x = self.conv(x)
         return x

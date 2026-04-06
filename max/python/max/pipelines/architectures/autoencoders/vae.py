@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn.activation import activation_function_from_name
 from max.nn.conv import Conv2d
 from max.nn.layer import LayerList, Module
@@ -153,6 +154,7 @@ class UpDecoderBlock2D(Module):
         output_scale_factor: float = 1.0,
         add_upsample: bool = True,
         temb_channels: int | None = None,
+        io_layout: Literal["nchw", "nhwc"] = "nchw",
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
@@ -190,6 +192,7 @@ class UpDecoderBlock2D(Module):
                 non_linearity=resnet_act_fn,
                 use_conv_shortcut=False,
                 conv_shortcut_bias=True,
+                io_layout=io_layout,
                 device=device,
                 dtype=dtype,
             )
@@ -206,6 +209,7 @@ class UpDecoderBlock2D(Module):
                 padding=1,
                 bias=True,
                 interpolate=True,
+                io_layout=io_layout,
                 device=device,
                 dtype=dtype,
             )
@@ -256,6 +260,7 @@ class MidBlock2D(Module):
         add_attention: bool = True,
         attention_head_dim: int = 1,
         output_scale_factor: float = 1.0,
+        io_layout: Literal["nchw", "nhwc"] = "nchw",
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
@@ -279,9 +284,13 @@ class MidBlock2D(Module):
             dtype: Data type for module parameters.
         """
         super().__init__()
+        self.io_layout = io_layout
 
         resnets_list = []
         attentions_list: list[VAEAttention | None] = []
+        inner_io_layout: Literal["nchw", "nhwc"] = (
+            "nchw" if io_layout == "nhwc" else io_layout
+        )
 
         resnet = ResnetBlock2D(
             in_channels=in_channels,
@@ -293,6 +302,7 @@ class MidBlock2D(Module):
             non_linearity=resnet_act_fn,
             use_conv_shortcut=False,
             conv_shortcut_bias=True,
+            io_layout=inner_io_layout,
             device=device,
             dtype=dtype,
         )
@@ -323,6 +333,7 @@ class MidBlock2D(Module):
                 non_linearity=resnet_act_fn,
                 use_conv_shortcut=False,
                 conv_shortcut_bias=True,
+                io_layout=inner_io_layout,
                 device=device,
                 dtype=dtype,
             )
@@ -362,6 +373,9 @@ class MidBlock2D(Module):
         Returns:
             Output tensor of shape [N, C, H, W] with same spatial dimensions.
         """
+        if self.io_layout == "nhwc":
+            hidden_states = ops.permute(hidden_states, [0, 3, 1, 2])
+
         hidden_states = self.resnets[0](hidden_states, temb)
         attention_idx = 0
         for i in range(len(self.resnets) - 1):
@@ -369,6 +383,9 @@ class MidBlock2D(Module):
                 hidden_states = self.attentions[attention_idx](hidden_states)
                 attention_idx += 1
             hidden_states = self.resnets[i + 1](hidden_states, temb)
+
+        if self.io_layout == "nhwc":
+            hidden_states = ops.permute(hidden_states, [0, 2, 3, 1])
         return hidden_states
 
 
@@ -600,6 +617,7 @@ class Decoder(Module):
         norm_type: str = "group",
         mid_block_add_attention: bool = True,
         use_post_quant_conv: bool = True,
+        internal_io_layout: Literal["nchw", "nhwc"] = "nchw",
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
@@ -629,7 +647,14 @@ class Decoder(Module):
         self.in_channels = in_channels
         self.device = device
         self.dtype = dtype
+        self.internal_io_layout = internal_io_layout
         self.activation = activation_function_from_name(act_fn)
+
+        if self.internal_io_layout not in ("nchw", "nhwc"):
+            raise ValueError(
+                "internal_io_layout must be one of 'nchw' or 'nhwc'. "
+                f"Got {self.internal_io_layout!r}."
+            )
 
         self.post_quant_conv: Conv2d | None = None
         if use_post_quant_conv:
@@ -643,6 +668,7 @@ class Decoder(Module):
                 has_bias=True,
                 device=device,
                 permute=True,
+                io_layout=internal_io_layout,
             )
 
         self.conv_in = Conv2d(
@@ -655,6 +681,7 @@ class Decoder(Module):
             has_bias=True,
             device=device,
             permute=True,
+            io_layout=internal_io_layout,
         )
         temb_channels = in_channels if norm_type == "spatial" else None
         self.mid_block = MidBlock2D(
@@ -671,6 +698,7 @@ class Decoder(Module):
             add_attention=mid_block_add_attention,
             attention_head_dim=block_out_channels[-1],
             output_scale_factor=1.0,
+            io_layout=internal_io_layout,
             device=device,
             dtype=dtype,
         )
@@ -698,6 +726,7 @@ class Decoder(Module):
                     output_scale_factor=1.0,
                     add_upsample=not is_final_block,
                     temb_channels=temb_channels,
+                    io_layout=internal_io_layout,
                     device=device,
                     dtype=dtype,
                 )
@@ -717,6 +746,7 @@ class Decoder(Module):
                 num_channels=block_out_channels[0],
                 eps=1e-6,
                 affine=True,
+                io_layout=internal_io_layout,
                 device=device,
             )
         self.conv_out = Conv2d(
@@ -729,6 +759,7 @@ class Decoder(Module):
             has_bias=True,
             device=device,
             permute=True,
+            io_layout=internal_io_layout,
         )
 
     def __call__(
@@ -744,6 +775,9 @@ class Decoder(Module):
             Decoded image tensor of shape [N, C_out, H, W] where H and W are
             upsampled from H_latent and W_latent.
         """
+        if self.internal_io_layout == "nhwc":
+            z = ops.permute(z, [0, 2, 3, 1])
+
         sample = (
             self.post_quant_conv(z) if self.post_quant_conv is not None else z
         )
@@ -754,6 +788,8 @@ class Decoder(Module):
         sample = self.conv_norm_out(sample)
         sample = self.activation(sample)
         sample = self.conv_out(sample)
+        if self.internal_io_layout == "nhwc":
+            sample = ops.permute(sample, [0, 3, 1, 2])
         return sample
 
     def input_types(self) -> tuple[TensorType, ...]:

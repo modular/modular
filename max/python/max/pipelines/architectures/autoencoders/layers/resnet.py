@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from typing import Literal
+
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.nn.activation import activation_function_from_name
@@ -38,6 +40,7 @@ class ResnetBlock2D(Module):
         non_linearity: str = "silu",
         use_conv_shortcut: bool = False,
         conv_shortcut_bias: bool = True,
+        io_layout: Literal["nchw", "nhwc"] = "nchw",
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
@@ -66,12 +69,14 @@ class ResnetBlock2D(Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.use_conv_shortcut = use_conv_shortcut
+        self.io_layout = io_layout
         self.activation = activation_function_from_name(non_linearity)
         self.norm1 = GroupNorm(
             num_groups=groups,
             num_channels=in_channels,
             eps=eps,
             affine=True,
+            io_layout=io_layout,
             device=device,
         )
         self.conv1 = Conv2d(
@@ -86,12 +91,14 @@ class ResnetBlock2D(Module):
             has_bias=True,
             device=device,
             permute=True,
+            io_layout=io_layout,
         )
         self.norm2 = GroupNorm(
             num_groups=groups_out,
             num_channels=out_channels,
             eps=eps,
             affine=True,
+            io_layout=io_layout,
             device=device,
         )
         self.conv2 = Conv2d(
@@ -106,6 +113,7 @@ class ResnetBlock2D(Module):
             has_bias=True,
             device=device,
             permute=True,
+            io_layout=io_layout,
         )
         self.conv_shortcut: Conv2d | None = None
         if self.use_conv_shortcut or in_channels != out_channels:
@@ -121,6 +129,7 @@ class ResnetBlock2D(Module):
                 has_bias=conv_shortcut_bias,
                 device=device,
                 permute=True,
+                io_layout=io_layout,
             )
 
     def __call__(

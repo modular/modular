@@ -67,6 +67,7 @@ class AutoencoderKLFlux2(Module):
             norm_type="group",
             mid_block_add_attention=config.mid_block_add_attention,
             use_post_quant_conv=config.use_post_quant_conv,
+            internal_io_layout="nhwc",
             device=config.device,
             dtype=config.dtype,
         )

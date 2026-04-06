@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 from max.dtype import DType
@@ -50,6 +51,7 @@ class GroupNorm(Module):
         num_channels: int,
         eps: float = 1e-5,
         affine: bool = True,
+        io_layout: Literal["nchw", "nhwc"] = "nchw",
         device: DeviceRef = DeviceRef.GPU(),
     ) -> None:
         super().__init__()
@@ -57,6 +59,13 @@ class GroupNorm(Module):
         self.num_channels = num_channels
         self.eps = eps
         self.affine = affine
+        self.io_layout = io_layout
+
+        if self.io_layout not in ("nchw", "nhwc"):
+            raise ValueError(
+                "io_layout must be one of 'nchw' or 'nhwc'. "
+                f"Got {self.io_layout!r}."
+            )
 
         if self.num_channels % self.num_groups != 0:
             raise ValueError(
@@ -85,7 +94,8 @@ class GroupNorm(Module):
         """Apply group normalization to input tensor.
 
         Args:
-            x: Input tensor of shape ``[N, C, *]`` where ``C`` is number of channels
+            x: Input tensor. ``io_layout="nchw"`` expects shape ``[N, C, *]``.
+                ``io_layout="nhwc"`` expects rank-4 shape ``[N, H, W, C]``.
 
         Returns:
             Normalized tensor of same shape as input
@@ -95,42 +105,66 @@ class GroupNorm(Module):
             raise ValueError(
                 f"Expected input tensor with >=2 dimensions, got shape {x.shape}"
             )
-        if x.shape[1] != self.num_channels:
+
+        if self.io_layout == "nhwc" and x.rank != 4:
+            raise ValueError(
+                "io_layout='nhwc' requires a rank-4 input tensor, got "
+                f"shape {x.shape}"
+            )
+
+        channel_axis = 1 if self.io_layout == "nchw" else x.rank - 1
+        if x.shape[channel_axis] != self.num_channels:
             raise ValueError(
                 f"Expected {self.num_channels} channels, got shape {x.shape}"
             )
 
+        input_x = (
+            x if self.io_layout == "nchw" else ops.permute(x, [0, 3, 1, 2])
+        )
+
         gamma = (
-            self.weight.cast(x.dtype).to(x.device)
+            self.weight.cast(input_x.dtype).to(input_x.device)
             if self.affine and self.weight
             else ops.constant(
                 np.full((self.num_channels,), 1.0, dtype=np.float32),
-                dtype=x.dtype,
+                dtype=input_x.dtype,
                 device=DeviceRef.CPU(),
-            ).to(x.device)
+            ).to(input_x.device)
         )
 
         beta = (
-            self.bias.cast(x.dtype).to(x.device)
+            self.bias.cast(input_x.dtype).to(input_x.device)
             if self.affine and self.bias
             else ops.constant(
                 np.full((self.num_channels,), 0.0, dtype=np.float32),
-                dtype=x.dtype,
+                dtype=input_x.dtype,
                 device=DeviceRef.CPU(),
-            ).to(x.device)
+            ).to(input_x.device)
         )
 
-        return ops.custom(
+        output = ops.custom(
             "group_norm",
-            x.device,
+            input_x.device,
             [
-                x,
+                input_x,
                 gamma,
                 beta,
-                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
+                ops.constant(
+                    self.eps, dtype=input_x.dtype, device=DeviceRef.CPU()
+                ),
                 ops.constant(
                     self.num_groups, dtype=DType.int32, device=DeviceRef.CPU()
                 ),
             ],
-            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
+            [
+                TensorType(
+                    dtype=input_x.dtype,
+                    shape=input_x.shape,
+                    device=input_x.device,
+                )
+            ],
         )[0].tensor
+
+        if self.io_layout == "nhwc":
+            output = ops.permute(output, [0, 2, 3, 1])
+        return output
