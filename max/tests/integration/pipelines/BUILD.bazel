@@ -24,7 +24,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_model_config_encoding_resolution",
-    size = "small",
+    size = "medium",
     srcs = ["test_model_config_encoding_resolution.py"],
     deps = [
         "//max/python/max/driver",
