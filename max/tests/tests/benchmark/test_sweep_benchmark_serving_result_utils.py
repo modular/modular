@@ -21,11 +21,14 @@ from unittest.mock import patch
 
 import pytest
 from max.benchmark.benchmark_shared.sweep_benchmark_serving_result_utils import (
+    BENCHMARK_DATAPOINTS,
     SUPPORTED_SWEEP_SERVING_PERCENTILES,
+    ServingSweepResultWriter,
     SweepServingBenchmarkResult,
     SweepServingBenchmarkResultWriter,
     SweepServingBenchmarkUploadSettings,
     _build_sweep_serving_upload_cmd,
+    format_float,
     validate_sweep_serving_percentiles,
 )
 
@@ -52,9 +55,9 @@ def test_writer_supported_percentiles_matches_module() -> None:
 
 
 def test_format_float() -> None:
-    assert SweepServingBenchmarkResultWriter.format_float(None) == "ERR"
-    assert SweepServingBenchmarkResultWriter.format_float(1.25) == "1.25"
-    assert SweepServingBenchmarkResultWriter.format_float(0.0) == "0.0"
+    assert format_float(None) == "ERR"
+    assert format_float(1.25) == "1.25"
+    assert format_float(0.0) == "0.0"
 
 
 def test_column_names_llm_no_gpu() -> None:
@@ -64,7 +67,7 @@ def test_column_names_llm_no_gpu() -> None:
         collect_gpu_stats=False,
         text_to_image=False,
     )
-    names = w.column_names()
+    names = w.column_names
     assert names[:8] == [
         "max_concurrency",
         "request_rate",
@@ -89,7 +92,7 @@ def test_column_names_llm_with_gpu() -> None:
         collect_gpu_stats=True,
         text_to_image=False,
     )
-    assert w.column_names()[-1] == "gpu_utilization"
+    assert w.column_names[-1] == "gpu_utilization"
 
 
 def test_column_names_t2i() -> None:
@@ -99,7 +102,7 @@ def test_column_names_t2i() -> None:
         collect_gpu_stats=False,
         text_to_image=True,
     )
-    names = w.column_names()
+    names = w.column_names
     assert names[5:7] == [
         "total_req_latency_mean_ms",
         "total_generated_outputs",
@@ -398,3 +401,64 @@ def test_upload_non_dry_run_invokes_subprocess(tmp_path: Path) -> None:
                 result=result,
             )
     run_mock.assert_called_once()
+
+
+def test_serving_sweep_datapoint_count() -> None:
+    assert len(BENCHMARK_DATAPOINTS) == 23
+
+
+def test_serving_sweep_writer_columns_no_lora(tmp_path: Path) -> None:
+    w = ServingSweepResultWriter(
+        tmp_path / "x.csv",
+        include_lora_columns=False,
+        max_num_loras=0,
+    )
+    names = w.column_names
+    assert names[:3] == ["blocksize", "max_concurrency", "request_rate"]
+    assert names[-1] == "gpu_util"
+    assert "max_num_loras" not in names
+
+
+def test_serving_sweep_writer_columns_with_lora(tmp_path: Path) -> None:
+    w = ServingSweepResultWriter(
+        tmp_path / "x.csv",
+        include_lora_columns=True,
+        max_num_loras=4,
+    )
+    names = w.column_names
+    assert names[-2:] == ["max_num_loras", "base_model_traffic_ratio"]
+
+
+def test_serving_sweep_writer_csv_roundtrip(tmp_path: Path) -> None:
+    out = tmp_path / "results.csv"
+    expected_columns = ServingSweepResultWriter(
+        out,
+        include_lora_columns=True,
+        max_num_loras=2,
+    ).column_names
+    with ServingSweepResultWriter(
+        out,
+        include_lora_columns=True,
+        max_num_loras=2,
+    ) as writer:
+        writer.write_row(
+            blocksize=30,
+            max_concurrency=4,
+            request_rate=2.5,
+            results={"duration": 10.0, "wer": None},
+            base_model_traffic_ratio=0.25,
+        )
+    lines = out.read_text().strip().splitlines()
+    assert len(lines) == 2
+    header_cols = lines[0].split(",")
+    data_cols = lines[1].split(",")
+    assert header_cols == expected_columns
+    assert data_cols[0] == "30"
+    assert data_cols[1] == "4"
+    assert data_cols[2] == "2.5"
+    duration_idx = header_cols.index("duration")
+    wer_idx = header_cols.index("wer")
+    assert data_cols[duration_idx] == "10.0"
+    assert data_cols[wer_idx] == "ERR"
+    assert data_cols[-2] == "2"
+    assert data_cols[-1] == "0.25"
