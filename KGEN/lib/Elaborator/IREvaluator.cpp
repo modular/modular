@@ -438,10 +438,9 @@ ParamNodeBase *IREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {
 
 ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
 IREvaluator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                                    TypedAttr symCst, bool allowParametric,
-                                    bool sanitize) {
+                                    TypedAttr symCst, bool sanitize) {
   return elaborator->getExpectedMangledName(errorLoc, errorContext, symCst,
-                                            allowParametric, sanitize);
+                                            sanitize);
 }
 
 GeneratorOp IREvaluator::getGenerator(SymbolRefAttr symbol) {

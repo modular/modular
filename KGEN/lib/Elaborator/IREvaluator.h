@@ -126,12 +126,9 @@ private:
   /// Compute the expected mangled name of a generator from a parameter.
   /// Returns both the mangled name and the generator referenced by the
   /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.
-  /// If `allowParametric`, any not fully bound symbol reference will just have
-  /// its symbol name returned. Otherwise, not fully bound symbols are errors.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
   getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                         TypedAttr symCst, bool allowParametric,
-                         bool sanitize = false) override;
+                         TypedAttr symCst, bool sanitize = false) override;
 
   GeneratorOp getGenerator(SymbolRefAttr symbol) override;
 

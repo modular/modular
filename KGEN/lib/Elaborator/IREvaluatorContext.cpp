@@ -78,53 +78,21 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
     GetLinkageNameAttr getLinkageNameAttr) {
   TargetInfoAttr target =
       cast<TargetParamAttr>(getLinkageNameAttr.getTarget()).getTarget();
-  // The elaborator's finalization sanitizes GPU symbol names (via
-  // sanitizeSymbolToAlnum). This call predicts the final sanitized name so that
-  // user code receiving the linkage name references the correct symbol.
+
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      getExpectedMangledName(*errorLoc, "get_linkage_name",
-                             getLinkageNameAttr.getFunc(),
-                             /*allowParametric=*/true,
-                             /*sanitize=*/target.isGPU());
+      evaluateMangledName(getLinkageNameAttr.getFunc(),
+                          /*sanitize=*/target.isGPU(), *errorLoc,
+                          "get_linkage_name");
+
   if (pairOrError.isError()) {
     emitError(pairOrError.takeError());
     return failure();
   }
-  auto [mangledName, generator] = pairOrError.takeValue();
 
-  // If the generator has an explicit linkage name, return the resolved name.
-  if (Attribute linkageNameAttr = generator.getLinkageNameAttr()) {
-    // Sanitize linkage names for GPU targets, as getExpectedMangledname does
-    // above.
-    auto maybeSanitize = [target](StringAttr str) {
-      if (target.isGPU())
-        str = KGEN::sanitizeSymbolToAlnum(str);
-      return str;
-    };
+  auto [mangledName, _] = pairOrError.takeValue();
 
-    // Constant linkage name — return directly.
-    if (auto linkageName = dyn_cast<StringAttr>(linkageNameAttr)) {
-      return {StringAttr::get(maybeSanitize(linkageName).getValue(),
-                              getLinkageNameAttr.getType())};
-    }
-
-    // Parametric linkage name — resolve via the evaluator.
-    if (auto symbol = extractSymbolConstantAttr(getLinkageNameAttr.getFunc())) {
-      FailureOr<TypedAttr> result = concretizeLinkageName(generator, symbol);
-      if (succeeded(result)) {
-        if (!*result)
-          return TypedAttr(); // Not ready yet — signal retry.
-        if (auto resolved = dyn_cast<StringAttr>(*result)) {
-          return {StringAttr::get(maybeSanitize(resolved).getValue(),
-                                  getLinkageNameAttr.getType())};
-        }
-      }
-      emitError({*errorLoc,
-                 "failed to resolve linkage name for '" +
-                     symbol.getSymbol().getLeafReference().getValue() + "'"});
-      return failure();
-    }
-  }
+  if (!mangledName)
+    return TypedAttr(); // Not ready yet — signal retry.
 
   return {
       StringAttr::get(mangledName.getValue(), getLinkageNameAttr.getType())};
@@ -283,15 +251,17 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
   bool propagateError = cast<BoolAttr>(attr.getPropagateError()).getValue();
   SymbolConstantAttr symbol = extractSymbolConstantAttr(attr.getFunc());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      getExpectedMangledName(*errorLoc, "compile_assembly", symbol,
-                             /*allowParametric=*/false);
+      evaluateMangledName(symbol, /*sanitize=*/false, *errorLoc,
+                          "compile_assembly");
   if (pairOrError.isError()) {
     getParentNode()->setToError(pairOrError.takeError());
     return failure();
   }
-  StringAttr name;
-  GeneratorOp func;
-  std::tie(name, func) = pairOrError.takeValue();
+
+  auto [name, func] = pairOrError.takeValue();
+
+  if (!name)
+    return TypedAttr(); // Not ready yet — signal retry.
 
   // Construct the expected result type.
   MLIRContext *ctx = attr.getContext();
@@ -348,6 +318,53 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
                        populateFnRef})};
 }
 
+/// Evaluate the mangled name of a function, including evaluating any explicit
+/// linkage name. This may return an empty StringAttr, signalling that the
+/// function is not yet ready.
+ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
+IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
+                                        Location errorLoc,
+                                        StringRef errorContext) {
+  // Ask the elaborator for the expected mangled name
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+      getExpectedMangledName(errorLoc, errorContext, symCst, sanitize);
+
+  if (pairOrError.isError())
+    return pairOrError.takeError();
+
+  auto [name, generator] = pairOrError.takeValue();
+
+  // If the generator has an explicit linkage name, evaluate and return the
+  // resolved name. This requires a concrete function which may not be ready
+  // for us yet.
+  if (generator.getLinkageNameAttr()) {
+    if (auto symbol = extractSymbolConstantAttr(symCst)) {
+      FailureOr<TypedAttr> result = concretizeLinkageName(generator, symbol);
+      if (succeeded(result)) {
+        if (!*result) {
+          // Concrete function not ready yet — signal retry.
+          return std::make_pair(StringAttr(), GeneratorOp());
+        }
+        if (auto resolved = dyn_cast<StringAttr>(*result)) {
+          if (!sanitize)
+            name = resolved;
+          else
+            name = sanitizeSymbolToAlnum(resolved);
+          return std::make_pair(name, generator);
+        }
+        // Else, we couldn't resolve the linkage name - fall through to an
+        // error.
+      }
+      return ErrorTree(
+          {errorLoc,
+           "'" + errorContext + "' failed to resolve linkage name for '" +
+               symbol.getSymbol().getLeafReference().getValue() + "'"});
+    }
+  }
+
+  return std::make_pair(name, generator);
+}
+
 FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
     CompileOffloadClosureAttr compileOffloadClosureAttr) {
   // Create the signature and an empty body of the populate capture for offload
@@ -366,10 +383,9 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   TargetInfoAttr target =
       cast<TargetParamAttr>(compileOffloadClosureAttr.getTarget()).getTarget();
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      getExpectedMangledName(*errorLoc, "compile_offload_closure",
-                             compileOffloadClosureAttr.getFunc(),
-                             /*allowParametric=*/false,
-                             /*sanitize=*/target.isGPU());
+      evaluateMangledName(compileOffloadClosureAttr.getFunc(),
+                          /*sanitize=*/target.isGPU(), *errorLoc,
+                          "compile_offload_closure");
 
   if (pairOrError.isError()) {
     emitError(pairOrError.takeError());
@@ -377,28 +393,8 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   }
   auto [name, generator] = pairOrError.takeValue();
 
-  // The offload elaborator's finalization renames functions with a linkageName
-  // attribute to that name. The populate_captures function name must match what
-  // writeCaptureArgs will produce after offload finalization. Constant linkage
-  // names are already handled by getExpectedMangledName; resolve parametric
-  // ones here.
-  if (Attribute linkageNameAttr = generator.getLinkageNameAttr()) {
-    if (!isa<StringAttr>(linkageNameAttr)) {
-      if (auto symbol =
-              extractSymbolConstantAttr(compileOffloadClosureAttr.getFunc())) {
-        FailureOr<TypedAttr> resolved =
-            concretizeLinkageName(generator, symbol);
-        if (succeeded(resolved)) {
-          if (!*resolved)
-            return TypedAttr(); // Not ready yet — signal retry.
-          if (auto resolvedStr = dyn_cast<StringAttr>(*resolved)) {
-            name = target.isGPU() ? sanitizeSymbolToAlnum(resolvedStr)
-                                  : resolvedStr;
-          }
-        }
-      }
-    }
-  }
+  if (!name)
+    return TypedAttr(); // Not ready yet — signal retry.
 
   // Construct the expected result type.
   MLIRContext *ctx = compileOffloadClosureAttr.getContext();

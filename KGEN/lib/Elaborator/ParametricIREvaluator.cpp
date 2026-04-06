@@ -737,11 +737,9 @@ GeneratorOp ParametricIREvaluator::getGenerator(SymbolRefAttr symbol) {
 ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
 ParametricIREvaluator::getExpectedMangledName(Location errorLoc,
                                               StringRef errorContext,
-                                              TypedAttr symCst,
-                                              bool allowParametric,
-                                              bool sanitize) {
+                                              TypedAttr symCst, bool sanitize) {
   return elaborator->getExpectedMangledName(errorLoc, errorContext, symCst,
-                                            allowParametric, sanitize);
+                                            sanitize);
 }
 
 ErrorOr<CrossDeviceFunction>

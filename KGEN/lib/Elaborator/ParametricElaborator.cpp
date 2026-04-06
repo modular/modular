@@ -484,9 +484,7 @@ ParametricElaborator::getConcreteStructTypeReference(
 ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
 ParametricElaborator::getExpectedMangledName(Location errorLoc,
                                              StringRef errorContext,
-                                             TypedAttr symCst,
-                                             bool allowParametric,
-                                             bool sanitize) {
+                                             TypedAttr symCst, bool sanitize) {
   auto symbol = extractSymbolConstantAttr(symCst);
   if (!symbol) {
     return ErrorTree(
@@ -1933,7 +1931,6 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   SymbolConstantAttr symbol = extractSymbolConstantAttr(op.getFuncAttr());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       getExpectedMangledName(op.getLoc(), "compile_offload", symbol,
-                             /*allowParametric=*/false,
                              /*sanitize=*/false);
   if (pairOrError.isError()) {
     return pairOrError.takeError();
