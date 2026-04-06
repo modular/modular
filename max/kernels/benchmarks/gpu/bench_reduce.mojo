@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
+from std.sys import (
+    align_of,
+    get_defined_bool,
+    get_defined_int,
+    get_defined_string,
+    simd_width_of,
+)
 from std.sys.info import _TargetType
 
 from std.algorithm.backend.gpu.reduction import reduce_launch
@@ -24,6 +30,7 @@ from std.benchmark import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout
 from std.gpu.host import DeviceContext, get_gpu_target
+from std.memory import bitcast
 from internal_utils import (
     CacheBustingBuffer,
     get_defined_shape,
@@ -104,6 +111,13 @@ def run_reduce[
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
+    comptime packed_u64_input_3072 = get_defined_bool[
+        "packed_u64_input_3072", False
+    ]()
+    comptime packed_u64_input_4096 = get_defined_bool[
+        "packed_u64_input_4096", False
+    ]()
+
     @__copy_capture(axis)
     @parameter
     @always_inline
@@ -118,15 +132,42 @@ def run_reduce[
                 RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
             )
 
-            @__copy_capture(input_lt)
+            @__copy_capture(input_lt, shape)
             @parameter
             def input_fn[
                 dtype: DType,
                 width: Int,
                 _rank: Int,
             ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+                var row_coords = rebind[IndexList[rank]](coords)
+                comptime if (
+                    dtype == DType.bfloat16
+                    and width == 8
+                    and rank == 3
+                ):
+                    if (
+                        axis == rank - 1
+                        and shape[0] == 1
+                        and (
+                            (
+                                packed_u64_input_3072
+                                and shape[1] == 1024
+                                and shape[2] == 3072
+                            )
+                            or (
+                                packed_u64_input_4096
+                                and shape[1] == 256
+                                and shape[2] == 4096
+                            )
+                        )
+                    ):
+                        return bitcast[dtype, width](
+                            input_lt.ptr_at_offset(row_coords).bitcast[
+                                UInt64
+                            ]().load[width=2]()
+                        )
                 return rebind[SIMD[dtype, width]](
-                    input_lt.load[width=width](rebind[IndexList[rank]](coords))
+                    input_lt.load[width=width](row_coords)
                 )
 
             reduce_launch[
