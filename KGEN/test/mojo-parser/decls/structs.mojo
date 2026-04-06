@@ -10,8 +10,10 @@
 # Support types
 # ===----------------------------------------------------------------------=== #
 
+
 trait RPTTrait(TrivialRegisterPassable):
     pass
+
 
 # ===----------------------------------------------------------------------=== #
 # Destructor tests
@@ -23,7 +25,7 @@ trait RPTTrait(TrivialRegisterPassable):
 # It does have a destructor though because of AnyType conformance.
 # CHECK-NOT: destructor :!lit.generator
 # CHECK: lit.fn @"__del__
-struct DtorExample1(TrivialRegisterPassable, AnyType):
+struct DtorExample1(AnyType, TrivialRegisterPassable):
     var a: Int
 
 
@@ -31,7 +33,7 @@ struct DtorExample1(TrivialRegisterPassable, AnyType):
 # Shouldn't have a registered destructor because it's trivial and not explicit
 # CHECK-NOT: destructor :!lit.generator
 # CHECK: lit.fn @"__del__
-struct DtorExample2(TrivialRegisterPassable, AnyType):
+struct DtorExample2(AnyType, TrivialRegisterPassable):
     var a: Int
 
 
@@ -245,6 +247,7 @@ struct MyStructWith2PFuncs[m1: MyParam[_]]:
     def p(self, x: Int):
         pass
 
+
 # ===----------------------------------------------------------------------=== #
 # Nonmaterializable
 # ===----------------------------------------------------------------------=== #
@@ -291,6 +294,10 @@ def nmTargetNoop(x: NmTarget):
     pass
 
 
+def explict_non_nm_target[T: NmStruct]():
+    pass
+
+
 def nmResult() -> NmStruct:
     pass
 
@@ -326,6 +333,10 @@ def useNonmaterializable(p: Bool):
     tail_types(NmStruct(5))
     # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType !NmTarget, :param_list<!AnyType> [!NmTarget]
     tail_types(NmStruct(5), NmStruct(6))
+
+    # However, if the type is the explicitly not the nm-target, it should also work
+    # CHECK: call {{.*}}explict_non_nm_target{{.*}}<:!NmStruct {{.*}}>
+    explict_non_nm_target[NmStruct(5)]()
 
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}nmResult{{.*}}()
     # CHECK: %nmResult = lit.var.decl

@@ -77,5 +77,5 @@ def test_borrowed(x: RegPassable, y: MemOnly):
 
 # CHECK-LABEL: lit.fn @"function_reference
 def function_reference():
-    # CHECK: kgen.param.constant: {{.*}}#kgen.func.symbol<@generic_calls::@"function_reference()"
+    # CHECK: kgen.create_closure{{.*}}@"function_reference()"
     borrowed_generic(function_reference)

@@ -465,21 +465,8 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
 
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
-  if (auto expectedParamRef = dyn_cast<ParamType>(expectedType)) {
-    // If this is a nonmaterializable type (like IntLiteral), infer it like its
-    // materializable type (like Int), for example:
-    //    def example[T: TrivialRegisterPassable](a: T): ...
-    //    example(1) # T should be Int, not IntLiteral.
-    // TODO: Why is this here?  Seems like a strange place to do this.
-    // FIXME: We should probably do it in `setInferredValue` here.
-    if (!sugarIsa<FnLiteralTypeGeneratorType>(actualType)) {
-      if (ASTType nmTarget =
-              ASTType(actualType).getNonmaterializableTarget(shared))
-        actualType = nmTarget;
-    }
-
+  if (auto expectedParamRef = dyn_cast<ParamType>(expectedType))
     return matchParams(PValue(actualType).get(), expectedParamRef.getParam());
-  }
 
   // Handle when both are metatypes.
   // For example, when we match a Tuple[Int, Bool] against a
