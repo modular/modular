@@ -35,6 +35,7 @@ from .pipeline_model import (
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
 )
+from .taylorseer import TaylorSeer, TaylorSeerState
 from .tensor_struct import TensorStruct
 
 __all__ = [
@@ -53,6 +54,8 @@ __all__ = [
     "ModelOutputs",
     "PipelineModel",
     "PipelineModelWithKVCache",
+    "TaylorSeer",
+    "TaylorSeerState",
     "TensorStruct",
     "UnifiedEagleOutputs",
     "fbcache_conditional_execution",
