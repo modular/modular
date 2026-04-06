@@ -411,6 +411,12 @@ enum class ValidationKind {
 /// string summary, section body, or argument description.
 static bool isValidFirstCharacter(char c) { return !llvm::isLower(c); }
 
+/// Return whether this character is valid as the last character in a doc
+/// string summary, section body, or argument description.
+static bool isValidLastCharacter(char c) {
+  return c == '.' || c == '!' || c == '?' || c == '`';
+}
+
 class DocStringValidator {
 public:
   DocStringValidator(ASTDecl &decl)
@@ -436,43 +442,43 @@ public:
     if (!decl.getIfOperation())
       return;
     TypeSwitch<Operation *>(decl.getIfOperation())
-        .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp,
-              AliasDeclOp>([&](auto op) {
-          ValidationKind validation = requiresDocString(op)
-                                          ? ValidationKind::Strict
-                                          : ValidationKind::Normal;
-          if (!docStr) {
-            if (validation == ValidationKind::Strict &&
-                diagnoseMissingDocStrings && !isOpInPrivateModule(op))
-              emitDiag(op.getLoc(), "public symbol ")
-                  << op.getDeclName() << " is missing a doc string";
-            return;
-          }
+        .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, AliasDeclOp>(
+            [&](auto op) {
+              ValidationKind validation = requiresDocString(op)
+                                              ? ValidationKind::Strict
+                                              : ValidationKind::Normal;
+              if (!docStr) {
+                if (validation == ValidationKind::Strict &&
+                    diagnoseMissingDocStrings && !isOpInPrivateModule(op))
+                  emitDiag(op.getLoc(), "public symbol ")
+                      << op.getDeclName() << " is missing a doc string";
+                return;
+              }
 
-          if (validation == ValidationKind::Strict) {
-            // Check that the summary line is a complete sentence: it begins
-            // with a capital letter (or a punctuator such as '`'), and ends
-            // with a period.
-            StringRef summary = docStr->getSummary();
-            if (!summary.empty()) {
-              if (!isValidFirstCharacter(summary.front()))
-                emitDiag(docStr->getLoc(),
-                         "doc string summary should begin with "
-                         "a capital letter or non-alpha "
-                         "character, but this begins with '")
-                    << summary.front() << "'";
+              if (validation == ValidationKind::Strict) {
+                // Check that the summary line is a complete sentence: it begins
+                // with a capital letter (or a punctuator such as '`'), and ends
+                // with a period, '!', '?', or '`'.
+                StringRef summary = docStr->getSummary();
+                if (!summary.empty()) {
+                  if (!isValidFirstCharacter(summary.front()))
+                    emitDiag(docStr->getLoc(),
+                             "doc string summary should begin with "
+                             "a capital letter or non-alpha "
+                             "character, but this begins with '")
+                        << summary.front() << "'";
 
-              if (!summary.ends_with("."))
-                emitDiag(
-                    docStr->getLoc(),
-                    "doc string summary should end with a period '.', but this "
-                    "ends with '")
-                    << summary.back() << "'";
-            }
-          }
+                  if (!isValidLastCharacter(summary.back()))
+                    emitDiag(docStr->getLoc(),
+                             "doc string summary should end with a period '.', "
+                             "exclamation mark '!', question mark '?', or "
+                             "backtick '`', but this ends with '")
+                        << summary.back() << "'";
+                }
+              }
 
-          validateDecl(decl, op, validation);
-        });
+              validateDecl(decl, op, validation);
+            });
   }
 
 private:
@@ -523,10 +529,11 @@ private:
                                "non-alpha character, but this begins with '"
                             << *first << "'";
 
-    if (*last != '.' && *last != '`')
+    if (!isValidLastCharacter(*last))
       emitDiag(last, name)
-          << " should end with a period '.' or backtick '`', but this ends with"
-          << " '" << *last << "'";
+          << " should end with a period '.', exclamation mark '!', question "
+             "mark '?', or backtick '`', but this ends with '"
+          << *last << "'";
   }
 
   //===----------------------------------------------------------------------===//
