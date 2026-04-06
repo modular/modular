@@ -660,19 +660,32 @@ static void attachInstrumentationAttributes(llvm::Module &module,
   if (options.sanitizers.has(Sanitizers::kAddress) &&
       llvm::Triple(module.getTargetTriple()).isOSBinFormatMachO() &&
       !isGPUBackend(options)) {
-    // Resolve llvm-symbolizer via PATH at compile time and embed its absolute
-    // path so it works in sandboxed environments (e.g. bazel) where
-    // llvm-symbolizer may not be on PATH at runtime.
+    // Resolve llvm-symbolizer at compile time and embed its absolute path so it
+    // works in sandboxed environments (e.g. bazel) where llvm-symbolizer may
+    // not be on PATH at runtime.
+    //
+    // Search order:
+    //   1. PATH (standard install)
+    //   2. LLVM_SYMBOLIZER_PATH env var (set by bazel lit test infrastructure
+    //      when llvm-symbolizer is a data dep but its directory isn't in PATH)
     std::string optStr;
     llvm::ErrorOr<std::string> symbolizer =
         llvm::sys::findProgramByName("llvm-symbolizer");
+    if (!symbolizer) {
+      if (const char *envPath = std::getenv("LLVM_SYMBOLIZER_PATH")) {
+        llvm::SmallString<256> absPath(envPath);
+        llvm::sys::fs::make_absolute(absPath);
+        if (llvm::sys::fs::exists(absPath))
+          symbolizer = std::string(absPath);
+      }
+    }
     if (symbolizer) {
       optStr = "external_symbolizer_path=" + symbolizer.get();
     } else {
       LLVM_DEBUG(llvm::dbgs()
-                 << "note: llvm-symbolizer not found in PATH; ASAN stack "
-                    "traces on macOS will use atos and may not show inlined "
-                    "frames.\n");
+                 << "note: llvm-symbolizer not found in PATH or "
+                    "LLVM_SYMBOLIZER_PATH; ASAN stack traces on macOS will "
+                    "use atos and may not show inlined frames.\n");
     }
 
     auto &ctx = module.getContext();
