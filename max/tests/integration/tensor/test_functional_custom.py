@@ -18,12 +18,16 @@ They don't otherwise make any attempt at coverage, edge cases, or correctness.
 
 import os
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
+from max.engine import Model
 from max.experimental import functional as F
+from max.experimental import realization_context as rc
 from max.experimental.tensor import Tensor
+from max.graph import Graph
 from max.nn import kernels
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
@@ -123,29 +127,89 @@ def test_custom_with_string_path(kernel_verification_ops_path: Path) -> None:
 def test_custom_extensions_cached_across_calls(
     kernel_verification_ops_path: Path,
 ) -> None:
-    """Test that custom_extensions are cached and not reloaded on every call."""
-    x = Tensor.ones([64], dtype=DType.float32, device=CPU())
-    y = Tensor.ones([64], dtype=DType.float32, device=CPU())
+    """Test that repeated identical custom op calls reuse a cached Model."""
+    rc._EAGER_MODEL_CACHE.clear()
 
-    # First call
-    result1 = F.custom(
-        "my_add",
-        device=CPU(),
-        values=[x, y],
-        out_types=[x.type],
-        custom_extensions=kernel_verification_ops_path,
-    )
-    assert result1[0].real
+    x = Tensor.ones([65], dtype=DType.float32, device=CPU())
+    y = Tensor.ones([65], dtype=DType.float32, device=CPU())
 
-    # Second call - should use cached extension
-    result2 = F.custom(
-        "my_add",
-        device=CPU(),
-        values=[x, y],
-        out_types=[x.type],
-        custom_extensions=kernel_verification_ops_path,
+    load_count = 0
+    original_load = rc._session().load
+
+    def counting_load(graph: Graph) -> Model:
+        nonlocal load_count
+        load_count += 1
+        return original_load(graph)
+
+    with mock.patch.object(
+        type(rc._session()), "load", side_effect=counting_load
+    ):
+        result1 = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x, y],
+            out_types=[x.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result1[0].real
+
+        result2 = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x, y],
+            out_types=[x.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result2[0].real
+
+    assert load_count == 1, (
+        f"Expected 1 compilation but got {load_count} — cache miss"
     )
-    assert result2[0].real
+
+
+def test_custom_extensions_cache_miss_on_different_shapes(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Test that different input shapes produce cache misses."""
+    rc._EAGER_MODEL_CACHE.clear()
+
+    x1 = Tensor.ones([65], dtype=DType.float32, device=CPU())
+    y1 = Tensor.ones([65], dtype=DType.float32, device=CPU())
+    x2 = Tensor.ones([66], dtype=DType.float32, device=CPU())
+    y2 = Tensor.ones([66], dtype=DType.float32, device=CPU())
+
+    load_count = 0
+    original_load = rc._session().load
+
+    def counting_load(graph: Graph) -> Model:
+        nonlocal load_count
+        load_count += 1
+        return original_load(graph)
+
+    with mock.patch.object(
+        type(rc._session()), "load", side_effect=counting_load
+    ):
+        result1 = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x1, y1],
+            out_types=[x1.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result1[0].real
+
+        result2 = F.custom(
+            "my_add",
+            device=CPU(),
+            values=[x2, y2],
+            out_types=[x2.type],
+            custom_extensions=kernel_verification_ops_path,
+        )
+        assert result2[0].real
+
+    assert load_count == 2, (
+        f"Expected 2 compilations for different shapes but got {load_count}"
+    )
 
 
 def test_custom_helper_function_pattern(
