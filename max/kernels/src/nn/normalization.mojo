@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_down, ceildiv, clamp, rsqrt
+from std.collections import OptionalReg
+from std.math import align_down, ceildiv, clamp, rsqrt, sqrt
 from std.sys.info import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
@@ -54,7 +55,7 @@ from layout import (
 )
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
-from std.memory import stack_allocation
+from std.memory import bitcast, stack_allocation
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -111,6 +112,77 @@ def block_reduce[
             m2_broadcast[0] = block_m2
     barrier()
     return m2_broadcast[0]
+
+
+
+
+@always_inline
+def block_reduce_one_barrier[
+    dtype: DType, max_warps_per_block: Int
+](val: Scalar[dtype]) -> Scalar[dtype]:
+    var m2_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+
+    var warp_m2 = warp.sum(val)
+
+    var wid = warp_id[broadcast=True]()
+    var lid = lane_id()
+
+    if lid == 0:
+        m2_shared[wid] = warp_m2
+    barrier()
+
+    var block_m2 = Scalar[dtype](0)
+    comptime for i in range(max_warps_per_block):
+        block_m2 += m2_shared[i]
+    return block_m2
+
+
+@always_inline
+def block_reduce_one_barrier_lane_group[
+    dtype: DType, max_warps_per_block: Int
+](val: Scalar[dtype]) -> Scalar[dtype]:
+    var m2_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+
+    var warp_m2 = warp.sum(val)
+
+    var wid = warp_id[broadcast=True]()
+    var lid = lane_id()
+
+    if lid == 0:
+        m2_shared[wid] = warp_m2
+    barrier()
+
+    var block_m2 = Scalar[dtype](0)
+    if lid < UInt(max_warps_per_block):
+        block_m2 = m2_shared[lid]
+    return warp.lane_group_sum[num_lanes=max_warps_per_block](block_m2)
+
+
+@always_inline
+def block_reduce_one_barrier_warp_sum[
+    dtype: DType, max_warps_per_block: Int
+](val: Scalar[dtype]) -> Scalar[dtype]:
+    var m2_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+
+    var warp_m2 = warp.sum(val)
+
+    var wid = warp_id[broadcast=True]()
+    var lid = lane_id()
+
+    if lid == 0:
+        m2_shared[wid] = warp_m2
+    barrier()
+
+    var block_m2 = Scalar[dtype](0)
+    if lid < UInt(max_warps_per_block):
+        block_m2 = m2_shared[lid]
+    return warp.sum(block_m2)
 
 
 @always_inline
@@ -552,9 +624,12 @@ def layer_norm_gpu[
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
+    var use_doubled = rows >= 1024
+    var effective_simd = simd_width * 2 if use_doubled else simd_width
+
     var grid_dim = rows
     var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        ceildiv(ceildiv(cols, effective_simd), WARP_SIZE) * WARP_SIZE,
         WARP_SIZE * max_warps_per_block,
     )
 
@@ -1009,6 +1084,826 @@ def rms_norm_gpu_warp_tiling_128[
             output_fn[simd_width, align](Int(row), Int(idx), norm_val)
 
 
+@always_inline
+def _rms_norm_load_gamma[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    alignment: Int,
+    linear_gamma_indexing: Bool = False,
+](
+    gamma: TileTensor[dtype, LayoutType, origin], idx: UInt
+) -> SIMD[dtype, simd_width]:
+    comptime if linear_gamma_indexing:
+        return gpu_load[
+            width=simd_width, read_only=True, alignment=alignment
+        ](gamma.ptr + Int(idx))
+    return gpu_load[
+        width=simd_width, read_only=True, alignment=alignment
+    ](gamma.ptr + Int(gamma.layout(Idx(idx))))
+
+
+def rms_norm_gpu_warp_tiling_aligned[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+    skip_weight_offset: Bool = False,
+](
+    gamma: TileTensor[dtype, LayoutType, origin],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    num_cols: Int,
+):
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var n_eps = Scalar[accum_type](num_cols) * eps_accum
+    var sqrt_n = sqrt(Scalar[accum_type](num_cols))
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var idx = tid * UInt(simd_width)
+
+    with PDL():
+        var raw_data = input_fn[simd_width](Int(row), Int(idx))
+
+        var thread_m2: Scalar[accum_type] = (raw_data * raw_data).reduce_add().cast[accum_type]()
+        var row_m2 = block_reduce_one_barrier[max_warps_per_block=max_warps_per_block](
+            thread_m2
+        )
+        var norm_factor = sqrt_n * rsqrt(row_m2 + n_eps)
+
+        var gamma_val = gpu_load[
+            width=simd_width, read_only=True, alignment=align
+        ](gamma.ptr + Int(gamma.layout(Idx(idx))))
+
+        comptime if skip_weight_offset:
+            comptime if multiply_before_cast:
+                var norm_bf16 = norm_factor.cast[dtype]()
+                var norm_val = raw_data * (gamma_val * norm_bf16)
+                output_fn[simd_width, align](Int(row), Int(idx), norm_val)
+            else:
+                var norm_val = (raw_data.cast[accum_type]() * norm_factor).cast[dtype]() * gamma_val
+                output_fn[simd_width, align](Int(row), Int(idx), norm_val)
+        else:
+            comptime if multiply_before_cast:
+                var gamma_accum = (
+                    gamma_val.cast[accum_type]() + weight_offset_accum
+                )
+                var norm_val = (raw_data.cast[accum_type]() * norm_factor * gamma_accum).cast[dtype]()
+                output_fn[simd_width, align](Int(row), Int(idx), norm_val)
+            else:
+                var norm_val = (raw_data.cast[accum_type]() * norm_factor).cast[dtype]() * (
+                    gamma_val + weight_offset_accum.cast[dtype]()
+                )
+                output_fn[simd_width, align](Int(row), Int(idx), norm_val)
+
+
+def rms_norm_gpu_warp_tiling_aligned_two_tiles[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+    skip_weight_offset: Bool = False,
+](
+    gamma: TileTensor[dtype, LayoutType, origin],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    num_cols: Int,
+):
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var n_eps = Scalar[accum_type](num_cols) * eps_accum
+    var sqrt_n = sqrt(Scalar[accum_type](num_cols))
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var idx0 = tid * UInt(simd_width)
+    var tile_stride = block_dim.x * UInt(simd_width)
+    var idx1 = idx0 + tile_stride
+
+    with PDL():
+        var raw_data0 = input_fn[simd_width](Int(row), Int(idx0))
+        var raw_data1 = input_fn[simd_width](Int(row), Int(idx1))
+
+        var thread_m2: Scalar[accum_type] = (
+            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
+            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
+        )
+        var row_m2 = block_reduce_one_barrier_lane_group[
+            max_warps_per_block=max_warps_per_block
+        ](thread_m2)
+        var norm_factor = sqrt_n * rsqrt(row_m2 + n_eps)
+
+        comptime if skip_weight_offset:
+            comptime if multiply_before_cast:
+                var norm_bf16 = norm_factor.cast[dtype]()
+                var gamma_val0 = gpu_load[
+                    width=simd_width, read_only=True, alignment=align
+                ](gamma.ptr + Int(gamma.layout(Idx(idx0))))
+                var norm_val0 = raw_data0 * (gamma_val0 * norm_bf16)
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = gpu_load[
+                    width=simd_width, read_only=True, alignment=align
+                ](gamma.ptr + Int(gamma.layout(Idx(idx1))))
+                var norm_val1 = raw_data1 * (gamma_val1 * norm_bf16)
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+            else:
+                var gamma_val0 = gpu_load[
+                    width=simd_width, read_only=True, alignment=align
+                ](gamma.ptr + Int(gamma.layout(Idx(idx0))))
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * gamma_val0
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = gpu_load[
+                    width=simd_width, read_only=True, alignment=align
+                ](gamma.ptr + Int(gamma.layout(Idx(idx1))))
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * gamma_val1
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+        else:
+            comptime if multiply_before_cast:
+                var gamma_val0 = gpu_load[
+                    width=simd_width, read_only=True, alignment=align
+                ](gamma.ptr + Int(gamma.layout(Idx(idx0))))
+                var gamma_accum0 = (
+                    gamma_val0.cast[accum_type]() + weight_offset_accum
+                )
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor * gamma_accum0
+                ).cast[dtype]()
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = gpu_load[
+                    width=simd_width, read_only=True, alignment=align
+                ](gamma.ptr + Int(gamma.layout(Idx(idx1))))
+                var gamma_accum1 = (
+                    gamma_val1.cast[accum_type]() + weight_offset_accum
+                )
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor * gamma_accum1
+                ).cast[dtype]()
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+            else:
+                var gamma_val0 = gpu_load[
+                    width=simd_width, read_only=True, alignment=align
+                ](gamma.ptr + Int(gamma.layout(Idx(idx0))))
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * (
+                    gamma_val0 + weight_offset_accum.cast[dtype]()
+                )
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = gpu_load[
+                    width=simd_width, read_only=True, alignment=align
+                ](gamma.ptr + Int(gamma.layout(Idx(idx1))))
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * (
+                    gamma_val1 + weight_offset_accum.cast[dtype]()
+                )
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+
+
+def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_pair_fn: def[width: Int](
+        row: Int, col0: Int, col1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+    output_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+    skip_weight_offset: Bool = False,
+    linear_gamma_indexing: Bool = False,
+](
+    gamma: TileTensor[dtype, LayoutType, origin],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    num_cols: Int,
+):
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var n_eps = Scalar[accum_type](num_cols) * eps_accum
+    var sqrt_n = sqrt(Scalar[accum_type](num_cols))
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var idx0 = tid * UInt(simd_width)
+    var tile_stride = block_dim.x * UInt(simd_width)
+    var idx1 = idx0 + tile_stride
+
+    with PDL():
+        var raw_data_pair = input_pair_fn[simd_width](
+            Int(row), Int(idx0), Int(idx1)
+        )
+        var raw_data0 = raw_data_pair[0]
+        var raw_data1 = raw_data_pair[1]
+
+        var thread_m2: Scalar[accum_type] = (
+            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
+            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
+        )
+        var row_m2 = block_reduce_one_barrier_warp_sum[
+            max_warps_per_block=max_warps_per_block
+        ](thread_m2)
+        var norm_factor = sqrt_n * rsqrt(row_m2 + n_eps)
+
+        comptime if skip_weight_offset:
+            comptime if multiply_before_cast:
+                var norm_bf16 = norm_factor.cast[dtype]()
+                var gamma_val0 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx0)
+                var norm_val0 = raw_data0 * (gamma_val0 * norm_bf16)
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx1)
+                var norm_val1 = raw_data1 * (gamma_val1 * norm_bf16)
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+            else:
+                var gamma_val0 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx0)
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * gamma_val0
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx1)
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * gamma_val1
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+        else:
+            comptime if multiply_before_cast:
+                var gamma_val0 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx0)
+                var gamma_accum0 = (
+                    gamma_val0.cast[accum_type]() + weight_offset_accum
+                )
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor * gamma_accum0
+                ).cast[dtype]()
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx1)
+                var gamma_accum1 = (
+                    gamma_val1.cast[accum_type]() + weight_offset_accum
+                )
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor * gamma_accum1
+                ).cast[dtype]()
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+            else:
+                var gamma_val0 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx0)
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * (
+                    gamma_val0 + weight_offset_accum.cast[dtype]()
+                )
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx1)
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * (
+                    gamma_val1 + weight_offset_accum.cast[dtype]()
+                )
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+
+
+@always_inline
+def _rms_norm_exact_4096_load_packed_rank2_pair[
+    dtype: DType,
+    //,
+    simd_width: Int,
+    packed_width: Int,
+    input_pair_fn: def[width: Int](
+        row: Int, col0: Int, col1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+](
+    row: Int,
+    col0: Int,
+    mut raw_bits0: SIMD[DType.uint32, packed_width],
+    mut raw_bits1: SIMD[DType.uint32, packed_width],
+) -> Scalar[get_accum_type[dtype]()]:
+    var raw_data_pair = input_pair_fn[simd_width](row, col0, col0 + 2048)
+    var raw_data0 = raw_data_pair[0]
+    var raw_data1 = raw_data_pair[1]
+    raw_bits0 = bitcast[DType.uint32, packed_width](raw_data0)
+    raw_bits1 = bitcast[DType.uint32, packed_width](raw_data1)
+
+    return (
+        (raw_data0 * raw_data0).reduce_add().cast[get_accum_type[dtype]()]()
+        + (raw_data1 * raw_data1).reduce_add().cast[get_accum_type[dtype]()]()
+    )
+
+
+def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_exact_4096[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_pair_fn: def[width: Int](
+        row: Int, col0: Int, col1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+    output_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]
+):
+    comptime assert dtype == DType.bfloat16, "exact 4096 path is BF16-only"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+    comptime assert (
+        2 * WARP_SIZE * max_warps_per_block * simd_width == 4096
+    ), "exact 4096 path requires a full two-tile CTA"
+    comptime packed_width = simd_width // 2
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var n_eps = Scalar[accum_type](4096) * eps_accum
+    var sqrt_n = Scalar[accum_type](64)
+
+    var tid = thread_idx.x
+    var input_idx0 = tid * UInt(simd_width)
+
+    with PDL():
+        var load_row_i = Int(block_idx.x)
+        var raw_bits0 = SIMD[DType.uint32, packed_width](0)
+        var raw_bits1 = SIMD[DType.uint32, packed_width](0)
+        var thread_m2: Scalar[accum_type] = (
+            _rms_norm_exact_4096_load_packed_rank2_pair[
+                simd_width, packed_width, input_pair_fn
+            ](load_row_i, Int(input_idx0), raw_bits0, raw_bits1)
+        )
+        var row_m2 = block_reduce_one_barrier[
+            max_warps_per_block=max_warps_per_block
+        ](thread_m2)
+        var norm_factor = sqrt_n * rsqrt(row_m2 + n_eps)
+        comptime if multiply_before_cast:
+            var norm_bf16 = norm_factor.cast[dtype]()
+            var col0 = Int(input_idx0)
+            output_fn[simd_width, align](
+                Int(block_idx.x),
+                col0,
+                bitcast[dtype, simd_width](raw_bits0)
+                * (
+                    _rms_norm_load_gamma[simd_width, align](gamma, input_idx0)
+                    * norm_bf16
+                ),
+            )
+            var row_i1 = Int(block_idx.x)
+            var idx1 = input_idx0 + UInt(2048)
+            var col1 = Int(idx1)
+            var gamma_val1 = _rms_norm_load_gamma[simd_width, align](gamma, idx1)
+            var norm_val1 = bitcast[dtype, simd_width](raw_bits1) * (
+                gamma_val1 * norm_bf16
+            )
+            output_fn[simd_width, align](row_i1, col1, norm_val1)
+        else:
+            var col0 = Int(input_idx0)
+            output_fn[simd_width, align](
+                Int(block_idx.x),
+                col0,
+                (
+                    bitcast[dtype, simd_width](raw_bits0).cast[accum_type]()
+                    * norm_factor
+                ).cast[dtype]()
+                    * _rms_norm_load_gamma[simd_width, align](gamma, input_idx0),
+            )
+            var row_i1 = Int(block_idx.x)
+            var idx1 = input_idx0 + UInt(2048)
+            var col1 = Int(idx1)
+            var gamma_val1 = _rms_norm_load_gamma[simd_width, align](gamma, idx1)
+            var norm_val1 = (
+                bitcast[dtype, simd_width](raw_bits1).cast[accum_type]()
+                * norm_factor
+            ).cast[dtype]() * gamma_val1
+            output_fn[simd_width, align](row_i1, col1, norm_val1)
+
+
+@always_inline
+def _rms_norm_exact_4096_load_flat_pair[
+    dtype: DType,
+    //,
+    simd_width: Int,
+    input_pair_fn_flat: def[width: Int](
+        flat0: Int, flat1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+](
+    flat0: Int
+) -> Tuple[SIMD[dtype, simd_width], SIMD[dtype, simd_width]]:
+    return input_pair_fn_flat[simd_width](flat0, flat0 + 2048)
+
+
+@always_inline
+def _rms_norm_exact_4096_store_flat_tile[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    output_fn_flat: def[width: Int, alignment: Int](
+        flat: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+    tile_offset: Int,
+](
+    gamma: TileTensor[dtype, LayoutType, origin],
+    flat0: Int,
+    idx0: UInt,
+    raw_data: SIMD[dtype, simd_width],
+    norm_factor: Scalar[DType.float32],
+):
+    comptime assert dtype == DType.bfloat16, "exact 4096 path is BF16-only"
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var idx = idx0 + UInt(tile_offset)
+    var flat = flat0 + tile_offset
+    var norm_factor_accum = rebind[Scalar[accum_type]](norm_factor)
+
+    comptime if multiply_before_cast:
+        var norm_bf16 = norm_factor_accum.cast[dtype]()
+        var gamma_val = _rms_norm_load_gamma[simd_width, align, True](
+            gamma, idx
+        )
+        var norm_val = raw_data * (gamma_val * norm_bf16)
+        output_fn_flat[simd_width, align](flat, norm_val)
+    else:
+        var gamma_val = _rms_norm_load_gamma[simd_width, align, True](
+            gamma, idx
+        )
+        var norm_val = (raw_data.cast[accum_type]() * norm_factor_accum).cast[
+            dtype
+        ]() * gamma_val
+        output_fn_flat[simd_width, align](flat, norm_val)
+
+
+def rms_norm_gpu_warp_tiling_aligned_two_tiles_flat_direct_exact_4096[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_pair_fn_flat: def[width: Int](
+        flat0: Int, flat1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+    output_fn_flat: def[width: Int, alignment: Int](
+        flat: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]
+):
+    comptime assert dtype == DType.bfloat16, "exact 4096 path is BF16-only"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+    comptime assert (
+        2 * WARP_SIZE * max_warps_per_block * simd_width == 4096
+    ), "exact 4096 path requires a full two-tile CTA"
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var n_eps = Scalar[accum_type](4096) * eps_accum
+    var sqrt_n = Scalar[accum_type](64)
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var idx0 = tid * UInt(simd_width)
+
+    with PDL():
+        var input_flat0 = Int(row) * 4096 + Int(idx0)
+        var raw_data_pair = _rms_norm_exact_4096_load_flat_pair[
+            simd_width,
+            input_pair_fn_flat,
+        ](input_flat0)
+        var raw_data0 = raw_data_pair[0]
+        var raw_data1 = raw_data_pair[1]
+
+        var thread_m2: Scalar[accum_type] = (
+            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
+            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
+        )
+        var row_m2 = block_reduce_one_barrier_warp_sum[
+            max_warps_per_block=max_warps_per_block
+        ](thread_m2)
+        var norm_factor = sqrt_n * rsqrt(row_m2 + n_eps)
+        var output_flat0 = Int(row) * 4096 + Int(idx0)
+
+        comptime if multiply_before_cast:
+            var norm_factor_f32 = rebind[Scalar[DType.float32]](norm_factor)
+            _rms_norm_exact_4096_store_flat_tile[
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
+                simd_width,
+                output_fn_flat,
+                multiply_before_cast=multiply_before_cast,
+                tile_offset=0,
+            ](gamma, output_flat0, idx0, raw_data0, norm_factor_f32)
+            _rms_norm_exact_4096_store_flat_tile[
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
+                simd_width,
+                output_fn_flat,
+                multiply_before_cast=multiply_before_cast,
+                tile_offset=2048,
+            ](gamma, output_flat0, idx0, raw_data1, norm_factor_f32)
+        else:
+            var norm_factor_f32 = rebind[Scalar[DType.float32]](norm_factor)
+            _rms_norm_exact_4096_store_flat_tile[
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
+                simd_width,
+                output_fn_flat,
+                multiply_before_cast=multiply_before_cast,
+                tile_offset=0,
+            ](gamma, output_flat0, idx0, raw_data0, norm_factor_f32)
+            _rms_norm_exact_4096_store_flat_tile[
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
+                simd_width,
+                output_fn_flat,
+                multiply_before_cast=multiply_before_cast,
+                tile_offset=2048,
+            ](gamma, output_flat0, idx0, raw_data1, norm_factor_f32)
+
+
+def rms_norm_gpu_warp_tiling_aligned_two_tiles_single_flat_input_exact_4096[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_fn_flat: def[width: Int](flat: Int) capturing -> SIMD[dtype, width],
+    output_fn_flat: def[width: Int, alignment: Int](
+        flat: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]
+):
+    comptime assert dtype == DType.bfloat16, "exact 4096 path is BF16-only"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+    comptime assert (
+        2 * WARP_SIZE * max_warps_per_block * simd_width == 4096
+    ), "exact 4096 path requires a full two-tile CTA"
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var n_eps = Scalar[accum_type](4096) * eps_accum
+    var sqrt_n = Scalar[accum_type](64)
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var idx0 = tid * UInt(simd_width)
+    var idx1 = idx0 + UInt(2048)
+    with PDL():
+        var row_offset = Int(row) * 4096
+        var flat0 = row_offset + Int(idx0)
+        var flat1 = flat0 + 2048
+        var raw_data0 = input_fn_flat[simd_width](flat0)
+        var raw_data1 = input_fn_flat[simd_width](flat1)
+        var thread_m2: Scalar[accum_type] = (
+            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
+            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
+        )
+        var row_m2 = block_reduce_one_barrier[
+            max_warps_per_block=max_warps_per_block
+        ](thread_m2)
+        var norm_factor = sqrt_n * rsqrt(row_m2 + n_eps)
+
+        comptime if multiply_before_cast:
+            var norm_bf16 = norm_factor.cast[dtype]()
+            var gamma_val0 = _rms_norm_load_gamma[simd_width, align, True](
+                gamma, idx0
+            )
+            var norm_val0 = raw_data0 * (gamma_val0 * norm_bf16)
+            output_fn_flat[simd_width, align](flat0, norm_val0)
+            var gamma_val1 = _rms_norm_load_gamma[simd_width, align, True](
+                gamma, idx1
+            )
+            var norm_val1 = raw_data1 * (gamma_val1 * norm_bf16)
+            output_fn_flat[simd_width, align](flat1, norm_val1)
+        else:
+            var gamma_val0 = _rms_norm_load_gamma[simd_width, align, True](
+                gamma, idx0
+            )
+            var norm_val0 = (
+                raw_data0.cast[accum_type]() * norm_factor
+            ).cast[dtype]() * gamma_val0
+            output_fn_flat[simd_width, align](flat0, norm_val0)
+            var gamma_val1 = _rms_norm_load_gamma[simd_width, align, True](
+                gamma, idx1
+            )
+            var norm_val1 = (
+                raw_data1.cast[accum_type]() * norm_factor
+            ).cast[dtype]() * gamma_val1
+            output_fn_flat[simd_width, align](flat1, norm_val1)
+
+
+def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_lane_group[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_pair_fn: def[width: Int](
+        row: Int, col0: Int, col1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+    output_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+    skip_weight_offset: Bool = False,
+    linear_gamma_indexing: Bool = False,
+](
+    gamma: TileTensor[dtype, LayoutType, origin],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    num_cols: Int,
+):
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var n_eps = Scalar[accum_type](num_cols) * eps_accum
+    var sqrt_n = sqrt(Scalar[accum_type](num_cols))
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var idx0 = tid * UInt(simd_width)
+    var tile_stride = block_dim.x * UInt(simd_width)
+    var idx1 = idx0 + tile_stride
+
+    with PDL():
+        var raw_data_pair = input_pair_fn[simd_width](
+            Int(row), Int(idx0), Int(idx1)
+        )
+        var raw_data0 = raw_data_pair[0]
+        var raw_data1 = raw_data_pair[1]
+
+        var thread_m2: Scalar[accum_type] = (
+            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
+            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
+        )
+        var row_m2 = block_reduce_one_barrier_lane_group[
+            max_warps_per_block=max_warps_per_block
+        ](thread_m2)
+        var norm_factor = sqrt_n * rsqrt(row_m2 + n_eps)
+
+        comptime if skip_weight_offset:
+            comptime if multiply_before_cast:
+                var norm_bf16 = norm_factor.cast[dtype]()
+                var gamma_val0 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx0)
+                var norm_val0 = raw_data0 * (gamma_val0 * norm_bf16)
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx1)
+                var norm_val1 = raw_data1 * (gamma_val1 * norm_bf16)
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+            else:
+                var gamma_val0 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx0)
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * gamma_val0
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx1)
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * gamma_val1
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+        else:
+            comptime if multiply_before_cast:
+                var gamma_val0 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx0)
+                var gamma_accum0 = (
+                    gamma_val0.cast[accum_type]() + weight_offset_accum
+                )
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor * gamma_accum0
+                ).cast[dtype]()
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx1)
+                var gamma_accum1 = (
+                    gamma_val1.cast[accum_type]() + weight_offset_accum
+                )
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor * gamma_accum1
+                ).cast[dtype]()
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+            else:
+                var gamma_val0 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx0)
+                var norm_val0 = (
+                    raw_data0.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * (
+                    gamma_val0 + weight_offset_accum.cast[dtype]()
+                )
+                output_fn[simd_width, align](Int(row), Int(idx0), norm_val0)
+                var gamma_val1 = _rms_norm_load_gamma[
+                    simd_width, align, linear_gamma_indexing
+                ](gamma, idx1)
+                var norm_val1 = (
+                    raw_data1.cast[accum_type]() * norm_factor
+                ).cast[dtype]() * (
+                    gamma_val1 + weight_offset_accum.cast[dtype]()
+                )
+                output_fn[simd_width, align](Int(row), Int(idx1), norm_val1)
+
+
 def rms_norm_gpu_warp_tiling[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -1197,6 +2092,16 @@ def rms_norm_gpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel(1),
+    input_pair_fn_rank2_direct: OptionalReg[
+        def[width: Int](
+            row: Int, col0: Int, col1: Int
+        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+    ] = None,
+    output_fn_rank2_direct: OptionalReg[
+        def[width: Int, alignment: Int](
+            row: Int, col: Int, val: SIMD[dtype, width]
+        ) capturing -> None
+    ] = None,
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[dtype, ...],
@@ -1252,12 +2157,64 @@ def rms_norm_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
+    @parameter
+    @always_inline
+    def output_fn_2d_flat[
+        simd_width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
+        comptime if rank != 3:
+            output_fn_2d[simd_width, alignment](row, col, val)
+        else:
+            var indices = IndexList[rank]()
+            indices[0] = 0
+            indices[1] = row
+            indices[2] = col
+            output_fn[simd_width, alignment](indices.canonicalize(), val)
+
+    @parameter
+    @always_inline
+    def input_fn_2d_flat[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
+        comptime if rank != 3:
+            return input_fn_2d[simd_width](row, col)
+        else:
+            var indices = IndexList[rank]()
+            indices[0] = 0
+            indices[1] = row
+            indices[2] = col
+            return input_fn[simd_width](indices.canonicalize())
+
+    @parameter
+    @always_inline
+    def input_pair_fn_2d[
+        simd_width: Int
+    ](
+        row: Int, col0: Int, col1: Int
+    ) -> Tuple[SIMD[dtype, simd_width], SIMD[dtype, simd_width]]:
+        comptime if rank == 3:
+            if shape[0] == 1:
+                var indices = IndexList[rank]()
+                indices[0] = 0
+                indices[1] = row
+                indices[2] = col0
+                var raw_data0 = input_fn[simd_width](indices.canonicalize())
+                indices[2] = col1
+                return (raw_data0, input_fn[simd_width](indices.canonicalize()))
+        return (
+            input_fn_2d[simd_width](row, col0),
+            input_fn_2d[simd_width](row, col1),
+        )
+
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
+    var use_doubled = rows >= 1024
+    var effective_simd = simd_width * 2 if use_doubled else simd_width
+
     var grid_dim = rows
     var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        ceildiv(ceildiv(cols, effective_simd), WARP_SIZE) * WARP_SIZE,
         WARP_SIZE * max_warps_per_block,
     )
 
@@ -1292,26 +2249,390 @@ def rms_norm_gpu[
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(pdl_level),
             )
+        elif use_doubled and cols % (simd_width * 2) == 0 and cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block):
+            comptime if rank == 3:
+                if shape[0] == 1:
+                    if cols == Int(block_dim) * (simd_width * 2):
+                        if rows >= 4096 and cols == 4096 and dtype == DType.bfloat16:
+                            var two_tiles_block_dim = block_dim // 2
+                            if weight_offset == Scalar[dtype](0):
+                                comptime if input_pair_fn_rank2_direct:
+                                    comptime direct_input_pair_fn = (
+                                        input_pair_fn_rank2_direct.value()
+                                    )
+                                    comptime if output_fn_rank2_direct:
+                                        comptime direct_output_fn = (
+                                            output_fn_rank2_direct.value()
+                                        )
+                                        comptime kernel = rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_lane_group[
+                                            mut=gamma.mut,
+                                            LayoutType=gamma.LayoutType,
+                                            origin=gamma.origin,
+                                            simd_width * 2,
+                                            4,
+                                            direct_input_pair_fn,
+                                            direct_output_fn,
+                                            multiply_before_cast=multiply_before_cast,
+                                            skip_weight_offset=True,
+                                            linear_gamma_indexing=True,
+                                        ]
+                                        ctx.enqueue_function[kernel, kernel](
+                                            gamma,
+                                            epsilon,
+                                            weight_offset,
+                                            cols,
+                                            grid_dim=grid_dim,
+                                            block_dim=two_tiles_block_dim,
+                                            attributes=pdl_launch_attributes(
+                                                pdl_level
+                                            ),
+                                        )
+                                    else:
+                                        comptime kernel = rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input[
+                                            mut=gamma.mut,
+                                            LayoutType=gamma.LayoutType,
+                                            origin=gamma.origin,
+                                            simd_width * 2,
+                                            4,
+                                            direct_input_pair_fn,
+                                            output_fn_2d,
+                                            multiply_before_cast=multiply_before_cast,
+                                            skip_weight_offset=True,
+                                            linear_gamma_indexing=True,
+                                        ]
+                                        ctx.enqueue_function[kernel, kernel](
+                                            gamma,
+                                            epsilon,
+                                            weight_offset,
+                                            cols,
+                                            grid_dim=grid_dim,
+                                            block_dim=two_tiles_block_dim,
+                                            attributes=pdl_launch_attributes(
+                                                pdl_level
+                                            ),
+                                        )
+                                else:
+                                    comptime if output_fn_rank2_direct:
+                                        comptime direct_output_fn = (
+                                            output_fn_rank2_direct.value()
+                                        )
+                                        comptime kernel = rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input[
+                                            mut=gamma.mut,
+                                            LayoutType=gamma.LayoutType,
+                                            origin=gamma.origin,
+                                            simd_width * 2,
+                                            4,
+                                            input_pair_fn_2d,
+                                            direct_output_fn,
+                                            multiply_before_cast=multiply_before_cast,
+                                            skip_weight_offset=True,
+                                            linear_gamma_indexing=True,
+                                        ]
+                                        ctx.enqueue_function[kernel, kernel](
+                                            gamma,
+                                            epsilon,
+                                            weight_offset,
+                                            cols,
+                                            grid_dim=grid_dim,
+                                            block_dim=two_tiles_block_dim,
+                                            attributes=pdl_launch_attributes(
+                                                pdl_level
+                                            ),
+                                        )
+                                    else:
+                                        comptime kernel = rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input[
+                                            mut=gamma.mut,
+                                            LayoutType=gamma.LayoutType,
+                                            origin=gamma.origin,
+                                            simd_width * 2,
+                                            4,
+                                            input_pair_fn_2d,
+                                            output_fn_2d,
+                                            multiply_before_cast=multiply_before_cast,
+                                            skip_weight_offset=True,
+                                            linear_gamma_indexing=True,
+                                        ]
+                                        ctx.enqueue_function[kernel, kernel](
+                                            gamma,
+                                            epsilon,
+                                            weight_offset,
+                                            cols,
+                                            grid_dim=grid_dim,
+                                            block_dim=two_tiles_block_dim,
+                                            attributes=pdl_launch_attributes(
+                                                pdl_level
+                                            ),
+                                        )
+                            else:
+                                comptime kernel = rms_norm_gpu_warp_tiling_aligned_two_tiles[
+                                    mut=gamma.mut,
+                                    LayoutType=gamma.LayoutType,
+                                    origin=gamma.origin,
+                                    simd_width * 2,
+                                    4,
+                                    input_fn_2d,
+                                    output_fn_2d,
+                                    multiply_before_cast=multiply_before_cast,
+                                ]
+                                ctx.enqueue_function[kernel, kernel](
+                                    gamma,
+                                    epsilon,
+                                    weight_offset,
+                                    cols,
+                                    grid_dim=grid_dim,
+                                    block_dim=two_tiles_block_dim,
+                                    attributes=pdl_launch_attributes(pdl_level),
+                                )
+                        elif weight_offset == Scalar[dtype](0):
+                            comptime kernel = rms_norm_gpu_warp_tiling_aligned[
+                                mut=gamma.mut,
+                                LayoutType=gamma.LayoutType,
+                                origin=gamma.origin,
+                                simd_width * 2,
+                                8,
+                                input_fn_2d,
+                                output_fn_2d,
+                                multiply_before_cast=multiply_before_cast,
+                                skip_weight_offset=True,
+                            ]
+                            ctx.enqueue_function[kernel, kernel](
+                                gamma,
+                                epsilon,
+                                weight_offset,
+                                cols,
+                                grid_dim=grid_dim,
+                                block_dim=block_dim,
+                                attributes=pdl_launch_attributes(pdl_level),
+                            )
+                        else:
+                            comptime kernel = rms_norm_gpu_warp_tiling_aligned[
+                                mut=gamma.mut,
+                                LayoutType=gamma.LayoutType,
+                                origin=gamma.origin,
+                                simd_width * 2,
+                                8,
+                                input_fn_2d,
+                                output_fn_2d,
+                                multiply_before_cast=multiply_before_cast,
+                            ]
+                            ctx.enqueue_function[kernel, kernel](
+                                gamma,
+                                epsilon,
+                                weight_offset,
+                                cols,
+                                grid_dim=grid_dim,
+                                block_dim=block_dim,
+                                attributes=pdl_launch_attributes(pdl_level),
+                            )
+                    else:
+                        comptime kernel = rms_norm_gpu_warp_tiling[
+                            mut=gamma.mut,
+                            LayoutType=gamma.LayoutType,
+                            origin=gamma.origin,
+                            simd_width * 2,
+                            max_warps_per_block,
+                            input_fn_2d,
+                            output_fn_2d,
+                            multiply_before_cast=multiply_before_cast,
+                        ]
+                        ctx.enqueue_function[kernel, kernel](
+                            gamma,
+                            epsilon,
+                            weight_offset,
+                            cols,
+                            grid_dim=grid_dim,
+                            block_dim=block_dim,
+                            attributes=pdl_launch_attributes(pdl_level),
+                        )
+                else:
+                    if cols == Int(block_dim) * (simd_width * 2):
+                        if weight_offset == Scalar[dtype](0):
+                            comptime kernel = rms_norm_gpu_warp_tiling_aligned[
+                                mut=gamma.mut,
+                                LayoutType=gamma.LayoutType,
+                                origin=gamma.origin,
+                                simd_width * 2,
+                                8,
+                                input_fn_2d,
+                                output_fn_2d,
+                                multiply_before_cast=multiply_before_cast,
+                                skip_weight_offset=True,
+                            ]
+                            ctx.enqueue_function[kernel, kernel](
+                                gamma,
+                                epsilon,
+                                weight_offset,
+                                cols,
+                                grid_dim=grid_dim,
+                                block_dim=block_dim,
+                                attributes=pdl_launch_attributes(pdl_level),
+                            )
+                        else:
+                            comptime kernel = rms_norm_gpu_warp_tiling_aligned[
+                                mut=gamma.mut,
+                                LayoutType=gamma.LayoutType,
+                                origin=gamma.origin,
+                                simd_width * 2,
+                                8,
+                                input_fn_2d,
+                                output_fn_2d,
+                                multiply_before_cast=multiply_before_cast,
+                            ]
+                            ctx.enqueue_function[kernel, kernel](
+                                gamma,
+                                epsilon,
+                                weight_offset,
+                                cols,
+                                grid_dim=grid_dim,
+                                block_dim=block_dim,
+                                attributes=pdl_launch_attributes(pdl_level),
+                            )
+                    else:
+                        comptime kernel = rms_norm_gpu_warp_tiling[
+                            mut=gamma.mut,
+                            LayoutType=gamma.LayoutType,
+                            origin=gamma.origin,
+                            simd_width * 2,
+                            max_warps_per_block,
+                            input_fn_2d,
+                            output_fn_2d,
+                            multiply_before_cast=multiply_before_cast,
+                        ]
+                        ctx.enqueue_function[kernel, kernel](
+                            gamma,
+                            epsilon,
+                            weight_offset,
+                            cols,
+                            grid_dim=grid_dim,
+                            block_dim=block_dim,
+                            attributes=pdl_launch_attributes(pdl_level),
+                        )
+            else:
+                if cols == Int(block_dim) * (simd_width * 2):
+                    if weight_offset == Scalar[dtype](0):
+                        comptime kernel = rms_norm_gpu_warp_tiling_aligned[
+                            mut=gamma.mut,
+                            LayoutType=gamma.LayoutType,
+                            origin=gamma.origin,
+                            simd_width * 2,
+                            8,
+                            input_fn_2d,
+                            output_fn_2d,
+                            multiply_before_cast=multiply_before_cast,
+                            skip_weight_offset=True,
+                        ]
+                        ctx.enqueue_function[kernel, kernel](
+                            gamma,
+                            epsilon,
+                            weight_offset,
+                            cols,
+                            grid_dim=grid_dim,
+                            block_dim=block_dim,
+                            attributes=pdl_launch_attributes(pdl_level),
+                        )
+                    else:
+                        comptime kernel = rms_norm_gpu_warp_tiling_aligned[
+                            mut=gamma.mut,
+                            LayoutType=gamma.LayoutType,
+                            origin=gamma.origin,
+                            simd_width * 2,
+                            8,
+                            input_fn_2d,
+                            output_fn_2d,
+                            multiply_before_cast=multiply_before_cast,
+                        ]
+                        ctx.enqueue_function[kernel, kernel](
+                            gamma,
+                            epsilon,
+                            weight_offset,
+                            cols,
+                            grid_dim=grid_dim,
+                            block_dim=block_dim,
+                            attributes=pdl_launch_attributes(pdl_level),
+                        )
+                else:
+                    comptime kernel = rms_norm_gpu_warp_tiling[
+                        mut=gamma.mut,
+                        LayoutType=gamma.LayoutType,
+                        origin=gamma.origin,
+                        simd_width * 2,
+                        max_warps_per_block,
+                        input_fn_2d,
+                        output_fn_2d,
+                        multiply_before_cast=multiply_before_cast,
+                    ]
+                    ctx.enqueue_function[kernel, kernel](
+                        gamma,
+                        epsilon,
+                        weight_offset,
+                        cols,
+                        grid_dim=grid_dim,
+                        block_dim=block_dim,
+                        attributes=pdl_launch_attributes(pdl_level),
+                    )
         elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            comptime kernel = rms_norm_gpu_warp_tiling[
-                mut=gamma.mut,
-                LayoutType=gamma.LayoutType,
-                origin=gamma.origin,
-                simd_width,
-                max_warps_per_block,
-                input_fn_2d,
-                output_fn_2d,
-                multiply_before_cast=multiply_before_cast,
-            ]
-            ctx.enqueue_function[kernel, kernel](
-                gamma,
-                epsilon,
-                weight_offset,
-                cols,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                attributes=pdl_launch_attributes(pdl_level),
-            )
+            if cols == Int(block_dim) * simd_width:
+                if weight_offset == Scalar[dtype](0):
+                    comptime kernel = rms_norm_gpu_warp_tiling_aligned[
+                        mut=gamma.mut,
+                        LayoutType=gamma.LayoutType,
+                        origin=gamma.origin,
+                        simd_width,
+                        16,
+                        input_fn_2d,
+                        output_fn_2d,
+                        multiply_before_cast=multiply_before_cast,
+                        skip_weight_offset=True,
+                    ]
+                    ctx.enqueue_function[kernel, kernel](
+                        gamma,
+                        epsilon,
+                        weight_offset,
+                        cols,
+                        grid_dim=grid_dim,
+                        block_dim=block_dim,
+                        attributes=pdl_launch_attributes(pdl_level),
+                    )
+                else:
+                    comptime kernel = rms_norm_gpu_warp_tiling_aligned[
+                        mut=gamma.mut,
+                        LayoutType=gamma.LayoutType,
+                        origin=gamma.origin,
+                        simd_width,
+                        16,
+                        input_fn_2d,
+                        output_fn_2d,
+                        multiply_before_cast=multiply_before_cast,
+                    ]
+                    ctx.enqueue_function[kernel, kernel](
+                        gamma,
+                        epsilon,
+                        weight_offset,
+                        cols,
+                        grid_dim=grid_dim,
+                        block_dim=block_dim,
+                        attributes=pdl_launch_attributes(pdl_level),
+                    )
+            else:
+                comptime kernel = rms_norm_gpu_warp_tiling[
+                    mut=gamma.mut,
+                    LayoutType=gamma.LayoutType,
+                    origin=gamma.origin,
+                    simd_width,
+                    max_warps_per_block,
+                    input_fn_2d,
+                    output_fn_2d,
+                    multiply_before_cast=multiply_before_cast,
+                ]
+                ctx.enqueue_function[kernel, kernel](
+                    gamma,
+                    epsilon,
+                    weight_offset,
+                    cols,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
         elif (
             cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
             and cols % (simd_width * 2) == 0
@@ -1375,7 +2696,6 @@ def rms_norm_gpu[
             block_dim=block_dim,
             attributes=pdl_launch_attributes(pdl_level),
         )
-
 
 def rms_norm_cpu[
     dtype: DType,
@@ -1518,6 +2838,257 @@ def rms_norm_cpu[
 
 
 @always_inline
+def _rms_norm_gpu_exact_public_direct_io[
+    dtype: DType,
+    //,
+    input_pair_fn_rank2_direct: def[width: Int](
+        row: Int, col0: Int, col1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+    output_fn_rank2_direct: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    shape: IndexList[3],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContext,
+    pdl_level: PDLLevel = PDLLevel(1),
+) raises -> Bool:
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime if dtype != DType.bfloat16:
+        return False
+
+    var cols = Int(gamma.dim[0]())
+    if cols == 0 or shape[0] != 1:
+        return False
+
+    var rows = shape.flattened_length() // cols
+    if rows < 4096 or cols != 4096:
+        return False
+
+    if weight_offset != Scalar[dtype](0):
+        return False
+
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    if simd_width != 8:
+        return False
+
+    comptime exact_simd_width = simd_width * 2
+    comptime exact_max_warps_per_block = 4
+    comptime exact_block_dim = WARP_SIZE * exact_max_warps_per_block
+
+    if ctx.default_device_info.max_thread_block_size < exact_block_dim:
+        return False
+
+    comptime kernel = rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_exact_4096[
+        mut=gamma.mut,
+        LayoutType=gamma.LayoutType,
+        origin=gamma.origin,
+        exact_simd_width,
+        exact_max_warps_per_block,
+        input_pair_fn_rank2_direct,
+        output_fn_rank2_direct,
+        multiply_before_cast=multiply_before_cast,
+    ]
+    ctx.enqueue_function[kernel, kernel](
+        gamma,
+        epsilon,
+        grid_dim=rows,
+        block_dim=exact_block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
+    )
+    return True
+
+
+@always_inline
+def _rms_norm_gpu_exact_public_flat_direct_io[
+    dtype: DType,
+    //,
+    input_pair_fn_flat_direct: def[width: Int](
+        flat0: Int, flat1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+    output_fn_flat_direct: def[width: Int, alignment: Int](
+        flat: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    shape: IndexList[3],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContext,
+    pdl_level: PDLLevel = PDLLevel(1),
+) raises -> Bool:
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime if dtype != DType.bfloat16:
+        return False
+
+    var cols = Int(gamma.dim[0]())
+    if cols == 0 or shape[0] != 1:
+        return False
+
+    var rows = shape.flattened_length() // cols
+    if rows < 4096 or cols != 4096:
+        return False
+
+    if weight_offset != Scalar[dtype](0):
+        return False
+
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    if simd_width != 8:
+        return False
+
+    comptime exact_simd_width = simd_width * 2
+    comptime exact_max_warps_per_block = 4
+    comptime exact_block_dim = WARP_SIZE * exact_max_warps_per_block
+
+    if ctx.default_device_info.max_thread_block_size < exact_block_dim:
+        return False
+
+    comptime kernel = (
+        rms_norm_gpu_warp_tiling_aligned_two_tiles_flat_direct_exact_4096[
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
+            exact_simd_width,
+            exact_max_warps_per_block,
+            input_pair_fn_flat_direct,
+            output_fn_flat_direct,
+            multiply_before_cast=multiply_before_cast,
+        ]
+    )
+    ctx.enqueue_function[kernel, kernel](
+        gamma,
+        epsilon,
+        grid_dim=rows,
+        block_dim=exact_block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
+    )
+    return True
+
+
+@always_inline
+def _rms_norm_gpu_exact_public_rank2_only_via_flat_direct_io[
+    dtype: DType,
+    //,
+    input_pair_fn_rank2_direct: def[width: Int](
+        row: Int, col0: Int, col1: Int
+    ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
+    output_fn_rank2_direct: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    shape: IndexList[3],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContext,
+    pdl_level: PDLLevel = PDLLevel(1),
+) raises -> Bool:
+    comptime exact_cols_shift = 12
+    comptime exact_cols_mask = (1 << exact_cols_shift) - 1
+
+    @always_inline
+    @parameter
+    def input_pair_fn_flat_from_rank2[
+        width: Int
+    ](
+        flat0: Int, flat1: Int
+    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+        var row = flat0 >> exact_cols_shift
+        return input_pair_fn_rank2_direct[width](
+            row,
+            flat0 & exact_cols_mask,
+            flat1 & exact_cols_mask,
+        )
+
+    @always_inline
+    @parameter
+    def output_fn_flat_from_rank2[
+        width: Int, alignment: Int
+    ](flat: Int, val: SIMD[dtype, width]) -> None:
+        var row = flat >> exact_cols_shift
+        output_fn_rank2_direct[width, alignment](
+            row, flat & exact_cols_mask, val
+        )
+
+    return _rms_norm_gpu_exact_public_flat_direct_io[
+        input_pair_fn_flat_from_rank2,
+        output_fn_flat_from_rank2,
+        multiply_before_cast=multiply_before_cast,
+    ](shape, gamma, epsilon, weight_offset, ctx, pdl_level)
+
+
+@always_inline
+def _rms_norm_gpu_exact_public_single_flat_direct_io[
+    dtype: DType,
+    //,
+    input_fn_flat_direct: def[width: Int](
+        flat: Int
+    ) capturing -> SIMD[dtype, width],
+    output_fn_flat_direct: def[width: Int, alignment: Int](
+        flat: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    shape: IndexList[3],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContext,
+    pdl_level: PDLLevel = PDLLevel(1),
+) raises -> Bool:
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime if dtype != DType.bfloat16:
+        return False
+
+    var cols = Int(gamma.dim[0]())
+    if cols == 0 or shape[0] != 1:
+        return False
+
+    var rows = shape.flattened_length() // cols
+    if rows < 4096 or cols != 4096:
+        return False
+
+    if weight_offset != Scalar[dtype](0):
+        return False
+
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    if simd_width != 8:
+        return False
+
+    comptime exact_simd_width = simd_width * 2
+    comptime exact_max_warps_per_block = 4
+    comptime exact_block_dim = WARP_SIZE * exact_max_warps_per_block
+
+    if ctx.default_device_info.max_thread_block_size < exact_block_dim:
+        return False
+
+    comptime kernel = (
+        rms_norm_gpu_warp_tiling_aligned_two_tiles_single_flat_input_exact_4096[
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
+            exact_simd_width,
+            exact_max_warps_per_block,
+            input_fn_flat_direct,
+            output_fn_flat_direct,
+            multiply_before_cast=multiply_before_cast,
+        ]
+    )
+    ctx.enqueue_function[kernel, kernel](
+        gamma,
+        epsilon,
+        grid_dim=rows,
+        block_dim=exact_block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
+    )
+    return True
+
+
 def _rms_norm_impl[
     dtype: DType,
     rank: Int,
@@ -1530,6 +3101,29 @@ def _rms_norm_impl[
     /,
     target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
+    input_pair_fn_rank2_direct: OptionalReg[
+        def[width: Int](
+            row: Int, col0: Int, col1: Int
+        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+    ] = None,
+    output_fn_rank2_direct: OptionalReg[
+        def[width: Int, alignment: Int](
+            row: Int, col: Int, val: SIMD[dtype, width]
+        ) capturing -> None
+    ] = None,
+    input_fn_flat_direct: OptionalReg[
+        def[width: Int](flat: Int) capturing -> SIMD[dtype, width]
+    ] = None,
+    input_pair_fn_flat_direct: OptionalReg[
+        def[width: Int](
+            flat0: Int, flat1: Int
+        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+    ] = None,
+    output_fn_flat_direct: OptionalReg[
+        def[width: Int, alignment: Int](
+            flat: Int, val: SIMD[dtype, width]
+        ) capturing -> None
+    ] = None,
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
@@ -1558,8 +3152,88 @@ def _rms_norm_impl[
             input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
         ](shape, gamma, epsilon, weight_offset)
     elif is_gpu[target]():
+        comptime if rank == 3:
+            comptime if input_pair_fn_flat_direct:
+                comptime if output_fn_flat_direct:
+                    comptime direct_input_pair_fn_flat = (
+                        input_pair_fn_flat_direct.value()
+                    )
+                    comptime direct_output_fn_flat = (
+                        output_fn_flat_direct.value()
+                    )
+                    if _rms_norm_gpu_exact_public_flat_direct_io[
+                        direct_input_pair_fn_flat,
+                        direct_output_fn_flat,
+                        multiply_before_cast=multiply_before_cast,
+                    ](
+                        rebind[IndexList[3]](shape),
+                        gamma,
+                        epsilon,
+                        weight_offset,
+                        ctx.get_device_context(),
+                    ):
+                        return
+            comptime if input_fn_flat_direct:
+                comptime if output_fn_flat_direct:
+                    comptime direct_input_fn_flat = (
+                        input_fn_flat_direct.value()
+                    )
+                    comptime direct_output_fn_flat = (
+                        output_fn_flat_direct.value()
+                    )
+                    if _rms_norm_gpu_exact_public_single_flat_direct_io[
+                        direct_input_fn_flat,
+                        direct_output_fn_flat,
+                        multiply_before_cast=multiply_before_cast,
+                    ](
+                        rebind[IndexList[3]](shape),
+                        gamma,
+                        epsilon,
+                        weight_offset,
+                        ctx.get_device_context(),
+                    ):
+                        return
+            comptime if (
+                not input_pair_fn_flat_direct or not output_fn_flat_direct
+            ):
+                comptime if input_pair_fn_rank2_direct:
+                    comptime if output_fn_rank2_direct:
+                        comptime direct_input_pair_fn = (
+                            input_pair_fn_rank2_direct.value()
+                        )
+                        comptime direct_output_fn = (
+                            output_fn_rank2_direct.value()
+                        )
+                        if _rms_norm_gpu_exact_public_direct_io[
+                            direct_input_pair_fn,
+                            direct_output_fn,
+                            multiply_before_cast=multiply_before_cast,
+                        ](
+                            rebind[IndexList[3]](shape),
+                            gamma,
+                            epsilon,
+                            weight_offset,
+                            ctx.get_device_context(),
+                        ):
+                            return
+                        if _rms_norm_gpu_exact_public_rank2_only_via_flat_direct_io[
+                            direct_input_pair_fn,
+                            direct_output_fn,
+                            multiply_before_cast=multiply_before_cast,
+                        ](
+                            rebind[IndexList[3]](shape),
+                            gamma,
+                            epsilon,
+                            weight_offset,
+                            ctx.get_device_context(),
+                        ):
+                            return
         rms_norm_gpu[
-            input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
+            input_0_fn,
+            output_fn,
+            multiply_before_cast=multiply_before_cast,
+            input_pair_fn_rank2_direct=input_pair_fn_rank2_direct,
+            output_fn_rank2_direct=output_fn_rank2_direct,
         ](
             shape,
             gamma,
@@ -2116,9 +3790,12 @@ def rms_norm_fused_residual_add_gpu[
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
+    var use_doubled = rows >= 1024
+    var effective_simd = simd_width * 2 if use_doubled else simd_width
+
     var grid_dim = rows
     var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        ceildiv(ceildiv(cols, effective_simd), WARP_SIZE) * WARP_SIZE,
         WARP_SIZE * max_warps_per_block,
     )
 
@@ -2126,7 +3803,48 @@ def rms_norm_fused_residual_add_gpu[
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
-        if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+        if (
+            use_doubled
+            and cols % (simd_width * 2) == 0
+            and cols
+            <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
+        ):
+            var doubled_block_dim = min(
+                ceildiv(ceildiv(cols, simd_width * 2), WARP_SIZE) * WARP_SIZE,
+                WARP_SIZE * max_warps_per_block,
+            )
+            comptime kernel = rms_norm_fused_residual_add_gpu_warp_tiling[
+                mut1=gamma1.mut,
+                LayoutType1=gamma1.LayoutType,
+                origin1=gamma1.origin,
+                mut2=gamma2.mut,
+                LayoutType2=gamma2.LayoutType,
+                origin2=gamma2.origin,
+                simd_width * 2,
+                max_warps_per_block,
+                input_fn_2d,
+                residual_input_fn_2d,
+                output_fn_2d,
+                output_residual_fn_2d,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                gamma1,
+                epsilon1,
+                weight_offset1,
+                gamma2,
+                epsilon2,
+                weight_offset2,
+                cols,
+                grid_dim=grid_dim,
+                block_dim=doubled_block_dim,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+        elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+            var single_block_dim = min(
+                ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+                WARP_SIZE * max_warps_per_block,
+            )
             comptime kernel = rms_norm_fused_residual_add_gpu_warp_tiling[
                 mut1=gamma1.mut,
                 LayoutType1=gamma1.LayoutType,
@@ -2151,7 +3869,7 @@ def rms_norm_fused_residual_add_gpu[
                 weight_offset2,
                 cols,
                 grid_dim=grid_dim,
-                block_dim=block_dim,
+                block_dim=single_block_dim,
                 attributes=pdl_launch_attributes(PDLLevel(1)),
             )
         else:
@@ -2384,6 +4102,29 @@ def rms_norm[
     /,
     target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
+    input_pair_fn_rank2_direct: OptionalReg[
+        def[width: Int](
+            row: Int, col0: Int, col1: Int
+        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+    ] = None,
+    output_fn_rank2_direct: OptionalReg[
+        def[width: Int, alignment: Int](
+            row: Int, col: Int, val: SIMD[dtype, width]
+        ) capturing -> None
+    ] = None,
+    input_fn_flat_direct: OptionalReg[
+        def[width: Int](flat: Int) capturing -> SIMD[dtype, width]
+    ] = None,
+    input_pair_fn_flat_direct: OptionalReg[
+        def[width: Int](
+            flat0: Int, flat1: Int
+        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+    ] = None,
+    output_fn_flat_direct: OptionalReg[
+        def[width: Int, alignment: Int](
+            flat: Int, val: SIMD[dtype, width]
+        ) capturing -> None
+    ] = None,
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
@@ -2417,6 +4158,11 @@ def rms_norm[
             output_fn_wrapper,
             target=target,
             multiply_before_cast=multiply_before_cast,
+            input_pair_fn_rank2_direct=input_pair_fn_rank2_direct,
+            output_fn_rank2_direct=output_fn_rank2_direct,
+            input_fn_flat_direct=input_fn_flat_direct,
+            input_pair_fn_flat_direct=input_pair_fn_flat_direct,
+            output_fn_flat_direct=output_fn_flat_direct,
         ](shape, gamma, epsilon, weight_offset, ctx)
 
 

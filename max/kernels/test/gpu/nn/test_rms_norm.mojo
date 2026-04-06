@@ -13,6 +13,7 @@
 
 from std.math import sqrt
 from std.random import rand
+from std.sys.info import align_of
 
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
@@ -41,7 +42,14 @@ def compute_rms[
 
 
 def run_rms_norm_gpu[
-    rank: Int, //, dtype: DType, *, static_cols: Int = -1
+    rank: Int,
+    //,
+    dtype: DType,
+    *,
+    static_cols: Int = -1,
+    public_direct_io: Bool = False,
+    pair_flat_only_public_direct_io: Bool = False,
+    rank2_only_public_direct_io: Bool = False,
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
 
@@ -80,6 +88,44 @@ def run_rms_norm_gpu[
         return data_buf.ptr.load[width=width](idx)
 
     @always_inline
+    @__copy_capture(data_buf, cols)
+    @parameter
+    def input_pair_fn_rank2_direct[
+        width: Int
+    ](
+        row: Int, col0: Int, col1: Int
+    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        var row_offset = row * cols
+        return (
+            data_buf.ptr.load[width=width, alignment=a](row_offset + col0),
+            data_buf.ptr.load[width=width, alignment=a](row_offset + col1),
+        )
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def input_fn_flat_direct[
+        width: Int
+    ](flat: Int) -> SIMD[dtype, width]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        return data_buf.ptr.load[width=width, alignment=a](flat)
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def input_pair_fn_flat_direct[
+        width: Int
+    ](
+        flat0: Int, flat1: Int
+    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+        comptime a = align_of[SIMD[dtype, width]]()
+        return (
+            data_buf.ptr.load[width=width, alignment=a](flat0),
+            data_buf.ptr.load[width=width, alignment=a](flat1),
+        )
+
+    @always_inline
     @__copy_capture(data_buf)
     @parameter
     def identity_output_fn[
@@ -88,9 +134,75 @@ def run_rms_norm_gpu[
         var idx = data_buf.layout(Coord(coords))
         data_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
-    rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
-        shape, gamma, epsilon, weight_offset, ctx
-    )
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def identity_output_fn_ranked[
+        width: Int, _rank: Int, alignment: Int
+    ](coords: IndexList[_rank], val: SIMD[dtype, width]) -> None:
+        var idx = data_buf.layout(Coord(coords))
+        data_buf.ptr.store[width=width, alignment=alignment](idx, val)
+
+    @always_inline
+    @__copy_capture(data_buf, cols)
+    @parameter
+    def output_fn_rank2_direct[
+        width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, width]) -> None:
+        var row_offset = row * cols
+        data_buf.ptr.store[width=width, alignment=alignment](
+            row_offset + col, val
+        )
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    def output_fn_flat_direct[
+        width: Int, alignment: Int
+    ](flat: Int, val: SIMD[dtype, width]) -> None:
+        data_buf.ptr.store[width=width, alignment=alignment](flat, val)
+
+    comptime if public_direct_io:
+        comptime if pair_flat_only_public_direct_io:
+            rms_norm[
+                dtype,
+                rank,
+                input_fn,
+                identity_output_fn_ranked,
+                target="gpu",
+                multiply_before_cast=True,
+                input_pair_fn_flat_direct=input_pair_fn_flat_direct,
+                output_fn_flat_direct=output_fn_flat_direct,
+            ](shape, gamma, epsilon, weight_offset, ctx)
+        elif rank2_only_public_direct_io:
+            rms_norm[
+                dtype,
+                rank,
+                input_fn,
+                identity_output_fn_ranked,
+                target="gpu",
+                multiply_before_cast=True,
+                input_pair_fn_rank2_direct=input_pair_fn_rank2_direct,
+                output_fn_rank2_direct=output_fn_rank2_direct,
+            ](shape, gamma, epsilon, weight_offset, ctx)
+        else:
+            rms_norm[
+                dtype,
+                rank,
+                input_fn,
+                identity_output_fn_ranked,
+                target="gpu",
+                multiply_before_cast=True,
+                input_pair_fn_rank2_direct=input_pair_fn_rank2_direct,
+                output_fn_rank2_direct=output_fn_rank2_direct,
+                input_fn_flat_direct=input_fn_flat_direct,
+                input_pair_fn_flat_direct=input_pair_fn_flat_direct,
+                output_fn_flat_direct=output_fn_flat_direct,
+            ](shape, gamma, epsilon, weight_offset, ctx)
+    else:
+        rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
+            shape, gamma, epsilon, weight_offset, ctx
+        )
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
@@ -135,3 +247,16 @@ def main() raises:
         run_rms_norm_gpu[DType.bfloat16, static_cols=16384](
             ctx, Index(2, 16384), rtol=2e-2
         )
+        run_rms_norm_gpu[DType.bfloat16, public_direct_io=True](
+            ctx, Index(1, 4096, 4096), rtol=2e-2
+        )
+        run_rms_norm_gpu[
+            DType.bfloat16,
+            public_direct_io=True,
+            pair_flat_only_public_direct_io=True,
+        ](ctx, Index(1, 4096, 4096), rtol=2e-2)
+        run_rms_norm_gpu[
+            DType.bfloat16,
+            public_direct_io=True,
+            rank2_only_public_direct_io=True,
+        ](ctx, Index(1, 4096, 4096), rtol=2e-2)
