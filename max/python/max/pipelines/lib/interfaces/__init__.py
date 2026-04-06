@@ -35,6 +35,7 @@ from .pipeline_model import (
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
 )
+from .tensor_struct import TensorStruct
 
 __all__ = [
     "AlwaysSignalBuffersMixin",
@@ -52,6 +53,7 @@ __all__ = [
     "ModelOutputs",
     "PipelineModel",
     "PipelineModelWithKVCache",
+    "TensorStruct",
     "UnifiedEagleOutputs",
     "fbcache_conditional_execution",
     "get_paged_manager",
