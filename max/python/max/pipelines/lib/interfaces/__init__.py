@@ -36,7 +36,7 @@ from .pipeline_model import (
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
 )
-from .taylorseer import TaylorSeer, TaylorSeerState
+from .taylorseer import TaylorSeer, TaylorSeerState, run_denoising_step
 from .tensor_struct import TensorStruct
 
 __all__ = [
@@ -63,5 +63,6 @@ __all__ = [
     "UnifiedEagleOutputs",
     "fbcache_conditional_execution",
     "get_paged_manager",
+    "run_denoising_step",
     "teacache_conditional_execution",
 ]

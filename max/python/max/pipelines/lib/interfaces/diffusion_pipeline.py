@@ -38,7 +38,7 @@ from max.pipelines.lib.interfaces.component_model import ComponentModel
 from tqdm import tqdm
 
 from .first_block_cache import FirstBlockCache
-from .taylorseer import TaylorSeer
+from .taylorseer import TaylorSeer, run_denoising_step
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -482,91 +482,14 @@ class DiffusionPipeline(ABC):
         Returns:
             noise_pred tensor for this step.
         """
-        cache_config = self.cache_config
-        ts = self._taylorseer
-
-        # 1. TaylorSeer scheduling decision
-        skip_transformer = False
-        warmup_steps = cache_config.taylorseer_warmup_steps
-        cache_interval = cache_config.taylorseer_cache_interval
-        if cache_config.taylorseer:
-            assert ts is not None
-            assert warmup_steps is not None
-            assert cache_interval is not None
-            skip_transformer = ts.should_skip(
-                step,
-                warmup_steps,
-                cache_interval,
-            )
-
-        # 2. Compute TaylorSeer step delta
-        taylor_delta_tensor: Tensor | None = None
-        if cache_config.taylorseer:
-            assert ts is not None
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            delta = (
-                float(step - cache_state.taylor_last_compute_step)
-                if cache_state.taylor_last_compute_step is not None
-                else 1.0
-            )
-            taylor_delta_tensor = Tensor(
-                storage=Buffer.from_dlpack(
-                    np.array([delta], dtype=np.float32)
-                ).to(device)
-            )
-
-        # 3. Predict path (skip transformer)
-        if cache_config.taylorseer and skip_transformer:
-            assert ts is not None
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            assert cache_state.taylor_factor_2 is not None
-            assert taylor_delta_tensor is not None
-            return ts.compiled_predict(
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                cache_state.taylor_factor_2,
-                taylor_delta_tensor,
-                ts.max_order_tensor,
-            )
-
-        # 4. Full compute path
-        result = self.run_transformer(cache_state, **kwargs)
-        if cache_config.teacache:
-            (
-                cache_state.teacache_prev_modulated_input,
-                cache_state.teacache_cached_residual,
-                cache_state.teacache_accumulated_rel_l1,
-                noise_pred,
-            ) = result
-        elif cache_config.first_block_caching:
-            new_residual, noise_pred = result
-            cache_state.prev_residual = new_residual
-            cache_state.prev_output = noise_pred
-        else:
-            noise_pred = result[0]
-
-        # 5. TaylorSeer factor update
-        if cache_config.taylorseer:
-            assert ts is not None
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            assert taylor_delta_tensor is not None
-            (
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                cache_state.taylor_factor_2,
-            ) = ts.compiled_update(
-                noise_pred,
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                taylor_delta_tensor,
-                ts.max_order_tensor,
-            )
-            cache_state.taylor_last_compute_step = step
-
-        return noise_pred
+        return run_denoising_step(
+            step=step,
+            cache_state=cache_state,
+            cache_config=self.cache_config,
+            device=device,
+            compute_fn=lambda: self.run_transformer(cache_state, **kwargs),
+            taylorseer=self._taylorseer,
+        )
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]
