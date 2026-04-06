@@ -473,6 +473,18 @@ class OutputVideoContent(BaseModel):
         frames_per_second: int | None = None,
         format: str | None = None,
     ) -> OutputVideoContent:
+        """Create internal video content from raw frame data.
+
+        Args:
+            frames: A uint8 array with shape ``[T, H, W, C]`` containing raw
+                video frames.
+            frames_per_second: Optional frame rate metadata to attach.
+            format: Optional output format metadata, typically ``"mp4"``.
+
+        Returns:
+            An ``OutputVideoContent`` instance carrying raw frames for later
+            route-level encoding.
+        """
         if frames.dtype != np.uint8:
             raise ValueError(
                 f"Expected uint8 frames with values in [0, 255], got {frames.dtype}."
