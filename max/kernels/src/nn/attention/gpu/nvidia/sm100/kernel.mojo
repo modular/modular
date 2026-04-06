@@ -16,16 +16,15 @@ from std.sys import simd_width_of, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    syncwarp,
-    thread_idx,
-    warp_id,
+    thread_idx_uint as thread_idx,
+    warp_id_uint as warp_id,
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import fence_mbarrier_init
+from std.gpu.primitives.cluster import cluster_sync
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from std.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
-    tcgen05_release_allocation_lock,
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
+    TmemAllocation,
 )
 from layout.tma_async import RaggedTMA3DTile
 from nn.attention.gpu.nvidia.sm100.attention import (
@@ -104,6 +103,11 @@ struct SM100MHA2Q[
 
     comptime num_qk_stages = Self.config.num_qk_stages
     comptime num_pv_stages = Self.config.num_pv_stages
+    comptime split_o_hi_barriers = (
+        Self.qkv_type.is_float8()
+        and Self.config.padded_ov_depth == 128
+        and size_of[Self.output_type]() > size_of[Self.qkv_type]()
+    )
 
     # Unified misc barriers type managing all barriers including K/V/O pipelines
     comptime MiscMBarsType = FA4MiscMBars[
@@ -112,8 +116,11 @@ struct SM100MHA2Q[
         num_kv_stages=Self.config.num_kv_stages,
         use_order_barriers=EnableForcedOrdering,
         use_fused_kv=Self.config.use_fused_kv,
+        split_o_hi_barriers=Self.split_o_hi_barriers,
     ]
 
+    # TMEM allocation type for this kernel's cta_group configuration
+    comptime TmemAllocType = TmemAllocation[Self.cta_group]
     # First MMA is Q@K' (can be staged by num_qk_stages)
     # (BM x depth) @ (BN x depth)' -> (BM x BN)
     comptime UMMA0Type = SM100TensorAccumulatorSS[
@@ -161,12 +168,15 @@ struct SM100MHA2Q[
         _is_decoding[Self.MaxSeqLenType](),
     ]
 
-    comptime SmemType = SM100AttentionSMem[Self.config]
+    comptime SmemType = SM100AttentionSMem[
+        Self.config, split_o_hi_barriers=Self.split_o_hi_barriers
+    ]
 
     @staticmethod
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(v_half_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(ragged_tma_store, `nvvm.grid_constant`)
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -195,6 +205,77 @@ struct SM100MHA2Q[
             Self.config.swizzle_mode,
             BN=Self.config.BN,
             BK=Self.config.padded_ov_depth,
+        ],
+        v_half_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BN=Self.config.BN,
+            BK=Self.config.padded_ov_depth // 2,
+        ],
+        ragged_tma_store: RaggedTMA3DTile[
+            Self.output_type,
+            Self.config.swizzle_mode,
+            BM=Self.config.BM // 2,
+            BN=Self.config.ov_depth,
+        ],
+        kv_lut: Self.KVLUTType,
+        scale: Float32,
+        batch_size: UInt32,
+        num_keys_arg: UInt32,
+        pack: Pack[
+            Self.MaskType,
+            Self.SchedulerType,
+            Self.ValidLengthType,
+            Self.SinkType,
+            Self.KVRowOffsetsType,
+            Self.MaxSeqLenType,
+            Self.PartitionType,
+        ],
+    ):
+        Self.kernel_impl[adjacent_head_kv_multicast=False](
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            v_half_tma_op,
+            ragged_tma_store,
+            kv_lut,
+            scale,
+            batch_size,
+            num_keys_arg,
+            pack,
+        )
+
+    @staticmethod
+    @always_inline
+    def kernel_impl[
+        adjacent_head_kv_multicast: Bool,
+    ](
+        q_tma_op: QTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BM=Self.config.BM // 2,
+            depth=Self.config.qk_depth,
+            group=Self.config.group,
+            decoding=False,
+            num_qk_stages=Self.config.num_qk_stages,
+        ],
+        k_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BN=Self.config.BN,
+            BK=Self.config.BK0,
+        ],
+        v_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BN=Self.config.BN,
+            BK=Self.config.padded_ov_depth,
+        ],
+        v_half_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BN=Self.config.BN,
+            BK=Self.config.padded_ov_depth // 2,
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
@@ -230,10 +311,6 @@ struct SM100MHA2Q[
             + "\nsmem_used = "
             + String(Self.config.smem_used)
         )
-        comptime assert (
-            not Self.SchedulerType.may_advance
-        ), "Persistent kernels not yet supported with FA4"
-
         mask = pack.mask
         scheduler = pack.scheduler
         valid_length = pack.valid_length
@@ -265,10 +342,9 @@ struct SM100MHA2Q[
             # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
         elif warp_idx == 1:
-            tcgen05_alloc[Int32(Self.cta_group)](
-                smem.tmem_addr_ptr(), UInt32(512)
+            _ = Self.TmemAllocType.allocate(
+                Self.TmemAllocType.SmemAddrStorage(smem.tmem_addr_ptr())
             )
-            syncwarp()
         elif warp_idx == 2:
             e = elect()
             if e != 0:
@@ -277,8 +353,14 @@ struct SM100MHA2Q[
                 k_tma_op.prefetch_descriptor()
             if e != 0:
                 v_tma_op.prefetch_descriptor()
+            if e != 0:
+                v_half_tma_op.prefetch_descriptor()
 
-        barrier()
+        comptime if adjacent_head_kv_multicast:
+            fence_mbarrier_init()
+            cluster_sync()
+        else:
+            barrier()
 
         # warp group partitioning
         # Two QO:
@@ -306,6 +388,7 @@ struct SM100MHA2Q[
                 Self.SinkType,
                 Self._is_cache_length_accurate,
                 Self.MaxSeqLenType,
+                Self.split_o_hi_barriers,
             ](
                 smem,
                 pos.score_row,
@@ -321,7 +404,6 @@ struct SM100MHA2Q[
         elif warp_idx < 12:
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
-
             var seq_info: SeqInfo = get_seq_info[
                 Self.BM,
                 Self.num_q_heads,
@@ -336,6 +418,7 @@ struct SM100MHA2Q[
             fa4_correction[
                 Self.config,
                 Self.page_size,
+                Self.split_o_hi_barriers,
             ](
                 smem,
                 pos.score_row,
@@ -370,6 +453,8 @@ struct SM100MHA2Q[
                     Self.ValidLengthType,
                     Self._is_cache_length_accurate,
                     Self.MaxSeqLenType,
+                    Self.split_o_hi_barriers,
+                    adjacent_head_kv_multicast=adjacent_head_kv_multicast,
                 ](
                     smem,
                     pos.score_row,
@@ -380,6 +465,7 @@ struct SM100MHA2Q[
                     q_tma_op,
                     k_tma_op,
                     v_tma_op,
+                    v_half_tma_op,
                     kv_lut,
                 )
 
@@ -392,11 +478,11 @@ struct SM100MHA2Q[
                 ](batch_size, max_seq_len, valid_length, partition)
 
                 if not seq_info.is_valid():
-                    var tmem_addr = smem.tmem_addr_ptr()[]
-                    tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                    tcgen05_dealloc[Int32(Self.cta_group)](
-                        tmem_addr, UInt32(512)
+                    var tmem = Self.TmemAllocType.from_shared(
+                        Self.TmemAllocType.SmemAddrStorage(smem.tmem_addr_ptr())
                     )
+                    tmem.release_lock()
+                    tmem.deallocate()
                     return
                 var pos: PositionSummary = PositionSummary.create[
                     ragged=Self.ragged,
@@ -408,7 +494,11 @@ struct SM100MHA2Q[
                     kv_input_row_offsets,
                     max_seq_len,
                 )
-                fa4_mma[Self.config, page_size=Self.page_size](
+                fa4_mma[
+                    Self.config,
+                    page_size=Self.page_size,
+                    split_o_hi_barriers=Self.split_o_hi_barriers,
+                ](
                     smem,
                     pos.score_row,
                     pos.num_keys,
@@ -416,6 +506,80 @@ struct SM100MHA2Q[
                 )
             else:
                 warpgroup_reg_dealloc[24]()
+
+    @staticmethod
+    @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(v_half_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(ragged_tma_store, `nvvm.grid_constant`)
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.config.num_threads)
+        )
+    )
+    @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
+    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    def clustered_kernel(
+        q_tma_op: QTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BM=Self.config.BM // 2,
+            depth=Self.config.qk_depth,
+            group=Self.config.group,
+            decoding=False,
+            num_qk_stages=Self.config.num_qk_stages,
+        ],
+        k_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BN=Self.config.BN,
+            BK=Self.config.BK0,
+        ],
+        v_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BN=Self.config.BN,
+            BK=Self.config.padded_ov_depth,
+        ],
+        v_half_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.swizzle_mode,
+            BN=Self.config.BN,
+            BK=Self.config.padded_ov_depth // 2,
+        ],
+        ragged_tma_store: RaggedTMA3DTile[
+            Self.output_type,
+            Self.config.swizzle_mode,
+            BM=Self.config.BM // 2,
+            BN=Self.config.ov_depth,
+        ],
+        kv_lut: Self.KVLUTType,
+        scale: Float32,
+        batch_size: UInt32,
+        num_keys_arg: UInt32,
+        pack: Pack[
+            Self.MaskType,
+            Self.SchedulerType,
+            Self.ValidLengthType,
+            Self.SinkType,
+            Self.KVRowOffsetsType,
+            Self.MaxSeqLenType,
+            Self.PartitionType,
+        ],
+    ):
+        Self.kernel_impl[adjacent_head_kv_multicast=True](
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            v_half_tma_op,
+            ragged_tma_store,
+            kv_lut,
+            scale,
+            batch_size,
+            num_keys_arg,
+            pack,
+        )
 
     @staticmethod
     @always_inline

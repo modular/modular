@@ -238,6 +238,13 @@ struct FA4Config[
         # - store_exp must write P in stages and signal barriers per stage
         # - mma must wait for each P stage barrier before processing
         self.num_pv_stages = 2
+        if (
+            not is_mla
+            and Self.qkv_dtype.is_float8()
+            and qk_depth == ov_depth
+            and (qk_depth == 128 or qk_depth == 256)
+        ):
+            self.num_pv_stages = 1
 
         var smem_use = 4
         # Compute misc_mbars fixed size (barriers that don't scale with num_kv_stages):
@@ -317,6 +324,22 @@ struct FA4Config[
                 fused_stages * bytes_per_kv
                 + ceildiv(fused_stages, 2) * bytes_per_k
             )
+        # The round-158 FP8 split-output path doubles the P@V issue sequence.
+        # Trim one K/V stage pair on the active depth128 route to test whether
+        # the old 6-stage ring is now over-buffered for the wider split O path.
+        if (
+            not is_mla
+            and Self.qkv_dtype.is_float8()
+            and qk_depth == 128
+            and ov_depth == 128
+            and fused_stages >= 12
+            and fused_stages % 2 == 0
+        ):
+            fused_stages = 10
+            bytes_used = (
+                fused_stages * bytes_per_kv
+                + ceildiv(fused_stages, 2) * bytes_per_k
+            )
         smem_use += bytes_used
 
         if fused_stages % 2 == 1:  # odd, fused
@@ -346,7 +369,6 @@ struct FA4Config[
                     smem_use = total_smem_use
                 else:
                     self.num_qk_stages = 1
-
         # BK0: K-dimension chunk size for Q@K' per stage
         self.BK0 = self.padded_qk_depth // self.num_qk_stages
         # BK1: Full BN since V loading is not staged (V must be complete

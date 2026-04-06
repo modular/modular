@@ -13,7 +13,9 @@
 
 from std.collections import OptionalReg
 from std.math import ceildiv
+from std.sys import size_of
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from nn.attention.gpu.nvidia.sm90.attention import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
@@ -130,7 +132,14 @@ def mha_sm100_dispatch[
         depth=fa4_config.ov_depth,
         BK=fa4_config.padded_ov_depth,
     ](ctx)
+    v_half_tma_op = v.create_tma_tile[
+        fa4_config.swizzle_mode,
+        BN=fa4_config.BN,
+        depth=fa4_config.ov_depth,
+        BK=fa4_config.padded_ov_depth // 2,
+    ](ctx)
     comptime assert BM == 256
+    comptime use_adjacent_head_kv_multicast = False
     comptime SchedulerType = TransientScheduler[
         UInt32(BM),
         UInt32(fa4_config.num_q_heads),
@@ -195,37 +204,76 @@ def mha_sm100_dispatch[
 
                 comptime smem_use = fa4_config.smem_used
 
-                comptime kernel = SM100MHA2Q[
-                    KVType,
-                    output_type,
-                    MaskType,
-                    SchedulerType,
-                    fa4_config,
-                    ValidLengthType,
-                    SinkType,
-                    KVRowOffsetsType,
-                    _is_cache_length_accurate,
-                    MaxPromptLenType,
-                    PartitionType,
-                ].kernel
-
-                ctx.enqueue_function[kernel, kernel](
-                    q_tma_op,
-                    k_tma_op,
-                    v_tma_op,
-                    ragged_tma_store,
-                    k,
-                    scale,
-                    batch_size,
-                    max_cache_valid_length,
-                    pack,
-                    grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=smem_use,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_use)
-                    ),
-                )
+                comptime if use_adjacent_head_kv_multicast:
+                    comptime kernel = SM100MHA2Q[
+                        KVType,
+                        output_type,
+                        MaskType,
+                        SchedulerType,
+                        fa4_config,
+                        ValidLengthType,
+                        SinkType,
+                        KVRowOffsetsType,
+                        _is_cache_length_accurate,
+                        MaxPromptLenType,
+                        PartitionType,
+                    ].clustered_kernel
+                    ctx.enqueue_function[kernel, kernel](
+                        q_tma_op,
+                        k_tma_op,
+                        v_tma_op,
+                        v_half_tma_op,
+                        ragged_tma_store,
+                        k,
+                        scale,
+                        batch_size,
+                        max_cache_valid_length,
+                        pack,
+                        grid_dim=SchedulerType.grid_dim(batch_size, block_x),
+                        block_dim=(num_threads, 1, 1),
+                        shared_mem_bytes=smem_use,
+                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                            UInt32(smem_use)
+                        ),
+                        attributes=pdl_launch_attributes(
+                            PDLLevel.OVERLAP_AT_END
+                        ),
+                    )
+                else:
+                    comptime kernel = SM100MHA2Q[
+                        KVType,
+                        output_type,
+                        MaskType,
+                        SchedulerType,
+                        fa4_config,
+                        ValidLengthType,
+                        SinkType,
+                        KVRowOffsetsType,
+                        _is_cache_length_accurate,
+                        MaxPromptLenType,
+                        PartitionType,
+                    ].kernel
+                    ctx.enqueue_function[kernel, kernel](
+                        q_tma_op,
+                        k_tma_op,
+                        v_tma_op,
+                        v_half_tma_op,
+                        ragged_tma_store,
+                        k,
+                        scale,
+                        batch_size,
+                        max_cache_valid_length,
+                        pack,
+                        grid_dim=SchedulerType.grid_dim(batch_size, block_x),
+                        block_dim=(num_threads, 1, 1),
+                        shared_mem_bytes=smem_use,
+                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                            UInt32(smem_use)
+                        ),
+                        attributes=pdl_launch_attributes(
+                            PDLLevel.OVERLAP_AT_END
+                        ),
+                    )
 
             # --- ragged dispatch ---
             comptime if ragged:

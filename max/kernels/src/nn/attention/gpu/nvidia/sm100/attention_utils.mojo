@@ -2152,6 +2152,7 @@ struct FA4MiscMBars[
     num_kv_stages: Int = 2,
     use_order_barriers: Bool = True,
     use_fused_kv: Bool = False,
+    split_o_hi_barriers: Bool = False,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -2172,7 +2173,7 @@ struct FA4MiscMBars[
         use_fused_kv: Whether the K and V share the same pipeline, or separate.
 
     Memory layout (count=128 first, then count=1):
-        [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync] [K] [V] [O_prod]
+        [S0_cons] [S1_cons] [C0] [C1] [O_hi_cons*] [Order*] | [S0_prod] [S1_prod] [Q1Sync] [K] [V] [O_prod]
         *Order barriers only present when use_order_barriers=True
     """
 
@@ -2185,9 +2186,12 @@ struct FA4MiscMBars[
     # C barriers: 2 per warp group (producer + consumer, both count=128)
     comptime C0_offset = 2 * Self.num_pv_stages
     comptime C1_offset = Self.C0_offset + 2
+    # Optional O_hi consumer barriers: 1 per warp group (count=128)
+    comptime num_o_hi_consumer_barriers: Int = 2 if Self.split_o_hi_barriers else 0
+    comptime O_hi_consumer_offset = Self.C1_offset + 2
     # Order barriers: 1 per warp group (count=128), conditional on use_order_barriers
     comptime num_order_barriers: Int = 2 if Self.use_order_barriers else 0
-    comptime order_offset = Self.C1_offset + 2
+    comptime order_offset = Self.O_hi_consumer_offset + Self.num_o_hi_consumer_barriers
     # ---- Count=1 section ----
     # S producer barriers: 1 per warp group
     comptime S0_producer_offset = Self.order_offset + Self.num_order_barriers
@@ -2202,9 +2206,10 @@ struct FA4MiscMBars[
     comptime V_barriers: Int = 0 if Self.use_fused_kv else 2 * Self.num_kv_stages
     # O producer barriers (count=1)
     comptime O_producer_offset = Self.V_offset + Self.V_barriers
+    comptime O_producer_barriers: Int = 4 if Self.split_o_hi_barriers else 2
 
     # Total size includes all barriers
-    comptime size = Self.O_producer_offset + 2
+    comptime size = Self.O_producer_offset + Self.O_producer_barriers
     comptime number_warpgroup_count = Self.S0_producer_offset
 
     @always_inline
@@ -2331,6 +2336,12 @@ struct FA4MiscMBars[
         """
         return self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx
 
+    @always_inline("nodebug")
+    def consumer_o_hi(self, wg_idx: UInt32) -> MBarType:
+        """Get O_hi consumer barrier for given warp group."""
+        comptime assert Self.split_o_hi_barriers
+        return self.mbar_base + Self.O_hi_consumer_offset + wg_idx
+
     # O pipeline convenience methods
     @always_inline("nodebug")
     def consumer_o(self) -> RolePipeline[2, False, 1, Self.num_pv_stages]:
@@ -2343,6 +2354,42 @@ struct FA4MiscMBars[
         return {
             self.mbar_base + Self.O_producer_offset,
             self.mbar_base,
+        }
+
+    @always_inline("nodebug")
+    def producer_o_lo(self, wg_idx: UInt32) -> ProducerPipeline[1]:
+        """Get O_lo producer for given warp group."""
+        comptime assert Self.split_o_hi_barriers
+        return {
+            self.mbar_base + Self.O_producer_offset + 2 * wg_idx,
+            self.combined_p_o_consumer(wg_idx),
+        }
+
+    @always_inline("nodebug")
+    def producer_o_hi(self, wg_idx: UInt32) -> ProducerPipeline[1]:
+        """Get O_hi producer for given warp group."""
+        comptime assert Self.split_o_hi_barriers
+        return {
+            self.mbar_base + Self.O_producer_offset + 2 * wg_idx + 1,
+            self.consumer_o_hi(wg_idx),
+        }
+
+    @always_inline("nodebug")
+    def consumer_o_lo(self, wg_idx: UInt32) -> ConsumerPipeline[1]:
+        """Correction-side O_lo pipeline for given warp group."""
+        comptime assert Self.split_o_hi_barriers
+        return {
+            self.mbar_base + Self.O_producer_offset + 2 * wg_idx,
+            self.combined_p_o_consumer(wg_idx),
+        }
+
+    @always_inline("nodebug")
+    def consumer_o_hi_pipeline(self, wg_idx: UInt32) -> ConsumerPipeline[1]:
+        """Correction-side O_hi pipeline for given warp group."""
+        comptime assert Self.split_o_hi_barriers
+        return {
+            self.mbar_base + Self.O_producer_offset + 2 * wg_idx + 1,
+            self.consumer_o_hi(wg_idx),
         }
 
     @always_inline("nodebug")
@@ -2360,6 +2407,15 @@ struct FA4MiscMBars[
             self.mbar_base + Self.O_producer_offset + 1,
             self.combined_p_o_consumer(1),
         }
+
+    @always_inline("nodebug")
+    def producer_o_final_mbar(self, wg_idx: UInt32) -> MBarType:
+        """Get the final O producer barrier that softmax waits on."""
+        comptime if Self.split_o_hi_barriers:
+            return self.mbar_base + Self.O_producer_offset + 2 * wg_idx + 1
+        else:
+            return self.mbar_base + Self.O_producer_offset + wg_idx
+
 
     @staticmethod
     @always_inline
