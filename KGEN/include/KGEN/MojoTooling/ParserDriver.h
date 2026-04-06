@@ -175,6 +175,14 @@ public:
                function_ref<void(MojoParserContext &, int)> parserCallback,
                bool disableModuleCaching = false);
 
+  /// Returns the code completion results for the given buffer at the given
+  /// completion position, using the provided existing context. The buffer is
+  /// added to the context's source manager, and the callback is invoked with
+  /// the file id. The context's parser listener is temporarily overridden.
+  static std::vector<KGEN::Mojo::CodeCompletionResult> codeCompleteInContext(
+      MojoParserContext &context, llvm::MemoryBufferRef buffer,
+      uint64_t completionPosition, function_ref<void(int)> parserCallback);
+
   //===--------------------------------------------------------------------===//
   // Signature Help
 
@@ -193,6 +201,13 @@ public:
                 MLIRContext *context, const KGEN::CompilationOptions &options,
                 function_ref<void(MojoParserContext &, int)> parserCallback,
                 bool disableModuleCaching = false);
+
+  /// Returns the signature help result for the given buffer at the given
+  /// position, using the provided existing context.
+  static std::optional<KGEN::Mojo::SignatureHelpResult>
+  signatureHelpInContext(MojoParserContext &context,
+                         llvm::MemoryBufferRef buffer, uint64_t position,
+                         function_ref<void(int)> parserCallback);
 
   //===--------------------------------------------------------------------===//
   // REPL
@@ -338,6 +353,13 @@ public:
   /// Substitute parameters into a type and resolve them into a different type.
   MojoASTTypeRef concretizeType(MojoASTTypeRef base, ArrayRef<TypedAttr> params,
                                 MojoASTTypeRef type);
+
+private:
+  /// Ensure the completion cache is up-to-date for a completion request.
+  /// Collects the target module list, incrementally updates the cache, and
+  /// returns the buffer identifier to use for the completion buffer (derived
+  /// from replDecl's source buffer for correct import resolution).
+  StringRef prepareCompletionCache(MojoASTDeclRef replDecl);
 
 protected:
   /// A struct representing the internal state of the parser.

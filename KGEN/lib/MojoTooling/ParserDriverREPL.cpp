@@ -8,6 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstdlib>
+
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -912,87 +914,123 @@ bool MojoParserContext::isHiddenPersistentVariable(StringRef name) {
 // Code Completion/Signature Help
 //===----------------------------------------------------------------------===//
 
-/// This function provides a shared implementation for parsing completion like
-/// utilities, such as code completion and signature help. It handles preparing
-/// the parser context for parsing, updating the completion position, and more.
-static void parseCompletionImpl(
-    uint64_t &completionPosition, StringRef exprText,
-    MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
-    ArrayRef<std::pair<StringRef, Type>> variables,
+/// Collect the ordered chain of REPL modules that should be in the completion
+/// cache. When replDecl is set (notebook editing a specific cell), we need
+/// modules up to its predecessor; otherwise, all evaluated modules.
+static SmallVector<ASTDecl *> collectCompletionTargetModules(
     ArrayRef<ASTDecl *> replModuleDecls,
     const llvm::MapVector<ASTDecl *, ASTDecl *> &prevReplModuleDecls,
-    ASTDecl *replDecl, SharedState &origSharedState,
-    function_ref<void(StringRef, function_ref<void(MojoParserContext &, int)>)>
-        parserCallback) {
-  // Insert a marker into the expression text at the completion position. This
-  // is only really necessary because we currently do string splicing to fake
-  // support for top-level code, meaning that we don't know where the completion
-  // position will end up after that process is done.
+    ASTDecl *replDecl) {
+  SmallVector<ASTDecl *> targetModules;
+  if (replDecl) {
+    ASTDecl *decl = prevReplModuleDecls.lookup(replDecl);
+    while (decl) {
+      targetModules.push_back(decl);
+      decl = prevReplModuleDecls.lookup(decl);
+    }
+    std::reverse(targetModules.begin(), targetModules.end());
+  } else {
+    targetModules.assign(replModuleDecls.begin(), replModuleDecls.end());
+  }
+  return targetModules;
+}
+
+/// Replay a single REPL module into a completion cache context. Extracts the
+/// declarations (after the entry point marker) from the main SourceMgr and
+/// parses them into the cache context.
+static ASTDecl *replayModuleIntoCache(MojoParserContext &cacheCtx,
+                                      llvm::SourceMgr &cacheSourceMgr,
+                                      llvm::SourceMgr &mainSourceMgr,
+                                      ASTDecl *module,
+                                      MojoASTDeclRef prevDecl) {
+  int bufferId = mainSourceMgr.FindBufferContainingLoc(module->getLoc());
+  const llvm::MemoryBuffer *moduleBuf = mainSourceMgr.getMemoryBuffer(bufferId);
+  StringRef moduleBufCode =
+      moduleBuf->getBuffer().split(kEntryPointEndMarker).second;
+  auto completionBuf = llvm::MemoryBuffer::getMemBuffer(
+      moduleBufCode, moduleBuf->getBufferIdentifier());
+  int completionBufferId =
+      cacheSourceMgr.AddNewSourceBuffer(std::move(completionBuf), SMLoc());
+  return &buildAndResolveREPLModule(
+      cacheSourceMgr.getMemoryBuffer(completionBufferId),
+      moduleBuf->getBufferIdentifier(), cacheCtx.getSharedState(), prevDecl,
+      /*parseForLSP=*/false);
+}
+
+/// Prepare the wrapped expression text for completion, inserting and removing
+/// the completion marker to track position through the wrapping transformation.
+static std::string prepareCompletionExpr(
+    uint64_t &completionPosition, StringRef exprText,
+    MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
+    ArrayRef<std::pair<StringRef, Type>> variables, bool isFirstCell) {
   constexpr StringLiteral kCompletionMarker = "<#COMPLETION_MARKER#>";
   std::string exprTextWithMarker = exprText.substr(0, completionPosition).str();
   exprTextWithMarker += kCompletionMarker;
   exprTextWithMarker += exprText.drop_front(completionPosition).str();
 
-  // Grab the previous repl decl.
-  ASTDecl *prevReplDecl = nullptr;
-  if (replDecl)
-    prevReplDecl = prevReplModuleDecls.lookup(replDecl);
-  else if (!replModuleDecls.empty())
-    prevReplDecl = replModuleDecls.back();
+  std::string wrappedExprText =
+      wrapExpressionText(locMapper, "__mojo_repl_code_complete_fn",
+                         exprTextWithMarker, variables, isFirstCell);
 
-  // Wrap the expression text in a function so that we can execute it.
-  std::string wrappedExprText = wrapExpressionText(
-      locMapper, "__mojo_repl_code_complete_fn", exprTextWithMarker, variables,
-      /*isFirstREPLCell=*/!prevReplDecl);
-
-  // Remove the completion marker from the wrapped expression text and grab the
-  // new completion position.
   completionPosition = wrappedExprText.find(kCompletionMarker);
   wrappedExprText.erase(completionPosition, kCompletionMarker.size());
+  return wrappedExprText;
+}
 
-  // Functor used to parse a REPL expression for use by code completion.
-  parserCallback(wrappedExprText, [&](MojoParserContext &ctx, int fileId) {
-    SourceMgr &mainSourceMgr = origSharedState.getSourceMgr();
-    SourceMgr &sourceMgr = ctx.getSourceMgr();
-    const llvm::MemoryBuffer *sourceBuf =
-        sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
+/// Maximum number of completion requests before forcing a full cache rebuild
+/// to bound memory growth from stale completion modules. Configurable via the
+/// MOJO_REPL_COMPLETION_CACHE_LIMIT environment variable.
+static size_t getCompletionCacheRebuildThreshold() {
+  static size_t threshold = [] {
+    if (const char *env = std::getenv("MOJO_REPL_COMPLETION_CACHE_LIMIT"))
+      if (int val = std::atoi(env); val > 0)
+        return static_cast<size_t>(val);
+    return size_t{50};
+  }();
+  return threshold;
+}
 
-    // Pull in the dependencies of the current module.
-    SmallVector<ASTDecl *> origPrevReplModuleDecls;
-    while (prevReplDecl) {
-      origPrevReplModuleDecls.push_back(prevReplDecl);
-      prevReplDecl = prevReplModuleDecls.lookup(prevReplDecl);
-    }
+/// Ensure the completion cache is up-to-date for a completion request.
+/// Collects target modules, incrementally updates the cache, and returns the
+/// buffer identifier for the completion buffer (for correct import resolution).
+StringRef MojoParserContext::prepareCompletionCache(MojoASTDeclRef replDecl) {
+  auto targetModules = collectCompletionTargetModules(
+      impl->replModuleDecls, impl->prevReplModuleDecls, replDecl.decl);
+  size_t target = targetModules.size();
+  auto &mainSourceMgr = impl->sharedState.getSourceMgr();
 
-    // Pull in the existing REPL module state.
-    MojoASTDeclRef completionPrevReplDecl;
-    for (ASTDecl *module : llvm::reverse(origPrevReplModuleDecls)) {
-      int bufferId = mainSourceMgr.FindBufferContainingLoc(module->getLoc());
-      const llvm::MemoryBuffer *moduleBuf =
-          mainSourceMgr.getMemoryBuffer(bufferId);
+  // Check if the existing cache can be incrementally extended.
+  bool canExtend = impl->completionCache &&
+                   impl->completionCache->replDeclKey == replDecl.decl &&
+                   impl->completionCache->replayedModuleCount <= target &&
+                   impl->completionCache->completionsSinceRebuild <
+                       getCompletionCacheRebuildThreshold();
 
-      // Split out the top-level code from the module, we don't want to process
-      // the entry point logic of imported cells.
-      StringRef moduleBufCode =
-          moduleBuf->getBuffer().split(kEntryPointEndMarker).second;
-      auto completionBuf = llvm::MemoryBuffer::getMemBuffer(
-          moduleBufCode, moduleBuf->getBufferIdentifier());
+  if (!canExtend) {
+    // Full rebuild: cache doesn't exist, replDecl changed, target set shrank,
+    // or stale module threshold exceeded.
+    impl->completionCache = std::make_unique<Impl::CompletionCache>(
+        impl->sharedState.getContext(), impl->sharedState.options,
+        mainSourceMgr);
+    impl->completionCache->replDeclKey = replDecl.decl;
+  }
 
-      // Add the copy of the decl and resolve its body.
-      int completionBufferId = sourceMgr.AddNewSourceBuffer(
-          std::move(completionBuf),
-          SMLoc::getFromPointer(sourceBuf->getBufferStart()));
-      completionPrevReplDecl = &buildAndResolveREPLModule(
-          sourceMgr.getMemoryBuffer(completionBufferId),
-          moduleBuf->getBufferIdentifier(), ctx.getSharedState(),
-          completionPrevReplDecl, /*parseForLSP=*/false);
-    }
+  auto &cc = *impl->completionCache;
+  for (size_t i = cc.replayedModuleCount; i < target; ++i) {
+    cc.lastResolvedDecl = replayModuleIntoCache(
+        *cc.context, cc.sourceMgr, mainSourceMgr, targetModules[i],
+        MojoASTDeclRef(cc.lastResolvedDecl));
+  }
+  cc.replayedModuleCount = target;
 
-    // Resolve a module decl for this REPL expression.
-    buildAndResolveREPLModule(sourceBuf, sourceBuf->getBufferIdentifier(),
-                              ctx.getSharedState(), completionPrevReplDecl,
-                              /*parseForLSP=*/false, variables);
-  });
+  // Derive the buffer identifier from replDecl's source buffer so that
+  // import resolution can find the correct working directory.
+  if (replDecl) {
+    const llvm::MemoryBuffer *origSourceBuf = getSourceMgr().getMemoryBuffer(
+        getSourceMgr().FindBufferContainingLoc(replDecl->getLoc()));
+    return origSourceBuf->getBufferIdentifier();
+  }
+  return "";
 }
 
 std::vector<Mojo::CodeCompletionResult>
@@ -1008,31 +1046,29 @@ MojoParserContext::codeCompleteREPLExpression(
     StringRef exprText, uint64_t completionPosition,
     ArrayRef<std::pair<StringRef, Type>> replVariables,
     MojoASTDeclRef replDecl) {
-  // Build a location mapper for this expression.
   REPLLocMapper locMapper(getSourceMgr());
   locMapper.exprMappers.emplace_back(
       std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
 
-  // Invoke the parser and collect code completion results.
-  std::vector<Mojo::CodeCompletionResult> results;
-  parseCompletionImpl(
+  StringRef bufferIdentifier = prepareCompletionCache(replDecl);
+  auto &cache = *impl->completionCache;
+
+  std::string wrappedExprText = prepareCompletionExpr(
       completionPosition, exprText, *locMapper.exprMappers.back(),
-      replVariables, impl->replModuleDecls, impl->prevReplModuleDecls,
-      replDecl.decl, impl->sharedState,
-      [&](StringRef wrappedExprText,
-          function_ref<void(MojoParserContext &, int)> parserCallback) {
-        StringRef identifier;
-        if (replDecl) {
-          const llvm::MemoryBuffer *origSourceBuf =
-              getSourceMgr().getMemoryBuffer(
-                  getSourceMgr().FindBufferContainingLoc(replDecl->getLoc()));
-          identifier = origSourceBuf->getBufferIdentifier();
-        }
-        results = MojoParserContext::codeComplete(
-            llvm::MemoryBufferRef(wrappedExprText, identifier),
-            completionPosition, impl->sharedState.getContext(),
-            impl->sharedState.options, parserCallback,
-            /*disableModuleCaching=*/true);
+      replVariables, !cache.lastResolvedDecl);
+
+  // Run completion in the cached context. Each request adds a new module, but
+  // lastResolvedDecl always points to the last *real* REPL module, so stale
+  // completion modules are harmless.
+  auto results = MojoParserContext::codeCompleteInContext(
+      *cache.context, llvm::MemoryBufferRef(wrappedExprText, bufferIdentifier),
+      completionPosition, [&](int fileId) {
+        const auto *buf = cache.context->getSourceMgr().getMemoryBuffer(fileId);
+        buildAndResolveREPLModule(buf, buf->getBufferIdentifier(),
+                                  cache.context->getSharedState(),
+                                  MojoASTDeclRef(cache.lastResolvedDecl),
+                                  /*parseForLSP=*/false, replVariables);
+        ++cache.completionsSinceRebuild;
       });
 
   // Filter out results pointing to internal decls.
@@ -1047,24 +1083,27 @@ MojoParserContext::signatureHelpREPLExpression(
     StringRef exprText, uint64_t position,
     ArrayRef<std::pair<StringRef, Type>> replVariables,
     MojoASTDeclRef replDecl) {
-  // Build a location mapper for this expression.
   REPLLocMapper locMapper(getSourceMgr());
   locMapper.exprMappers.emplace_back(
       std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
 
-  // Invoke the parser and collect the signature help result.
-  std::optional<Mojo::SignatureHelpResult> result;
-  parseCompletionImpl(
-      position, exprText, *locMapper.exprMappers.back(), replVariables,
-      impl->replModuleDecls, impl->prevReplModuleDecls, replDecl.decl,
-      impl->sharedState,
-      [&](StringRef wrappedExprText,
-          function_ref<void(MojoParserContext &, int)> parserCallback) {
-        result = MojoParserContext::signatureHelp(
-            llvm::MemoryBufferRef(wrappedExprText, ""), position,
-            impl->sharedState.getContext(), impl->sharedState.options,
-            parserCallback,
-            /*disableModuleCaching=*/true);
+  StringRef bufferIdentifier = prepareCompletionCache(replDecl);
+  auto &cache = *impl->completionCache;
+
+  std::string wrappedExprText =
+      prepareCompletionExpr(position, exprText, *locMapper.exprMappers.back(),
+                            replVariables, !cache.lastResolvedDecl);
+
+  auto result = MojoParserContext::signatureHelpInContext(
+      *cache.context, llvm::MemoryBufferRef(wrappedExprText, bufferIdentifier),
+      position, [&](int fileId) {
+        const auto *buf = cache.context->getSourceMgr().getMemoryBuffer(fileId);
+        buildAndResolveREPLModule(buf, buf->getBufferIdentifier(),
+                                  cache.context->getSharedState(),
+                                  MojoASTDeclRef(cache.lastResolvedDecl),
+                                  /*parseForLSP=*/false, replVariables);
+        ++cache.completionsSinceRebuild;
       });
+
   return result;
 }
