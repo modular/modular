@@ -48,7 +48,7 @@ def _int64_product_fits(values: Iterable[Dim | int], initial: int = 1) -> bool:
 
 @given(
     type=shared_tensor_types,
-    repeats=st.integers(min_value=1),
+    repeats=st.integers(min_value=0),
     axis=axes(shared_tensor_types),
 )
 def test_repeat_interleave(
@@ -98,7 +98,7 @@ def test_vector_repeats(
 
 @given(
     type=shared_tensor_types,
-    repeats=st.integers(min_value=1, max_value=2**63 - 1),
+    repeats=st.integers(min_value=0, max_value=2**63 - 1),
 )
 def test_repeat_interleave__no_axis(
     graph_builder: GraphBuilder,
@@ -127,10 +127,26 @@ def test_repeat_interleave__nonpositive_repeats(
     repeats: int,
     axis: int | None,
 ) -> None:
-    assume(repeats <= 0)
+    assume(repeats < 0)
     with graph_builder(input_types=[type]) as graph:
         with pytest.raises(ValueError):
             ops.repeat_interleave(graph.inputs[0].tensor, repeats, axis=axis)
+
+
+def test_repeat_interleave_allows_gpu_tensor_type(
+    graph_builder: GraphBuilder,
+) -> None:
+    input_type = TensorType(
+        DType.int32,
+        [2, 3],
+        device=DeviceRef.GPU(),
+    )
+
+    with graph_builder(input_types=[input_type]) as graph:
+        out = ops.repeat_interleave(graph.inputs[0].tensor, repeats=2, axis=1)
+        assert out.shape == [2, 6]
+        assert out.device == DeviceRef.GPU()
+        graph.output(out)
 
 
 @given(

@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import simd_width_of
-
 from std.algorithm.functional import elementwise
+from std.gpu.host.info import is_cpu
+from std.runtime.asyncrt import DeviceContextPtr
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 
 from std.utils import IndexList
@@ -45,11 +45,13 @@ def _collapse_dims_around_axis(
 def repeat_interleave[
     dtype: DType,
     type_repeats: DType,
+    target: StaticString = "cpu",
 ](
     input: TileTensor[dtype, ...],
     repeats: TileTensor[type_repeats, ...],
     axis: Int,
     output: TileTensor[mut=True, dtype, ...],
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """
     Fill `output` by repeating values from `input` along `axis` based on the
@@ -63,6 +65,7 @@ def repeat_interleave[
         repeats: The number of repetitions each element in input.
         axis: The axis along which to repeat values.
         output: The output buffer.
+        context: Device context used for GPU execution.
     """
     # comptime assert (is_row_major[input.rank](input.layout)) and (
     #     is_row_major[output.rank](output.layout)
@@ -96,29 +99,36 @@ def repeat_interleave[
     var output_repeat_dim = collapsed_output_shape[1]
     var repeat_stride = Int(repeats.dim[0]() > 1)
 
-    # Mapping from offsets in the input tensor to offsets in the output tensor
-    # along the repeat axis.
-    var offset_mapping = List[Int](unsafe_uninit_length=output_repeat_dim)
-
     var repeat_offset = 0
-    var output_offset = 0
-    for input_offset in range(input_repeat_dim):
+    var total_repeats = 0
+    for _ in range(input_repeat_dim):
         var repeat_val = Int(repeats[repeat_offset])
         if repeat_val < 0:
             raise Error("all repeat values must be non-negative")
-
-        for _ in range(repeat_val):
-            offset_mapping[output_offset] = input_offset
-            output_offset += 1
-
+        total_repeats += repeat_val
         repeat_offset += repeat_stride
+
+    assert total_repeats == output_repeat_dim
 
     @always_inline
     @parameter
     def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var output_index = rebind[IndexList[3]](idx)
         var input_index = output_index
-        input_index[1] = offset_mapping[output_index[1]]
+
+        var remaining_repeats = output_index[1]
+        var repeat_offset = 0
+        var input_offset = 0
+        while input_offset < input_repeat_dim:
+            var repeat_val = Int(repeats[repeat_offset])
+            if remaining_repeats < repeat_val:
+                break
+
+            remaining_repeats -= repeat_val
+            input_offset += 1
+            repeat_offset += repeat_stride
+
+        input_index[1] = input_offset
 
         var input_idx = collapsed_input.layout(Coord(input_index))
         var input_value = collapsed_input.ptr.load[width=width](input_idx)
@@ -126,9 +136,15 @@ def repeat_interleave[
         var output_idx = collapsed_output.layout(Coord(output_index))
         collapsed_output.ptr.store(output_idx, input_value)
 
-    elementwise[func, simd_width_of[output.dtype]()](
-        coord_to_index_list(collapsed_output.layout.shape_coord())
-    )
+    comptime if is_cpu[target]():
+        elementwise[func, 1, target=target](
+            coord_to_index_list(collapsed_output.layout.shape_coord())
+        )
+    else:
+        elementwise[func, 1, target=target](
+            coord_to_index_list(collapsed_output.layout.shape_coord()),
+            context,
+        )
 
 
 @always_inline

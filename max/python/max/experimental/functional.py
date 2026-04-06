@@ -35,6 +35,7 @@ from collections.abc import (
 )
 from pathlib import Path
 from typing import Any, TypeAlias, TypeVar, overload
+from typing import cast as typing_cast
 
 from max import driver
 from max._mlir_context import MLIRThreadPoolExecutor
@@ -43,7 +44,10 @@ from max.experimental import realization_context as rc
 from max.experimental import tensor
 from max.graph import (
     BufferValue,
+    Dim,
+    DimLike,
     Graph,
+    StaticDim,
     TensorValue,
     TensorValueLike,
     Type,
@@ -546,6 +550,15 @@ exp = functional(ops.exp)
 #: Flattens a tensor.
 #: See :func:`max.graph.ops.flatten` for details.
 flatten = functional(ops.flatten)
+#: Computes element-wise bitwise AND.
+#: See :func:`max.graph.ops.bitwise_and` for details.
+bitwise_and = functional(ops.bitwise_and)
+#: Computes element-wise bitwise OR.
+#: See :func:`max.graph.ops.bitwise_or` for details.
+bitwise_or = functional(ops.bitwise_or)
+#: Computes element-wise bitwise XOR.
+#: See :func:`max.graph.ops.bitwise_xor` for details.
+bitwise_xor = functional(ops.bitwise_xor)
 #: Computes the floor element-wise.
 #: See :func:`max.graph.ops.floor` for details.
 floor = functional(ops.floor)
@@ -606,6 +619,9 @@ logsoftmax = functional(ops.logsoftmax)
 #: Scatters values according to a mask.
 #: See :func:`max.graph.ops.masked_scatter` for details.
 masked_scatter = functional(ops.masked_scatter)
+#: Replaces elements selected by a boolean mask.
+#: See :func:`max.graph.ops.masked_fill` for details.
+masked_fill = functional(ops.masked_fill)
 #: Performs matrix multiplication.
 #: See :func:`max.graph.ops.matmul` for details.
 matmul = functional(ops.matmul)
@@ -691,6 +707,15 @@ def min(
 
 
 @functional
+def amin(
+    x: TensorValueLike,
+    axis: int | Sequence[int] | None = -1,
+) -> TensorValue:
+    """Returns minimum values along one or more axes."""
+    return ops.amin(x, axis=axis)
+
+
+@functional
 def clamp(
     x: TensorValueLike,
     lower_bound: TensorValueLike,
@@ -773,12 +798,31 @@ relu = functional(ops.relu)
 #: Repeats elements of a tensor.
 #: See :func:`max.graph.ops.repeat_interleave` for details.
 repeat_interleave = functional(ops.repeat_interleave)
+
+
+@functional
+def repeat(
+    x: TensorValueLike,
+    *repeats: Sequence[DimLike] | DimLike,
+) -> TensorValue:
+    """Repeats tensor data along each dimension using PyTorch-style varargs."""
+    normalized_repeats: Sequence[DimLike]
+    if len(repeats) == 1 and isinstance(repeats[0], Sequence):
+        normalized_repeats = repeats[0]
+    else:
+        normalized_repeats = typing_cast(Sequence[DimLike], repeats)
+    return ops.repeat(x, normalized_repeats)
+
+
 #: Reshapes a tensor to a new shape.
 #: See :func:`max.graph.ops.reshape` for details.
 reshape = functional(ops.reshape)
 #: Resizes a tensor using linear (bilinear) interpolation.
 #: See :func:`max.graph.ops.resize_linear` for details.
 resize_linear = functional(ops.resize_linear)
+#: Resizes a tensor.
+#: See :func:`max.graph.ops.resize` for details.
+resize = functional(ops.resize)
 #: Rounds tensor values element-wise.
 #: See :func:`max.graph.ops.round` for details.
 round = functional(ops.round)
@@ -914,12 +958,149 @@ transfer_to = functional(ops.transfer_to)
 #: Transposes a tensor.
 #: See :func:`max.graph.ops.transpose` for details.
 transpose = functional(ops.transpose)
+#: Swaps two tensor axes.
+#: See :func:`max.graph.ops.swapaxes` for details.
+swapaxes = functional(ops.swapaxes)
 #: Truncates tensor values element-wise.
 #: See :func:`max.graph.ops.trunc` for details.
 trunc = functional(ops.trunc)
 #: Adds dimensions of size 1.
 #: See :func:`max.graph.ops.unsqueeze` for details.
 unsqueeze = functional(ops.unsqueeze)
+#: Replaces a dimension with multiple dimensions.
+#: See :func:`max.graph.ops.unflatten` for details.
+unflatten = functional(ops.unflatten)
 #: Selects elements from two tensors based on a condition.
 #: See :func:`max.graph.ops.where` for details.
 where = functional(ops.where)
+
+
+def unbind(
+    x: tensor.Tensor | TensorValue,
+    dim: int = 0,
+) -> tuple[tensor.Tensor, ...] | tuple[TensorValue, ...]:
+    """Removes one axis and returns each slice as a separate tensor."""
+    return tuple(functional(ops.unbind)(x, dim))
+
+
+flip = functional(ops.flip)
+
+
+def _nearest_interpolate_integer_ratio(
+    x: TensorValue,
+    spatial_shape: Sequence[DimLike],
+) -> TensorValue | None:
+    input_spatial = list(x.shape[-2:])
+    target_spatial = [Dim(dim) for dim in spatial_shape]
+    if not all(
+        isinstance(dim, StaticDim) for dim in [*input_spatial, *target_spatial]
+    ):
+        return None
+
+    out = x
+    for axis, input_dim, output_dim in zip(
+        range(out.rank - 2, out.rank),
+        input_spatial,
+        target_spatial,
+        strict=True,
+    ):
+        input_size = int(input_dim)
+        output_size = int(output_dim)
+
+        if input_size == output_size:
+            continue
+        if output_size > input_size:
+            if output_size % input_size != 0:
+                return None
+            out = ops.repeat_interleave(
+                out,
+                output_size // input_size,
+                axis=axis,
+            )
+            continue
+        if input_size % output_size != 0:
+            return None
+        step = input_size // output_size
+        indices = [slice(None)] * out.rank
+        indices[axis] = slice(None, None, step)
+        out = ops.slice_tensor(out, tuple(indices))
+
+    return out
+
+
+@functional
+def interpolate(
+    x: TensorValueLike,
+    size: int | Sequence[DimLike] | None = None,
+    scale_factor: float | int | Sequence[float | int] | None = None,
+    mode: str = "nearest",
+) -> TensorValue:
+    """Resizes an NCHW tensor using the supported MAX interpolation paths."""
+    x = TensorValue(x)
+    if mode != "nearest":
+        raise NotImplementedError(
+            "Only nearest-neighbor interpolate is currently supported"
+        )
+    if x.rank != 4:
+        raise ValueError(
+            f"interpolate currently expects rank-4 NCHW tensors, got rank {x.rank}"
+        )
+    if (size is None) == (scale_factor is None):
+        raise ValueError("Specify exactly one of size or scale_factor")
+
+    spatial_shape: list[DimLike]
+    if size is not None:
+        if isinstance(size, int):
+            spatial_shape = [size, size]
+        else:
+            spatial_shape = [*size]
+        if len(spatial_shape) != 2:
+            raise ValueError("size must have exactly two spatial dimensions")
+    else:
+        assert scale_factor is not None
+        factors: list[float | int]
+        if isinstance(scale_factor, Sequence):
+            factors = [*scale_factor]
+        else:
+            factors = [scale_factor, scale_factor]
+        if len(factors) != 2:
+            raise ValueError(
+                "scale_factor must be a scalar or length-2 sequence"
+            )
+        spatial_shape = []
+        for dim, factor in zip(x.shape[-2:], factors, strict=True):
+            factor_value = float(factor)
+            if factor_value.is_integer():
+                spatial_shape.append(dim * int(factor_value))
+                continue
+
+            reciprocal = 1.0 / factor_value
+            if not reciprocal.is_integer() or not isinstance(dim, StaticDim):
+                raise NotImplementedError(
+                    "nearest interpolate currently requires integral "
+                    "upscale factors or exact reciprocal downscale factors"
+                )
+
+            divisor = int(reciprocal)
+            if int(dim) % divisor != 0:
+                raise NotImplementedError(
+                    "nearest interpolate currently requires exact integer "
+                    "downscale ratios"
+                )
+            spatial_shape.append(int(dim) // divisor)
+
+    integer_ratio_result = _nearest_interpolate_integer_ratio(x, spatial_shape)
+    if integer_ratio_result is not None:
+        return integer_ratio_result
+
+    if x.device.device_type == "gpu":
+        raise NotImplementedError(
+            "nearest interpolate on GPU currently requires exact integer "
+            "upscale or downscale ratios"
+        )
+
+    return ops.resize(
+        x,
+        [*x.shape[:-2], *spatial_shape],
+        interpolation=ops.InterpolationMode.NEAREST,
+    )

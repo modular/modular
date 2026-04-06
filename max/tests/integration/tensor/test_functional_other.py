@@ -372,8 +372,7 @@ def test_arange() -> None:
 
 
 def test_repeat_interleave() -> None:
-    # repeat_interleave not supported on GPU, use CPU
-    tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=CPU())
+    tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.repeat_interleave(tensor_2d, 2, axis=0)
     assert result.real
 

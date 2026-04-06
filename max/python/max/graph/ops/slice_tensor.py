@@ -29,6 +29,10 @@ from ..type import DeviceRef, TensorType
 from ..value import BufferValue, HasTensorValue, TensorValue
 from .concat import concat
 from .constant import constant
+from .gather import gather
+from .range import range as range_op
+from .shape_to_tensor import shape_to_tensor
+from .unsqueeze import unsqueeze
 from .validation import assert_on_host
 from .where import where
 
@@ -181,6 +185,113 @@ def _has_no_ellipsis(indices: SliceIndices) -> TypeGuard[list[SliceIndex]]:
 
 def _stack_scalars(vals: Iterable[TensorValue]) -> TensorValue:
     return concat([v.reshape([1]) if v.shape != [1] else v for v in vals])
+
+
+def _has_negative_step(indices: SliceIndices) -> bool:
+    for index in indices:
+        if isinstance(index, slice):
+            if isinstance(index.step, int) and index.step < 0:
+                return True
+        elif (
+            isinstance(index, tuple)
+            and len(index) == 2
+            and isinstance(index[0], slice)
+            and isinstance(index[0].step, int)
+            and index[0].step < 0
+        ):
+            return True
+    return False
+
+
+def _dynamic_axis_size(x: TensorValue, axis: int) -> TensorValue:
+    shape_tensor = shape_to_tensor(x.shape)
+    axis_index = constant([axis], DType.int64, DeviceRef.CPU())
+    return gather(shape_tensor, axis_index, axis=0).reshape([])
+
+
+def _negative_step_indices(
+    x: TensorValue, axis: int, index: slice
+) -> TensorValue:
+    dim = x.shape[axis]
+    if isinstance(dim, StaticDim):
+        concrete_slice = _concrete_static_slice(int(dim), index)
+        values = np.array(
+            list(
+                builtins.range(
+                    concrete_slice.start,
+                    concrete_slice.stop,
+                    concrete_slice.step,
+                )
+            ),
+            dtype=np.int64,
+        )
+        return constant(values, DType.int64, x.device)
+
+    if index.start is None and index.stop is None and index.step == -1:
+        axis_size = _dynamic_axis_size(x, axis)
+        return range_op(
+            axis_size - 1,
+            -1,
+            -1,
+            out_dim=dim,
+            dtype=DType.int64,
+            device=x.device,
+        )
+
+    raise NotImplementedError(
+        "dynamic negative-step slicing currently only supports full-axis reversal"
+    )
+
+
+def _slice_with_negative_steps(
+    x: TensorValue, indices: SliceIndices
+) -> TensorValue:
+    expanded_indices = expand_ellipsis(indices, x.rank)
+    current = x
+    axis = 0
+    for index in expanded_indices:
+        if index is None:
+            current = unsqueeze(current, axis)
+            axis += 1
+            continue
+
+        if (
+            isinstance(index, slice)
+            and isinstance(index.step, int)
+            and index.step < 0
+        ):
+            current = gather(
+                current,
+                _negative_step_indices(current, axis, index),
+                axis,
+            )
+            axis += 1
+            continue
+
+        if (
+            isinstance(index, tuple)
+            and len(index) == 2
+            and isinstance(index[0], slice)
+            and isinstance(index[0].step, int)
+            and index[0].step < 0
+        ):
+            current = gather(
+                current,
+                _negative_step_indices(current, axis, index[0]),
+                axis,
+            )
+            axis += 1
+            continue
+
+        full_indices: list[SliceIndex | builtins.ellipsis] = [
+            slice(None)
+        ] * current.rank
+        full_indices[axis] = index
+        current = slice_tensor(current, tuple(full_indices))
+        if not isinstance(index, int):
+            axis += 1
+
+    return current
 
 
 def _slice_and_output_tensors(  # noqa: ANN202
@@ -413,6 +524,9 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
         The sliced subtensor of `x`.
     """
     x = TensorValue(x)
+
+    if _has_negative_step(indices):
+        return _slice_with_negative_steps(x, indices)
 
     if not any(
         isinstance(subslice, TensorValue | HasTensorValue | tuple)

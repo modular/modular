@@ -49,8 +49,10 @@ PARAMS = [
         (slice(None, None, 2),),
     ),
     # x[::-1]
-    # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
-    # (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, -1),)),
+    (
+        TensorType(DType.float32, shape=["dim0"], device=device_ref),
+        (slice(None, None, -1),),
+    ),
     # x[:, None, :]
     (
         TensorType(DType.float32, shape=["dim0", "dim1"], device=device_ref),
@@ -76,11 +78,14 @@ PARAMS = [
         (Ellipsis, slice(1, None)),
     ),
     # x[1, ..., ::-1]
-    # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
-    # (
-    #     TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
-    #     (1, Ellipsis, slice(None, None, -1)),
-    # ),
+    (
+        TensorType(
+            DType.float32,
+            shape=["dim0", "dim1", "dim2"],
+            device=device_ref,
+        ),
+        (1, Ellipsis, slice(None, None, -1)),
+    ),
     # x[:, -1]
     (
         TensorType(

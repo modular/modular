@@ -59,6 +59,7 @@ modular_py_test(
         "//max/python/max/nn",
         requirement("numpy"),
         requirement("pytest-xdist"),
+        requirement("torch"),
     ],
 )
 

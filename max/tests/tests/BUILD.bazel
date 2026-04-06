@@ -114,6 +114,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         requirement("numpy"),
+        requirement("torch"),
     ],
 )
 

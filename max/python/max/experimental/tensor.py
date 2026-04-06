@@ -100,7 +100,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import warnings
-from collections.abc import Generator, Sequence
+from collections.abc import Generator, Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, cast
@@ -129,6 +129,19 @@ if TYPE_CHECKING:
     )
 
 GraphValue: TypeAlias = graph.BufferValue | graph.TensorValue
+
+
+def _canonicalize_shape_args(
+    shape: tuple[ShapeLike | DimLike, ...],
+) -> ShapeLike:
+    if (
+        len(shape) == 1
+        and isinstance(shape[0], Iterable)
+        and not isinstance(shape[0], (str, bytes, int))
+    ):
+        return cast(ShapeLike, shape[0])
+    return cast(ShapeLike, shape)
+
 
 _CONTEXT: ContextVar[RealizationContext] = ContextVar("_CONTEXT")
 _DEFAULT_DEVICE: ContextVar[Device] = ContextVar("_DEFAULT_DEVICE")
@@ -1789,6 +1802,10 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.min(self, axis=axis)
 
+    def amin(self, axis: int | Sequence[int] | None = -1) -> Tensor:
+        """Computes the minimum values along one or more axes."""
+        return F.amin(self, axis=axis)
+
     def mean(self, axis: int | None = -1) -> Tensor:
         """Computes the mean values along an axis.
 
@@ -1981,6 +1998,12 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.unsqueeze(self, axis)
 
+    def size(self, dim: int | None = None) -> graph.Shape | graph.Dim:
+        """Returns the tensor shape or a single dimension size."""
+        if dim is None:
+            return self.shape
+        return self.shape[dim]
+
     def split(
         self, split_size_or_sections: int | list[int], axis: int = 0
     ) -> list[Tensor]:
@@ -2018,7 +2041,7 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return cast(list[Tensor], F.split(self, split_size_or_sections, axis))
 
-    def reshape(self, shape: ShapeLike) -> Tensor:
+    def reshape(self, *shape: ShapeLike | DimLike) -> Tensor:
         """Reshapes the tensor to a new shape.
 
         Returns a tensor with the same data but a different shape. The total
@@ -2041,14 +2064,30 @@ class Tensor(DLPackArray, HasTensorValue):
             # Values: [1, 2, 3, 4, 5, 6]
 
         Args:
-            shape: The desired output shape. Can be a tuple or list of integers.
-                The total number of elements must equal the original tensor's
-                element count.
+            shape: The desired output shape. Can be a tuple/list of integers
+                or positional dimensions. The total number of elements must
+                equal the original tensor's element count.
 
         Returns:
             Tensor: A reshaped tensor with the specified shape.
         """
-        return F.reshape(self, shape)
+        return F.reshape(self, _canonicalize_shape_args(shape))
+
+    def flatten(self, start_dim: int = 0, end_dim: int = -1) -> Tensor:
+        """Flattens a contiguous range of dimensions into one dimension."""
+        return F.flatten(self, start_dim, end_dim)
+
+    def repeat(self, *repeats: DimLike) -> Tensor:
+        """Repeats the tensor along each dimension using PyTorch semantics."""
+        return F.repeat(self, _canonicalize_shape_args(repeats))
+
+    def unflatten(self, dim: int, sizes: Sequence[DimLike]) -> Tensor:
+        """Expands one dimension into multiple dimensions."""
+        return F.unflatten(self, dim, sizes)
+
+    def unbind(self, dim: int = 0) -> tuple[Tensor, ...]:
+        """Returns a tuple of slices with the selected dimension removed."""
+        return cast(tuple[Tensor, ...], F.unbind(self, dim))
 
     def broadcast_to(self, shape: ShapeLike) -> Tensor:
         """Broadcasts the tensor to the specified shape.
@@ -2186,6 +2225,20 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.transpose(self, dim1, dim2)
 
+    def swapaxes(self, axis0: int, axis1: int) -> Tensor:
+        """Swaps two tensor dimensions."""
+        return F.swapaxes(self, axis0, axis1)
+
+    def flip(self, dims: Sequence[int]) -> Tensor:
+        """Reverses the tensor along the requested dimensions."""
+        return F.flip(self, dims)
+
+    def masked_fill(
+        self, mask: TensorValueLike, value: TensorValueLike
+    ) -> Tensor:
+        """Replaces masked elements with a broadcastable fill value."""
+        return F.masked_fill(self, mask, value)
+
     @property
     def T(self) -> Tensor:
         """Returns a tensor with the last two dimensions transposed.
@@ -2297,22 +2350,22 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.pow(lhs, self)
 
     def __and__(self, rhs: TensorValueLike) -> Tensor:
-        return F.logical_and(self, rhs)
+        return F.bitwise_and(self, rhs)
 
     def __rand__(self, lhs: TensorValueLike) -> Tensor:
-        return F.logical_and(lhs, self)
+        return F.bitwise_and(lhs, self)
 
     def __or__(self, rhs: TensorValueLike) -> Tensor:
-        return F.logical_or(self, rhs)
+        return F.bitwise_or(self, rhs)
 
     def __ror__(self, lhs: TensorValueLike) -> Tensor:
-        return F.logical_or(lhs, self)
+        return F.bitwise_or(lhs, self)
 
     def __xor__(self, rhs: TensorValueLike) -> Tensor:
-        return F.logical_xor(self, rhs)
+        return F.bitwise_xor(self, rhs)
 
     def __rxor__(self, lhs: TensorValueLike) -> Tensor:
-        return F.logical_xor(lhs, self)
+        return F.bitwise_xor(lhs, self)
 
     def __invert__(self) -> Tensor:
         return F.logical_not(self)
