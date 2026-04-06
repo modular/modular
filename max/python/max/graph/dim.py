@@ -27,46 +27,29 @@ from max._core.dialects import builtin, kgen
 class Dim:
     """A tensor dimension.
 
-    Tensor dimensions can be one of three types:
-
-    - **Static**: Known size
-    - **Symbolic**: Unknown size but named
-    - **Algebraic**: Unknown size has an algebraic expression
-
-
-    In most cases, you don't need to work with a ``Dim`` directly.
-    Instead, use conversion constructors:
-
+    Dims describe the shape of tensors in a :class:`Graph`. In most cases, you don't
+    need to construct a ``Dim`` directly. Instead, you pass dimension values
+    directly to :class:`TensorType` or :class:`BufferType` constructors:
 
     .. code-block:: python
 
         from max.graph import Dim, TensorType, DeviceRef
 
+        # Create a TensorType with a symbolic "batch" dimension and a static dimension of size 10
         tensor_type = TensorType(DType.int64, ("batch", 10), device=DeviceRef.CPU())
 
-    This creates a tensor type with two dimensions:
 
-    - A symbolic "batch" dimension
-    - A static dimension of size 10
+    A tensor dimension can be one of three types:
 
-    For explicit dimension construction, use the following helpers:
+    - **Static**: A known size. See :class:`StaticDim`.
+    - **Symbolic**: An unknown size identified by name. See :class:`SymbolicDim`.
+    - **Algebraic**: An expression derived from symbolic dimensions. See :class:`AlgebraicDim`.
 
-    .. code-block:: python
-
-        from max.graph import Dim
-
-        some_dims = [
-            SymbolicDim("batch"),
-            StaticDim(5),
-            AlgebraicDim(Dim("batch") + 1),
-        ]
-
-    Constraining tensor dimensions is one important way to improve model
-    performance. If tensors have unknown dimensions, we can't optimize them
-    as aggressively. Symbolic tensors allow the compiler to learn constraints
-    on a specific dimension (eg. if 2 inputs have the same `batch` dimension),
-    but static dims are the easiest to optimize and therefore the easiest to
-    create and work with.
+    Static dimensions let the graph compiler resolve shapes at compile time.
+    This enables more aggressive optimizations than symbolic or algebraic
+    dimensions allow. That said, when tensors share a named symbolic dimension,
+    the compiler can leverage the implied shape equality to optimize some
+    operations.
     """
 
     def __new__(cls, value: DimLike):
@@ -206,34 +189,18 @@ class Dim:
 
 @dataclass(frozen=True)
 class SymbolicDim(Dim):
-    """A symbolic tensor dimension.
+    """A symbolic tensor dimension with an unknown size identified by name.
 
-    Symbolic dimensions represent named dimensions in MO tensor types.
+    When you don't know a dimension value at compile time, you can use a
+    symbolic dimension. This helps you identify dimensions by name and lets the
+    compiler optimize operations when two or more dimensions share the same name.
 
-    Symbolic dimensions don't have a static value, but they allow a readable
-    name to understand what's going on in the model IR better, and they also
-    allow users to hint to the compiler that two dimensions will have the same
-    value, which can often allow important speedups.
-
-    In tensor type notation:
-
-    .. code-block::
-
-        !mo.tensor<[batch, x, 10], si32]>
-
-    The first and second dimensions are named ``batch`` and ``x`` respectively.
-
-    Creating a ``SymbolicDim``:
+    The following example creates a symbolic dimension implicitly passing the
+    strings ``"batch"`` and ``"x"`` to :class:`TensorType`:
 
     .. code-block:: python
 
-        dim = SymbolicDim("name")
-
-    Using ``SymbolicDim`` in a :class:`~max.graph.TensorType`:
-
-    .. code-block:: python
-
-        tensor_type = TensorType(DType.bool, (SymbolicDim("batch"), SymbolicDim("x"), 10))
+       tensor_type = TensorType(DType.float32, ("batch", "x", 10), device=DeviceRef.CPU())
     """
 
     name: str
@@ -313,20 +280,30 @@ class SymbolicDim(Dim):
 
 @dataclass(frozen=True)
 class AlgebraicDim(Dim):
-    """An algebraic tensor dimension to enable expressions over symbolic dimensions.
+    """A dimension defined by an expression over symbolic dimensions.
 
-    That is, any expression over a symbolic dimension returns ``AlgebraicDim``.
-    Furthermore, algebraic dimensions automatically simplify into a canonical
-    form.
-
-    The following example demonstrates how to create and use algebraic dimensions with symbolic values:
+    Arithmetic on symbolic dimensions produces an ``AlgebraicDim``:
 
     .. code-block:: python
 
         from max.graph import AlgebraicDim, Dim
-        isinstance(Dim("batch") * 5, AlgebraicDim)  # Returns True
-        print(Dim("batch") * 5)  # Outputs: batch * 5
-        -Dim("x") - 4 == -(Dim("x") + 4)  # Returns True
+
+        isinstance(Dim("batch") * 5, AlgebraicDim)  # True
+
+    Equivalent expressions simplify to the same form:
+
+    .. code-block:: python
+
+        Dim("x") + 1 + 1 == Dim("x") + 2  # True
+
+    .. note::
+
+        Algebraic dimensions are valid inside a graph. However, they can't
+        appear in graph input or output types because their underlying values
+        can be ambiguous. For example, a dimension of ``Dim("foo") *
+        Dim("bar")`` could be satisfied by multiple combinations of ``foo`` and
+        ``bar``.
+
     """
 
     attr: kgen.ParamOperatorAttr
@@ -422,12 +399,13 @@ class AlgebraicDim(Dim):
 @functools.total_ordering
 @dataclass(frozen=True)
 class StaticDim(Dim):
-    """A static tensor dimension.
+    """A static tensor dimension with a fixed size.
 
-    Static tensor dimensions will always have exactly the same value,
-    and are key to good model performance.
+    Because a static dimension's size is fixed, related computation can be
+    optimized at compile time. This is key to good model performance.
 
-    The following example shows how static dimensions can be created implicitly:
+    The following example creates static dimensions implicitly by passing
+    integer values to :class:`TensorType`:
 
     .. code-block:: python
 
