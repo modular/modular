@@ -304,10 +304,10 @@ def _validate_requested_model(request: Request, requested_model: str) -> None:
 
     if (
         pipeline_config is not None
-        and getattr(pipeline_config, "model", None) is not None
-        and getattr(pipeline_config.model, "model_name", None)
+        and getattr(pipeline_config, "models", None) is not None
+        and getattr(pipeline_config.models, "model_name", None)
     ):
-        served_models.append(pipeline_config.model.model_name)
+        served_models.append(pipeline_config.models.model_name)
 
     served_models = list(dict.fromkeys(served_models))
     if not served_models:
