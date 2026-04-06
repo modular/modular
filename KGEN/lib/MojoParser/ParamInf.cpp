@@ -583,49 +583,6 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
       !paramFinder.hasReferences(expectedType))
     return success();
 
-  // Hack: Infer a closure wrapper struct for a function symbol when the
-  // expected type is a closure trait. This is a temporary workaround to get
-  // unified closures out the door, and should be removed after some refactors.
-  auto inferClosureWrapperStruct = [&](ASTType argType) {
-    auto paramTy = dyn_cast<ParamType>(expectedType);
-    if (!paramTy)
-      return argType;
-
-    auto ref = dyn_cast<ParamIndexRefAttr>(paramTy.getParam());
-    if (!ref)
-      return argType;
-
-    auto traitType = sugarDynCastIfPresent<TraitType>(ref.getType());
-    if (!traitType)
-      return argType;
-
-    if (!ClosureEmitter::isClosureType(getShared(), traitType))
-      return argType;
-
-    PValue argPVal = argVal.getIfPValue();
-    if (!argPVal)
-      return argType;
-
-    auto sym = dyn_cast<SymbolConstantAttr>(argPVal.get());
-    if (!sym)
-      return argType;
-
-    ASTDecl *module = getDeclScope().getNearestDeclOfType<FileModuleOp>();
-    ASTDecl *argClosureTrait = getShared().getOrCreateClosureTrait(
-        operand.expr->getLoc(), *module, sym.getType());
-    ASTDecl *argWrapper = getShared().getClosureEmitter().createFnStructWrapper(
-        *module, *argClosureTrait, sym.getType(), operand.expr->getLoc());
-    // Note: createFnStructWrapper should always return a struct decl; cast<>
-    // instead of dyn_cast<> is intentional.
-    auto structDeclOp = cast<StructDeclOp>(argWrapper->getIfOperation());
-    Type wrapperImplType = structDeclOp.getInputParams().front().getType();
-    TypedAttr fnVal = ParamOperatorAttr::getRebind(sym, wrapperImplType);
-    StructType closureWrapperType = structDeclOp.bindReference({fnVal});
-
-    return ASTType(closureWrapperType);
-  };
-  argType = inferClosureWrapperStruct(argType);
-
   // TODO: Optionally compute fitness metrics (# implicit conversions,
   // convention mismatches) during inference, so they don't need to be
   // recomputed by scoreOperandFitness() afterward.

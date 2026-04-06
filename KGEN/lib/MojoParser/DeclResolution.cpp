@@ -1996,11 +1996,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       resolveAllWithin(decl);
       auto promotedDecl = shared.closureEmitter->promoteStatelessClosure(decl);
       auto promotedFn = cast<FnOp>(promotedDecl->getIfOperation());
-      auto promotedSig = promotedFn.getFullSignature();
-
-      PValue promotedValue(
-          SymbolConstantAttr::get(promotedDecl->getSymbolRef(), promotedSig));
-      decl.setIRValue(promotedValue);
+      decl.setIRValue(promotedFn);
       return success();
     }
 
