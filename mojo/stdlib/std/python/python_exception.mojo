@@ -64,6 +64,9 @@ struct PythonException(Movable, ImplicitlyCopyable):
         
         Args:
             error_message: The error message for the exception.
+        
+        Raises:
+            If the Python builtins module cannot be imported.
         """
         # Create a standard Exception using Python's builtins
         var builtins = Python.import_module("builtins")
