@@ -30,12 +30,116 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar, NamedTuple, TextIO
+from typing import Any, ClassVar, NamedTuple, TextIO
 
 from typing_extensions import Self
 
-# Flexible dict type for dynamic percentile fields; ``results_filename`` is str.
-SweepServingBenchmarkResult = dict[str, str | float]
+
+def _percentile_key(prefix: str, p: int) -> str:
+    """Return the raw JSON key for a given percentile (handles median special case)."""
+    return f"median_{prefix}" if p == 50 else f"p{p}_{prefix}"
+
+
+@dataclass
+class SweepServingBenchmarkResult:
+    """Base benchmark result shared by all task types.
+
+    Stores the fields common to every sweep iteration: duration, throughput,
+    request-latency statistics, GPU utilization, and the path to the per-run
+    JSON file.  Percentile values are stored in a ``dict`` keyed by the
+    integer percentile (e.g. ``{50: 490.0, 99: 800.0}``).
+    """
+
+    duration: float
+    throughput: float
+    req_latency_mean: float
+    gpu_utilization: float
+    results_filename: str
+    req_latency_percentiles: dict[int, float]
+
+
+@dataclass
+class LLMBenchmarkResult(SweepServingBenchmarkResult):
+    """Result from an LLM (text-generation) benchmark iteration."""
+
+    ttft_mean: float = 0.0
+    itl_mean: float = 0.0
+    ttft_percentiles: dict[int, float] = field(default_factory=dict)
+    itl_percentiles: dict[int, float] = field(default_factory=dict)
+
+    @classmethod
+    def from_benchmark_json(
+        cls,
+        data: dict[str, Any],
+        percentiles: list[int],
+        results_filename: str,
+    ) -> LLMBenchmarkResult:
+        """Construct from the raw JSON emitted by ``benchmark_serving``."""
+        return cls(
+            duration=data["duration"],
+            throughput=data["request_throughput"],
+            req_latency_mean=data["mean_latency_ms"],
+            gpu_utilization=data["gpu_utilization"],
+            results_filename=results_filename,
+            req_latency_percentiles={
+                p: data[_percentile_key("latency_ms", p)] for p in percentiles
+            },
+            ttft_mean=data["mean_ttft_ms"],
+            itl_mean=data["mean_itl_ms"],
+            ttft_percentiles={
+                p: data[_percentile_key("ttft_ms", p)] for p in percentiles
+            },
+            itl_percentiles={
+                p: data[_percentile_key("itl_ms", p)] for p in percentiles
+            },
+        )
+
+    @classmethod
+    def zeros(
+        cls, percentiles: list[int], results_filename: str = ""
+    ) -> LLMBenchmarkResult:
+        """Create a zeroed-out result (used for dry runs)."""
+        pz = {p: 0.0 for p in percentiles}
+        return cls(
+            duration=0,
+            throughput=0.0,
+            req_latency_mean=0.0,
+            gpu_utilization=0.0,
+            results_filename=results_filename,
+            req_latency_percentiles=dict(pz),
+            ttft_mean=0.0,
+            itl_mean=0.0,
+            ttft_percentiles=dict(pz),
+            itl_percentiles=dict(pz),
+        )
+
+
+@dataclass
+class TextToImageBenchmarkResult(SweepServingBenchmarkResult):
+    """Result from a text-to-image benchmark iteration."""
+
+    total_generated_outputs: int = 0
+
+    @classmethod
+    def from_benchmark_json(
+        cls,
+        data: dict[str, Any],
+        percentiles: list[int],
+        results_filename: str,
+    ) -> TextToImageBenchmarkResult:
+        """Construct from the raw JSON emitted by ``benchmark_serving``."""
+        return cls(
+            duration=data["duration"],
+            throughput=data["request_throughput"],
+            req_latency_mean=data["mean_latency_ms"],
+            gpu_utilization=data.get("gpu_utilization", 0.0),
+            results_filename=results_filename,
+            req_latency_percentiles={
+                p: data[_percentile_key("latency_ms", p)] for p in percentiles
+            },
+            total_generated_outputs=data.get("total_generated_outputs", 0),
+        )
+
 
 SUPPORTED_SWEEP_SERVING_PERCENTILES: frozenset[int] = frozenset(
     (50, 90, 95, 99)
@@ -123,12 +227,12 @@ class _BaseSweepResultWriter(ABC):
 
 @dataclass
 class SweepServingBenchmarkResultWriter(_BaseSweepResultWriter):
-    """Write the sweep summary ``results.csv`` (header + one row per concurrency and rate).
+    """Abstract base for sweep serving CSV writers.
 
-    Per-run JSON from ``benchmark_serving`` is parsed elsewhere into
-    ``SweepServingBenchmarkResult``; this class maps those dicts to CSV rows and,
-    when ``upload`` settings are set, uploads the kept iteration JSON after each
-    row.
+    Subclass and implement the three task-specific hooks
+    (``_task_base_headers``, ``_percentile_header_names``,
+    ``_format_task_values``) to add a new benchmark task type.
+    See ``LLMBenchmarkResultWriter`` and ``TextToImageBenchmarkResultWriter``.
     """
 
     SUPPORTED_PERCENTILES: ClassVar[frozenset[int]] = (
@@ -143,50 +247,39 @@ class SweepServingBenchmarkResultWriter(_BaseSweepResultWriter):
         "throughput_req_per_sec",
     )
 
-    _LLM_BASE_HEADERS: ClassVar[tuple[str, ...]] = _BASE_HEADERS_COMMON + (
-        "time_to_first_token_mean_ms",
-        "inter_token_latency_mean_ms",
-        "total_req_latency_mean_ms",
-    )
-
-    _T2I_BASE_HEADERS: ClassVar[tuple[str, ...]] = _BASE_HEADERS_COMMON + (
-        "total_req_latency_mean_ms",
-        "total_generated_outputs",
-    )
-
-    _LLM_PERCENTILE_SPECS: ClassVar[tuple[tuple[str, str], ...]] = (
-        ("time_to_first_token", "ttft"),
-        ("inter_token_latency", "itl"),
-        ("total_req_latency", "req-latency"),
-    )
-
     path: Path
     percentiles: list[int] = field(kw_only=True)
     collect_gpu_stats: bool = field(kw_only=True)
-    text_to_image: bool = field(kw_only=True)
     upload: SweepServingBenchmarkUploadSettings | None = field(
         default=None, kw_only=True
     )
     _file: TextIO | None = field(default=None, init=False, repr=False)
 
     @property
+    @abstractmethod
+    def _task_base_headers(self) -> tuple[str, ...]:
+        """Column headers specific to the task type, after the common prefix."""
+        ...
+
+    @property
+    @abstractmethod
     def _percentile_header_names(self) -> list[str]:
-        names: list[str] = []
-        for p in self.percentiles:
-            if self.text_to_image:
-                names.append(f"total_req_latency_p{p}_ms")
-            else:
-                for csv_stem, _ in self._LLM_PERCENTILE_SPECS:
-                    names.append(f"{csv_stem}_p{p}_ms")
-        return names
+        """Column headers for percentile columns."""
+        ...
+
+    @abstractmethod
+    def _format_task_values(
+        self, result: SweepServingBenchmarkResult
+    ) -> list[str]:
+        """Format the task-specific portion of a CSV row."""
+        ...
 
     @property
     def column_names(self) -> list[str]:
         """CSV header columns in row order."""
-        if self.text_to_image:
-            headers = list(self._T2I_BASE_HEADERS)
-        else:
-            headers = list(self._LLM_BASE_HEADERS)
+        headers = list(self._BASE_HEADERS_COMMON) + list(
+            self._task_base_headers
+        )
         headers.extend(self._percentile_header_names)
         if self.collect_gpu_stats:
             headers.append("gpu_utilization")
@@ -204,37 +297,12 @@ class SweepServingBenchmarkResultWriter(_BaseSweepResultWriter):
             str(max_concurrency),
             str(request_rate),
             str(num_prompts),
-            format_float(result["duration"]),  # type: ignore[arg-type]
-            format_float(result["throughput"]),  # type: ignore[arg-type]
+            format_float(result.duration),
+            format_float(result.throughput),
         ]
-        if self.text_to_image:
-            row.extend(
-                [
-                    format_float(result["req-latency-mean"]),  # type: ignore[arg-type]
-                    str(int(result.get("total-generated-outputs", 0))),
-                ]
-            )
-            for p in self.percentiles:
-                row.append(
-                    format_float(result[f"req-latency-p{p}"])  # type: ignore[arg-type]
-                )
-        else:
-            row.extend(
-                [
-                    format_float(result["ttft-mean"]),  # type: ignore[arg-type]
-                    format_float(result["itl-mean"]),  # type: ignore[arg-type]
-                    format_float(result["req-latency-mean"]),  # type: ignore[arg-type]
-                ]
-            )
-            for p in self.percentiles:
-                for _, json_stem in self._LLM_PERCENTILE_SPECS:
-                    row.append(
-                        format_float(result[f"{json_stem}-p{p}"])  # type: ignore[arg-type]
-                    )
+        row.extend(self._format_task_values(result))
         if self.collect_gpu_stats:
-            row.append(
-                format_float(result["gpu-utilization"])  # type: ignore[arg-type]
-            )
+            row.append(format_float(result.gpu_utilization))
         return row
 
     def write_row(
@@ -259,8 +327,7 @@ class SweepServingBenchmarkResultWriter(_BaseSweepResultWriter):
     ) -> None:
         if self.upload is None:
             return
-        raw_path = result.get("results_filename", "")
-        results_path = str(raw_path).strip()
+        results_path = result.results_filename.strip()
         if not results_path:
             return
         cmd = _build_sweep_serving_upload_cmd(self.upload, results_path)
@@ -269,6 +336,76 @@ class SweepServingBenchmarkResultWriter(_BaseSweepResultWriter):
             print(f"Dry run: {' '.join(cmd)}")
             return
         subprocess.run(cmd)
+
+
+@dataclass
+class LLMBenchmarkResultWriter(SweepServingBenchmarkResultWriter):
+    """Write sweep CSV results for LLM (text-generation) benchmarks."""
+
+    _LLM_PERCENTILE_SPECS: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("time_to_first_token", "ttft"),
+        ("inter_token_latency", "itl"),
+        ("total_req_latency", "req-latency"),
+    )
+
+    @property
+    def _task_base_headers(self) -> tuple[str, ...]:
+        return (
+            "time_to_first_token_mean_ms",
+            "inter_token_latency_mean_ms",
+            "total_req_latency_mean_ms",
+        )
+
+    @property
+    def _percentile_header_names(self) -> list[str]:
+        names: list[str] = []
+        for p in self.percentiles:
+            for csv_stem, _ in self._LLM_PERCENTILE_SPECS:
+                names.append(f"{csv_stem}_p{p}_ms")
+        return names
+
+    def _format_task_values(
+        self, result: SweepServingBenchmarkResult
+    ) -> list[str]:
+        assert isinstance(result, LLMBenchmarkResult)
+        row = [
+            format_float(result.ttft_mean),
+            format_float(result.itl_mean),
+            format_float(result.req_latency_mean),
+        ]
+        for p in self.percentiles:
+            row.append(format_float(result.ttft_percentiles.get(p)))
+            row.append(format_float(result.itl_percentiles.get(p)))
+            row.append(format_float(result.req_latency_percentiles.get(p)))
+        return row
+
+
+@dataclass
+class TextToImageBenchmarkResultWriter(SweepServingBenchmarkResultWriter):
+    """Write sweep CSV results for text-to-image benchmarks."""
+
+    @property
+    def _task_base_headers(self) -> tuple[str, ...]:
+        return (
+            "total_req_latency_mean_ms",
+            "total_generated_outputs",
+        )
+
+    @property
+    def _percentile_header_names(self) -> list[str]:
+        return [f"total_req_latency_p{p}_ms" for p in self.percentiles]
+
+    def _format_task_values(
+        self, result: SweepServingBenchmarkResult
+    ) -> list[str]:
+        assert isinstance(result, TextToImageBenchmarkResult)
+        row = [
+            format_float(result.req_latency_mean),
+            str(result.total_generated_outputs),
+        ]
+        for p in self.percentiles:
+            row.append(format_float(result.req_latency_percentiles.get(p)))
+        return row
 
 
 # --- Serving sweep: benchmark log lines and optional LoRA CSV columns ---
