@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for OpenResponses API routes."""
 
+import base64
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -32,7 +33,10 @@ from max.interfaces import (
 )
 from max.interfaces.generation import GenerationOutput
 from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import OutputImageContent
+from max.interfaces.request.open_responses import (
+    OutputImageContent,
+    OutputVideoContent,
+)
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
@@ -138,13 +142,11 @@ class MockVideoPipelineHandler(GeneralPipelineHandler):
         frame_a[:, :, 0] = 255
         frame_b = np.zeros((8, 8, 3), dtype=np.uint8)
         frame_b[:, :, 1] = 255
+        frames = np.stack([frame_a, frame_b], axis=0)
         yield GenerationOutput(
             request_id=request.request_id,
             final_status=GenerationStatus.END_OF_SEQUENCE,
-            output=[
-                OutputImageContent.from_numpy(frame_a, format="png"),
-                OutputImageContent.from_numpy(frame_b, format="png"),
-            ],
+            output=[OutputVideoContent.from_numpy_frames(frames)],
         )
 
 
@@ -326,3 +328,71 @@ def test_openresponses_video_request_returns_inline_base64_when_requested(
         assert content["num_frames"] == 2
         assert content["video_data"]
         assert "video_url" not in content
+
+
+async def test_generated_media_store_evicts_least_recently_used_asset(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Saving beyond the cache budget should evict the oldest untouched asset."""
+    caplog.set_level(logging.INFO, logger="max.serve")
+    store = GeneratedMediaStore(
+        tmp_path / "media",
+        max_storage_bytes=10,
+    )
+
+    first = await store.save_image_content(
+        OutputImageContent(
+            image_data=base64.b64encode(b"1111").decode("utf-8"),
+            format="png",
+        )
+    )
+    second = await store.save_image_content(
+        OutputImageContent(
+            image_data=base64.b64encode(b"2222").decode("utf-8"),
+            format="png",
+        )
+    )
+
+    assert store.get_image(first.asset_id) is not None
+
+    third = await store.save_image_content(
+        OutputImageContent(
+            image_data=base64.b64encode(b"3333").decode("utf-8"),
+            format="png",
+        )
+    )
+
+    assert store.get_image(first.asset_id) is not None
+    assert store.get_image(second.asset_id) is None
+    assert store.get_image(third.asset_id) is not None
+    assert not second.path.exists()
+    assert "Evicted generated image" in caplog.text
+
+
+def test_openresponses_returns_insufficient_storage_when_media_exceeds_budget(
+    app: FastAPI,
+    tmp_path: Path,
+) -> None:
+    """Requests should fail clearly when the generated artifact cannot fit in cache."""
+    app.state.media_store = GeneratedMediaStore(
+        tmp_path / "tiny-media",
+        max_storage_bytes=1,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/responses",
+            json={
+                "model": "test-model",
+                "input": "Generate an image of a cat",
+                "provider_options": {
+                    "image": {
+                        "response_format": "url",
+                    }
+                },
+            },
+        )
+
+        assert response.status_code == 507
+        assert "configured local media cache size" in response.json()["detail"]

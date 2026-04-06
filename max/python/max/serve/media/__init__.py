@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from .generated_media import (
+    GeneratedMediaStorageLimitExceeded,
     GeneratedMediaStore,
     StoredMediaAsset,
     encode_video_bytes_b64,
 )
 
 __all__ = [
+    "GeneratedMediaStorageLimitExceeded",
     "GeneratedMediaStore",
     "StoredMediaAsset",
     "encode_video_bytes_b64",

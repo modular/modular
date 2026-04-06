@@ -7,8 +7,8 @@ modular_py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//max/python/max/interfaces",
+        requirement("aiofiles"),
         requirement("av"),
         requirement("numpy"),
-        requirement("pillow"),
     ],
 )

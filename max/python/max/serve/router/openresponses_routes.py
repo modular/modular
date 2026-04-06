@@ -37,6 +37,7 @@ from max.interfaces.request.open_responses import (
 )
 from max.serve.dependencies import create_request_parser
 from max.serve.media import (
+    GeneratedMediaStorageLimitExceeded,
     GeneratedMediaStore,
     StoredMediaAsset,
     encode_video_bytes_b64,
@@ -112,11 +113,17 @@ async def create_response(
             if chunk.is_done:
                 break
 
-    final_output = _persist_generated_media(
-        request=request,
-        open_responses_request=open_responses_request,
-        final_output=final_output,
-    )
+    try:
+        final_output = await _persist_generated_media(
+            request=request,
+            open_responses_request=open_responses_request,
+            final_output=final_output,
+        )
+    except GeneratedMediaStorageLimitExceeded as exc:
+        raise HTTPException(
+            status_code=HTTPStatus.INSUFFICIENT_STORAGE,
+            detail=str(exc),
+        ) from exc
 
     # Convert GenerationOutput to ResponseResource format
     response = ResponseResource.from_generation_output(
@@ -165,7 +172,7 @@ async def get_generated_video_content(
     )
 
 
-def _persist_generated_media(
+async def _persist_generated_media(
     request: Request,
     open_responses_request: OpenResponsesRequest,
     final_output: GenerationOutput,
@@ -178,20 +185,17 @@ def _persist_generated_media(
     if (
         video_options is not None
         and final_output.output
-        and all(
-            isinstance(content, OutputImageContent)
-            for content in final_output.output
-        )
+        and len(final_output.output) == 1
+        and isinstance(final_output.output[0], OutputVideoContent)
+        and final_output.output[0].frames is not None
     ):
         video_response_format = video_options.response_format
-        frames = [
-            content
-            for content in final_output.output
-            if isinstance(content, OutputImageContent)
-        ]
+        video_content = final_output.output[0]
+
+        # Return the video content as a base64-encoded string
         if video_response_format == GeneratedMediaResponseFormat.b64_json:
-            video_bytes = media_store.encode_video_frames(
-                frame_contents=frames,
+            video_bytes = media_store.encode_video_content(
+                content=video_content,
                 frames_per_second=video_options.frames_per_second or 16,
             )
             return final_output.model_copy(
@@ -202,14 +206,16 @@ def _persist_generated_media(
                             format="mp4",
                             frames_per_second=video_options.frames_per_second
                             or 16,
-                            num_frames=len(frames),
+                            num_frames=video_content.frames.shape[0],
+                            frames=None,
                         )
                     ]
                 }
             )
 
-        video_asset = media_store.save_video_frames(
-            frame_contents=frames,
+        # Save the video content to the media store
+        video_asset = await media_store.save_video_content(
+            content=video_content,
             frames_per_second=video_options.frames_per_second or 16,
         )
         video_url = str(
@@ -225,7 +231,8 @@ def _persist_generated_media(
                         video_url=video_url,
                         format="mp4",
                         frames_per_second=video_options.frames_per_second or 16,
-                        num_frames=len(frames),
+                        num_frames=video_content.frames.shape[0],
+                        frames=None,
                     )
                 ]
             }
@@ -246,7 +253,7 @@ def _persist_generated_media(
             persisted_output.append(content)
             continue
 
-        image_asset = media_store.save_image_content(content)
+        image_asset = await media_store.save_image_content(content)
         image_url = str(
             request.url_for(
                 "get_generated_image_content",
