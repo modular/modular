@@ -14,6 +14,7 @@
 
 from std.math import align_up
 from std.sys import size_of
+from layout import IntTuple
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -36,8 +37,9 @@ def fa4_mma[
     config: FA4Config,
     *,
     page_size: Int,
+    split_o_hi_barriers: Bool = False,
 ](
-    smem: SM100AttentionSMem[config],
+    smem: SM100AttentionSMem[config, split_o_hi_barriers=split_o_hi_barriers],
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
@@ -73,6 +75,21 @@ def fa4_mma[
         transpose_b=False,
         num_stages=num_pv_stages,
     ]
+    comptime half_ov_depth = config.padded_ov_depth // 2
+    comptime UMMA1HalfType = SM100TensorAccumulatorTS[
+        config.qkv_dtype,
+        accum_type,
+        MMA_M=HalfBM,
+        MMA_N=half_ov_depth,
+        BK=BN,
+        swizzle_b=config.swizzle_mode,
+        transpose_b=False,
+        num_stages=num_pv_stages,
+    ]
+    comptime v_hi_byte_offset = (
+        UMMA1Type.b_layout(IntTuple(half_ov_depth, 0))
+        * size_of[config.qkv_dtype]()
+    )
 
     var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
     var q_smem = smem.q_smem()
@@ -158,12 +175,32 @@ def fa4_mma[
         kv_pipeline.consumer_wait()
         var v_prev_idx: UInt32 = kv_pipeline.state.index()
         v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s0[pv_stage].wait(0)
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s0_tmem, v0, o0_tmem, elect=e, c_scale=0
-            )
-        pipeline_o0.commit_mma(e)
+        comptime if split_o_hi_barriers:
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s0[pv_stage].wait(0)
+                UMMA1HalfType.mma[stage_idx=pv_stage](
+                    s0_tmem, v0, o0_tmem, elect=e, c_scale=0
+                )
+            mbars.producer_o_lo(0).commit_mma(e)
+            mbars.producer_o_hi(0).acquire()
+            v0_hi = v0 + UInt32(v_hi_byte_offset)
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s0[pv_stage].wait(0)
+                UMMA1HalfType.mma[stage_idx=pv_stage](
+                    s0_tmem,
+                    v0_hi,
+                    o0_tmem + UInt32(half_ov_depth),
+                    elect=e,
+                    c_scale=0,
+                )
+            mbars.producer_o_hi(0).commit_mma(e)
+        else:
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s0[pv_stage].wait(0)
+                UMMA1Type.mma[stage_idx=pv_stage](
+                    s0_tmem, v0, o0_tmem, elect=e, c_scale=0
+                )
+            pipeline_o0.commit_mma(e)
         var phase: UInt32 = 0
 
         var c_scale: UInt32 = 0
@@ -183,40 +220,107 @@ def fa4_mma[
 
             # P1 @ V_{n-1}
             v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            comptime if split_o_hi_barriers:
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s1[pv_stage].wait(phase)
+                    UMMA1HalfType.mma[stage_idx=pv_stage](
+                        s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
+                    )
+                mbars.producer_o_lo(1).commit_mma(e)
+                mbars.producer_o_hi(1).acquire()
+                v_prev_hi = v_prev + UInt32(v_hi_byte_offset)
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s1[pv_stage].wait(phase)
+                    UMMA1HalfType.mma[stage_idx=pv_stage](
+                        s1_tmem,
+                        v_prev_hi,
+                        o1_tmem + UInt32(half_ov_depth),
+                        elect=e,
+                        c_scale=c_scale,
+                    )
+                mbars.producer_o_hi(1).commit_mma(e)
+            else:
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s1[pv_stage].wait(phase)
+                    UMMA1Type.mma[stage_idx=pv_stage](
+                        s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
+                    )
+                pipeline_o1.commit_mma(e)
+            c_scale = 1
+            kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_{n-1}
+
+            var vn_idx = kv_pipeline.state.index() + 1
+            var vn_phase = kv_pipeline.state.phase()
+            if vn_idx == UInt32(config.num_kv_stages):
+                vn_idx = 0
+                vn_phase ^= 1
+
+            # Q1 @ Kn
+            UMMA0Type.mma[stage_idx=0](q1, kn, s1_tmem, elect=e, c_scale=0)
+            pipeline_s1.commit_mma(e)
+            # Pre-wait the next V slot while Q1 @ Kn is already in flight.
+            (kv_pipeline.mbar + vn_idx)[].wait(vn_phase)
+            kv_pipeline.consumer_release(e)  # release Kn, step -> Vn
+            phase ^= 1
+
+            # Vn
+            v_prev_idx = vn_idx
+            vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            comptime if split_o_hi_barriers:
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s0[pv_stage].wait(phase)
+                    UMMA1HalfType.mma[stage_idx=pv_stage](
+                        s0_tmem, vn, o0_tmem, elect=e, c_scale=1
+                    )
+                mbars.producer_o_lo(0).commit_mma(e)
+                mbars.producer_o_hi(0).acquire()
+                vn_hi = vn + UInt32(v_hi_byte_offset)
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s0[pv_stage].wait(phase)
+                    UMMA1HalfType.mma[stage_idx=pv_stage](
+                        s0_tmem,
+                        vn_hi,
+                        o0_tmem + UInt32(half_ov_depth),
+                        elect=e,
+                        c_scale=1,
+                    )
+                mbars.producer_o_hi(0).commit_mma(e)
+            else:
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s0[pv_stage].wait(phase)
+                    UMMA1Type.mma[stage_idx=pv_stage](
+                        s0_tmem, vn, o0_tmem, elect=e, c_scale=1
+                    )
+                pipeline_o0.commit_mma(e)
+
+        # ---- Epilogue ----
+        v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+        comptime if split_o_hi_barriers:
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s1[pv_stage].wait(phase)
+                UMMA1HalfType.mma[stage_idx=pv_stage](
+                    s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
+                )
+            mbars.producer_o_lo(1).commit_mma(e)
+            mbars.producer_o_hi(1).acquire()
+            v_prev_hi = v_prev + UInt32(v_hi_byte_offset)
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s1[pv_stage].wait(phase)
+                UMMA1HalfType.mma[stage_idx=pv_stage](
+                    s1_tmem,
+                    v_prev_hi,
+                    o1_tmem + UInt32(half_ov_depth),
+                    elect=e,
+                    c_scale=c_scale,
+                )
+            mbars.producer_o_hi(1).commit_mma(e)
+        else:
             comptime for pv_stage in range(num_pv_stages):
                 _ = consumer_s1[pv_stage].wait(phase)
                 UMMA1Type.mma[stage_idx=pv_stage](
                     s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
                 )
             pipeline_o1.commit_mma(e)
-            c_scale = 1
-            kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_{n-1}
-
-            # Q1 @ Kn
-            UMMA0Type.mma[stage_idx=0](q1, kn, s1_tmem, elect=e, c_scale=0)
-            kv_pipeline.consumer_release(e)  # release Kn, step
-            pipeline_s1.commit_mma(e)
-            phase ^= 1
-
-            # Vn
-            kv_pipeline.consumer_wait()
-            v_prev_idx = kv_pipeline.state.index()
-            vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
-            comptime for pv_stage in range(num_pv_stages):
-                _ = consumer_s0[pv_stage].wait(phase)
-                UMMA1Type.mma[stage_idx=pv_stage](
-                    s0_tmem, vn, o0_tmem, elect=e, c_scale=1
-                )
-            pipeline_o0.commit_mma(e)
-
-        # ---- Epilogue ----
-        v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s1[pv_stage].wait(phase)
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
-            )
-        pipeline_o1.commit_mma(e)
         kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_last
 
     else:
@@ -229,9 +333,18 @@ def fa4_mma[
             smem.v_smem_base()
         )
         comptime KPipeType = KConsumerPipeline[config.qkv_dtype, config]
-        comptime VPipeType = VConsumerPipeline[config.qkv_dtype, config]
         var pipeline_k: KPipeType = {mbars.get_k_mbars(), k_smem}
+        comptime VPipeType = VConsumerPipeline[config.qkv_dtype, config]
         var pipeline_v: VPipeType = {mbars.get_v_mbars(), v_smem}
+        comptime v_stage_bytes = (
+            config.BN * config.padded_ov_depth * size_of[config.qkv_dtype]()
+        )
+        v_half_desc = smem_descriptor[
+            BMN=half_ov_depth,
+            BK=config.BN,
+            swizzle_mode=config.swizzle_mode,
+            is_k_major=False,
+        ](v_smem)
 
         # We peel the first iteration, as we want to wait on q1
         var iter_count: UInt32 = (
@@ -260,18 +373,46 @@ def fa4_mma[
             pipeline_k.release_k[qk_stage=qk_stage](e)  # [kv0]->kv1
         pipeline_s1.commit_mma(e)
 
-        vlatest = pipeline_v.get_v()  # [kv1]
-        pipeline_v.wait_v()  # [kv1]
-
-        # For the first V tile in the current KV stage buffer:
-        # Use the SAME base pointer you used for K (no manual offset).
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s0[pv_stage].wait(0)
-
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s0_tmem, vlatest, o0_tmem, elect=e, c_scale=0
+        comptime if split_o_hi_barriers:
+            # Probe the hi-half output slot early so any residual release can
+            # hide under the low-half P@V work.
+            var producer_o_hi = mbars.producer_o_hi(0)
+            var o_hi_ready = producer_o_hi.consumer_mbar()[].try_wait(
+                producer_o_hi.state.phase()
             )
-        pipeline_o0.commit_mma(e)
+            pipeline_v.wait_v()  # [kv1]
+            vlatest_lo = v_half_desc + UInt32(v_stage_bytes) * pipeline_v.pipeline.state.index()
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s0[pv_stage].wait(0)
+                UMMA1HalfType.mma[stage_idx=pv_stage](
+                    s0_tmem, vlatest_lo, o0_tmem, elect=e, c_scale=0
+                )
+            mbars.producer_o_lo(0).commit_mma(e)
+            pipeline_v.release_v(e)
+            if not o_hi_ready:
+                producer_o_hi.acquire()
+            pipeline_v.wait_v()
+            vlatest_hi = v_half_desc + UInt32(v_stage_bytes) * pipeline_v.pipeline.state.index()
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s0[pv_stage].wait(0)
+                UMMA1HalfType.mma[stage_idx=pv_stage](
+                    s0_tmem,
+                    vlatest_hi,
+                    o0_tmem + UInt32(half_ov_depth),
+                    elect=e,
+                    c_scale=0,
+                )
+            producer_o_hi.commit_mma(e)
+            pipeline_v.release_v(e)
+        else:
+            vlatest = pipeline_v.get_v()  # [kv1]
+            pipeline_v.wait_v()  # [kv1]
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s0[pv_stage].wait(0)
+                UMMA1Type.mma[stage_idx=pv_stage](
+                    s0_tmem, vlatest, o0_tmem, elect=e, c_scale=0
+                )
+            pipeline_o0.commit_mma(e)
         var phase: UInt32 = 0
 
         var c_scale: UInt32 = 0
@@ -294,14 +435,47 @@ def fa4_mma[
             pipeline_s0.commit_mma(e)
 
             # O_1 + P_1 @ V_{n-1}
-            comptime for pv_stage in range(num_pv_stages):
-                _ = consumer_s1[pv_stage].wait(phase)
-                UMMA1Type.mma[stage_idx=pv_stage](
-                    s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
+            comptime if split_o_hi_barriers:
+                var producer_o_hi = mbars.producer_o_hi(1)
+                var o_hi_ready = producer_o_hi.consumer_mbar()[].try_wait(
+                    producer_o_hi.state.phase()
                 )
-            pipeline_o1.commit_mma(e)
+                pipeline_v.wait_v()  # [kv_{2n-1}]
+                vlatest_lo = v_half_desc + UInt32(v_stage_bytes) * pipeline_v.pipeline.state.index()
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s1[pv_stage].wait(phase)
+                    UMMA1HalfType.mma[stage_idx=pv_stage](
+                        s1_tmem, vlatest_lo, o1_tmem, elect=e, c_scale=c_scale
+                    )
+                mbars.producer_o_lo(1).commit_mma(e)
+                pipeline_v.release_v(e)
+                if not o_hi_ready:
+                    producer_o_hi.acquire()
+                pipeline_v.wait_v()
+                vlatest_hi = v_half_desc + UInt32(v_stage_bytes) * pipeline_v.pipeline.state.index()
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s1[pv_stage].wait(phase)
+                    UMMA1HalfType.mma[stage_idx=pv_stage](
+                        s1_tmem,
+                        vlatest_hi,
+                        o1_tmem + UInt32(half_ov_depth),
+                        elect=e,
+                        c_scale=c_scale,
+                    )
+                producer_o_hi.commit_mma(e)
+                pipeline_v.release_v(e)
+            else:
+                vlatest = pipeline_v.get_v()  # [kv_{2n-1}]
+                pipeline_v.wait_v()  # [kv_{2n-1}]
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s1[pv_stage].wait(phase)
+                    UMMA1Type.mma[stage_idx=pv_stage](
+                        s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
+                    )
+                pipeline_o1.commit_mma(e)
             c_scale = 1
-            pipeline_v.release_v(e)  # [kv_{2n-1}]
+            comptime if not split_o_hi_barriers:
+                pipeline_v.release_v(e)  # [kv_{2n-1}]
 
             # Q_1 @ K_n' (staged over num_qk_stages)
             comptime for qk_stage in range(num_qk_stages):
@@ -314,20 +488,82 @@ def fa4_mma[
             pipeline_s1.commit_mma(e)
             phase ^= 1
 
-            # O_0 + P_0 @ V_n
-            vlatest = pipeline_v.get_v()  # [kv_{2n+1}]
-            pipeline_v.wait_v()  # [kv_{2n+1}]
-
-            comptime for pv_stage in range(num_pv_stages):
-                _ = consumer_s0[pv_stage].wait(phase)
-                UMMA1Type.mma[stage_idx=pv_stage](
-                    s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1
+            comptime if split_o_hi_barriers:
+                # O_0 + P_0 @ V_n
+                var producer_o_hi = mbars.producer_o_hi(0)
+                var o_hi_ready = producer_o_hi.consumer_mbar()[].try_wait(
+                    producer_o_hi.state.phase()
                 )
-            pipeline_o0.commit_mma(e)
+                pipeline_v.wait_v()  # [kv_{2n+1}]
+                vlatest_lo = v_half_desc + UInt32(v_stage_bytes) * pipeline_v.pipeline.state.index()
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s0[pv_stage].wait(phase)
+                    UMMA1HalfType.mma[stage_idx=pv_stage](
+                        s0_tmem, vlatest_lo, o0_tmem, elect=e, c_scale=1
+                    )
+                mbars.producer_o_lo(0).commit_mma(e)
+                pipeline_v.release_v(e)
+                if not o_hi_ready:
+                    producer_o_hi.acquire()
+                pipeline_v.wait_v()
+                vlatest_hi = v_half_desc + UInt32(v_stage_bytes) * pipeline_v.pipeline.state.index()
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s0[pv_stage].wait(phase)
+                    UMMA1HalfType.mma[stage_idx=pv_stage](
+                        s0_tmem,
+                        vlatest_hi,
+                        o0_tmem + UInt32(half_ov_depth),
+                        elect=e,
+                        c_scale=1,
+                    )
+                producer_o_hi.commit_mma(e)
+                pipeline_v.release_v(e)
+            else:
+                # O_0 + P_0 @ V_n
+                vlatest = pipeline_v.get_v()  # [kv_{2n+1}]
+                pipeline_v.wait_v()  # [kv_{2n+1}]
+                comptime for pv_stage in range(num_pv_stages):
+                    _ = consumer_s0[pv_stage].wait(phase)
+                    UMMA1Type.mma[stage_idx=pv_stage](
+                        s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1
+                )
+                pipeline_o0.commit_mma(e)
 
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s1[pv_stage].wait(phase)
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
+        comptime if split_o_hi_barriers:
+            var producer_o_hi = mbars.producer_o_hi(1)
+            var o_hi_ready = producer_o_hi.consumer_mbar()[].try_wait(
+                producer_o_hi.state.phase()
             )
-        pipeline_o1.commit_mma(e)
+            pipeline_v.wait_v()  # final [kv_last]
+            vlatest_lo = v_half_desc + UInt32(v_stage_bytes) * pipeline_v.pipeline.state.index()
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s1[pv_stage].wait(phase)
+                UMMA1HalfType.mma[stage_idx=pv_stage](
+                    s1_tmem, vlatest_lo, o1_tmem, elect=e, c_scale=c_scale
+                )
+            mbars.producer_o_lo(1).commit_mma(e)
+            pipeline_v.release_v(e)
+            if not o_hi_ready:
+                producer_o_hi.acquire()
+            pipeline_v.wait_v()
+            vlatest_hi = v_half_desc + UInt32(v_stage_bytes) * pipeline_v.pipeline.state.index()
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s1[pv_stage].wait(phase)
+                UMMA1HalfType.mma[stage_idx=pv_stage](
+                    s1_tmem,
+                    vlatest_hi,
+                    o1_tmem + UInt32(half_ov_depth),
+                    elect=e,
+                    c_scale=c_scale,
+                )
+            producer_o_hi.commit_mma(e)
+            pipeline_v.release_v(e)
+        else:
+            vlatest = pipeline_v.get_v()  # final [kv_last]
+            pipeline_v.wait_v()  # final [kv_last]
+            comptime for pv_stage in range(num_pv_stages):
+                _ = consumer_s1[pv_stage].wait(phase)
+                UMMA1Type.mma[stage_idx=pv_stage](
+                    s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
+                )
+            pipeline_o1.commit_mma(e)

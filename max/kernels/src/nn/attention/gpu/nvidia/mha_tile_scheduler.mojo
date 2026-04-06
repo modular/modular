@@ -18,7 +18,7 @@ from std.os.atomic import Atomic
 import std.gpu.primitives.warp as warp
 from std.builtin.device_passable import DevicePassable
 from std.gpu.host.info import H100
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.sync import barrier, named_barrier
 from nn.attention.gpu.nvidia.sm90.attention import NullPointer, OptionalPointer
 
@@ -441,10 +441,17 @@ struct TransientScheduler[
     @always_inline
     def get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
         var raw_idx: UInt32
+        var head_idx: UInt32
         comptime if Self.pair_cta:
             raw_idx = UInt32(block_idx.x) >> 1
+            head_idx = UInt32(block_idx.y)
         else:
-            raw_idx = UInt32(block_idx.x)
+            comptime if Self.flip_prompt_idx:
+                raw_idx = UInt32(block_idx.y)
+                head_idx = UInt32(block_idx.x)
+            else:
+                raw_idx = UInt32(block_idx.x)
+                head_idx = UInt32(block_idx.y)
         var prompt_tile_idx: UInt32
         comptime if Self.flip_prompt_idx:
             prompt_tile_idx = num_prompt_tiles - 1 - raw_idx
@@ -452,7 +459,7 @@ struct TransientScheduler[
             prompt_tile_idx = raw_idx
         return WorkInfo(
             prompt_tile_idx * Self.tile_shape,
-            UInt32(block_idx.y),
+            head_idx,
             UInt32(block_idx.z),
             True,
         )
@@ -492,11 +499,18 @@ struct TransientScheduler[
                 Int(batch_size),
             )
         else:
-            return (
-                Int(max_num_prompt_tiles),
-                Int(Self.num_heads),
-                Int(batch_size),
-            )
+            comptime if Self.flip_prompt_idx:
+                return (
+                    Int(Self.num_heads),
+                    Int(max_num_prompt_tiles),
+                    Int(batch_size),
+                )
+            else:
+                return (
+                    Int(max_num_prompt_tiles),
+                    Int(Self.num_heads),
+                    Int(batch_size),
+                )
 
     @always_inline
     def initial_state[

@@ -16,6 +16,7 @@ from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
 from std.benchmark import (
     Bench,
+    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
@@ -35,11 +36,13 @@ from std.utils.numerics import min_or_neg_inf
 
 def run_mha[
     qkv_type: DType,
+    output_type: DType,
     mask_type: DType,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
     cache_busting: Bool = True,
+    prefill_only: Bool = False,
 ](
     mut m: Bench,
     seq_len: Int,
@@ -71,13 +74,13 @@ def run_mha[
     var cb_v = CacheBustingBuffer[qkv_type](
         v_size, simd_size, ctx, cache_busting
     )
-    var cb_o = CacheBustingBuffer[qkv_type](
+    var cb_o = CacheBustingBuffer[output_type](
         o_size, simd_size, ctx, cache_busting
     )
 
     # Allocate host memory for verification.
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](cb_o.alloc_size())
+    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[output_type]](cb_o.alloc_size())
 
     # Initialize data on the device.
     comptime random_distribution = InitializationType.uniform_distribution
@@ -141,11 +144,11 @@ def run_mha[
                     ),
                 )
 
-                flash_attention(
-                    output_device,
-                    q_device,
-                    k_device,
-                    v_device,
+                flash_attention[_force_context_encoding=prefill_only](
+                    output_device.to_layout_tensor(),
+                    q_device.to_layout_tensor(),
+                    k_device.to_layout_tensor(),
+                    v_device.to_layout_tensor(),
                     CausalMask(),
                     scale,
                     ctx,
@@ -154,7 +157,7 @@ def run_mha[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() unified {read} -> Int:
+        def compute_flops() -> Int:
             # Using causal mask, skip half of tiles.
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
@@ -164,15 +167,18 @@ def run_mha[
                 # fmt: off
             input_id=String(
                 "qkv_type=", qkv_type,
+                "/output_type=", output_type,
                 "/num_heads=", num_heads,
                 "/seq_len=", seq_len,
                 "/num_keys=", num_keys,
                 "/batch_size=", batch_size,
                 "/cache_busting=", cache_busting,
+                "/prefill_only=", prefill_only,
             ),
                 # fmt: on
             ),
             [ThroughputMeasure(BenchMetric.flops, compute_flops())],
+            fixed_iterations=1,
         )
         # Wait for benchmark to complete before running verification
         ctx.synchronize()
@@ -224,11 +230,11 @@ def run_mha[
         ),
     )
 
-    flash_attention(
-        output_device,
-        q_device,
-        k_device,
-        v_device,
+    flash_attention[_force_context_encoding=prefill_only](
+        output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
+        k_device.to_layout_tensor(),
+        v_device.to_layout_tensor(),
         CausalMask(),
         scale,
         ctx,
@@ -279,7 +285,14 @@ def run_mha[
             ),
         )
 
-        var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+        comptime if qkv_type != output_type:
+            raise Error(
+                "verify=True is unsupported when qkv_type != output_type"
+            )
+
+        var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](
+            o_size
+        )
         var output_ref_device = TileTensor(
             output_ref_device_ptr.unsafe_ptr(),
             row_major(
@@ -342,20 +355,24 @@ def run_mha[
 struct MHA_cfg(ImplicitlyCopyable, Writable):
     # params
     var qkv_type: DType
+    var output_type: DType
     var mask_type: DType
     var depth: Int
     var num_heads: Int
     var group: Int
     var cache_busting: Bool
+    var prefill_only: Bool
 
 
 def main() raises:
     comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
-    comptime mask_type = get_defined_dtype["mask_type", DType.float32]()
+    comptime output_type = get_defined_dtype["output_type", qkv_type]()
+    comptime mask_type = get_defined_dtype["mask_type", DType.bfloat16]()
     comptime depth = get_defined_int["depth", 128]()
     comptime num_heads = get_defined_int["num_heads", 32]()
-    comptime group = get_defined_int["group", 1]()
+    comptime group = get_defined_int["group", 4]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
+    comptime prefill_only = get_defined_bool["prefill_only", False]()
 
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))
@@ -366,22 +383,26 @@ def main() raises:
 
     comptime cfg = MHA_cfg(
         qkv_type=qkv_type,
+        output_type=output_type,
         mask_type=mask_type,
         depth=depth,
         num_heads=num_heads,
         group=group,
         cache_busting=cache_busting,
+        prefill_only=prefill_only,
     )
 
-    var m = Bench()
+    var m = Bench(BenchConfig(max_runtime_secs=0.05, num_warmup_iters=2))
     with DeviceContext() as ctx:
         run_mha[
             cfg.qkv_type,
+            cfg.output_type,
             cfg.mask_type,
             cfg.depth,
             cfg.num_heads,
             cfg.group,
             cfg.cache_busting,
+            cfg.prefill_only,
         ](
             m,
             seq_len,

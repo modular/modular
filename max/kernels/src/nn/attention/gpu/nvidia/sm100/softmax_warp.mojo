@@ -26,11 +26,9 @@ from std.gpu.sync import (
     cp_async_bulk_wait_group,
 )
 from std.gpu.compute.arch.tcgen05 import (
-    tcgen05_dealloc,
     tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_ld,
-    tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
 from structured_kernels.barriers import (
@@ -38,6 +36,7 @@ from structured_kernels.barriers import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TMEM_LOWER_ROW_OFFSET,
+    TmemAllocation,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout import row_major, stack_allocation as tt_stack_allocation
@@ -90,6 +89,7 @@ def fa4_scale_write_output[
     output_type: DType,
     //,
     config: FA4Config,
+    split_o_hi_barriers: Bool = False,
     output_swizzle_mode: TensorMapSwizzle = config.swizzle_mode,
 ](
     local_row: UInt32,
@@ -107,6 +107,8 @@ def fa4_scale_write_output[
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
+    o_hi_ready_mbar: MBarType,
+    o_phase: UInt32,
 ):
     comptime accum_dtype = DType.float32
 
@@ -115,6 +117,9 @@ def fa4_scale_write_output[
     ]()
     comptime iters = config.padded_ov_depth // swizzle_granularity
     comptime half_bm = config.BM // 2
+    comptime hi_half_start_iter = iters // 2
+    comptime if split_o_hi_barriers:
+        comptime assert iters % 2 == 0
 
     comptime ST = STMatrixLayout[
         half_bm,
@@ -196,7 +201,6 @@ def fa4_scale_write_output[
             func=load_fn, N=ST.repeat, max_value=max_value
         ]()
 
-    load_chunk[0, 0](o_cur)
     inv_row_sums = tt_stack_allocation[
         dtype=accum_dtype, address_space=AddressSpace.LOCAL
     ](row_major[num_rows]())
@@ -271,10 +275,18 @@ def fa4_scale_write_output[
             if e != 0:
                 cp_async_bulk_commit_group()
 
+    @always_inline
+    @parameter
+    def wait_for_hi_half[next_iter: Int]():
+        comptime if split_o_hi_barriers and next_iter == hi_half_start_iter:
+            o_hi_ready_mbar[].wait(o_phase)
+            tcgen05_fence_after()
+
     # --- Pipeline loop ---
 
     # Prologue: load column 0, m_half=1 into o_cur (m_half=0 was already
     # loaded above).
+    load_chunk[0, 0](o_cur)
     load_chunk[0, 1](o_cur)
 
     comptime for iter in range(iters):
@@ -284,13 +296,22 @@ def fa4_scale_write_output[
         write_to_smem[iter, 0](o_cur)
 
         comptime if next_iter < iters:
-            load_chunk[next_iter, 0](o_cur)
+            comptime if split_o_hi_barriers and next_iter == hi_half_start_iter:
+                pass
+            else:
+                wait_for_hi_half[next_iter]()
+                load_chunk[next_iter, 0](o_cur)
 
         scale_half[1](o_cur)
         write_to_smem[iter, 1](o_cur)
 
         comptime if next_iter < iters:
-            load_chunk[next_iter, 1](o_cur)
+            comptime if split_o_hi_barriers and next_iter == hi_half_start_iter:
+                wait_for_hi_half[next_iter]()
+                load_chunk[next_iter, 0](o_cur)
+                load_chunk[next_iter, 1](o_cur)
+            else:
+                load_chunk[next_iter, 1](o_cur)
 
         sync_and_tma_store[iter]()
 
@@ -316,8 +337,9 @@ def fa4_softmax[
     SinkType: OptionalPointer,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
+    split_o_hi_barriers: Bool = False,
 ](
-    smem: SM100AttentionSMem[config],
+    smem: SM100AttentionSMem[config, split_o_hi_barriers=split_o_hi_barriers],
     score_row: UInt32,
     seq_info: SeqInfo,
     mask: MaskType,
@@ -382,9 +404,6 @@ def fa4_softmax[
 
     var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
     var o_smem = smem.o_smem[output_type]()
-    var o_prod_mbar: MBarType = (
-        mbars.mbar_base + MiscMBarsType.O_producer_offset
-    )
     var s_tmem: UInt32 = tmem_addr + UInt32(config.TMEM_S0)
 
     # var tid = UInt32(thread_idx.x)
@@ -413,8 +432,8 @@ def fa4_softmax[
         order_s_wait = mbars.pipeline_order_wait(warp_group_idx)
         order_s_arrive = mbars.pipeline_order_arrive(warp_group_idx)
     else:
-        order_s_wait = {_unsafe_null = ()}
-        order_s_arrive = {_unsafe_null = ()}
+        order_s_wait = MBarType()
+        order_s_arrive = MBarType()
 
     var q_head_idx: UInt32 = seq_info.head_idx
     var scale_log2e: Scalar[accum_dtype] = scale
@@ -982,14 +1001,20 @@ def fa4_softmax[
         + UInt32(config.TMEM_O0)
         + warp_group_idx * UInt32(padded_ov_depth)
     )
+    tail_e = elect()
     # wait on the o_pipeline producer
     comptime assert size_of[output_type]() >= size_of[qkv_type]()
     if num_output_rows > 0:
-        o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
+        var o_hi_ready_mbar = mbars.producer_o_final_mbar(warp_group_idx)
+        comptime if split_o_hi_barriers:
+            mbars.combined_p_o_consumer(warp_group_idx)[].wait(o_phase)
+            o_hi_ready_mbar = mbars.consumer_o_hi(warp_group_idx)
+        else:
+            o_hi_ready_mbar[].wait(o_phase)
         tcgen05_fence_after()  # example 1
         # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
 
-        fa4_scale_write_output[config](
+        fa4_scale_write_output[config, split_o_hi_barriers=split_o_hi_barriers](
             row,
             warp_idx & 3,
             warp_group_idx,
@@ -1000,8 +1025,20 @@ def fa4_softmax[
             num_output_rows,
             q_head_idx,
             gmem_row + warp_group_idx * UInt32(HalfBM),
+            o_hi_ready_mbar,
+            o_phase,
         )
-    WarpGroupBarrier[2 * WARPGROUP_SIZE, 2].sync()
+    comptime if split_o_hi_barriers and config.num_qk_stages >= 2:
+        # Reuse the existing Q1Sync slots so the persistent handoff can be
+        # prototyped without changing the FA4 shared-memory barrier layout.
+        if (warp_idx & 3) == 0 and tail_e != 0:
+            _ = (mbars.q1_wait_mbar() + warp_group_idx)[].arrive()
+        if warp_idx == 0:
+            mbars.q1_wait_mbar()[0].wait(1)
+            mbars.q1_wait_mbar()[1].wait(1)
+    else:
+        WarpGroupBarrier[2 * WARPGROUP_SIZE, 2].sync()
     if warp_idx == 0:
-        tcgen05_release_allocation_lock[Int32(cta_group)]()
-        tcgen05_dealloc[Int32(cta_group)](tmem_addr, UInt32(512))
+        var tmem = TmemAllocation[cta_group](tmem_addr)
+        tmem.release_lock()
+        tmem.deallocate()

@@ -237,7 +237,13 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 + self.warp_scratch_smem_size()
             )
 
-        if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
+        # FP8 generic prefill can no longer use the register-reuse second MMA
+        # path when num_warps_n == 1, so it also needs the packed P tile in smem.
+        if (
+            self.num_warps_n() > 1
+            or has_amd_gpu_accelerator()
+            or Self.dtype.is_float8()
+        ):
             num_smem_elements += self.p_smem_size()
 
         num_smem_bytes = size_of[self.dtype]() * Int(num_smem_elements)
@@ -329,9 +335,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         else:
             # BN
             self.num_keys_per_block = num_keys_per_block.or_else(
-                (
-                    UInt(32 if depth == 512 else 64)
-                ) if has_amd_gpu_accelerator() else depth
+                64 if has_amd_gpu_accelerator() else depth
             )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
@@ -343,7 +347,13 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 )
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-            var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
+            # FP8 uses 16x8x32 MMA on NVIDIA, so the generic multistage path
+            # needs at least two K-MMAs per stage to satisfy its pipeline shape.
+            var bk_type_factor = (
+                1 if Self.dtype == DType.float32 else (
+                    4 if Self.dtype.is_float8() else 2
+                )
+            )
             self.BK = BK.or_else(
                 UInt(16 * bk_arch_factor * bk_type_factor)
             ) if has_nvidia_gpu_accelerator() else 32
@@ -789,9 +799,7 @@ struct NoPartition[dtype: DType](
     def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
 
 
 struct SplitKPartition[dtype: DType](
@@ -808,9 +816,7 @@ struct SplitKPartition[dtype: DType](
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
     ):
-        assert ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        assert ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
 

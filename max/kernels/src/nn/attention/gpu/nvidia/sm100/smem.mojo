@@ -67,6 +67,7 @@ struct SM100AttentionSMem[
     ],
     *,
     use_order_barriers: Bool = EnableForcedOrdering,
+    split_o_hi_barriers: Bool = False,
 ](TrivialRegisterPassable):
     """Shared memory layout manager for SM100 Flash Attention kernels.
 
@@ -187,6 +188,7 @@ struct SM100AttentionSMem[
         num_kv_stages=Self.config.num_kv_stages,
         use_order_barriers=Self.use_order_barriers,
         use_fused_kv=Self.config.use_fused_kv,
+        split_o_hi_barriers=Self.split_o_hi_barriers,
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[
