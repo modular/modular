@@ -593,21 +593,21 @@ static StringAttr closureNameFromSelfOperand(SharedState &shared,
   return {};
 }
 
-static SmallVectorImpl<ClosureParamCapture> *
+static ArrayRef<ClosureParamCapture>
 closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
                               const CallOperands &operands,
                               const OverloadSet &callable) {
   if (!funcIfDirect)
-    return nullptr;
+    return {};
   if (operands.empty())
-    return nullptr;
+    return {};
   auto selfCValue = operands[0].ir.getIfCValue();
   if (!selfCValue)
-    return nullptr;
+    return {};
   StringAttr closureName =
       closureNameFromSelfOperand(funcIfDirect->getShared(), selfCValue);
   if (!closureName)
-    return nullptr;
+    return {};
 
   // Look up the captures on the operation that owns the closure definition.
   // For block arguments (closure parameters), this is the parent op of the
@@ -615,16 +615,16 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
   // block containing the VarDeclOp.
   Value mlirValue = selfCValue.getMlirValue();
   if (!mlirValue)
-    return nullptr;
+    return {};
   Operation *ownerOp = mlirValue.getParentBlock()->getParentOp();
   ClosureParamCaptures *captures =
       funcIfDirect->getShared().getClosureParamCapturesForOp(ownerOp);
   if (!captures)
-    return nullptr;
+    return {};
   auto ptr = captures->find(closureName);
   if (ptr != captures->end())
-    return &ptr->second;
-  return nullptr;
+    return ptr->second;
+  return {};
 }
 
 OverloadFitness::VisibleParamDeclBindings
@@ -740,7 +740,7 @@ OverloadFitness OverloadFitness::evaluate(
   // captured closure parameters. Only applies to method call syntax on a
   // __call__ method — not direct calls that happen to pass a closure as an
   // argument.
-  SmallVectorImpl<ClosureParamCapture> *implicitParams = nullptr;
+  ArrayRef<ClosureParamCapture> implicitParams;
   if (funcIfDirect) {
     if (auto fnOp = dyn_cast_or_null<FnOp>(funcIfDirect->getIfOperation())) {
       if (fnOp.getSourceNameAttr() &&
@@ -749,10 +749,10 @@ OverloadFitness OverloadFitness::evaluate(
             closureParamCapturesIfClosure(funcIfDirect, operands, callable);
     }
   }
-  if (implicitParams) {
+  if (!implicitParams.empty()) {
     size_t paramIdx =
-        signature.getInputParamTypes().size() - implicitParams->size();
-    for (const auto &[paramName, paramType] : *implicitParams) {
+        signature.getInputParamTypes().size() - implicitParams.size();
+    for (const auto &[paramName, paramType] : implicitParams) {
       TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
       if (failed(inference.setInitialInferredValue(paramIdx, paramValue))) {
         if (inference.diag.hasErrorEmitted())

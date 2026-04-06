@@ -80,7 +80,8 @@ public:
     return diag.getDiag()(loc);
   }
 
-  LogicalResult setInferredValue(size_t paramIdx, TypedAttr paramVal);
+  LogicalResult setInferredValue(size_t paramIdx, TypedAttr paramVal,
+                                 bool isDefaulted = false);
   virtual bool isExplicitlyUnbound(size_t paramIdx) const = 0;
 
   SmallVector<ConstraintAttr> unprovableConstraints;

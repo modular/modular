@@ -8,6 +8,8 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/lib/MojoParser/ExprNodes.h"
+#include "KGEN/lib/MojoParser/IREmitter.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -42,9 +44,31 @@ InferenceState::InferenceState(ASTDecl &declScope,
 }
 
 LogicalResult InferenceState::setInferredValue(size_t paramIdx,
-                                               TypedAttr paramVal) {
+                                               TypedAttr paramVal,
+                                               bool isDefaulted) {
   paramVal = evaluator.getReboundAttribute(paramVal);
   ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
+
+  if (!isDefaulted && LIT::isTypeExpr(paramVal)) {
+    IREmitter emitter(declScope, EC_TypeParamValue);
+    if (auto nmTarget = ASTType(paramVal).getNonmaterializableTarget(shared)) {
+      TypedAttr nmTargetAttr = PValue(nmTarget).get();
+      FailureOr<bool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
+          shared, declScope.getLoc(), nmTargetAttr.getType(), targetType,
+          &declScope);
+      // If the nonmaterializable type can be upcast to the target type, then
+      // make sure we infer to the nonmaterializable type:
+      //    def example[T: TrivialRegisterPassable](a: T): ...
+      //    example(1) # T should be Int, not IntLiteral.
+      if (succeeded(typeUpCastable) && typeUpCastable.value()) {
+        SyntheticNode expr(declScope.getLoc());
+        paramVal = emitter.emitPValue({nmTargetAttr, &expr}, EC_TypeParamValue,
+                                      targetType);
+        assert(paramVal && "must be convertible");
+      }
+    }
+  }
+
   // Type must be equal
   assert(targetType.isEqualCanon(paramVal.getType()));
 

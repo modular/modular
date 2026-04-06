@@ -647,8 +647,13 @@ void ClosureEmitter::collectClosureExternalRefs(
 
   // Collect alias ops - these represent external parameter references.
   auto collectAliases = [&](TraitDeclOp closureTrait) {
-    for (AliasDeclOp aliasOp : closureTrait.getOps<AliasDeclOp>())
+    for (AliasDeclOp aliasOp : closureTrait.getOps<AliasDeclOp>()) {
+      // Skip aliases that are inherited from a parent trait: Those are not
+      // captured parameters by the closure.
+      if (aliasOp.getInheritedFrom())
+        continue;
       refs.push_back({closureParam, aliasOp});
+    }
   };
   processClosureTraits(traitType, collectAliases);
 }
