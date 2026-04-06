@@ -12,8 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm.functional import unswitch
+from std.math import ceildiv
+from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
+from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -43,7 +46,7 @@ from nn.attention.mha_utils import (
     dispatch_mask,
     dispatch_materialized_mask,
 )
-from nn.normalization import _rms_norm_impl
+from nn.normalization import _rms_norm_impl, rms_norm_gpu_warp_tiling_128
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
@@ -420,7 +423,7 @@ def _matmul_common[
         )
     else:
         c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
-            UnsafePointer[Scalar[dtype], MutExternalOrigin](_unsafe_null=()),
+            UnsafePointer[Scalar[dtype], MutExternalOrigin](),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
@@ -901,7 +904,128 @@ def _flash_attention_dispatch_materialized_mask[
 # ===-----------------------------------------------------------------------===#
 
 
-def rms_norm_kv_cache_ragged_paged[
+@always_inline
+def _rms_norm_kv_cache_ragged_paged_decode_uniform_direct[
+    dtype: DType,
+    params: KVCacheStaticParams,
+    page_size: Int,
+    cache_dtype: DType,
+    //,
+    target: StaticString,
+    multiply_before_cast: Bool,
+](
+    kv_collection: PagedKVCacheCollection[
+        cache_dtype,
+        params,
+        page_size,
+    ],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    layer_idx: UInt32,
+    total_seq_len: UInt32,
+    context: DeviceContextPtr,
+) raises:
+    comptime assert is_gpu[target](), "decode-uniform direct path is GPU-only"
+    comptime assert dtype == DType.bfloat16
+    comptime assert cache_dtype == DType.bfloat16
+    comptime assert gamma.static_shape[0] == 128
+    comptime assert Int(params.head_size) == 128
+    comptime assert page_size == 128
+
+    var ctx = context.get_device_context()
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    var num_rows = Int(total_seq_len) * Int(params.num_heads)
+    comptime simd_width = 8
+    comptime default_warps_per_block = 2
+    comptime large_row_warps_per_block = 8
+    comptime default_block_size = default_warps_per_block * WARP_SIZE
+    comptime large_row_block_size = large_row_warps_per_block * WARP_SIZE
+    comptime min_large_row_blocks_per_sm = 5
+    var min_large_row_blocks = (
+        ctx.default_device_info.sm_count * min_large_row_blocks_per_sm
+    )
+    var large_row_grid_dim = ceildiv(num_rows, large_row_warps_per_block * 2)
+
+    @always_inline
+    @parameter
+    @__copy_capture(k_cache)
+    def direct_input_fn_2d[width: Int](
+        row: Int, col: Int
+    ) -> SIMD[dtype, width]:
+        var batch_idx = row // Int(params.num_heads)
+        var head_idx = row % Int(params.num_heads)
+        var cache_token_idx = Int(k_cache.cache_length(batch_idx))
+        return k_cache.load[width=width](
+            bs=batch_idx,
+            tok_idx=cache_token_idx,
+            head_idx=head_idx,
+            head_dim_idx=col,
+        ).cast[dtype]()
+
+    @always_inline
+    @parameter
+    @__copy_capture(k_cache)
+    def direct_output_fn_2d[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) -> None:
+        var batch_idx = row // Int(params.num_heads)
+        var head_idx = row % Int(params.num_heads)
+        var cache_token_idx = Int(k_cache.cache_length(batch_idx))
+        k_cache.store(
+            bs=batch_idx,
+            tok_idx=cache_token_idx,
+            head_idx=head_idx,
+            head_dim_idx=col,
+            val=val.cast[cache_dtype](),
+        )
+
+    if large_row_grid_dim >= min_large_row_blocks:
+        comptime kernel = rms_norm_gpu_warp_tiling_128[
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
+            simd_width,
+            large_row_warps_per_block,
+            direct_input_fn_2d,
+            direct_output_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            gamma,
+            epsilon,
+            weight_offset,
+            num_rows,
+            gamma.static_shape[0],
+            grid_dim=large_row_grid_dim,
+            block_dim=large_row_block_size,
+            attributes=pdl_launch_attributes(PDLLevel(1)),
+        )
+    else:
+        comptime kernel = rms_norm_gpu_warp_tiling_128[
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
+            simd_width,
+            default_warps_per_block,
+            direct_input_fn_2d,
+            direct_output_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            gamma,
+            epsilon,
+            weight_offset,
+            num_rows,
+            gamma.static_shape[0],
+            grid_dim=ceildiv(num_rows, default_warps_per_block * 2),
+            block_dim=default_block_size,
+            attributes=pdl_launch_attributes(PDLLevel(1)),
+        )
+
+
+@always_inline
+def _rms_norm_kv_cache_ragged_paged_no_trace[
     dtype: DType,
     params: KVCacheStaticParams,
     page_size: Int,
@@ -924,7 +1048,7 @@ def rms_norm_kv_cache_ragged_paged[
     input_row_offsets: TileTensor[DType.uint32, ...],
     context: DeviceContextPtr,
 ) raises:
-    """Performs RMSNorm in place on new entries in the key cache.
+    """Implements RMSNorm in place on new entries in the key cache.
 
     This is done by first creating the ragged tensor weight_shape
     (total_seq_len, num_heads, head_dim) of the new token tensor.
@@ -963,6 +1087,22 @@ def rms_norm_kv_cache_ragged_paged[
         rms_norm_cols <= Int(kv_collection.kv_params.head_size)
         or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
+    comptime has_uniform_decode_rank3_specialization = (
+        per_head_norm
+        and dtype == DType.bfloat16
+        and cache_dtype == DType.bfloat16
+        and rms_norm_cols == 128
+        and Int(params.head_size) == 128
+        and page_size == 128
+    )
+    var batch_size = Int(input_row_offsets.dim(0)) - 1
+    var use_uniform_decode_batch_mapping = False
+
+    comptime if has_uniform_decode_rank3_specialization:
+        use_uniform_decode_batch_mapping = (
+            kv_collection.max_seq_length == 1
+            and total_seq_len == UInt32(batch_size)
+        )
 
     var shape = IndexList[rank]()
     shape[0] = Int(total_seq_len)
@@ -1047,30 +1187,43 @@ def rms_norm_kv_cache_ragged_paged[
             val=val.cast[cache_dtype](),
         )
 
-    with Trace[TraceLevel.OP, target=target](
-        "rms_norm_kv_cache_ragged_paged_nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
-        task_id=get_safe_task_id(context),
-    ):
-        _rms_norm_impl[
-            dtype,
-            rank,
-            key_cache_input_fn,
-            key_cache_output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            shape,
-            gamma,
-            epsilon,
-            weight_offset,
-            context,
-        )
+    comptime if has_uniform_decode_rank3_specialization:
+        if use_uniform_decode_batch_mapping:
+            _rms_norm_kv_cache_ragged_paged_decode_uniform_direct[
+                dtype=dtype,
+                params=params,
+                page_size=page_size,
+                cache_dtype=cache_dtype,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                kv_collection,
+                gamma,
+                epsilon,
+                weight_offset,
+                layer_idx,
+                total_seq_len,
+                context,
+            )
+            return
+
+    _rms_norm_impl[
+        dtype,
+        rank,
+        key_cache_input_fn,
+        key_cache_output_fn,
+        target=target,
+        multiply_before_cast=multiply_before_cast,
+    ](
+        shape,
+        gamma,
+        epsilon,
+        weight_offset,
+        context,
+    )
 
 
-def rms_norm_value_cache_ragged_paged[
+def rms_norm_kv_cache_ragged_paged[
     dtype: DType,
     params: KVCacheStaticParams,
     page_size: Int,
@@ -1093,128 +1246,68 @@ def rms_norm_value_cache_ragged_paged[
     input_row_offsets: TileTensor[DType.uint32, ...],
     context: DeviceContextPtr,
 ) raises:
-    """Performs RMSNorm in place on new entries in the value cache.
+    """Performs RMSNorm in place on new entries in the key cache."""
 
-    Same indexing and layout as ``rms_norm_kv_cache_ragged_paged`` on the key
-    cache, but reads/writes the value cache tensor for ``layer_idx``.
-    """
-    comptime assert gamma.flat_rank == 1, "gamma must be rank 1"
-    comptime assert (
-        input_row_offsets.flat_rank == 1
-    ), "input_row_offsets must be rank 1"
+    var batch_size = Int(input_row_offsets.dim(0)) - 1
 
-    comptime rank = 3 if per_head_norm else 2
-    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
-    var kv_params = v_cache.kv_params
-    comptime rms_norm_cols = gamma.static_shape[0]
+    comptime use_no_trace_decode_uniform_fastpath = (
+        is_gpu[target]()
+        and per_head_norm
+        and dtype == DType.bfloat16
+        and cache_dtype == DType.bfloat16
+        and gamma.static_shape[0] == 128
+        and Int(params.head_size) == 128
+        and page_size == 128
+    )
 
-    comptime assert rms_norm_cols != -1, "Need static shape for gamma"
-    comptime assert (
-        rms_norm_cols <= Int(kv_collection.kv_params.head_size)
-        or not per_head_norm
-    ), "Length of gamma must be smaller or equal to head size"
-
-    var shape = IndexList[rank]()
-    shape[0] = Int(total_seq_len)
-
-    comptime if per_head_norm:
-        shape[1] = Int(kv_params.num_heads)
-        shape[2] = rms_norm_cols
-    else:
-        shape[1] = rms_norm_cols
-
-    @always_inline
-    @parameter
-    @__copy_capture(v_cache, input_row_offsets)
-    def value_cache_input_fn[
-        width: Int, rank_: Int
-    ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        comptime assert rank_ == rank, (
-            "rms_norm_value_cache input lambda index should have rank "
-            + String(rank)
-        )
-
-        var global_token_idx = idx[0]
-        var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
-        )
-        var token_idx = Int(
-            UInt32(global_token_idx) - input_row_offsets[batch_idx]
-        )
-
-        var cache_length = v_cache.cache_length(batch_idx)
-        var cache_token_idx = token_idx + cache_length
-
-        var head_idx: Int
-        var head_dim_idx: Int
-
-        comptime if per_head_norm:
-            head_idx = idx[1]
-            head_dim_idx = idx[2]
-        else:
-            head_idx = idx[1] // Int(params.head_size)
-            head_dim_idx = idx[1] % Int(params.head_size)
-
-        return v_cache.load[width=width](
-            bs=batch_idx,
-            tok_idx=cache_token_idx,
-            head_idx=head_idx,
-            head_dim_idx=head_dim_idx,
-        ).cast[dtype]()
-
-    @always_inline
-    @parameter
-    @__copy_capture(v_cache)
-    def value_cache_output_fn[
-        width: Int, alignment: Int
-    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var global_token_idx = idx[0]
-        var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
-        )
-        var token_idx = Int(
-            UInt32(global_token_idx) - input_row_offsets[batch_idx]
-        )
-
-        var cache_length = v_cache.cache_length(batch_idx)
-        var cache_token_idx = token_idx + cache_length
-
-        var head_idx: Int
-        var head_dim_idx: Int
-
-        comptime if per_head_norm:
-            head_idx = idx[1]
-            head_dim_idx = idx[2]
-        else:
-            head_idx = idx[1] // Int(params.head_size)
-            head_dim_idx = idx[1] % Int(params.head_size)
-        v_cache.store(
-            bs=batch_idx,
-            tok_idx=cache_token_idx,
-            head_idx=head_idx,
-            head_dim_idx=head_dim_idx,
-            val=val.cast[cache_dtype](),
-        )
+    comptime if use_no_trace_decode_uniform_fastpath:
+        if (
+            kv_collection.max_seq_length == 1
+            and total_seq_len == UInt32(batch_size)
+        ):
+            _rms_norm_kv_cache_ragged_paged_no_trace[
+                dtype=dtype,
+                params=params,
+                page_size=page_size,
+                cache_dtype=cache_dtype,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+                per_head_norm=per_head_norm,
+            ](
+                kv_collection,
+                gamma,
+                epsilon,
+                weight_offset,
+                layer_idx,
+                total_seq_len,
+                input_row_offsets,
+                context,
+            )
+            return
 
     with Trace[TraceLevel.OP, target=target](
-        "rms_norm_value_cache_ragged_paged_nhead_"
+        "rms_norm_kv_cache_ragged_paged_nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         task_id=get_safe_task_id(context),
     ):
-        _rms_norm_impl[
-            dtype,
-            rank,
-            value_cache_input_fn,
-            value_cache_output_fn,
+        _rms_norm_kv_cache_ragged_paged_no_trace[
+            dtype=dtype,
+            params=params,
+            page_size=page_size,
+            cache_dtype=cache_dtype,
             target=target,
             multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
         ](
-            shape,
+            kv_collection,
             gamma,
             epsilon,
             weight_offset,
+            layer_idx,
+            total_seq_len,
+            input_row_offsets,
             context,
         )
 

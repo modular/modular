@@ -16,6 +16,7 @@ from __future__ import annotations
 import functools
 import logging
 from collections.abc import Sequence
+from typing import cast
 
 from max.dtype import DType
 from max.graph import (
@@ -36,6 +37,7 @@ from max.nn.rotary_embedding import (
 )
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
+    distributed_logits_postprocess,
 )
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
@@ -53,6 +55,10 @@ from .encoding import Gemma3VisionEncoder
 from .projection import Gemma3MultiModalProjector
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _identity_norm(x: TensorValue) -> TensorValue:
+    return x
 
 
 class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
@@ -199,20 +205,48 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
         ]
 
         # Run through transformer layers
+        next_norm_xs: list[TensorValue] | None = None
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = ops.constant(
                 idx, DType.uint32, device=self.devices[0]
             )
-            h = layer(
+            next_input_layernorm_shards = cast(
+                Sequence[Gemma3RMSNorm], self.norm_shards
+            )
+            if idx + 1 < len(self.layers):
+                next_input_layernorm_shards = cast(
+                    Sequence[Gemma3RMSNorm],
+                    cast(
+                        Gemma3TransformerBlock, self.layers[idx + 1]
+                    ).input_layernorm_shards,
+                )
+            h, next_norm_xs = layer(
                 layer_idx_tensor,
                 h,
                 signal_buffers,
                 kv_collections,
                 input_row_offsets=input_row_offsets,
+                normalized_xs=next_norm_xs,
+                next_input_layernorm_shards=next_input_layernorm_shards,
             )
 
-        return self._postprocess_logits(
-            h, input_row_offsets, return_n_logits, signal_buffers
+        postprocess_h = next_norm_xs if next_norm_xs is not None else h
+        postprocess_norms = (
+            [_identity_norm for _ in self.devices]
+            if next_norm_xs is not None
+            else self.norm_shards
+        )
+        return distributed_logits_postprocess(
+            postprocess_h,
+            input_row_offsets,
+            return_n_logits,
+            norm_shards=postprocess_norms,
+            lm_head=self.lm_head,
+            signal_buffers=signal_buffers,
+            return_logits=self.return_logits,
+            device=self.devices[0],
+            return_hidden_states=self.return_hidden_states,
+            logits_scaling=self.logits_scaling,
         )
 
 

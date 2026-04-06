@@ -30,6 +30,7 @@ from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
+    q_rms_norm_fused_qk_ragged_rope,
     quantize_static_scaled_float8,
     rms_norm_key_cache,
 )
@@ -271,35 +272,60 @@ class Gemma3Attention(Module, Shardable):
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        # Apply QK norm to query and key states.
-        xq = self.q_norm(xq)
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
-                self.devices[0]
-            ),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
-            weight_offset=1.0,
-        )
-
         # Apply rotary embedding.
         use_local = bool((self.layer_idx + 1) % self.sliding_window_pattern)
         rope = self.rope_local if use_local else self.rope_global
 
         freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            kwargs["input_row_offsets"],
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            interleaved=rope.interleaved,
+        can_fuse_qk_norm_rope = (
+            not rope.interleaved
+            and xq.dtype == DType.bfloat16
+            and self.kv_params.dtype == DType.bfloat16
+            and self.kv_params.head_dim in (128, 256)
         )
+        if can_fuse_qk_norm_rope:
+            xq = q_rms_norm_fused_qk_ragged_rope(
+                self.kv_params,
+                xq,
+                kwargs["input_row_offsets"],
+                kv_collection,
+                freqs_cis,
+                self.q_norm.weight.cast(self.kv_params.dtype).to(
+                    self.devices[0]
+                ),
+                self.k_norm.weight.cast(self.kv_params.dtype).to(
+                    self.devices[0]
+                ),
+                self.qk_norm_eps,
+                layer_idx,
+                weight_offset=1.0,
+                interleaved=False,
+            )
+        else:
+            # Other shapes stay on the original seam until they have their own
+            # measured win and correctness coverage.
+            rms_norm_key_cache(
+                self.kv_params,
+                kv_collection=kv_collection,
+                gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
+                    self.devices[0]
+                ),
+                epsilon=self.qk_norm_eps,
+                layer_idx=layer_idx,
+                total_seq_len=total_seq_len,
+                input_row_offsets=kwargs["input_row_offsets"],
+                weight_offset=1.0,
+            )
+            xq = self.q_norm(xq)
+            xq = fused_qk_ragged_rope(
+                self.kv_params,
+                xq,
+                kwargs["input_row_offsets"],
+                kv_collection,
+                freqs_cis,
+                layer_idx,
+                interleaved=rope.interleaved,
+            )
 
         # Calculate Flash Attention.
         mask_variant = (

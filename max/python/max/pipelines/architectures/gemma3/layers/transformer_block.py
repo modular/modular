@@ -15,6 +15,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import cast
+
 from max.graph import (
     BufferValue,
     DeviceRef,
@@ -29,6 +32,10 @@ from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
+from max.pipelines.architectures.gemma3.layers.rms_norm import (
+    Gemma3RMSNorm,
+    gemma3_rms_norm_fused_residual_add,
+)
 
 
 class Gemma3TransformerBlock(Module):
@@ -105,10 +112,16 @@ class Gemma3TransformerBlock(Module):
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         input_row_offsets: list[TensorValue],
+        normalized_xs: Sequence[TensorValue] | None = None,
+        next_input_layernorm_shards: Sequence[Gemma3RMSNorm] | None = None,
         **kwargs,
-    ) -> list[TensorValue]:
+    ) -> tuple[list[TensorValue], list[TensorValue] | None]:
         residual = xs
-        norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
+        norm_xs = (
+            list(normalized_xs)
+            if normalized_xs is not None
+            else forward_sharded_layers(self.input_layernorm_shards, xs)
+        )
         attn_out = [
             shard(
                 norm_xs[i],
@@ -120,24 +133,49 @@ class Gemma3TransformerBlock(Module):
         ]
         attn_out = self.allreduce(attn_out, signal_buffers)
 
-        hidden_states = forward_sharded_layers(
-            self.post_attention_layernorm_shards, attn_out
-        )
-        hidden_states = [
-            residual[i] + hidden_states[i] for i in range(len(hidden_states))
+        fused_attn_norm = [
+            gemma3_rms_norm_fused_residual_add(
+                attn_out[i],
+                residual[i],
+                cast(
+                    Gemma3RMSNorm, self.post_attention_layernorm_shards[i]
+                ),
+                cast(
+                    Gemma3RMSNorm, self.pre_feedforward_layernorm_shards[i]
+                ),
+            )
+            for i in range(len(attn_out))
         ]
-
-        residual = hidden_states
-        norm_xs = forward_sharded_layers(
-            self.pre_feedforward_layernorm_shards, hidden_states
-        )
+        norm_xs = [fused_output for fused_output, _ in fused_attn_norm]
+        residual = [fused_residual for _, fused_residual in fused_attn_norm]
 
         hidden_states = forward_sharded_layers(self.mlp_shards, norm_xs)
         hidden_states = self.allreduce(hidden_states, signal_buffers)
 
-        hidden_states = forward_sharded_layers(
-            self.post_feedforward_layernorm_shards, hidden_states
-        )
-        return [
-            residual[i] + hidden_states[i] for i in range(len(hidden_states))
+        if next_input_layernorm_shards is None:
+            hidden_states = forward_sharded_layers(
+                self.post_feedforward_layernorm_shards, hidden_states
+            )
+            return (
+                [
+                    residual[i] + hidden_states[i]
+                    for i in range(len(hidden_states))
+                ],
+                None,
+            )
+
+        fused_mlp_norm = [
+            gemma3_rms_norm_fused_residual_add(
+                hidden_states[i],
+                residual[i],
+                cast(
+                    Gemma3RMSNorm, self.post_feedforward_layernorm_shards[i]
+                ),
+                next_input_layernorm_shards[i],
+            )
+            for i in range(len(hidden_states))
         ]
+        return (
+            [fused_residual for _, fused_residual in fused_mlp_norm],
+            [fused_output for fused_output, _ in fused_mlp_norm],
+        )
