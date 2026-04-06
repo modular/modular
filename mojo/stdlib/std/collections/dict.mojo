@@ -404,6 +404,90 @@ struct _TakeDictEntryIter[
 
 
 @fieldwise_init
+struct _DictEntryIterOwned[
+    K: KeyElement,
+    V: Copyable & ImplicitlyDestructible,
+    H: Hasher,
+](IterableOwned, Iterator, Movable):
+    """An owning iterator over DictEntry values that consumes the dictionary.
+
+    Parameters:
+        K: The key type of the elements in the dictionary.
+        V: The value type of the elements in the dictionary.
+        H: The type of the hasher in the dictionary.
+    """
+
+    comptime Element = DictEntry[Self.K, Self.V, Self.H]
+    comptime IteratorOwnedType = Self
+
+    var _dict: Dict[Self.K, Self.V, Self.H]
+    var _index: Int
+
+    @always_inline
+    def __del__(deinit self):
+        # Dict.__del__ handles destroying remaining occupied slots.
+        pass
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        while self._index < len(self._dict._order):
+            var slot = Int(self._dict._order[self._index])
+            self._index += 1
+
+            if _is_occupied(self._dict._ctrl[slot]):
+                var entry = (self._dict._slots + slot).take_pointee()
+                self._dict._set_ctrl(slot, _CTRL_DELETED)
+                self._dict._len -= 1
+                return entry^
+
+        debug_assert(
+            self._dict._len == 0,
+            "_order exhausted but _len > 0: ctrl bytes and _len out of sync",
+        )
+        raise StopIteration()
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return (self._dict._len, {self._dict._len})
+
+
+@fieldwise_init
+struct _DictKeyIterOwned[
+    K: KeyElement,
+    V: Copyable & ImplicitlyDestructible,
+    H: Hasher,
+](IterableOwned, Iterator, Movable):
+    """An owning iterator over Dict keys that consumes the dictionary.
+
+    Parameters:
+        K: The key type of the elements in the dictionary.
+        V: The value type of the elements in the dictionary.
+        H: The type of the hasher in the dictionary.
+    """
+
+    comptime Element = Self.K
+    comptime IteratorOwnedType = Self
+
+    var _inner: _DictEntryIterOwned[Self.K, Self.V, Self.H]
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        return self._inner.__next__().reap_key()
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self._inner.bounds()
+
+
+@fieldwise_init
 struct _DictKeyIter[
     mut: Bool,
     //,
@@ -541,6 +625,14 @@ struct DictEntry[
         self.key = key^
         self.value = value^
 
+    def reap_key(deinit self) -> Self.K:
+        """Take the key from an owned entry, discarding hash and value.
+
+        Returns:
+            The key of the entry.
+        """
+        return self.key^
+
     def reap_value(deinit self) -> Self.V:
         """Take the value from an owned entry.
 
@@ -566,6 +658,7 @@ struct Dict[
     Equatable where conforms_to(V, Equatable),
     Hashable where conforms_to(V, Hashable),
     Iterable,
+    IterableOwned,
     Sized,
     Writable where conforms_to(K, Writable) and conforms_to(V, Writable),
 ):
@@ -770,6 +863,11 @@ struct Dict[
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+
+    comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
+        Self.K, Self.V, Self.H
+    ]
+    """The owned iterator type for this dictionary."""
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -992,6 +1090,14 @@ struct Dict[
         """
         var found, _ = self._find_slot(hash[Self.H](key), key)
         return found
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the dictionary and iterate over its keys.
+
+        Returns:
+            An iterator that owns the dictionary's keys.
+        """
+        return {_DictEntryIterOwned(self^, 0)}
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the dict's keys as immutable references.

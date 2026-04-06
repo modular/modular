@@ -1291,7 +1291,7 @@ class StructFieldNamesAttr(max._core.Attribute):
     Example:
 
     ```mlir
-    #kgen.struct_field_names<#MyStruct> : !kgen.variadic<!kgen.string>
+    #kgen.struct_field_names<#MyStruct> : !kgen.param_list<!kgen.string>
     ```
     """
 
@@ -1403,7 +1403,7 @@ class StructFieldTypesAttr(max._core.Attribute):
     Example:
 
     ```mlir
-    #kgen.struct_field_types<#MyStruct> : !kgen.variadic<!kgen.type>
+    #kgen.struct_field_types<#MyStruct> : !kgen.param_list<!kgen.type>
     ```
     """
 
@@ -1788,7 +1788,7 @@ class VariadicAttr(max._core.Attribute):
     Example:
 
     ```mlir
-    #kgen.variadic<1, 2> : !kgen.variadic<index>
+    #kgen.variadic<1, 2> : !kgen.param_list<index>
     ```
     """
 
@@ -1816,9 +1816,9 @@ class VariadicConcatAttr(max._core.Attribute):
 
     Example:
     ```mlir
-    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !variadic<!AnyType>
+    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !param_list<!AnyType>
     // ->
-    #kgen.variadic<[Int, Int, Float, Float]> : !variadic<!AnyType>
+    #kgen.variadic<[Int, Int, Float, Float]> : !param_list<!AnyType>
     ```
     """
 
@@ -1906,9 +1906,9 @@ class VariadicTabulateAttr(max._core.Attribute):
 
     Example:
     ```mlir
-    #kgen.variadic.tabulate<:!kgen.variadic<f32> 3, fn(i: index) -> f32> : !kgen.variadic<f32>
+    #kgen.variadic.tabulate<:!kgen.param_list<f32> 3, fn(i: index) -> f32> : !kgen.param_list<f32>
     // ->
-    #kgen.variadic<0, 1, 2> : !kgen.variadic<f32>
+    #kgen.variadic<0, 1, 2> : !kgen.param_list<f32>
     ```
     """
 
@@ -1940,9 +1940,9 @@ class VariadicZipAttr(max._core.Attribute):
 
     Example:
     ```mlir
-    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !variadic<!variadic<!AnyType>>
+    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
     // ->
-    #kgen.variadic<[[Int, Float], [Int, Float]]> : !variadic<!variadic<!AnyType>>
+    #kgen.variadic<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
     ```
 
     At the moment, when the provided variadics are of different lengths, we zip
@@ -2296,81 +2296,6 @@ class CallParamOp(max._core.Operation):
     def tail_kind(self) -> TailKind: ...
     @tail_kind.setter
     def tail_kind(self, arg: TailKindAttr, /) -> None: ...
-
-class CaptureListCopyOp(max._core.Operation):
-    """
-    The `kgen.capture_list.copy` operation allocates heap memory and
-    copies the capture list for a closure.
-
-    Example:
-
-    ```mlir
-    %cl = kgen.capture_list.copy %orig :() capturing -> index @cap_closure
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: PointerType,
-        orig: max._core.Value[PointerType],
-        callee: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def orig(self) -> max._core.Value[PointerType]: ...
-    @property
-    def callee(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @callee.setter
-    def callee(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
-
-class CaptureListCreateOp(max._core.Operation):
-    """
-    The `kgen.capture_list.create` operation allocates heap memory and
-    initializes the capture list for a closure.
-
-    Example:
-
-    ```mlir
-    %cl = kgen.capture_list.create :() capturing -> index @cap_closure
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: PointerType,
-        callee: max._core.dialects.builtin.TypedAttr,
-        args: Sequence[max._core.Value[max._core.Type]],
-    ) -> None: ...
-    @property
-    def callee(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @callee.setter
-    def callee(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
-    @property
-    def args(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-
-class CaptureListExpandOp(max._core.Operation):
-    """
-    The `kgen.capture_list.expand` operation unpacks the capture list of the
-    enclosing function.
-
-    Example:
-
-    ```mlir
-    kgen.capture_list.expand %cl
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        capture_list: max._core.Value[PointerType],
-    ) -> None: ...
-    @property
-    def capture_list(self) -> max._core.Value[PointerType]: ...
 
 class ClosureInitOp(max._core.Operation):
     """
@@ -2977,6 +2902,7 @@ class FuncOp(max._core.Operation):
         _llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr,
         cross_device_captures: max._core.dialects.m.StringArrayAttr,
         coroutine_type: max._core.dialects.builtin.TypeAttr,
+        linkage_name: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2989,6 +2915,7 @@ class FuncOp(max._core.Operation):
         export_kind: ExportKind = ExportKind.not_exported,
         external: bool = False,
         convergent: bool = False,
+        linkage_name: max._core.dialects.builtin.TypedAttr = ...,
         decorators: Sequence[max._core.dialects.builtin.TypedAttr] = [],
         llvm_metadata: max._core.dialects.builtin.DictionaryAttr = ...,
         llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr = ...,
@@ -3053,6 +2980,12 @@ class FuncOp(max._core.Operation):
     def coroutine_type(
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
+    @property
+    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @linkage_name.setter
+    def linkage_name(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
 
 class GeneratorOp(max._core.Operation):
     """
@@ -3090,6 +3023,7 @@ class GeneratorOp(max._core.Operation):
         export_kind: ExportKindAttr,
         external: max._core.dialects.builtin.UnitAttr,
         inlined_form: max._core.dialects.builtin.TypedAttr,
+        linkage_name: max._core.dialects.builtin.TypedAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
@@ -3105,6 +3039,7 @@ class GeneratorOp(max._core.Operation):
         input_params: Sequence[ParamDeclAttr],
         inline_level: InlineLevel = InlineLevel.automatic,
         inlined_form: max._core.dialects.builtin.TypedAttr = ...,
+        linkage_name_attr: max._core.dialects.builtin.TypedAttr = ...,
         llvm_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
         llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
     ) -> None: ...
@@ -3167,6 +3102,12 @@ class GeneratorOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.TypedAttr, /
     ) -> None: ...
     @property
+    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @linkage_name.setter
+    def linkage_name(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
+    @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
     def _llvm_metadata_array(
@@ -3213,7 +3154,7 @@ class PackCreateOp(max._core.Operation):
     Example:
 
     ```mlir
-    kgen.generator @pack<Ts: variadic<!kgen.type>>(
+    kgen.generator @pack<Ts: param_list<!kgen.type>>(
       %arg0: f32, %arg1: si8
     ) {
       // Create a pack of two elements.
@@ -3249,7 +3190,7 @@ class PackExtractOp(max._core.Operation):
     Example:
 
     ```mlir
-    kgen.generator @pack<Ts: variadic<!kgen.type>, T: type, I: index>(
+    kgen.generator @pack<Ts: param_list<!kgen.type>, T: type, I: index>(
       %arg0: !kgen.pack<i32, T>
       %arg1: Ts,
     ) {
@@ -4629,7 +4570,7 @@ class PackType(max._core.Type):
     // A concrete pack type with two element types.
     !kgen.pack<[i32, i64]>
 
-    kgen.generator @pack<Ts: variadic<!kgen.type>, T0: type, T1: type>(
+    kgen.generator @pack<Ts: param_list<!kgen.type>, T0: type, T1: type>(
       // A pack type parameterized on a variadic sequence of elements.
       %0: !kgen.pack<Ts>,
       // A pack type parameterized on two element types.
@@ -4828,7 +4769,7 @@ class StructType(max._core.Type):
     !kgen.struct<(type, array<size, scalar<dtype>>)>
 
     // A struct parameterized on a variadic sequence of element types.
-    kgen.generator @example<Ts: variadic<!kgen.type>>(
+    kgen.generator @example<Ts: param_list<!kgen.type>>(
       %0: !kgen.struct<(Ts)>,
     ) { kgen.return }
     ```
@@ -4914,13 +4855,13 @@ class TypeValueType(max._core.Type):
 
 class VariadicSplatType(max._core.Type):
     """
-    The `!kgen.variadic_splat` type represents deferred type that splats
+    The `!kgen.param_list_splat` type represents deferred type that splats
     element type specified number of times. The type cannot be used standalone
     and has to be used either within `!kgen.struct` or `!llvm.struct` types.
 
     ```mlir
-    !kgen.struct<(!kgen.variadic_splat<index, 3>)>
-    !llvm.struct<(!kgen.variadic_splat<index, 5>)>
+    !kgen.struct<(!kgen.param_list_splat<index, 3>)>
+    !llvm.struct<(!kgen.param_list_splat<index, 5>)>
     ```
 
     will be concretized to
@@ -4943,7 +4884,7 @@ class VariadicSplatType(max._core.Type):
 
 class VariadicType(max._core.Type):
     """
-    The `!kgen.variadic` type represents a homogeneously typed variadic sequence
+    The `!kgen.param_list` type represents a homogeneously typed variadic sequence
     of zero or more elements.  It also includes the original argument convention
     so clients know if the input argument is supposed to be owned, read,
     mut, etc.
@@ -4952,10 +4893,10 @@ class VariadicType(max._core.Type):
 
     ```mlir
     // A variadic sequence of scalar floats.
-    !kgen.variadic<scalar<f32>>
+    !kgen.param_list<scalar<f32>>
 
     // A parameterized variadic sequence.
-    !kgen.variadic<type>
+    !kgen.param_list<type>
     ```
     """
 

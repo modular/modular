@@ -610,7 +610,7 @@ struct ManagedTensorSlice[
         assert (
             len(indices) == Self.rank
         ), "mismatch between requested index and rank"
-        return self[IndexList[Self.rank](indices)]
+        return self[IndexList[Self.rank](*indices)]
 
     @always_inline
     def __setitem__(self, *indices: Int, val: Scalar[Self.dtype]):
@@ -627,7 +627,7 @@ struct ManagedTensorSlice[
         assert (
             len(indices) == Self.rank
         ), "mismatch between requested index and rank"
-        self[IndexList[Self.rank](indices)] = val
+        self[IndexList[Self.rank](*indices)] = val
 
     @always_inline
     def __setitem__(

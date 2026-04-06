@@ -13,7 +13,7 @@
 """Correction warp group logic for FA4 (SM100 Flash Attention)."""
 
 from std.sys import size_of
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
     tcgen05_st,

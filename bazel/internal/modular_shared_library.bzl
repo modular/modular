@@ -100,6 +100,7 @@ def _shared_library_impl(ctx):
         cc_toolchain = cc_toolchain,
         compilation_outputs = compilation_outputs,
         linking_contexts = deps_linking_contexts,
+        emit_interface_shared_library = True,
         name = output_name,
         output_type = "dynamic_library",
         user_link_flags = linkopts,

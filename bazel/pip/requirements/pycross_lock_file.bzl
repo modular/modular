@@ -59,7 +59,7 @@ PINS = {
     "fastapi": "fastapi@0.124.4",
     "fire": "fire@0.7.0",
     "flashinfer-cubin": "flashinfer-cubin@0.6.1",
-    "flashinfer-python": "flashinfer-python@0.6.4",
+    "flashinfer-python": "flashinfer-python@0.6.3",
     "flask": "flask@3.0.3",
     "gguf": "gguf@0.17.1",
     "google-auth": "google-auth@2.48.0",
@@ -1757,45 +1757,8 @@ def targets():
     )
 
     _cuda_python_12_9_4_deps = [
-    ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@12.9.4",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":cuda-bindings@12.9.4",
-        ],
-        "//conditions:default": [],
-    })
+        ":cuda-bindings@12.9.4",
+    ]
 
     native.alias(
         name = "_wheel_cuda-python@12.9.4",
@@ -2516,178 +2479,31 @@ def targets():
         testonly = "flashinfer-cubin" in _TESTONLY_DEPS,
     )
 
-    _flashinfer_python_0_6_4_deps = [
+    _flashinfer_python_0_6_3_deps = [
+        ":apache-tvm-ffi@0.1.9",
+        ":click@8.1.7",
+        ":einops@0.8.0",
+        ":ninja@1.13.0",
         ":numpy@multiple",
+        ":nvidia-cudnn-frontend@1.16.0",
+        ":nvidia-cutlass-dsl@4.4.1",
+        ":nvidia-ml-py@12.560.30",
+        ":packaging@25.0",
+        ":requests@2.32.3",
+        ":tabulate@0.9.0",
         ":torch@multiple",
-    ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":apache-tvm-ffi@0.1.9",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.4.1",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        "//conditions:default": [],
-    })
+        ":tqdm@4.66.5",
+    ]
 
     native.alias(
-        name = "_wheel_flashinfer-python@0.6.4",
-        actual = "@pycross_lock_file_wheel_flashinfer_python_0.6.4_py3_none_any//file",
+        name = "_wheel_flashinfer-python@0.6.3",
+        actual = "@pycross_lock_file_wheel_flashinfer_python_0.6.3_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "flashinfer-python@0.6.4",
-        deps = _flashinfer_python_0_6_4_deps,
-        wheel = ":_wheel_flashinfer-python@0.6.4",
+        name = "flashinfer-python@0.6.3",
+        deps = _flashinfer_python_0_6_3_deps,
+        wheel = ":_wheel_flashinfer-python@0.6.3",
         testonly = "flashinfer-python" in _TESTONLY_DEPS,
     )
 
@@ -6482,45 +6298,8 @@ def targets():
     )
 
     _nvidia_cutlass_dsl_4_4_1_deps = [
-    ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":nvidia-cutlass-dsl-libs-base@4.4.1",
-        ],
-        "//conditions:default": [],
-    })
+        ":nvidia-cutlass-dsl-libs-base@4.4.1",
+    ]
 
     native.alias(
         name = "_wheel_nvidia-cutlass-dsl@4.4.1",
@@ -6535,58 +6314,10 @@ def targets():
     )
 
     _nvidia_cutlass_dsl_libs_base_4_4_1_deps = [
+        ":cuda-python@12.9.4",
         ":numpy@multiple",
-    ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":cuda-python@12.9.4",
-            ":typing-extensions@4.15.0",
-        ],
-        "//conditions:default": [],
-    })
+        ":typing-extensions@4.15.0",
+    ]
 
     native.alias(
         name = "_wheel_nvidia-cutlass-dsl-libs-base@4.4.1",
@@ -12150,7 +11881,7 @@ def targets():
             ":diskcache@5.6.3",
             ":einops@0.8.0",
             ":filelock@3.16.1",
-            ":flashinfer-python@0.6.4",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":grpcio-reflection@1.76.0",
             ":grpcio@1.76.0",
@@ -12210,7 +11941,7 @@ def targets():
             ":diskcache@5.6.3",
             ":einops@0.8.0",
             ":filelock@3.16.1",
-            ":flashinfer-python@0.6.4",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":grpcio-reflection@1.76.0",
             ":grpcio@1.76.0",
@@ -12272,7 +12003,7 @@ def targets():
             ":diskcache@5.6.3",
             ":einops@0.8.0",
             ":filelock@3.16.1",
-            ":flashinfer-python@0.6.4",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":grpcio-reflection@1.76.0",
             ":grpcio@1.76.0",
@@ -12334,7 +12065,7 @@ def targets():
             ":diskcache@5.6.3",
             ":einops@0.8.0",
             ":filelock@3.16.1",
-            ":flashinfer-python@0.6.4",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":grpcio-reflection@1.76.0",
             ":grpcio@1.76.0",
@@ -12396,7 +12127,7 @@ def targets():
             ":diskcache@5.6.3",
             ":einops@0.8.0",
             ":filelock@3.16.1",
-            ":flashinfer-python@0.6.4",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":grpcio-reflection@1.76.0",
             ":grpcio@1.76.0",
@@ -16641,12 +16372,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_flashinfer_python_0.6.4_py3_none_any",
+        name = "pycross_lock_file_wheel_flashinfer_python_0.6.3_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/17/9a/d2bab76d2bb15062c6a2329614653e4f8bec9c78eec9069856ef0c7c0a79/flashinfer_python-0.6.4-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/33/13/2d95248101d8cb978db9000a4dceafb5b122484a694b53e84df1ac2a7b3d/flashinfer_python-0.6.3-py3-none-any.whl",
         ],
-        sha256 = "105596b505892ae330af84e250ee0eb6fc2c3a22e8dc42bd46de1b90d36004c8",
-        downloaded_file_path = "flashinfer_python-0.6.4-py3-none-any.whl",
+        sha256 = "0fe2de934a4b3690c543dafb03f38d7bb4a762431abe8ae4f7292d6fef10c65d",
+        downloaded_file_path = "flashinfer_python-0.6.3-py3-none-any.whl",
     )
 
     maybe(

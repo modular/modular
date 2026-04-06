@@ -24,15 +24,12 @@ Key differences from CDNA Attention:
 
 from std.collections import OptionalReg
 from std.math import ceildiv
+from std.math.uutils import umod, ufloordiv
 from std.math.constants import log2e
 
 
 from std.algorithm.functional import unswitch
-from std.gpu import (
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_idx, lane_id, thread_idx
 from layout import (
     Layout,
     LayoutTensor,
@@ -121,8 +118,8 @@ def _mask_apply_rdna[
 
     # RDNA WMMA C/D: lane l, elem v → D[row=v*2+l//16, col=l%16]
     # P^T[key, seq]: seq = l%16, key = v*2 + l//16 (interleaved)
-    var lane_seq_offset = Int(lane % UInt(16))
-    var lane_key_group = Int(lane // UInt(16))
+    var lane_seq_offset = umod(lane, 16)
+    var lane_key_group = ufloordiv(lane, 16)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -158,14 +155,15 @@ def _mask_apply_rdna[
                     # For RDNA, lane_key_group (lane//16) is the interleave
                     # group (even/odd keys), NOT the GQA group offset.
                     # Use lane % group to match MHAAttentionConfigRDNA.q_head_idx().
-                    var group_idx = Int(lane % UInt(group))
+                    var group_idx = umod(lane, group)
                     var q_head_idx = (
-                        block_idx.y * UInt(group) + UInt(group_idx)
-                    ) if token_gen else block_idx.x
+                        block_idx.y * group
+                        + group_idx if token_gen else block_idx.x
+                    )
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
                         IndexList[4, element_type=DType.uint32](
-                            Int(block_idx.z),
-                            Int(q_head_idx),
+                            block_idx.z,
+                            q_head_idx,
                             Int(score_seq_with_start_pos),
                             Int(score_key_with_cache_start_pos),
                         ),
@@ -690,7 +688,7 @@ struct AttentionRDNA[
         var output_tile = self.gmem_manager.get_output_tensor(self.output_ptr)
 
         var reg_tile = self.out_reg_buffer.get_reg_tile()
-        var lane = Int(lane_id())
+        var lane = lane_id()
         var row_group = lane // 16
         var col_within_mma = lane % 16
 
@@ -758,7 +756,7 @@ struct AttentionRDNA[
 
         var q_head_idx = self.q_head_idx()
         if num_partitions > 1:
-            if thread_idx.x < UInt(Self.group):
+            if thread_idx.x < Self.group:
                 var row_sum = self.rowsum[0, 0][0]
                 var row_max = self.rowmax[0, 0][0]
 

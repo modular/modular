@@ -68,7 +68,7 @@ from std.builtin.int import (
     index,
 )
 from std.builtin.int_literal import IntLiteral
-from std.builtin.len import Sized, SizedRaising, UIntSized, len
+from std.builtin.len import Sized, SizedRaising, len
 from std.math.math import (
     Absable,
     Powable,
@@ -144,8 +144,9 @@ from std.builtin.value import (
     TrivialRegisterPassable,
 )
 from std.builtin.variadics import (
+    TypeList,
     Variadic,
-    VariadicParamList,
+    ParameterList,
     VariadicList,
     VariadicPack,
 )

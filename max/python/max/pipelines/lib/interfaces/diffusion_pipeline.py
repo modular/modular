@@ -201,25 +201,19 @@ class DiffusionPipeline(ABC):
     def _load_sub_models(
         self, weight_paths: list[Path]
     ) -> dict[str, ComponentModel]:
-        """Load all ComponentModel sub-components defined in `components`."""
+        """Load all ComponentModel sub-components defined in `components`.
+
+        Uses per-component ``MAXModelConfig`` instances from the
+        ``ModelManifest`` to obtain each component's config, encoding,
+        and weight paths.
+        """
         if not self.components:
             raise ValueError(
                 f"{self.__class__.__name__}.components is not set."
             )
 
-        diffusers_config = self.pipeline_config.model.diffusers_config
-        if not diffusers_config:
-            raise ValueError(
-                "diffusers_config is required for DiffusionPipeline."
-            )
-
-        components_config = diffusers_config.get("components")
-        if not components_config:
-            raise ValueError("diffusers_config['components'] is missing.")
-
-        relative_paths = self._resolve_relative_component_paths()
+        models = self.pipeline_config.models
         loaded_sub_models: dict[str, ComponentModel] = {}
-        pipeline_encoding = self.pipeline_config.model.quantization_encoding
 
         for name, component_cls in tqdm(
             self.components.items(), desc="Loading sub models"
@@ -227,22 +221,16 @@ class DiffusionPipeline(ABC):
             if not issubclass(component_cls, ComponentModel):
                 continue
 
-            config_dict = self._get_component_config_dict(
-                components_config, name
-            )
-
-            if name in relative_paths:
-                abs_paths = self._resolve_absolute_paths(
-                    weight_paths, relative_paths[name]
+            component_config = models.get(name)
+            if component_config is None:
+                raise ValueError(
+                    f"Missing model config for component '{name}' "
+                    f"in manifest. Available: {list(models.keys())}"
                 )
-                encoding = pipeline_encoding
-            else:
-                # Component weights not provided — download from base model
-                # repo.  These components (e.g. VAE, text encoder) always use
-                # bfloat16 regardless of the quantization applied to the
-                # primary component.
-                abs_paths = self._download_component_weights(name)
-                encoding = "bfloat16"
+
+            config_dict = component_config.huggingface_config.to_dict()
+            encoding = component_config.quantization_encoding or "bfloat16"
+            abs_paths = self._get_component_weight_paths(component_config)
 
             init_params = inspect.signature(component_cls.__init__).parameters
             init_kwargs: dict[str, Any] = {
@@ -260,74 +248,29 @@ class DiffusionPipeline(ABC):
 
         return loaded_sub_models
 
-    def _get_component_config_dict(
-        self, components_config: dict[str, Any], name: str
-    ) -> dict[str, Any]:
-        """Extract config_dict for a named component."""
-        component = components_config.get(name)
-        if not component:
-            raise ValueError(f"Missing config for component '{name}'.")
+    def _get_component_weight_paths(self, component_config: Any) -> list[Path]:
+        """Resolve absolute weight paths for a single component.
 
-        config_dict = component.get("config_dict")
-        if not config_dict:
-            raise ValueError(f"Missing config_dict for component '{name}'.")
-
-        return config_dict
-
-    def _resolve_relative_component_paths(self) -> dict[str, list[str]]:
-        """Group weight paths by component name (first path segment).
-
-        Files without a ``/`` separator (i.e. flat filenames) are assigned to
-        :attr:`unprefixed_weight_component` when it is set.
+        Uses the component's own ``MAXModelConfig`` (which already has
+        ``weight_path`` and ``huggingface_weight_repo`` resolved after
+        ``ModelManifest.resolve()``).
         """
-        result: dict[str, list[str]] = {}
-
-        for path in self.pipeline_config.model.weight_path:
-            path_str = str(path)
-            parts = path_str.split("/")
-            if len(parts) >= 2:
-                component = parts[0]
-                result.setdefault(component, []).append(path_str)
-            elif self.unprefixed_weight_component:
-                result.setdefault(self.unprefixed_weight_component, []).append(
-                    path_str
-                )
-
-        if not result:
-            raise ValueError(
-                "No component weights found. Expected format:"
-                " <component>/<file>"
-            )
-        return result
-
-    def _download_component_weights(self, component_name: str) -> list[Path]:
-        """Download weight files for a component from the base model repo."""
-        from max.graph.weights import WeightsFormat
-
         from ..hf_utils import download_weight_files
 
-        model_repo = self.pipeline_config.model.huggingface_model_repo
-        all_safetensors = model_repo.weight_files.get(
-            WeightsFormat.safetensors, []
-        )
-        component_files = [
-            f for f in all_safetensors if f.startswith(f"{component_name}/")
-        ]
-        if not component_files:
-            raise ValueError(
-                f"No weight files found for component '{component_name}' "
-                f"in base model repo '{model_repo.repo_id}'."
-            )
-        if model_repo.repo_type == "online":
+        weight_repo = component_config.huggingface_weight_repo
+        if not component_config.weight_path:
+            return []
+
+        if weight_repo.repo_type == "online":
             return download_weight_files(
-                huggingface_model_id=model_repo.repo_id,
-                filenames=component_files,
-                revision=self.pipeline_config.model.huggingface_model_revision,
-                force_download=self.pipeline_config.model.force_download,
+                huggingface_model_id=weight_repo.repo_id,
+                filenames=[str(x) for x in component_config.weight_path],
+                revision=component_config.huggingface_weight_revision,
+                force_download=component_config.force_download,
             )
         else:
-            local_path = Path(model_repo.repo_id)
-            return [local_path / f for f in component_files]
+            local_path = Path(weight_repo.repo_id)
+            return [local_path / x for x in component_config.weight_path]
 
     # -----------------------------------------------------------------
     # Denoising cache support (FBCache + TaylorSeer)

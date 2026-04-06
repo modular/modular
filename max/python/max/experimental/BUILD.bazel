@@ -13,7 +13,10 @@ modular_py_library(
         "realization_context.py",
         "support.py",
         "tensor.py",
-    ],
+    ] + glob([
+        "distributed_functional/**/*.py",
+        "sharding/**/*.py",
+    ]),
     # engine is used via engine.api.InferenceSession in realization_context.py
     # interpreter is used via lazy import in realization_context.py
     ignore_extra_deps = [
@@ -28,6 +31,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("numpy"),
         requirement("rich"),
         requirement("typing-extensions"),
     ],

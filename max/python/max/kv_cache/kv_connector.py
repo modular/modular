@@ -122,7 +122,7 @@ class KVConnector(Protocol):
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache. No-op by default."""
-        ...
+        return None
 
     @property
     def metrics(self) -> KVCacheMetrics:

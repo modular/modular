@@ -56,7 +56,7 @@ class IfOp(IfOp):  # type: ignore[no-redef]
     ) -> None:
         if out_types is None:
             out_types = []
-        super().__init__(results_=out_types, cond=pred)
+        super().__init__(results_=list(out_types), cond=pred)
         Block.create_at_start(self.thenRegion, [])
         Block.create_at_start(self.elseRegion, [])
 

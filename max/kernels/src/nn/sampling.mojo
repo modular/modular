@@ -16,7 +16,7 @@ from std.sys.info import simd_width_of
 
 import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -149,9 +149,7 @@ def update_frequency_data_kernel[
 
     # search if the new token is already in the frequency data
     for scan_idx in range(num_scans):
-        var tok_idx = tok_start + Int(
-            (tid + UInt(scan_idx * block_size)) * UInt(simd_width)
-        )
+        var tok_idx = tok_start + ((tid + scan_idx * block_size) * simd_width)
 
         var val = SIMD[DType.int32, simd_width](0)
 

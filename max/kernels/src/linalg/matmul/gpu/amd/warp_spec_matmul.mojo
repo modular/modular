@@ -45,7 +45,7 @@ from std.gpu import (
     warp_id_uint as warp_id,
 )
 from std.gpu.intrinsics import inlined_assembly
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor
 from layout.layout import blocked_product
 from layout.layout_tensor import ThreadScope, copy_local_to_shared
 from layout.swizzle import Swizzle
@@ -584,11 +584,15 @@ def warp_specialized_matmul[
     consumer_warps: Int,
     pipeline_stages: Int = 1,
 ](
-    a_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), ...],
-    b_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(N, K), ...],
-    c_device_tensor: LayoutTensor[DType.float32, Layout.row_major(M, N), ...],
+    a_tt: TileTensor[DType.bfloat16, ...],
+    b_tt: TileTensor[DType.bfloat16, ...],
+    c_tt: TileTensor[DType.float32, ...],
     ctx: DeviceContext,
 ) raises:
+    var a_device_tensor = a_tt.to_layout_tensor()
+    var b_device_tensor = b_tt.to_layout_tensor()
+    var c_device_tensor = c_tt.to_layout_tensor()
+
     comptime kernel = warp_specialized_matmul_kernel[
         a_device_tensor.dtype,
         c_device_tensor.dtype,

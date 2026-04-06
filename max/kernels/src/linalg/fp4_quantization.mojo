@@ -1243,7 +1243,7 @@ def block_scaled_matmul_with_epilogue[
         task_id=get_safe_task_id(ctx),
     ):
         comptime if not elementwise_lambda_fn:
-            if not c.ptr:
+            if not c.ptr._is_not_null():
                 raise Error("c must be allocated!")
 
             matmul[scales_type=scales_dtype](
@@ -1280,7 +1280,7 @@ def block_scaled_matmul_with_epilogue[
 
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
-            if c.ptr:
+            if c.ptr._is_not_null():
                 matmul[scales_type=scales_dtype](
                     ctx,
                     c,

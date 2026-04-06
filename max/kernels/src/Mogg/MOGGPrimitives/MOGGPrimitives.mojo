@@ -363,9 +363,7 @@ def mgp_buffer_constant(
 
 
 @no_inline
-def fill_buffer[
-    dtype: DType
-](buf: MutByteBuffer, vals: VariadicList[Int, is_owned=False],):
+def fill_buffer[dtype: DType](buf: MutByteBuffer, *vals: Int):
     var ptr = buf.unsafe_ptr().bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
@@ -387,9 +385,9 @@ def mgp_buffer_set_with_index[
 
     var elSize = bufSize // numArgs
     if elSize == 4:
-        fill_buffer[DType.int32](buffer, vals)
+        fill_buffer[DType.int32](buffer, *vals)
     elif elSize == 8:
-        fill_buffer[DType.int64](buffer, vals)
+        fill_buffer[DType.int64](buffer, *vals)
     else:
         raise Error("unsupported element size")
 
@@ -1236,7 +1234,7 @@ def mgp_buffer_get_cached(
     Get a reference to the cached tensor.
     """
     var buffer_size: UInt64 = 0
-    var buffer_data = OpaquePointer[MutAnyOrigin]()
+    var buffer_data = OpaquePointer[MutAnyOrigin](_unsafe_null=())
 
     var buffer_ref = external_call[
         "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr

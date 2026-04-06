@@ -180,6 +180,26 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="tokens",
         description="Distribution of output tokens per request",
     ),  # type: ignore
+    "maxserve.dkv.nixl_read_latency": _meter.create_histogram(
+        "maxserve.dkv.nixl_read_latency",
+        unit="ms",
+        description="NIXL READ transfer latency",
+    ),  # type: ignore
+    "maxserve.dkv.nixl_write_latency": _meter.create_histogram(
+        "maxserve.dkv.nixl_write_latency",
+        unit="ms",
+        description="NIXL WRITE transfer latency",
+    ),  # type: ignore
+    "maxserve.dkv.rpc_acquire_latency": _meter.create_histogram(
+        "maxserve.dkv.rpc_acquire_latency",
+        unit="ms",
+        description="dKV acquire_blocks RPC latency",
+    ),  # type: ignore
+    "maxserve.dkv.rpc_read_latency": _meter.create_histogram(
+        "maxserve.dkv.rpc_read_latency",
+        unit="ms",
+        description="dKV read_blocks RPC latency",
+    ),  # type: ignore
 }
 
 
@@ -524,6 +544,46 @@ class _AsyncMetrics:
                 self.extra_attributes,
             ),
             MetricLevel.BASIC,
+        )
+
+    def dkv_nixl_read_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.nixl_read_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def dkv_nixl_write_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.nixl_write_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def dkv_rpc_acquire_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.rpc_acquire_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def dkv_rpc_read_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.rpc_read_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
         )
 
 

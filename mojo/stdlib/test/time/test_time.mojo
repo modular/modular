@@ -23,13 +23,11 @@ from std.testing import assert_true, TestSuite
 
 
 @always_inline
-@parameter
 def time_me():
     sleep(1.0)
 
 
 @always_inline
-@parameter
 def time_me_templated[
     dtype: DType,
 ]():
@@ -41,15 +39,14 @@ def time_me_templated[
 def time_templated_function[
     dtype: DType,
 ]() -> Int:
-    return Int(time_function[time_me_templated[dtype]]())
+    return Int(time_function(time_me_templated[dtype]))
 
 
 def time_capturing_function(iters: Int) -> Int:
-    @parameter
-    def time_fn():
+    def time_fn() unified {}:
         sleep(1.0)
 
-    return Int(time_function[time_fn]())
+    return Int(time_function(time_fn))
 
 
 def test_time() raises:
@@ -59,7 +56,7 @@ def test_time() raises:
     assert_true(perf_counter_ns() > 0)
     assert_true(monotonic() > 0)
 
-    var t1 = time_function[time_me]()
+    var t1 = time_function(time_me)
     assert_true(t1 > 1 * ns_per_sec)
     assert_true(t1 < 10 * ns_per_sec)
 

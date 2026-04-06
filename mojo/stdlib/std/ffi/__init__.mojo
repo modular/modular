@@ -442,7 +442,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Raises:
             If `dlopen(nullptr, flags)` fails.
         """
-        self = Self._dlopen(UnsafePointer[c_char, MutExternalOrigin](), flags)
+        self = Self._dlopen(
+            UnsafePointer[c_char, MutExternalOrigin](_unsafe_null=()), flags
+        )
 
     def __init__[
         PathLike: os.PathLike, //

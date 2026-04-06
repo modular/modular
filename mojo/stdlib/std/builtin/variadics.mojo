@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the VariadicList, VariadicParamList and VariadicPack types.
+"""Implements the VariadicList, ParameterList and VariadicPack types.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -26,7 +26,7 @@ struct Variadic:
     """A namespace for variadic utilities."""
 
     comptime ValuesOfType[type: AnyType] = __mlir_type[
-        `!kgen.variadic<`, type, `>`
+        `!kgen.param_list<`, type, `>`
     ]
     """Represents a raw variadic sequence of values of the specified type.
 
@@ -35,7 +35,7 @@ struct Variadic:
     """
 
     comptime TypesOfTrait[T: type_of(AnyType)] = __mlir_type[
-        `!kgen.variadic<`, T, `>`
+        `!kgen.param_list<`, T, `>`
     ]
     """Represents a raw variadic sequence of types that satisfy the specified trait.
 
@@ -43,44 +43,46 @@ struct Variadic:
         T: The trait that types in the variadic sequence must conform to.
     """
 
-    @staticmethod
-    @always_inline("builtin")
-    def size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
-        """Returns the length of a variadic sequence.
+    comptime size[T: AnyType, //, seq: Self.ValuesOfType[T]]: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(seq),
+            ` `,
+            +seq,
+            `> : index`,
+        ]
+    )
+    """Returns the length of a variadic sequence.
 
-        Parameters:
-            T: The type of values in the sequence.
+    Parameters:
+        T: The type of values in the sequence.
+        seq: The variadic sequence to measure.
+    """
 
-        Args:
-            seq: The variadic sequence to measure.
+    comptime size_types[
+        T: type_of(AnyType), //, seq: Self.TypesOfTrait[T]
+    ]: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(seq),
+            ` `,
+            +seq,
+            `> : index`,
+        ]
+    )
+    """Returns the length of a variadic sequence.
 
-        Returns:
-            The length of the variadic sequence.
-        """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
-
-    @staticmethod
-    @always_inline("builtin")
-    def size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
-        """Returns the length of a variadic sequence.
-
-        Parameters:
-            T: The trait that types in the sequence must conform to.
-
-        Args:
-            seq: The variadic sequence of types to measure.
-
-        Returns:
-            The length of the variadic sequence.
-        """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+    Parameters:
+        T: The trait that types in the sequence must conform to.
+        seq: The variadic sequence of types to measure.
+    """
 
     # ===-----------------------------------------------------------------------===#
     # Utils
     # ===-----------------------------------------------------------------------===#
 
     comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+        `#kgen.variadic<>: !kgen.param_list<`, T, `>`
     ]
     """Empty comptime variadic of type values.
 
@@ -89,7 +91,7 @@ struct Variadic:
     """
 
     comptime empty_of_type[T: AnyType] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+        `#kgen.variadic<>: !kgen.param_list<`, T, `>`
     ]
     """Empty comptime variadic of values.
 
@@ -233,7 +235,6 @@ struct Variadic:
     ] = _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[False],
         VariadicType=element_types,
-        #  Curry `_ContainsMapper` to fit the reducer signature
         Reducer=_ContainsReducer[Trait=Trait, Type=type, ...],
     ][
         0
@@ -315,7 +316,7 @@ struct Variadic:
     # The resulting variadic of types is [Int, String]
     comptime output = Variadic.map_types_to_types[input_types, mapper]
 
-    assert_equal(Variadic.size(output), 2)
+    assert_equal(Variadic.size[output], 2)
     assert_true(_type_is_eq[output[0], Int]())
     assert_true(_type_is_eq[output[1], String]())
     ```
@@ -327,8 +328,8 @@ struct Variadic:
         element_types: Variadic.TypesOfTrait[T],
         start: Int where start >= 0 = 0,
         end: Int where (
-            start <= end <= Variadic.size(element_types)
-        ) = Variadic.size(element_types),
+            start <= end <= Variadic.size_types[element_types]
+        ) = Variadic.size_types[element_types],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
         VariadicType=element_types,
@@ -346,7 +347,7 @@ struct Variadic:
         end: The ending index (exclusive).
 
     Constraints:
-        - 0 <= start <= end <= Variadic.size(element_types)
+        - 0 <= start <= end <= Variadic.size_types[element_types]
 
     Examples:
         ```mojo
@@ -367,7 +368,7 @@ struct Variadic:
     ] = __mlir_attr[
         `#kgen.variadic.zip<`,
         types,
-        `> : !kgen.variadic<`,
+        `> : !kgen.param_list<`,
         Variadic.TypesOfTrait[Trait],
         `>`,
     ]
@@ -384,7 +385,7 @@ struct Variadic:
     ] = __mlir_attr[
         `#kgen.variadic.zip<`,
         values,
-        `> : !kgen.variadic<`,
+        `> : !kgen.param_list<`,
         Variadic.ValuesOfType[type],
         `>`,
     ]
@@ -487,15 +488,155 @@ struct Variadic:
 
 
 # ===-----------------------------------------------------------------------===#
-# VariadicParamList
+# TypeList
 # ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
-struct _VariadicParamListIter[type: Copyable, //, *values: type](
+struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
+    """A compile-time list of types conforming to a common trait.
+
+    `TypeList` provides type-level operations on variadic sequences of types,
+    such as reversing, filtering, slicing, mapping, and membership testing.
+
+    Parameters:
+        Trait: The trait that all types in the list must conform to.
+        element_types: The types in the list.
+
+    Examples:
+
+    ```mojo
+    from std.builtin.variadics import TypeList
+    from std.sys.intrinsics import _type_is_eq
+
+    # Create a type list
+    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
+
+    # Query size
+    assert_equal(tl.size, 3)
+
+    # Check membership
+    comptime assert tl.contains[Int]
+    comptime assert not tl.contains[Bool]
+
+    # Index into the list
+    comptime assert _type_is_eq[tl[0], Int]()
+    ```
+    """
+
+    comptime size = Variadic.size_types[Self.element_types]
+    """The number of types in the list."""
+
+    comptime __getitem_param__[idx: Int] = Self.element_types[idx]
+    """Gets a type at the given index.
+
+    Parameters:
+        idx: The index of the type to access.
+    """
+
+    comptime reverse = TypeList[
+        *_MapVariadicAndIdxToType[
+            To=Self.Trait,
+            VariadicType=Self.element_types,
+            Mapper=_ReversedVariadic[Self.Trait, ...],
+        ]
+    ]
+    """The types in reverse order."""
+
+    comptime contains[type: Self.Trait] = _ReduceVariadicAndIdxToValue[
+        BaseVal=Variadic.values[False],
+        VariadicType=Self.element_types,
+        Reducer=_ContainsReducer[Trait=Self.Trait, Type=type, ...],
+    ][0]
+    """Checks if a type is contained in this type list.
+
+    Parameters:
+        type: The type to check for.
+    """
+
+    comptime map[
+        To: type_of(AnyType),
+        //,
+        Mapper: _TypeToTypeGenerator[Self.Trait, To],
+    ] = TypeList[
+        *_ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[To],
+            VariadicType=Self.element_types,
+            Reducer=_MapTypeToTypeReducer[Self.Trait, To, Mapper, ...],
+        ],
+    ]
+    """Maps types to new types using a mapper.
+
+    Returns a new variadic of types resulting from applying `Mapper[T]` to each
+    type in this type list.
+
+    Parameters:
+        To: The trait that the output types conform to.
+        Mapper: A generator that maps a type to another type.
+            The generator type is `[T: Trait] -> To`.
+    """
+
+    comptime slice[
+        start: Int where start >= 0 = 0,
+        end: Int where start <= end <= Self.size = Self.size,
+    ] = TypeList[
+        *_ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[Self.Trait],
+            VariadicType=Self.element_types,
+            Reducer=_SliceReducer[Self.Trait, start, end, ...],
+        ]
+    ]
+    """Extracts a contiguous subsequence from the type list.
+
+    Returns a new variadic containing elements from index `start` (inclusive)
+    to index `end` (exclusive). Similar to Python's slice notation [start:end].
+
+    Parameters:
+        start: The starting index (inclusive). Defaults to 0.
+        end: The ending index (exclusive). Defaults to the list size.
+
+    Constraints:
+        0 <= start <= end <= size.
+    """
+
+    comptime filter[
+        predicate: _TypePredicateGenerator[Self.Trait],
+    ] = TypeList[
+        *_ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[Self.Trait],
+            VariadicType=Self.element_types,
+            Reducer=_FilterReducer[Self.Trait, predicate, ...],
+        ]
+    ]
+    """Filters types based on a predicate.
+
+    Returns a new variadic containing only the types for which the predicate
+    returns True.
+
+    Parameters:
+        predicate: A generator that takes a type and returns Bool.
+    """
+
+    @always_inline
+    def __len__(self) -> Int:
+        """Gets the size of the TypeList.
+
+        Returns:
+            The number of elements on the TypeList.
+        """
+        return Self.size
+
+
+# ===-----------------------------------------------------------------------===#
+# ParameterList
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _ParameterListIter[type: Copyable, //, *values: type](
     ImplicitlyCopyable, Iterable, Iterator
 ):
-    """Const Iterator for VariadicParamList.
+    """Const Iterator for ParameterList.
 
     Parameters:
         type: The type of the elements in the list.
@@ -515,7 +656,7 @@ struct _VariadicParamListIter[type: Copyable, //, *values: type](
     ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
         var index = self.index
 
-        comptime params = VariadicParamList[*Self.values]()
+        comptime params = ParameterList[*Self.values]()
         if index >= params.size:
             raise StopIteration()
         self.index = index + 1
@@ -526,26 +667,26 @@ struct _VariadicParamListIter[type: Copyable, //, *values: type](
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = VariadicParamList[*Self.values].size - self.index
+        var len = ParameterList[*Self.values].size - self.index
         return (len, {len})
 
 
 # TODO: Make this conform to Iterable when IteratorType can be conditionally
 # defined only when 'type' is Copyable.
-struct VariadicParamList[type: AnyType, //, *values: type](
+struct ParameterList[type: AnyType, //, *values: type](
     Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
 
-    `VariadicParamList` is used by homogenous variadic parameter lists. Unlike
-    `VariadicPack` (which is heterogeneous), `VariadicParamList` requires all
+    `ParameterList` is used by homogenous variadic parameter lists. Unlike
+    `VariadicPack` (which is heterogeneous), `ParameterList` requires all
     elements to have the same type.
 
-    `VariadicParamList` is only used for parameter lists, `VariadicList` is
+    `ParameterList` is only used for parameter lists, `VariadicList` is
     used for function arguments.
 
     For example, in the following function signature, `*args: Int` creates a
-    `VariadicParamList` because it uses a single type `Int` instead of a variadic type
+    `ParameterList` because it uses a single type `Int` instead of a variadic type
     parameter. The `*` before `args` indicates that `args` is a variadic argument,
     which means that the function can accept any number of arguments, but all
     arguments must have the same type `Int`.
@@ -554,7 +695,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
     def sum_values[*args: Int]() -> Int:
         var total = 0
 
-        # Can use regular for loop because args is a VariadicParamList
+        # Can use regular for loop because args is a ParameterList
         for i in range(len(args)):
             total += args[i]  # All elements are Int, so uniform access
 
@@ -569,20 +710,12 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         values: The values in the list.
     """
 
-    comptime size = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
-            type_of(Self.values),
-            ` `,
-            +Self.values,
-            `> : index`,
-        ]
-    )
+    comptime size = Variadic.size[Self.values]
     """The number of elements in the list."""
 
     @always_inline
     def __init__(out self):
-        """Constructs a VariadicParamList."""
+        """Constructs a ParameterList."""
         pass
 
     @always_inline
@@ -686,7 +819,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         def write_fields(mut w: Some[Writer]):
             self._write_elements[is_repr=True](w)
 
-        FormatStruct(writer, "VariadicParamList").params(
+        FormatStruct(writer, "ParameterList").params(
             TypeNames[Self.type](),
         ).fields[FieldsFn=write_fields]()
 
@@ -695,7 +828,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
     @always_inline
     def __iter__(
         ref self,
-    ) -> _VariadicParamListIter[
+    ) -> _ParameterListIter[
         *rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
             Self.values
         )
@@ -742,10 +875,7 @@ struct _VariadicListIter[
     comptime Element = Self.elt_type
 
     var index: Int
-    var src: Pointer[
-        Self.variadic_list_type,
-        Self.list_origin,
-    ]
+    var src: Pointer[Self.variadic_list_type, Self.list_origin]
 
     def __init__(
         out self,
@@ -758,14 +888,18 @@ struct _VariadicListIter[
     @always_inline
     def __next__(
         mut self,
-    ) raises StopIteration -> ref[Self.elt_origin._mlir_origin] Self.elt_type:
+    ) raises StopIteration -> ref[self.src[][0]] Self.elt_type:
         var index = self.index
-        if index >= len(self.src[]):
+        if index == len(self.src[]):
             raise StopIteration()
         self.index = index + 1
-        return rebind[Self.variadic_list_type.reference_type](
-            Pointer(to=self.src[][index])
-        )[]
+        return self.src[][index]
+
+
+struct _MLIR:
+    comptime POPArrayType[
+        size: __mlir_type.index, elt_type: AnyType
+    ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
 
 
 struct VariadicList[
@@ -788,30 +922,49 @@ struct VariadicList[
                   passed as an 'var' argument.
     """
 
-    comptime reference_type = Pointer[Self.element_type, Self.origin]
-    """The pointer type for references to elements."""
-
-    comptime _mlir_type = Variadic.ValuesOfType[Self.reference_type._mlir_type]
-
-    var value: Self._mlir_type
-    """The underlying storage, a variadic list of references to elements of the
-    given type."""
+    comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
+    # FIXME: This should be the origin of the container, not ExternalOrigin.
+    var _value: Span[Self._EltPointerType, ExternalOrigin[mut=False]]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    # Provide support for read-only variadic arguments.
     @doc_hidden
     @always_inline
     @implicit
-    def __init__(out self, value: Self._mlir_type):
-        """Constructs a VariadicList from a variadic argument type.
+    def __init__[
+        size: __mlir_type.index, container_origin: ImmutOrigin
+    ](
+        out self,
+        value: Pointer[
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            container_origin,
+        ]._mlir_type,
+    ):
+        """Constructs a VariadicList from a compiler-generated array of element
+        pointers.
+
+        Parameters:
+            size: The number of elements in the variadic list.
+            container_origin: The origin of the container.
 
         Args:
-            value: The variadic argument to construct the list with.
+            value: The raw reference to the array of element pointers.
         """
-        self.value = value
+        # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
+        # the first element.
+        var array_up = UnsafePointer(
+            to=Pointer(_mlir_value=value)[]
+        ).unsafe_origin_cast[ExternalOrigin[mut=False]]()
+        var elt_ptr = UnsafePointer[_, ExternalOrigin[mut=False]](
+            __mlir_op.`pop.array.gep`(
+                array_up.address,
+                Int(0)._mlir_value,
+            )
+        ).bitcast[Self._EltPointerType]()
+        var size_tmp = size  # FIXME: Weird MLIR syntax error?
+        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size_tmp))
 
     # The destructor for this type is trivial if not an "owned" list.
     comptime __del__is_trivial: Bool = not Self.is_owned
@@ -877,7 +1030,7 @@ struct VariadicList[
         Returns:
             The number of elements on the variadic list.
         """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
+        return len(self._value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -906,9 +1059,7 @@ struct VariadicList[
             A low-level pointer to the element on the list corresponding to the
             given index.
         """
-        return __get_litref_as_mvalue(
-            __mlir_op.`pop.variadic.get`(self.value, idx._mlir_value)
-        )
+        return self._value.unsafe_ptr()[idx][]
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -995,7 +1146,7 @@ struct VariadicPack[
 
     `VariadicPack` is used when you need to accept variadic arguments where each
     argument can have a different type, but all types conform to a common trait.
-    Unlike `VariadicParamList` (which is homogeneous), `VariadicPack` allows each
+    Unlike `ParameterList` (which is homogeneous), `VariadicPack` allows each
     element to have a different concrete type.
 
     `VariadicPack` is essentially a heterogeneous tuple that gets lowered to a
@@ -1005,7 +1156,7 @@ struct VariadicPack[
     time to generate the correct memory layout and access code.
 
     Therefore, indexing into `VariadicPack` requires compile-time indices using
-    `comptime for` loops, whereas indexing into `VariadicParamList` uses runtime
+    `comptime for` loops, whereas indexing into `ParameterList` uses runtime
     indices.
 
     For example, in the following function signature, `*args: *ArgTypes` creates a
@@ -1043,7 +1194,7 @@ struct VariadicPack[
     """
 
     comptime _mlir_type = __mlir_type[
-        `!lit.ref.pack<:variadic<`,
+        `!lit.ref.pack<:param_list<`,
         Self.element_trait,
         `> `,
         Self.element_types,
@@ -1149,7 +1300,7 @@ struct VariadicPack[
             The number of elements in the variadic pack.
         """
 
-        comptime result = Variadic.size(Self.element_types)
+        comptime result = Variadic.size_types[Self.element_types]
         return result
 
     @always_inline
@@ -1206,7 +1357,7 @@ struct VariadicPack[
     references.
     """
     comptime _kgen_pack_with_pointer_type = __mlir_type[
-        `!kgen.pack<:variadic<type> `, Self._variadic_pointer_types, `>`
+        `!kgen.pack<:param_list<type> `, Self._variadic_pointer_types, `>`
     ]
     """This is the !kgen.pack type with pointer elements."""
 
@@ -1225,7 +1376,9 @@ struct VariadicPack[
         Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
-        `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`
+        `!kgen.pack<:param_list<type> `,
+        Self._variadic_with_pointers_removed,
+        `>`,
     ]
     """This is the `!kgen.pack` type that happens if one loads all the elements
     of the pack.
@@ -1369,7 +1522,7 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
-    `, "From": !kgen.variadic<`,
+    `, "From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -1428,7 +1581,7 @@ comptime _ReduceValueIdxGeneratorTypeGenerator[
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
-    `, "From": !kgen.variadic<`,
+    `, "From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -1559,7 +1712,7 @@ comptime _TypeToTypeGenerator[
 comptime _VariadicIdxToTypeGeneratorTypeGenerator[
     From: type_of(AnyType), To: type_of(AnyType)
 ] = __mlir_type[
-    `!lit.generator<<"From": !kgen.variadic<`,
+    `!lit.generator<<"From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -1608,7 +1761,7 @@ Parameters:
 comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
     From: AnyType, To: type_of(AnyType)
 ] = __mlir_type[
-    `!lit.generator<<"From": !kgen.variadic<`,
+    `!lit.generator<<"From": !kgen.param_list<`,
     From,
     `>, "Idx":`,
     Int,
@@ -1634,7 +1787,7 @@ comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],
     idx: Int,
-] = element_types[Variadic.size(element_types) - 1 - idx]
+] = element_types[Variadic.size_types[element_types] - 1 - idx]
 """A generator that reverses a variadic sequence of types.
 
 Parameters:

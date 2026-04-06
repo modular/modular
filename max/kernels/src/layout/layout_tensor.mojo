@@ -2631,7 +2631,7 @@ struct LayoutTensor[
                 Scalar[Self.dtype],
                 address_space=Self.address_space,
                 origin=MutExternalOrigin,
-            ]()
+            ](_unsafe_null=())
         )
 
     comptime StackTensorType = LayoutTensor[
@@ -3243,7 +3243,7 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        comptime num_tiles = Variadic.size(tile_sizes)
+        comptime num_tiles = Variadic.size[tile_sizes]
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3358,7 +3358,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        comptime num_tiles = Variadic.size(tile_sizes)
+        comptime num_tiles = Variadic.size[tile_sizes]
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3511,7 +3511,7 @@ struct LayoutTensor[
         ```
         """
 
-        comptime tiles_rank = Variadic.size(tile_sizes)
+        comptime tiles_rank = Variadic.size[tile_sizes]
         comptime __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         comptime assert (
             __tiled_layout[1].rank() == tiles_rank
@@ -8065,7 +8065,11 @@ struct LayoutTensorIter[
                 not Self.circular
             ), "Circular use case is not supported if an axis is defined."
 
-        self.ptr = {}
+        self.ptr = UnsafePointer[
+            Scalar[Self.dtype],
+            address_space=Self.address_space,
+            origin=Self.origin,
+        ](_unsafe_null=())
         self.offset = 0
         self.stride = 0
         self.bound = 0

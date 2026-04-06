@@ -226,6 +226,7 @@ def struct_field_type_by_name[
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline("builtin")
 def struct_field_count[T: AnyType]() -> Int:
     """Returns the number of fields in struct `T`.
 
@@ -258,7 +259,7 @@ def struct_field_count[T: AnyType]() -> Int:
     # This avoids needing a dedicated struct_field_count attribute.
     return Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:!kgen.variadic<!kgen.type> `,
+            `#kgen.variadic.size<:!kgen.param_list<!kgen.type> `,
             `#kgen.struct_field_types<`,
             T,
             `>> : index`,
@@ -309,7 +310,7 @@ def struct_field_types[
 
 def _struct_field_names_raw[
     T: AnyType,
-]() -> __mlir_type[`!kgen.variadic<!kgen.string>`]:
+]() -> __mlir_type[`!kgen.param_list<!kgen.string>`]:
     """Returns the names of all fields in struct `T` as a raw variadic.
 
     This is an internal helper. Use `struct_field_names` for a more

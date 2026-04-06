@@ -32,12 +32,13 @@ import time
 import warnings
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeGuard
+from typing import TYPE_CHECKING, Annotated, Any, TypeGuard
 from urllib.parse import urlparse
 
 import numpy as np
 import yaml
+from cyclopts import App, Parameter
+from cyclopts.config import Env
 from tqdm.asyncio import tqdm
 from transformers import (
     AutoTokenizer,
@@ -57,7 +58,6 @@ from max.benchmark.benchmark_shared.config import (
     BenchmarkTask,
     Endpoint,
     ServingBenchmarkConfig,
-    parse_benchmark_args,
 )
 from max.benchmark.benchmark_shared.cpu_metrics import (
     CpuMetricsCollector,
@@ -813,8 +813,17 @@ def print_workload_stats(samples: Samples) -> None:
                 if msg.delay_until_next_message is not None:
                     all_delays.append(msg.delay_until_next_message)
 
+        total_prefix = sum(s.prefix_turns for s in sessions)
+        total_turns = sum(num_turns_list)
         print(f"  {'Total sessions:':<30} {len(sessions)}")
-        print(f"  {'Total turns (across all):':<30} {sum(num_turns_list)}")
+        if total_prefix > 0:
+            print(
+                f"  {'Total turns (measured):':<30}"
+                f" {total_turns - total_prefix}"
+            )
+            print(f"  {'Total turns (warmup):':<30} {total_prefix}")
+        else:
+            print(f"  {'Total turns (across all):':<30} {total_turns}")
         print()
         print(
             _format_distribution_table(
@@ -1149,6 +1158,7 @@ async def chat_session_driver(
     skip_session_count: int | None = None,
     ignore_first_turn_stats: bool = False,
     benchmark_should_end_time: int | None = None,
+    randomize_session_start: bool = False,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
@@ -1170,7 +1180,12 @@ async def chat_session_driver(
     chat_len = 0
 
     messages = chat_session.messages
+    prefix_end_idx = chat_session.prefix_turns * 2
+    applied_initial_sleep = False
+
     while content_idx + 1 < len(messages):
+        is_prefix_turn = content_idx < prefix_end_idx
+
         chat_len += messages[content_idx].num_tokens
         output_len = messages[content_idx + 1].num_tokens
         if chat_len + output_len > max_chat_len:
@@ -1179,9 +1194,10 @@ async def chat_session_driver(
             )
             break
 
-        advance_request = request_counter.advance_until_max()
-        if not advance_request:  # reached max_requests
-            break
+        if not is_prefix_turn:
+            advance_request = request_counter.advance_until_max()
+            if not advance_request:  # reached max_requests
+                break
 
         user_prompt = messages[content_idx].content
         message_history.append(
@@ -1194,7 +1210,13 @@ async def chat_session_driver(
         request_func_input.prompt_len = chat_len
         request_func_input.max_tokens = output_len
 
-        # Check timeout before making request
+        if not is_prefix_turn and not applied_initial_sleep:
+            applied_initial_sleep = True
+            if randomize_session_start:
+                delay_ms = messages[content_idx + 1].delay_until_next_message
+                if delay_ms and delay_ms > 0:
+                    await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
+
         if (
             benchmark_should_end_time is not None
             and time.perf_counter_ns() >= benchmark_should_end_time
@@ -1209,18 +1231,22 @@ async def chat_session_driver(
                     "Expected RequestFuncOutput in text-generation benchmark flow."
                 )
             response = raw_response
-        if (
-            skip_session_count is None
-            or chat_session.id is None
-            or chat_session.id >= skip_session_count
-        ) and not (ignore_first_turn_stats and content_idx == 0):
-            session_outputs.append(response)
+
+        if not is_prefix_turn:
+            if (
+                skip_session_count is None
+                or chat_session.id is None
+                or chat_session.id >= skip_session_count
+            ) and not (
+                ignore_first_turn_stats and content_idx == prefix_end_idx
+            ):
+                session_outputs.append(response)
 
         if not response.success:
             if not response.cancelled:
                 logger.error(
-                    f"Ending chat session {chat_session.id} due to server error"
-                    f" response: {response.error}"
+                    f"Ending chat session {chat_session.id} due to server"
+                    f" error response: {response.error}"
                 )
             break
 
@@ -1232,8 +1258,9 @@ async def chat_session_driver(
         )
         chat_len += output_len
 
-        if delay_ms := messages[content_idx + 1].delay_until_next_message:
-            await asyncio.sleep(delay_ms / 1000)
+        if not is_prefix_turn:
+            if delay_ms := messages[content_idx + 1].delay_until_next_message:
+                await asyncio.sleep(delay_ms / 1000)
 
         content_idx += 2
 
@@ -1329,6 +1356,7 @@ async def run_multiturn_benchmark(
     temperature: float | None,
     top_p: float | None,
     top_k: int | None,
+    randomize_session_start: bool = False,
 ) -> list[RequestFuncOutput]:
     """Run multi-turn chat benchmark scenario."""
 
@@ -1364,6 +1392,7 @@ async def run_multiturn_benchmark(
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
+                randomize_session_start=randomize_session_start,
             )
         async with semaphore:
             return await chat_session_driver(
@@ -1379,6 +1408,7 @@ async def run_multiturn_benchmark(
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
+                randomize_session_start=randomize_session_start,
             )
 
     tasks: list[asyncio.Task[list[RequestFuncOutput]]] = []
@@ -1392,6 +1422,15 @@ async def run_multiturn_benchmark(
     session_outputs: list[list[RequestFuncOutput]] = await asyncio.gather(
         *tasks
     )
+
+    if (
+        benchmark_should_end_time is not None
+        and time.perf_counter_ns() < benchmark_should_end_time
+    ):
+        logger.warning(
+            "All chat sessions completed before the time limit. "
+            "Consider increasing --num-chat-sessions for more stable load."
+        )
 
     return [output for sublist in session_outputs for output in sublist]
 
@@ -1521,6 +1560,7 @@ async def benchmark(
     max_benchmark_duration_s: int | None,
     warmup_delay_ms: float,
     ignore_first_turn_stats: bool,
+    randomize_session_start: bool,
     timing_data: dict[str, list[float]] | None,
     lora_manager: LoRABenchmarkManager | None,
     trace_path: str | None = None,
@@ -1695,6 +1735,7 @@ async def benchmark(
                     temperature=temperature,
                     top_p=top_p,
                     top_k=top_k,
+                    randomize_session_start=randomize_session_start,
                 )
 
             # Close pbar if it was created
@@ -2218,6 +2259,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     tokenizer=tokenizer,
                     sys_prompt_ratio=args.random_sys_prompt_ratio,
                     max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                    randomize_starting_turn=args.randomize_starting_turn,
                 )
             else:
                 assert args.num_prompts is not None
@@ -2469,6 +2511,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
             ignore_first_turn_stats=args.ignore_first_turn_stats,
+            randomize_session_start=args.randomize_session_start,
             timing_data=None,
             lora_manager=lora_manager,
             trace_path=trace_path,
@@ -2498,7 +2541,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
         result_json["dataset_name"] = args.dataset_name
-        result_json["client_args"] = dict(vars(args))
+        result_json["client_args"] = args.model_dump()
         # json doesn't allow infinity as numeric, so cast this to string
         result_json["client_args"]["request_rate"] = str(
             result_json["client_args"]["request_rate"]
@@ -2567,7 +2610,8 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             "top_p",
         )
         output_lens_dict = {}
-        output_lens_dict["args"] = {x: vars(args)[x] for x in args_to_save}
+        args_dict = args.model_dump()
+        output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
         output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
         with open(args.record_output_lengths, "w") as f:
             yaml.dump(output_lens_dict, f)
@@ -2579,27 +2623,83 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     logger.info("finished benchmark run: Success.")
 
 
-def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:
-    """Parse command line arguments using ServingBenchmarkConfig with enhanced cli_parse_args().
+def _extract_metadata_args(
+    args: list[str],
+) -> tuple[list[str], list[str]]:
+    """Extract --metadata values from args before passing to cyclopts.
 
-    This function uses the generalized parse_benchmark_args function to handle
-    config file inheritance and CLI argument parsing.
+    cyclopts interprets bare ``key=value`` tokens as keyword assignments. When
+    a token like ``enable_prefix_caching=True`` matches a real model field, it
+    is routed to that field rather than consumed as a ``--metadata`` list item,
+    leaving subsequent tokens as orphaned positionals (which then fail).
+
+    This function peels off all space-separated values after ``--metadata``
+    (until the next ``--flag``) and returns them separately so cyclopts never
+    sees them.
+
+    Returns:
+        A 2-tuple of (clean_args, metadata_values).
+    """
+    clean_args: list[str] = []
+    metadata_values: list[str] = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--metadata":
+            i += 1
+            while i < len(args) and not args[i].startswith("-"):
+                metadata_values.append(args[i])
+                i += 1
+        else:
+            clean_args.append(args[i])
+            i += 1
+    return clean_args, metadata_values
+
+
+def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:
+    """Parse command line arguments into a ServingBenchmarkConfig using cyclopts.
 
     Args:
         args: Command line arguments to parse. If None, parse from sys.argv.
     """
-    parsed_args = parse_benchmark_args(
-        config_class=ServingBenchmarkConfig,
-        default_config_path=Path(__file__).parent
-        / "configs/serving_config.yaml",
-        description=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
-        args=args,
+    raw_args = list(sys.argv[1:] if args is None else args)
+
+    # Pre-extract --metadata values because cyclopts interprets bare key=value
+    # tokens as keyword assignments. Tokens matching real model field names
+    # (e.g. enable_prefix_caching=True) would be routed to those fields
+    # instead of being consumed as --metadata list items.
+    clean_args, metadata_values = _extract_metadata_args(raw_args)
+
+    result: list[ServingBenchmarkConfig] = []
+
+    app = App(
+        name="benchmark_serving",
+        help=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
+        help_formatter="plain",
+        config=[Env(prefix="MODULAR_")],
+        result_action="return_value",
     )
-    slim_parsed_args = dict(vars(parsed_args))
-    # config_file is present in the parsed arguments, but isn't a part of the
-    # config proper, so remove it before constructing the config
-    slim_parsed_args.pop("config_file", None)
-    return ServingBenchmarkConfig(**slim_parsed_args)
+
+    # TODO: Parameter(name="*") flattens flags to match legacy argparse
+    # behavior (e.g. --dataset-name instead of --config.dataset-name).
+    # Remove this once callers are migrated to use the dotted names.
+    @app.default
+    def _capture(
+        config: Annotated[
+            ServingBenchmarkConfig, Parameter(name="*")
+        ] = ServingBenchmarkConfig(),
+    ) -> None:
+        result.append(config)
+
+    app(clean_args)
+    if not result:
+        # --help was requested: cyclopts printed help and returned without
+        # invoking the handler.  (Parse errors still raise SystemExit(1)
+        # via cyclopts' exit_on_error, so they never reach here.)
+        raise SystemExit(0)
+    config = result[0]
+    if metadata_values:
+        config.metadata = metadata_values
+    return config
 
 
 def main(args: Sequence[str] | None = None) -> None:

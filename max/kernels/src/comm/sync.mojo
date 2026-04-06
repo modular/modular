@@ -16,11 +16,7 @@ from std.math.uutils import umod
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    barrier,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.intrinsics import (
     load_acquire,
     store_release,
@@ -190,7 +186,7 @@ def _multi_gpu_barrier[
     comptime flag_t = Signal.flag_t
     var bid = block_idx.x
 
-    if thread_idx.x < UInt(ngpus):
+    if thread_idx.x < ngpus:
         # NOTE: (MOCO-1431) the use of pointer arithmetic here is a temporary workaround
         # to avoid functional issues that arise with increased register pressure when
         # dealing with static tuples

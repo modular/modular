@@ -41,10 +41,11 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
+from std.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     mul_ftz,
@@ -80,8 +81,9 @@ def depth512_correction[
 
     # Dummy arrives for the prologue iteration (no previous O to protect).
     # This satisfies the correction half of PO_lo and PO_hi for the first P@V.
-    _ = mbars.po_lo_mbar()[].arrive()
-    _ = mbars.po_hi_mbar()[].arrive()
+    # Cluster-scope arrive so both CTAs' signals reach the leader.
+    umma_arrive_leader_cta(mbars.po_lo_mbar())
+    umma_arrive_leader_cta(mbars.po_hi_mbar())
 
     # ---- Thread identity -----------------------------------------------------
     var tid: UInt32 = UInt32(thread_idx.x)
@@ -237,15 +239,18 @@ def depth512_correction[
             tcgen05_fence_after()
             var c_pair = SIMD[DType.float32, 2](c_scalar, c_scalar)
             rescale_o(o_lo_tmem, c_pair)
-            pipeline_o_lo.release()
+            umma_arrive_leader_cta(pipeline_o_lo.consumer_mbar())
+            pipeline_o_lo.step()
 
             # Phase 2: rescale O_hi (all 128 threads, ov_quarter cols each).
             pipeline_o_hi.wait()
             tcgen05_fence_after()
             rescale_o(o_hi_tmem, c_pair)
         else:
-            pipeline_o_lo.release()
+            umma_arrive_leader_cta(pipeline_o_lo.consumer_mbar())
+            pipeline_o_lo.step()
             pipeline_o_hi.wait()
 
-        pipeline_o_hi.release()
+        umma_arrive_leader_cta(pipeline_o_hi.consumer_mbar())
+        pipeline_o_hi.step()
         pipeline_c.release()

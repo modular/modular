@@ -32,6 +32,7 @@ from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import OpenResponsesRequestBody
 from max.pipelines.lib import MAXModelConfig, PixelGenerationTokenizer
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 
 
@@ -51,7 +52,9 @@ class TestPixelGenerationTokenizer:
     def flux_pipeline_config(self, flux_model_path: str) -> PipelineConfig:
         """Pipeline config for Flux model."""
         return PipelineConfig(
-            model=MAXModelConfig(model_path=flux_model_path),
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path=flux_model_path)}
+            ),
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 
@@ -64,7 +67,9 @@ class TestPixelGenerationTokenizer:
     def zimage_pipeline_config(self, zimage_model_path: str) -> PipelineConfig:
         """Pipeline config for Z-Image model."""
         return PipelineConfig(
-            model=MAXModelConfig(model_path=zimage_model_path),
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path=zimage_model_path)}
+            ),
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 
@@ -89,18 +94,23 @@ class TestPixelGenerationTokenizer:
         assert tokenizer.delegate_2 is None
         assert tokenizer._pipeline_class_name == "Flux2Pipeline"
 
-    def test_initialization_without_diffusers_config(
+    def test_initialization_without_diffusion_manifest(
         self, flux_model_path: str
     ) -> None:
-        """Test that initialization fails without diffusers_config."""
-        # Use a non-diffusion model (text-generation model) which won't have diffusers_config
+        """Test that initialization fails without a diffusion ModelManifest."""
+        # Use a non-diffusion model (text-generation model) which won't have
+        # diffusion metadata (_class_name) in its ModelManifest.
         non_diffusion_model = "gpt2"
         config = PipelineConfig(
-            model=MAXModelConfig(model_path=non_diffusion_model),
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path=non_diffusion_model)}
+            ),
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 
-        with pytest.raises(ValueError, match="diffusers_config cannot be None"):
+        with pytest.raises(
+            ValueError, match="metadata is missing required key"
+        ):
             PixelGenerationTokenizer(
                 model_path=flux_model_path,
                 pipeline_config=config,

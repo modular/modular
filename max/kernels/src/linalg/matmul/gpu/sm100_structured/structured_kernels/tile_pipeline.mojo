@@ -109,33 +109,31 @@ When to Use Which
 Example: TMA Load Warp (context manager)
 -----------------------------------------
     with input_pipeline.producer() as producer:
-        while work_iter.has_work():
-            with work_iter.next() as current:
-                for i in range(num_iters):
-                    with producer.acquire() as tiles:
-                        tma_load(tiles.a_tile(), tiles.b_tile())
+        for current in load_iter:
+            scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
+            for i in range(num_iters):
+                with producer.acquire() as tiles:
+                    tma_load(tiles.a_tile(), tiles.b_tile())
         producer.drain()
 
 Example: MMA Warp (linear types, flat)
 --------------------------------------
     var mma_handle = MmaHandle.create(...)
-    while work_iter.has_work():
-        with work_iter.wait_and_advance():
-            for _ in range(num_iters):
-                var mma_stage = mma_handle.acquire_k_stage_linear()
-                var input_tiles = input_pipeline.acquire_consumer()
-                mma(input_tiles, mma_op, ...)
-                input_tiles^.release()
-                mma_stage^.release()
+    for _ in mma_iter:
+        for _ in range(num_iters):
+            var mma_stage = mma_handle.acquire_k_stage_linear()
+            var input_tiles = input_pipeline.acquire_consumer()
+            mma(input_tiles, mma_op, ...)
+            input_tiles^.release()
+            mma_stage^.release()
     mma_handle^.release()
 
 Example: Epilogue Warp (context manager)
 ----------------------------------------
     with epi_ctx:
-        while work_iter.has_work():
-            with work_iter.next() as current:
-                with output_pipeline.consumer() as output_stage:
-                    write_output(output_stage)
+        for current in epi_iter:
+            with output_pipeline.consumer() as output_stage:
+                write_output(output_stage)
 """
 
 from layout.tma_async import SharedMemBarrier
@@ -1442,7 +1440,7 @@ struct OutputProducer[
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
         )
 
     @always_inline
@@ -1713,7 +1711,7 @@ struct MmaKStage[
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
         )
 
     @always_inline
@@ -1759,7 +1757,7 @@ struct PerKConsumerStage[
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
         )
 
     @always_inline
@@ -1889,7 +1887,9 @@ struct EpilogueKContext[
         self.output_stage = Self.OutputStageType(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_output_stages](MbarPtr()),
+            ProducerConsumerPipeline[Self.num_output_stages](
+                MbarPtr(_unsafe_null=())
+            ),
         )
 
     @always_inline

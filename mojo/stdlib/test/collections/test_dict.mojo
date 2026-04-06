@@ -21,7 +21,7 @@ from std.collections.dict import (
 
 from std.hashlib import Hasher, default_comp_time_hasher
 
-from test_utils import CopyCounter, check_write_to
+from test_utils import CopyCounter, DelCounter, check_write_to
 from std.testing import (
     assert_equal,
     assert_false,
@@ -1188,6 +1188,71 @@ def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Equatable))
     assert_true(conforms_to(Dict[Int, Int], Hashable))
     assert_false(conforms_to(Dict[Int, NonWritable], Writable))
+
+
+def test_dict_iter_owned() raises:
+    var d = Dict[String, Int]()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+
+    var keys = List[String]()
+    for key in d^:
+        keys.append(key)
+
+    assert_equal(len(keys), 3)
+    assert_equal(keys[0], "a")
+    assert_equal(keys[1], "b")
+    assert_equal(keys[2], "c")
+
+
+def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
+    var del_count = 0
+    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var d = Dict[Int, DelCounter[ptr.origin]]()
+    d[1] = DelCounter(ptr)
+    d[2] = DelCounter(ptr)
+    d[3] = DelCounter(ptr)
+    assert_equal(del_count, 0)
+
+    # Create the owned iterator but never consume it; all values should
+    # still be destroyed when the iterator is dropped.
+    var _ = d^.__iter__()
+    assert_equal(del_count, 3)
+
+
+def test_dict_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var del_count = 0
+    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var d = Dict[Int, DelCounter[ptr.origin]]()
+    d[1] = DelCounter(ptr)
+    d[2] = DelCounter(ptr)
+    d[3] = DelCounter(ptr)
+    assert_equal(del_count, 0)
+
+    var it = d^.__iter__()
+    _ = it.__next__()  # consume one key; entry (including value) is dropped
+    assert_equal(del_count, 1)
+
+    # Drop the iterator with two unconsumed entries remaining.
+    _ = it^
+    assert_equal(del_count, 3)
+
+
+def test_dict_iter_owned_bounds() raises:
+    var d = Dict[String, Int]()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+
+    var it = d^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
 
 
 def main() raises:

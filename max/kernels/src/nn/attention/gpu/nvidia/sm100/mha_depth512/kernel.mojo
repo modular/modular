@@ -28,7 +28,7 @@ from std.math import align_up, ceildiv, min
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    thread_idx_uint as thread_idx,
+    thread_idx,
     warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
@@ -36,8 +36,10 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
-    TmemAllocation,
+from std.gpu.compute.arch.tcgen05 import (
+    tcgen05_alloc,
+    tcgen05_dealloc,
+    tcgen05_release_allocation_lock,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -104,7 +106,6 @@ struct SM100MHADepth512[
     comptime ragged = not Self.ValidLengthType.is_null
     comptime page_size = Self.KVLUTType.page_size
 
-    comptime TmemAllocType = TmemAllocation[Self.cta_group]
     comptime SmemType = Depth512AttentionSMem[Self.config]
 
     comptime PositionType = MHAPosition[
@@ -199,8 +200,8 @@ struct SM100MHADepth512[
             )
         elif warp_idx == 1:
             # TMEM allocation (pair-CTA cooperative).
-            _ = Self.TmemAllocType.allocate(
-                Self.TmemAllocType.SmemAddrStorage(smem.tmem_addr_ptr())
+            tcgen05_alloc[Int32(Self.cta_group)](
+                smem.tmem_addr_ptr(), UInt32(512)
             )
         elif warp_idx == 2:
             e = elect()
@@ -320,11 +321,9 @@ struct SM100MHADepth512[
             ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
-                var tmem = Self.TmemAllocType.from_shared(
-                    Self.TmemAllocType.SmemAddrStorage(smem.tmem_addr_ptr())
-                )
-                tmem.release_lock()
-                tmem.deallocate()
+                var tmem_addr = smem.tmem_addr_ptr()[]
+                tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
+                tcgen05_dealloc[Int32(Self.cta_group)](tmem_addr, UInt32(512))
                 return
             var pos: PositionSummary = PositionSummary.create[
                 ragged=Self.ragged,

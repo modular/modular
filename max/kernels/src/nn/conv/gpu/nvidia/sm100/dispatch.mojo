@@ -20,7 +20,7 @@ dtype inside a @parameter if guard.
 """
 
 from std.math import ceildiv
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from std.utils.index import IndexList
@@ -43,7 +43,7 @@ def _transpose_rscf_to_krsc[
     F: Int,
 ):
     """GPU kernel: transpose filter RSCF [R,S,C,F] -> KRSC [K,R,S,C]."""
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     if tid >= R * S * C * F:
         return
     var k, rem = divmod(tid, R * S * C)
@@ -65,7 +65,7 @@ def _transpose_fcrs_to_krsc[
     S: Int,
 ):
     """GPU kernel: transpose filter FCRS [F,C,R,S] -> KRSC [K,R,S,C]."""
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     if tid >= F * C * R * S:
         return
     var k, rem = divmod(tid, R * S * C)
@@ -94,9 +94,9 @@ def dispatch_sm100_conv2d[
     output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[
-        Scalar[output_type], MutAnyOrigin
-    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin](),
+    source_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
     beta: Float32 = 0.0,
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.

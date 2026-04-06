@@ -62,7 +62,7 @@ from __future__ import annotations
 import copy
 import logging
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -91,6 +91,7 @@ from max.interfaces import (
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
+    SpecDecodingState,
     TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -98,6 +99,7 @@ from max.interfaces import (
 )
 from max.interfaces.tokens import TokenBuffer
 from max.kv_cache import PagedKVCacheManager
+from max.kv_cache.paged_kv_cache.cache_manager import _contiguous_prefix_2d
 from max.kv_cache.registry import load_multi_kv_managers
 from max.nn import kernels
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
@@ -105,6 +107,8 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
+from ..speculative_decoding.base import SpeculativeDecodingMetrics
+from ..speculative_decoding.utils import build_response
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     get_eos_tokens,
@@ -113,10 +117,7 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from ..config import (
-        MAXModelConfig,
-        PipelineConfig,
-    )
+    from ..config import MAXModelConfig, PipelineConfig
 
 from dataclasses import dataclass
 
@@ -126,6 +127,7 @@ from ..interfaces import (
     ModelOutputs,
     PipelineModel,
     PipelineModelWithKVCache,
+    UnifiedEagleOutputs,
 )
 from ..sampling import (
     FusedSamplingProcessor,
@@ -136,6 +138,121 @@ from ..sampling import (
 logger = logging.getLogger("max.pipelines")
 
 _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
+
+
+@runtime_checkable
+class _UnifiedEagleInputs(Protocol):
+    draft_tokens: Buffer | None
+    draft_kv_blocks: list[Buffer] | None
+
+
+def _get_draft_kv_blocks(
+    draft_kv_manager: PagedKVCacheManager,
+    data_parallel_degree: int,
+) -> list[Buffer]:
+    """Extract persistent draft KV block buffers (one per device).
+
+    cache_lengths are NOT saved here — they must be created fresh
+    per-execute to match the runtime batch size.
+    """
+    draft_kv_inputs = draft_kv_manager.runtime_inputs(
+        [[] for _ in range(data_parallel_degree)]
+    )
+    return [per_dev.blocks for per_dev in draft_kv_inputs.inputs]
+
+
+@dataclass
+class SpecDecodeState:
+    """Pipeline for unified EAGLE: single fused graph handles target + draft.
+
+    Unlike EAGLESpeculativeDecodingPipeline which manages two separate models,
+    this pipeline uses a single model that runs both target forward and draft
+    generation in one compiled graph call. Rejection sampling also happens
+    in-graph (greedy acceptance).
+
+    Orchestration:
+    Prefill: model(draft_tokens=[?,0]) -> commit bonus, save new_token.
+    Decode:  model(draft_tokens=[?,K]) -> verify drafts, commit tokens,
+            save new_token for next iteration.
+    """
+
+    num_speculative_tokens: int
+    """The number of speculative tokens to generate."""
+
+    target_kv_manager: PagedKVCacheManager
+    """The KVCache manager for the target model."""
+
+    draft_kv_blocks: list[Buffer]
+    """The KVCache blocks for the draft model."""
+
+    metrics: SpeculativeDecodingMetrics
+    """The metrics for speculative decoding."""
+
+    persistent_draft_tokens: Buffer
+    """Persistent input buffer for draft tokens.
+
+    A stable buffer must be used for inputs to device graphs."""
+
+    @classmethod
+    def load(
+        cls,
+        session: InferenceSession,
+        model: PipelineModelWithKVCache[Any],
+        pipeline_config: PipelineConfig,
+    ) -> SpecDecodeState:
+        """Load the spec decode state."""
+        if pipeline_config.speculative is None:
+            raise ValueError(
+                "Speculative decoding is not enabled in the pipeline config."
+            )
+
+        target_kv_params = model.kv_params
+        assert isinstance(target_kv_params, KVCacheParams)
+        assert hasattr(model, "_draft_kv_params"), "Draft KV params not found"
+        draft_kv_params = model._draft_kv_params
+        assert isinstance(draft_kv_params, KVCacheParams)
+
+        multi_kv_params = MultiKVCacheParams.from_params(
+            target_kv_params, draft_kv_params
+        )
+        target_kv_mgr, draft_kv_mgr = load_multi_kv_managers(
+            params=multi_kv_params,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_seq_len=model.max_seq_len,
+            session=session,
+            available_cache_memory=pipeline_config.model.kv_cache._available_cache_memory,
+        )
+        target_kv_manager = target_kv_mgr
+
+        draft_kv_blocks = _get_draft_kv_blocks(
+            draft_kv_mgr, multi_kv_params.data_parallel_degree
+        )
+        assert len(draft_kv_blocks) == target_kv_params.n_devices
+
+        num_speculative_tokens = (
+            pipeline_config.speculative.num_speculative_tokens
+        )
+        spec_decoding_metrics = SpeculativeDecodingMetrics.empty(
+            num_speculative_tokens=num_speculative_tokens
+        )
+
+        assert pipeline_config.runtime.max_batch_size is not None
+        persistent_draft_tokens = Buffer(
+            dtype=DType.int64,
+            shape=(
+                pipeline_config.runtime.max_batch_size,
+                num_speculative_tokens,
+            ),
+            device=model.devices[0],
+        )
+
+        return SpecDecodeState(
+            num_speculative_tokens=num_speculative_tokens,
+            target_kv_manager=target_kv_manager,
+            draft_kv_blocks=draft_kv_blocks,
+            metrics=spec_decoding_metrics,
+            persistent_draft_tokens=persistent_draft_tokens,
+        )
 
 
 @runtime_checkable
@@ -420,6 +537,13 @@ class OverlapTextGenerationPipeline(
         """
         self._pipeline_config = pipeline_config
 
+        is_spec_decode = self._pipeline_config.speculative is not None
+        if is_spec_decode and not disable_overlap:
+            logger.info(
+                "Speculative decoding is enabled while using OverlapTextGenerationPipeline. Overriding disable_overlap to True."
+            )
+            disable_overlap = True
+
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
@@ -455,6 +579,16 @@ class OverlapTextGenerationPipeline(
             raise ValueError(
                 f"OverlapTextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
             )
+
+        enable_echo = self._pipeline_config.model.enable_echo
+        if is_spec_decode and enable_echo:
+            raise ValueError(
+                "Enable Echo is not supported for speculative decoding. Please disable echo."
+            )
+        elif is_spec_decode:
+            return_logits = ReturnLogits.VARIABLE
+        else:
+            return_logits = ReturnLogits.LAST_TOKEN
         self._pipeline_model: PipelineModelWithKVCache[Any] = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -462,43 +596,61 @@ class OverlapTextGenerationPipeline(
             kv_cache_config=model_config.kv_cache,
             weights=load_weights(weight_paths),
             adapter=weight_adapters.get(weights_format(weight_paths)),
-            return_logits=ReturnLogits.ALL
-            if self._pipeline_config.model.enable_echo
-            else ReturnLogits.LAST_TOKEN,
+            return_logits=return_logits,
         )
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
         kv_params = self._pipeline_model.kv_params
-        if isinstance(kv_params, MultiKVCacheParams):
-            kv_managers = load_multi_kv_managers(
-                params=kv_params,
-                max_batch_size=self._pipeline_config.runtime.max_batch_size,
-                max_seq_len=self._pipeline_model.max_seq_len,
-                session=session,
-                available_cache_memory=available_cache_memory,
-            )
-            self._kv_manager = kv_managers[0]
 
-            # Temporary hack to pass extra cache managers to PipelineModel
-            self._pipeline_model.extra_kv_managers = kv_managers[1:]
+        # Load the KVCache manager. This is pretty cursed at the moment because
+        # we do not have a KVCache manager that has first class support for
+        # speculative decoding.
+        self._spec_decode_state: SpecDecodeState | None = None
+        self._extra_kv_managers: list[PagedKVCacheManager] = []
+        if not is_spec_decode:
+            if isinstance(kv_params, MultiKVCacheParams):
+                kv_managers = load_multi_kv_managers(
+                    params=kv_params,
+                    max_batch_size=self._pipeline_config.runtime.max_batch_size,
+                    max_seq_len=self._pipeline_model.max_seq_len,
+                    session=session,
+                    available_cache_memory=available_cache_memory,
+                )
+                self._kv_manager = kv_managers[0]
+
+                # Extra managers (e.g. global attention KV for multimodal models) must
+                # be exposed on the pipeline so the serve scheduler can claim/alloc
+                # them alongside the primary cache — same contract as generate.py and
+                # TextGenerationPipeline.
+                self._extra_kv_managers = kv_managers[1:]
+                self._pipeline_model.extra_kv_managers = self._extra_kv_managers
+            else:
+                assert isinstance(kv_params, KVCacheParams)
+                self._kv_manager = load_kv_manager(
+                    params=kv_params,
+                    max_batch_size=self._pipeline_config.runtime.max_batch_size,
+                    max_seq_len=self._pipeline_model.max_seq_len,
+                    session=session,
+                    available_cache_memory=available_cache_memory,
+                )
         else:
-            assert isinstance(kv_params, KVCacheParams)
-            self._kv_manager = load_kv_manager(
-                params=kv_params,
-                max_batch_size=self._pipeline_config.runtime.max_batch_size,
-                max_seq_len=self._pipeline_model.max_seq_len,
+            self._spec_decode_state = SpecDecodeState.load(
                 session=session,
-                available_cache_memory=available_cache_memory,
+                model=self._pipeline_model,
+                pipeline_config=self._pipeline_config,
             )
-
-        pipeline_role = self._pipeline_config.runtime.pipeline_role
+            self._kv_manager = self._spec_decode_state.target_kv_manager
 
         # Load sampler.
-        self._sampler: Model = session.load(
-            token_sampler(
-                self._pipeline_config.sampling,
-                device=DeviceRef.from_device(self._devices[0]),
+        self._sampler: Model | None = (
+            session.load(
+                token_sampler(
+                    self._pipeline_config.sampling,
+                    device=DeviceRef.from_device(self._devices[0]),
+                )
             )
+            if not is_spec_decode
+            else None
         )
 
         # Overlap scheduling specific initialization.
@@ -509,7 +661,9 @@ class OverlapTextGenerationPipeline(
             ScatterFutureTokenProcessor(
                 session, DeviceRef.from_device(self._devices[0])
             )
-            if pipeline_role != "prefill_only"
+            if self._pipeline_config.runtime.pipeline_role
+            in ("prefill_and_decode", "decode_only")
+            and not is_spec_decode
             else None
         )
         # Set previous asynchronously executing batch to None.
@@ -519,6 +673,18 @@ class OverlapTextGenerationPipeline(
         self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
 
         self._disable_overlap = disable_overlap
+
+    @property
+    def _effective_max_cache_length(self) -> int:
+        """Max cache length capped to the smallest KV pool capacity."""
+        all_managers = [self._kv_manager] + self._extra_kv_managers
+        return min(
+            self._pipeline_model.max_seq_len,
+            *(
+                mgr._total_num_pages * mgr.params.page_size
+                for mgr in all_managers
+            ),
+        )
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -552,6 +718,17 @@ class OverlapTextGenerationPipeline(
     ) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
+
+        num_speculative_tokens = (
+            self._spec_decode_state.num_speculative_tokens
+            if self._spec_decode_state is not None
+            else 0
+        )
+        if num_speculative_tokens > 1:
+            raise ValueError(
+                "Speculative decoding with multiple tokens is not supported with Device Graph Capture."
+            )
+
         for _replica_idx in range(dp_size):
             replica_batches.append(
                 [
@@ -562,23 +739,74 @@ class OverlapTextGenerationPipeline(
                         ),
                         eos_tracker=EOSTracker(),
                         model_name=self._pipeline_config.model.model_name,
+                        _spec_decoding_state=SpecDecodingState(
+                            saved_draft_tokens=[0] * num_speculative_tokens,
+                        ),
                     )
                     for idx in range(batch_size)
                 ]
             )
-        with self._kv_manager.reserve(replica_batches, num_steps=1):
+        # TODO(b-rod): ExitStack is needed to reserve multiple KV managers.
+        # Once MultiKVCacheManager exposes a single reserve() that covers
+        # all caches, replace with a plain `with` statement.
+        with ExitStack() as stack:
+            stack.enter_context(
+                self._kv_manager.reserve(
+                    replica_batches,
+                    num_steps=1,
+                    num_speculative_steps=num_speculative_tokens,
+                )
+            )
+            for ekm in self._extra_kv_managers:
+                stack.enter_context(
+                    ekm.reserve(
+                        replica_batches,
+                        num_steps=1,
+                        num_speculative_steps=num_speculative_tokens,
+                    )
+                )
+            max_cache_length = self._effective_max_cache_length
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
                 num_steps=1,
-                max_cache_length=self._pipeline_model.max_seq_len,
+                max_cache_length=max_cache_length,
+                num_speculative_steps=num_speculative_tokens,
+            )
+
+            return_n_logits = (
+                num_speculative_tokens + 1
+                if self._spec_decode_state is not None
+                else 0
             )
             with Tracer("prepare_initial_token_inputs"):
                 model_inputs = (
                     self._pipeline_model.prepare_initial_token_inputs(
                         replica_batches=replica_batches,
                         kv_cache_inputs=kv_cache_inputs,
+                        return_n_logits=return_n_logits,
                     )
                 )
+
+            if self._spec_decode_state is not None:
+                assert isinstance(model_inputs, _UnifiedEagleInputs)
+                draft_tokens = Buffer.from_numpy(
+                    np.zeros(
+                        (batch_size, num_speculative_tokens),
+                        dtype=np.int64,
+                    )
+                )
+                persistent_draft_tokens = (
+                    self._spec_decode_state.persistent_draft_tokens
+                )
+                persistent_draft_tokens = _contiguous_prefix_2d(
+                    persistent_draft_tokens, batch_size, num_speculative_tokens
+                )
+                persistent_draft_tokens.inplace_copy_from(draft_tokens)
+                model_inputs.draft_tokens = persistent_draft_tokens
+                model_inputs.draft_kv_blocks = (
+                    self._spec_decode_state.draft_kv_blocks
+                )
+
             yield model_inputs
 
     def warmup_graph_capture(self) -> None:
@@ -610,14 +838,30 @@ class OverlapTextGenerationPipeline(
                 max_capture_batch_size,
             )
 
+        # TODO(b-rod): Reaching into _replica[0].attention_dispatch_resolver
+        # is fragile. The KV manager should expose this via a public API.
+        # Also only handles one extra manager — generalize for N.
+        extra_resolver = (
+            self._extra_kv_managers[0]._replica[0].attention_dispatch_resolver
+            if self._extra_kv_managers
+            else None
+        )
+
+        num_speculative_tokens = (
+            self._spec_decode_state.num_speculative_tokens
+            if self._spec_decode_state is not None
+            else 0
+        )
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
             execute_model=self._pipeline_model.execute,
             session=self.session,
             kv_params=self._kv_manager.params,
             warmup_model_inputs=self._warmup_model_inputs,
-            max_cache_length_upper_bound=self._pipeline_model.max_seq_len,
+            max_cache_length_upper_bound=self._effective_max_cache_length,
             max_batch_size=max_capture_batch_size,
+            extra_dispatch_resolver=extra_resolver,
+            num_speculative_tokens=num_speculative_tokens,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size
@@ -641,9 +885,27 @@ class OverlapTextGenerationPipeline(
             )
 
     def _run_forward(
-        self, inputs: TextGenerationInputs[TextGenerationContextType]
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+        draft_tokens: Buffer | None = None,
     ) -> ModelOutputs:
-        """Runs the forward pass for the provided inputs and returns the ModelOutputs."""
+        """Runs the forward pass for the provided inputs and returns the ModelOutputs.
+
+        This handles both the non spec-decode and spec-decode paths. When running
+        with spec-decode, you must provide the draft tokens even when there are
+        no draft tokens to verify. In which case the shape is (batch_size, 0).
+        """
+        if draft_tokens is not None:
+            assert self._spec_decode_state is not None
+            num_speculative_steps = (
+                self._spec_decode_state.num_speculative_tokens
+            )
+            num_draft_tokens_to_verify = draft_tokens.shape[1]
+        else:
+            assert self._spec_decode_state is None
+            num_speculative_steps = 0
+            num_draft_tokens_to_verify = 0
+
         runner = self._graph_capture_runner
         batch_per_rank = max((len(b) for b in inputs.batches), default=0)
         use_graph_capture_replay = (
@@ -651,6 +913,7 @@ class OverlapTextGenerationPipeline(
             and bool(inputs)
             and inputs.batch_type == BatchType.TG
             and batch_per_rank <= self._max_graph_capture_batch_size
+            and (draft_tokens is None or num_draft_tokens_to_verify > 0)
         )
         debug_verify_replay_enabled = (
             use_graph_capture_replay
@@ -662,22 +925,30 @@ class OverlapTextGenerationPipeline(
         # Replay uses LUT buffers sized by max cache length so copied inputs
         # match captured graph buffer shapes.
         if use_graph_capture_replay:
+            assert self._graph_capture_runner is not None
             with self._kv_manager.scalar_metadata_on_host():
                 kv_cache_inputs = self._kv_manager.runtime_inputs(
                     inputs.batches,
                     num_steps=1,
-                    max_cache_length=self._pipeline_model.max_seq_len,
+                    max_cache_length=self._graph_capture_runner._max_cache_length_upper_bound,
+                    num_speculative_steps=num_speculative_steps,
                 )
         else:
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 inputs.batches,
                 num_steps=1,
+                num_speculative_steps=num_speculative_steps,
             )
+
+        return_n_logits = (
+            num_draft_tokens_to_verify + 1 if draft_tokens is not None else 0
+        )
 
         with Tracer("prepare_initial_token_inputs"):
             model_inputs = self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=inputs.batches,
                 kv_cache_inputs=kv_cache_inputs,
+                return_n_logits=return_n_logits,
             )
 
         if debug_verify_replay_enabled:
@@ -686,7 +957,9 @@ class OverlapTextGenerationPipeline(
             debug_verify_model_inputs = copy.copy(model_inputs)
             debug_verify_model_inputs.update(
                 kv_cache_inputs=self._kv_manager.runtime_inputs(
-                    inputs.batches, num_steps=1
+                    inputs.batches,
+                    num_steps=1,
+                    num_speculative_steps=num_speculative_steps,
                 )
             )
 
@@ -710,6 +983,15 @@ class OverlapTextGenerationPipeline(
             model_inputs.tokens = new_ragged_input_tokens
             if debug_verify_model_inputs is not None:
                 debug_verify_model_inputs.tokens = new_ragged_input_tokens
+
+        # Wrap the model inputs when speculative decoding is enabled.
+        if draft_tokens is not None:
+            assert self._spec_decode_state is not None
+            assert isinstance(model_inputs, _UnifiedEagleInputs)
+            model_inputs.draft_tokens = draft_tokens
+            model_inputs.draft_kv_blocks = (
+                self._spec_decode_state.draft_kv_blocks
+            )
 
         # Execute the model and get next tokens.
         try:
@@ -743,6 +1025,7 @@ class OverlapTextGenerationPipeline(
         """Runs the forward pass, samples logits, and returns an AsyncBatch."""
         device0 = self._devices[0]
         assert not device0.is_host
+        assert self._sampler is not None
 
         flat_batch = inputs.flat_batch
         with Tracer("FusedSamplingProcessor"):
@@ -799,6 +1082,128 @@ class OverlapTextGenerationPipeline(
             copy_event=copy_event,
         )
 
+    def _execute_spec_decode(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
+        """Executes unified EAGLE speculative decoding.
+
+        Single graph call handles: merge, target forward, greedy rejection,
+        shift, and draft forward.
+        """
+        assert self._spec_decode_state is not None
+        num_speculative_tokens = self._spec_decode_state.num_speculative_tokens
+
+        context_batch = inputs.flat_batch
+        verify_draft_tokens = all(
+            ctx.spec_decoding_state.num_draft_tokens == num_speculative_tokens
+            and ctx.tokens.generated_length > 1
+            for ctx in context_batch
+        )
+        num_draft_tokens_to_verify = (
+            num_speculative_tokens if verify_draft_tokens else 0
+        )
+
+        # Delete the saved draft tokens if we are not verifying them.
+        if not verify_draft_tokens:
+            for ctx in context_batch:
+                if ctx.spec_decoding_state.num_draft_tokens:
+                    ctx.spec_decoding_state.saved_draft_tokens = []
+
+        # Load or create draft tokens.
+        draft_tokens_pinned = DevicePinnedBuffer(
+            shape=(len(context_batch), num_draft_tokens_to_verify),
+            dtype=DType.int64,
+            device=self._devices[0],
+        )
+        draft_tokens_np = draft_tokens_pinned.to_numpy()
+        if num_draft_tokens_to_verify:
+            for i, ctx in enumerate(context_batch):
+                tokens = ctx.spec_decoding_state.saved_draft_tokens
+                assert len(tokens) == num_draft_tokens_to_verify
+                draft_tokens_np[i, :] = tokens
+
+        draft_tokens_device = self._spec_decode_state.persistent_draft_tokens
+        draft_tokens_device = _contiguous_prefix_2d(
+            draft_tokens_device, len(context_batch), num_draft_tokens_to_verify
+        )
+        draft_tokens_device.inplace_copy_from(draft_tokens_pinned)
+
+        outputs = self._run_forward(inputs, draft_tokens=draft_tokens_device)
+        assert isinstance(outputs, UnifiedEagleOutputs)
+
+        # Do the copy to host for each model output using pinned memory.
+        with Tracer("D2H generated_tokens"):
+            device0 = self._devices[0]
+            device0.synchronize()
+            num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
+            generated_tokens_host = DevicePinnedBuffer(
+                shape=num_accepted_draft_tokens_device.shape,
+                dtype=num_accepted_draft_tokens_device.dtype,
+                device=device0,
+            )
+            generated_tokens_host.inplace_copy_from(
+                num_accepted_draft_tokens_device
+            )
+
+            next_tokens_device = outputs.next_tokens
+            next_tokens_host = DevicePinnedBuffer(
+                shape=next_tokens_device.shape,
+                dtype=next_tokens_device.dtype,
+                device=device0,
+            )
+            next_tokens_host.inplace_copy_from(next_tokens_device)
+
+            next_draft_tokens_device = outputs.next_draft_tokens
+            next_draft_tokens_host = DevicePinnedBuffer(
+                shape=next_draft_tokens_device.shape,
+                dtype=next_draft_tokens_device.dtype,
+                device=device0,
+            )
+            next_draft_tokens_host.inplace_copy_from(next_draft_tokens_device)
+
+            # Sync to ensure all prior pinned d2h transfers are complete.
+            device0.synchronize()
+
+            num_accepted_draft_tokens_np = generated_tokens_host.to_numpy()
+            next_tokens_np = next_tokens_host.to_numpy()
+            next_draft_tokens_np = next_draft_tokens_host.to_numpy()
+
+        assert num_accepted_draft_tokens_np.shape == (len(context_batch),)
+        assert next_tokens_np.shape == (len(context_batch),)
+        assert next_draft_tokens_np.shape == (
+            len(context_batch),
+            num_speculative_tokens,
+        )
+        assert all(
+            num_accept <= num_draft_tokens_to_verify
+            for num_accept in num_accepted_draft_tokens_np
+        )
+
+        for batch_idx, ctx in enumerate(context_batch):
+            for token_idx in range(num_accepted_draft_tokens_np[batch_idx]):
+                if not ctx.is_done:
+                    ctx.update(draft_tokens_np[batch_idx, token_idx])
+            if not ctx.is_done:
+                ctx.update(next_tokens_np[batch_idx])
+                # Save the generated draft tokens for verification in next iteration.
+                ctx.spec_decoding_state.saved_draft_tokens = (
+                    next_draft_tokens_np[batch_idx].copy()
+                )
+
+        self._spec_decode_state.metrics.update(
+            draft_tokens_accepted=num_accepted_draft_tokens_np.sum(),
+            draft_tokens_generated=num_draft_tokens_to_verify
+            * len(context_batch),
+        )
+
+        res = build_response(
+            context_batch=context_batch,
+            max_seq_len=self._pipeline_model.max_seq_len,
+        )
+        self._kv_manager.step(inputs.batches)
+
+        return res
+
     @traced
     def execute(
         self,
@@ -835,6 +1240,9 @@ class OverlapTextGenerationPipeline(
                 "Max num steps > 1 is not supported with the Overlap scheduler."
             )
 
+        if self._spec_decode_state is not None:
+            return self._execute_spec_decode(inputs)
+
         if inputs:
             # Run the entire forward pass and output processing if the batch has
             # at least one request.
@@ -867,6 +1275,8 @@ class OverlapTextGenerationPipeline(
         # Commit the new KV blocks into the prefix cache, ignoring the final
         # placeholder future token.
         self._kv_manager.step(inputs.batches)
+        for extra_kv_manager in self._extra_kv_managers:
+            extra_kv_manager.step(inputs.batches)
 
         if curr_batch is not None:
             if self._disable_overlap:
@@ -898,3 +1308,14 @@ class OverlapTextGenerationPipeline(
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
+
+    @property
+    def extra_kv_managers(self) -> list[PagedKVCacheManager]:
+        """Returns extra KV cache managers (e.g. global attention for Diancie)."""
+        return self._extra_kv_managers
+
+    def spec_decode_metrics(self) -> SpeculativeDecodingMetrics | None:
+        """Returns the draft token acceptance metrics for speculative decoding."""
+        if self._spec_decode_state is None:
+            return None
+        return self._spec_decode_state.metrics

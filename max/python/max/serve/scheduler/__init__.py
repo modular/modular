@@ -13,8 +13,11 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any, cast
+
+logger = logging.getLogger(__name__)
 
 from max.interfaces import (
     AudioGenerationOutput,
@@ -147,7 +150,18 @@ def load_scheduler(
         assert (
             pipeline_config.runtime.enable_prioritize_first_decode is not None
         )
+        assert pipeline_config.model is not None
         assert pipeline_config.model.max_length is not None
+
+        enable_in_flight_batching = (
+            pipeline_config.runtime.enable_in_flight_batching
+        )
+        if enable_in_flight_batching:
+            logger.warning(
+                "In-flight batching is not supported with the TTS "
+                "scheduler, overriding enable_in_flight_batching to False"
+            )
+            enable_in_flight_batching = False
 
         token_gen_config = AudioGenerationSchedulerConfig(
             max_batch_size=pipeline_config.runtime.max_batch_size,
@@ -157,7 +171,7 @@ def load_scheduler(
             max_seq_len=pipeline_config.model.max_length,
             target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
             enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
+            enable_in_flight_batching=enable_in_flight_batching,
             max_queue_size_tg=pipeline_config.runtime.max_queue_size_tg,
             min_batch_size_tg=pipeline_config.runtime.min_batch_size_tg,
             ce_delay_ms=pipeline_config.runtime.ce_delay_ms,

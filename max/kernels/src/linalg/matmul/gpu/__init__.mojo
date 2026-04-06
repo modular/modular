@@ -1002,6 +1002,10 @@ def multistage_gemm[
     var tensor_c = c.to_layout_tensor()
     var tensor_a = a.to_layout_tensor()
     var tensor_b = b.to_layout_tensor()
+    comptime a_layout = tensor_a.layout
+    comptime b_layout = tensor_b.layout
+    _ = tensor_a
+    _ = tensor_b
 
     var M = tensor_c.dim[0]()
     var N = tensor_c.dim[1]()
@@ -1024,13 +1028,17 @@ def multistage_gemm[
                 a_type,
                 b_type,
                 c_type,
-                tensor_a.layout,
-                tensor_b.layout,
+                a_layout,
+                b_layout,
                 tensor_c.layout,
                 pingpong_config,
                 enable_swizzle=True,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong
+            ].matmul_ping_pong[
+                a.LayoutType,
+                b.LayoutType,
+                c.LayoutType,
+            ]
 
             comptime skinny_config = KernelConfig(
                 block_shape=Index(128, 256, 128),
@@ -1041,13 +1049,17 @@ def multistage_gemm[
                 a_type,
                 b_type,
                 c_type,
-                tensor_a.layout,
-                tensor_b.layout,
+                a_layout,
+                b_layout,
                 tensor_c.layout,
                 skinny_config,
                 enable_swizzle=True,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong
+            ].matmul_ping_pong[
+                a.LayoutType,
+                b.LayoutType,
+                c.LayoutType,
+            ]
 
             comptime standard_kernel = gemm_kernel_amd[
                 CLT=c.LayoutType,
@@ -1076,9 +1088,9 @@ def multistage_gemm[
                 if M >= 640:
                     logger.info("Executing: AMD ping-pong matmul (256x256)")
                     ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
-                        tensor_a,
-                        tensor_b,
-                        tensor_c,
+                        a,
+                        b,
+                        c,
                         grid_dim=(
                             ceildiv(N, pingpong_config.block_shape[1]),
                             ceildiv(M, pingpong_config.block_shape[0]),
@@ -1088,9 +1100,9 @@ def multistage_gemm[
                 elif M >= 128:
                     logger.info("Executing: AMD skinny pingpong matmul")
                     ctx.enqueue_function[skinny_kernel, skinny_kernel](
-                        tensor_a,
-                        tensor_b,
-                        tensor_c,
+                        a,
+                        b,
+                        c,
                         grid_dim=(
                             ceildiv(N, skinny_config.block_shape[1]),
                             ceildiv(M, skinny_config.block_shape[0]),
@@ -1110,9 +1122,9 @@ def multistage_gemm[
                 if M >= 512:
                     logger.info("Executing: AMD skinny pingpong matmul")
                     ctx.enqueue_function[skinny_kernel, skinny_kernel](
-                        tensor_a,
-                        tensor_b,
-                        tensor_c,
+                        a,
+                        b,
+                        c,
                         grid_dim=(
                             ceildiv(N, skinny_config.block_shape[1]),
                             ceildiv(M, skinny_config.block_shape[0]),
@@ -1303,7 +1315,11 @@ def multistage_gemm[
                 pingpong_config,
                 enable_swizzle=True,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong
+            ].matmul_ping_pong[
+                a.LayoutType,
+                b.LayoutType,
+                c.LayoutType,
+            ]
 
             comptime skinny_config = KernelConfig(
                 block_shape=Index(128, 256, 128),
@@ -1320,7 +1336,11 @@ def multistage_gemm[
                 skinny_config,
                 enable_swizzle=True,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong
+            ].matmul_ping_pong[
+                a.LayoutType,
+                b.LayoutType,
+                c.LayoutType,
+            ]
 
             comptime standard_kernel = gemm_kernel_amd[
                 CLT=c.LayoutType,
@@ -1348,9 +1368,9 @@ def multistage_gemm[
                 if M >= 640:
                     logger.info("Executing: AMD ping-pong matmul (256x256)")
                     ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
-                        tensor_a,
-                        tensor_b,
-                        tensor_c,
+                        a,
+                        b,
+                        c,
                         grid_dim=(
                             ceildiv(N, pingpong_config.block_shape[1]),
                             ceildiv(M, pingpong_config.block_shape[0]),
@@ -1360,9 +1380,9 @@ def multistage_gemm[
                 elif M >= 128:
                     logger.info("Executing: AMD skinny pingpong matmul")
                     ctx.enqueue_function[skinny_kernel, skinny_kernel](
-                        tensor_a,
-                        tensor_b,
-                        tensor_c,
+                        a,
+                        b,
+                        c,
                         grid_dim=(
                             ceildiv(N, skinny_config.block_shape[1]),
                             ceildiv(M, skinny_config.block_shape[0]),
@@ -1382,9 +1402,9 @@ def multistage_gemm[
                 if M >= 512:
                     logger.info("Executing: AMD skinny pingpong matmul")
                     ctx.enqueue_function[skinny_kernel, skinny_kernel](
-                        tensor_a,
-                        tensor_b,
-                        tensor_c,
+                        a,
+                        b,
+                        c,
                         grid_dim=(
                             ceildiv(N, skinny_config.block_shape[1]),
                             ceildiv(M, skinny_config.block_shape[0]),

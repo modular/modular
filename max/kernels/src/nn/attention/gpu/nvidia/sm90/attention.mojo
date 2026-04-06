@@ -13,6 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import ceildiv, align_up
+from std.math.uutils import ufloordiv
 from std.math.constants import log2e
 from std.memory import (
     bitcast,
@@ -22,7 +23,7 @@ from std.sys import size_of
 
 import std.gpu.primitives.warp as warp
 from std.algorithm.functional import unswitch
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -74,8 +75,6 @@ from std.utils.static_tuple import StaticTuple
 from std.builtin.device_passable import DevicePassable
 from std.utils import StaticTuple
 
-
-from std.gpu import block_idx_uint as block_idx
 
 comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
@@ -157,7 +156,7 @@ struct NonNullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        assert Bool(self.ptr), (
+        assert self.ptr._is_not_null(), (
             "NonNullPointer is supposed to provide a compile-time guarantee"
             " of being non-null"
         )
@@ -180,7 +179,7 @@ struct NullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        return {}
+        return Self.PtrType(_unsafe_null=())
 
 
 struct Pack[
@@ -506,9 +505,9 @@ def get_seq_info[
         pair_cta=pair_cta,
     ]()
     var state: MHATileState = scheduler.initial_state(
-        UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ](),
+        UnsafePointer[UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED](
+            _unsafe_null=()
+        ),
         tile_summary,
     )
     return scheduler.unsafe_seq_info(tile_summary, state)
@@ -906,7 +905,9 @@ def _apply_mask[
     var batch_cache_valid_length: UInt32
 
     comptime if decoding:
-        if warp.broadcast((thread_idx.x - 128) // 32) > UInt((group - 1) // 16):
+        if warp.broadcast(ufloordiv(thread_idx.x - 128, 32)) > (
+            (group - 1) // 16
+        ):
             return
         if lane >= UInt32(4 * group):
             return

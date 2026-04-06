@@ -67,11 +67,13 @@ def _compile_code[
     compile_options: StaticString = CompilationTarget[
         target
     ].default_compile_options(),
+    link_options: StaticString = "",
 ]() -> CompiledFunctionInfo[func_type, func, target]:
     return compile_info[
         func,
         emission_kind=emission_kind,
         compile_options=compile_options,
+        link_options=link_options,
         target=target,
     ]()
 

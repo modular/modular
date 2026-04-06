@@ -14,12 +14,7 @@
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType
-from std.gpu import (
-    barrier,
-    thread_idx_int as thread_idx,
-    block_idx_uint as block_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import barrier, thread_idx, block_idx, warp_id
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -614,11 +609,9 @@ struct OffsetPosition[
         # Grid layout: block_z = batch_size * num_partitions
         # block_idx.z = batch_idx * num_partitions + split_idx
         comptime if Self.decoding_warp_split_k:
-            self.batch_idx, self.split_idx = divmod(
-                Int(block_idx.z), num_partitions
-            )
+            self.batch_idx, self.split_idx = divmod(block_idx.z, num_partitions)
         else:
-            self.batch_idx = Int(block_idx.z)
+            self.batch_idx = block_idx.z
             self.split_idx = 0
 
         comptime if Self.ragged:
@@ -630,14 +623,14 @@ struct OffsetPosition[
 
             # Global Q token index for per-token scale lookup.
             # In ragged mode, Q tokens are packed: token = start_of_seq + seq_idx
-            self.q_token_idx = start_of_seq + Int(block_idx.y)
+            self.q_token_idx = start_of_seq + block_idx.y
 
             # Q row offset: no split dimension
             # Q shape: (total_tokens * num_heads, depth)
             self.q_row_offset = (
                 start_of_seq * Self.config.num_q_heads
-                + Int(block_idx.x) * Self.config.BM
-                + Int(block_idx.y) * Self.config.num_q_heads
+                + block_idx.x * Self.config.BM
+                + block_idx.y * Self.config.num_q_heads
             )
 
             # Output row offset: includes split dimension for split-K
@@ -652,8 +645,8 @@ struct OffsetPosition[
                 self.out_row_offset = (
                     self.split_idx * rows_per_split
                     + self.batch_idx * max_seq_len * Self.config.num_q_heads
-                    + Int(block_idx.y) * Self.config.num_q_heads
-                    + Int(block_idx.x) * Self.config.BM
+                    + block_idx.y * Self.config.num_q_heads
+                    + block_idx.x * Self.config.BM
                 )
             else:
                 self.out_row_offset = self.q_row_offset
@@ -664,14 +657,14 @@ struct OffsetPosition[
 
             # Global Q token index for per-token scale lookup.
             # In fixed mode: token = batch_idx * seq_len + seq_idx
-            self.q_token_idx = self.batch_idx * self.seq_len + Int(block_idx.y)
+            self.q_token_idx = self.batch_idx * self.seq_len + block_idx.y
 
             # Q row offset: (batch * seq_len * num_heads, depth)
             # Row = batch_idx * (seq_len * num_heads) + seq_idx * num_heads + head_block * BM
             self.q_row_offset = (
                 Self.config.num_q_heads * self.seq_len * self.batch_idx
-                + Int(block_idx.x) * Self.config.BM
-                + Int(block_idx.y) * Self.config.num_q_heads
+                + block_idx.x * Self.config.BM
+                + block_idx.y * Self.config.num_q_heads
             )
 
             # Output row offset for split-K:
@@ -2870,8 +2863,8 @@ struct MLA_SM100_Decode_Common[
         # LSE layout: (num_splits, batch_size, max_seq_len, num_heads)
         # Use max_seq_len (not per-batch seq_len) for strides to match
         # the PADDED buffer layout and the combine kernel's read pattern.
-        var head_start = Int(block_idx.x) * Self.config.BM
-        var seq_idx = Int(block_idx.y)
+        var head_start = block_idx.x * Self.config.BM
+        var seq_idx = block_idx.y
         var stride_seq = Self.config.num_q_heads
         var stride_batch = max_seq_len * stride_seq
         var stride_split = batch_size * stride_batch
@@ -3084,12 +3077,12 @@ struct MLA_SM100_Decode_Common[
         prompt_idx: UInt32,  # batch index
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
-        scale_k_smem: SharedMemPointer[
-            Scalar[DType.float32]
-        ] = SharedMemPointer[Scalar[DType.float32]](),
+        scale_k_smem: SharedMemPointer[Scalar[DType.float32]] = {
+            _unsafe_null = ()
+        },
         q_scale_ptr: UnsafePointer[
             Scalar[DType.float32], origin=MutAnyOrigin
-        ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
+        ] = {_unsafe_null = ()},
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime assert Self.AccumType.is_floating_point()
@@ -3448,7 +3441,7 @@ struct MLA_SM100_Decode_Common[
             # row = lane_id & 0x3F gives 0-63 for both halves
             # half = lane_id >> 6 gives 0 or 1
             # We only need one write per head, so half=0 threads write
-            var head_idx = Int(block_idx.x) * Self.config.BM + row
+            var head_idx = block_idx.x * Self.config.BM + row
             var half_idx = lane_id >> 6  # 0 for first half, 1 for second half
 
             if half_idx == 0 and head_idx < Self.config.num_q_heads:
@@ -3468,7 +3461,7 @@ struct MLA_SM100_Decode_Common[
                 # lse_accum_split shape: (num_splits, batch_size, max_seq_len, num_heads)
                 # Use max_seq_len (not per-batch seq_len) for strides to match
                 # the PADDED buffer layout and the combine kernel's read pattern.
-                var seq_idx = Int(block_idx.y)
+                var seq_idx = block_idx.y
                 var stride_batch = (
                     offset_position.max_seq_len * Self.config.num_q_heads
                 )

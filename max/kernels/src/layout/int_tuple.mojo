@@ -60,6 +60,7 @@ from std.os import abort
 
 from std.builtin.range import _StridedRange
 from std.memory import memcpy
+from std.memory._nonnull import NonNullUnsafePointer
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 from std.utils.numerics import max_finite
@@ -131,7 +132,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: UnsafePointer[Int, MutExternalOrigin]
+    var _data: Optional[NonNullUnsafePointer[Int, MutExternalOrigin]]
     var _size: Int
 
     @always_inline("nodebug")
@@ -141,7 +142,12 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         Args:
             size: Number of integers to allocate space for. Defaults to 0.
         """
-        self._data = alloc[Int](size)
+        if size > 0:
+            self._data = NonNullUnsafePointer(
+                unsafe_from_nullable=alloc[Int](size)
+            )
+        else:
+            self._data = {}
         self._size = size
 
     @always_inline("nodebug")
@@ -156,7 +162,9 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = copy._size
         if copy.owning():
             var size = copy.size()
-            self._data = alloc[Int](size)
+            self._data = NonNullUnsafePointer(
+                unsafe_from_nullable=alloc[Int](size)
+            )
             self.copy_from(0, copy, size)
         else:
             self._data = copy._data
@@ -169,7 +177,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         double-free errors with views.
         """
         if self.owning() and self._data:
-            self._data.free()
+            self._data.unsafe_value().free()
 
     @always_inline("nodebug")
     def __getitem__(self, idx: Int) -> Int:
@@ -186,7 +194,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         # Note:
         #     Bounds checking is performed when assertions are enabled (e.g., -D ASSERT=all).
 
-        return self._data[idx]
+        return self._data.unsafe_value()[idx]
 
     @always_inline("nodebug")
     def __setitem__(mut self, idx: Int, value: Int):
@@ -208,7 +216,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             ")",
         )
 
-        self._data[idx] = value
+        self._data.unsafe_value()[idx] = value
 
     @always_inline("nodebug")
     def owning(self) -> Bool:
@@ -238,7 +246,12 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             source: Source array to copy from.
             size: Number of elements to copy.
         """
-        memcpy(dest=self._data + offset, src=source._data, count=size)
+        if self._data and source._data:
+            memcpy(
+                dest=self._data.unsafe_value() + offset,
+                src=source._data.unsafe_value(),
+                count=size,
+            )
 
     @always_inline("nodebug")
     def copy_from(
@@ -252,11 +265,12 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             src_offset: Source offset in the source array.
             size: Number of elements to copy.
         """
-        memcpy(
-            dest=self._data + dst_offset,
-            src=source._data + src_offset,
-            count=size,
-        )
+        if self._data and source._data:
+            memcpy(
+                dest=self._data.unsafe_value() + dst_offset,
+                src=source._data.unsafe_value() + src_offset,
+                count=size,
+            )
 
 
 comptime UNKNOWN_VALUE = -1
@@ -389,7 +403,7 @@ struct IntTuple(
 
     @staticmethod
     @always_inline("nodebug")
-    def elements_size(elements: VariadicList[IntTuple, ...]) -> Int:
+    def elements_size(*elements: IntTuple) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
@@ -474,17 +488,6 @@ struct IntTuple(
 
         Args:
             elements: Variable number of integer values to store in the tuple.
-        """
-        self = Self(elements)
-
-    @always_inline
-    def __init__(out self, elements: VariadicList[Int, is_owned=False]):
-        """Initialize an `IntTuple` with a list of integers.
-
-        Creates an `IntTuple` containing the provided integer values.
-
-        Args:
-            elements: List of integer values to store in the tuple.
 
         Notes:
             - Pre-allocates exact memory needed for efficiency.
@@ -521,11 +524,11 @@ struct IntTuple(
               less than `MinimumValue`, assertion fails with an error message.
             - Structure validation performed when assertions are enabled.
         """
-        comptime size = VariadicParamList[*elements].size
+        comptime size = ParameterList[*elements].size
         self._store = IntArray(size + 1)
         self._store[0] = size
         for i in range(size):
-            var value = VariadicParamList[*elements]()[i]
+            var value = ParameterList[*elements]()[i]
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",
@@ -570,7 +573,7 @@ struct IntTuple(
             __list_literal__: Specifies that this constructor can be used for
               list literals.
         """
-        var size = Self.elements_size(elements)
+        var size = Self.elements_size(*elements)
         self._store = IntArray(size + 1)
         var num_elems = len(elements)
         self._store[0] = num_elems
@@ -924,7 +927,7 @@ struct IntTuple(
 
         var old_len = len(self)
         var old_size = self.size()
-        var new_size = old_size + Self.elements_size(elements)
+        var new_size = old_size + Self.elements_size(*elements)
         var new_len = old_len + len(elements)
         var new_store = IntArray(new_size)
         new_store[0] = new_len

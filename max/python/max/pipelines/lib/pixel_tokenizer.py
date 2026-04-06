@@ -101,21 +101,14 @@ class PipelineClassName(str, Enum):
     ZIMAGE = "ZImagePipeline"
 
     @classmethod
-    def from_diffusers_config(
-        cls, diffusers_config: dict[str, Any]
-    ) -> PipelineClassName:
-        """Resolve a PipelineClassName from a diffusers config dict."""
-        raw = diffusers_config.get("_class_name")
-        if raw is None:
-            raise KeyError(
-                "diffusers_config is missing required key '_class_name'."
-            )
+    def from_class_name(cls, class_name: str) -> PipelineClassName:
+        """Resolve a PipelineClassName from a ``_class_name`` string."""
         try:
-            return cls(raw)
+            return cls(class_name)
         except ValueError as e:
             allowed = ", ".join([m.value for m in cls])
             raise ValueError(
-                f"Unsupported _class_name={raw!r}. Allowed: {allowed}"
+                f"Unsupported _class_name={class_name!r}. Allowed: {allowed}"
             ) from e
 
 
@@ -130,7 +123,7 @@ class PixelGenerationTokenizer(
 
     Args:
         model_path: Path to the model/tokenizer.
-        pipeline_config: Pipeline configuration (must include diffusers_config).
+        pipeline_config: Pipeline configuration with ModelManifest metadata.
         subfolder: Subfolder within the model path for the primary tokenizer.
         subfolder_2: Optional subfolder for a second tokenizer (e.g. text encoder).
         revision: Git revision/branch to use.
@@ -205,34 +198,34 @@ class PixelGenerationTokenizer(
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
 
-        # Extract diffusers_config
-        if not pipeline_config or not hasattr(
-            pipeline_config.model, "diffusers_config"
-        ):
+        # Extract config from ModelManifest metadata and per-component configs.
+        if not pipeline_config:
             raise ValueError(
-                "pipeline_config.model.diffusers_config is required for PixelGenerationTokenizer. "
-                "Please provide a pipeline_config with a valid diffusers_config."
+                "pipeline_config is required for PixelGenerationTokenizer."
             )
-        if pipeline_config.model.diffusers_config is None:
-            raise ValueError(
-                "pipeline_config.model.diffusers_config cannot be None. "
-                "Please provide a valid diffusers_config."
-            )
-        self.diffusers_config = pipeline_config.model.diffusers_config
+        models = pipeline_config.models
+        metadata = models.metadata
 
-        # Store the pipeline class name for model-specific behavior
-        self._pipeline_class_name = PipelineClassName.from_diffusers_config(
-            self.diffusers_config
+        class_name = metadata.get("_class_name")
+        if not class_name:
+            raise ValueError(
+                "ModelManifest metadata is missing required key '_class_name'."
+            )
+        self._pipeline_class_name = PipelineClassName.from_class_name(
+            class_name
         )
+        self._manifest_metadata = metadata
 
-        # Preserve tokenizer attention masks so downstream text encoders can
-        # derive additive attention bias directly from tokenizer semantics.
-
-        # Extract static config values once during initialization
-        components = self.diffusers_config.get("components", {})
-        vae_config = components.get("vae", {}).get("config_dict", {})
-        transformer_config = components.get("transformer", {}).get(
-            "config_dict", {}
+        # Extract static config values from per-component huggingface_config.
+        vae_config = (
+            models["vae"].huggingface_config.to_dict()
+            if "vae" in models
+            else {}
+        )
+        transformer_config = (
+            models["transformer"].huggingface_config.to_dict()
+            if "transformer" in models
+            else {}
         )
 
         # Compute static VAE scale factor
@@ -248,11 +241,16 @@ class PixelGenerationTokenizer(
         else:
             self._num_channels_latents = transformer_config["in_channels"] // 4
 
-        # Create scheduler
-        scheduler_class_name = components.get("scheduler", {}).get(
-            "class_name", None
+        # Create scheduler from its component config.
+        scheduler_config = models["scheduler"].huggingface_config
+        scheduler_class_name: str | None = getattr(
+            scheduler_config, "_class_name", None
         )
-        scheduler_cfg = components.get("scheduler", {}).get("config_dict", {})
+        if scheduler_class_name is None:
+            raise ValueError(
+                "Scheduler config missing '_class_name' attribute."
+            )
+        scheduler_cfg = scheduler_config.to_dict()
         scheduler_cfg["use_empirical_mu"] = self._pipeline_class_name in (
             PipelineClassName.FLUX2,
             PipelineClassName.FLUX2_KLEIN,
@@ -920,7 +918,7 @@ class PixelGenerationTokenizer(
         )
         if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
             is_distilled_klein = bool(
-                self.diffusers_config.get("is_distilled", False)
+                self._manifest_metadata.get("is_distilled", False)
             )
             # for non-distilled models, CFG is enabled
             # whenever guidance_scale > 1.0; negative prompt defaults to "".

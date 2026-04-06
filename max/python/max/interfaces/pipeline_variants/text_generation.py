@@ -105,7 +105,15 @@ class ImageContentPart(MessageContentPart):
     )
 
 
-MessageContent = TextContentPart | ImageContentPart
+class VideoContentPart(MessageContentPart):
+    """A video content part of a message."""
+
+    type: Literal["video"] = Field(
+        default="video", description="Content type identifier"
+    )
+
+
+MessageContent = TextContentPart | ImageContentPart | VideoContentPart
 
 MessageRole = Literal["system", "user", "assistant", "tool", "function"]
 
@@ -138,7 +146,9 @@ class TextGenerationRequestMessage(BaseModel):
 
         normalized: list[MessageContent] = []
         for item in v:
-            if isinstance(item, (TextContentPart, ImageContentPart)):
+            if isinstance(
+                item, (TextContentPart, ImageContentPart, VideoContentPart)
+            ):
                 normalized.append(item)
                 continue
 
@@ -160,11 +170,19 @@ class TextGenerationRequestMessage(BaseModel):
                 normalized.append(TextContentPart(text=text_value))
             elif content_type == "image":
                 normalized.append(ImageContentPart())
+            elif content_type == "video":
+                normalized.append(VideoContentPart())
             elif content_type == "image_url":
                 raise ValueError(
                     "image_url content type not supported in internal format. "
                     "Images must be provided as bytes in TextGenerationRequest.images "
                     "with image placeholders (type='image') in message content."
+                )
+            elif content_type == "video_url":
+                raise ValueError(
+                    "video_url content type not supported in internal format. "
+                    "Videos must be provided as bytes in TextGenerationRequest.videos "
+                    "with video placeholders (type='video') in message content."
                 )
             else:
                 raise ValueError(
@@ -200,6 +218,15 @@ class TextGenerationRequestMessage(BaseModel):
             1 for item in self.content if isinstance(item, ImageContentPart)
         )
 
+    @cached_property
+    def number_of_videos(self) -> int:
+        """Returns the number of VideoContentPart instances in the message content."""
+        if isinstance(self.content, str):
+            return 0
+        return sum(
+            1 for item in self.content if isinstance(item, VideoContentPart)
+        )
+
 
 @dataclass(frozen=True)
 class TextGenerationRequest:
@@ -232,6 +259,11 @@ class TextGenerationRequest:
     A list of image byte arrays that can be included as part of the request.
     This field is optional and may be used for multimodal inputs where images
     are relevant to the prompt or task.
+    """
+    videos: list[bytes] = field(default_factory=list)
+    """
+    A list of video byte arrays that can be included as part of the request.
+    Each video is decoded into frames during preprocessing.
     """
     tools: list[TextGenerationRequestTool] | None = None
     """
@@ -286,6 +318,14 @@ class TextGenerationRequest:
     If not specified, the request will be routed to the default endpoint.
     """
 
+    dkv_cache_hint: dict[str, Any] | None = None
+    """Cache hint from the Orchestrator for distributed KV cache.
+
+    When present, the serving layer converts this into
+    ``TextContext.external_block_metadata`` so the DKVConnector can
+    fetch cached blocks before the forward pass.
+    """
+
     def __str__(self) -> str:
         return str(self.request_id)
 
@@ -316,9 +356,19 @@ class TextGenerationRequest:
                 "string prompts cannot be provided, when images are provided, use messages"
             )
 
+        if self.videos and isinstance(self.prompt, str):
+            raise ValueError(
+                "string prompts cannot be provided, when videos are provided, use messages"
+            )
+
         if self.images and self.number_of_images != len(self.images):
             raise ValueError(
                 f"number of images provided in TextGenerationRequest do not match messages:\n{self.messages}"
+            )
+
+        if self.videos and self.number_of_videos != len(self.videos):
+            raise ValueError(
+                f"number of videos provided in TextGenerationRequest do not match messages:\n{self.messages}"
             )
 
     @cached_property
@@ -330,6 +380,19 @@ class TextGenerationRequest:
         """
         return (
             sum(message.number_of_images for message in self.messages)
+            if self.messages
+            else 0
+        )
+
+    @cached_property
+    def number_of_videos(self) -> int:
+        """Returns the total number of video-type contents across all provided messages.
+
+        Returns:
+            Total count of video-type contents found in messages.
+        """
+        return (
+            sum(message.number_of_videos for message in self.messages)
             if self.messages
             else 0
         )

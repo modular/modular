@@ -15,11 +15,11 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    block_dim,
+    block_idx,
+    lane_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.primitives import block, warp
 from std.gpu.primitives.grid_controls import (
@@ -41,6 +41,7 @@ from layout import (
 )
 from layout.tile_layout import Layout
 from std.math import ceildiv, gcd, exp
+from std.math.uutils import ufloordiv
 from std.memory import stack_allocation
 from std.os import Atomic
 from std.random import Random
@@ -178,10 +179,8 @@ def get_min_max_value[
     for i in range(num_iterations):
         var in_data_vec = SIMD[DType.float32, vec_size](0)
 
-        if (i * block_size + Int(tx)) * vec_size < d:
-            var offset = (
-                row_idx * d + i * block_size * vec_size + Int(tx) * vec_size
-            )
+        if (i * block_size + tx) * vec_size < d:
+            var offset = row_idx * d + i * block_size * vec_size + tx * vec_size
             in_data_vec = in_data.load[width=vec_size](offset).cast[
                 DType.float32
             ]()
@@ -215,7 +214,7 @@ def TopKMaskLogitsKernel[
     d: Int,
 ):
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var row_idx = bx
 
     var logits_ptr = logits.ptr + bx * d
@@ -228,7 +227,7 @@ def TopKMaskLogitsKernel[
 
     with PDL():
         var k = top_k_val
-        if top_k_arr:
+        if top_k_arr._is_not_null():
             k = Int(top_k_arr[bx])
 
         # Initialize pivot to negative infinity.
@@ -401,7 +400,12 @@ def topk_mask_logits[
         if top_k_arr:
             top_k_buf = top_k_arr.value().to_device_buffer(ctx)
         else:
-            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            top_k_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
 
         @parameter
         def launch_kernel[vec_size: Int]() raises:
@@ -457,7 +461,7 @@ def device_sampling_from_prob[
         after all chunks are processed.
     """
 
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     # Step 1: Filter probabilities based on predicate (prob > low).
     var prob_gt_threshold = SIMD[DType.float32, vec_size]()
@@ -629,9 +633,9 @@ def _block_reduce_value_count[
     var warp_accum = _warp_reduce_value_count(val)
 
     # Store warp-level results in shared memory (only lane 0 of each warp).
-    if lane_id() == 0 and warp < UInt(num_warps_needed):
-        value_sram[Int(warp) * value_width] = warp_accum.value
-        count_sram[Int(warp) * count_width] = warp_accum.count
+    if lane_id() == 0 and warp < num_warps_needed:
+        value_sram[warp * value_width] = warp_accum.value
+        count_sram[warp * count_width] = warp_accum.count
     barrier()
 
     # Each warp has reduced its own ValueCount in smem (value_sram and count_sram).
@@ -641,12 +645,12 @@ def _block_reduce_value_count[
     # block_size = 1024 and WARP_SIZE = 32, then only the first 32 threads from warp 0
     # will have valid results).
     var block_accum: ValueCount[T]
-    var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
+    var thread_in_final_warp = thread_idx.x < ufloordiv(block_dim.x, WARP_SIZE)
 
     if thread_in_final_warp:
         block_accum = {
-            value = value_sram[lane_id() * UInt(value_width)],
-            count = count_sram[lane_id() * UInt(count_width)],
+            value = value_sram[lane_id() * value_width],
+            count = count_sram[lane_id() * count_width],
         }
     else:
         # Initialize unused threads with zeros (identity for sum).
@@ -710,7 +714,7 @@ def TopKSamplingFromProbKernel[
     comptime assert output.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     var sampled_id_sram = stack_allocation[
         1, Int, address_space=AddressSpace.SHARED
@@ -722,10 +726,10 @@ def TopKSamplingFromProbKernel[
     with PDL():
         var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
         var k = top_k_val
-        if top_k_arr:
+        if top_k_arr._is_not_null():
             k = Int(top_k_arr.load(bx))
         var row_idx = bx
-        if indices:
+        if indices._is_not_null():
             row_idx = Int(indices.load(bx))
 
         var probs_ptr = probs.ptr + row_idx * d
@@ -958,12 +962,22 @@ def topk_sampling_from_prob[
         if indices:
             indices_buf = indices.value().to_device_buffer(ctx)
         else:
-            indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            indices_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var top_k_buf: DeviceBuffer[out_idx_type]
         if top_k_arr:
             top_k_buf = top_k_arr.value().to_device_buffer(ctx)
         else:
-            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            top_k_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
@@ -1054,10 +1068,10 @@ def TopKTopPSamplingFromProbKernel[
     comptime assert output.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     var row_idx = bx
-    if indices:
+    if indices._is_not_null():
         row_idx = Int(indices.load(bx))
 
     var sampled_id_sram = stack_allocation[
@@ -1069,17 +1083,19 @@ def TopKTopPSamplingFromProbKernel[
 
     with PDL():
         var seed_val = UInt64(0)
-        if rng_seed:
+        if rng_seed._is_not_null():
             seed_val = rng_seed[row_idx]
 
         var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
 
-        var k = Int(top_k_arr.load(row_idx)) if top_k_arr else top_k_val
+        var k = Int(
+            top_k_arr.load(row_idx)
+        ) if top_k_arr._is_not_null() else top_k_val
         if k == -1:
             k = top_k_val
 
         var p = top_p_val
-        if top_p_arr:
+        if top_p_arr._is_not_null():
             p = top_p_arr[row_idx]
 
         var probs_ptr = probs.ptr + row_idx * d
@@ -1332,22 +1348,42 @@ def topk_topp_sampling_from_prob[
         if indices:
             indices_buf = indices.value().to_device_buffer(ctx)
         else:
-            indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            indices_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var top_k_buf: DeviceBuffer[out_idx_type]
         if top_k_arr:
             top_k_buf = top_k_arr.value().to_device_buffer(ctx)
         else:
-            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            top_k_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var top_p_buf: DeviceBuffer[DType.float32]
         if top_p_arr:
             top_p_buf = top_p_arr.value().to_device_buffer(ctx)
         else:
-            top_p_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+            top_p_buf = DeviceBuffer[DType.float32](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var seed_buf: DeviceBuffer[DType.uint64]
         if rng_seed:
             seed_buf = rng_seed.value().to_device_buffer(ctx)
         else:
-            seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+            seed_buf = DeviceBuffer[DType.uint64](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
@@ -1415,7 +1451,7 @@ def topk_softmax_sample_kernel[
     comptime assert sampled_indices.flat_rank == 1
 
     var bx = block_idx.x
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var row_idx = bx
 
     var logits_ptr = logits.ptr + bx * d
@@ -1423,10 +1459,10 @@ def topk_softmax_sample_kernel[
     var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
 
     var k = top_k_val
-    if top_k_arr:
+    if top_k_arr._is_not_null():
         k = Int(top_k_arr[bx])
     var temp_val = temperature_val
-    if temperature:
+    if temperature._is_not_null():
         temp_val = max(temperature[bx], 1e-6)
 
     # Allocate shared memory for caching top-k elements.
@@ -1586,7 +1622,7 @@ def topk_softmax_sample_kernel[
         # PHASE 3: Sampling (thread 0 only).
         if tx == 0:
             var seed_val = seed_val
-            if seed:
+            if seed._is_not_null():
                 seed_val = seed[bx]
             var rng_state = Random(seed=seed_val)
             var rng = rng_state.step_uniform()
@@ -1726,17 +1762,32 @@ def topk_softmax_sample[
         if top_k_arr:
             top_k_buf = top_k_arr.value().to_device_buffer(ctx)
         else:
-            top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+            top_k_buf = DeviceBuffer[out_idx_type](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var temp_buf: DeviceBuffer[DType.float32]
         if temperature:
             temp_buf = temperature.value().to_device_buffer(ctx)
         else:
-            temp_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+            temp_buf = DeviceBuffer[DType.float32](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
         var seed_buf: DeviceBuffer[DType.uint64]
         if seed:
             seed_buf = seed.value().to_device_buffer(ctx)
         else:
-            seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+            seed_buf = DeviceBuffer[DType.uint64](
+                ctx,
+                {_unsafe_null = ()},
+                0,
+                owning=False,
+            )
 
         @parameter
         def launch_kernel[vec_size: Int]() raises:

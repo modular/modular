@@ -19,7 +19,7 @@ struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer[MutAnyOrigin]
 
     def __init__(out self):
-        self._value = OpaquePointer[MutAnyOrigin]()
+        self._value = {_unsafe_null = ()}
 
 
 @fieldwise_init

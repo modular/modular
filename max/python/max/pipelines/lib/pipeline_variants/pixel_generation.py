@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
 
 import numpy as np
@@ -33,7 +32,6 @@ from max.interfaces.request.open_responses import OutputImageContent
 
 from ..interfaces.cache_mixin import DenoisingCacheConfig
 from ..interfaces.diffusion_pipeline import DiffusionPipeline
-from .utils import get_weight_paths
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -63,8 +61,9 @@ class PixelGenerationPipeline(
         from max.engine import InferenceSession  # local import to avoid cycles
 
         self._pipeline_config = pipeline_config
-        model_config = pipeline_config.model
-        self._devices = load_devices(pipeline_config.model.device_specs)
+        # Use the first component's device_specs for session initialization.
+        first_config = next(iter(pipeline_config.models.values()))
+        self._devices = load_devices(first_config.device_specs)
 
         # Initialize Session.
         session = InferenceSession(devices=[*self._devices])
@@ -72,14 +71,12 @@ class PixelGenerationPipeline(
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
-        # Download weights if required and get absolute weight paths.
-        weight_paths: list[Path] = get_weight_paths(model_config)
-
+        # Weight paths are resolved per-component inside _load_sub_models.
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
             devices=self._devices,
-            weight_paths=weight_paths,
+            weight_paths=[],
             cache_config=cache_config or DenoisingCacheConfig(),
         )
 

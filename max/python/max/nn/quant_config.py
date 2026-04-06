@@ -54,6 +54,16 @@ class ScaleOrigin(Enum):
     DYNAMIC = "dynamic"
     """Scales are computed at runtime based on the input data."""
 
+    @property
+    def is_dynamic(self) -> bool:
+        """Whether the scale origin is dynamic."""
+        return self == ScaleOrigin.DYNAMIC
+
+    @property
+    def is_static(self) -> bool:
+        """Whether the scale origin is static."""
+        return self == ScaleOrigin.STATIC
+
 
 class QuantFormat(Enum):
     """Identifies the quantization format of a model checkpoint."""

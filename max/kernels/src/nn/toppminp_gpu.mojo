@@ -16,14 +16,7 @@ from std.math import ceildiv
 from std.sys import bit_width_of
 
 from std.builtin.dtype import _uint_type_of_width
-from std.gpu import (
-    barrier,
-    block_dim,
-    block_idx_uint as block_idx,
-    grid_dim,
-    WARP_SIZE,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.dim import Dim
@@ -68,8 +61,8 @@ def topk_wrapper_no_shmem[
     Uses warp-level reduction and register-based invalidation instead of
     shared memory. Only correct when block_size <= WARP_SIZE.
     """
-    var tid = Int(thread_idx.x)
-    var bid = Int(block_idx.x)
+    var tid = thread_idx.x
+    var bid = block_idx.x
 
     var batch_id, block_lane = divmod(bid, num_blocks_per_input)
 
@@ -153,8 +146,8 @@ def topk_wrapper[
         p_threshold: UnsafePointer[Scalar[input_type]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
         skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
     """
-    var tid = Int(thread_idx.x)
-    var bid = Int(block_idx.x)
+    var tid = thread_idx.x
+    var bid = block_idx.x
 
     var batch_id, block_lane = divmod(bid, num_blocks_per_input)
 
@@ -356,10 +349,10 @@ def radix_sort_pairs_kernel[
     var elems_per_thread = ceildiv(num_keys, BLOCK_SIZE)
     comptime NUM_BUCKETS = 2**NUM_BITS_PER_PASS
 
-    var input_keys = input_keys_ + batch_id * UInt(num_keys)
-    var output_keys = output_keys_ + batch_id * UInt(num_keys)
-    var input_key_ids = input_key_ids_ + batch_id * UInt(num_keys)
-    var output_key_ids = output_key_ids_ + batch_id * UInt(num_keys)
+    var input_keys = input_keys_ + batch_id * num_keys
+    var output_keys = output_keys_ + batch_id * num_keys
+    var input_key_ids = input_key_ids_ + batch_id * num_keys
+    var output_key_ids = output_key_ids_ + batch_id * num_keys
 
     if skip_sort[batch_id]:
         return
@@ -397,10 +390,8 @@ def radix_sort_pairs_kernel[
     var counts = counts_buf.ptr
 
     # Process elements and compute counts for each thread
-    for index in range(
-        tid * UInt(elems_per_thread), (tid + 1) * UInt(elems_per_thread)
-    ):
-        if index < UInt(num_keys):
+    for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
+        if index < num_keys:
             var key = input_keys[index]
             var normalized_key = normalize(key)
             comptime KeyType = type_of(normalized_key)
@@ -411,16 +402,16 @@ def radix_sort_pairs_kernel[
 
     # Store counts[NUM_BUCKETS] per thread into shared memory s_counts
     comptime for i in range(NUM_BUCKETS):
-        s_counts[tid * UInt(NUM_BUCKETS) + UInt(i)] = counts[i]
+        s_counts[tid * NUM_BUCKETS + i] = counts[i]
     barrier()
 
     # Compute total_counts[NUM_BUCKETS] by summing counts[NUM_BUCKETS] across threads
-    if tid < UInt(NUM_BUCKETS):
+    if tid < NUM_BUCKETS:
         var sum = Int32(0)
         bucket_offset = tid
 
         comptime for t in range(BLOCK_SIZE):
-            sum += s_counts[t * NUM_BUCKETS + Int(bucket_offset)]
+            sum += s_counts[t * NUM_BUCKETS + bucket_offset]
         total_counts[bucket_offset] = sum
     barrier()
 
@@ -433,8 +424,8 @@ def radix_sort_pairs_kernel[
 
     # Compute per-thread starting offsets per radix value
     comptime for i in range(NUM_BUCKETS):
-        s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(i)] = s_counts[
-            tid * UInt(NUM_BUCKETS) + UInt(i)
+        s_thread_offsets[tid * NUM_BUCKETS + i] = s_counts[
+            tid * NUM_BUCKETS + i
         ]
     barrier()
 
@@ -446,16 +437,15 @@ def radix_sort_pairs_kernel[
         while offset < BLOCK_SIZE:
             # Initialize a temporary variable to store the value from the neighboring thread.
             var val = Int32(0)
-            if tid >= UInt(offset):
+            if tid >= offset:
                 # If the current thread ID is greater than or equal to the offset,
                 # fetch the value from the neighboring thread that is 'offset' positions behind.
-                val = s_thread_offsets[
-                    (tid - UInt(offset)) * UInt(NUM_BUCKETS) + UInt(radix)
-                ]
+                val = s_thread_offsets[(tid - offset) * NUM_BUCKETS + radix]
+
             # Synchronize all threads to ensure that the value fetching is complete.
             barrier()
             # Add the fetched value to the current thread's value.
-            s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(radix)] += val
+            s_thread_offsets[tid * NUM_BUCKETS + radix] += val
             # Synchronize all threads to ensure that the addition is complete.
             barrier()
             # Double the offset for the next iteration to fetch values from farther threads.
@@ -463,18 +453,18 @@ def radix_sort_pairs_kernel[
 
         # After the loop, set the first thread's offset to 0.
         if tid == 0:
-            s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(radix)] = 0
+            s_thread_offsets[tid * NUM_BUCKETS + radix] = 0
         else:
             # For all other threads, set the offset to the value of the previous thread.
-            s_thread_offsets[
-                tid * UInt(NUM_BUCKETS) + UInt(radix)
-            ] = s_thread_offsets[(tid - 1) * UInt(NUM_BUCKETS) + UInt(radix)]
+            s_thread_offsets[tid * NUM_BUCKETS + radix] = s_thread_offsets[
+                (tid - 1) * NUM_BUCKETS + radix
+            ]
         # Synchronize all threads to ensure that the final offset values are set.
         barrier()
 
     # Compute total_offsets_descending[NUM_BUCKETS] if needed
     comptime if not ascending:
-        if tid < UInt(NUM_BUCKETS):
+        if tid < NUM_BUCKETS:
             total_offsets_descending[tid] = (
                 total_offsets[NUM_BUCKETS] - total_offsets[tid + 1]
             )
@@ -490,10 +480,8 @@ def radix_sort_pairs_kernel[
     var local_offsets = local_offsets_buf.ptr
 
     # Now, each thread processes its elements, computes destination index, write to output
-    for index in range(
-        tid * UInt(elems_per_thread), (tid + 1) * UInt(elems_per_thread)
-    ):
-        if index < UInt(num_keys):
+    for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
+        if index < num_keys:
             var key = input_keys[index]
             var normalized_key = normalize(key)
             comptime KeyType = type_of(normalized_key)
@@ -508,13 +496,13 @@ def radix_sort_pairs_kernel[
             comptime if ascending:
                 global_offset = Int(
                     total_offsets[radix]
-                    + s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(radix)]
+                    + s_thread_offsets[tid * NUM_BUCKETS + radix]
                     + local_offsets[radix]
                 )
             else:
                 global_offset = Int(
                     total_offsets_descending[radix]
-                    + s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(radix)]
+                    + s_thread_offsets[tid * NUM_BUCKETS + radix]
                     + local_offsets[radix]
                 )
 
@@ -536,7 +524,14 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     var _size: Int
 
     def __init__(out self):
-        self._d_buffers = [{}, {}]
+        self._d_buffers = [
+            UnsafePointer[Scalar[Self.dtype], MutExternalOrigin](
+                _unsafe_null=()
+            ),
+            UnsafePointer[Scalar[Self.dtype], MutExternalOrigin](
+                _unsafe_null=()
+            ),
+        ]
         self._selection = 0
         self._size = 0
 
@@ -658,8 +653,8 @@ def topp_minp_sampling_kernel[
         return
 
     var p_threshold = p_thresholds_[batch_id]
-    var sorted_probs = sorted_probs_ + batch_id * UInt(vocab_size)
-    var sorted_ids = sorted_ids_ + batch_id * UInt(vocab_size)
+    var sorted_probs = sorted_probs_ + batch_id * vocab_size
+    var sorted_ids = sorted_ids_ + batch_id * vocab_size
 
     comptime if is_top_p:
         if tid == 0:

@@ -113,7 +113,12 @@ class AttentionDispatchResolver:
         )
         return Buffer.from_numpy(
             np.array(
-                [batch_size, 1, num_partitions, max_cache_valid_length],
+                [
+                    batch_size,
+                    max_prompt_length,
+                    num_partitions,
+                    max_cache_valid_length,
+                ],
                 dtype=np.int64,
             )
         )

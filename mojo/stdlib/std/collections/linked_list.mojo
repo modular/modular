@@ -173,6 +173,55 @@ struct _LinkedListIter[
         return old.value()[].value
 
 
+@fieldwise_init
+struct _LinkedListIterOwned[T: Copyable & ImplicitlyDestructible](
+    IterableOwned, Iterator, Movable
+):
+    """An owning iterator for LinkedList.
+
+    Parameters:
+        T: The type of the elements in the linked list.
+    """
+
+    comptime Element = Self.T
+    comptime IteratorOwnedType = Self
+
+    var _list: LinkedList[Self.T]
+
+    @always_inline
+    def __del__(deinit self):
+        # LinkedList.__del__ handles destroying remaining nodes.
+        pass
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._list._size <= 0:
+            raise StopIteration()
+
+        # Pop from front: take the head node, relink, and return the value.
+        # (Mirrors LinkedList.pop() but operates on the head instead of tail.)
+        var nn = self._list._head.value()
+        var node = nn.take_pointee()
+        self._list._head = node.next()
+        self._list._size -= 1
+        if self._list._size == 0:
+            self._list._tail = LinkedList[Self.T]._NodePointer()
+        else:
+            self._list._head.value()[].prev() = LinkedList[
+                Self.T
+            ]._NodePointer()
+        nn.free()
+        return node^._into_value()
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var sz = self._list._size
+        return (sz, {sz})
+
+
 struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
@@ -180,6 +229,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     Iterable,
+    IterableOwned,
     Sized,
     Writable where conforms_to(ElementType, Writable),
 ):
@@ -208,6 +258,11 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         iterable_origin: The origin of the iterable.
     """
 
+    comptime IteratorOwnedType: Iterator = _LinkedListIterOwned[
+        Self.ElementType
+    ]
+    """The owned iterator type for this linked list."""
+
     var _head: Self._NodePointer
     """The first node in the list."""
     var _tail: Self._NodePointer
@@ -233,17 +288,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             elements: Variable number of elements to initialize the list with.
             __list_literal__: Tell Mojo to use this method for list literals.
-
-        Notes:
-            Time Complexity: O(n) in len(elements).
-        """
-        self = Self(elements=elements^)
-
-    def __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
-        """Construct a list from a `VariadicList`.
-
-        Args:
-            elements: The elements to add to the list.
 
         Notes:
             Time Complexity: O(n) in len(elements).
@@ -742,6 +786,19 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             Time Complexity: O(1).
         """
         return self._size
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the linked list and return an iterator over its elements.
+
+        Returns:
+            An iterator that owns the linked list's elements.
+
+        Notes:
+            Time Complexity:
+            - O(1) for iterator construction.
+            - O(n) in len(self) for a complete iteration of the list.
+        """
+        return {self^}
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.

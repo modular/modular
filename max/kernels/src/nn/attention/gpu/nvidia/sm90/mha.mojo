@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp2, recip
+from std.math.uutils import umod
 from std.math.constants import log2e
 from std.sys import align_of, get_defined_int, simd_width_of
 
@@ -22,8 +23,8 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
@@ -1122,7 +1123,9 @@ def _mha_sm90[
     comptime mma_thread_layout = Layout.row_major(8, 4)
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
+    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin](
+        _unsafe_null=()
+    )
 
     comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
@@ -1584,7 +1587,7 @@ def _mha_sm90[
 
         comptime if decoding and PartitionType.do_partition:
             if kv_tile_start_row >= end:
-                if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                     4 * min(group, 8) + 128
                 ):
                     exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
@@ -1743,7 +1746,7 @@ def _mha_sm90[
                 score_frag_rowmax = current_rowmax
                 if new_q:
                     comptime if decoding and PartitionType.do_partition:
-                        if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                        if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                             4 * min(group, 8) + 128
                         ):
                             exp_sum_ptr, qk_max_ptr = (
@@ -1857,7 +1860,7 @@ def _mha_sm90[
         )
 
         comptime if decoding and PartitionType.do_partition:
-            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+            if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                 4 * min(group, 8) + 128
             ):
                 exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(

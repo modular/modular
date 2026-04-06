@@ -13,6 +13,7 @@ _FILECHECK_TESTS = [
     "test_debug_assert_gpu_error.mojo",
     "test_grid_dependence_control.mojo",
     "test_kernel_with_list.mojo",
+    "test_metal_print.mojo",
     "test_print.mojo",
     "test_printf.mojo",
     "test_producer_consumer.mojo",
@@ -45,6 +46,7 @@ _EXTRA_CONSTRAINTS = {
     "test_wmma.mojo": ["//:nvidia_gpu"],
     "test_wmma_amd.mojo": ["//:amd_gpu"],
     "test_tcgen05.mojo": ["//:b200_gpu"],
+    "test_metal_print.mojo": ["//:apple_gpu"],  # Metal GPU print tests (Apple only)
     "test_debug_assert_gpu_error.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_print_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2366
     "test_print.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405

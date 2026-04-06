@@ -22,13 +22,13 @@ from layout.tile_layout import Layout
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    global_idx,
+    grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
+    PDL,
     PDLLevel,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
+    pdl_launch_attributes,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
@@ -57,6 +57,8 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 comptime elementwise_epilogue_type = def[
     dtype: DType, width: Int, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
+
+comptime pdl_level = PDLLevel(0)
 
 
 @always_inline
@@ -195,8 +197,8 @@ struct ReduceScatterConfig[
         return self.rank_num_elements(rank)
 
     @always_inline
-    def thr_local_start(self, thread_idx: UInt) -> Int:
-        return Int(thread_idx) * Self.simd_width
+    def thr_local_start(self, thread_idx: Int) -> Int:
+        return thread_idx * Self.simd_width
 
 
 @always_inline
@@ -278,7 +280,7 @@ def _reduce_scatter_impl[
         TileTensor[dtype, in_tile_layout, ImmutAnyOrigin].flat_rank >= 1
     )
     for c in range(
-        Int(global_idx.x) * simd_width,
+        global_idx.x * simd_width,
         num_elements,
         thread_stride,
     ):
@@ -319,7 +321,6 @@ def _reducescatter_kernel[
     axis: Int = 0,
     BLOCK_SIZE: Int,
     output_lambda: elementwise_epilogue_type,
-    pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     in_bufs: InlineArray[
@@ -340,105 +341,106 @@ def _reducescatter_kernel[
     """
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     var my_sig = rank_sigs[my_rank]
-    var threads_per_gpu = Int(grid_dim.x) * BLOCK_SIZE
+    var threads_per_gpu = grid_dim.x * BLOCK_SIZE
 
     var config = ReduceScatterConfig[dtype, ngpus](
         axis_size, unit_numel, threads_per_gpu
     )
 
-    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
-        launch_dependent_grids()
+    with PDL():
+        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    comptime if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
-
-    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
-
-    comptime if use_multimem:
-        # Multimem: single pointer, hardware-accelerated reduction.
-        var ptrs = InlineArray[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], 1](
-            uninitialized=True
-        )
-        ptrs[0] = in_bufs[0].ptr
-        _reduce_scatter_flat_impl[
-            ngpus, output_lambda=output_lambda, use_multimem=True
-        ](ptrs, out_buf, my_rank, config)
-    else:
-        # Round-robin access pattern to balance NVLink traffic across GPUs.
-        var reordered = InlineArray[
-            TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus
-        ](uninitialized=True)
-
-        comptime for i in range(ngpus):
-            reordered[i] = in_bufs[circular_add[ngpus](my_rank, i)]
-
-        var u_start = config.rank_unit_start(my_rank)
-        var n_units = config.rank_units(my_rank)
-        var n_elements = config.rank_num_elements(my_rank)
-
-        comptime if in_layout.rank == 1:
-            # Flat: construct sliced 1D tiles from input TileTensors (any rank).
-            comptime FlatLayout = type_of(row_major(Idx(n_elements)))
-            comptime FlatTile = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
-            var flat_tiles = InlineArray[FlatTile, ngpus](uninitialized=True)
-            var elem_start = u_start * config.unit_numel
+        comptime if use_multimem:
+            # Multimem: single pointer, hardware-accelerated reduction.
+            var ptrs = InlineArray[
+                UnsafePointer[Scalar[dtype], ImmutAnyOrigin], 1
+            ](uninitialized=True)
+            ptrs[0] = in_bufs[0].ptr
+            _reduce_scatter_flat_impl[
+                ngpus, output_lambda=output_lambda, use_multimem=True
+            ](ptrs, out_buf, my_rank, config)
+        else:
+            # Round-robin access pattern to balance NVLink traffic across GPUs.
+            var reordered = InlineArray[
+                TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus
+            ](uninitialized=True)
 
             comptime for i in range(ngpus):
-                flat_tiles[i] = FlatTile(
-                    reordered[i].ptr + elem_start,
-                    row_major(Idx(n_elements)),
+                reordered[i] = in_bufs[circular_add[ngpus](my_rank, i)]
+
+            var u_start = config.rank_unit_start(my_rank)
+            var n_units = config.rank_units(my_rank)
+            var n_elements = config.rank_num_elements(my_rank)
+
+            comptime if in_layout.rank == 1:
+                # Flat: construct sliced 1D tiles from input TileTensors (any rank).
+                comptime FlatLayout = type_of(row_major(Idx(n_elements)))
+                comptime FlatTile = TileTensor[
+                    dtype, FlatLayout, ImmutAnyOrigin
+                ]
+                var flat_tiles = InlineArray[FlatTile, ngpus](
+                    uninitialized=True
+                )
+                var elem_start = u_start * config.unit_numel
+
+                comptime for i in range(ngpus):
+                    flat_tiles[i] = FlatTile(
+                        reordered[i].ptr + elem_start,
+                        row_major(Idx(n_elements)),
+                    )
+
+                _reduce_scatter_impl[output_lambda=output_lambda](
+                    flat_tiles, out_buf, n_elements, config.stride
+                )
+            else:
+                # 2D axis-aware: slice + reverse for coalesced access.
+                comptime InputTile = TileTensor[
+                    dtype, in_layout, ImmutAnyOrigin
+                ]
+                comptime DynShapeTypes = _CoordToDynamic[
+                    InputTile.linear_idx_type, *in_layout._shape_types
+                ]
+                comptime RevLayout = Layout[
+                    Variadic.reverse[*DynShapeTypes],
+                    Variadic.reverse[*in_layout._stride_types],
+                ]
+                comptime SlicedRevTile = TileTensor[
+                    dtype, RevLayout, ImmutAnyOrigin
+                ]
+                var sliced_tiles = InlineArray[SlicedRevTile, ngpus](
+                    uninitialized=True
                 )
 
-            _reduce_scatter_impl[output_lambda=output_lambda](
-                flat_tiles, out_buf, n_elements, config.stride
-            )
-        else:
-            # 2D axis-aware: slice + reverse for coalesced access.
-            comptime InputTile = TileTensor[dtype, in_layout, ImmutAnyOrigin]
-            comptime DynShapeTypes = _CoordToDynamic[
-                InputTile.linear_idx_type, *in_layout._shape_types
-            ]
-            comptime RevLayout = Layout[
-                Variadic.reverse[*DynShapeTypes],
-                Variadic.reverse[*in_layout._stride_types],
-            ]
-            comptime SlicedRevTile = TileTensor[
-                dtype, RevLayout, ImmutAnyOrigin
-            ]
-            var sliced_tiles = InlineArray[SlicedRevTile, ngpus](
-                uninitialized=True
-            )
+                comptime if axis == 0:
+                    # Scatter along rows.
+                    var dim_1 = Int(reordered[0].dim[1]())
+                    comptime for i in range(ngpus):
+                        var sliced = reordered[i].slice(
+                            (u_start, u_start + n_units),
+                            (0, dim_1),
+                        )
+                        sliced_tiles[i] = SlicedRevTile(
+                            sliced.ptr, sliced.layout.reverse()
+                        )
+                else:
+                    # axis == 1: scatter along columns.
+                    var dim_0 = Int(reordered[0].dim[0]())
+                    var col_start = u_start * simd_width
+                    var col_end = col_start + n_units * simd_width
+                    comptime for i in range(ngpus):
+                        var sliced = reordered[i].slice(
+                            (0, dim_0),
+                            (col_start, col_end),
+                        )
+                        sliced_tiles[i] = SlicedRevTile(
+                            sliced.ptr, sliced.layout.reverse()
+                        )
 
-            comptime if axis == 0:
-                # Scatter along rows.
-                var dim_1 = Int(reordered[0].dim[1]())
-                comptime for i in range(ngpus):
-                    var sliced = reordered[i].slice(
-                        (u_start, u_start + n_units),
-                        (0, dim_1),
-                    )
-                    sliced_tiles[i] = SlicedRevTile(
-                        sliced.ptr, sliced.layout.reverse()
-                    )
-            else:
-                # axis == 1: scatter along columns.
-                var dim_0 = Int(reordered[0].dim[0]())
-                var col_start = u_start * simd_width
-                var col_end = col_start + n_units * simd_width
-                comptime for i in range(ngpus):
-                    var sliced = reordered[i].slice(
-                        (0, dim_0),
-                        (col_start, col_end),
-                    )
-                    sliced_tiles[i] = SlicedRevTile(
-                        sliced.ptr, sliced.layout.reverse()
-                    )
+                _reduce_scatter_impl[output_lambda=output_lambda](
+                    sliced_tiles, out_buf, n_elements, config.stride
+                )
 
-            _reduce_scatter_impl[output_lambda=output_lambda](
-                sliced_tiles, out_buf, n_elements, config.stride
-            )
-
-    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @always_inline
@@ -450,7 +452,6 @@ def _reducescatter_p2p[
     *,
     axis: Int = 0,
     output_lambda: elementwise_epilogue_type,
-    pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
@@ -473,7 +474,6 @@ def _reducescatter_p2p[
         in_origin: Origin of the input TileTensors.
         axis: Scatter axis.
         output_lambda: Elementwise epilogue function to apply to reduced values.
-        pdl_level: Control PDL behavior for the kernel.
         use_multimem: Whether multimem optimization is enabled.
 
     Args:
@@ -520,7 +520,6 @@ def _reducescatter_p2p[
         axis=axis,
         BLOCK_SIZE=BLOCK_SIZE,
         output_lambda=output_lambda,
-        pdl_level=pdl_level,
         use_multimem=use_multimem,
     ]
 
@@ -534,6 +533,7 @@ def _reducescatter_p2p[
         Int(ctx.id()),
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -544,7 +544,6 @@ def reducescatter[
     in_layout: TensorLayout,
     in_origin: Origin,
     output_lambda: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
     *,
     axis: Int = 0,
     use_multimem: Bool = False,
@@ -570,7 +569,6 @@ def reducescatter[
         in_origin: Origin of the input TileTensors.
         output_lambda: Optional elementwise epilogue function. If not provided,
             reduced values are stored directly to output_buffer.
-        pdl_level: Control PDL behavior for the kernel.
         axis: Scatter axis. 0 to scatter along rows (default), 1 to scatter along columns.
             Requires 2D row-major inputs when axis >= 0.
         use_multimem: If True, use hardware-accelerated multimem reduction.
@@ -713,7 +711,6 @@ def reducescatter[
         ngpus,
         axis=axis,
         output_lambda=actual_output_lambda,
-        pdl_level=pdl_level,
         use_multimem=use_multimem,
     ](
         input_buffers,

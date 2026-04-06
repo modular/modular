@@ -25,10 +25,7 @@ from .cache_mixin import (
     teacache_conditional_execution,
 )
 from .component_model import ComponentModel
-from .diffusion_pipeline import (
-    DiffusionPipeline,
-    DiffusionPipelineOutput,
-)
+from .diffusion_pipeline import DiffusionPipeline, DiffusionPipelineOutput
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
@@ -36,6 +33,7 @@ from .pipeline_model import (
     ModelOutputs,
     PipelineModel,
     PipelineModelWithKVCache,
+    UnifiedEagleOutputs,
 )
 
 __all__ = [
@@ -54,6 +52,7 @@ __all__ = [
     "ModelOutputs",
     "PipelineModel",
     "PipelineModelWithKVCache",
+    "UnifiedEagleOutputs",
     "fbcache_conditional_execution",
     "get_paged_manager",
     "teacache_conditional_execution",

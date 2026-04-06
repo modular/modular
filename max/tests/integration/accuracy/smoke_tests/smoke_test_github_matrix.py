@@ -81,9 +81,9 @@ HF_MODELS: dict[str, set[str]] = {
     "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@H100"},  # MODELS-1020
     "qwen/qwen3-8b": MULTI,
     "qwen/qwen3-vl-4b-instruct": XL | {"max-ci@H100", "vllm@B200"},  # MODELS-1020
-    "qwen/qwen3-vl-4b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@H100"},  # max: 26.2, MI355: no FP8
+    "qwen/qwen3-vl-4b-instruct-fp8": XL | {"MI355", "max-ci@2xH100", "max-ci@H100"},  # MI355: no FP8
     "qwen/qwen3-vl-30b-a3b-instruct": XL | {"max-ci@2xH100", "max-ci@H100", "max@2xH100", "max@H100"},
-    "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # max: 26.2, MI355: no FP8, B200: MODELS-1020
+    "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"MI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
     "qwen/qwen3-vl-30b-a3b-thinking": XL | {"max", "max-ci@2xH100", "max-ci@H100"},
     "redhatai/gemma-3-27b-it-fp8-dynamic": MULTI,  # TODO(MODELS-1021)
     "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
@@ -106,6 +106,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/kimi-k2.5-nvfp4__no_vision": NON_XL | {"8xMI355"},
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
     "meta-llama/llama-3.1-8b-instruct__eagle": MULTI | {"vllm", "sglang"},
+    "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": MULTI | {"vllm", "sglang"},
     "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
     "nvidia/kimi-k2.5-nvfp4__eagle": NON_XL | {"8xMI355"},
 }

@@ -67,6 +67,7 @@ from .pipeline_variants import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VideoContentPart,
     VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
@@ -83,6 +84,12 @@ from .status import GenerationStatus
 from .task import PipelineTask
 from .tokenizer import PipelineTokenizer
 from .tokens import TokenBuffer, TokenSlice
+from .tool_parsing import (
+    ParsedToolCall,
+    ParsedToolCallDelta,
+    ParsedToolResponse,
+    ToolParser,
+)
 from .utils import (
     SharedMemoryArray,
     msgpack_numpy_decoder,
@@ -138,6 +145,9 @@ __all__ = [
     "MAXPushQueue",
     "MessageContent",
     "OpenResponsesRequest",
+    "ParsedToolCall",
+    "ParsedToolCallDelta",
+    "ParsedToolResponse",
     "Pipeline",
     "PipelineInputs",
     "PipelineInputsType",
@@ -176,7 +186,9 @@ __all__ = [
     "TextGenerationResponseFormat",
     "TokenBuffer",
     "TokenSlice",
+    "ToolParser",
     "VLMTextGenerationContext",
+    "VideoContentPart",
     "drain_queue",
     "get_blocking",
     "msgpack_numpy_decoder",

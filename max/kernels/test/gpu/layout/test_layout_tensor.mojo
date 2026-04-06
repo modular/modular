@@ -34,7 +34,7 @@ def test_runtime_and_compile_time_dim_and_stride[
 ](m: MType, k: KType) raises:
     var shape = Coord(k, m)
     var tt = TileTensor(
-        UnsafePointer[Float32, MutAnyOrigin](), row_major(shape)
+        UnsafePointer[Float32, MutAnyOrigin](_unsafe_null=()), row_major(shape)
     )
     var tensor = tt.to_layout_tensor()
 
@@ -60,7 +60,7 @@ def test_nested_layout_shape() raises:
     comptime smem_layout = blocked_product(base_layout, tiler_layout)
 
     var tensor = LayoutTensor[DType.float32, smem_layout, MutAnyOrigin](
-        UnsafePointer[Float32, MutAnyOrigin]()
+        UnsafePointer[Float32, MutAnyOrigin](_unsafe_null=())
     )
 
     # Shape should be (64, 128) because:

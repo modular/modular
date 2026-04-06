@@ -484,7 +484,7 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def null() -> Self:
-        return PyType_Slot(0, OpaquePointer[MutAnyOrigin]())
+        return PyType_Slot(0, OpaquePointer[MutAnyOrigin](_unsafe_null=()))
 
 
 @fieldwise_init
@@ -1718,7 +1718,7 @@ struct CPython(Defaultable, Movable):
         # instance.
         var ptr = self.lib.get_symbol[PyObjectPtr](global_name)
 
-        if not ptr:
+        if not ptr._is_not_null():
             abort(
                 "error: unable to get pointer to CPython `"
                 + String(global_name)

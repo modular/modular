@@ -14,15 +14,24 @@
 
 from .plugin import (
     Plugin,
+    OutParam,
     ContextHandle,
     DeviceHandle,
     QueueHandle,
     EventHandle,
+    BundleHandle,
 )
 from .status import STATUS_SUCCESS, HALError
 
+from std.memory import (
+    MutPointer,
+    ArcPointer,
+    UnsafeMaybeUninit,
+)
 
-struct Context:
+
+@fieldwise_init
+struct Context[device_origin: MutOrigin](Movable):
     """A context loaded on a specific device.
 
     Represents a runtime handle to an initialized
@@ -32,14 +41,39 @@ struct Context:
     so information gathering for device selection
     should ideally be done on Device before creating
     a Context.
+
+    Parameters:
+        device_origin: The origin of the parent Device pointer.
     """
 
     var _handle: ContextHandle
-    # TODO: Proper lifetime management — for now the caller must ensure
-    # the Plugin outlives the Context.
+    var device: MutPointer[Device[Self.device_origin], Self.device_origin]
 
-    def __init__(out self, handle: ContextHandle):
-        self._handle = handle
+    def __init__[
+        o1: MutOrigin, o2: MutOrigin
+    ](
+        out self: Context[origin_of(o1, o2)], ref[o1] device: Device[o2]
+    ) raises HALError:
+        # This is a horrible hack that should be revisited as soon as
+        # we can express subtyping relations between origins and/or
+        # inferred/unbound inner origin params for arguments
+        self.device = rebind[type_of(self.device)](Pointer(to=device))
+
+        ref driver = device.driver[]
+        ref plugin = driver._plugin
+        var context_handle_uninit = UnsafeMaybeUninit[ContextHandle]()
+        var status = plugin.context_create.f(
+            device._handle, OutParam[ContextHandle](to=context_handle_uninit)
+        )
+
+        if status != STATUS_SUCCESS:
+            var err = plugin.get_status_message(status)
+            raise HALError(
+                err.status,
+                message="failed to create context from device: " + err.message,
+            )
+
+        self._handle = context_handle_uninit.unsafe_assume_init_ref()
 
 
 struct Buffer:
@@ -50,18 +84,24 @@ struct Buffer:
 
     var memory: UnsafePointer[NoneType, MutAnyOrigin]
     var byte_size: UInt64
-    var _context_handle: ContextHandle
 
 
-struct Queue:
-    """A command queue bound to a context."""
+struct Queue[context_origin: MutOrigin]:
+    """A command queue bound to a context.
+
+    Parameters:
+        context_origin: The origin of the parent Context pointer.
+    """
 
     var _handle: QueueHandle
-    var _context_handle: ContextHandle
+    var context: MutPointer[Context[Self.context_origin], Self.context_origin]
 
 
 struct Event:
     """A synchronisation event."""
 
     var _handle: EventHandle
-    var _context_handle: ContextHandle
+
+
+struct Bundle:
+    var _handle: BundleHandle

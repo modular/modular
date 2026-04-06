@@ -110,7 +110,7 @@ async def lifespan(
     try:
         if not settings.disable_telemetry:
             send_telemetry_log(
-                serving_settings.pipeline_config.model.model_name
+                serving_settings.pipeline_config.models.model_name
             )
     except Exception as e:
         logger.warning("Failed to send telemetry log: %s", e)
@@ -177,24 +177,26 @@ async def lifespan(
             else None
         )
 
-        METRICS.pipeline_load(serving_settings.pipeline_config.model.model_name)
+        METRICS.pipeline_load(
+            serving_settings.pipeline_config.models.model_name
+        )
 
         pipeline = {
             PipelineTask.TEXT_GENERATION: lambda: TokenGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.model.model_name,
+                model_name=serving_settings.pipeline_config.models.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 model_worker=model_worker,
                 reasoning_parser_name=serving_settings.reasoning_parser_name,
             ),
             PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.model.model_name,
+                model_name=serving_settings.pipeline_config.models.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 model_worker=model_worker,
             ),
             PipelineTask.AUDIO_GENERATION: lambda: AudioGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.model.model_name,
+                model_name=serving_settings.pipeline_config.models.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 model_worker=cast(
@@ -204,7 +206,7 @@ async def lifespan(
             ),
             # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
             PipelineTask.PIXEL_GENERATION: lambda: GeneralPipelineHandler(
-                model_name=serving_settings.pipeline_config.model.model_name,
+                model_name=serving_settings.pipeline_config.models.model_name,
                 tokenizer=serving_settings.tokenizer,
                 model_worker=model_worker,
                 lora_queue=lora_queue,
@@ -224,7 +226,7 @@ async def lifespan(
             app.state.handler = pipeline
         else:
             app.state.handler = GeneralPipelineHandler(
-                model_name=serving_settings.pipeline_config.model.model_name,
+                model_name=serving_settings.pipeline_config.models.model_name,
                 tokenizer=serving_settings.tokenizer,
                 model_worker=model_worker,
                 lora_queue=lora_queue,

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp, iota
+from std.math.uutils import ufloordiv, udivmod
 from std.memory import alloc
 from std.sys import align_of, simd_width_of, size_of, get_defined_bool
 
@@ -22,11 +23,11 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    thread_idx,
+    block_dim,
+    block_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, DeviceBuffer
@@ -878,22 +879,20 @@ def _block_reduce_topk[
     var warp_accum: TopK_2[T, ascending] = _warp_reduce_topk[T, ascending](val)
 
     # Store warp-level results in shared memory
-    if lane_id() == 0 and warp < UInt(num_warps_needed):
+    if lane_id() == 0 and warp < num_warps_needed:
         # Note: Potential bank conflict for sub 4 byte data elements
-        p_sram[Int(warp) * p_width] = Scalar[DType.int](warp_accum.p)
-        u_sram[Int(warp) * u_width] = warp_accum.u
+        p_sram[warp * p_width] = Scalar[DType.int](warp_accum.p)
+        u_sram[warp * u_width] = warp_accum.u
     barrier()
 
     # Load warp results into final warp for block-level reduction
     var block_accum = TopK_2[T, ascending]()
-    var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
+    var thread_in_final_warp = thread_idx.x < ufloordiv(block_dim.x, WARP_SIZE)
     if thread_in_final_warp:
-        var p_idx = p_sram[
-            lane_id() * UInt(p_width)
-        ]  # loaded value is a scalar
+        var p_idx = p_sram[lane_id() * p_width]  # loaded value is a scalar
         block_accum = TopK_2[T, ascending](
-            p=Int(p_idx),
-            u=u_sram[lane_id() * UInt(u_width)],  # Convert back to int
+            p=Int(p_idx),  # Convert back to int
+            u=u_sram[lane_id() * u_width],
         )
     else:
         # Initialize unused threads with dummy values
@@ -935,20 +934,20 @@ def _topk_stage1_old_no_shmem[
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id, block_lane = divmod(bid, UInt(num_blocks_per_input))
+    batch_id, block_lane = udivmod(bid, num_blocks_per_input)
 
-    _in_buffer = in_buffer + batch_id * UInt(num_elements)
+    _in_buffer = in_buffer + batch_id * num_elements
 
     with PDL():
         # Each thread finds its local best element in registers.
         var block_offset = block_lane * block_size
-        var stride = block_size * UInt(num_blocks_per_input)
+        var stride = block_size * num_blocks_per_input
         var partial = TopK_2[T, largest]()
-        for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+        for i in range(tid + block_offset, num_elements, stride):
             partial.insert(_in_buffer[i], i)
 
         var k_batch = max_k
-        if K:
+        if K._is_not_null():
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
 
@@ -963,10 +962,10 @@ def _topk_stage1_old_no_shmem[
             var winner_p = warp.broadcast(total.p)
 
             if tid == 0:
-                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
-                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
-                    DType.int
-                ](total.p).cast[out_idx_type]()
+                local_topk_vals[bid * max_k + k] = total.u
+                local_topk_idxs[bid * max_k + k] = Scalar[DType.int](
+                    total.p
+                ).cast[out_idx_type]()
 
             # The thread that owned the winning element invalidates it.
             if partial.p == winner_p:
@@ -976,10 +975,10 @@ def _topk_stage1_old_no_shmem[
         # Fill remaining positions with sentinel values.
         if tid == 0:
             for remaining_k in range(k_batch, max_k):
-                local_topk_vals[
-                    bid * UInt(max_k) + UInt(remaining_k)
-                ] = _topk_dead_val[T, largest]()
-                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
+                local_topk_vals[bid * max_k + remaining_k] = _topk_dead_val[
+                    T, largest
+                ]()
+                local_topk_idxs[bid * max_k + remaining_k] = Scalar[
                     out_idx_type
                 ](-1)
 
@@ -1030,9 +1029,9 @@ def _topk_stage1_old[
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id, block_lane = divmod(bid, UInt(num_blocks_per_input))
+    batch_id, block_lane = udivmod(bid, num_blocks_per_input)
 
-    _in_buffer = in_buffer + batch_id * UInt(num_elements)
+    _in_buffer = in_buffer + batch_id * num_elements
 
     # Allocate shared memory for the values and indices
     var topk_sram = stack_allocation[
@@ -1048,13 +1047,13 @@ def _topk_stage1_old[
     with PDL():
         # Pack the topk_vals and topk_idxs into shared memory
         var block_offset = block_lane * block_size
-        var stride = block_size * UInt(num_blocks_per_input)
+        var stride = block_size * num_blocks_per_input
         topk_sram[tid] = TopK_2[T, largest]()
-        for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+        for i in range(tid + block_offset, num_elements, stride):
             topk_sram[tid].insert(_in_buffer[i], i)
         barrier()
         var k_batch = max_k
-        if K:
+        if K._is_not_null():
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
         # Prepare for K iterations to find the local top-K elements
@@ -1068,16 +1067,14 @@ def _topk_stage1_old[
             if tid == 0:
                 # Store the local top-K values and indices in global memory
                 var vector_idx = total.p
-                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
-                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
-                    DType.int
-                ](vector_idx).cast[out_idx_type]()
+                local_topk_vals[bid * max_k + k] = total.u
+                local_topk_idxs[bid * max_k + k] = Scalar[DType.int](
+                    vector_idx
+                ).cast[out_idx_type]()
 
                 # Remove the found maximum from consideration in the next iteration
                 if total.p >= 0:
-                    var orig_tid = (vector_idx - Int(block_offset)) % Int(
-                        stride
-                    )
+                    var orig_tid = (vector_idx - block_offset) % stride
                     topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
 
             barrier()
@@ -1085,10 +1082,10 @@ def _topk_stage1_old[
         # Fill remaining positions with sentinel values for unused elements
         if tid == 0:
             for remaining_k in range(k_batch, max_k):
-                local_topk_vals[
-                    bid * UInt(max_k) + UInt(remaining_k)
-                ] = _topk_dead_val[T, largest]()
-                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
+                local_topk_vals[bid * max_k + remaining_k] = _topk_dead_val[
+                    T, largest
+                ]()
+                local_topk_idxs[bid * max_k + remaining_k] = Scalar[
                     out_idx_type
                 ](-1)
 
@@ -1125,19 +1122,19 @@ def _topk_stage1_no_shmem[
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id, block_lane = divmod(bid, UInt(num_blocks_per_input))
+    batch_id, block_lane = udivmod(bid, num_blocks_per_input)
 
     var block_offset = block_lane * block_size
-    var stride = block_size * UInt(num_blocks_per_input)
+    var stride = block_size * num_blocks_per_input
 
-    _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
+    _in_buffer_tmp = in_buffer_tmp + batch_id * num_elements
 
     # Hoist per-block output base pointers out of the k loop.
-    var out_vals = local_topk_vals + bid * UInt(max_k)
-    var out_idxs = local_topk_idxs + bid * UInt(max_k)
+    var out_vals = local_topk_vals + bid * max_k
+    var out_idxs = local_topk_idxs + bid * max_k
 
     var k_batch = max_k
-    if K:
+    if K._is_not_null():
         var k_raw = Int(K[batch_id])
         k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1150,7 +1147,7 @@ def _topk_stage1_no_shmem[
     with PDL():
         # Phase 1: Single scan to build per-thread register heap.
         var heap = TopKHeap[T, largest, HEAP_SIZE]()
-        for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+        for i in range(tid + block_offset, num_elements, stride):
             heap.insert(_in_buffer_tmp[i], i)
 
         # Phase 2: Extract winners from heaps without re-scanning.
@@ -1162,9 +1159,7 @@ def _topk_stage1_no_shmem[
             var partial = heap.best()
             if partial.p < 0:
                 partial = TopK_2[T, largest]()
-                for i in range(
-                    Int(tid + block_offset), num_elements, Int(stride)
-                ):
+                for i in range(tid + block_offset, num_elements, stride):
                     partial.insert(_in_buffer_tmp[i], i)
 
             var total = _warp_reduce_topk[T, largest](partial)
@@ -1183,7 +1178,7 @@ def _topk_stage1_no_shmem[
         for k in range(heap_iters, k_batch):
             var partial = TopK_2[T, largest]()
 
-            for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+            for i in range(tid + block_offset, num_elements, stride):
                 partial.insert(_in_buffer_tmp[i], i)
 
             var total = _warp_reduce_topk[T, largest](partial)
@@ -1253,19 +1248,19 @@ def _topk_stage1[
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id, block_lane = divmod(bid, UInt(num_blocks_per_input))
+    batch_id, block_lane = udivmod(bid, num_blocks_per_input)
 
     var block_offset = block_lane * block_size
-    var stride = block_size * UInt(num_blocks_per_input)
+    var stride = block_size * num_blocks_per_input
 
-    _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
+    _in_buffer_tmp = in_buffer_tmp + batch_id * num_elements
 
     # Hoist per-block output base pointers out of the k loop.
-    var out_vals = local_topk_vals + bid * UInt(max_k)
-    var out_idxs = local_topk_idxs + bid * UInt(max_k)
+    var out_vals = local_topk_vals + bid * max_k
+    var out_idxs = local_topk_idxs + bid * max_k
 
     var k_batch = max_k
-    if K:
+    if K._is_not_null():
         var k_raw = Int(K[batch_id])
         k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1284,7 +1279,7 @@ def _topk_stage1[
     with PDL():
         # Phase 1: Single scan to build per-thread register heap.
         var heap = TopKHeap[T, largest, HEAP_SIZE]()
-        for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+        for i in range(tid + block_offset, num_elements, stride):
             heap.insert(_in_buffer_tmp[i], i)
 
         # Phase 2: Extract winners from heaps without re-scanning.
@@ -1296,9 +1291,7 @@ def _topk_stage1[
             var partial = heap.best()
             if partial.p < 0:
                 partial = TopK_2[T, largest]()
-                for i in range(
-                    Int(tid + block_offset), num_elements, Int(stride)
-                ):
+                for i in range(tid + block_offset, num_elements, stride):
                     partial.insert(_in_buffer_tmp[i], i)
 
             var total = _block_reduce_topk[ascending=largest](partial)
@@ -1318,7 +1311,7 @@ def _topk_stage1[
         for k in range(heap_iters, k_batch):
             var partial = TopK_2[T, largest]()
 
-            for i in range(Int(tid + block_offset), num_elements, Int(stride)):
+            for i in range(tid + block_offset, num_elements, stride):
                 var val = _in_buffer_tmp[i]
                 partial.insert(val, i)
 
@@ -1335,7 +1328,7 @@ def _topk_stage1[
                 _in_buffer_tmp[winner_p] = _topk_dead_val[T, largest]()
 
         # Parallel sentinel fill using all threads.
-        for remaining_k in range(k_batch + Int(tid), max_k, Int(block_size)):
+        for remaining_k in range(k_batch + tid, max_k, block_size):
             out_vals[remaining_k] = _topk_dead_val[T, largest]()
             out_idxs[remaining_k] = Scalar[out_idx_type](-1)
 
@@ -1405,12 +1398,12 @@ def _topk_stage2[
     var batch_id = block_idx.x
     # assert (block_idx.x == 0)
     # assert (grid_dim.x == 1)
-    var batch_i_topk_vals = global_topk_vals + batch_id * UInt(max_k)
-    var batch_i_topk_idxs = global_topk_idxs + batch_id * UInt(
+    var batch_i_topk_vals = global_topk_vals + batch_id * max_k
+    var batch_i_topk_idxs = global_topk_idxs + batch_id * (
         1 if sampling else max_k
     )
-    var _local_topk_vals = local_topk_vals + batch_id * UInt(num_elem_reduced)
-    var _local_topk_idxs = local_topk_idxs + batch_id * UInt(num_elem_reduced)
+    var _local_topk_vals = local_topk_vals + batch_id * num_elem_reduced
+    var _local_topk_idxs = local_topk_idxs + batch_id * num_elem_reduced
 
     # Allocate shared memory for values and indices
     var num_e_rounded = ceildiv(num_elem_reduced, WARP_SIZE) * WARP_SIZE
@@ -1428,13 +1421,13 @@ def _topk_stage2[
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
     # These values are only read from in the sampling case.
-    var s_val2 = type_of(vals_sram)()
-    var s_id = type_of(idxs_sram)()
+    var s_val2 = type_of(vals_sram)(_unsafe_null=())
+    var s_id = type_of(idxs_sram)(_unsafe_null=())
 
     with PDL():
         # Handle the case where stage 1 is executed with a single block
         var k_batch = max_k
-        if K:
+        if K._is_not_null():
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1443,11 +1436,11 @@ def _topk_stage2[
             k_batch = num_elem_reduced
 
         if num_blocks_per_input == 1 and not sampling:
-            if tid < UInt(k_batch):
+            if tid < k_batch:
                 batch_i_topk_vals[tid] = _local_topk_vals[tid]
                 # cast to out_idx_type
                 batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
-            elif tid >= UInt(k_batch) and tid < UInt(max_k):
+            elif tid >= k_batch and tid < max_k:
                 # Fill unused positions with sentinel values
                 batch_i_topk_vals[tid] = _topk_dead_val[T, largest]()
                 batch_i_topk_idxs[tid] = Scalar[out_idx_type](-1)
@@ -1466,7 +1459,7 @@ def _topk_stage2[
         var max_logit = Scalar[T](0)
 
         # Cache local top-K results from stage 1 into shared memory
-        for i in range(Int(tid), num_elem_reduced, Int(block_dim.x)):
+        for i in range(tid, num_elem_reduced, block_dim.x):
             vals_sram[i] = _local_topk_vals[i]
             idxs_sram[i] = i
         barrier()
@@ -1488,7 +1481,7 @@ def _topk_stage2[
             # Re-initialize partial for each thread
             var partial = TopK_2[T, largest]()
             # TODO: unroll this
-            for i in range(Int(tid), num_elem_reduced, Int(block_dim.x)):
+            for i in range(tid, num_elem_reduced, block_dim.x):
                 partial.insert(vals_sram[i], i)
 
             barrier()
@@ -1511,7 +1504,7 @@ def _topk_stage2[
                     batch_i_topk_vals[k] = total.u
                     s_id[k] = total.p
                     var temp_val = Float32(1.0)
-                    if temperature:
+                    if temperature._is_not_null():
                         temp_val = temperature[batch_id]
                     total.u = exp(
                         (total.u - max_logit) / max(temp_val.cast[T](), 1e-6)
@@ -1532,7 +1525,7 @@ def _topk_stage2[
         comptime if sampling:
             if tid == 0:
                 var top_p_val = Scalar[T](1.0)
-                if top_p:
+                if top_p._is_not_null():
                     top_p_val = top_p[batch_id].cast[T]()
                 var _top_p = _adjust_top_p[T](
                     top_p_val, s_val2, k_batch, s_sum[0]
@@ -1542,7 +1535,7 @@ def _topk_stage2[
                 # generator, so that we don't use the same random number for every
                 # token in the sequence.
                 var seed_val = UInt64(0)
-                if seed:
+                if seed._is_not_null():
                     seed_val = seed[batch_id]
                 var rng_state = Random(seed=seed_val)
                 var rng = rng_state.step_uniform()
@@ -1688,7 +1681,9 @@ def _topk_gpu[
     if k:
         k_ptr = rebind[UnsafePointer[Int64, ImmutAnyOrigin]](k.value().ptr)
     else:
-        k_ptr = UnsafePointer[Int64, ImmutAnyOrigin]()  # null pointer
+        k_ptr = UnsafePointer[Int64, ImmutAnyOrigin](
+            _unsafe_null=()
+        )  # null pointer
 
     var k_size = k.value().num_elements() if k else 0
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
@@ -1801,7 +1796,9 @@ def _topk_gpu[
             temperature.value().ptr
         )
     else:
-        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
+        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+            _unsafe_null=()
+        )  # null pointer
     var temp_size = temperature.value().num_elements() if temperature else 0
 
     # Handle optional top_p parameter
@@ -1811,7 +1808,9 @@ def _topk_gpu[
             top_p.value().ptr
         )
     else:
-        top_p_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
+        top_p_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+            _unsafe_null=()
+        )  # null pointer
     var top_p_size = top_p.value().num_elements() if top_p else 0
 
     # Handle optional seed parameter
@@ -1819,7 +1818,9 @@ def _topk_gpu[
     if seed:
         seed_ptr = seed.value().ptr
     else:
-        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
+        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin](
+            _unsafe_null=()
+        )  # null pointer
     var seed_size = seed.value().num_elements() if seed else 0
 
     var temp_device = DeviceBuffer[DType.float32](
@@ -2334,8 +2335,8 @@ def apply_gumbel_noise_kernel[
     comptime group_size = num_blocks_per_token * num_threads
     comptime num_groups = num_sms // num_blocks_per_token
 
-    var tid = Int(thread_idx.x)
-    var sm_id = Int(block_idx.x)
+    var tid = thread_idx.x
+    var sm_id = block_idx.x
     var group_id, sm_id_rem = divmod(sm_id, num_blocks_per_token)
     var tid_in_group = tid + sm_id_rem * num_threads
 
@@ -2352,11 +2353,11 @@ def apply_gumbel_noise_kernel[
 
         for tok_idx in range(group_id, Int(num_tokens), num_groups):
             var temp_val = Float32(1.0)
-            if temperature:
+            if temperature._is_not_null():
                 temp_val = temperature[tok_idx]
 
             var seed_val = UInt64(0)
-            if seed:
+            if seed._is_not_null():
                 seed_val = seed[tok_idx]
 
             var ld_ptr = input.ptr + tok_idx * N
@@ -2475,7 +2476,9 @@ def gumbel_sampling_gpu[
                 temperature.value().ptr
             )
         else:
-            temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
+            temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+                _unsafe_null=()
+            )  # null pointer
         var temp_size = temperature.value().num_elements() if temperature else 0
 
         # Handle optional seed parameter
@@ -2485,7 +2488,9 @@ def gumbel_sampling_gpu[
                 seed.value().ptr
             )
         else:
-            seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
+            seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin](
+                _unsafe_null=()
+            )  # null pointer
         var seed_size = seed.value().num_elements() if seed else 0
 
         comptime hw_info = ctx.default_device_info

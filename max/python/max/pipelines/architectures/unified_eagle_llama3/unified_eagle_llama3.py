@@ -43,6 +43,7 @@ from max.nn.sampling.rejection_sampler import (
 )
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
+    shape_to_scalar,
 )
 
 from ..eagle_llama3.eagle_llama3 import EagleLlama3
@@ -84,7 +85,6 @@ class UnifiedEagleLlama3(Module):
         (
             tokens,
             input_row_offsets,
-            draft_tokens,
             return_n_logits,
             # target model kvcache inputs
             target_kv_blocks,
@@ -92,7 +92,9 @@ class UnifiedEagleLlama3(Module):
             lookup_table,
             max_lengths,
             dispatch_metadata,
-            # draft model kvcache inputs
+            # draft model inputs
+            draft_tokens,
+            # draft kvcache
             draft_kv_blocks,
         ) = inputs
 
@@ -142,9 +144,9 @@ class UnifiedEagleLlama3(Module):
         return (
             tokens_type,
             input_row_offsets_type,
-            draft_tokens_type,
             return_n_logits_type,
             *target_kv_flat,
+            draft_tokens_type,
             draft_kv_blocks,
         )
 
@@ -200,7 +202,7 @@ class UnifiedEagleLlama3(Module):
         # recovered                : [B, K]  (target argmax at each draft position)
         # bonus                    : [B, 1]  (target argmax at the +1 position)
         num_accepted_draft_tokens, recovered, bonus = greedy_acceptance_sampler(
-            inputs.draft_tokens, logits
+            draft_tokens, logits
         )
 
         # target_tokens: [B, K+1]
@@ -211,10 +213,7 @@ class UnifiedEagleLlama3(Module):
             batch_dims=1,
         )
 
-        num_draft_sentinel_cpu = ops.shape_to_tensor(
-            [inputs.draft_tokens.shape[1]]
-        ).cast(DType.int64)
-        num_draft_sentinel_gpu = num_draft_sentinel_cpu.to(device)
+        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device)
 
         # Build corrected merged tokens: replace draft tokens with target
         # argmax (recovered). For accepted positions draft == target argmax,

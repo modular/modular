@@ -128,6 +128,16 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--speculative-method eagle"
         ),
     },
+    # Llama Eagle + CUDA Graph only works when num_speculative_tokens == 1
+    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
+    "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": {
+        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
+        "max_serve_args": (
+            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 1"
+        ),
+    },
     "nvidia/deepseek-v3.1-nvfp4__mtp": {
         "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
         "max_serve_args": (

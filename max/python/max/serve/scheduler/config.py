@@ -42,7 +42,7 @@ class TokenGenerationSchedulerConfig:
     """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
     each batch contains exactly `target_tokens_per_batch_ce` tokens."""
 
-    enable_in_flight_batching: bool = False
+    enable_in_flight_batching: bool = True
     """When enabled, prioritizes token generation by batching it with context encoding requests."""
 
     data_parallel_degree: int = 1
@@ -98,6 +98,7 @@ class TokenGenerationSchedulerConfig:
         # We know that the max_length and max_batch_size is not None since they
         # are required for memory estimation.
         assert pipeline_config.runtime.max_batch_size is not None
+        assert pipeline_config.model is not None
 
         return cls(
             max_batch_size=pipeline_config.runtime.max_batch_size,

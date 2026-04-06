@@ -26,7 +26,6 @@ from layout._fillers import random
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
-from std.sys import has_amd_gpu_accelerator
 from std.utils import Index, IndexList
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
@@ -214,8 +213,7 @@ def execute_flash_attention[
     )
 
     # Verify results
-    # amd uses more aggressive split-k partitioning
-    var rtol = 2e-2 if has_amd_gpu_accelerator() else 8e-3
+    var rtol = 8e-3
     var test_out_tensor = test_output.tensor()
     var ref_out_tensor = ref_output.tensor()
     for bs in range(Int(batch_size)):

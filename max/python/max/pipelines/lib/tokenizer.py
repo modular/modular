@@ -16,11 +16,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import json
 import logging
+import socket
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar
+from urllib.parse import urlsplit
 
 import numpy as np
 import numpy.typing as npt
@@ -39,10 +43,6 @@ from PIL import Image
 from transformers import (
     AutoProcessor,
     AutoTokenizer,
-    CodeLlamaTokenizer,
-    CodeLlamaTokenizerFast,
-    LlamaTokenizer,
-    LlamaTokenizerFast,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
@@ -52,6 +52,148 @@ if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
+
+_UINT64_MASK = (1 << 64) - 1
+
+
+@dataclass(frozen=True, slots=True)
+class _HintBlock:
+    """A single block descriptor from the Orchestrator's dkv_cache_hint."""
+
+    hash: int
+    tier: str = "G1"
+    offset: int = 0
+    length: int = 0
+    device_id: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _HintAgentInfo:
+    """NIXL agent info from the Orchestrator's dkv_cache_hint."""
+
+    agent_name: str
+    agent_metadata: str = ""  # base64-encoded
+    base_addr: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _DkvCacheHint:
+    """Typed representation of a dkv_cache_hint payload from the Orchestrator."""
+
+    source: str
+    blocks: list[_HintBlock]
+    version: int = 1
+    block_size: int = 0
+    nixl_agent_info: _HintAgentInfo | None = None
+    source_endpoint: str = ""
+
+
+def _parse_dkv_cache_hint(
+    hint: dict[str, Any] | None,
+) -> dict[int, Any] | None:
+    """Convert a ``dkv_cache_hint`` JSON payload into the dict the DKVConnector expects.
+
+    The Orchestrator injects a ``dkv_cache_hint`` field into the request
+    body (see SERVOPT-1143). This function normalizes it into a
+    ``dict[uint64_hash, DKVExternalBlockMetadata]`` keyed by block hash,
+    which ``DKVConnector.lookup()`` reads from
+    ``ctx.external_block_metadata``.
+
+    Returns ``None`` for hints with ``source="self"`` (blocks already in
+    GPU memory, no dKV fetch needed) or when no hint is present.
+
+    Raises ``TypeError`` or ``KeyError`` if the hint is malformed.
+    """
+    if hint is None:
+        return None
+
+    # Parse into typed dataclass; raises on missing/wrong fields.
+    agent_raw = hint.get("nixl_agent_info")
+    agent_info = _HintAgentInfo(**agent_raw) if agent_raw else None
+    parsed = _DkvCacheHint(
+        source=hint["source"],
+        blocks=[_HintBlock(**b) for b in hint.get("blocks", [])],
+        version=hint.get("version", 1),
+        block_size=hint.get("block_size", 0),
+        nixl_agent_info=agent_info,
+        source_endpoint=hint.get("source_endpoint", ""),
+    )
+
+    if parsed.source == "self" or not parsed.blocks:
+        return None
+
+    # Remote hints require block_size so we can build transfer engine
+    # metadata. Without it, lookup() silently falls back to the
+    # connector's local auto-discovered metadata, misrouting NIXL reads.
+    if parsed.source_endpoint and not parsed.block_size:
+        raise ValueError(
+            "dkv_cache_hint with source_endpoint (remote dKV) requires"
+            f" block_size > 0, got {parsed.block_size}"
+        )
+
+    # Lazy import to avoid pulling dkv deps when dKV is not configured.
+    from max._core import nixl
+    from max.kv_cache.connectors.dkv.connector import (
+        DKVExternalBlockMetadata,
+    )
+    from max.kv_cache.paged_kv_cache.transfer_engine import (
+        KVTransferEngineMetadata,
+        TensorAgentMetadata,
+    )
+
+    # Build transfer engine metadata from the hint's nixl_agent_info.
+    # When block_size=0 (only valid without source_endpoint, i.e. local
+    # dKV), the connector discovers geometry via ExchangeMetadata at init
+    # and _default_remote_metadata handles the NIXL path.
+    transfer_engine: KVTransferEngineMetadata | None = None
+    if parsed.nixl_agent_info and parsed.block_size:
+        ai = parsed.nixl_agent_info
+        agent_metadata = (
+            base64.b64decode(ai.agent_metadata) if ai.agent_metadata else b""
+        )
+
+        # Derive total_num_pages from the highest page offset.
+        max_page_idx = max(
+            (b.offset // parsed.block_size for b in parsed.blocks),
+            default=0,
+        )
+        total_num_pages = max_page_idx + 1
+
+        # Parse hostname from source_endpoint.
+        url = urlsplit(parsed.source_endpoint)
+        host = url.hostname or ""
+        _LOCAL = ("", "localhost", "127.0.0.1", "0.0.0.0", "::1")
+        dkv_hostname = socket.gethostname() if host in _LOCAL else host
+
+        agent_meta = TensorAgentMetadata(
+            agent_name=ai.agent_name,
+            metadata=agent_metadata,
+            base_addr=ai.base_addr,
+            device_id=0,
+        )
+        transfer_engine = KVTransferEngineMetadata(
+            name=f"dkv-hint-{ai.agent_name}",
+            total_num_pages=total_num_pages,
+            bytes_per_page=parsed.block_size,
+            memory_type=nixl.MemoryType.DRAM,
+            hostname=dkv_hostname,
+            agents_meta=[[agent_meta]],
+        )
+
+    result: dict[int, DKVExternalBlockMetadata] = {}
+    for block in parsed.blocks:
+        block_hash = block.hash & _UINT64_MASK
+        result[block_hash] = DKVExternalBlockMetadata(
+            seq_hash=block_hash,
+            agent_id=0,
+            device_id=block.device_id,
+            offset=block.offset,
+            length=block.length,
+            transfer_engine=transfer_engine,
+        )
+
+    return result or None
+
 
 TokenGeneratorContext = TypeVar("TokenGeneratorContext")
 
@@ -330,7 +472,7 @@ class TextTokenizer(
 
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
-            enable_llama_whitespace_fix and self._is_llama_tokenizer
+            enable_llama_whitespace_fix and self._strips_leading_whitespace
         )
         (
             self._llama_whitespace_fix_dummy_token_id,
@@ -480,6 +622,34 @@ class TextTokenizer(
                 "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TextGenerationRequestMessage]"
             )
 
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes ``stop`` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+        return stop_tokenized
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = set(self._default_eos_token_ids)
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
+
     async def create_eos_tracker(
         self, request: TextGenerationRequest
     ) -> EOSTracker:
@@ -532,19 +702,29 @@ class TextTokenizer(
             sampling_params=request.sampling_params,
             model_name=request.model_name,
             target_endpoint=request.target_endpoint,
+            external_block_metadata=_parse_dkv_cache_hint(
+                request.dkv_cache_hint
+            ),
         )
 
         return context
 
     @property
-    def _is_llama_tokenizer(self) -> bool:
-        tokenizers = (
-            LlamaTokenizer,
-            LlamaTokenizerFast,
-            CodeLlamaTokenizer,
-            CodeLlamaTokenizerFast,
-        )
-        return isinstance(self.delegate, tokenizers)
+    def _strips_leading_whitespace(self) -> bool:
+        """Detect if this tokenizer strips leading whitespace on single-token decode.
+
+        SentencePiece tokenizers encode word boundaries as a ``▁`` prefix
+        which gets stripped when a single token is decoded in isolation.
+        Instead of checking for specific tokenizer class names (which change
+        across ``transformers`` versions), we test the behavior directly.
+        """
+        enc = self.delegate.encode("A B", add_special_tokens=False)
+        enc_a = self.delegate.encode("A", add_special_tokens=False)
+        b_tokens = enc[len(enc_a) :]
+        if not b_tokens:
+            return False
+        decoded = self.delegate.decode([b_tokens[0]])
+        return not decoded.startswith(" ")
 
     @property
     def _llama_whitespace_fix_dummy_token(self) -> tuple[int, int]:
@@ -690,6 +870,8 @@ class TextAndVisionTokenizer(
                 raise ValueError(
                     f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {max_length})."
                 )
+
+            encoded_prompt = np.array(encoded_prompt)
         else:
             encoded_prompt = np.array(list(prompt))
 
@@ -835,6 +1017,9 @@ class TextAndVisionTokenizer(
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            external_block_metadata=_parse_dkv_cache_hint(
+                request.dkv_cache_hint
+            ),
             images=[
                 ImageMetadata(
                     start_idx=start_idx,
@@ -852,6 +1037,35 @@ class TextAndVisionTokenizer(
         )
 
         return context
+
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes `stop` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+
+        return stop_tokenized
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = set(self._default_eos_token_ids)
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
 
 
 def _rgba_to_rgb(

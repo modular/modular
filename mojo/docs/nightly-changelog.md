@@ -14,8 +14,8 @@ This version is still a work in progress.
 
 - Added support for conditional `RegisterPassable` conformance.
 
-- Variadic packs can be forwarded through runtime calls with `*pack` when the
-  callee takes a compatible variadic pack parameter.
+- Variadic lists and packs can be forwarded through runtime calls with `*pack`
+  when the callee takes a compatible variadic list/pack.
 
   ```mojo
   def callee[*Ts: Writable](*args: *Ts):
@@ -30,6 +30,16 @@ This version is still a work in progress.
 
 ## Language changes
 
+- All Mojo functions now has a unique "function literal type". In practice, it
+  means that:
+
+  ```mojo
+  # type_of(foo) != type_of(bar)
+
+  def foo(): pass
+  def bar(): pass
+  ```
+
 - Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
   this will upgrade to an error in the future.
 
@@ -37,6 +47,13 @@ This version is still a work in progress.
   available to the module.
 
 ## Library changes
+
+- Variadics of types have been moved to the `TypeList` struct.
+  One can write operations such as:
+
+  ```mojo
+  comptime assert TypeList[Trait=AnyType, Int, String]().contains[Bool]
+  ```
 
 - `abort(message)` now includes the call site location in its output. The
   location is automatically captured and printed alongside the message. You can
@@ -112,6 +129,13 @@ This version is still a work in progress.
   `IterableOwned` implement `__iter__(var self)`, which consumes the collection
   and returns an iterator that owns the underlying elements.
   - `List` now conforms to `IterableOwned`.
+  - `Optional` now conforms to `IterableOwned`.
+  - `Deque` now conforms to `IterableOwned`.
+  - `LinkedList` now conforms to `IterableOwned`.
+  - `Dict` now conforms to `IterableOwned`.
+  - `Set` now conforms to `IterableOwned`.
+  - `Counter` now conforms to `IterableOwned`.
+  - `InlineArray` now conforms to `IterableOwned`.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same
@@ -175,6 +199,9 @@ This version is still a work in progress.
 - Added support for AMD MI250X accelerators.
 
 ## ❌ Removed
+
+- The `escaping` function effect is no longer supported. Migrate
+  `def(...) escaping -> T` closures to `unified` closures.
 
 - The deprecated `@doc_private` decorator has been removed. Use `@doc_hidden`
   instead.

@@ -61,6 +61,7 @@ from .interfaces import (
     ModelOutputs,
     PipelineModel,
     PipelineModelWithKVCache,
+    UnifiedEagleOutputs,
 )
 from .lora import LoRAManager
 from .lora_request_processor import LoRARequestProcessor
@@ -140,6 +141,7 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
+    "UnifiedEagleOutputs",
     "WeightPathParser",
     "build_eos_tracker_for_request",
     "convert_max_config_value",

@@ -262,7 +262,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     if ngpus > MAX_GPUS:
         raise Error("too many GPUs for CCL")
 
-    var comms = InlineArray[ncclComm_t, MAX_GPUS](fill={})
+    var comms = InlineArray[ncclComm_t, MAX_GPUS](fill={_unsafe_null = ()})
     var devlist = InlineArray[Int32, MAX_GPUS](fill={})
     for i in range(ngpus):
         devlist[i] = Int32(i)

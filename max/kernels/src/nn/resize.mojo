@@ -337,10 +337,16 @@ def _resize[
     var interpolator = Interpolator[interpolation_mode]()
 
     var in_ptr = input.ptr.unsafe_origin_cast[MutExternalOrigin]()
-    var out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
+    var out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        _unsafe_null=()
+    )
     var using_tmp1 = False
-    var tmp_buffer1 = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
-    var tmp_buffer2 = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
+    var tmp_buffer1 = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        _unsafe_null=()
+    )
+    var tmp_buffer2 = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        _unsafe_null=()
+    )
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass across one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
@@ -393,7 +399,7 @@ def _resize[
         out_ptr = tmp_buffer2 if using_tmp1 else tmp_buffer1
         using_tmp1 = not using_tmp1
 
-    if tmp_buffer1:
+    if tmp_buffer1._is_not_null():
         tmp_buffer1.free()
-    if tmp_buffer2:
+    if tmp_buffer2._is_not_null():
         tmp_buffer2.free()

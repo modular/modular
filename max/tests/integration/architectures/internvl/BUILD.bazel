@@ -36,6 +36,7 @@ modular_py_test(
     name = "unit_tests",
     size = "large",
     srcs = [
+        "tests/test_batch_image_token_indices.py",
         "tests/test_embedding_merge_unit.py",
         "tests/test_embeddings_unit.py",
         "tests/test_weight_adapters.py",
@@ -108,6 +109,7 @@ modular_py_test(
     for src in glob(
         ["tests/test_*.py"],
         exclude = [
+            "tests/test_batch_image_token_indices.py",
             "tests/test_embedding_merge_unit.py",
             "tests/test_embeddings_unit.py",
             "tests/test_weight_adapters.py",

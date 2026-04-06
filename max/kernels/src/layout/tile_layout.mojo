@@ -60,6 +60,7 @@ from .coord import (
     coord_to_int_tuple,
     _IntToComptimeInt,
     _CoordToDynamic,
+    _NestedDynamicCoord,
     _Divide,
     _Multiply,
     _MultiplyByScalar,
@@ -199,11 +200,15 @@ trait TensorLayout(TrivialRegisterPassable):
     def idx2crd[
         *,
         out_dtype: DType = DType.int64,
-    ](self, idx: Int) -> DynamicCoord[out_dtype, Self.rank]:
+    ](self, idx: Int) -> Coord[
+        *_NestedDynamicCoord[out_dtype, *Self._shape_types]
+    ]:
         """Maps a linear memory index back to logical coordinates.
 
         This is the inverse of `__call__` (crd2idx). Given a linear index,
         it computes the corresponding multi-dimensional coordinates.
+        For hierarchical layouts (e.g. from `zipped_divide`), the result
+        preserves the nested coordinate structure.
 
         Parameters:
             out_dtype: The data type for the output coordinate values.
@@ -213,7 +218,8 @@ trait TensorLayout(TrivialRegisterPassable):
 
         Returns:
             A Coord containing the logical coordinates corresponding to
-            the linear index.
+            the linear index. For nested layouts, the result mirrors the
+            shape nesting with RuntimeInt leaves.
 
         Examples:
             For a layout with shape (3, 4) and row-major strides:
@@ -305,9 +311,9 @@ struct Layout[
     var _stride: Coord[*Self.stride_types]
     """The stride of the layout as a Coord."""
 
-    comptime rank = Variadic.size(Self.shape_types)
+    comptime rank = Variadic.size_types[Self.shape_types]
     """The number of dimensions in the layout."""
-    comptime flat_rank = Variadic.size(_Flattened[*Self.shape_types])
+    comptime flat_rank = Variadic.size_types[_Flattened[*Self.shape_types]]
     """The number of dimensions after flattening nested coordinates."""
     comptime shape_known = Coord[*Self.shape_types].all_dims_known
     """Whether all shape dimensions are known at compile time."""
@@ -437,12 +443,16 @@ struct Layout[
     def idx2crd[
         *,
         out_dtype: DType = DType.int64,
-    ](self, idx: Int) -> DynamicCoord[out_dtype, Self.rank]:
+    ](self, idx: Int) -> Coord[
+        *_NestedDynamicCoord[out_dtype, *Self.shape_types]
+    ]:
         """Maps a linear memory index back to logical coordinates.
 
         This is the inverse of `__call__` (crd2idx). Given a linear index,
         it computes the corresponding multi-dimensional coordinates using
         the per-element formula: ``coord[i] = (idx // stride[i]) % shape[i]``.
+        For hierarchical layouts (e.g. from `zipped_divide`), the result
+        preserves the nested coordinate structure.
 
         Parameters:
             out_dtype: The data type for the output coordinate values.
@@ -451,7 +461,9 @@ struct Layout[
             idx: The linear memory index to convert to coordinates.
 
         Returns:
-            A Coord containing the logical coordinates corresponding to the linear index.
+            A Coord containing the logical coordinates corresponding to
+            the linear index. For nested layouts, the result mirrors the
+            shape nesting with RuntimeInt leaves.
 
         Examples:
             For a layout with shape (3, 4) and row-major strides:
@@ -459,23 +471,48 @@ struct Layout[
             - layout.idx2crd(5) returns (1, 1).
             - layout.idx2crd(11) returns (2, 3).
         """
-        comptime ResultType = DynamicCoord[out_dtype, Self.rank]
+        comptime ResultType = Coord[
+            *_NestedDynamicCoord[out_dtype, *Self.shape_types]
+        ]
         var result = ResultType()
         var shape_t = self._shape.tuple()
         var stride_t = self._stride.tuple()
 
         comptime for i in range(Self.rank):
-            var divided = _divide_by_stride[Self.stride_types[i]](
-                idx, stride_t[i].value()
-            )
-            var coord_val = _mod_by_shape[Self.shape_types[i]](
-                divided, shape_t[i].value()
-            )
-            UnsafePointer(to=result[i]).init_pointee_copy(
-                rebind[ResultType.element_types[i]](
-                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+            comptime if Self.shape_types[i].is_tuple:
+                # Nested dimension: compute sub-coordinates.
+                comptime sub_rank = Self.shape_types[i].__len__()
+                comptime SubResultType = DynamicCoord[out_dtype, sub_rank]
+                var sub_result = SubResultType()
+                var sub_shape = shape_t[i].tuple()
+                var sub_stride = stride_t[i].tuple()
+                comptime for j in range(sub_rank):
+                    var divided = _divide_by_stride[
+                        Self.stride_types[i].VariadicType[j]
+                    ](idx, sub_stride[j].value())
+                    var coord_val = _mod_by_shape[
+                        Self.shape_types[i].VariadicType[j]
+                    ](divided, sub_shape[j].value())
+                    UnsafePointer(to=sub_result[j]).init_pointee_copy(
+                        rebind[SubResultType.element_types[j]](
+                            RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                        )
+                    )
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultType.element_types[i]](sub_result)
                 )
-            )
+            else:
+                var divided = _divide_by_stride[Self.stride_types[i]](
+                    idx, stride_t[i].value()
+                )
+                var coord_val = _mod_by_shape[Self.shape_types[i]](
+                    divided, shape_t[i].value()
+                )
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultType.element_types[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
         return result
 
     @always_inline("nodebug")
@@ -699,7 +736,7 @@ def _types_to_int_tuple[Types: Variadic.TypesOfTrait[CoordLike]]() -> IntTuple:
     Uses direct IntTuple construction (no append) for rank 1-2.
     Falls back to append for rank > 2.
     """
-    comptime N = Variadic.size(Types)
+    comptime N = Variadic.size_types[Types]
     comptime if N == 1:
         return _type_to_int_tuple[Types[0]]()
     elif N == 2:
@@ -745,7 +782,7 @@ comptime _RowMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
 
 comptime _UnwrapSingleTuple[*element_types: CoordLike] = element_types[
     0
-].VariadicType if Variadic.size(element_types) == 1 and element_types[
+].VariadicType if Variadic.size_types[element_types] == 1 and element_types[
     0
 ].is_tuple else element_types
 
@@ -793,7 +830,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
         A Layout with row-major strides.
     """
     comptime RowMajorTypes = _RowMajor[*shape.element_types]
-    comptime rank = Variadic.size(shape.element_types)
+    comptime rank = Variadic.size_types[shape.element_types]
 
     var strides = Tuple[*RowMajorTypes]()
 
@@ -849,7 +886,7 @@ def row_major[
     """
 
     comptime RowMajorTypes = _RowMajor[*element_types]
-    comptime rank = Variadic.size(element_types)
+    comptime rank = Variadic.size_types[element_types]
 
     var strides = Tuple[*RowMajorTypes]()
 
@@ -994,7 +1031,7 @@ def col_major(var shape: Coord) -> ColMajorLayout[*shape.element_types]:
         A Layout with column-major strides.
     """
     comptime ColMajorTypes = _ColMajor[*shape.element_types]
-    comptime rank = Variadic.size(shape.element_types)
+    comptime rank = Variadic.size_types[shape.element_types]
 
     var strides = Tuple[*ColMajorTypes]()
 
@@ -1802,9 +1839,9 @@ comptime _DropLast2Reducer[
 ] = Variadic.concat_types[
     Prev,
     Variadic.types[T=CoordLike, From[idx]],
-] if idx < Variadic.size(
+] if idx < Variadic.size_types[
     From
-) - 2 else Prev
+] - 2 else Prev
 """Keeps all elements except the last two."""
 
 
@@ -1833,7 +1870,7 @@ comptime _CoalesceReducer[
             ComptimeInt[flat_shape_types[idx].static_value],
             ComptimeInt[flat_stride_types[idx].static_value],
         ],
-    ] if Prev[Variadic.size(Prev) - 2].static_value
+    ] if Prev[Variadic.size_types[Prev] - 2].static_value
     == 1 else (
         # Contiguous: merge into previous (prev_shape * cur_shape, prev_stride)
         Variadic.concat_types[
@@ -1841,13 +1878,13 @@ comptime _CoalesceReducer[
             Variadic.types[
                 T=CoordLike,
                 ComptimeInt[
-                    Prev[Variadic.size(Prev) - 2].static_value
+                    Prev[Variadic.size_types[Prev] - 2].static_value
                     * flat_shape_types[idx].static_value
                 ],
-                Prev[Variadic.size(Prev) - 1],
+                Prev[Variadic.size_types[Prev] - 1],
             ],
-        ] if Prev[Variadic.size(Prev) - 2].static_value
-        * Prev[Variadic.size(Prev) - 1].static_value
+        ] if Prev[Variadic.size_types[Prev] - 2].static_value
+        * Prev[Variadic.size_types[Prev] - 1].static_value
         == flat_stride_types[idx].static_value else
         # Non-contiguous: append new (shape, stride) pair
         Variadic.concat_types[
@@ -1926,7 +1963,7 @@ comptime _CoalescedShapeTypes[
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=_HalfSizeDriver[
-        Variadic.size(_CoalescedInterleaved[shape_types, stride_types])
+        Variadic.size_types[_CoalescedInterleaved[shape_types, stride_types]]
     ],
     Reducer=_ExtractEvenReducer[
         _CoalescedInterleaved[shape_types, stride_types], ...
@@ -1941,7 +1978,7 @@ comptime _CoalescedStrideTypes[
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=_HalfSizeDriver[
-        Variadic.size(_CoalescedInterleaved[shape_types, stride_types])
+        Variadic.size_types[_CoalescedInterleaved[shape_types, stride_types]]
     ],
     Reducer=_ExtractOddReducer[
         _CoalescedInterleaved[shape_types, stride_types], ...
@@ -2030,7 +2067,8 @@ def coalesce[
 comptime _WCPair3[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            Variadic.size(L.VariadicType) == Variadic.size(C.VariadicType)
+            Variadic.size_types[L.VariadicType]
+            == Variadic.size_types[C.VariadicType]
         )
     )
 )
@@ -2051,12 +2089,16 @@ comptime _WCReducer3[
 comptime _WCPair2[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            False if Variadic.size(L.VariadicType)
-            != Variadic.size(C.VariadicType) else _ReduceVariadicAndIdxToValue[
+            False if Variadic.size_types[L.VariadicType]
+            != Variadic.size_types[
+                C.VariadicType
+            ] else _ReduceVariadicAndIdxToValue[
                 BaseVal=Variadic.values[True],
                 VariadicType=C.VariadicType,
                 Reducer=_WCReducer3[L.VariadicType, C.VariadicType, ...],
-            ][0]
+            ][
+                0
+            ]
         )
     )
 )
@@ -2076,12 +2118,16 @@ comptime _WCReducer2[
 comptime _WCPair1[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            False if Variadic.size(L.VariadicType)
-            != Variadic.size(C.VariadicType) else _ReduceVariadicAndIdxToValue[
+            False if Variadic.size_types[L.VariadicType]
+            != Variadic.size_types[
+                C.VariadicType
+            ] else _ReduceVariadicAndIdxToValue[
                 BaseVal=Variadic.values[True],
                 VariadicType=C.VariadicType,
                 Reducer=_WCReducer2[L.VariadicType, C.VariadicType, ...],
-            ][0]
+            ][
+                0
+            ]
         )
     )
 )
@@ -2102,8 +2148,8 @@ comptime _WeaklyCompatible[
     layout_types: Variadic.TypesOfTrait[CoordLike],
     coord_types: Variadic.TypesOfTrait[CoordLike],
 ] = (
-    False if Variadic.size(layout_types)
-    != Variadic.size(coord_types) else _ReduceVariadicAndIdxToValue[
+    False if Variadic.size_types[layout_types]
+    != Variadic.size_types[coord_types] else _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[True],
         VariadicType=coord_types,
         Reducer=_WCReducer1[layout_types, coord_types, ...],

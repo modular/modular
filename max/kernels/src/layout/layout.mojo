@@ -381,7 +381,7 @@ struct Layout(
         # Result: Layout with shape (3,4) and stride (1,3)
         ```
         """
-        var shape = IntTuple(dims)
+        var shape = IntTuple(*dims)
         return Self.col_major(shape)
 
     @staticmethod
@@ -483,7 +483,7 @@ struct Layout(
         # Result: Layout with shape (3,4) and stride (4,1)
         ```
         """
-        var shape = IntTuple(dims)
+        var shape = IntTuple(*dims)
         return Self.row_major(shape)
 
     @staticmethod
@@ -893,7 +893,7 @@ def MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
         A LayoutList containing layouts for each tile size.
     """
 
-    comptime num_tiles = Variadic.size(tile_sizes)
+    comptime num_tiles = Variadic.size[tile_sizes]
 
     var layout_list = LayoutList(capacity=num_tiles)
 

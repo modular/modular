@@ -131,7 +131,7 @@ def correlation[
     """
     var umu = Scalar[out_type]()
     var vmu = Scalar[out_type]()
-    var w_val = UnsafePointer[u.type, MutAnyOrigin]()
+    var w_val = UnsafePointer[u.type, MutAnyOrigin](_unsafe_null=())
     if w:
         # TODO: this is a memory leak and needs to be freed
         w_val = alloc[Scalar[dtype]](len)

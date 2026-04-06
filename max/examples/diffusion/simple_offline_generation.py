@@ -41,11 +41,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import json
 import os
 import time
 from io import BytesIO
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
@@ -71,6 +72,7 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
@@ -289,6 +291,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Prefer the ModuleV3 implementation when the selected model provides one.",
     )
+    parser.add_argument(
+        "--model-override",
+        type=str,
+        action="append",
+        default=None,
+        help=(
+            "Per-component overrides in 'component.field=value' format. "
+            "Repeatable. Example: "
+            "'transformer.quantization_encoding=float4_e2m1fnx2'."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -382,21 +395,74 @@ async def generate_image(args: argparse.Namespace) -> None:
     print(f"Loading model: {args.model}")
 
     # Step 1: Initialize pipeline configuration
-    config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=args.model,
-            device_specs=[DeviceSpec.accelerator()],
-            weight_path=(
-                [Path(p) for p in args.weight_path] if args.weight_path else []
-            ),
+    # Use from_model_path to get full diffusers component expansion.
+    manifest = ModelManifest.from_model_path(
+        args.model,
+        device_specs=[DeviceSpec.accelerator()],
+    )
+
+    # Apply legacy single-component overrides for backward compat.
+    if args.weight_path:
+        manifest = manifest.with_override(
+            "transformer",
+            weight_path=[Path(p) for p in args.weight_path],
+        )
+    if args.quantization_encoding:
+        manifest = manifest.with_override(
+            "transformer",
             quantization_encoding=args.quantization_encoding,
-        ),
+        )
+
+    # Apply flexible per-component overrides from --model-override.
+    if args.model_override:
+        from pydantic import TypeAdapter
+
+        for override in args.model_override:
+            dot_pos = override.find(".")
+            if dot_pos < 1:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            eq_pos = override.find("=", dot_pos)
+            if eq_pos < dot_pos + 2:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            component = override[:dot_pos]
+            field_name = override[dot_pos + 1 : eq_pos]
+            raw_value = override[eq_pos + 1 :]
+
+            if field_name not in MAXModelConfig.model_fields:
+                raise ValueError(
+                    f"Unknown MAXModelConfig field: {field_name!r}. "
+                    f"Valid fields: "
+                    f"{sorted(MAXModelConfig.model_fields.keys())}"
+                )
+            if component not in manifest:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(manifest.keys())}"
+                )
+
+            field_info = MAXModelConfig.model_fields[field_name]
+            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+            try:
+                parsed = json.loads(raw_value)
+            except (json.JSONDecodeError, ValueError):
+                parsed = raw_value
+            value = adapter.validate_python(parsed)
+            manifest = manifest.with_override(component, **{field_name: value})
+
+    config = PipelineConfig(
+        models=manifest,
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=args.prefer_module_v3,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.model.architecture_name,
+        config.models.main_architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
@@ -406,33 +472,37 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Step 2: Initialize the tokenizer
     # The tokenizer handles prompt encoding and context preparation
-    has_tokenizer_2 = False
-    diffusers_config = config.model.diffusers_config
+    models = config.models
+    has_tokenizer_2 = "tokenizer_2" in models
     max_length = args.max_length
     secondary_max_length = args.secondary_max_length
-    if (
-        max_length is None
-        and diffusers_config is not None
-        and (components_config := diffusers_config.get("components", None))
-        and (components_config.get("tokenizer", None) is not None)
-    ):
-        max_length = components_config["tokenizer"]["config_dict"].get(
-            "model_max_length", None
-        )
+    if max_length is None and "tokenizer" in models:
         if arch.name in _FLUX2_ARCH_NAMES or arch.name == "ZImagePipeline":
             max_length = 512
+        else:
+            # Load tokenizer_config.json directly — tokenizer subfolders
+            # don't carry a HuggingFace model config.json.
+            from huggingface_hub import hf_hub_download
+
+            tok_cfg_path = hf_hub_download(
+                repo_id=args.model,
+                filename="tokenizer/tokenizer_config.json",
+            )
+            with open(tok_cfg_path) as f:
+                tok_cfg = json.load(f)
+            max_length = tok_cfg.get("model_max_length", None)
         print(f"Using max length: {max_length} for tokenizer")
 
-    if (
-        secondary_max_length is None
-        and diffusers_config is not None
-        and (components_config := diffusers_config.get("components", None))
-        and (components_config.get("tokenizer_2", None) is not None)
-    ):
-        has_tokenizer_2 = True
-        secondary_max_length = components_config["tokenizer_2"][
-            "config_dict"
-        ].get("model_max_length", None)
+    if secondary_max_length is None and has_tokenizer_2:
+        from huggingface_hub import hf_hub_download
+
+        tok2_cfg_path = hf_hub_download(
+            repo_id=args.model,
+            filename="tokenizer_2/tokenizer_config.json",
+        )
+        with open(tok2_cfg_path) as f:
+            tok2_cfg = json.load(f)
+        secondary_max_length = tok2_cfg.get("model_max_length", None)
         print(
             f"Using secondary max length: {secondary_max_length} for tokenizer_2"
         )

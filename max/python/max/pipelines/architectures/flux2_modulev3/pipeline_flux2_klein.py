@@ -136,8 +136,9 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 )
             )
 
-        diff_cfg = self.pipeline_config.model.diffusers_config or {}
-        is_distilled = bool(diff_cfg.get("is_distilled", False))
+        is_distilled = bool(
+            self.pipeline_config.models.metadata.get("is_distilled", False)
+        )
 
         if context.guidance_scale > 1.0 and is_distilled:
             logger.warning(

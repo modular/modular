@@ -14,15 +14,11 @@
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.constants import log2e
-
+from std.memory import bitcast
 from std.sys import size_of
-from std.sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq, readfirstlane
 from std.sys._assembly import inlined_assembly
-from std.gpu import (
-    block_idx_int as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_idx, lane_id, thread_idx
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._utils import idx2crd
 from layout.layout_tensor import ThreadScope, copy_local_to_dram
@@ -134,7 +130,7 @@ def _mask_apply[
 
     var lane = lane_id()
 
-    var coords = idx2crd[warp_layout](Int(lane))
+    var coords = idx2crd[warp_layout](lane)
     var lane_row = coords[0] * rowwise_stride
     var lane_col = coords[1] * colwise_stride
 
@@ -688,7 +684,12 @@ struct Attention[
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
-        self.scale = scale_log2e
+        comptime if is_causal_mask and Self.attention_config_t.double_buffer:
+            self.scale = bitcast[DType.float32](
+                readfirstlane(bitcast[DType.int32](scale_log2e))
+            ).cast[Self.accum_type]()
+        else:
+            self.scale = scale_log2e
         self.seq_len = seq_len
         self.num_keys = num_keys
         self.start_pos = start_pos
@@ -783,7 +784,7 @@ struct Attention[
 
         var q_head_idx = self.q_head_idx()
         if num_partitions > 1:
-            if thread_idx.x < UInt(Self.group):
+            if thread_idx.x < Self.group:
                 var row_sum = self.softmax.rowsum_tensor[0, 0][0]
                 var row_max = self.softmax.rowmax_tensor[0, 0][0]
 

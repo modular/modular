@@ -35,6 +35,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import AudioGenerationConfig
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,
@@ -91,7 +92,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_basic(self) -> None:
         """Test basic kwargs extraction for a config class."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         # Test extracting SamplingConfig kwargs
         kwargs = {
@@ -125,7 +130,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_with_prefix(self) -> None:
         """Test kwargs extraction with prefix filtering."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         # Test extracting with draft_ prefix
         kwargs = {
@@ -157,7 +166,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_empty_result(self) -> None:
         """Test extraction when no matching kwargs exist."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         kwargs = {
             "unrelated_param1": "value1",
@@ -179,7 +192,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_create_lora_config_if_needed_with_lora_paths(self) -> None:
         """Test LoRA config creation when lora_paths are provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         kwargs = {
             "enable_lora": True,
@@ -208,7 +225,11 @@ class TestPipelineConfigUtilityMethods:
         self,
     ) -> None:
         """Test error when LoRA config detected but no lora_paths provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         kwargs = {
             "max_lora_rank": 32,
@@ -219,57 +240,21 @@ class TestPipelineConfigUtilityMethods:
         assert config.lora is None
 
     @mock_pipeline_config_resolve
-    def test_create_draft_model_config_if_needed_with_model_path(self) -> None:
-        """Test draft model config creation when model_path is provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
-
-        kwargs = {
-            "draft_model_path": "/path/to/draft",
-            "draft_quantization_encoding": "float32",
-            "other_param": "value",
-        }
-
-        config._create_draft_model_config_if_needed(kwargs)
-
-        # Should create draft model config
-        assert config.draft_model is not None
-        assert config.draft_model.model_path == "/path/to/draft"
-        assert config.draft_model.quantization_encoding == "float32"
-
-        # Should remove draft-related kwargs
-        assert "draft_model_path" not in kwargs
-        assert "draft_quantization_encoding" not in kwargs
-        assert "other_param" in kwargs  # Non-draft params should remain
-
-    @mock_pipeline_config_resolve
-    def test_create_draft_model_config_if_needed_error_on_incomplete_config(
-        self,
-    ) -> None:
-        """Test error when draft model config detected but no model_path provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
-
-        kwargs = {
-            "draft_quantization_encoding": "float32",
-            "draft_max_length": 1024,
-        }
-
-        config._create_draft_model_config_if_needed(kwargs)
-        # Draft model config should not be created if no model_path is provided.
-        assert config.draft_model is None
-
-    @mock_pipeline_config_resolve
     def test_create_and_set_config_basic(self) -> None:
         """Test basic config creation and setting."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         matched_kwargs: dict[str, Any] = {
             "enable_structured_output": True,
             "enable_penalties": True,
         }
-        kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "sampling", SamplingConfig, matched_kwargs
         )
 
         # Should create and set the config
@@ -278,34 +263,22 @@ class TestPipelineConfigUtilityMethods:
         assert config.sampling.enable_penalties is True
 
     @mock_pipeline_config_resolve
-    def test_create_and_set_config_model_config_with_kv_cache(self) -> None:
-        """Test model config creation with KV cache kwargs."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
-
-        matched_kwargs: dict[str, Any] = {"model_path": "/test/path"}
-        kv_cache_kwargs: dict[str, Any] = {"kv_cache_page_size": 256}
-
-        config._create_and_set_config(
-            "model", MAXModelConfig, matched_kwargs, kv_cache_kwargs
-        )
-
-        # Should create model config with KV cache config
-        assert config.model is not None
-        assert config.model.model_path == "/test/path"
-        assert config.model.kv_cache.kv_cache_page_size == 256
-
-    @mock_pipeline_config_resolve
     def test_create_and_set_config_sampling_with_echo_enabled(self) -> None:
         """Test sampling config creation with echo enabled sets variable logits."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path="test/model", enable_echo=True)
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model", enable_echo=True
+                    )
+                }
+            ),
         )
 
         matched_kwargs = {"enable_min_tokens": True}
-        kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "sampling", SamplingConfig, matched_kwargs
         )
 
         # Should create sampling config with variable logits enabled
@@ -316,14 +289,15 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes(self) -> None:
         """Test processing of remaining config classes."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         unmatched_kwargs = {
             "enable_structured_output": True,  # SamplingConfig
             "enable_penalties": True,  # SamplingConfig
-            "model_path": "/override/path",  # MAXModelConfig
-            "kv_cache_page_size": 128,  # KVCacheConfig
-            "kv_cache_format": "float8_e4m3fn",  # KVCacheConfig
             "unknown_param": "value",  # Should remain unmatched
         }
 
@@ -332,8 +306,6 @@ class TestPipelineConfigUtilityMethods:
         # Should process and remove matched kwargs
         assert "enable_structured_output" not in unmatched_kwargs
         assert "enable_penalties" not in unmatched_kwargs
-        assert "model_path" not in unmatched_kwargs
-        assert "kv_cache_page_size" not in unmatched_kwargs
 
         # Should leave unmatched kwargs
         assert "unknown_param" in unmatched_kwargs
@@ -341,14 +313,15 @@ class TestPipelineConfigUtilityMethods:
         # Should update configs
         assert config.sampling.enable_structured_output is True
         assert config.sampling.enable_penalties is True
-        assert config.model.model_path == "/override/path"
-        assert config.model.kv_cache.kv_cache_page_size == 128
-        assert config.model.kv_cache.cache_dtype == DType.float8_e4m3fn
 
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes_no_matches(self) -> None:
         """Test processing when no config classes match."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+        )
 
         unmatched_kwargs = {
             "unknown_param1": "value1",
@@ -488,8 +461,12 @@ class TestDraftModelEncodingDefault:
     def test_draft_encoding_defaults_to_target(self) -> None:
         """Draft encoding inherits the target's resolved encoding when unset."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path=self._MODEL),
-            draft_model=MAXModelConfig(model_path=self._MODEL),
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(model_path=self._MODEL),
+                    "draft": MAXModelConfig(model_path=self._MODEL),
+                }
+            ),
             speculative=SpeculativeConfig(speculative_method="standalone"),
         )
         assert config.draft_model is not None
@@ -503,9 +480,14 @@ class TestDraftModelEncodingDefault:
     def test_explicit_draft_encoding_is_preserved(self) -> None:
         """Explicit draft encoding is not overridden by the target's encoding."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path=self._MODEL),
-            draft_model=MAXModelConfig(
-                model_path=self._MODEL, quantization_encoding="float32"
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(model_path=self._MODEL),
+                    "draft": MAXModelConfig(
+                        model_path=self._MODEL,
+                        quantization_encoding="float32",
+                    ),
+                }
             ),
             speculative=SpeculativeConfig(speculative_method="standalone"),
         )
@@ -519,8 +501,14 @@ class TestDraftModelEncodingDefault:
     def test_max_length_clamped_to_draft_max_seq_len(self) -> None:
         """max_length is clamped to draft arch_config.get_max_seq_len()."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path=self._MODEL, max_length=131072),
-            draft_model=MAXModelConfig(model_path=self._MODEL),
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=self._MODEL, max_length=131072
+                    ),
+                    "draft": MAXModelConfig(model_path=self._MODEL),
+                }
+            ),
             speculative=SpeculativeConfig(speculative_method="standalone"),
         )
 
@@ -537,7 +525,9 @@ def test_validate_model_path__bad_repo_provided() -> None:
     # This test requires a HF call to check that this repo is not valid.
     with pytest.raises(Exception):
         _ = PipelineConfig(
-            model=MAXModelConfig(model_path="bert-base-asdfasdf"),
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="bert-base-asdfasdf")}
+            ),
         )
 
 
@@ -545,7 +535,9 @@ def test_config_init__raises_with_no_model_path() -> None:
     # We expect this to fail.
     with pytest.raises(ValueError):
         _ = PipelineConfig(
-            model=MAXModelConfig(weight_path=[Path("file.gguf")])
+            models=ModelManifest(
+                {"main": MAXModelConfig(weight_path=[Path("file.gguf")])}
+            ),
         )
 
 
@@ -553,12 +545,16 @@ def test_config_init__raises_with_no_model_path() -> None:
 def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model=MAXModelConfig(
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    weight_path=[
+                        Path(
+                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+                        )
+                    ],
                 )
-            ],
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -576,13 +572,17 @@ def test_config_post_init__other_repo_weights(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    weight_path=[
+                        Path(
+                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+                        )
+                    ],
                 )
-            ],
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -601,13 +601,17 @@ def test_config_init__reformats_with_str_weights_path(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     # We expect this to convert the string.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    weight_path=[
+                        Path(
+                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+                        )
+                    ],
                 )
-            ],
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -627,9 +631,13 @@ def test_validate_model_path__correct_repo_id_provided(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding="bfloat16",
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -648,15 +656,19 @@ def test_config__test_incompatible_quantization_encoding(
     with pytest.raises(ValueError):
         # This should raise, as q4_k != f32.
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding="q4_k",
-                weight_path=[
-                    Path(
-                        "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        quantization_encoding="q4_k",
+                        weight_path=[
+                            Path(
+                                "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+                            )
+                        ],
+                        max_length=1,
                     )
-                ],
-                max_length=1,
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 max_batch_size=1,
@@ -666,15 +678,19 @@ def test_config__test_incompatible_quantization_encoding(
 
     # This should not raise, as float32 == f32.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="float32",
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    quantization_encoding="float32",
+                    weight_path=[
+                        Path(
+                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+                        )
+                    ],
+                    max_length=1,
                 )
-            ],
-            max_length=1,
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -696,10 +712,14 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     # Float32 <-> bfloat16 casting is always enabled,
     # so this should succeed by casting bfloat16 weights to float32.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="float32",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    quantization_encoding="float32",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -722,10 +742,14 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
     # This should pass, because the flag also supports casting bfloat16 weights
     # to float32.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="float32",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    quantization_encoding="float32",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -748,10 +772,14 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
     # This should not raise, as float32 <-> bfloat16 casting is always enabled
     # and the quantization encoding is set to bfloat16.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="bfloat16",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    quantization_encoding="bfloat16",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -772,10 +800,14 @@ def test_config__test_retrieve_factory_with_known_architecture(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding="bfloat16",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=1,
@@ -798,8 +830,12 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
         ValueError, match="MAX-optimized architecture not available"
     ):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=gemma_3_1b_it_local_path, max_length=1
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=gemma_3_1b_it_local_path, max_length=1
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 max_batch_size=1,
@@ -828,9 +864,13 @@ def test_config_is_picklable(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding="bfloat16",
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -861,11 +901,15 @@ def test_config__validates_supported_device(
 
     # Valid device/encoding combinations.
     _ = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=modular_ai_llama_3_1_local_path,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding="float32",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    device_specs=[DeviceSpec.cpu()],
+                    quantization_encoding="float32",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -875,11 +919,15 @@ def test_config__validates_supported_device(
     if accelerator_count() == 0:
         with pytest.raises(ValueError):
             _ = PipelineConfig(
-                model=MAXModelConfig(
-                    model_path=modular_ai_llama_3_1_local_path,
-                    device_specs=[DeviceSpec.accelerator()],
-                    quantization_encoding="float32",
-                    max_length=1,
+                models=ModelManifest(
+                    {
+                        "main": MAXModelConfig(
+                            model_path=modular_ai_llama_3_1_local_path,
+                            device_specs=[DeviceSpec.accelerator()],
+                            quantization_encoding="float32",
+                            max_length=1,
+                        )
+                    }
                 ),
                 runtime=PipelineRuntimeConfig(
                     prefer_module_v3=True,
@@ -887,11 +935,15 @@ def test_config__validates_supported_device(
             )
     else:
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=modular_ai_llama_3_1_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=modular_ai_llama_3_1_local_path,
+                        device_specs=[DeviceSpec.accelerator()],
+                        quantization_encoding="bfloat16",
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 prefer_module_v3=True,
@@ -903,11 +955,15 @@ def test_config__validates_supported_device(
     ):
         # Invalid device/encoding combinations.
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=modular_ai_llama_3_1_local_path,
-                device_specs=[DeviceSpec.cpu()],
-                quantization_encoding="bfloat16",
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=modular_ai_llama_3_1_local_path,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="bfloat16",
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(
                 prefer_module_v3=True,
@@ -926,12 +982,16 @@ def test_config__validates_lora_configuration(
 
     # Test LoRA configuration with valid config
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding="bfloat16",
-            kv_cache=KVCacheConfig(enable_prefix_caching=False),
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    device_specs=[DeviceSpec.accelerator()],
+                    quantization_encoding="bfloat16",
+                    kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                    max_length=1,
+                )
+            }
         ),
         lora=LoRAConfig(
             enable_lora=True, lora_paths=[llama_3_1_8b_lora_local_path]
@@ -961,12 +1021,16 @@ def test_config__validates_lora_only_supported_for_llama(
         match=r"LoRA is not currently supported for architecture.*LoRA support is currently only available for Llama-3\.x models",
     ):
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=gemma_3_1b_it_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=gemma_3_1b_it_local_path,
+                        device_specs=[DeviceSpec.accelerator()],
+                        quantization_encoding="bfloat16",
+                        kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                        max_length=1,
+                    )
+                }
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
             runtime=PipelineRuntimeConfig(
@@ -987,12 +1051,16 @@ def test_config__validates_lora_works_for_llama(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding="bfloat16",
-            kv_cache=KVCacheConfig(enable_prefix_caching=False),
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    device_specs=[DeviceSpec.accelerator()],
+                    quantization_encoding="bfloat16",
+                    kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                    max_length=1,
+                )
+            }
         ),
         lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
         runtime=PipelineRuntimeConfig(
@@ -1020,12 +1088,16 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
         match=r"LoRA is not compatible with prefix caching\. Please disable prefix caching by using the --no-enable-prefix-caching flag\.",
     ):
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                kv_cache=KVCacheConfig(enable_prefix_caching=True),
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        device_specs=[DeviceSpec.accelerator()],
+                        quantization_encoding="bfloat16",
+                        kv_cache=KVCacheConfig(enable_prefix_caching=True),
+                        max_length=1,
+                    )
+                }
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
             runtime=PipelineRuntimeConfig(
@@ -1045,12 +1117,16 @@ def test_config__validates_lora_single_device_only(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding="bfloat16",
-            kv_cache=KVCacheConfig(enable_prefix_caching=False),
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    device_specs=[DeviceSpec.accelerator()],
+                    quantization_encoding="bfloat16",
+                    kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                    max_length=1,
+                )
+            }
         ),
         lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
         runtime=PipelineRuntimeConfig(
@@ -1078,15 +1154,19 @@ def test_config__validates_lora_fails_with_multiple_devices(
         match=r"LoRA is currently not supported with the number of devices > 1\.",
     ):
         _ = PipelineConfig(
-            model=MAXModelConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                device_specs=[
-                    DeviceSpec.accelerator(),
-                    DeviceSpec.accelerator(),
-                ],
-                quantization_encoding="bfloat16",
-                kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                max_length=1,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=llama_3_1_8b_instruct_local_path,
+                        device_specs=[
+                            DeviceSpec.accelerator(),
+                            DeviceSpec.accelerator(),
+                        ],
+                        quantization_encoding="bfloat16",
+                        kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                        max_length=1,
+                    )
+                }
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
             runtime=PipelineRuntimeConfig(
@@ -1095,11 +1175,18 @@ def test_config__validates_lora_fails_with_multiple_devices(
         )
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator(), DeviceSpec.accelerator()],
-            quantization_encoding="bfloat16",
-            max_length=1,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=llama_3_1_8b_instruct_local_path,
+                    device_specs=[
+                        DeviceSpec.accelerator(),
+                        DeviceSpec.accelerator(),
+                    ],
+                    quantization_encoding="bfloat16",
+                    max_length=1,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
@@ -1108,187 +1195,28 @@ def test_config__validates_lora_fails_with_multiple_devices(
     assert config.lora is None
 
 
-def test_diffusers_config_loads_for_diffusion_pipeline() -> None:
-    """Test that diffusers_config is properly loaded for diffusion pipelines."""
-    # Use a small, publicly accessible diffusion model for testing
-    # This model is from HuggingFace's internal testing organization
+def test_manifest_discovers_diffusion_components() -> None:
+    """Test that ModelManifest discovers components for a diffusion pipeline."""
+    from transformers import PretrainedConfig
+
     diffusion_model = "hf-internal-testing/tiny-stable-diffusion-torch"
 
-    # Create a model config with a diffusion pipeline
-    model_config = MAXModelConfig(
-        model_path=diffusion_model,
-        device_specs=[DeviceSpec.cpu()],
-    )
+    manifest = ModelManifest.from_model_path(diffusion_model)
 
-    # The diffusers_config should be automatically loaded
-    diffusers_config = model_config.diffusers_config
-
-    # Verify that diffusers_config is not None (indicating this is a diffusion pipeline)
-    assert diffusers_config is not None, (
-        "diffusers_config should not be None for diffusion pipelines"
-    )
-
-    # Verify that the config contains expected keys for a Stable Diffusion pipeline
-    # model_index.json typically contains pipeline class name and component mapping
-    assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
-    )
-
-    # The pipeline class name should indicate this is a Stable Diffusion pipeline
-    assert "StableDiffusion" in diffusers_config["_class_name"], (
-        f"Expected StableDiffusion pipeline, got {diffusers_config['_class_name']}"
-    )
-
-    # Verify that the config contains the "components" key
-    assert "components" in diffusers_config, (
-        "diffusers_config should contain 'components' key"
-    )
-
-    # Verify that the components dict contains expected components
-    components = diffusers_config["components"]
+    # ModelManifest should have discovered per-component configs.
     expected_components = ["vae", "unet", "text_encoder"]
     for component in expected_components:
-        assert component in components, (
-            f"components should contain {component} component"
+        assert component in manifest, (
+            f"manifest should contain {component} component"
+        )
+        # Each component should have a valid huggingface_config.
+        assert isinstance(
+            manifest[component].huggingface_config, PretrainedConfig
         )
 
-        # Verify each component has the expected structure
-        component_data = components[component]
-        assert "library" in component_data, (
-            f"{component} should have 'library' field"
-        )
-        assert "class_name" in component_data, (
-            f"{component} should have 'class_name' field"
-        )
-        assert "config_dict" in component_data, (
-            f"{component} should have 'config_dict' field"
-        )
-
-        # Print component info to see what's being downloaded
-        print(
-            f"Component {component}: library={component_data['library']}, "
-            f"class={component_data['class_name']}, "
-            f"config_dict_keys={list(component_data['config_dict'].keys()) if component_data['config_dict'] else 'empty'}"
-        )
-
-
-def test_diffusers_config_is_none_for_transformer_model(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    """Test that diffusers_config is None for non-diffusion models."""
-    # Create a model config with a standard transformer model (not a diffusion model)
-    model_config = MAXModelConfig(
-        model_path=llama_3_1_8b_instruct_local_path,
-        device_specs=[DeviceSpec.cpu()],
-    )
-
-    # The diffusers_config should be None for non-diffusion models
-    diffusers_config = model_config.diffusers_config
-
-    assert diffusers_config is None, (
-        "diffusers_config should be None for non-diffusion transformer models"
-    )
-
-
-@pytest.mark.skip(reason="SERVOPT-972, diffusers_config assertion failure")
-def test_pipeline_config_with_flux_1_dev_model() -> None:
-    """Test PipelineConfig instantiation with Flux.1-dev model."""
-    # Flux.1-dev is a diffusion model from Black Forest Labs
-    flux_model = "black-forest-labs/FLUX.1-dev"
-
-    # Create a PipelineConfig with Flux.1-dev
-    config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=flux_model,
-            device_specs=[DeviceSpec.cpu()],
-        ),
-        runtime=PipelineRuntimeConfig(defer_resolve=True),
-    )
-
-    # Verify that the config was created successfully
-    assert config.model.model_path == flux_model
-
-    # Verify that diffusers_config is loaded (since Flux is a diffusion model)
-    diffusers_config = config.model.diffusers_config
-    assert diffusers_config is not None, (
-        "diffusers_config should not be None for Flux.1-dev diffusion model"
-    )
-
-    # Verify that the config contains expected pipeline information
-    assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
-    )
-
-    # Flux uses FluxPipeline class
-    assert "Flux" in diffusers_config["_class_name"], (
-        f"Expected Flux pipeline, got {diffusers_config['_class_name']}"
-    )
-
-    # Print component info to evaluate download behavior
-    if "components" in diffusers_config:
-        components = diffusers_config["components"]
-        print(f"\nFlux model has {len(components)} components:")
-        for component_name, component_data in components.items():
-            config_dict_size = len(str(component_data.get("config_dict", {})))
-            config_dict_keys = (
-                list(component_data["config_dict"].keys())
-                if component_data.get("config_dict")
-                else "empty"
-            )
-            print(
-                f"  {component_name}: library={component_data.get('library')}, "
-                f"class={component_data.get('class_name')}, "
-                f"config_dict_size={config_dict_size} chars, "
-                f"config_dict_keys={config_dict_keys}"
-            )
-
-
-def test_pipeline_config_with_tiny_stable_diffusion() -> None:
-    """Test PipelineConfig instantiation with tiny-stable-diffusion-torch model."""
-    # Use the same model as in test_diffusers_config_loads_for_diffusion_pipeline
-    # but test with PipelineConfig instead of MAXModelConfig
-    diffusion_model = "hf-internal-testing/tiny-stable-diffusion-torch"
-
-    # Create a PipelineConfig with the diffusion model
-    config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=diffusion_model,
-            device_specs=[DeviceSpec.cpu()],
-        ),
-        runtime=PipelineRuntimeConfig(defer_resolve=True),
-    )
-
-    # Verify that the config was created successfully
-    assert config.model.model_path == diffusion_model
-
-    # Verify that diffusers_config is loaded
-    diffusers_config = config.model.diffusers_config
-    assert diffusers_config is not None, (
-        "diffusers_config should not be None for diffusion pipelines"
-    )
-
-    # Verify that the config contains expected keys
-    assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
-    )
-
-    # The pipeline class name should indicate this is a Stable Diffusion pipeline
-    assert "StableDiffusion" in diffusers_config["_class_name"], (
-        f"Expected StableDiffusion pipeline, got {diffusers_config['_class_name']}"
-    )
-
-    # Verify that the config contains the "components" key
-    assert "components" in diffusers_config, (
-        "diffusers_config should contain 'components' key"
-    )
-
-    # Verify that the components dict contains expected components
-    components = diffusers_config["components"]
-    expected_components = ["vae", "unet", "text_encoder"]
-    for component in expected_components:
-        assert component in components, (
-            f"components should contain {component} component"
-        )
+    # Metadata should contain the pipeline class name.
+    assert "_class_name" in manifest.metadata
+    assert "StableDiffusion" in manifest.metadata["_class_name"]
 
 
 class TestSamplingConfig:
@@ -1363,6 +1291,7 @@ class TestSamplingConfig:
         ("DeepseekV32ForCausalLM", 16, False, True, True),
         ("DeepseekV3ForCausalLMNextN", 16, False, True, True),
         ("KimiK25ForConditionalGeneration", 16, False, True, True),
+        ("UnifiedEagleLlama3ForCausalLM", 16, False, True, True),
         ("LlamaForCausalLM", 16, False, False, False),
         ("LlamaForCausalLM", None, False, True, False),
         ("LlamaForCausalLM", 16, True, True, False),
@@ -1377,8 +1306,10 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
     expected_device_graph_capture: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Mock .huggingface_model_repo so that we don't reach out to HF.
-    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    # Mock architecture_name so we don't reach out to HF for the config.
+    monkeypatch.setattr(
+        MAXModelConfig, "architecture_name", property(lambda self: arch_name)
+    )
     # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch.
     arch = SimpleNamespace(name=arch_name)
     monkeypatch.setattr(
@@ -1392,9 +1323,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
     )
 
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_num_steps=42,
@@ -1420,8 +1355,12 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         arch_name: str,
     ) -> Generator[None, None, None]:
         with monkeypatch.context() as m:
-            # Mock .huggingface_model_repo so that we don't reach out to HF
-            m.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+            # Mock architecture_name so we don't reach out to HF for the config.
+            m.setattr(
+                MAXModelConfig,
+                "architecture_name",
+                property(lambda self: arch_name),
+            )
             # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch
             arch = SimpleNamespace(name=arch_name)
             m.setattr(
@@ -1441,9 +1380,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     ):
         with patch_retrieve_architecture(arch_name):
             config = PipelineConfig(
-                model=MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
+                models=ModelManifest(
+                    {
+                        "main": MAXModelConfig(
+                            model_path="test/model",
+                            device_specs=[DeviceSpec.accelerator()],
+                        )
+                    }
                 ),
                 runtime=PipelineRuntimeConfig(max_num_steps=42),
             )
@@ -1454,9 +1397,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     # Don't override if the device is CPU
     with patch_retrieve_architecture("LlamaForCausalLM"):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.cpu()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model",
+                        device_specs=[DeviceSpec.cpu()],
+                    )
+                }
             ),
         )
         config._validate_and_resolve_overlap_scheduler()
@@ -1465,9 +1412,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     # Don't override if structured output is enabled
     with patch_retrieve_architecture("LlamaForCausalLM"):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model",
+                        device_specs=[DeviceSpec.accelerator()],
+                    )
+                }
             ),
             sampling=SamplingConfig(enable_structured_output=True),
         )
@@ -1477,9 +1428,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     # Don't override if the pipeline role is not PrefillAndDecode
     with patch_retrieve_architecture("LlamaForCausalLM"):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model",
+                        device_specs=[DeviceSpec.accelerator()],
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(pipeline_role="prefill_only"),
         )
@@ -1489,9 +1444,13 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     # Don't override for other architectures
     with patch_retrieve_architecture("SomeOtherArchitecture"):
         config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="test/model",
+                        device_specs=[DeviceSpec.accelerator()],
+                    )
+                }
             ),
         )
         config._validate_and_resolve_overlap_scheduler()
@@ -1503,14 +1462,22 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
 def test_validate_and_resolve_overlap_scheduler__validate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Mock .huggingface_model_repo so that we don't reach out to HF.
-    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    # Mock architecture_name so we don't reach out to HF for the config.
+    monkeypatch.setattr(
+        MAXModelConfig,
+        "architecture_name",
+        property(lambda self: "SomeArchitecture"),
+    )
 
     # Allow user to manually enable overlap scheduler
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
@@ -1519,34 +1486,48 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 
     # Error out if user tries to enable overlap scheduler on CPU
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.cpu()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.cpu()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
 
-    # Error out if user tries to enable overlap scheduler without PrefillAndDecode
+    # prefill_only with overlap scheduler is now allowed (experimental),
+    # the runtime just logs a warning and sets max_num_steps=1.
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             pipeline_role="prefill_only",
             enable_overlap_scheduler=True,
         ),
     )
-    with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
+    config._validate_and_resolve_overlap_scheduler()
+    assert config.runtime.enable_overlap_scheduler is True
+    assert config.runtime.max_num_steps == 1
 
     # Error out if user tries to enable overlap scheduler with AudioGenerationConfig
     config = AudioGenerationConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             pipeline_role="prefill_and_decode",
@@ -1559,12 +1540,65 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 
     # Error out if user tries to enable overlap scheduler with structured output
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
         ),
         sampling=SamplingConfig(enable_structured_output=True),
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+@pytest.mark.parametrize(
+    "num_speculative_tokens,expected_device_graph_capture",
+    [
+        (1, True),
+        (2, False),
+        (5, False),
+    ],
+    ids=["1_spec_token", "2_spec_tokens", "5_spec_tokens"],
+)
+def test_auto_device_graph_capture_eagle_gating(
+    num_speculative_tokens: int,
+    expected_device_graph_capture: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Eagle arch auto-enables graph capture only when num_speculative_tokens <= 1."""
+    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    arch = SimpleNamespace(name="UnifiedEagleLlama3ForCausalLM")
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+    monkeypatch.setattr(
+        "max.pipelines.lib.config.config.accelerator_api",
+        Mock(return_value="cuda"),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="eagle",
+            num_speculative_tokens=num_speculative_tokens,
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=16),
+    )
+    config._validate_and_resolve_overlap_scheduler()
+
+    assert config.runtime.device_graph_capture is expected_device_graph_capture

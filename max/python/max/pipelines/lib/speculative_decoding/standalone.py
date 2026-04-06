@@ -26,7 +26,7 @@ from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 
 from ..sampling import SamplerInputs, apply_logits_processors
-from .base import SpeculativeDecodingPipelineBase
+from .base import SpeculativeDecodingMetrics, SpeculativeDecodingPipelineBase
 from .utils import (
     ModelInputsWithTokensAndOffsets,
     build_response,
@@ -316,7 +316,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 num_draft_tokens_generated=num_draft_tokens_generated,
             )
         )
-        self.metrics.update(
+        self._metrics.update(
             draft_tokens_accepted=draft_tokens_accepted,
             draft_tokens_generated=draft_tokens_generated,
         )
@@ -329,3 +329,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self._target_kv_manager.step([context_batch])
 
         return res
+
+    def spec_decode_metrics(self) -> SpeculativeDecodingMetrics:
+        """Returns the draft token acceptance metrics for speculative decoding."""
+        return self._metrics

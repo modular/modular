@@ -10,6 +10,7 @@ modular_py_binary(
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
     ],
 )
 

@@ -34,7 +34,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_pipeline_config_resolve",
-    size = "small",
+    size = "medium",
     srcs = ["test_pipeline_config_resolve.py"],
     deps = [
         "//max/python/max/driver",
@@ -71,6 +71,37 @@ modular_py_test(
     deps = [
         "//max/python/max/pipelines/lib",
         requirement("huggingface-hub"),
+        requirement("transformers"),
+    ],
+)
+
+# FIXME: Combine back into below target
+modular_py_test(
+    name = "test_pipeline_lora_sorting",
+    srcs = ["test_pipeline_lora_sorting.py"],
+    tags = [
+        "manual",
+        "no-pydeps",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/support",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common:mocks",
+        "//max/tests/integration/test_common:numerics",
+        requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 
@@ -87,9 +118,11 @@ modular_py_test(
             "test_pipeline_config_resolve.py",
             "test_model_manifest.py",
             "test_model_manifest_hf.py",
+            "test_pipeline_lora_sorting.py",  # FIXME
         ],
     ),
     tags = [
+        "no-pydeps",  # FIXME: MODELS-1295
         "requires-network",  # This is needed for escaping HF sandbox.
     ],
     target_compatible_with = select({

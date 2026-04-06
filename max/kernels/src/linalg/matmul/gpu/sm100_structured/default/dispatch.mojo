@@ -753,7 +753,7 @@ def _matmul_dispatch_sm100[
     ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
-        if not c_tensor.ptr:
+        if not c_tensor.ptr._is_not_null():
             raise "c must be allocated!"
 
         blackwell_matmul_tma_umma_warp_specialized[
@@ -795,7 +795,7 @@ def _matmul_dispatch_sm100[
 
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
-        if c_tensor.ptr:
+        if c_tensor.ptr._is_not_null():
             var m = Int(c_tensor.dim[0]())
             var n = Int(c_tensor.dim[1]())
 

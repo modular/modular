@@ -713,7 +713,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
             var refcount = ptr.bitcast[Atomic[DType.int]]()
-            if refcount[].fetch_sub[ordering=Consistency.RELEASE](1) == 1:
+            if refcount[].fetch_sub(1) == 1:
                 fence[Consistency.ACQUIRE]()
                 ptr.free()
 

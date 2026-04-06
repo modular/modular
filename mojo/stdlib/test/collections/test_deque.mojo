@@ -13,7 +13,7 @@
 
 from std.collections import Deque
 
-from test_utils import check_write_to
+from test_utils import Observable, check_write_to
 from std.testing import assert_equal, assert_false, assert_raises, assert_true
 from std.testing import TestSuite
 
@@ -1179,6 +1179,96 @@ def test_deque_conditional_conformances() raises:
 
     assert_true(conforms_to(Deque[Int], Writable))
     assert_false(conforms_to(Deque[NonEquatable], Writable))
+
+
+# ===-------------------------------------------------------------------===#
+# Owned iteration tests
+# ===-------------------------------------------------------------------===#
+
+# We use `MutAnyOrigin` to bypass exclusivity checking
+# otherwise we cannot construct a deque of Observables where
+# all point to the same copy/move/del counter.
+comptime ObservableElement = Observable[
+    CopyOrigin=MutAnyOrigin,
+    MoveOrigin=MutAnyOrigin,
+    DelOrigin=MutAnyOrigin,
+]
+
+
+def make_observable_deque(
+    *, mut copies: Int, mut moves: Int, mut dels: Int, length: Int
+) -> Deque[ObservableElement]:
+    var deque = Deque[ObservableElement]()
+    for _i in range(length):
+        deque.append(
+            ObservableElement(
+                copies=Pointer[Int, MutAnyOrigin](to=copies),
+                moves=Pointer[Int, MutAnyOrigin](to=moves),
+                dels=Pointer[Int, MutAnyOrigin](to=dels),
+            )
+        )
+    return deque^
+
+
+def test_deque_iter_owned() raises:
+    var deque = Deque[Int](1, 2, 3, 4, 5)
+    var result = List[Int]()
+    for elem in deque^:
+        result.append(elem)
+    assert_equal(len(result), 5)
+    assert_equal(result[0], 1)
+    assert_equal(result[1], 2)
+    assert_equal(result[2], 3)
+    assert_equal(result[3], 4)
+    assert_equal(result[4], 5)
+
+
+def test_deque_iter_owned_destroys_elements_if_not_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var deque = make_observable_deque(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+    var _ = deque^.__iter__()
+    assert_equal(copies, 0)
+    assert_equal(dels, 2)
+
+
+def test_deque_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var deque = make_observable_deque(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+
+    var iter = deque^.__iter__()
+    assert_equal(copies, 0)
+    assert_equal(dels, 0)
+
+    var _ = iter.__next__()
+    assert_equal(dels, 1)
+
+    _ = iter^
+    assert_equal(copies, 0)
+    assert_equal(dels, 2)
+
+
+def test_deque_iter_owned_bounds() raises:
+    var deque = Deque[Int](1, 2, 3)
+    var iter = deque^.__iter__()
+    for i in range(3, 0, -1):
+        var lower, upper = iter.bounds()
+        assert_equal(i, lower)
+        assert_equal(i, upper.value())
+        _ = iter.__next__()
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
 
 
 # ===-------------------------------------------------------------------===#

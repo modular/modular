@@ -176,14 +176,14 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
         self.rank = 0
         self.nranks = 0
         self.uid = SHMEMUniqueID()
-        self.mpi_comm = UnsafePointer[NoneType, ImmutAnyOrigin]()
+        self.mpi_comm = {_unsafe_null = ()}
 
     def __init__(out self, rank: Int32, nranks: Int32, uid: SHMEMUniqueID):
         self.rank = rank
         self.nranks = nranks
         self.uid = uid
         # Null pointer, we're not using MPI
-        self.mpi_comm = UnsafePointer[NoneType, ImmutAnyOrigin]()
+        self.mpi_comm = {_unsafe_null = ()}
 
 
 def _dtype_to_rocshmem_type[
@@ -487,7 +487,7 @@ def _check_rocshmem_allocation[
     func_name: StaticString,
     requested_bytes: c_size_t,
 ) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
-    if not ptr:
+    if not ptr._is_not_null():
         raise Error(
             func_name,
             " failed to allocate ",

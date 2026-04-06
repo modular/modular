@@ -381,7 +381,9 @@ struct Pointer[
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
-        memory.bitcast[Self._NullPointerType]().init_pointee_move({})
+        memory.bitcast[Self._NullPointerType]().init_pointee_move(
+            Self._NullPointerType(_unsafe_null=())
+        )
 
     @staticmethod
     @always_inline
@@ -389,4 +391,4 @@ struct Pointer[
     def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
-        return not Bool(memory.bitcast[Self._NullPointerType]()[])
+        return not memory.bitcast[Self._NullPointerType]()[]._is_not_null()
