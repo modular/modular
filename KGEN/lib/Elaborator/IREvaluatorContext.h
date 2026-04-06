@@ -197,6 +197,13 @@ protected:
       CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
 
+  /// Evaluate the mangled name of a function, including evaluating any explicit
+  /// linkage name. This may return an empty StringAttr, signalling that the
+  /// function is not yet ready.
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
+  evaluateMangledName(TypedAttr symCst, bool sanitize, Location errorLoc,
+                      StringRef errorContext);
+
   std::string stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
                                        bool qualifiedBuiltins);
   void printParamValue(raw_ostream &os, ParamDeclAttr decl, TypedAttr value,
@@ -226,12 +233,9 @@ private:
   /// Compute the expected mangled name of a generator from a parameter.
   /// Returns both the mangled name and the generator referenced by the
   /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.
-  /// If `allowParametric`, any not fully bound symbol reference will just have
-  /// its symbol name returned. Otherwise, not fully bound symbols are errors.
   virtual ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
   getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                         TypedAttr symCst, bool allowParametric,
-                         bool sanitize = false) = 0;
+                         TypedAttr symCst, bool sanitize = false) = 0;
 
   virtual GeneratorOp getGenerator(SymbolRefAttr symbol) = 0;
 
