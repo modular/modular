@@ -149,7 +149,7 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
 
 @fieldwise_init
 struct _ListTakeIter[
-    T: Copyable,
+    T: Copyable & ImplicitlyDestructible,
     origin: MutOrigin,
 ](Movable, IterableOwned, Iterator):
     """Iterator over List elements that moves elements out of the list.
@@ -164,7 +164,7 @@ struct _ListTakeIter[
         origin: The mutable origin of the List.
     """
 
-    comptime IteratorType: Iterator = Self
+    comptime IteratorOwnedType = Self
     comptime Element = Self.T
 
     var _index: Int
@@ -180,7 +180,7 @@ struct _ListTakeIter[
         list._len = 0
 
     @always_inline
-    def __iter__(owned self) -> Self:
+    def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
     @always_inline
