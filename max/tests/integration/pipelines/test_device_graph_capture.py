@@ -25,18 +25,13 @@ from max.engine import Model
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice
 from max.pipelines.lib import ModelInputs, ModelOutputs
-from max.pipelines.lib.graph_capture import (
-    ServeGraphCaptureRunner,
-)
+from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 from max.pipelines.lib.interfaces import UnifiedEagleOutputs
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
     mock_huggingface_config,
 )
-from test_common.mocks.pipeline_model import (
-    MockModelInputs,
-    MockPipelineModel,
-)
+from test_common.mocks.pipeline_model import MockModelInputs, MockPipelineModel
 
 
 class DummyModel:
@@ -515,7 +510,6 @@ def test_warmup_eagle_outputs_vs_model_outputs() -> None:
         @contextmanager
         def _warmup_ctx(
             batch_size: int,
-            num_steps: int,
             _mi: MockModelInputs = mock_inputs,
         ) -> Iterator[MockModelInputs]:
             yield _mi

@@ -239,7 +239,8 @@ class SpecDecodeState:
         persistent_draft_tokens = Buffer(
             dtype=DType.int64,
             shape=(
-                pipeline_config.runtime.max_batch_size,
+                pipeline_config.runtime.max_batch_size
+                * pipeline_config.model.data_parallel_degree,
                 num_speculative_tokens,
             ),
             device=model.devices[0],
@@ -712,9 +713,7 @@ class OverlapTextGenerationPipeline(
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
-    def _warmup_model_inputs(
-        self, batch_size: int, q_max_seq_len: int = 1
-    ) -> Iterator[ModelInputs]:
+    def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
 
@@ -728,13 +727,17 @@ class OverlapTextGenerationPipeline(
                 "Speculative decoding with multiple tokens is not supported with Device Graph Capture."
             )
 
+        # For unified Eagle/MTP models, the graph merges prompt tokens with
+        # draft tokens internally. Each request contributes 1 decode token
+        # as input; the q_max_seq_len only affects KV cache dispatch metadata.
+        num_decode_tokens = 1
         for _replica_idx in range(dp_size):
             replica_batches.append(
                 [
                     TextContext(
                         max_length=self._pipeline_model.max_seq_len,
                         tokens=TokenBuffer(
-                            np.zeros(q_max_seq_len, dtype=np.int64)
+                            np.zeros(num_decode_tokens, dtype=np.int64)
                         ),
                         eos_tracker=EOSTracker(),
                         model_name=self._pipeline_config.model.model_name,
@@ -790,7 +793,7 @@ class OverlapTextGenerationPipeline(
                 assert isinstance(model_inputs, _UnifiedEagleInputs)
                 draft_tokens = Buffer.from_numpy(
                     np.zeros(
-                        (batch_size, num_speculative_tokens),
+                        (batch_size * dp_size, num_speculative_tokens),
                         dtype=np.int64,
                     )
                 )
@@ -798,7 +801,9 @@ class OverlapTextGenerationPipeline(
                     self._spec_decode_state.persistent_draft_tokens
                 )
                 persistent_draft_tokens = _contiguous_prefix_2d(
-                    persistent_draft_tokens, batch_size, num_speculative_tokens
+                    persistent_draft_tokens,
+                    batch_size * dp_size,
+                    num_speculative_tokens,
                 )
                 persistent_draft_tokens.inplace_copy_from(draft_tokens)
                 model_inputs.draft_tokens = persistent_draft_tokens
