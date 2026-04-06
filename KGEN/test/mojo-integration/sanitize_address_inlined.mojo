@@ -16,7 +16,7 @@
 # RUN: export ASAN_OPTIONS=abort_on_error=1
 # RUN: not not %t 2>&1 | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 
 
 # CHECK: ERROR: AddressSanitizer: heap-buffer-overflow
