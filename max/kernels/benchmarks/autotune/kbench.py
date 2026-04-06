@@ -123,8 +123,9 @@ def run(
     timeout_secs: int | None = None,
     plot: str = "bars",
     use_shared_lib: bool = False,
+    reset_shared_lib_worker_per_binary_group: bool = False,
     cache_dir: Path | None = None,
-) -> None:
+) -> int:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
         assert len(yaml_path_list), "There should be at least 1 YAML as input."
@@ -158,6 +159,8 @@ def run(
     if filter_list:
         spec.filter(filter_list)
 
+    executed_spec_count = len(spec)
+
     if verbose:
         for i, s in enumerate(spec):
             logging.debug(f"[{i}]{s}")
@@ -188,6 +191,7 @@ def run(
         output_suffix="output.csv",
         progress=progress,
         use_shared_lib=use_shared_lib,
+        reset_shared_lib_worker_per_binary_group=reset_shared_lib_worker_per_binary_group,
         cache_dir=cache_dir,
     )
 
@@ -216,7 +220,7 @@ def run(
                     f"Number of valid built specs: {num_valid}"
                     f" (out of {num_total})"
                 )
-                return
+                return executed_spec_count
 
             # Only RUN and BUILD_AND_RUN reach here.
             scheduler.execute_all(
@@ -258,6 +262,8 @@ def run(
                 render_results(
                     pkl_data["merged_df"], mode=plot, console=CONSOLE
                 )
+
+    return executed_spec_count
 
 
 def _validate_partition(partition: str) -> list[int]:
@@ -403,7 +409,8 @@ def set_build_opts(
     "cache_dir",
     default=None,
     help="Fixed directory for compiled binaries and cache pickle. "
-    "Enables portable caching for split build/run workflows.",
+    "Stores portable build artifacts for split build/run workflows. "
+    "Reuse still requires --cached or --run-only.",
     type=click.Path(path_type=Path),
 )
 @click.option(
@@ -470,6 +477,12 @@ def set_build_opts(
     multiple=False,
 )
 @click.option(
+    "--reset-shared-lib-worker-per-binary-group",
+    is_flag=True,
+    default=False,
+    help="Respawn the shared-lib worker whenever kbench switches to a new compiled binary group.",
+)
+@click.option(
     "--timeout-secs",
     default=120,
     show_default=True,
@@ -523,6 +536,7 @@ def cli(
     profile: str,
     exec_prefix: str,
     exec_suffix: str,
+    reset_shared_lib_worker_per_binary_group: bool,
     timeout_secs: int | None,
     partition: str,
     plot: str,
@@ -558,7 +572,6 @@ def cli(
     if cache_dir:
         cache_dir = Path(cache_dir).resolve()
         obj_cache = KbenchCache(base_dir=cache_dir)
-        cached = True  # --cache-dir implies --cached
     else:
         obj_cache = KbenchCache()
 
@@ -570,6 +583,12 @@ def cli(
 
     if cached or (mode == KBENCH_MODE.RUN):
         obj_cache.load()
+    elif cache_dir:
+        logging.info(
+            "Using --cache-dir for fresh builds only; pass --cached to "
+            "reuse previous binaries."
+        )
+        obj_cache.activate_empty()
 
     if len(obj_cache.data) == 0 and mode == KBENCH_MODE.RUN:
         log_and_raise_error(
@@ -662,6 +681,14 @@ def cli(
     use_shared_lib = not profile and not exec_prefix and not exec_suffix
     if use_shared_lib:
         logging.info("Using shared library (.so) mode for faster execution")
+    elif reset_shared_lib_worker_per_binary_group:
+        logging.warning(
+            "Ignoring --reset-shared-lib-worker-per-binary-group because shared library mode is disabled."
+        )
+        reset_shared_lib_worker_per_binary_group = False
+
+    if reset_shared_lib_worker_per_binary_group:
+        logging.info("Resetting the shared-lib worker between binary groups")
 
     # Resolve num_cpu sentinel value once before the shape loop.
     if num_cpu == -1:
@@ -673,8 +700,9 @@ def cli(
     shape_idx_ub = min(shape_idx_lb + shapes_per_partition, len(shape_list))
 
     output_dir_path: Path | None = Path(output_dir) if output_dir else None
+    executed_shape_count = 0
     for i in range(shape_idx_lb, shape_idx_ub):
-        run(
+        executed_shape_count += run(
             yaml_path_list=yaml_files,
             obj_cache=obj_cache,
             shape=shape_list[i],
@@ -695,11 +723,12 @@ def cli(
             timeout_secs=timeout_secs,
             plot=plot,
             use_shared_lib=use_shared_lib,
+            reset_shared_lib_worker_per_binary_group=reset_shared_lib_worker_per_binary_group,
             cache_dir=cache_dir,
         )
         if obj_cache.is_active:
             obj_cache.dump()
-    logging.info(f"Number of shapes: {len(shape_list)}")
+    logging.info(f"Number of shapes: {executed_shape_count}")
     return True
 
 

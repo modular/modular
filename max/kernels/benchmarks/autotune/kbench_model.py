@@ -81,7 +81,7 @@ ScalarValue = str | int | float | bool
 
 _WRAPPER_SOURCE = """\
 from {module_name} import main as _bench_main
-from std.builtin._startup import _ensure_runtime_init
+from std.builtin._startup import _ensure_current_or_global_runtime_init
 
 
 @export
@@ -91,7 +91,7 @@ def benchmark_entry() -> Int32:
     # never registered.  Benchmarks that use CPU parallelism
     # (e.g. elementwise) will abort on a null Runtime* without
     # this.  The call is idempotent — a no-op after the first.
-    _ensure_runtime_init()
+    _ensure_current_or_global_runtime_init()
     try:
         _bench_main()
         return 0
@@ -294,6 +294,11 @@ class KbenchCache:
         """Load cache from file."""
         if self.path.exists():
             self.data = utils.load_pickle(self.path)
+        self.is_active = True
+
+    def activate_empty(self) -> None:
+        """Enable cache writes without loading any existing entries."""
+        self.data = {}
         self.is_active = True
 
     def dump(self) -> None:
@@ -1049,6 +1054,17 @@ def _start_worker(
     return proc
 
 
+def _has_explicit_single_visible_device(
+    visible_device_prefix: str,
+) -> bool:
+    """True when the caller already constrained visibility to one GPU."""
+    if not visible_device_prefix:
+        return False
+    existing = os.environ.get(visible_device_prefix, "")
+    visible_ids = [v.strip() for v in existing.split(",") if v.strip()]
+    return len(visible_ids) == 1
+
+
 def _gpu_worker_loop(
     gpu_id: int | str,
     visible_device_prefix: str,
@@ -1203,6 +1219,7 @@ def _gpu_manager(
     visible_device_prefix: str,
     item_pool: ItemPool,
     timeout_secs: int | None,
+    reset_shared_lib_worker_per_binary_group: bool,
     results_list: list[BuildItem],
     results_lock: threading.Lock,
     progress: Any,
@@ -1217,11 +1234,28 @@ def _gpu_manager(
     proc = _start_worker(
         gpu_id, visible_device_prefix, task_queue, result_queue
     )
+    last_bin_path: Path | None = None
 
     while not shutdown_event.is_set():
         item = item_pool.next_for(gpu_id)
         if item is None:
             break
+
+        current_bin_path = item.build_item.bin_path
+        if (
+            reset_shared_lib_worker_per_binary_group
+            and item.use_shared_lib
+            and last_bin_path is not None
+            and current_bin_path is not None
+            and current_bin_path != last_bin_path
+        ):
+            proc, task_queue, result_queue = _respawn_worker(
+                gpu_id,
+                visible_device_prefix,
+                proc,
+                task_queue,
+                result_queue,
+            )
 
         task_queue.put(item)
         completed_bi, status = _poll_result(result_queue, proc, timeout_secs)
@@ -1253,6 +1287,8 @@ def _gpu_manager(
             f"{status} [{done}/{total}] ({utils._percentage(done, total)}%)"
         )
         completed_bi.exec_output.log()
+        if completed_bi.bin_path is not None:
+            last_bin_path = completed_bi.bin_path
 
         completed_bi.stdout_capture_path.unlink(missing_ok=True)
         completed_bi.stderr_capture_path.unlink(missing_ok=True)
@@ -1345,6 +1381,7 @@ class Scheduler:
         output_suffix: str = "output.csv",
         progress: Progress = Progress(),
         use_shared_lib: bool = False,
+        reset_shared_lib_worker_per_binary_group: bool = False,
         output_dir_list: list[Path] | None = None,
         cache_dir: Path | None = None,
     ) -> None:
@@ -1376,6 +1413,9 @@ class Scheduler:
         self.output_dir = output_dir
         self.run_only = run_only
         self.cache_dir = cache_dir
+        self.reset_shared_lib_worker_per_binary_group = (
+            reset_shared_lib_worker_per_binary_group
+        )
 
         self.build_items = [
             BuildItem(
@@ -1743,9 +1783,20 @@ class Scheduler:
         gpu_ids = self._make_gpu_ids(visible_device_prefix)
 
         # Only isolate GPUs when kbench itself is parallelizing across GPUs
-        # and not using mpirun. Otherwise let benchmarks see all GPUs.
+        # and not using mpirun. Preserve an explicit single visible-device
+        # selection from the caller so shared-lib workers can stay pinned to
+        # that physical GPU.
         use_mpirun = any("mpirun" in p for p in exec_prefix)
-        if len(gpu_ids) <= 1 or use_mpirun:
+        preserve_single_visible_device = (
+            _has_explicit_single_visible_device(visible_device_prefix)
+        )
+        if preserve_single_visible_device:
+            logging.info(
+                f"Preserving explicit {visible_device_prefix}="
+                f"{os.environ[visible_device_prefix]} for single-GPU worker"
+                " isolation"
+            )
+        if (len(gpu_ids) <= 1 and not preserve_single_visible_device) or use_mpirun:
             visible_device_prefix = ""
 
         num_items = num_build_items - no_binary_count
@@ -1776,6 +1827,7 @@ class Scheduler:
                     visible_device_prefix,
                     item_pool,
                     timeout_secs,
+                    self.reset_shared_lib_worker_per_binary_group,
                     self.build_items,
                     results_lock,
                     self.progress,

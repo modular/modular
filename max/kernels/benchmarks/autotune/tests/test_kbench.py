@@ -38,6 +38,7 @@ from kbench_model import (
     Scheduler,
     SpecInstance,
     SupportedLangs,
+    _has_explicit_single_visible_device,
 )
 from kplot import _resolve_ytext_unit
 from kplot import cli as kplot_cli
@@ -116,6 +117,28 @@ def test_kbench() -> None:
 
     pd.testing.assert_series_equal(df["name"], baseline_df["name"])
     pd.testing.assert_series_equal(df["spec"], baseline_df["spec"])
+
+
+def test_kbench_logs_multishape_count_on_dryrun(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    output_path = tmp_path / "dryrun_output"
+    result = CliRunner().invoke(
+        kbench_cli,
+        [
+            "--skip-clock-check",
+            f"{kernel_benchmarks_root}/autotune/test.yaml",
+            "-fv",
+            "--dryrun",
+            "-o",
+            str(output_path),
+        ],
+        env=os.environ.copy(),
+    )
+
+    assert result.exit_code == os.EX_OK, result.output
+    assert "Number of shapes: 5" in caplog.text
+    assert "Number of shapes: 1" not in caplog.text
 
 
 # TODO: resolving mpirun deps in bazel.
@@ -362,6 +385,30 @@ def test_kbench_cache_basic_operations(tmp_path: Path) -> None:
     assert cache.query("nonexistent") is None
 
 
+def test_kbench_cache_activate_empty_starts_fresh(tmp_path: Path) -> None:
+    """cache_dir-only build runs should overwrite stale manifests."""
+    cache = KbenchCache(base_dir=tmp_path)
+    stale_bin = tmp_path / "stale.so"
+    stale_bin.touch()
+    cache.load()
+    cache.store("stale", stale_bin)
+    cache.dump()
+
+    fresh_cache = KbenchCache(base_dir=tmp_path)
+    fresh_cache.activate_empty()
+    assert fresh_cache.query("stale") is None
+
+    fresh_bin = tmp_path / "fresh.so"
+    fresh_bin.touch()
+    fresh_cache.store("fresh", fresh_bin)
+    fresh_cache.dump()
+
+    reloaded = KbenchCache(base_dir=tmp_path)
+    reloaded.load()
+    assert reloaded.query("stale") is None
+    assert reloaded.query("fresh") == str(fresh_bin.resolve())
+
+
 def test_process_output_log() -> None:
     """Test ProcessOutput.log doesn't crash"""
     # Just verify it doesn't raise
@@ -482,6 +529,26 @@ def test_get_gpu_count_nvidia_env_fewer_than_hw(mocker: MockerFixture) -> None:
     )
     mocker.patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "2,3"}, clear=False)
     assert _get_gpu_count("nvidia:sm_90") == 2
+
+
+def test_has_explicit_single_visible_device_nvidia(
+    mocker: MockerFixture,
+) -> None:
+    """Single-GPU shared-lib workers should preserve an explicit one-GPU env."""
+    mocker.patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "1"}, clear=False)
+    assert _has_explicit_single_visible_device("CUDA_VISIBLE_DEVICES")
+
+
+def test_has_explicit_single_visible_device_rejects_multi_gpu_env(
+    mocker: MockerFixture,
+) -> None:
+    """Do not preserve the prefix when the caller exposed multiple GPUs."""
+    mocker.patch.dict(
+        os.environ, {"CUDA_VISIBLE_DEVICES": "1,3"}, clear=False
+    )
+    assert not _has_explicit_single_visible_device(
+        "CUDA_VISIBLE_DEVICES"
+    )
 
 
 def test_get_gpu_count_nvidia_no_smi(mocker: MockerFixture) -> None:
