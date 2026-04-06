@@ -287,14 +287,24 @@ def _dot_accum[
     elif is_amd_gpu():
         # AMD non-BF16 (e.g. FP8): vector multiply + horizontal reduce.
         result += (a.cast[accum_type]() * b.cast[accum_type]()).reduce_add()
+    elif is_nvidia_gpu() and in_type.is_float8() and width >= 2:
+        # NVIDIA FP8: paired bitcast emits cvt.rn.f16x2.e4m3x2, eliminating
+        # PRMT byte-shuffle instructions. Multiply in f32 to avoid overflow
+        # (FP8 max=480, 480²=230400 > f16 max 65504).
+        comptime half_width = width // 2
+        var a_u16 = bitcast[DType.uint16, half_width](a)
+        var b_u16 = bitcast[DType.uint16, half_width](b)
+        comptime for l in range(half_width):
+            var a_f16 = bitcast[in_type, 2](a_u16[l]).cast[DType.float16]()
+            var b_f16 = bitcast[in_type, 2](b_u16[l]).cast[DType.float16]()
+            result += a_f16[0].cast[accum_type]() * b_f16[0].cast[accum_type]()
+            result += a_f16[1].cast[accum_type]() * b_f16[1].cast[accum_type]()
     else:
         # NVIDIA/generic: scalar element-wise loop. reduce_add() generates
         # wider intermediates that increase NVIDIA register pressure vs
         # sequential FMA chains (13% regression on small-K shapes).
-        var ac = a.cast[accum_type]()
-        var bc = b.cast[accum_type]()
         comptime for l in range(width):
-            result += ac[l] * bc[l]
+            result += a[l].cast[accum_type]() * b[l].cast[accum_type]()
 
     return result
 
@@ -317,8 +327,8 @@ def gemv_split_k[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
     check_bounds: Bool = True,
-    check_k_bounds: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
+    known_k_iterations: Int = 0,
 ](
     output: TileTensor[c_type, c_layout, MutAnyOrigin],
     act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
@@ -346,176 +356,461 @@ def gemv_split_k[
     # which rows of the weight matrix each thread will process
     var tile_id_n = block_idx.y * tile_n
     var tid = Int(thread_idx.x)
-    var tile_w = LayoutTensor[
-        b_type,
-        Layout.row_major(tile_n, simd_width),
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
-    ].stack_allocation()
-    # these are the partial accumlations for each thread this a matrix of values
-    # since each thread will process a tile_m x tile_n partials of the output vector
-    var acc = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(tile_m, tile_n),
-            MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
     var output_idx = tile_id_m * n + tile_id_n
     var iteration = 0
-    comptime WeightVecType = SIMD[b_type, simd_width]
-
+    comptime static_act_cols = type_of(act).static_shape[1]
+    comptime use_scalar_acc_sw16_tile_n4_fastpath = (
+        is_nvidia_gpu()
+        and not check_bounds
+        and tile_m == 1
+        and tile_n == 4
+        and num_threads == 128
+        and simd_width == 16
+        and unroll_factor == 1
+        and known_k_iterations == 6
+        and a_type == DType.bfloat16
+        and b_type == DType.bfloat16
+        and c_type == DType.bfloat16
+    )
+    comptime use_scalar_acc_wide_tile_n2_exact_multiple_fastpath = False and (
+        is_nvidia_gpu()
+        and not check_bounds
+        and tile_m == 1
+        and tile_n == 2
+        and num_threads == 256
+        and simd_width == 16
+        and unroll_factor == 2
+        and static_act_cols >= 16384
+        and static_act_cols % tile_k == 0
+        and a_type == DType.bfloat16
+        and b_type == DType.bfloat16
+        and c_type == DType.bfloat16
+    )
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    # Each thread sums local data in K.
-    @parameter
-    @always_inline
-    def _k_iter_body():
-        var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
-        var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
+    comptime if use_scalar_acc_sw16_tile_n4_fastpath:
+        comptime NativeVecType = SIMD[a_type, simd_width]
+        comptime k_warp_num = num_threads // WARP_SIZE
+        var acc0 = Scalar[accum_type](0)
+        var acc1 = Scalar[accum_type](0)
+        var acc2 = Scalar[accum_type](0)
+        var acc3 = Scalar[accum_type](0)
 
-        comptime for i in range(tile_n):
-            comptime if check_bounds:
-                if i + tile_id_n >= n:
-                    continue
-            comptime if is_amd_gpu():
-                var b_vec = weight_tile.load[simd_width, non_temporal=True](
-                    Coord(Idx(i), Idx(Int(thread_idx.x) * simd_width))
-                )
-                tile_w.store(i, 0, rebind[WeightVecType](b_vec))
-            else:
-                var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
-                var b_vec = vec_weight_tile[i, thread_idx.x]
-                tile_w.store(i, 0, rebind[WeightVecType](b_vec))
-
-        comptime for i in range(tile_m):
-            comptime if check_bounds:
-                if i + tile_id_m >= m:
-                    continue
-            var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
-            comptime NativeVecType = SIMD[a_type, simd_width]
+        @parameter
+        @always_inline
+        def _k_iter_body_direct_scalar_acc():
+            """Single K-iteration for the kept sw16/tile_n=4 mid-band family."""
+            var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
+            var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
+            var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
+            var act_vec = act_tile.vectorize[1, simd_width]()[0, thread_idx.x]
             var act_native = rebind[NativeVecType](act_vec)
-            comptime for j in range(tile_n):
-                var weight_native = rebind[NativeVecType](
-                    tile_w.vectorize[1, simd_width]()[j, 0]
-                )
-                var local_accum = rebind[Scalar[accum_type]](acc[i, j])
-                local_accum = _dot_accum(act_native, weight_native, local_accum)
-                acc.store(i, j, local_accum)
 
-        iteration += 1
+            acc0 = _dot_accum(
+                act_native,
+                rebind[NativeVecType](vec_weight_tile[0, thread_idx.x]),
+                acc0,
+            )
+            acc1 = _dot_accum(
+                act_native,
+                rebind[NativeVecType](vec_weight_tile[1, thread_idx.x]),
+                acc1,
+            )
+            acc2 = _dot_accum(
+                act_native,
+                rebind[NativeVecType](vec_weight_tile[2, thread_idx.x]),
+                acc2,
+            )
+            acc3 = _dot_accum(
+                act_native,
+                rebind[NativeVecType](vec_weight_tile[3, thread_idx.x]),
+                acc3,
+            )
 
-    @parameter
-    @always_inline
-    def _k_scalar_iter():
-        var kc = iteration * tile_k + Int(thread_idx.x) * simd_width
-        if kc < k:
-            var valid = min(simd_width, k - kc)
+            iteration += 1
 
-            comptime for i in range(tile_n):
-                comptime if check_bounds:
-                    if i + tile_id_n >= n:
-                        continue
-                var bv = SIMD[b_type, simd_width](0)
-                var wr = block_idx.y * tile_n + Int(i)
-                var w_base = wr * k + kc
-                comptime for el in range(simd_width):
-                    if Int(el) < valid:
-                        bv[el] = weight.ptr[w_base + Int(el)]
-                tile_w.store(i, 0, bv)
+        # Run the exact-six mid-band family as a fixed counted loop and keep
+        # the four outputs in scalar accumulators throughout the hot path.
+        for _ in range(known_k_iterations):
+            _k_iter_body_direct_scalar_acc()
 
-            comptime for i in range(tile_m):
-                comptime if check_bounds:
-                    if i + tile_id_m >= m:
-                        continue
-                comptime NativeVecType = SIMD[a_type, simd_width]
-                var act_native = SIMD[a_type, simd_width](0)
-                var a_base = (block_idx.x * tile_m + Int(i)) * k + kc
-                comptime for el in range(simd_width):
-                    if Int(el) < valid:
-                        act_native[el] = act.ptr[a_base + Int(el)]
-                comptime for j in range(tile_n):
-                    var weight_native = rebind[NativeVecType](
-                        tile_w.vectorize[1, simd_width]()[j, 0]
-                    )
-                    var local_accum = rebind[Scalar[accum_type]](acc[i, j])
-                    local_accum = _dot_accum(act_native, weight_native, local_accum)
-                    acc.store(i, j, local_accum)
+        var warp_id = Int(warp_id())
+        var lane_id = lane_id()
+        var shmem = LayoutTensor[
+            accum_type,
+            Layout.row_major(1, tile_n * k_warp_num),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ].stack_allocation()
 
-        iteration += 1
+        var val0 = warp.sum(acc0)
+        var val1 = warp.sum(acc1)
+        var val2 = warp.sum(acc2)
+        var val3 = warp.sum(acc3)
+        if lane_id == 0:
+            var warp_offset = warp_id * tile_n
+            shmem[0, warp_offset] = val0
+            shmem[0, warp_offset + 1] = val1
+            shmem[0, warp_offset + 2] = val2
+            shmem[0, warp_offset + 3] = val3
+        barrier()
 
-    comptime if check_k_bounds:
-        for _ in range(tid * simd_width, k, tile_k):
-            _k_scalar_iter()
+        if tid < tile_n:
+            # Keep scalar fan-in loads but turn the repeated `jj * tile_n`
+            # addressing into a simple offset walk for the exact-six mid-band
+            # family.
+            var shmem_offset = tid
+            var val = rebind[Scalar[accum_type]](shmem[0, shmem_offset])
+            comptime for _jj in range(1, k_warp_num):
+                shmem_offset += tile_n
+                val += rebind[Scalar[accum_type]](shmem[0, shmem_offset])
+
+            var idx = output_idx + tid
+            comptime if elementwise_lambda_fn:
+                comptime elementwise_lambda = elementwise_lambda_fn.value()
+                elementwise_lambda(Index(0, idx), val.cast[c_type]())
+            else:
+                output[0, idx] = val.cast[c_type]()
     else:
-        comptime if unroll_factor == 1:
-            for _ in range(tid * simd_width, k, tile_k):
-                _k_iter_body()
-        else:
+        comptime if use_scalar_acc_wide_tile_n2_exact_multiple_fastpath:
+            comptime NativeVecType = SIMD[a_type, simd_width]
+            comptime k_warp_num = num_threads // WARP_SIZE
+            var acc0 = Scalar[accum_type](0)
+            var acc1 = Scalar[accum_type](0)
+
+            @parameter
+            @always_inline
+            def _k_iter_body_direct_scalar_pair():
+                """Exact-multiple long-K body with scalar tile_n=2 accumulation."""
+                var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
+                var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
+                var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
+                var act_vec = act_tile.vectorize[1, simd_width]()[0, thread_idx.x]
+                var act_native = rebind[NativeVecType](act_vec)
+
+                acc0 = _dot_accum(
+                    act_native,
+                    rebind[NativeVecType](vec_weight_tile[0, thread_idx.x]),
+                    acc0,
+                )
+                acc1 = _dot_accum(
+                    act_native,
+                    rebind[NativeVecType](vec_weight_tile[1, thread_idx.x]),
+                    acc1,
+                )
+
+                iteration += 1
+
             var k_start = tid * simd_width
             var num_k_iters = ceildiv(k - k_start, tile_k) if k > k_start else 0
             var main_iters = align_down(num_k_iters, unroll_factor)
+
             for _outer in range(0, main_iters, unroll_factor):
                 comptime for _u in range(unroll_factor):
-                    _k_iter_body()
+                    _k_iter_body_direct_scalar_pair()
+
             for _rem in range(main_iters, num_k_iters):
-                _k_iter_body()
+                _k_iter_body_direct_scalar_pair()
 
-    # Warps are arranged along K.
-    comptime k_warp_num = num_threads // WARP_SIZE
-    var warp_id = Int(warp_id())
-    var lane_id = lane_id()
-    var shmem = LayoutTensor[
-        accum_type,
-        Layout.row_major(1, tile_m * tile_n * k_warp_num),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
+            var warp_id = Int(warp_id())
+            var lane_id = lane_id()
+            var shmem = LayoutTensor[
+                accum_type,
+                Layout.row_major(1, tile_n * k_warp_num),
+                MutAnyOrigin,
+                address_space=AddressSpace.SHARED,
+            ].stack_allocation()
 
-    # Each warp sums across its threads and stages results in shared memory.
-    # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
-    comptime for mi in range(tile_m):
-        comptime for ni in range(tile_n):
-            var val = warp.sum(acc[mi, ni])
+            var val0 = warp.sum(acc0)
+            var val1 = warp.sum(acc1)
             if lane_id == 0:
-                shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
-    barrier()
-    # Sum across warps' results in shared memory then output (vectorized in N).
-    for mid in range(tid, tile_m, num_threads):
-        var vals = SIMD[accum_type, tile_n]()
+                var warp_offset = warp_id * tile_n
+                shmem[0, warp_offset] = val0
+                shmem[0, warp_offset + 1] = val1
+            barrier()
 
-        comptime for jj in range(k_warp_num):
-            comptime for ni in range(tile_n):
-                vals[ni] += rebind[Scalar[accum_type]](
-                    shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
-                )
+            if tid < tile_n:
+                var val = rebind[Scalar[accum_type]](shmem[0, tid])
+                comptime for jj in range(1, k_warp_num):
+                    val += rebind[Scalar[accum_type]](shmem[0, jj * tile_n + tid])
 
-        var base_idx = output_idx + mid * n
-
-        comptime if check_bounds:
-            comptime for ni in range(tile_n):
-                if base_idx + ni < n:
-                    comptime if elementwise_lambda_fn:
-                        comptime elementwise_lambda = (
-                            elementwise_lambda_fn.value()
-                        )
-                        elementwise_lambda(
-                            Index(0, base_idx + ni),
-                            vals[ni].cast[c_type](),
-                        )
-                    else:
-                        output[0, base_idx + ni] = vals[ni].cast[c_type]()
+                var idx = output_idx + tid
+                comptime if elementwise_lambda_fn:
+                    comptime elementwise_lambda = elementwise_lambda_fn.value()
+                    elementwise_lambda(Index(0, idx), val.cast[c_type]())
+                else:
+                    output[0, idx] = val.cast[c_type]()
         else:
-            comptime if elementwise_lambda_fn:
-                comptime elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda(Index(0, base_idx), vals.cast[c_type]())
+            # these are the partial accumlations for each thread this a matrix of values
+            # since each thread will process a tile_m x tile_n partials of the output vector
+            var acc = (
+                LayoutTensor[
+                    accum_type,
+                    Layout.row_major(tile_m, tile_n),
+                    MutAnyOrigin,
+                    address_space=AddressSpace.LOCAL,
+                ]
+                .stack_allocation()
+                .fill(0)
+            )
+
+            var tile_w = LayoutTensor[
+                b_type,
+                Layout.row_major(tile_n, simd_width),
+                MutAnyOrigin,
+                address_space=AddressSpace.LOCAL,
+            ].stack_allocation()
+            comptime WeightVecType = SIMD[b_type, simd_width]
+
+            # Each thread sums local data in K.
+            @parameter
+            @always_inline
+            def _k_iter_body():
+                """Single K-iteration: load weights, load activations, accumulate."""
+                var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
+                var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
+
+                comptime if is_amd_gpu() or check_bounds:
+                    # Keep local staging for AMD and any checked-bound path.
+                    # The aligned NVIDIA path below loads directly from global.
+                    comptime for i in range(tile_n):
+                        comptime if check_bounds:
+                            if i + tile_id_n >= n:
+                                continue
+                        comptime if is_amd_gpu():
+                            var b_vec = weight_tile.load[simd_width, non_temporal=True](
+                                Coord(Idx(i), Idx(Int(thread_idx.x) * simd_width))
+                            )
+                            tile_w.store(i, 0, rebind[WeightVecType](b_vec))
+                        else:
+                            var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
+                            var b_vec = vec_weight_tile[i, thread_idx.x]
+                            tile_w.store(i, 0, rebind[WeightVecType](b_vec))
+
+                    # Load activations and accumulate dot products.
+                    comptime for i in range(tile_m):
+                        comptime if check_bounds:
+                            if i + tile_id_m >= m:
+                                continue
+                        var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
+
+                        comptime NativeVecType = SIMD[a_type, simd_width]
+                        var act_native = rebind[NativeVecType](act_vec)
+                        comptime for j in range(tile_n):
+                            var weight_native = rebind[NativeVecType](
+                                tile_w.vectorize[1, simd_width]()[j, 0]
+                            )
+                            var local_accum = rebind[Scalar[accum_type]](acc[i, j])
+                            local_accum = _dot_accum(
+                                act_native, weight_native, local_accum
+                            )
+                            acc.store(i, j, local_accum)
+                else:
+                    var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
+
+                    # Load activations and accumulate dot products.
+                    comptime for i in range(tile_m):
+                        var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
+
+                        comptime NativeVecType = SIMD[a_type, simd_width]
+                        var act_native = rebind[NativeVecType](act_vec)
+                        comptime for j in range(tile_n):
+                            var weight_native = rebind[NativeVecType](
+                                vec_weight_tile[j, thread_idx.x]
+                            )
+                            var local_accum = rebind[Scalar[accum_type]](acc[i, j])
+                            local_accum = _dot_accum(
+                                act_native, weight_native, local_accum
+                            )
+                            acc.store(i, j, local_accum)
+
+                iteration += 1
+
+            comptime if unroll_factor == 1:
+                # Simple loop — no ceildiv, no main_iters/remainder split.
+                # Produces minimal PTX with fewest registers on NVIDIA.
+                # Exact-trip aligned families can skip the range(start, stop, step)
+                # setup and run as a fixed counted loop instead.
+                comptime if known_k_iterations > 0:
+                    for _ in range(known_k_iterations):
+                        _k_iter_body()
+                else:
+                    for _ in range(tid * simd_width, k, tile_k):
+                        _k_iter_body()
             else:
-                comptime for ni in range(tile_n):
-                    output[0, base_idx + ni] = vals[ni].cast[c_type]()
+                # Unrolled loop for ILP — comptime for duplicates the body.
+                comptime if known_k_iterations > 0:
+                    comptime main_iters = align_down(known_k_iterations, unroll_factor)
+
+                    # Main unrolled loop with fixed trip count.
+                    for _outer in range(0, main_iters, unroll_factor):
+                        comptime for _u in range(unroll_factor):
+                            _k_iter_body()
+
+                    # Remainder iterations (at most unroll_factor - 1).
+                    for _rem in range(main_iters, known_k_iterations):
+                        _k_iter_body()
+                else:
+                    var k_start = tid * simd_width
+                    var num_k_iters = ceildiv(k - k_start, tile_k) if k > k_start else 0
+                    var main_iters = align_down(num_k_iters, unroll_factor)
+
+                    # Main unrolled loop.
+                    for _outer in range(0, main_iters, unroll_factor):
+                        comptime for _u in range(unroll_factor):
+                            _k_iter_body()
+
+                    # Remainder iterations (at most unroll_factor - 1).
+                    for _rem in range(main_iters, num_k_iters):
+                        _k_iter_body()
+
+            # Warps are arranged along K.
+            comptime k_warp_num = num_threads // WARP_SIZE
+            var warp_id = Int(warp_id())
+            var lane_id = lane_id()
+            var shmem = LayoutTensor[
+                accum_type,
+                Layout.row_major(1, tile_m * tile_n * k_warp_num),
+                MutAnyOrigin,
+                address_space=AddressSpace.SHARED,
+            ].stack_allocation()
+            comptime use_tile_n2_fixed_fanin_fastpath = False and (
+                is_nvidia_gpu()
+                and tile_m == 1
+                and tile_n == 2
+                and num_threads == 128
+                and simd_width == 8
+                and not check_bounds
+                and a_type == DType.bfloat16
+                and b_type == DType.bfloat16
+                and c_type == DType.bfloat16
+                and (
+                    unroll_factor == 2
+                    and known_k_iterations == 8
+                )
+            )
+            comptime use_tile_n4_fixed_fanin_fastpath = False and (
+                is_nvidia_gpu()
+                and tile_m == 1
+                and tile_n == 4
+                and num_threads == 128
+                and simd_width == 8
+                and unroll_factor == 1
+                and known_k_iterations == 4
+                and not check_bounds
+                and a_type == DType.bfloat16
+                and b_type == DType.bfloat16
+                and c_type == DType.bfloat16
+            )
+            comptime use_tile_n2_shared_read_pair_fastpath = (
+                is_nvidia_gpu()
+                and tile_m == 1
+                and tile_n == 2
+                and num_threads == 128
+                and simd_width == 8
+                and unroll_factor == 2
+                and known_k_iterations == 12
+                and not check_bounds
+                and a_type == DType.bfloat16
+                and b_type == DType.bfloat16
+                and c_type == DType.bfloat16
+            )
+
+            # Each warp sums across its threads and stages results in shared memory.
+            # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
+            comptime if (
+                is_nvidia_gpu()
+                and tile_m == 1
+                and tile_n == 4
+                and num_threads == 128
+                and simd_width == 8
+                and not check_bounds
+                and a_type == DType.bfloat16
+                and b_type == DType.bfloat16
+                and c_type == DType.bfloat16
+            ):
+                var warp_vals = SIMD[accum_type, 4](
+                    rebind[Scalar[accum_type]](acc[0, 0]),
+                    rebind[Scalar[accum_type]](acc[0, 1]),
+                    rebind[Scalar[accum_type]](acc[0, 2]),
+                    rebind[Scalar[accum_type]](acc[0, 3]),
+                )
+                var reduced_vals = warp.sum(warp_vals)
+                if lane_id == 0:
+                    comptime for ni in range(tile_n):
+                        shmem[0, ni + warp_id * tile_n] = reduced_vals[ni]
+            else:
+                comptime for mi in range(tile_m):
+                    comptime for ni in range(tile_n):
+                        var val = warp.sum(acc[mi, ni])
+                        if lane_id == 0:
+                            shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
+            barrier()
+            # Sum across warps' results in shared memory then output.
+            # TODO: should be able to vectorize and maybe use larger tile_n.
+            comptime if use_tile_n2_fixed_fanin_fastpath:
+                if tid < tile_n:
+                    var val = rebind[Scalar[accum_type]](shmem[0, tid])
+                    comptime for jj in range(1, k_warp_num):
+                        val += rebind[Scalar[accum_type]](shmem[0, jj * tile_n + tid])
+
+                    var idx = output_idx + tid
+                    comptime if elementwise_lambda_fn:
+                        comptime elementwise_lambda = elementwise_lambda_fn.value()
+                        elementwise_lambda(Index(0, idx), val.cast[c_type]())
+                    else:
+                        output[0, idx] = val.cast[c_type]()
+            elif use_tile_n4_fixed_fanin_fastpath:
+                if tid < tile_n:
+                    var val = rebind[Scalar[accum_type]](shmem[0, tid])
+                    comptime for jj in range(1, k_warp_num):
+                        val += rebind[Scalar[accum_type]](shmem[0, jj * tile_n + tid])
+
+                    var idx = output_idx + tid
+                    comptime if elementwise_lambda_fn:
+                        comptime elementwise_lambda = elementwise_lambda_fn.value()
+                        elementwise_lambda(Index(0, idx), val.cast[c_type]())
+                    else:
+                        output[0, idx] = val.cast[c_type]()
+            elif use_tile_n2_shared_read_pair_fastpath:
+                if tid < tile_n:
+                    var shmem_pairs = shmem.vectorize[1, 2]()
+                    var pair_sum = SIMD[accum_type, 2](0)
+                    comptime for jj in range(k_warp_num):
+                        pair_sum += rebind[SIMD[accum_type, 2]](shmem_pairs[0, jj])
+
+                    var val = (
+                        rebind[Scalar[accum_type]](pair_sum[0])
+                        if tid == 0
+                        else rebind[Scalar[accum_type]](pair_sum[1])
+                    )
+                    var idx = output_idx + tid
+                    comptime if elementwise_lambda_fn:
+                        comptime elementwise_lambda = elementwise_lambda_fn.value()
+                        elementwise_lambda(Index(0, idx), val.cast[c_type]())
+                    else:
+                        output[0, idx] = val.cast[c_type]()
+            else:
+                for ii in range(tid, tile_m * tile_n, num_threads):
+                    var mid, nid = divmod(ii, tile_n)
+                    var val = Scalar[accum_type]()
+                    comptime ValType = type_of(val)
+
+                    comptime for jj in range(k_warp_num):
+                        val += rebind[ValType](shmem[0, jj * tile_m * tile_n + ii])
+
+                    var idx = output_idx + mid * n + nid
+
+                    comptime if check_bounds:
+                        if idx >= n:
+                            continue
+
+                    comptime if elementwise_lambda_fn:
+                        comptime elementwise_lambda = elementwise_lambda_fn.value()
+                        elementwise_lambda(Index(0, idx), val.cast[c_type]())
+                    else:
+                        output[0, idx] = val.cast[c_type]()
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -718,15 +1013,11 @@ def _nvidia_gemv_config[
         else:
             tile_n = 2
 
-    # BF16: unroll=2/4 for large K to improve ILP across iterations.
-    # Small K stays unroll=1 to avoid I-cache pressure from scalar FMA chain.
+    # BF16: always unroll=1 (I-cache sensitive due to scalar FMA chain).
     # FP8: unroll benefits from fewer instructions per iteration.
     var unroll: Int
     comptime if simd_width <= 8:
-        if k_iters >= 16:
-            unroll = 2
-        else:
-            unroll = 1
+        unroll = 1
     else:
         if k_iters == 4:
             unroll = 4
@@ -777,9 +1068,31 @@ def gemv_gpu_dispatch[
             num_threads: Int,
             tile_n: Int,
             unroll_factor: Int = 2,
+            known_k_iterations_override: Int = 0,
         ]() raises:
             comptime check_bounds = static_N % tile_n != 0
-            comptime check_k_bounds = static_K % simd_width != 0
+            comptime use_known_k_iterations = (
+                not has_amd_gpu_accelerator()
+                and simd_width == 8
+                and tile_n == 4
+                and num_threads == 128
+                and unroll_factor == 1
+                and not check_bounds
+                and static_K >= 4096
+                and static_K <= 8192
+                and static_K % (num_threads * simd_width) == 0
+                and c_type == DType.bfloat16
+                and a_type == DType.bfloat16
+                and b_type == DType.bfloat16
+            )
+            comptime default_known_k_iterations = (
+                static_K // (num_threads * simd_width)
+            ) if use_known_k_iterations else 0
+            comptime known_k_iterations = (
+                known_k_iterations_override
+                if known_k_iterations_override > 0
+                else default_known_k_iterations
+            )
             comptime kernel = gemv_split_k[
                 c_type,
                 a_type,
@@ -794,8 +1107,8 @@ def gemv_gpu_dispatch[
                 unroll_factor=unroll_factor,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 check_bounds=check_bounds,
-                check_k_bounds=check_k_bounds,
                 pdl_level=pdl_level,
+                known_k_iterations=known_k_iterations,
             ]
             ctx.enqueue_function[kernel, kernel](
                 c,
@@ -823,18 +1136,145 @@ def gemv_gpu_dispatch[
                 config[2],
             ]()
         else:
-            # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
-            comptime config = _nvidia_gemv_config[
-                simd_width,
-                static_K,
-                has_N,
-                static_N,
-            ]()
-            _gemv_split_k_dispatch[
-                config[0],
-                config[1],
-                config[2],
-            ]()
+            comptime if (
+                simd_width == 8
+                and static_K >= 16384
+                and static_K % 16 == 0
+            ):
+                # Long-K BF16 shapes are HBM-bound on B200; a 16-wide split-K
+                # path halves the number of K iterations without touching
+                # smaller cached families.
+                comptime wide_simd_width = 16
+                comptime wide_tile_n = 2
+                comptime wide_num_threads = 256
+                comptime wide_unroll_factor = 2
+                comptime wide_check_bounds = static_N % wide_tile_n != 0
+                comptime wide_kernel = gemv_split_k[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    simd_width=wide_simd_width,
+                    tile_m=tile_m,
+                    tile_n=wide_tile_n,
+                    num_threads=wide_num_threads,
+                    unroll_factor=wide_unroll_factor,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    check_bounds=wide_check_bounds,
+                    pdl_level=pdl_level,
+                ]
+                ctx.enqueue_function[wide_kernel, wide_kernel](
+                    c,
+                    a,
+                    b,
+                    m,
+                    n,
+                    k,
+                    grid_dim=(ceildiv(m, tile_m), ceildiv(n, wide_tile_n)),
+                    block_dim=wide_num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
+            elif False and (
+                simd_width == 8
+                and static_K == 8192
+                and has_N
+                and static_N >= 5120
+                and static_N < 6144
+                and static_N % 4 == 0
+            ):
+                # Round 136 showed the exact-eight unroll=2 body reproducing on
+                # the mid-band only, so keep the unstable low and upper edges on
+                # the kept unroll=1 path and probe the slice that actually held.
+                _gemv_split_k_dispatch[128, 4, 2, 8]()
+            elif (
+                simd_width == 8
+                and static_K == 8192
+                and has_N
+                and static_N >= 6400
+                and static_N % 2 == 0
+            ):
+                # The high-N K=8192 family already lands on the 128T/tile_n=2
+                # geometry and now has an exact-eight counted loop. Probe
+                # whether that fixed trip count can also carry a safe unroll=2
+                # ILP retune across the same six-shape family.
+                _gemv_split_k_dispatch[128, 2, 2, 8]()
+            elif (
+                simd_width == 8
+                and static_K == 12288
+                and has_N
+                and static_N >= 6400
+                and static_N % 2 == 0
+            ):
+                # The broad K=12288 high-N family already uses the generic
+                # 128T/tile_n=2 geometry. Probe whether its exact-twelve trip
+                # count can also carry the same unroll=2 ILP retune that now
+                # pays off for the kept K=8192 high-N family.
+                _gemv_split_k_dispatch[128, 2, 2, 12]()
+            elif (
+                simd_width == 8
+                and static_K == 12288
+                and has_N
+                and static_N >= 4096
+                and static_N < 6400
+                and static_N % 4 == 0
+            ):
+                # The K=12288 mid-band already wants tile_n=4. Probe whether a
+                # 16-wide K tile at the same 128T geometry can lift the whole
+                # family without another 64T reduction-depth retune.
+                comptime midband_simd_width = 16
+                comptime midband_tile_n = 4
+                comptime midband_num_threads = 128
+                comptime midband_unroll_factor = 1
+                comptime midband_known_k_iterations = 6
+                comptime midband_check_bounds = static_N % midband_tile_n != 0
+                comptime midband_kernel = gemv_split_k[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    simd_width=midband_simd_width,
+                    tile_m=tile_m,
+                    tile_n=midband_tile_n,
+                    num_threads=midband_num_threads,
+                    unroll_factor=midband_unroll_factor,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    check_bounds=midband_check_bounds,
+                    pdl_level=pdl_level,
+                    known_k_iterations=midband_known_k_iterations,
+                ]
+                ctx.enqueue_function[midband_kernel, midband_kernel](
+                    c,
+                    a,
+                    b,
+                    m,
+                    n,
+                    k,
+                    grid_dim=(ceildiv(m, tile_m), ceildiv(n, midband_tile_n)),
+                    block_dim=midband_num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
+            elif False and (
+                simd_width == 8
+                and static_K == 3072
+                and static_K % simd_width == 0
+            ):
+                _gemv_split_k_dispatch[128, 3, 1]()
+            else:
+                comptime config = _nvidia_gemv_config[
+                    simd_width,
+                    static_K,
+                    has_N,
+                    static_N,
+                ]()
+                _gemv_split_k_dispatch[
+                    config[0],
+                    config[1],
+                    config[2],
+                ]()
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
         logger.info("Executing: GEMV_KERNEL_VECTOR kernel")
@@ -1086,12 +1526,15 @@ def gemv_gpu[
 
     elif m == 1 and transpose_b == True:
         comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
-            if ceildiv(n, 2) <= ctx.get_attribute(
-                DeviceAttribute.MAX_GRID_DIM_Y
-            ):
-                kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
+            if k % simd_width == 0:
+                if ceildiv(n, 2) <= ctx.get_attribute(
+                    DeviceAttribute.MAX_GRID_DIM_Y
+                ):
+                    kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
+                else:
+                    kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
-                kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
+                kernel_func = GEMVAlgorithm.GEMV_KERNEL
         else:
             kernel_func = GEMVAlgorithm.GEMV_KERNEL
 
