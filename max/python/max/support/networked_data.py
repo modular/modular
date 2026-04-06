@@ -25,16 +25,6 @@ def fetch_bytes_from_s3(s3_path: str) -> bytes:
         ImportError: If boto3 is not installed. Install with `pip install boto3`
             or use the benchmark extras: `pip install max[benchmark]`
     """
-    import io
-
-    try:
-        import boto3  # type: ignore[import-not-found]
-    except ImportError as e:
-        raise ImportError(
-            "boto3 is required for S3 operations. "
-            "Install it with `pip install boto3` or use `pip install max[benchmark]`"
-        ) from e
-
     if not s3_path.startswith("s3://"):
         raise ValueError(f"Invalid S3 path: {s3_path}")
 
@@ -43,9 +33,41 @@ def fetch_bytes_from_s3(s3_path: str) -> bytes:
     if len(path_parts) != 2:
         raise ValueError(f"Invalid S3 path format: {s3_path}")
 
-    bucket, key = path_parts
-    s3 = boto3.client("s3")
+    import io
 
-    buffer = io.BytesIO()
-    s3.download_fileobj(bucket, key, buffer)
-    return buffer.getvalue()
+    try:
+        import boto3  # type: ignore[import-not-found]
+        from botocore import UNSIGNED  # type: ignore[import-not-found]
+        from botocore.client import Config  # type: ignore[import-not-found]
+        from botocore.exceptions import (  # type: ignore[import-not-found]
+            NoCredentialsError,
+            SSOTokenLoadError,
+            UnauthorizedSSOTokenError,
+        )
+    except ImportError as e:
+        raise ImportError(
+            "boto3 is required for S3 operations. "
+            "Install it with `pip install boto3` or use `pip install max[benchmark]`"
+        ) from e
+
+    bucket, key = path_parts
+
+    def _download_bytes(*, anonymous: bool = False) -> bytes:
+        buffer = io.BytesIO()
+        client_kwargs = (
+            {"config": Config(signature_version=UNSIGNED)} if anonymous else {}
+        )
+        s3 = boto3.client("s3", **client_kwargs)
+        s3.download_fileobj(bucket, key, buffer)
+        return buffer.getvalue()
+
+    try:
+        return _download_bytes()
+    except (
+        NoCredentialsError,
+        SSOTokenLoadError,
+        UnauthorizedSSOTokenError,
+    ):
+        # Public test artifacts are readable without credentials; fall back to
+        # unsigned requests when the local AWS credential chain is unavailable.
+        return _download_bytes(anonymous=True)
