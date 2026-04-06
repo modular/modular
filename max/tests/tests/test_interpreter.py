@@ -403,6 +403,82 @@ class TestRuntimeFallback:
         assert ctx_explicit_off._auto_interpreter is False
 
 
+class TestDebugPrintOps:
+    """Tests for DebugPrintOp and DebugTensorPrintOp interpreter handlers."""
+
+    def test_can_execute_with_debug_print(self) -> None:
+        """Test can_execute returns True for a graph using ops.print (string)."""
+        with Graph("debug_print", input_types=[]) as graph:
+            ops.print("hello world", label="test")
+            c = ops.constant([1.0], dtype=DType.float32, device=CPU())
+            graph.output(c)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph) is True
+
+    def test_can_execute_with_debug_tensor_print(self) -> None:
+        """Test can_execute returns True for a graph using ops.print on a tensor."""
+        with Graph("debug_tensor", input_types=[]) as graph:
+            t = ops.constant([1.0, 2.0, 3.0], dtype=DType.float32, device=CPU())
+            ops.print(t, label="my_tensor")
+            graph.output(t)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph) is True
+
+    def test_debug_print_executes(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test that DebugPrintOp handler prints the string to stdout."""
+        with Graph("print_exec", input_types=[]) as graph:
+            ops.print("hello from graph", label="dbg")
+            c = ops.constant([1.0], dtype=DType.float32, device=CPU())
+            graph.output(c)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(graph, [])
+        assert len(outputs) == 1
+
+        captured = capsys.readouterr()
+        assert "[dbg] hello from graph" in captured.out
+
+    def test_debug_tensor_print_executes(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test that DebugTensorPrintOp handler prints tensor data to stdout."""
+        with Graph("tensor_print_exec", input_types=[]) as graph:
+            t = ops.constant(
+                [10.0, 20.0, 30.0], dtype=DType.float32, device=CPU()
+            )
+            ops.print(t, label="vec")
+            graph.output(t)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(graph, [])
+        assert len(outputs) == 1
+
+        captured = capsys.readouterr()
+        assert "[vec]" in captured.out
+        assert "10." in captured.out
+        assert "20." in captured.out
+        assert "30." in captured.out
+
+    def test_debug_print_no_label(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test DebugPrintOp with empty label prints just the value."""
+        with Graph("print_no_label", input_types=[]) as graph:
+            ops.print("bare message", label="")
+            c = ops.constant([1.0], dtype=DType.float32, device=CPU())
+            graph.output(c)
+
+        interp = MOInterpreter()
+        interp.execute(graph, [])
+
+        captured = capsys.readouterr()
+        assert "bare message" in captured.out
+
+
 class TestInterpreterMaxOps:
     """Tests for the MAX_INTERPRETER_MAX_OPS threshold."""
 

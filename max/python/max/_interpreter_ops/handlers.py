@@ -261,6 +261,66 @@ def _handle_transfer(
     return [input_buffer.to(target_device), None]
 
 
+# Debug operations
+
+
+@register_op_handler(mo.DebugPrintOp)
+def _handle_debug_print(
+    op: mo.DebugPrintOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer | None]:
+    """Handle mo.debug.print by printing the string value.
+
+    DebugPrintOp has operands (inChain) and attributes (value, label).
+    It produces (outChain). The interpreter prints the string to stdout.
+
+    Args:
+        op: The debug print operation.
+        inputs: Input buffers - first is the chain (None).
+
+    Returns:
+        List containing None for the output chain.
+    """
+    label = op.label
+    value = op.value
+    if label:
+        print(f"[{label}] {value}")
+    else:
+        print(value)
+    return [None]
+
+
+@register_op_handler(mo.DebugTensorPrintOp)
+def _handle_debug_tensor_print(
+    op: mo.DebugTensorPrintOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer | None]:
+    """Handle mo.debug.tensor.print by printing tensor data.
+
+    DebugTensorPrintOp has operands (inChain, input_tensor) and attribute
+    (label). It produces (outChain). The interpreter converts the tensor
+    buffer to numpy and prints it to stdout.
+
+    Args:
+        op: The debug tensor print operation.
+        inputs: Input buffers - first is the chain (None), second is the
+            tensor Buffer.
+
+    Returns:
+        List containing None for the output chain.
+    """
+    tensor_buf = inputs[1]
+    label = op.label
+    if tensor_buf is not None:
+        np_array = tensor_buf.to_numpy()
+        if label:
+            print(f"[{label}] {np_array}")
+        else:
+            print(np_array)
+    else:
+        tag = f"[{label}] " if label else ""
+        print(f"{tag}<no tensor data>")
+    return [None]
+
+
 # Shape operations
 
 
