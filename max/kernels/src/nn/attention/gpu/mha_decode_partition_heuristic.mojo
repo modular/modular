@@ -84,4 +84,6 @@ def mha_decoding_num_partitions(
             heads_per_group,
             sm_count,
         )
-    raise Error("Expected a CUDA or HIP device context.")
+    if ctx.api() == "metal":
+        return 1
+    raise Error("Expected a CUDA, HIP, or Metal device context.")
