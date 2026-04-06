@@ -22,10 +22,10 @@ from std.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx_uint as block_idx,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_int as thread_idx,
+    block_idx,
+    global_idx,
+    grid_dim,
+    thread_idx,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -164,23 +164,21 @@ def fused_rope_rmsnorm_kernel[
     var num_tokens = q_rope.dim(0)
 
     with PDL():
-        for global_token_idx in range(
-            Int(worker_idx), Int(num_tokens), Int(num_workers)
-        ):
+        for global_token_idx in range(worker_idx, Int(num_tokens), num_workers):
             var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
             # First n_rope_blocks blocks of this worker process RoPE.
-            if block_idx.x < UInt(n_rope_blocks):
+            if block_idx.x < n_rope_blocks:
                 comptime q_width = simd_width_of[dtype]()
                 comptime assert (
                     rope_dim % q_width == 0
                 ), "rope_dim should be divisible by q_width"
 
                 var head_idx, head_dim_idx = divmod(
-                    Int(global_idx.x) * q_width, rope_dim
+                    global_idx.x * q_width, rope_dim
                 )
                 var f_c = freqs_cis.load[width=q_width](
                     (Idx(post_seq_idx), Idx(head_dim_idx))
@@ -360,23 +358,21 @@ def fused_rope_rmsnorm_quantization_kernel[
     var num_tokens = q_rope.dim(0)
 
     with PDL():
-        for global_token_idx in range(
-            Int(worker_idx), Int(num_tokens), Int(num_workers)
-        ):
+        for global_token_idx in range(worker_idx, Int(num_tokens), num_workers):
             var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
             # First n_rope_blocks blocks of this worker process RoPE.
-            if block_idx.x < UInt(n_rope_blocks):
+            if block_idx.x < n_rope_blocks:
                 comptime q_width = simd_width_of[dtype]()
                 comptime assert (
                     rope_dim % q_width == 0
                 ), "rope_dim should be divisible by q_width"
 
                 var head_idx, head_dim_idx = divmod(
-                    Int(global_idx.x) * q_width, rope_dim
+                    global_idx.x * q_width, rope_dim
                 )
                 var f_c = freqs_cis.load[width=q_width](
                     (Idx(post_seq_idx), Idx(head_dim_idx))
