@@ -815,7 +815,9 @@ def parse_quant_config(
         config.can_use_fused_mlp = can_use_fused_mlp(
             state_dict,
             tensor_wise=(
-                config.weight_scale.is_tensor and config.input_scale.is_tensor
+                config.weight_scale.is_tensor
+                and config.input_scale.is_tensor
+                and not config.is_static
             ),
         )
         if not config.can_use_fused_mlp:
