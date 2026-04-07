@@ -1342,17 +1342,20 @@ def test_format_conversion_flags() raises:
         "Mojo Float64(2" in "{} {!r} {} {!r}".format(a, b, c, d)
     )
     assert_true(
-        "Mojo Float64(2" in "{!s} {!r} {!s} {!r}".format(a, b, c, d)
+        "Mojo Float64(2"
+        in "{!s} {!r} {!s} {!r}".format(a, b, c, d)
     )
 
     var e = True
     assert_equal("{} {!r}".format(e, e), "True True")
 
     assert_true(
-        "Mojo Float64(2" in "{0} {1!r} {2} {3}".format(a, b, c, d)
+        "Mojo Float64(2"
+        in "{0} {1!r} {2} {3}".format(a, b, c, d)
     )
     assert_true(
-        "Mojo Float64(2" in "{0!s} {1!r} {2} {3!s}".format(a, b, c, d)
+        "Mojo Float64(2"
+        in "{0!s} {1!r} {2} {3!s}".format(a, b, c, d)
     )
 
     assert_equal(
@@ -1360,10 +1363,13 @@ def test_format_conversion_flags() raises:
         "21.1 1e+100 42 Mojo",
     )
 
-    assert_true("'Mojo' 42 Float64(2" in "{0!r} {3} {1!r}".format(a, b, c, d))
+    assert_true(
+        "'Mojo' 42 SIMD[DType.float64, 1](2"
+        in "{0!r} {3} {1!r}".format(a, b, c, d)
+    )
 
     assert_true(
-        "True 'Mojo' 42 Float64(2"
+        "True 'Mojo' 42 SIMD[DType.float64, 1](2"
         in "{4} {0!r} {3} {1!r}".format(a, b, c, d, True)
     )
 
