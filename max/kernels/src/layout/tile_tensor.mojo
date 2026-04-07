@@ -26,6 +26,8 @@ from std.builtin.variadics import (
 from std.builtin.int import index as _index
 from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
+from std.memory._nonnull import NonNullUnsafePointer, unsafe_origin_cast
+from std.reflection import call_location
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout._fillers import BATCH_SIZE
 from std.sys import prefetch
@@ -1978,6 +1980,293 @@ struct TileTensor[
             self.num_elements(),
             owning=False,
         )
+
+
+@fieldwise_init
+struct NullableTileTensor[
+    mut: Bool,
+    //,
+    dtype: DType,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
+    element_size: Int = 1,
+](ImplicitlyCopyable, RegisterPassable):
+    """A TileTensor variant whose pointer may be absent (null).
+
+    `NullableTileTensor` carries the same layout metadata as `TileTensor` but
+    explicitly represents its pointer as nullable.
+
+    Only layout-query methods are provided.  To perform loads, stores, or other
+    data operations, first check `self.ptr` and then call `value()` to
+    obtain a regular `TileTensor`.
+
+    Parameters:
+        mut: The inferred mutability of the underlying pointer.
+        dtype: The data type of tensor elements.
+        LayoutType: A type implementing `TensorLayout` that defines the
+            tensor's shape and stride structure.
+        origin: The origin of the underlying pointer for lifetime tracking.
+        address_space: Memory address space. Defaults to GENERIC.
+        linear_idx_type: Integer type for memory indexing.
+        element_size: The number of scalar elements per logical element.
+    """
+
+    comptime rank = Self.LayoutType.rank
+    """The number of dimensions in the tensor's layout."""
+
+    comptime flat_rank = TypeList[
+        *_Flattened[*Self.LayoutType._shape_types]
+    ].size
+    """The flattened rank."""
+
+    comptime ElementType = SIMD[Self.dtype, Self.element_size]
+    """The SIMD type used for element access."""
+
+    comptime shape_known = Self.LayoutType.shape_known
+    """True if all shape dimensions are compile-time constants."""
+
+    comptime stride_known = Self.LayoutType.stride_known
+    """True if all stride dimensions are compile-time constants."""
+
+    comptime all_dims_known = Self.LayoutType.all_dims_known
+    """True if both shape and stride are fully known at compile time."""
+
+    comptime is_compatible_with[
+        C: Variadic.TypesOfTrait[CoordLike]
+    ] = WeaklyCompatible[Self.LayoutType, C]
+    """True if coordinate types `C` are structurally compatible with this
+    tensor's layout shape.
+
+    A scalar coordinate element is always compatible. A tuple coordinate
+    element requires the corresponding layout shape element to also be a
+    tuple of the same length, checked recursively up to 4 levels of
+    nesting.
+
+    Parameters:
+        C: The coordinate element types to check against.
+    """
+
+    comptime static_shape[i: Int] = Self.LayoutType.static_shape[i]
+    """Get the compile-time shape value for dimension i, or -1 if dynamic.
+
+    Parameters:
+        i: The dimension index.
+    """
+
+    comptime static_stride[i: Int] = Self.LayoutType.static_stride[i]
+    """Get the compile-time stride value for dimension i, or -1 if dynamic.
+
+    Parameters:
+        i: The dimension index.
+    """
+
+    comptime is_row_major = _IsRowMajor[
+        Self.LayoutType._shape_types, Self.LayoutType._stride_types
+    ]
+    """True if the tensor has row-major (contiguous) strides."""
+
+    comptime PtrType = NonNullUnsafePointer[
+        Scalar[Self.dtype], Self.origin, address_space=Self.address_space
+    ]
+    """The non-null pointer type for the underlying data storage."""
+
+    var ptr: Optional[Self.PtrType]
+    """Optional pointer to the tensor's underlying data storage.
+
+    When `None`, represents a tensor with layout metadata but no backing
+    memory (e.g. an output buffer that the callee should allocate).
+    """
+
+    var layout: Self.LayoutType
+    """The layout instance defining shape and stride mappings."""
+
+    comptime GenericType = NullableTileTensor[
+        Self.dtype,
+        Self.LayoutType,
+        Self.origin,
+        address_space=AddressSpace.GENERIC,
+        linear_idx_type=Self.linear_idx_type,
+    ]
+    """Type alias for this tensor with GENERIC address space.
+
+    Used by constructors that create tensors from Span, DeviceBuffer, or
+    HostBuffer, which all produce GENERIC address space tensors.
+    """
+
+    @always_inline
+    @implicit
+    def __init__(
+        other: NullableTileTensor,
+        out self: NullableTileTensor[
+            other.dtype,
+            other.LayoutType,
+            ImmutOrigin(other.origin),
+            address_space=other.address_space,
+            linear_idx_type=other.linear_idx_type,
+            element_size=other.element_size,
+        ],
+    ):
+        """Implicitly cast a mutable NullableTileTensor to immutable.
+
+        Args:
+            other: The mutable NullableTileTensor to cast from.
+        """
+        self.ptr = unsafe_origin_cast[type_of(self).origin](other.ptr)
+        self.layout = other.layout
+
+    @always_inline
+    @implicit
+    def __init__(
+        other: TileTensor[mut=True, ...],
+        out self: NullableTileTensor[
+            other.dtype,
+            other.LayoutType,
+            other.origin,
+            address_space=other.address_space,
+            linear_idx_type=other.linear_idx_type,
+            element_size=other.element_size,
+        ],
+    ):
+        """Implicitly cast a TileTensor to a NullableTileTensor.
+
+        Args:
+            other: The TileTensor to cast from.
+        """
+        self.ptr = other.ptr
+        self.layout = other.layout
+
+    @always_inline
+    @implicit
+    def __init__(
+        other: TileTensor,
+        out self: NullableTileTensor[
+            other.dtype,
+            other.LayoutType,
+            ImmutOrigin(other.origin),
+            address_space=other.address_space,
+            linear_idx_type=other.linear_idx_type,
+            element_size=other.element_size,
+        ],
+    ):
+        """Implicitly cast a mutable TileTensor to an immutable NullableTileTensor.
+
+        Args:
+            other: The mutable TileTensor to cast from.
+        """
+        self.ptr = other.ptr.unsafe_mut_cast[
+            type_of(self).mut
+        ]().unsafe_origin_cast[type_of(self).origin]()
+        self.layout = other.layout
+
+    @always_inline
+    def value(
+        self,
+    ) -> TileTensor[
+        Self.dtype,
+        Self.LayoutType,
+        Self.origin,
+        address_space=Self.address_space,
+        linear_idx_type=Self.linear_idx_type,
+        element_size=Self.element_size,
+    ]:
+        """Returns a regular TileTensor with the underlying pointer.
+
+        The caller must ensure the underlying pointer is non-null before
+        calling this method.
+
+        Returns:
+            A `TileTensor` backed by the stored pointer and layout.
+        """
+        assert Bool(self.ptr), t"TileTensor cannot be null - {call_location()}"
+        return TileTensor[
+            Self.dtype,
+            Self.LayoutType,
+            Self.origin,
+            address_space=Self.address_space,
+            linear_idx_type=Self.linear_idx_type,
+            element_size=Self.element_size,
+        ](self.ptr.unsafe_value(), self.layout)
+
+    # ===------------------------------------------------------------------=== #
+    # Layout query methods
+    # ===------------------------------------------------------------------=== #
+
+    @always_inline("nodebug")
+    def dim[i: Int](self) -> Scalar[Self.linear_idx_type]:
+        """Returns the size of dimension i.
+
+        Parameters:
+            i: The dimension index (compile-time constant).
+
+        Returns:
+            The size of dimension i as a scalar.
+        """
+        return Scalar[Self.linear_idx_type](self.layout.shape[i]().value())
+
+    @always_inline("nodebug")
+    def dim[
+        IndexType: Indexer
+    ](self, index: IndexType) -> Scalar[Self.linear_idx_type]:
+        """Returns the size of the specified dimension.
+
+        Parameters:
+            IndexType: The type of the index argument.
+
+        Args:
+            index: The dimension index (runtime value).
+
+        Returns:
+            The size of the specified dimension as a scalar.
+        """
+        var idx = _index(index)
+
+        comptime for i in range(Self.rank):
+            if idx == i:
+                return Scalar[Self.linear_idx_type](
+                    self.layout.shape[i]().value()
+                )
+        abort("attempt to dynamically index out of bounds")
+
+    @always_inline("nodebug")
+    def to_layout_tensor(
+        self,
+        out result: LayoutTensor[
+            Self.dtype,
+            layout.Layout(
+                coord_to_int_tuple[*Self.LayoutType._shape_types](),
+                coord_to_int_tuple[*Self.LayoutType._stride_types](),
+            ),
+            Self.origin,
+            address_space=Self.address_space,
+        ],
+    ):
+        """Return a LayoutTensor with the same shape, stride, and address space
+        of this tensor. Currently it expects flat layouts.
+
+        This is a utility to help with porting LayoutTensor methods to this type.
+
+        Returns:
+            A LayoutTensor with the same shape, stride, and address space of
+            this tensor.
+        """
+        return {
+            # This is totally a hack casting nullable pointer to non-nullable,
+            # however this works as they have the same size/layout
+            # and this is much simpler than moving LayoutTensor over to
+            # nullable pointers since TileTensor is the preferred alternative now.
+            UnsafePointer(to=self.ptr).bitcast[type_of(result.ptr)]()[],
+            type_of(result.runtime_layout)(
+                coord_to_index_list(self.layout.shape_coord()).cast[
+                    result.layout_int_type
+                ](),
+                coord_to_index_list(self.layout.stride_coord()).cast[
+                    result.linear_idx_type
+                ](),
+            ),
+        }
 
 
 comptime _ComptimeConditionalTileTensor[
