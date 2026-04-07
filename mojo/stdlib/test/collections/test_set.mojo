@@ -585,5 +585,35 @@ def test_set_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 0)
 
 
+def test_set_reserve_noop_when_sufficient() raises:
+    """reserve() is a no-op when current capacity is already sufficient."""
+    var s = Set[Int]()
+    for i in range(10):
+        s.add(i)
+    var len_before = len(s)
+    s.reserve(5)
+    assert_equal(len(s), len_before)
+
+
+def test_set_reserve_grows_capacity() raises:
+    """reserve() allows inserting up to min_capacity elements without rehash."""
+    var s = Set[Int]()
+    s.reserve(200)
+    for i in range(200):
+        s.add(i)
+    assert_equal(len(s), 200)
+
+
+def test_set_reserve_preserves_elements() raises:
+    """reserve() after insertions preserves all existing elements."""
+    var s = Set[Int]()
+    for i in range(10):
+        s.add(i)
+    s.reserve(500)
+    assert_equal(len(s), 10)
+    for i in range(10):
+        assert_true(i in s)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
