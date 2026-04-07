@@ -59,9 +59,9 @@ from std.math import exp
 
 from std.algorithm import sync_parallelize
 from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
+    block_dim,
+    block_idx,
+    thread_idx,
 )
 from layout import TensorLayout, TileTensor
 
@@ -764,7 +764,7 @@ def causal_conv1d_channel_first_fwd_gpu[
     var batch_id: Int = block_idx.z
     var channel_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = Int(x.dim[0]())
     var nChannels: Int = Int(x.dim[1]())
@@ -1023,7 +1023,7 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
     var batch_id: Int = block_idx.z
     var channel_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = Int(x.dim[0]())
     var nChannels: Int = Int(x.dim[1]())
@@ -1267,7 +1267,7 @@ def causal_conv1d_channel_last_fwd_gpu[
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = batch
     var nSeqLen: Int = seqlen
@@ -1473,7 +1473,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = batch
     var nSeqLen: Int = seqlen
@@ -1677,7 +1677,7 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = batch
     var nSeqLen: Int = seqlen
@@ -2038,7 +2038,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = batch
     var nSeqLen: Int = seqlen
@@ -2377,7 +2377,7 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = batch
     var nSeqLen: Int = seqlen
@@ -2728,7 +2728,7 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = batch
     var nSeqLen: Int = seqlen

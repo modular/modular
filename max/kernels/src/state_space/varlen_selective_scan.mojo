@@ -14,9 +14,9 @@
 """Variable-length selective scan kernels for Mamba SSM architecture."""
 
 from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
+    block_dim,
+    block_idx,
+    thread_idx,
 )
 from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
@@ -93,17 +93,13 @@ def varlen_selective_state_update_gpu[
     var pid_b = block_idx.y  # Batch index
     var pid_h = block_idx.z  # Head index
 
-    var pid_b_int = Int(pid_b)
-    var pid_h_int = Int(pid_h)
-    var pid_m_int = Int(pid_m)
-
-    if pid_b_int >= batch or pid_h_int >= nheads:
+    if pid_b >= batch or pid_h >= nheads:
         return
 
     # Determine state batch index
-    var state_batch_idx = Int32(pid_b_int)
+    var state_batch_idx = Int32(pid_b)
     if Bool(Int(has_state_batch_indices) != 0):
-        state_batch_idx = state_batch_indices.ptr[pid_b_int]
+        state_batch_idx = state_batch_indices.ptr[pid_b]
         # Check for padding
         if state_batch_idx == pad_slot_id:
             return
@@ -113,27 +109,23 @@ def varlen_selective_state_update_gpu[
     var has_z = Int(z.dim[0]()) > 0
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
 
-    var group_id = pid_h_int // nheads_ngroups_ratio
+    var group_id = pid_h // nheads_ngroups_ratio
 
     # Process BLOCK_SIZE_M dims per thread
     comptime for local_m in range(BLOCK_SIZE_M):
-        var m = pid_m_int * BLOCK_SIZE_M + local_m
+        var m = pid_m * BLOCK_SIZE_M + local_m
         if m >= dim:
             continue
 
         # Load x value
         var x_offset = UInt32(
-            pid_b_int * x_strides[0]
-            + pid_h_int * x_strides[1]
-            + m * x_strides[2]
+            pid_b * x_strides[0] + pid_h * x_strides[1] + m * x_strides[2]
         )
         var x_val = Scalar[kernel_dtype](x.ptr[x_offset]).cast[DType.float32]()
 
         # Load dt value
         var dt_offset = UInt32(
-            pid_b_int * dt_strides[0]
-            + pid_h_int * dt_strides[1]
-            + m * dt_strides[2]
+            pid_b * dt_strides[0] + pid_h * dt_strides[1] + m * dt_strides[2]
         )
         var dt_val = Scalar[kernel_dtype](dt.ptr[dt_offset]).cast[
             DType.float32
@@ -142,7 +134,7 @@ def varlen_selective_state_update_gpu[
         # Apply dt_bias if present
         if has_dt_bias:
             var dt_bias_offset = UInt32(
-                pid_h_int * dt_bias_strides[0] + m * dt_bias_strides[1]
+                pid_h * dt_bias_strides[0] + m * dt_bias_strides[1]
             )
             var bias_val = Scalar[kernel_dtype](
                 dt_bias.ptr[dt_bias_offset]
@@ -159,7 +151,7 @@ def varlen_selective_state_update_gpu[
         comptime for n in range(DSTATE):
             # Load A value
             var A_offset = UInt32(
-                pid_h_int * A_strides[0] + m * A_strides[1] + n * A_strides[2]
+                pid_h * A_strides[0] + m * A_strides[1] + n * A_strides[2]
             )
             var A_val = Scalar[kernel_dtype](A.ptr[A_offset]).cast[
                 DType.float32
@@ -170,7 +162,7 @@ def varlen_selective_state_update_gpu[
 
             # Load B value
             var B_offset = UInt32(
-                pid_b_int * B_strides[0]
+                pid_b * B_strides[0]
                 + group_id * B_strides[1]
                 + n * B_strides[2]
             )
@@ -184,7 +176,7 @@ def varlen_selective_state_update_gpu[
             # Load current state
             var state_offset = UInt32(
                 Int(state_batch_idx) * state_strides[0]
-                + pid_h_int * state_strides[1]
+                + pid_h * state_strides[1]
                 + m * state_strides[2]
                 + n * state_strides[3]
             )
@@ -202,7 +194,7 @@ def varlen_selective_state_update_gpu[
 
             # Load C value
             var C_offset = UInt32(
-                pid_b_int * C_strides[0]
+                pid_b * C_strides[0]
                 + group_id * C_strides[1]
                 + n * C_strides[2]
             )
@@ -215,7 +207,7 @@ def varlen_selective_state_update_gpu[
 
         # Add skip connection if D is present
         if has_D:
-            var D_offset = UInt32(pid_h_int * D_strides[0] + m * D_strides[1])
+            var D_offset = UInt32(pid_h * D_strides[0] + m * D_strides[1])
             var D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[
                 DType.float32
             ]()
@@ -224,9 +216,7 @@ def varlen_selective_state_update_gpu[
         # Apply gating if z is present, using optimized silu
         if has_z:
             var z_offset = UInt32(
-                pid_b_int * z_strides[0]
-                + pid_h_int * z_strides[1]
-                + m * z_strides[2]
+                pid_b * z_strides[0] + pid_h * z_strides[1] + m * z_strides[2]
             )
             var z_val = Scalar[kernel_dtype](z.ptr[z_offset]).cast[
                 DType.float32
@@ -235,9 +225,7 @@ def varlen_selective_state_update_gpu[
 
         # Store output
         var out_offset = UInt32(
-            pid_b_int * out_strides[0]
-            + pid_h_int * out_strides[1]
-            + m * out_strides[2]
+            pid_b * out_strides[0] + pid_h * out_strides[1] + m * out_strides[2]
         )
         output.ptr[out_offset] = Scalar[kernel_dtype](
             out_val.cast[kernel_dtype]()
@@ -307,8 +295,8 @@ def varlen_selective_scan_fwd_gpu[
 ):
     """GPU kernel for variable-length selective scan."""
     # 2D grid: block_idx.x for dim, block_idx.y for batch
-    var d = Int(block_dim.x * block_idx.x + thread_idx.x)
-    var b = Int(block_idx.y)
+    var d = block_dim.x * block_idx.x + thread_idx.x
+    var b = block_idx.y
 
     if d >= dim or b >= batch:
         return

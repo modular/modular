@@ -20,9 +20,9 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
+    block_dim,
+    block_idx,
+    thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_gpu
@@ -322,13 +322,11 @@ def rms_norm_fused_residual_gpu_block[
         var tid = thread_idx.x
         var row = block_idx.x
 
-        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
-            var idx = x * Int(block_dim.x) * simd_width + Int(
-                tid * UInt(simd_width)
-            )
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var idx = x * block_dim.x * simd_width + tid * simd_width
 
             if idx < num_cols:
-                var input_val = input_fn[simd_width](Int(row), idx)
+                var input_val = input_fn[simd_width](row, idx)
 
                 # Apply dropout if enabled
                 var zero_scalar = Scalar[dtype](0.0)
@@ -354,13 +352,13 @@ def rms_norm_fused_residual_gpu_block[
                             else:
                                 input_val[i] = zero_scalar
 
-                var residual_val = residual_input_fn[simd_width](Int(row), idx)
+                var residual_val = residual_input_fn[simd_width](row, idx)
                 var residual_add_val = input_val + residual_val
 
                 # Output the pre-normalized value (x + residual) for prenorm mode
                 output_residual_fn[
                     simd_width, align_of[SIMD[dtype, simd_width]]()
-                ](Int(row), idx, residual_add_val)
+                ](row, idx, residual_add_val)
 
                 # Store in shared memory for normalization
                 shared_mem.store[
