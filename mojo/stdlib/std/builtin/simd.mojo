@@ -2225,6 +2225,10 @@ struct SIMD[dtype: DType, size: Int](
                 writer.write_string("Float4_e2m1fn(")
             elif Self.dtype == DType.bool:
                 writer.write_string("Bool(")
+            elif Self.dtype == DType.index:
+                writer.write_string("Int(")
+            elif Self.dtype == DType.uindex:
+                writer.write_string("UInt(")
             else:
                 # Fallback to verbose format for unknown dtypes
                 writer.write_string("SIMD[")

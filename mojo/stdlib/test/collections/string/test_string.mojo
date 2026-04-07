@@ -1352,14 +1352,10 @@ def test_format_conversion_flags() raises:
         "21.1 1e+100 42 Mojo",
     )
 
-    assert_true(
-        "'Mojo' 42 SIMD[DType.float64, 1](2"
-        in "{0!r} {3} {1!r}".format(a, b, c, d)
-    )
+    assert_true("'Mojo' 42 Float64(2" in "{0!r} {3} {1!r}".format(a, b, c, d))
 
     assert_true(
-        "True 'Mojo' 42 SIMD[DType.float64, 1](2"
-        in "{4} {0!r} {3} {1!r}".format(a, b, c, d, True)
+        "True 'Mojo' 42 Float64(2" in "{4} {0!r} {3} {1!r}".format(a, b, c, d, True)
     )
 
     with assert_raises(contains='Conversion flag "x" not recognized.'):
