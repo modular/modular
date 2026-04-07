@@ -105,7 +105,7 @@ class Qwen3TransformerBlock(Module):
         self.mlp = self._get_mlp(config, layer_idx, linear_cls, ep_manager)
 
         if self.use_dp:
-            if isinstance(self.mlp, (MoE, MoEQuantized)) and ep_manager:
+            if hasattr(self.mlp, "_ep_batch_manager") and ep_manager:
                 self.mlp.sharding_strategy = ShardingStrategy.expert_parallel(
                     num_devices
                 )

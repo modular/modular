@@ -37,6 +37,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
+from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
@@ -120,8 +121,17 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             cache_dtype=cache_dtype,
         )
 
-    def _create_ep_config(self) -> EPConfig | None:
-        """Create EP config from pipeline settings."""
+    def _create_ep_config(
+        self,
+        state_dict: dict[str, Any] | None = None,
+    ) -> EPConfig | None:
+        """Create EP config from pipeline settings.
+
+        Args:
+            state_dict: Model weight state dict, required for non-bfloat16
+                dispatch dtypes (e.g. FP8) to parse the dispatch quantization
+                configuration.
+        """
         ep_size = self.pipeline_config.runtime.ep_size
         if ep_size <= 1:
             return None
@@ -149,6 +159,12 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             else DType.bfloat16
         )
 
+        dispatch_quant_config = None
+        if dispatch_dtype != DType.bfloat16 and state_dict is not None:
+            dispatch_quant_config = parse_quant_config(
+                config, state_dict, dispatch_dtype
+            )
+
         return EPConfig(
             dispatch_dtype=dispatch_dtype,
             combine_dtype=DType.bfloat16,
@@ -158,7 +174,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             max_tokens_per_rank=ep_max_rank_send_tokens,
             n_gpus_per_node=n_devices,
             n_nodes=n_nodes,
-            dispatch_quant_config=None,
+            dispatch_quant_config=dispatch_quant_config,
         )
 
     @override
@@ -212,7 +228,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
 
         # Set up EP config
-        ep_config = self._create_ep_config()
+        ep_config = self._create_ep_config(state_dict)
         model_config.ep_config = ep_config
 
         # Create EP infrastructure
