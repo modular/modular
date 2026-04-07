@@ -676,18 +676,32 @@ class Gemma3_MultiModalModel(
         for d_offsets in device_row_offsets:
             d_offsets.inplace_copy_from(host_row_offsets)
 
-        uncached = self._ve_cache.get_uncached_contexts(context_batch)
         k = self.config.vision_config.pooling_kernel_size
-        image_inputs = build_image_inputs(
-            context_batch=context_batch,
-            uncached=uncached,
-            devices=self.devices,
-            pooling_kernel_size=k,
-            ve_cache=self._ve_cache,
-            empty_embeddings=self._empty_embeddings(),
-        )
 
-        if context_batch and hasattr(context_batch[0], "video_frame_patches"):
+        needs_images = (
+            any(ctx.needs_vision_encoding for ctx in context_batch)
+            if context_batch
+            else False
+        )
+        if needs_images:
+            uncached = self._ve_cache.get_uncached_contexts(context_batch)
+            image_inputs = build_image_inputs(
+                context_batch=context_batch,
+                uncached=uncached,
+                devices=self.devices,
+                pooling_kernel_size=k,
+                ve_cache=self._ve_cache,
+                empty_embeddings=self._empty_embeddings(),
+            )
+        else:
+            image_inputs = None
+
+        needs_video = (
+            any(ctx.needs_video_encoding for ctx in context_batch)
+            if context_batch
+            else False
+        )
+        if needs_video:
             video_inputs = build_video_inputs(
                 context_batch=context_batch,
                 devices=self.devices,

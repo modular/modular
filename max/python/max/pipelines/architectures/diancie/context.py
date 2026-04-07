@@ -48,3 +48,20 @@ class Gemma4Context(TextAndVisionContext):
 
     video_token_ranges: list[tuple[int, int]] = field(default_factory=list)
     """``(start_idx, end_idx)`` of video placeholder tokens in the prompt."""
+
+    @property
+    def needs_video_encoding(self) -> bool:
+        """Whether video encoding is still needed for this context.
+
+        Returns ``True`` when the context contains video frames whose
+        placeholder tokens have not yet been fully processed (i.e. the
+        active window still covers at least one video range).  Once
+        ``processed_length`` moves past every video range the encoder
+        can be skipped — mirroring ``needs_vision_encoding`` for images.
+        """
+        if not self.video_frame_patches:
+            return False
+        return any(
+            self.tokens.processed_length < end
+            for _, end in self.video_token_ranges
+        )

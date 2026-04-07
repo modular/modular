@@ -40,10 +40,7 @@ diancie_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     rope_type="normal",
-    required_arguments={
-        "enable_prefix_caching": False,
-        "enable_chunked_prefill": False,
-    },
+    required_arguments={"max_num_steps": 1},
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
 )
