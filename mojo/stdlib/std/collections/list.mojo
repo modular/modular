@@ -151,7 +151,7 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
 struct _ListTakeIter[
     T: Copyable,
     origin: MutOrigin,
-](Movable, IterableOwned, Iterator):
+](IterableOwned, Iterator, Movable):
     """Iterator over List elements that moves elements out of the list.
 
     This iterator drains the list as it iterates, moving elements out using
