@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
+from std.math.uutils import umod, ufloordiv
 from std.os.atomic import Atomic, Consistency
 from std.sys import is_amd_gpu, is_nvidia_gpu
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
@@ -31,10 +32,10 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    thread_idx,
+    block_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.host import get_gpu_target, DeviceBuffer
 from std.gpu.intrinsics import Scope, load_acquire, store_release
@@ -109,7 +110,7 @@ def block_memcpy[
 ](
     dst_p: UnsafePointer[mut=True, UInt8, _, address_space=dst_addr_space],
     src_p: UnsafePointer[mut=False, UInt8, _, address_space=src_addr_space],
-    thread_idx: UInt,
+    thread_idx: Int,
 ) -> None:
     """
     Copies a memory area from source to destination. This function will use the
@@ -117,7 +118,7 @@ def block_memcpy[
     make sure pointers are aligned to the simd width.
     """
     comptime simd_width = simd_width_of[DType.uint8]()
-    for i in range(Int(thread_idx), num_bytes // simd_width, block_size):
+    for i in range(thread_idx, num_bytes // simd_width, block_size):
         dst_p.store[width=simd_width, alignment=simd_width](
             i * simd_width,
             src_p.load[
@@ -148,25 +149,25 @@ def block_prefix_sum[
     ]()
 
     var val = Scalar[dtype](0)
-    if thread_idx.x < UInt(num_elements):
+    if thread_idx.x < num_elements:
         val = _val
 
-    if thread_idx.x < UInt(n_elements_aligned):
+    if thread_idx.x < n_elements_aligned:
         val = warp.prefix_sum(val)
-        if lane_id() == UInt(WARP_SIZE - 1):
+        if lane_id() == WARP_SIZE - 1:
             warp_prefix_sum[warp_id()] = val
     barrier()
 
     if warp_id() == 0:
         var warp_sum = Scalar[dtype](0)
-        if lane_id() < UInt(n_warps):
+        if lane_id() < n_warps:
             warp_sum = warp_prefix_sum[lane_id()]
         warp_sum = warp.prefix_sum[exclusive=True](warp_sum)
-        if lane_id() < UInt(n_warps):
+        if lane_id() < n_warps:
             warp_prefix_sum[lane_id()] = warp_sum
     barrier()
 
-    if thread_idx.x < UInt(num_elements):
+    if thread_idx.x < num_elements:
         val += warp_prefix_sum[warp_id()]
     barrier()
 
@@ -423,7 +424,7 @@ struct BF16TokenFormat[
         ), "output_tokens expects rank >= 2"
         comptime bf16_width = simd_width_of[DType.bfloat16]()
         comptime byte_width = bf16_width * size_of[BFloat16]()
-        for i in range(Int(lane_id()), Self.hid_dim // bf16_width, WARP_SIZE):
+        for i in range(lane_id(), Self.hid_dim // bf16_width, WARP_SIZE):
             self.output_tokens.store[width=bf16_width](
                 (Idx(token_index), Idx(i * bf16_width)),
                 bitcast[DType.bfloat16, bf16_width](
@@ -551,7 +552,7 @@ struct BlockwiseFP8TokenFormat[
         is [0, 10, 20, 30, 40], the function will update the row_offsets tensor
         to [0, 12, 24, 36, 48].
         """
-        var tid = Int(thread_idx.x)
+        var tid = thread_idx.x
         var per_expert_m = UInt32(0)
         if tid < n_groups:
             per_expert_m = row_offsets[tid + 1] - row_offsets[tid]
@@ -589,7 +590,7 @@ struct BlockwiseFP8TokenFormat[
         ), "Each warp must process a multiple of quantization groups"
 
         for i in range(
-            Int(thread_idx.x), Self.hid_dim // src_width, Int(block_size)
+            thread_idx.x, Self.hid_dim // src_width, Int(block_size)
         ):
             var loaded_vec = src_p.load[
                 width=src_width, alignment=Self.alignment, invariant=True
@@ -611,7 +612,7 @@ struct BlockwiseFP8TokenFormat[
 
             # The first thread in each group stores the scale factor.
             comptime scale_bytes = size_of[Self.scales_dtype]()
-            if lane_id() % UInt(n_threads_per_group) == 0:
+            if umod(lane_id(), n_threads_per_group) == 0:
                 scale_idx = i * src_width // Self.group_size
                 buf_p.store[width=scale_bytes, alignment=scale_bytes](
                     Self.scales_offset() + scale_idx * scale_bytes,
@@ -633,7 +634,7 @@ struct BlockwiseFP8TokenFormat[
         ), "output_tokens expects rank >= 2"
         # First we copy the FP8 quants.
         comptime fp8_width = simd_width_of[Self.fp8_dtype]()
-        for i in range(Int(lane_id()), Self.hid_dim // fp8_width, WARP_SIZE):
+        for i in range(lane_id(), Self.hid_dim // fp8_width, WARP_SIZE):
             self.output_tokens.store[width=fp8_width](
                 (Idx(token_index), Idx(i * fp8_width)),
                 bitcast[Self.fp8_dtype, fp8_width](
@@ -652,9 +653,7 @@ struct BlockwiseFP8TokenFormat[
         ), "output_scales expects rank >= 2"
         # Unlike the output tensor, the scales tensor is stored in a transposed way.
         comptime scale_bytes = size_of[Self.scales_dtype]()
-        for i in range(
-            Int(lane_id()), Self.hid_dim // Self.group_size, WARP_SIZE
-        ):
+        for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
             self.output_scales.store(
                 (Idx(i), Idx(token_index)),
                 bitcast[Self.scales_dtype, 1](
@@ -810,8 +809,8 @@ struct NVFP4TokenFormat[
 
             comptime for round_i in range(n_rounds):
                 var per_expert_m: UInt32 = 0
-                var group_idx = UInt(round_i * WARP_SIZE) + tid
-                if group_idx < UInt(n_groups):
+                var group_idx = round_i * WARP_SIZE + tid
+                if group_idx < n_groups:
                     per_expert_m = (
                         row_offsets[group_idx + 1] - row_offsets[group_idx]
                     )
@@ -824,7 +823,7 @@ struct NVFP4TokenFormat[
                     + warp.prefix_sum[exclusive=True](scales_blocks)
                 )
 
-                if group_idx < UInt(n_groups):
+                if group_idx < n_groups:
                     self.output_scales_offset.store(
                         (Idx(group_idx),),
                         group_scales_start
@@ -848,7 +847,7 @@ struct NVFP4TokenFormat[
 
         var tid = thread_idx.x
         var group_id, sm_id_in_group = divmod(sm_id, n_sms_per_group)
-        var tid_in_group = UInt(sm_id_in_group * block_size) + tid
+        var tid_in_group = sm_id_in_group * block_size + tid
 
         if group_id >= n_groups:
             return
@@ -884,7 +883,7 @@ struct NVFP4TokenFormat[
             Self.hid_dim % (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K) == 0
         ), "hid_dim must be divisible by (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)"
         for i in range(
-            Int(tid_in_group),
+            tid_in_group,
             Int(UInt32(scales_simds_per_tok) * tokens_to_zero_pad),
             block_size * n_sms_per_group,
         ):
@@ -912,7 +911,7 @@ struct NVFP4TokenFormat[
         comptime NUM_THREADS_PER_SF = NVFP4_SF_VECTOR_SIZE // src_width
 
         for i in range(
-            Int(thread_idx.x), Self.hid_dim // src_width, Int(block_size)
+            thread_idx.x, Self.hid_dim // src_width, Int(block_size)
         ):
             var loaded_vec = src_p.load[
                 width=src_width, alignment=Self.alignment, invariant=True
@@ -980,7 +979,7 @@ struct NVFP4TokenFormat[
             quant_bytes % fp4_width == 0
         ), "quant_bytes must be divisible by fp4_width"
 
-        for i in range(Int(lane_id()), quant_bytes // fp4_width, WARP_SIZE):
+        for i in range(lane_id(), quant_bytes // fp4_width, WARP_SIZE):
             self.output_tokens.store[width=fp4_width](
                 (Idx(token_index), Idx(i * fp4_width)),
                 bitcast[Self.fp4_dtype, fp4_width](
@@ -1019,7 +1018,7 @@ struct NVFP4TokenFormat[
             n_scales % SF_ATOM_K == 0
         ), "n_scales must be divisible by SF_ATOM_K"
         comptime scale_bytes = size_of[Self.scales_dtype]() * SF_ATOM_K
-        for i in range(Int(lane_id()), n_scales_simd, WARP_SIZE):
+        for i in range(lane_id(), n_scales_simd, WARP_SIZE):
             var scale_factors = bitcast[Self.scales_dtype, SF_ATOM_K](
                 buf_p.load[
                     width=scale_bytes,
@@ -1290,11 +1289,11 @@ struct EPDispatchKernel[
         """
         var num_tokens = Int(topk_ids.dim(0))
 
-        var expert_idx = Int32(block_idx.x * UInt(Self.n_warps) + warp_id())
+        var expert_idx = Int32(block_idx.x * Self.n_warps + warp_id())
         var expert_count: Int32 = 0
 
         if expert_idx < Int32(Self.n_experts):
-            for i in range(Int(lane_id()), num_tokens * Self.top_k, WARP_SIZE):
+            for i in range(lane_id(), num_tokens * Self.top_k, WARP_SIZE):
                 if topk_ids.ptr[i] == expert_idx:
                     expert_count += 1
 
@@ -1380,7 +1379,7 @@ struct EPDispatchKernel[
             input_scale = input_scale_fn[DType.float32](0)
 
         for token_idx in range(
-            Int(block_idx.x - UInt(Self.n_signal_sms)),
+            block_idx.x - Self.n_signal_sms,
             Int(num_tokens),
             Self.n_dispatch_async_comm_sms,
         ):
@@ -1396,7 +1395,7 @@ struct EPDispatchKernel[
                 input_type, UInt(Self.num_threads)
             ](curr_send_buf_ptr, input_tensor_ptr, input_scale)
 
-            if tid < UInt(Self.top_k):
+            if tid < Self.top_k:
                 # Store all the top-k expert IDs in current token's message.
                 # The remote device will use the expert ID to determine a
                 # token's top-k id.
@@ -1407,7 +1406,7 @@ struct EPDispatchKernel[
                     alignment=align_of[DType.uint16](),
                 ](
                     Self.token_fmt_type.topk_info_offset()
-                    + Int(tid * UInt(size_of[UInt16]())),
+                    + tid * size_of[UInt16](),
                     bitcast[DType.uint8, size_of[UInt16]()](UInt16(top_k_idx)),
                 )
 
@@ -1427,7 +1426,7 @@ struct EPDispatchKernel[
 
             # Try to copy the message to the target expert's recv_buf if the
             # target device is on the same node.
-            for topk_idx in range(Int(warp_id()), Self.top_k, Self.n_warps):
+            for topk_idx in range(warp_id(), Self.top_k, Self.n_warps):
                 var target_expert = rebind[Int32](topk_ids[token_idx, topk_idx])
                 var dst_rank, dst_expert_local_idx = divmod(
                     target_expert, Int32(Self.n_local_experts)
@@ -1478,11 +1477,11 @@ struct EPDispatchKernel[
             comptime if Self.use_shmem:
                 comptime n_rcs = min(Self.n_local_experts, Self.n_warps)
                 var rc_map_offset = Int32(
-                    (block_idx.x * UInt(Self.n_warps) + warp_id()) % UInt(n_rcs)
+                    umod(block_idx.x * Self.n_warps + warp_id(), n_rcs)
                 )
 
                 var topk_idx = lane_id()
-                if topk_idx < UInt(Self.top_k) and warp_id() < UInt(n_rcs):
+                if topk_idx < Self.top_k and warp_id() < n_rcs:
                     var target_expert = rebind[Int32](
                         topk_ids[token_idx, topk_idx]
                     )
@@ -1562,7 +1561,7 @@ struct EPDispatchKernel[
             Self.n_experts, DType.uint32, address_space=AddressSpace.SHARED
         ]()
 
-        if Int(tid) < Self.n_local_experts + shared_expert_offset:
+        if tid < Self.n_local_experts + shared_expert_offset:
             expert_ids[tid] = Int32(tid)
 
         if tid == 0:
@@ -1574,7 +1573,7 @@ struct EPDispatchKernel[
                 row_offsets[1] = reserved_shared_expert_tokens
 
         var token_count: UInt32 = 0
-        if tid < UInt(Self.n_experts):
+        if tid < Self.n_experts:
             var target_count_ptr = recv_count_p + tid
             var _token_count = load_acquire[scope=Scope.SYSTEM](
                 target_count_ptr
@@ -1587,11 +1586,11 @@ struct EPDispatchKernel[
         barrier()
 
         token_count = block_prefix_sum[Self.n_experts](token_count)
-        if Int(tid) < Self.n_experts:
+        if tid < Self.n_experts:
             prefix_sum_arr[tid] = token_count + reserved_shared_expert_tokens
 
-            if Int(tid) % Self.n_ranks == Self.n_ranks - 1:
-                var local_expert_id = Int(tid) // Self.n_ranks
+            if tid % Self.n_ranks == Self.n_ranks - 1:
+                var local_expert_id = tid // Self.n_ranks
                 row_offsets[local_expert_id + shared_expert_offset + 1] = (
                     token_count + reserved_shared_expert_tokens
                 )
@@ -1605,8 +1604,8 @@ struct EPDispatchKernel[
         # Make sure row_offsets are visible to other threads.
         barrier()
 
-        if tid < UInt(Self.n_experts):
-            var local_expert_id = Int(tid) // Self.n_ranks
+        if tid < Self.n_experts:
+            var local_expert_id = tid // Self.n_ranks
 
             # The row offsets might be padded to satisfy the grouped matmul
             # alignment requirement. We check the row_offsets tensor again to
@@ -1623,7 +1622,7 @@ struct EPDispatchKernel[
             )
 
             var expert_rank_linear_idx = (
-                local_expert_id * Self.n_ranks + Int(tid) % Self.n_ranks
+                local_expert_id * Self.n_ranks + tid % Self.n_ranks
             )
             atomic_counter.store(
                 expert_rank_linear_idx * 2 + 1,
@@ -1668,7 +1667,7 @@ struct EPDispatchKernel[
         comptime assert src_info.flat_rank == 2, "src_info expects rank == 2"
         comptime shared_expert_offset = 1 if Self.fused_shared_expert else 0
 
-        var sm_id = block_idx.x - UInt(Self.n_offset_sms)
+        var sm_id = block_idx.x - Self.n_offset_sms
 
         comptime n_wg_per_sm = ceildiv(
             Self.n_experts, Self.n_dispatch_wait_comm_sms
@@ -1676,15 +1675,15 @@ struct EPDispatchKernel[
         comptime wg_size = Self.n_warps // n_wg_per_sm
         comptime wg_threads = wg_size * WARP_SIZE
 
-        var wg_idx = warp_id() // UInt(wg_size)
-        var global_wg_idx = sm_id * UInt(n_wg_per_sm) + wg_idx
-        var warp_id_in_wg = warp_id() % UInt(wg_size)
+        var wg_idx = ufloordiv(warp_id(), wg_size)
+        var global_wg_idx = sm_id * n_wg_per_sm + wg_idx
+        var warp_id_in_wg = umod(warp_id(), wg_size)
 
-        if wg_idx >= UInt(n_wg_per_sm) or global_wg_idx >= UInt(Self.n_experts):
+        if wg_idx >= n_wg_per_sm or global_wg_idx >= Self.n_experts:
             return
 
-        var local_expert_id = global_wg_idx % UInt(Self.n_local_experts)
-        var target_rank = global_wg_idx // UInt(Self.n_local_experts)
+        var local_expert_id = umod(global_wg_idx, Self.n_local_experts)
+        var target_rank = ufloordiv(global_wg_idx, Self.n_local_experts)
         var expert_rank_offset = Self.recv_count_layout(
             (Idx(local_expert_id), Idx(target_rank))
         )
@@ -1701,7 +1700,7 @@ struct EPDispatchKernel[
         output_offset -= token_count
         var local_expert_start_offset = offset_ptr.load(1)
 
-        for token_idx in range(Int(warp_id_in_wg), Int(token_count), wg_size):
+        for token_idx in range(warp_id_in_wg, Int(token_count), wg_size):
             var token_pos = Int(Int32(token_idx) + output_offset)
             var recv_buf_ptr = recv_buf_p + Self.recv_buf_layout(
                 (Idx(local_expert_id), Idx(target_rank), Idx(token_idx), Idx(0))
@@ -1710,18 +1709,18 @@ struct EPDispatchKernel[
             format_handler.copy_msg_to_output_tensor(
                 recv_buf_ptr,
                 token_pos,
-                Int(local_expert_id) + shared_expert_offset,
+                local_expert_id + shared_expert_offset,
                 token_pos - Int(local_expert_start_offset),
             )
 
-            if lane_id() < UInt(Self.top_k):
+            if lane_id() < Self.top_k:
                 # Load top-k expert IDs from the token's message.
                 var src_topk_idx = bitcast[DType.uint16, 1](
                     recv_buf_ptr.load[
                         width=size_of[UInt16](), alignment=size_of[UInt16]()
                     ](
                         Self.token_fmt_type.topk_info_offset()
-                        + Int(lane_id() * UInt(size_of[UInt16]())),
+                        + lane_id() * size_of[UInt16](),
                     )
                 )
                 var global_expert_idx = my_rank * Int32(
@@ -1745,7 +1744,7 @@ struct EPDispatchKernel[
 
         format_handler.zero_pad_scales[
             Self.num_threads, Self.n_dispatch_wait_comm_sms
-        ](row_offsets.ptr, Int(sm_id))
+        ](row_offsets.ptr, sm_id)
 
     @staticmethod
     @always_inline
@@ -1773,7 +1772,7 @@ struct EPDispatchKernel[
             alignment=simd_width_of[DType.uint8](),
             address_space=AddressSpace.SHARED,
         ]()
-        var sm_id = block_idx.x - UInt(Self.n_offset_sms)
+        var sm_id = block_idx.x - Self.n_offset_sms
         var shared_expert_token_count = input_tokens.dim(0)
 
         var input_scale = Float32(1.0)
@@ -1783,7 +1782,7 @@ struct EPDispatchKernel[
             input_scale = input_scale_fn[DType.float32](0)
 
         for token_idx in range(
-            Int(sm_id),
+            sm_id,
             Int(shared_expert_token_count),
             Self.n_dispatch_wait_comm_sms,
         ):
@@ -1894,7 +1893,7 @@ def dispatch_async_kernel[
     # The auxiliary SMs are used for counting the number of tokens that need to
     # be sent to each expert. It also monitors the completion of
     # the communication for each expert.
-    if block_idx.x < UInt(dispatch_impl.n_signal_sms):
+    if block_idx.x < dispatch_impl.n_signal_sms:
         dispatch_impl.monitor_and_signal_completion(
             topk_ids,
             recv_count_ptrs,
@@ -2018,7 +2017,7 @@ def dispatch_wait_kernel[
     # The first SM is used for checking if any of a local expert has received
     # tokens from all the remote ranks. It will also calculate the offset where
     # the tokens start in the output tensor.
-    if block_idx.x < UInt(dispatch_impl.n_offset_sms):
+    if block_idx.x < dispatch_impl.n_offset_sms:
         var reserved_shared_expert_tokens: UInt32 = 0
 
         comptime if fused_shared_expert:
@@ -2165,8 +2164,8 @@ struct EPCombineKernel[
             output_tokens.flat_rank >= 2
         ), "output_tokens expects rank >= 2"
         comptime hid_dim = input_tokens.static_shape[1]
-        var tid = Int(thread_idx.x)
-        var sm_id = Int(block_idx.x)
+        var tid = thread_idx.x
+        var sm_id = block_idx.x
         var shared_expert_token_count = output_tokens.dim(0)
 
         for token_idx in range(
@@ -2177,7 +2176,7 @@ struct EPCombineKernel[
             block_memcpy[hid_dim * size_of[input_type](), Self.num_threads](
                 output_tokens_p.bitcast[UInt8](),
                 input_tokens_p.bitcast[UInt8](),
-                UInt(tid),
+                tid,
             )
 
     @staticmethod
@@ -2225,8 +2224,8 @@ struct EPCombineKernel[
             Self.msg_bytes == hid_dim * size_of[Scalar[input_type]]()
         ), "EP combine_async: input shape doesn't match message size."
 
-        var tid = Int(thread_idx.x)
-        var sm_id = Int(block_idx.x)
+        var tid = thread_idx.x
+        var sm_id = block_idx.x
         var my_p2p_world, my_p2p_rank = divmod(
             my_rank, Int32(Self.p2p_world_size)
         )
@@ -2278,7 +2277,7 @@ struct EPCombineKernel[
                         input_tokens.ptr_at_offset(
                             (Idx(token_idx), Idx(0))
                         ).bitcast[UInt8](),
-                        UInt(tid),
+                        tid,
                     )
 
             # If the target device is on a different node, we need to send the
@@ -2289,7 +2288,7 @@ struct EPCombineKernel[
                     # same RC as the one they come from.
                     comptime n_rcs = min(Self.n_local_experts, Self.n_warps)
                     var rc_map_offset = (
-                        sm_id * Self.n_warps + Int(warp_id())
+                        sm_id * Self.n_warps + warp_id()
                     ) % n_rcs
 
                     var n_rounds = ceildiv(
@@ -2322,7 +2321,7 @@ struct EPCombineKernel[
                         barrier()
 
                         if (
-                            warp_id() < UInt(n_rcs)
+                            warp_id() < n_rcs
                             and local_expert_id % n_rcs == rc_map_offset
                         ):
                             var token_idx = (
@@ -2365,11 +2364,8 @@ struct EPCombineKernel[
             # Once all the tokens for the current expert and rank have been
             # sent, signal the completion of the communication.
             comptime n_rcs = min(Self.n_local_experts, Self.n_warps)
-            var rc_map_offset = (sm_id * Self.n_warps + Int(warp_id())) % n_rcs
-            if (
-                warp_id() < UInt(n_rcs)
-                and local_expert_id % n_rcs == rc_map_offset
-            ):
+            var rc_map_offset = (sm_id * Self.n_warps + warp_id()) % n_rcs
+            if warp_id() < n_rcs and local_expert_id % n_rcs == rc_map_offset:
                 if lane_id() == 0:
                     var signal_offset = my_rank * Int32(
                         Self.n_local_experts
@@ -2412,7 +2408,7 @@ struct EPCombineKernel[
         """
         comptime DATA_READY_FLAG = 1024
 
-        if thread_idx.x < UInt(Self.n_experts):
+        if thread_idx.x < Self.n_experts:
             var target_count_ptr = recv_count_p + thread_idx.x
             while (
                 load_acquire[scope=Scope.SYSTEM](target_count_ptr)
@@ -2425,9 +2421,9 @@ struct EPCombineKernel[
 
         # Once all the tokens have been received, set flags for other SMs to
         # copy the tokens to the output tensor.
-        if thread_idx.x < UInt(Self.n_reduce_sms):
+        if thread_idx.x < Self.n_reduce_sms:
             atomic_counter.store(
-                Self.n_wait_sms + Int(thread_idx.x), DATA_READY_FLAG
+                Self.n_wait_sms + thread_idx.x, DATA_READY_FLAG
             )
 
     @staticmethod
@@ -2469,7 +2465,7 @@ struct EPCombineKernel[
             byte_simd_width
         )
 
-        var sm_id = Int(block_idx.x)
+        var sm_id = block_idx.x
 
         if thread_idx.x == 0:
             while (
@@ -2492,9 +2488,7 @@ struct EPCombineKernel[
 
         # This will allow a single token to be processed by multiple blocks.
         # Reduce the latency when there is only a small number of tokens.
-        var global_id = (
-            sm_id - Self.n_wait_sms + Int(warp_id()) * Self.n_reduce_sms
-        )
+        var global_id = sm_id - Self.n_wait_sms + warp_id() * Self.n_reduce_sms
 
         for chunk_idx in range(
             global_id,
@@ -2521,7 +2515,7 @@ struct EPCombineKernel[
                         invariant=True,
                         alignment=_align,
                     ](
-                        Int(lane_id()) * byte_simd_width,
+                        lane_id() * byte_simd_width,
                     )
                 )
 
@@ -2540,7 +2534,7 @@ struct EPCombineKernel[
                     )
                     var elem_offset = (
                         chunk_idx_in_token * n_chunk_elems
-                        + Int(lane_id()) * dst_simd_width
+                        + lane_id() * dst_simd_width
                     )
                     output_tokens.store(
                         (
@@ -2558,7 +2552,7 @@ struct EPCombineKernel[
                         (
                             token_idx,
                             chunk_idx_in_token * n_chunk_elems
-                            + Int(lane_id()) * dst_simd_width,
+                            + lane_id() * dst_simd_width,
                         ),
                         accum.cast[output_type](),
                     )
@@ -2572,7 +2566,7 @@ struct EPCombineKernel[
                             Idx(token_idx),
                             Idx(
                                 chunk_idx_in_token * n_chunk_elems
-                                + Int(lane_id()) * dst_simd_width
+                                + lane_id() * dst_simd_width
                             ),
                         ),
                         accum.cast[output_type](),
@@ -2768,7 +2762,7 @@ def combine_wait_kernel[
     ]
 
     var atomic_counter = ep_counters.get_combine_wait_ptr()
-    var sm_id = Int(block_idx.x)
+    var sm_id = block_idx.x
 
     # The first SM is used for checking if we have received tokens from all the
     # remote ranks.
@@ -2905,7 +2899,7 @@ def dispatch_kernel[
     var rank_completion_counter = async_atomic_counter + 2 * n_experts
 
     with PDL():
-        if block_idx.x < UInt(dispatch_impl.n_signal_sms):
+        if block_idx.x < dispatch_impl.n_signal_sms:
             dispatch_impl.monitor_and_signal_completion(
                 topk_ids,
                 recv_count_ptrs,
@@ -2929,7 +2923,7 @@ def dispatch_kernel[
         var wait_atomic_counter = ep_counters.get_dispatch_wait_ptr()
         var my_p2p_rank = my_rank % Int32(p2p_world_size)
 
-        if block_idx.x < UInt(dispatch_impl.n_offset_sms):
+        if block_idx.x < dispatch_impl.n_offset_sms:
             var reserved_shared_expert_tokens: UInt32 = 0
 
             comptime if fused_shared_expert:
@@ -3208,8 +3202,8 @@ def fused_silu_kernel[
         output_dim % simd_width == 0
     ), "Output dimension must be divisible by the SIMD width."
 
-    var tid = Int(thread_idx.x)
-    var bid = Int(block_idx.x)
+    var tid = thread_idx.x
+    var bid = block_idx.x
     var gid = tid + bid * num_threads
 
     with PDL():
@@ -3308,15 +3302,15 @@ def fused_silu_fp8_kernel[
 
     # Scatter processing of a single token across different thread blocks
     # to improve the memory access performance.
-    var global_warp_id = block_idx.x + warp_id() * UInt(num_sms)
-    var gid = lane_id() + global_warp_id * UInt(WARP_SIZE)
+    var global_warp_id = block_idx.x + warp_id() * num_sms
+    var gid = lane_id() + global_warp_id * WARP_SIZE
 
     with PDL():
         var num_tokens = row_offsets[row_offsets.static_shape[0] - 1]
         var num_elem = num_tokens * UInt32(output_dim)
 
         for i in range(
-            Int(gid),
+            gid,
             Int(num_elem // UInt32(simd_width)),
             num_threads * num_sms,
         ):
@@ -3344,7 +3338,7 @@ def fused_silu_fp8_kernel[
             output_tensor.store((Idx(m), Idx(k)), output_val.cast[fp8_dtype]())
 
             # The first thread in each group stores the scale factor.
-            if lane_id() % UInt(n_threads_per_group) == 0:
+            if umod(lane_id(), n_threads_per_group) == 0:
                 scales_tensor.store(
                     (Idx(k // group_size), Idx(m)),
                     scale_factor.cast[scales_dtype](),
@@ -3434,13 +3428,13 @@ def fused_silu_nvfp4_kernel[
         input_scales.static_shape[0] == n_groups
     ), "input_scales must match number of expert groups."
 
-    var tid = Int(thread_idx.x)
-    var sm_id = Int(block_idx.x)
+    var tid = thread_idx.x
+    var sm_id = block_idx.x
     var group_id, sm_id_in_group = divmod(sm_id, n_sms_per_group)
     var tid_in_group = (
         lane_id()
-        + UInt(sm_id_in_group) * UInt(WARP_SIZE)
-        + warp_id() * UInt(WARP_SIZE) * UInt(n_sms_per_group)
+        + sm_id_in_group * WARP_SIZE
+        + warp_id() * WARP_SIZE * n_sms_per_group
     )
     if group_id >= n_groups:
         return
@@ -3465,7 +3459,7 @@ def fused_silu_nvfp4_kernel[
         var tensor_sf = rebind[Float32](input_scales[group_id])
 
         for group_linear in range(
-            Int(tid_in_group),
+            tid_in_group,
             n_threads_per_token * expert_m,
             num_threads * n_sms_per_group,
         ):
@@ -3521,7 +3515,7 @@ def fused_silu_nvfp4_kernel[
                 expert_m % SF_MN_GROUP_SIZE
             )
             for i in range(
-                Int(tid_in_group),
+                tid_in_group,
                 scales_simds_per_tok * tokens_to_zero_pad,
                 num_threads * n_sms_per_group,
             ):
