@@ -640,6 +640,48 @@ void M::KGEN::addLLVMIRDowngradePass(llvm::ModulePassManager &mpm) {
   mpm.addPass(LLVMIRDowngradePass());
 }
 
+void M::KGEN::registerKGENLLVMPasses(PassBuilder &passBuilder) {
+  passBuilder.registerPipelineParsingCallback(
+      [](StringRef name, ModulePassManager &mpm,
+         ArrayRef<PassBuilder::PipelineElement>) -> bool {
+        if (name == "kgen-metal-air") {
+          mpm.addPass(MetalAIRPass());
+          return true;
+        }
+        if (name == "kgen-pointer-rewriter") {
+          mpm.addPass(PointerRewriter());
+          return true;
+        }
+        if (name == "kgen-metal-verifier") {
+          mpm.addPass(MetalVerifierPass());
+          return true;
+        }
+        if (name == "kgen-metal-rewrite-di") {
+          mpm.addPass(MetalRewriteDebugInfoPass());
+          return true;
+        }
+        if (name == "kgen-llvmir-downgrade") {
+          mpm.addPass(LLVMIRDowngradePass());
+          return true;
+        }
+        if (name == "kgen-set-function-attrs") {
+          mpm.addPass(SetFunctionAttributes());
+          return true;
+        }
+        return false;
+      });
+
+  passBuilder.registerPipelineParsingCallback(
+      [](StringRef name, FunctionPassManager &fpm,
+         ArrayRef<PassBuilder::PipelineElement>) -> bool {
+        if (name == "kgen-instruction-rewrite") {
+          fpm.addPass(InstructionRewritePass());
+          return true;
+        }
+        return false;
+      });
+}
+
 bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,
                                   TargetMachine &targetMachine,
                                   llvm::legacy::PassManagerBase &pm,
