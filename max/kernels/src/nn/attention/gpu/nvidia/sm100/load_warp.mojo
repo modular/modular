@@ -14,6 +14,7 @@
 
 from std.sys import size_of
 from std.gpu.memory import CacheEviction
+from layout.tma_async import SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
@@ -61,6 +62,7 @@ def fa4_load[
         depth=config.qk_depth,
         group=config.group,
         decoding=False,
+        fuse_gqa=config.fuse_gqa,
         num_qk_stages=config.num_qk_stages,
     ],
     k_tma_op: KVTMATile[
@@ -83,6 +85,8 @@ def fa4_load[
     comptime BN = config.BN
     comptime HalfBM = BM // 2
     comptime group = config.group
+    comptime fuse_gqa = config.fuse_gqa
+    comptime BM_mask: Int = config.BM_eff()
     comptime page_size = KVLUTType.page_size
     comptime ragged = not ValidLengthType.is_null
 
@@ -104,35 +108,61 @@ def fa4_load[
     # If two-qo, we produce qkv in a pattern of
     # q0 & k0, q1, v0, k1, v1, k2, v2...
     # TMA only uses .ptr — flat row_major TileTensor is sufficient.
-    comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
-        q_tma_op
-    ).tile_shape[1] * type_of(q_tma_op).tile_shape[2]
+    # q_elements = HalfBM * BK0 regardless of fuse_gqa
+    # (fused: BM//(2*group) * group * BK0 = HalfBM * BK0)
+    comptime q_elements = HalfBM * config.BK0
     comptime QType = TileTensor[
         KVLUTType.dtype,
-        type_of(tt_row_major[q_elems]()),
+        type_of(tt_row_major[q_elements]()),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
 
-    var kv_head_idx: UInt32 = seq_info.head_idx // UInt32(group)
+    var kv_head_idx: UInt32
+    comptime if fuse_gqa:
+        kv_head_idx = seq_info.head_idx
+    else:
+        kv_head_idx = seq_info.head_idx // UInt32(group)
 
     var q_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
         smem.q_smem()
     )
-    comptime q_elements = HalfBM * config.BK0
-    comptime assert q_elements == q_elems
     comptime q_bytes = size_of[qkv_type]() * q_elements
 
     var q_gmem_row: UInt32 = PositionType.get_q_gmem_row[ragged=ragged](
         seq_info, max_seq_len
     )
-    var q_head_idx: UInt32 = seq_info.head_idx
     e = elect()
 
-    var kv_row: UInt32 = mask.start_column[BM, BN, page_size](score_row)
+    @parameter
+    @always_inline
+    def q_async_copy[
+        eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
+    ](
+        smem_dst: QType,
+        ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
+        depth_idx: UInt32 = 0,
+    ):
+        comptime if fuse_gqa:
+            q_tma_op.async_copy[eviction_policy=eviction_policy](
+                smem_dst,
+                mbar,
+                StaticTuple[UInt32, 4](depth_idx, 0, kv_head_idx, q_gmem_row),
+            )
+        else:
+            q_tma_op.async_copy[eviction_policy=eviction_policy](
+                smem_dst,
+                mbar,
+                StaticTuple[UInt32, 3](
+                    depth_idx, seq_info.head_idx, q_gmem_row
+                ),
+            )
+
+    var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](score_row)
     var kv_gmem_row: UInt32 = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
     var iter_count: UInt32 = (
-        mask.last_masked_set_end[BM, BN, page_size](score_row, num_keys) - 1
+        mask.last_masked_set_end[BM_mask, BN, page_size](score_row, num_keys)
+        - 1
     )
 
     comptime if config.use_fused_kv:
@@ -178,10 +208,9 @@ def fa4_load[
             k0_mbar[].expect_bytes(Int32(qk_fused_bytes))
         # Copy Q0
         if e != 0:
-            q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
-                QType(q_smem, tt_row_major[q_elems]()),
+            q_async_copy(
+                QType(q_smem, tt_row_major[q_elements]()),
                 k0_mbar[],
-                StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
             )
         # Copy K0
         if e != 0:
@@ -197,16 +226,18 @@ def fa4_load[
         kv_pipeline.state.step()  # step -> stage 1
 
         # ---- Q1 (separate barrier) ----
-        q_gmem_row += UInt32(HalfBM)
+        comptime if fuse_gqa:
+            q_gmem_row += UInt32(HalfBM // group)
+        else:
+            q_gmem_row += UInt32(HalfBM)
         var q1_mbar = mbars.q1_wait_mbar()
         if e != 0:
             q1_mbar[0].expect_bytes(Int32(q_bytes))
         if e != 0:
             comptime q1_smem_offset = q_elements * 1  # num_qk_stages=1
-            q_tma_op.async_copy(
-                QType(q_smem + q1_smem_offset, tt_row_major[q_elems]()),
+            q_async_copy(
+                QType(q_smem + q1_smem_offset, tt_row_major[q_elements]()),
                 q1_mbar[0],
-                StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
             )
 
         # ---- V0 ----
@@ -226,7 +257,7 @@ def fa4_load[
             )
         kv_pipeline.state.step()
 
-        comptime check_mask = mask.nonfull_sets[BM, BN]()[
+        comptime check_mask = mask.nonfull_sets[BM_mask, BN]()[
             0
         ] == TileMaskStatus.UNKNOWN_MASK
 
@@ -239,7 +270,7 @@ def fa4_load[
                 if (
                     mask.status(
                         Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                        Index[dtype=DType.int32](BM, BN),
+                        Index[dtype=DType.int32](BM_mask, BN),
                     )
                     == TileMaskStatus.FULL_MASK
                 ):
@@ -302,10 +333,9 @@ def fa4_load[
             mbark0.mbar[].expect_bytes(Int32(qk_bytes))
         # copy q0
         if e != 0:
-            q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
-                QType(q_smem, tt_row_major[q_elems]()),
+            q_async_copy(
+                QType(q_smem, tt_row_major[q_elements]()),
                 mbark0.mbar[],
-                StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
             )
         # copy k0
         if e != 0:  # K0
@@ -321,14 +351,13 @@ def fa4_load[
             if e != 0:
                 mbark.mbar[].expect_bytes(Int32(qk_bytes))
             if e != 0:
-                q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
+                q_async_copy(
                     QType(
-                        q_smem + q_elements * qk_stage, tt_row_major[q_elems]()
+                        q_smem + q_elements * qk_stage,
+                        tt_row_major[q_elements](),
                     ),
                     mbark.mbar[],
-                    StaticTuple[UInt32, 3](
-                        UInt32(d_idx), q_head_idx, q_gmem_row
-                    ),
+                    depth_idx=UInt32(d_idx),
                 )
             if e != 0:
                 k_tma_op.async_copy(
@@ -341,7 +370,10 @@ def fa4_load[
 
         pipeline_k.commit_step()
         # Q1
-        q_gmem_row += UInt32(HalfBM)
+        comptime if fuse_gqa:
+            q_gmem_row += UInt32(HalfBM // group)
+        else:
+            q_gmem_row += UInt32(HalfBM)
         var q1_mbar = mbars.q1_wait_mbar()
 
         comptime for qk_stage in range(config.num_qk_stages):
@@ -352,12 +384,10 @@ def fa4_load[
             if e != 0:
                 q1_mbar[qk_stage].expect_bytes(Int32(q_bytes))
             if e != 0:
-                q_tma_op.async_copy(
-                    QType(q_smem + q_smem_offset, tt_row_major[q_elems]()),
+                q_async_copy(
+                    QType(q_smem + q_smem_offset, tt_row_major[q_elements]()),
                     q1_mbar[qk_stage],
-                    StaticTuple[UInt32, 3](
-                        UInt32(d_idx), q_head_idx, q_gmem_row
-                    ),
+                    depth_idx=UInt32(d_idx),
                 )
         # copy v0
         mbarv0 = pipeline_v.get_v(e)
@@ -368,7 +398,7 @@ def fa4_load[
                 StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
             )
         pipeline_v.commit_step()
-        comptime check_mask = mask.nonfull_sets[BM, BN]()[
+        comptime check_mask = mask.nonfull_sets[BM_mask, BN]()[
             0
         ] == TileMaskStatus.UNKNOWN_MASK
         # kv producer loop
@@ -380,7 +410,7 @@ def fa4_load[
                 if (
                     mask.status(
                         Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                        Index[dtype=DType.int32](BM, BN),
+                        Index[dtype=DType.int32](BM_mask, BN),
                     )
                     == TileMaskStatus.FULL_MASK
                 ):

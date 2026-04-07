@@ -160,6 +160,7 @@ __extension SM100MLA:
             Self.config.output_swizzle_mode,
             BM=Self.config.fa4_config.BM // 2,
             BN=Self.config.fa4_config.ov_depth,
+            group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: Self.KRopeType,

@@ -46,6 +46,7 @@ def fa4_mma[
     comptime BM = config.BM
     comptime BN = config.BN
     comptime HalfBM = BM // 2
+    comptime BM_mask: Int = config.BM_eff()
     comptime num_qk_stages = config.num_qk_stages
     comptime num_pv_stages = config.num_pv_stages
 
@@ -135,7 +136,7 @@ def fa4_mma[
 
         # We peel the first iteration, as we want to wait on q1
         var iter_count: UInt32 = (
-            mask.total_iters[BM, BN, page_size](score_row, num_keys) - 1
+            mask.total_iters[BM_mask, BN, page_size](score_row, num_keys) - 1
         )
 
         e = elect()
@@ -235,7 +236,7 @@ def fa4_mma[
 
         # We peel the first iteration, as we want to wait on q1
         var iter_count: UInt32 = (
-            mask.total_iters[BM, BN, page_size](score_row, num_keys) - 1
+            mask.total_iters[BM_mask, BN, page_size](score_row, num_keys) - 1
         )
 
         # Q_0 @ K_0' (staged over num_qk_stages)
