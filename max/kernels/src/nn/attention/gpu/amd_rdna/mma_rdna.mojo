@@ -27,7 +27,11 @@ from std.gpu.compute.mma import mma as _mma_intrinsic
 from layout import IntTuple, Layout
 from layout.tensor_core import TiledTensorCore
 
-from .buffers import KVBuffer, RegisterBuffer, RegisterMMABuffer
+from nn.attention.gpu.amd.buffers import (
+    KVBuffer,
+    RegisterBuffer,
+    RegisterMMABuffer,
+)
 from .buffers_rdna import RDNA_AB_FRAG_SIZE, RDNA_CD_FRAG_SIZE
 
 

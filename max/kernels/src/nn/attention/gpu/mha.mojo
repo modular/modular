@@ -85,8 +85,8 @@ from std.memory import stack_allocation
 from .amd.mha_gfx942 import MHAAttentionConfig
 from .amd.mha_gfx950 import Attention
 from .amd.mha_structured import Attention
-from .amd.mha_rdna import MHAAttentionConfigRDNA
-from .amd.attention_rdna import AttentionRDNA
+from .amd_rdna.mha_rdna import MHAAttentionConfigRDNA
+from .amd_rdna.attention_rdna import AttentionRDNA
 from nn.attention.mha_mask import (
     CausalMask,
     MaterializedMask,
