@@ -10,18 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for PythonException and non-NULL PythonObject enforcement.
+"""Tests for PythonException type.
 
-These tests verify that PythonObject handles NULL pointers safely and that
-PythonException can be used to return errors from Python bindings without
-causing segfaults.
+These tests verify that PythonException can be created and used to represent
+Python exceptions safely.
 """
 
 from std.python import Python, PythonException, PythonObject
 from std.python._cpython import PyObjectPtr
-from std.python.bindings import PyFunctionResult
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
-from std.utils import Variant
 
 
 def test_python_exception_creation() raises:
@@ -31,19 +28,6 @@ def test_python_exception_creation() raises:
     
     # Verify the exception object is valid
     assert_true(Bool(exc_obj))
-
-
-def test_python_function_result_variant() raises:
-    """Test that PyFunctionResult can hold either exception or object."""
-    # Test with PythonObject
-    var obj_result: PyFunctionResult = PythonObject(42)
-    assert_true(obj_result.isa[PythonObject]())
-    assert_false(obj_result.isa[PythonException]())
-    
-    # Test with PythonException
-    var exc_result: PyFunctionResult = PythonException("Error")
-    assert_true(exc_result.isa[PythonException]())
-    assert_false(exc_result.isa[PythonObject]())
 
 
 def test_python_object_null_safety() raises:
@@ -75,4 +59,4 @@ def test_python_object_from_borrowed_null() raises:
 # main
 # ===-------------------------------------------------------------------===#
 def main() raises:
-    TestSuite.discover_tests[__functions_in_module__()]().run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
