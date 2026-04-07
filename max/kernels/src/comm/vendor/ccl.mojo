@@ -221,7 +221,7 @@ def _ccl_broadcast(
 @always_inline
 def _ccl_stream_ptr(
     ctx: DeviceContext,
-) raises -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+) raises -> OpaquePointer[ExternalOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
         return bitcast[NoneType](HIP(ctx.stream()))
     else:
