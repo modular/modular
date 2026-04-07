@@ -122,8 +122,9 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 context.negative_tokens.array
             ).to(self.text_encoder.devices[0])
 
-        diff_cfg = self.pipeline_config.model.diffusers_config or {}
-        is_distilled = bool(diff_cfg.get("is_distilled", False))
+        is_distilled = bool(
+            self.pipeline_config.models.metadata.get("is_distilled", False)
+        )
         do_classifier_free_guidance = (
             negative_tokens is not None
             and context.guidance_scale > 1.0
