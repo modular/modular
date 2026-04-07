@@ -9291,10 +9291,11 @@ def _layout_transform_conv_filter_from_fcrs[
 ):
     comptime assert packed_rank == filter_rank + 1
 
-    # Transpose FCRS→RSCF using actual dtype (needs correct element sizes),
-    # then pack RSCF→FRSCf using int64 reinterpretation (matches pack_filter).
+    # With the compiler-level FCRS→RSCF transpose in PatternFusion,
+    # this kernel should no longer be called. But keep it as a fallback
+    # using int64 convention (same as the RSCF path).
     _pack_conv_filter_from_fcrs(
-        filter.to_tile_tensor[dtype](),
+        filter.to_tile_tensor[DType.int64](),
         packed_filter.to_tile_tensor[DType.int64](),
         num_groups,
     )
@@ -9330,6 +9331,9 @@ struct LayoutTransformRSCF2FRSCf:
         )
 
 
+# Note: These FCRS/FCQRS kernels are currently unused — the compiler
+# transposes FCRS to RSCF in PatternFusion before packing, so only the
+# RSCF kernels above are invoked. Kept as fallback; can be removed in cleanup.
 @compiler.register("layout_transform_FCRS_to_FRSCf")
 struct LayoutTransformFCRS2FRSCf:
     @always_inline
