@@ -22,7 +22,6 @@ _MACOS_INCOMPATIBLE_TESTS = [
         size = "large",
         srcs = [src],
         tags = [
-            "manual",  # FIXME: MODELS-1295
             "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
         ] + (
             ["external-exclusive"] if src in [
