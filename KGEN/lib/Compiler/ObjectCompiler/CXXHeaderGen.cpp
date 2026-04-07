@@ -113,7 +113,11 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
 
     if (failed(getCTypeForType(func, array.getElementType(), types)))
       return failure();
-    types.back() += ("[" + Twine(*array.getResolvedSize()) + "]").str();
+    // Size-1 arrays are ABI-compatible with the scalar element type,
+    // so omit the [1] suffix (e.g. Optional[NonNullUnsafePointer] lowers
+    // to array<1, pointer> but should emit as `void *` in the C header).
+    if (*array.getResolvedSize() != 1)
+      types.back() += ("[" + Twine(*array.getResolvedSize()) + "]").str();
     return success();
   }
 
