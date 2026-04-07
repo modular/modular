@@ -175,7 +175,6 @@ select _Runtime > Change runtime type > [GPU]_.
 from std.gpu.host import DeviceContext
 
 def kernel():
-    # This call does not work on Apple Silicon
     print("Hello from the GPU")
 
 def main() raises:
@@ -191,13 +190,9 @@ Output:
 Hello from the GPU
 ```
 
-### Hello, Apple Silicon
+### Example: Hello writing
 
-On Apple Silicon, `print()` isn't available inside GPU kernels. But you
-can still say hello.
-
-Instead of printing from the kernel, write a value to device memory and
-read it back on the host:
+This example writes a value to device memory and reads it back on the host:
 
 ```mojo
 %%mojo
@@ -221,11 +216,15 @@ def main() raises:
 
         # Report the result
         with out.map_to_host() as out_host:
-            print("GPU responded:", "👋, 🔥" if out_host[0] == `✅` else "😢")
+            print("GPU responded:", \
+                "👋, 🔥" if out_host[0] == `✅` else "😢")
 ```
 
-While `print()` isn't supported inside Apple Silicon GPU kernels,
-the final report runs on the CPU and is safe to run.
+Output:
+
+```output
+👋, 🔥
+```
 
 ### Example: GPU vector addition
 
