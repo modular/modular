@@ -733,7 +733,11 @@ struct List[T: Copyable](
             index=len(self), src=self.unsafe_ptr(), length=self._len
         )
 
-    def take_items(mut self) -> _ListTakeIter[Self.T, origin_of(self)]:
+    def take_items(
+        mut self,
+    ) -> _ListTakeIter[Self.T, origin_of(self)] where conforms_to(
+        Self.T, ImplicitlyDestructible
+    ):
         """Iterate over the list's elements and move them out of the list,
         effectively draining the list.
 
@@ -747,10 +751,13 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        var my_list = List[String]("a", "b", "c")
+        var my_list = List[String]()
+        my_list.append("a")
+        my_list.append("b")
+        my_list.append("c")
 
         for element in my_list.take_items():
-            print(element[])  # prints a, then b, then c
+            print(element)  # prints a, then b, then c
 
         print(len(my_list))  # prints 0
         ```
