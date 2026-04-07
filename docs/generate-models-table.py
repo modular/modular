@@ -42,6 +42,11 @@ INIT_FILE = ARCH_BASE / "__init__.py"
 
 OUTPUT_FILE = REPO_ROOT / "oss" / "modular" / "docs" / "max" / "models.mdx"
 
+GITHUB_ARCH_URL = (
+    "https://github.com/modular/modular/tree/main/"
+    "max/python/max/pipelines/architectures"
+)
+
 OUTPUT_LABELS: dict[str, str] = {
     "TEXT_GENERATION": "text",
     "EMBEDDINGS_GENERATION": "embeddings",
@@ -270,6 +275,7 @@ def collect_architectures() -> list[dict[str, Any]]:
         parsed = parse_arch_file(arch_path)
         for arch in parsed:
             if arch["var_name"] in var_names:
+                arch["module_name"] = module_name
                 all_archs.append(arch)
 
     return all_archs
@@ -318,6 +324,7 @@ def merge_architectures(archs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             insert_order.append(display_name)
             grouped[display_name] = {
                 "name": display_name,
+                "module_name": arch["module_name"],
                 "example_repo_ids": list(arch["example_repo_ids"]),
                 "modality_context_pairs": {
                     (arch["modality"], arch["context_type"])
@@ -388,9 +395,12 @@ def format_table(archs: list[dict[str, Any]]) -> str:
 
         multi_gpu = "Yes" if arch["multi_gpu_supported"] else "No"
 
+        arch_url = f"{GITHUB_ARCH_URL}/{arch['module_name']}"
+
         lines.append(f"{ind}{ind}<tr>")
         lines.append(
-            f"{ind}{ind}{ind}<td className='arch'><code>{display_name}</code></td>"
+            f"{ind}{ind}{ind}<td className='arch'>"
+            f'<a href="{arch_url}"><code>{display_name}</code></a></td>'
         )
         lines.append(f"{ind}{ind}{ind}<td className='models'>")
         lines.append(examples_inner)
