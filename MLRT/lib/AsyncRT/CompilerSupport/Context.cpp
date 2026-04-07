@@ -10,16 +10,7 @@
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/MDialect/MDialect.h"
 
-#include <mutex>
-
 using namespace M;
-
-namespace {
-std::mutex &getRegisterContextOnMLIRMutex() {
-  static std::mutex mutex;
-  return mutex;
-}
-} // namespace
 
 //===---------------------------------------------------------------------===//
 // MContextExtension
@@ -78,11 +69,8 @@ void M::registerContext(mlir::DialectRegistry &registry, ContextRef &ref,
 
 void M::registerContext(mlir::MLIRContext &ctx, ContextRef &ref,
                         bool enableThreadPool) {
-  std::lock_guard<std::mutex> guard(getRegisterContextOnMLIRMutex());
-
   DialectRegistry registry;
   registerContext(registry, ref, enableThreadPool);
-
   ctx.appendDialectRegistry(registry);
 }
 
