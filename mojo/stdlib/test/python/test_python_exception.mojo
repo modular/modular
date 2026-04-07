@@ -25,7 +25,7 @@ def test_python_exception_creation() raises:
     """Test that PythonException can be created from an error message."""
     var exc = PythonException("Test error message")
     var exc_obj = exc.get_exception_object()
-    
+
     # Verify the exception object is valid
     assert_true(Bool(exc_obj))
 
@@ -35,11 +35,11 @@ def test_python_object_null_safety() raises:
     # Create a PythonObject with a NULL pointer
     var null_ptr = PyObjectPtr()
     assert_false(Bool(null_ptr))  # Verify it's NULL
-    
+
     # Creating from NULL should be handled gracefully
     # The object should be safely destructible even with NULL pointer
     var obj = PythonObject(from_owned=null_ptr)
-    
+
     # Destructor should not crash
     _ = obj^  # Destroys the object
 
@@ -47,10 +47,10 @@ def test_python_object_null_safety() raises:
 def test_python_object_from_borrowed_null() raises:
     """Test that from_borrowed handles NULL gracefully."""
     var null_ptr = PyObjectPtr()
-    
+
     # This should not crash - the NULL check should prevent issues
     var obj = PythonObject(from_borrowed=null_ptr)
-    
+
     # Destructor should handle NULL safely
     _ = obj^
 
