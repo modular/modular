@@ -34,7 +34,7 @@ struct KernelFunction[
 struct KernelArgPack[kernel: KernelFunction[_]]:
     var pointers: InlineArray[
         MutOpaquePointer[MutExternalOrigin],
-        Variadic.size_types[Self.kernel.declared_arg_types],
+        TypeList[*Self.kernel.declared_arg_types].size,
     ]
 
     def __init__(out self):
@@ -69,7 +69,7 @@ def wrapped_entry_point[
     ]
     var ptr_tuple: UnsafePointerTupleType = {}
 
-    comptime for i in range(Variadic.size_types[kernel.declared_arg_types]):
+    comptime for i in range(TypeList[*kernel.declared_arg_types].size):
         comptime ArgType = kernel.declared_arg_types[i]
         comptime if looks_like_pointer[ArgType]():
             ptr_tuple[i] = rebind[type_of(ptr_tuple[i])](
@@ -101,7 +101,7 @@ def invoke_kernel[
     *args: * kernel.declared_arg_types,
 ) -> kernel.declared_ret_type:
     var pa = KernelArgPack[kernel]()
-    comptime for i in range(Variadic.size_types[kernel.declared_arg_types]):
+    comptime for i in range(TypeList[*kernel.declared_arg_types].size):
         comptime ArgType = kernel.declared_arg_types[i]
         comptime if looks_like_pointer[ArgType]():
             pa.pointers[i] = rebind[MutOpaquePointer[MutExternalOrigin]](

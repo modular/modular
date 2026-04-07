@@ -924,12 +924,59 @@ trait ImplicitlyDestructible:
 
 
 struct ParameterList[type: AnyType, //, *values: type](TrivialRegisterPassable):
+    comptime size: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
+            `> : index`,
+        ]
+    )
+
     def __init__(out self):
         pass
 
     @always_inline
     def __getitem__(self, idx: Int) -> Self.type:
         pass
+
+    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+        `#kgen.variadic.get<:`,
+        type_of(Self.values),
+        ` `,
+        +Self.values,
+        `, `,
+        idx._mlir_value,
+        `> : `,
+        +Self.type,
+    ]
+
+
+@fieldwise_init
+struct TypeList[type: type_of(AnyType), //, *values: type](
+    TrivialRegisterPassable
+):
+    comptime size: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
+            `> : index`,
+        ]
+    )
+
+    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+        `#kgen.variadic.get<:`,
+        type_of(Self.values),
+        ` `,
+        +Self.values,
+        `, `,
+        idx._mlir_value,
+        `> : `,
+        +Self.type,
+    ]
 
 
 @fieldwise_init

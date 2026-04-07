@@ -23,18 +23,6 @@ struct Variadic:
         ]
     )
 
-    comptime size_types[
-        T: type_of(AnyType), //, seq: Self.TypesOfTrait[T]
-    ]: Int = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
-            type_of(seq),
-            ` `,
-            +seq,
-            `> : index`,
-        ]
-    )
-
     # ===-----------------------------------------------------------------------===#
     # Utils
     # ===-----------------------------------------------------------------------===#
@@ -147,9 +135,9 @@ struct Variadic:
         //,
         element_types: Variadic.TypesOfTrait[T],
         start: Int where start >= 0 = 0,
-        end: Int where (
-            start <= end <= Variadic.size_types[element_types]
-        ) = Variadic.size_types[element_types],
+        end: Int where start <= end <= TypeList[*element_types].size = TypeList[
+            *element_types
+        ].size,
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
         ParamListType=element_types,
@@ -429,7 +417,7 @@ comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],
     idx: Int,
-] = element_types[Variadic.size_types[element_types] - 1 - idx]
+] = element_types[TypeList[*element_types].size - 1 - idx]
 comptime _ContainsReducer[
     Trait: type_of(AnyType),
     Type: Trait,
