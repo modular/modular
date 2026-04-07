@@ -26,6 +26,7 @@ from std.format.tstring import TString
 from std.io import FileDescriptor
 from std.ffi import c_char, c_int, external_call, get_errno, _CPointer
 from std.reflection import SourceLocation, call_location
+from std.gpu import thread_idx, block_idx
 from std.sys import CompilationTarget, is_gpu
 
 from .path import isdir, split
@@ -248,8 +249,41 @@ def abort() -> Never:
 def _abort_impl[
     *, prefix: StaticString
 ](message: Some[Writable], *, location: Optional[SourceLocation] = {}) -> Never:
-    comptime if not is_gpu():
-        var loc = location.or_else(call_location[inline_count=2]())
+    var loc = location.or_else(call_location[inline_count=2]())
+
+    comptime if is_gpu():
+        # On GPU, gate the print to a single thread to avoid flooding the
+        # printf buffer with identical messages from thousands of threads.
+        if (
+            thread_idx.x == 0
+            and thread_idx.y == 0
+            and thread_idx.z == 0
+            and block_idx.x == 0
+            and block_idx.y == 0
+            and block_idx.z == 0
+        ):
+            print(
+                prefix,
+                " ",
+                loc,
+                ": block: [",
+                block_idx.x,
+                ",",
+                block_idx.y,
+                ",",
+                block_idx.z,
+                "] thread: [",
+                thread_idx.x,
+                ",",
+                thread_idx.y,
+                ",",
+                thread_idx.z,
+                "]: ",
+                message,
+                sep="",
+                flush=True,
+            )
+    else:
         print(prefix, " ", loc, ": ", message, sep="", flush=True)
 
     abort()
