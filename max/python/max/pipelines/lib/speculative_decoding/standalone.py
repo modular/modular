@@ -25,11 +25,11 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 
+from ..pipeline_variants.utils import build_response
 from ..sampling import SamplerInputs, apply_logits_processors
 from .base import SpeculativeDecodingMetrics, SpeculativeDecodingPipelineBase
 from .utils import (
     ModelInputsWithTokensAndOffsets,
-    build_response,
     compute_max_num_draft_steps,
     update_contexts_and_compute_metrics_standalone,
 )
@@ -316,10 +316,12 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 num_draft_tokens_generated=num_draft_tokens_generated,
             )
         )
-        self._metrics.update(
+        metrics = SpeculativeDecodingMetrics(
+            num_speculative_tokens=self._num_draft_steps,
             draft_tokens_accepted=draft_tokens_accepted,
             draft_tokens_generated=draft_tokens_generated,
         )
+        self._metrics.update(metrics=metrics)
 
         res = build_response(
             context_batch=context_batch, max_seq_len=self._max_seq_len
