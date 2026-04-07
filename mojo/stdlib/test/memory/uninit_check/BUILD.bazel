@@ -1,0 +1,82 @@
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# Crash tests: each file loads a poison pattern and expects the process to
+# abort. These use mojo_filecheck_test with expect_crash = True so the test
+# harness verifies the crash output matches the CHECK directives.
+_CRASH_TESTS = [
+    "test_uninit_check_float32_host_poison.mojo",
+    "test_uninit_check_float32_device_poison.mojo",
+    "test_uninit_check_float16_host_poison.mojo",
+    "test_uninit_check_bfloat16_host_poison.mojo",
+    "test_uninit_check_float64_host_poison.mojo",
+    "test_uninit_check_float8_e4m3fn_host_poison.mojo",
+    "test_uninit_check_float8_e5m2_host_poison.mojo",
+    "test_uninit_check_simd_vector_poison.mojo",
+    "test_uninit_check_masked_load_poison.mojo",
+    "test_uninit_check_gather_poison.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+            "-D",
+            "MOJO_STDLIB_SIMD_UNINIT_CHECK=true",
+        ],
+        expect_crash = True,
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _CRASH_TESTS
+]
+
+# Non-crash test: verifies no false positives for legitimate values.
+# Compiled with MOJO_STDLIB_SIMD_UNINIT_CHECK=true — these loads must NOT abort.
+mojo_test(
+    name = "test_uninit_check_no_false_positives.mojo.test",
+    srcs = ["test_uninit_check_no_false_positives.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+        "-D",
+        "MOJO_STDLIB_SIMD_UNINIT_CHECK=true",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# Disabled-by-default test: compiled WITHOUT -D MOJO_STDLIB_SIMD_UNINIT_CHECK=true.
+# Loading poison values should NOT crash when the check is disabled.
+mojo_test(
+    name = "test_uninit_check_disabled.mojo.test",
+    srcs = ["test_uninit_check_disabled.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)

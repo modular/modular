@@ -54,6 +54,7 @@ from std.gpu import lane_id
 from std.math.uutils import ufloordiv, umod
 
 from std.memory.unsafe import bitcast
+from std.memory._poison import _check_not_poison
 
 from .memory.memory import CacheOperation, _int_to_str
 
@@ -924,7 +925,7 @@ def load_acquire[
             dtype
         ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
         comptime scope_str = scope.mnemonic()
-        return inlined_assembly[
+        var result = inlined_assembly[
             "ld.acquire."
             + ((scope_str + ".") if scope_str else "")
             + "global."
@@ -933,11 +934,17 @@ def load_acquire[
             Scalar[dtype],
             constraints=constraints,
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
+        comptime if dtype.is_floating_point():
+            _check_not_poison[dtype, 1](result)
+        return result
     elif is_amd_gpu():
-        return __mlir_op.`pop.load`[
+        var result = __mlir_op.`pop.load`[
             alignment=alignment._mlir_value,
             ordering=Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
+        comptime if dtype.is_floating_point():
+            _check_not_poison[dtype, 1](result)
+        return result
     elif is_apple_gpu():
         comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
         comptime mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
@@ -957,6 +964,8 @@ def load_acquire[
             _AirMemOrder.SeqCst,
             air_scope,
         )
+        comptime if dtype.is_floating_point():
+            _check_not_poison[dtype, 1](value)
         return value
     else:
         CompilationTarget.unsupported_target_error[
@@ -997,7 +1006,7 @@ def load_relaxed[
             dtype
         ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
         comptime scope_str = scope.mnemonic()
-        return inlined_assembly[
+        var result = inlined_assembly[
             "ld.relaxed."
             + ((scope_str + ".") if scope_str else "")
             + "global."
@@ -1006,11 +1015,17 @@ def load_relaxed[
             Scalar[dtype],
             constraints=constraints,
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
+        comptime if dtype.is_floating_point():
+            _check_not_poison[dtype, 1](result)
+        return result
     elif is_amd_gpu():
-        return __mlir_op.`pop.load`[
+        var result = __mlir_op.`pop.load`[
             alignment=alignment._mlir_value,
             ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](ptr.address)
+        comptime if dtype.is_floating_point():
+            _check_not_poison[dtype, 1](result)
+        return result
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
@@ -1088,11 +1103,14 @@ def load_volatile[
     comptime constraints = "=" + _get_nvtx_register_constraint[
         dtype
     ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-    return inlined_assembly[
+    var result = inlined_assembly[
         "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
         Scalar[dtype],
         constraints=constraints,
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
+    comptime if dtype.is_floating_point():
+        _check_not_poison[dtype, 1](result)
+    return result
 
 
 struct AMDBufferResource(TrivialRegisterPassable):

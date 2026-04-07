@@ -21,6 +21,7 @@ from std.sys import PrefetchLocality
 
 import std.math
 from std.collections.string.string_slice import _get_kgen_string
+from std.memory._poison import _check_not_poison_masked
 from std.sys.info import _is_sm_9x_or_newer, is_gpu
 
 
@@ -162,7 +163,10 @@ def gather[
         passthrough,
     )
     _ = base
-    return SIMD(mlir_value=result)
+    var loaded = SIMD[dtype, size](mlir_value=result)
+    comptime if dtype.is_floating_point():
+        _check_not_poison_masked[dtype, size](loaded, mask)
+    return loaded
 
 
 # ===-----------------------------------------------------------------------===#
@@ -545,12 +549,15 @@ def masked_load[
     comptime if size == 1:
         return addr.load() if mask else passthrough[0]
 
-    return llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
+    var result = llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
         addr.bitcast[NoneType]().address,
         Int32(alignment),
         mask,
         passthrough,
     )
+    comptime if dtype.is_floating_point():
+        _check_not_poison_masked[dtype, size](result, mask)
+    return result
 
 
 # ===-----------------------------------------------------------------------===#

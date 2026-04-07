@@ -73,6 +73,14 @@ This version is still a work in progress.
 - Fixed default alignment in `TileTensor.load()` and `TileTensor.store()` to
   use the caller-specified `width` parameter instead of `Self.element_size`.
 
+- Added uninitialized memory read detection for float loads. When compiled
+  with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`, every float load is checked
+  against the debug allocator's poison patterns (0xFF host fill and canonical
+  qNaN device fill). A match triggers `abort()` with a descriptive message.
+  When disabled (the default), zero runtime overhead. For MAX pipelines, set
+  `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` to enable both the debug
+  allocator and the load-time checks automatically.
+
 - Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
   targets at compile time. `is_apple_silicon()` now includes M5 in its check.
 

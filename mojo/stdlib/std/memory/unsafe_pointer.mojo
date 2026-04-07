@@ -39,6 +39,7 @@ from std.memory import memcpy
 from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
 from std.memory._nonnull import NonNullUnsafePointer
+from std.memory._poison import _check_not_poison, _check_not_poison_masked
 from std.os import abort
 from std.python import PythonObject
 
@@ -1141,6 +1142,8 @@ struct UnsafePointer[
                     isInvariant=invariant._mlir_value,
                     isNonTemporal=non_temporal._mlir_value,
                 ]((self + i).address)
+            comptime if dtype.is_floating_point():
+                _check_not_poison[dtype, width](v)
             return v
         elif dtype == DType.bool and width > 1:
             # Bool (i1) is sub-byte, so a vector load of SIMD[bool, N]
@@ -1160,12 +1163,15 @@ struct UnsafePointer[
 
         var address = self.bitcast[SIMD[dtype, width]]().address
 
-        return __mlir_op.`pop.load`[
+        var result = __mlir_op.`pop.load`[
             alignment=alignment._mlir_value,
             isVolatile=volatile._mlir_value,
             isInvariant=invariant._mlir_value,
             isNonTemporal=non_temporal._mlir_value,
         ](address)
+        comptime if dtype.is_floating_point():
+            _check_not_poison[dtype, width](result)
+        return result
 
     @always_inline("nodebug")
     def load[

@@ -419,6 +419,24 @@ class InferenceSession:
         if val := os.getenv("ENABLE_PER_TENSOR_FP8_QUANTIZE"):
             self.enable_per_tensor_fp8_quantize(val)
 
+        if (
+            os.environ.get("MODULAR_MAX_UNINITIALIZED_READ_CHECK", "").lower()
+            == "true"
+        ):
+            # Enable debug allocator poison
+            existing = os.environ.get("MODULAR_DEBUG_DEVICE_ALLOCATOR", "")
+            if existing:
+                if "uninitialized-poison" not in existing:
+                    os.environ["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = (
+                        existing + ",uninitialized-poison"
+                    )
+            else:
+                os.environ["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = (
+                    "uninitialized-poison"
+                )
+            # Enable compile-time checks
+            self._set_mojo_define("MOJO_STDLIB_SIMD_UNINIT_CHECK", "true")
+
     def __repr__(self) -> str:
         if self.num_threads:
             return f"<modular engine InferenceSession(num_threads={self.num_threads})>"

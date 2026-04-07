@@ -36,6 +36,11 @@ This version is still a work in progress.
 
 ### Python API {#26-3-max-python}
 
+- Setting `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` enables detection of
+  uninitialized memory reads in Mojo kernels. `InferenceSession` automatically
+  enables the debug allocator poison and compiles kernels with load-time
+  poison checks for all float types. When a load matches a poison pattern,
+  the process aborts with a descriptive message.
 - Added support for the `bfloat16` data type on ARM CPU devices in MAX graphs.
   Previously, `session.load()` raised a `ValueError` when a graph contained
   bf16 tensors targeting an ARM CPU.
