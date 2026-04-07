@@ -43,40 +43,6 @@ struct Variadic:
         T: The trait that types in the variadic sequence must conform to.
     """
 
-    comptime size[T: AnyType, //, seq: Self.ValuesOfType[T]]: Int = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
-            type_of(seq),
-            ` `,
-            +seq,
-            `> : index`,
-        ]
-    )
-    """Returns the length of a variadic sequence.
-
-    Parameters:
-        T: The type of values in the sequence.
-        seq: The variadic sequence to measure.
-    """
-
-    comptime size_types[
-        T: type_of(AnyType), //, seq: Self.TypesOfTrait[T]
-    ]: Int = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
-            type_of(seq),
-            ` `,
-            +seq,
-            `> : index`,
-        ]
-    )
-    """Returns the length of a variadic sequence.
-
-    Parameters:
-        T: The trait that types in the sequence must conform to.
-        seq: The variadic sequence of types to measure.
-    """
-
     # ===-----------------------------------------------------------------------===#
     # Utils
     # ===-----------------------------------------------------------------------===#
@@ -316,7 +282,7 @@ struct Variadic:
     # The resulting variadic of types is [Int, String]
     comptime output = Variadic.map_types_to_types[input_types, mapper]
 
-    assert_equal(Variadic.size[output], 2)
+    assert_equal(ParameterList[*output].size, 2)
     assert_true(_type_is_eq[output[0], Int]())
     assert_true(_type_is_eq[output[1], String]())
     ```
@@ -327,9 +293,9 @@ struct Variadic:
         //,
         element_types: Variadic.TypesOfTrait[T],
         start: Int where start >= 0 = 0,
-        end: Int where (
-            start <= end <= Variadic.size_types[element_types]
-        ) = Variadic.size_types[element_types],
+        end: Int where start <= end <= TypeList[*element_types].size = TypeList[
+            *element_types
+        ].size,
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
         ParamListType=element_types,
@@ -347,7 +313,7 @@ struct Variadic:
         end: The ending index (exclusive).
 
     Constraints:
-        - 0 <= start <= end <= Variadic.size_types[element_types]
+        - 0 <= start <= end <= TypeList[*element_types].size
 
     Examples:
         ```mojo
@@ -493,15 +459,15 @@ struct Variadic:
 
 
 @fieldwise_init
-struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
+struct TypeList[type: type_of(AnyType), //, *values: type](Sized):
     """A compile-time list of types conforming to a common trait.
 
     `TypeList` provides type-level operations on variadic sequences of types,
     such as reversing, filtering, slicing, mapping, and membership testing.
 
     Parameters:
-        Trait: The trait that all types in the list must conform to.
-        element_types: The types in the list.
+        type: The trait that all types in the list must conform to.
+        values: The types in the list.
 
     Examples:
 
@@ -510,7 +476,7 @@ struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
     from std.sys.intrinsics import _type_is_eq
 
     # Create a type list
-    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
+    comptime tl = TypeList[type=AnyType, Int, String, Float64]()
 
     # Query size
     assert_equal(tl.size, 3)
@@ -524,10 +490,18 @@ struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
     ```
     """
 
-    comptime size = Variadic.size_types[Self.element_types]
+    comptime size: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
+            `> : index`,
+        ]
+    )
     """The number of types in the list."""
 
-    comptime __getitem_param__[idx: Int] = Self.element_types[idx]
+    comptime __getitem_param__[idx: Int] = Self.values[idx]
     """Gets a type at the given index.
 
     Parameters:
@@ -536,17 +510,17 @@ struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
 
     comptime reverse = TypeList[
         *_MapVariadicAndIdxToType[
-            To=Self.Trait,
-            ParamListType=Self.element_types,
-            Mapper=_ReversedVariadic[Self.Trait, ...],
+            To=Self.type,
+            ParamListType=Self.values,
+            Mapper=_ReversedVariadic[Self.type, ...],
         ]
     ]
     """The types in reverse order."""
 
-    comptime contains[type: Self.Trait] = _ReduceVariadicAndIdxToValue[
+    comptime contains[type: Self.type] = _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[False],
-        ParamListType=Self.element_types,
-        Reducer=_ContainsReducer[Trait=Self.Trait, Type=type, ...],
+        ParamListType=Self.values,
+        Reducer=_ContainsReducer[Trait=Self.type, Type=type, ...],
     ][0]
     """Checks if a type is contained in this type list.
 
@@ -557,12 +531,12 @@ struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
     comptime map[
         To: type_of(AnyType),
         //,
-        Mapper: _TypeToTypeGenerator[Self.Trait, To],
+        Mapper: _TypeToTypeGenerator[Self.type, To],
     ] = TypeList[
         *_ReduceVariadicAndIdxToVariadic[
             BaseVal=Variadic.empty_of_trait[To],
-            ParamListType=Self.element_types,
-            Reducer=_MapTypeToTypeReducer[Self.Trait, To, Mapper, ...],
+            ParamListType=Self.values,
+            Reducer=_MapTypeToTypeReducer[Self.type, To, Mapper, ...],
         ],
     ]
     """Maps types to new types using a mapper.
@@ -581,9 +555,9 @@ struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
         end: Int where start <= end <= Self.size = Self.size,
     ] = TypeList[
         *_ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[Self.Trait],
-            ParamListType=Self.element_types,
-            Reducer=_SliceReducer[Self.Trait, start, end, ...],
+            BaseVal=Variadic.empty_of_trait[Self.type],
+            ParamListType=Self.values,
+            Reducer=_SliceReducer[Self.type, start, end, ...],
         ]
     ]
     """Extracts a contiguous subsequence from the type list.
@@ -600,12 +574,12 @@ struct TypeList[Trait: type_of(AnyType), //, *element_types: Trait](Sized):
     """
 
     comptime filter[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: _TypePredicateGenerator[Self.type],
     ] = TypeList[
         *_ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[Self.Trait],
-            ParamListType=Self.element_types,
-            Reducer=_FilterReducer[Self.Trait, predicate, ...],
+            BaseVal=Variadic.empty_of_trait[Self.type],
+            ParamListType=Self.values,
+            Reducer=_FilterReducer[Self.type, predicate, ...],
         ]
     ]
     """Filters types based on a predicate.
@@ -710,7 +684,15 @@ struct ParameterList[type: AnyType, //, *values: type](
         values: The values in the list.
     """
 
-    comptime size = Variadic.size[Self.values]
+    comptime size: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
+            `> : index`,
+        ]
+    )
     """The number of elements in the list."""
 
     @always_inline
@@ -1300,7 +1282,7 @@ struct VariadicPack[
             The number of elements in the variadic pack.
         """
 
-        comptime result = Variadic.size_types[Self.element_types]
+        comptime result = TypeList[*Self.element_types].size
         return result
 
     @always_inline
@@ -1789,7 +1771,7 @@ comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],
     idx: Int,
-] = element_types[Variadic.size_types[element_types] - 1 - idx]
+] = element_types[TypeList[*element_types].size - 1 - idx]
 """A generator that reverses a variadic sequence of types.
 
 Parameters:

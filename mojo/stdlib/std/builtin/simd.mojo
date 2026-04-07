@@ -2372,7 +2372,7 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         comptime assert (
-            output_size == Variadic.size[mask]
+            output_size == ParameterList[*mask].size
         ), "size of the mask must match the output SIMD size"
 
         # FIXME: Support parameters on initializers better, removing __init__.

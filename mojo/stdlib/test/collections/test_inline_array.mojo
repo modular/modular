@@ -96,7 +96,7 @@ def test_array_int() raises:
     ]() raises:
         comptime for current_batch_size in range(len(batch_sizes)):
             comptime for current_size in range(len(sizes)):
-                comptime for current_type in range(Variadic.size[dts]):
+                comptime for current_type in range(ParameterList[*dts].size):
                     test_init_fill[
                         sizes[current_size], batch_sizes[current_batch_size]
                     ](Scalar[dts[current_type]].MAX)

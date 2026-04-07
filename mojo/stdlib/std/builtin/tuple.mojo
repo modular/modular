@@ -171,7 +171,7 @@ struct Tuple[*element_types: Movable](
             The tuple length.
         """
 
-        comptime result = Variadic.size_types[Self.element_types]
+        comptime result = TypeList[*Self.element_types].size
         return result
 
     @always_inline("nodebug")
@@ -550,7 +550,7 @@ struct Tuple[*element_types: Movable](
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
                     UnsafePointer(
-                        to=self[Variadic.size_types[Self.element_types] - 1 - i]
+                        to=self[TypeList[*Self.element_types].size - 1 - i]
                     )
                 )
             )
