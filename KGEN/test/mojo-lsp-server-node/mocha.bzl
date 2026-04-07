@@ -1,5 +1,6 @@
 "Example macro wrapping the mocha CLI"
 
+load("@cfg_workaround.bzl", "TARGET_CONSTRAINTS")
 load("@mojo-lsp-server-node-tests//KGEN/test/mojo-lsp-server-node:mocha/package_json.bzl", "bin")
 load("//bazel:api.bzl", "mojo_test_environment")
 
@@ -12,6 +13,15 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
 
     bin.mocha_test(
         name = name,
+        # The js_binary launcher embeds the Node.js binary path at analysis time
+        # based on the exec platform. Under --config=remote-macos,
+        # --extra_execution_platforms lists //:m7g-platform (linux) first, so
+        # most actions — including js_binary builds — run on the linux executor,
+        # embedding a linux node path that fails when the script runs on macOS.
+        # Constrain the exec platform to TARGET_CONSTRAINTS (from
+        # @cfg_workaround.bzl) so Bazel picks the macOS exec platform for this
+        # target, which resolves the correct Node.js toolchain for that OS.
+        exec_compatible_with = TARGET_CONSTRAINTS,
         args = [
             "--parallel",
             # NodeJS has to be explicitly told to enable source map support.
