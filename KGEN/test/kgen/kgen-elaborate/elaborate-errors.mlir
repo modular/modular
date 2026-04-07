@@ -477,3 +477,24 @@ kgen.generator @"clash::a"() attributes {linkageName = "foo" : !kgen.string} {
 kgen.generator @"clash::b"() attributes {linkageName = "foo" : !kgen.string} {
   kgen.return
 }
+
+// -----
+
+// Test that a negative alloc size is rejected by the interpreter.
+
+// expected-note @below {{failed to interpret function @negative_alloc_size}}
+kgen.generator @negative_alloc_size() -> !kgen.pointer<index> {
+  %idx8 = index.constant 8
+  %idx_neg = index.constant -1
+  // expected-note @below {{failed to interpret operation pop.aligned_alloc}}
+  // expected-note @below {{alloc has negative size}}
+  %0 = pop.aligned_alloc %idx8, %idx_neg : <index>
+  kgen.return %0 : !kgen.pointer<index>
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @use_negative_alloc_size() {
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.constant: !kgen.pointer<index> = <apply(:() -> !kgen.pointer<index> @negative_alloc_size)>
+  kgen.return
+}
