@@ -30,10 +30,16 @@ from std.reflection.traits import (
     AllRegisterPassable,
     AllWritable,
 )
-from ._nicheable import UnsafeNicheable, NicheIndex
+from ._nicheable import (
+    UnsafeNicheable,
+    NicheIndex,
+    NicheStorageTraits,
+    UnsafeCustomNicheStorage,
+)
 from std.os import abort
 from std.reflection import struct_field_count
-from std.sys.intrinsics import _type_is_eq, size_of
+from std.sys import align_of, size_of
+from std.sys.intrinsics import _type_is_eq
 from std.utils.type_functions import ConditionalType
 
 # ===----------------------------------------------------------------------=== #
@@ -82,6 +88,77 @@ trait _VariantStorage(Copyable, ImplicitlyDestructible):
         ...
 
 
+trait _NicheStorage(Defaultable, ImplicitlyCopyable, ImplicitlyDestructible):
+    """Internal abstraction over niche backing storage backends."""
+
+    def as_uninit[
+        T: AnyType
+    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[T], origin_of(self)]:
+        ...
+
+
+struct _DefaultNicheStorage[T: AnyType](Defaultable, _NicheStorage):
+    """Default niche backing: stores the value in `UnsafeMaybeUninit[T]`
+    (lowers to `pop.array<1, T>`)."""
+
+    var _memory: UnsafeMaybeUninit[Self.T]
+
+    @always_inline
+    def __init__(out self):
+        self._memory = {}
+
+    @always_inline
+    def as_uninit[
+        U: AnyType
+    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[U], origin_of(self)]:
+        comptime assert _type_is_eq[Self.T, U]()
+        return (
+            UnsafePointer(to=self._memory)
+            .bitcast[UnsafeMaybeUninit[U]]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
+
+
+struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
+    Defaultable, _NicheStorage
+):
+    """Niche backing that delegates to the user-provided `Storage` type,
+    allowing the nicheable type to control what MLIR type the storage lowers
+    to."""
+
+    var _memory: Self.Storage.NicheStorage
+
+    @always_inline
+    def __init__(out self):
+        self._memory = {}
+
+    @always_inline
+    def as_uninit[
+        T: AnyType
+    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[T], origin_of(self)]:
+        comptime assert (
+            size_of[Self.Storage.NicheStorage]()
+            == size_of[UnsafeMaybeUninit[T]]()
+        ), "Custom storage must be the same size as Self"
+        comptime assert (
+            align_of[Self.Storage.NicheStorage]()
+            == align_of[UnsafeMaybeUninit[T]]()
+        ), "Custom storage must have the the same alignment as Self"
+        return (
+            UnsafePointer(to=self._memory)
+            .bitcast[UnsafeMaybeUninit[T]]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
+
+
+comptime _NicheStorageFor[T: AnyType] = ConditionalType[
+    Trait=_NicheStorage,
+    If=conforms_to(T, UnsafeCustomNicheStorage),
+    Then=_CustomNicheStorage[downcast[T, UnsafeCustomNicheStorage]],
+    Else=_DefaultNicheStorage[T],
+]
+
+
 struct _NichedOptionalStorage[
     T: UnsafeNicheable, EmptyType: TrivialRegisterPassable
 ](
@@ -100,7 +177,7 @@ struct _NichedOptionalStorage[
     comptime __copy_ctor_is_trivial = _all_trivial_copyinit[Self.T]()
     comptime __move_ctor_is_trivial = _all_trivial_moveinit[Self.T]()
 
-    var _memory: UnsafeMaybeUninit[Self.T]
+    var _memory: _NicheStorageFor[Self.T]
 
     @staticmethod
     def _check[U: AnyType]():
@@ -114,14 +191,14 @@ struct _NichedOptionalStorage[
             Self.T.niche_count() > 0
         ), "UnsafeNicheable must specify at least 1 invalid bit pattern"
         self._memory = {}
-        Self.T.write_niche[index=0](UnsafePointer(to=self._memory))
+        Self.T.write_niche[index=0](self._memory.as_uninit[Self.T]())
 
     @always_inline
     def __init__[U: Movable](out self, var value: U):
         Self._check[U]()
         comptime if _type_is_eq[U, Self.T]():
             self._memory = {}
-            rebind[UnsafeMaybeUninit[U]](self._memory).init_from(value^)
+            self._memory.as_uninit[U]()[].init_from(value^)
         else:
             # This is the empty "none" type.
             comptime assert conforms_to(U, TrivialRegisterPassable)
@@ -153,13 +230,13 @@ struct _NichedOptionalStorage[
         comptime assert conforms_to(Self.T, ImplicitlyDestructible)
         if self.isa[Self.T]():
             rebind[UnsafeMaybeUninit[downcast[Self.T, ImplicitlyDestructible]]](
-                self._memory
+                self._memory.as_uninit[Self.T]()[]
             ).unsafe_assume_init_destroy()
 
     @always_inline
     def isa[U: AnyType](self) -> Bool:
         Self._check[U]()
-        var niche = Self.T.classify_niche(UnsafePointer(to=self._memory))
+        var niche = Self.T.classify_niche(self._memory.as_uninit[Self.T]())
         var is_some = niche == NicheIndex.NotANiche
         comptime if _type_is_eq[U, Self.T]():
             return is_some
@@ -170,7 +247,7 @@ struct _NichedOptionalStorage[
     def unsafe_ptr[U: AnyType](ref self) -> UnsafePointer[U, origin_of(self)]:
         Self._check[U]()
         return (
-            self._memory.unsafe_ptr()
+            self._memory.as_uninit[U]()
             .bitcast[U]()
             .unsafe_origin_cast[origin_of(self)]()
         )
