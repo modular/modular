@@ -14,8 +14,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from functools import partial
 
+from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -23,13 +25,23 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
+from max.graph.weights import WeightData
 from typing_extensions import Self
 
 from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import grouped_matmul_ragged, moe_create_indices
+from ..kernels import (
+    grouped_matmul_ragged,
+    moe_create_indices,
+)
 from ..layer import Layer, LayerList, Module, Shardable
-from ..linear import MLP, Linear
+from ..linear import (
+    MLP,
+    GPTQLinear,
+    Linear,
+    materialize_gptq_linear_weights,
+)
 from ..quant_config import QuantConfig
 
 
@@ -134,6 +146,19 @@ class MoEGate(Module):
             sharded.gate_score = gate_score_shards[shard_idx]
             shards.append(sharded)
         return shards
+
+
+def _run_gptq_expert(
+    expert: Callable[[TensorValue], TensorValue],
+    expert_input: TensorValue,
+) -> tuple[TensorValue]:
+    return (expert(expert_input),)
+
+
+def _return_gptq_expert_input(
+    expert_input: TensorValue,
+) -> tuple[TensorValue]:
+    return (expert_input,)
 
 
 class MoE(Module, Shardable):
@@ -575,5 +600,211 @@ class MoE(Module, Shardable):
 
         if self.has_shared_experts:
             routed_expert_out += self.shared_experts(x)
+
+        return routed_expert_out
+
+
+class MoEGPTQ(MoE):
+    """MoE variant with GPTQ-quantized expert weights."""
+
+    def __init__(
+        self,
+        devices: list[DeviceRef],
+        hidden_dim: int,
+        num_experts: int,
+        num_experts_per_token: int,
+        moe_dim: int,
+        quantization_config: QuantizationConfig,
+        gate_cls: Callable[..., MoEGate] = MoEGate,
+        mlp_cls: Callable[..., MLP] = MLP,
+        has_shared_experts: bool = False,
+        shared_experts_dim: int = 0,
+        ep_size: int = 1,
+        dtype: DType = DType.bfloat16,
+        apply_router_weight_first: bool = False,
+        ep_batch_manager: EPBatchManager | None = None,
+        is_sharding: bool = False,
+    ):
+        if has_shared_experts:
+            raise NotImplementedError(
+                "Shared experts are not implemented for GPTQ MoE."
+            )
+        if ep_batch_manager is not None:
+            raise NotImplementedError(
+                "Expert-parallel GPTQ MoE is not implemented."
+            )
+
+        self.quantization_config = quantization_config
+        super().__init__(
+            devices=devices,
+            hidden_dim=hidden_dim,
+            num_experts=num_experts,
+            num_experts_per_token=num_experts_per_token,
+            moe_dim=moe_dim,
+            gate_cls=gate_cls,
+            mlp_cls=mlp_cls,
+            has_shared_experts=has_shared_experts,
+            shared_experts_dim=shared_experts_dim,
+            ep_size=ep_size,
+            dtype=dtype,
+            apply_router_weight_first=apply_router_weight_first,
+            ep_batch_manager=ep_batch_manager,
+            quant_config=None,
+            is_sharding=is_sharding,
+        )
+
+    def _init_experts(self) -> None:
+        linear_cls = partial(
+            GPTQLinear,
+            quantization_encoding=QuantizationEncoding.GPTQ,
+            quantization_config=self.quantization_config,
+        )
+        self._all_experts = [
+            self.mlp_cls(
+                dtype=self.dtype,
+                quantization_encoding=QuantizationEncoding.GPTQ,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.moe_dim,
+                devices=self.devices,
+                linear_cls=linear_cls,
+            )
+            for _ in range(self.num_experts)
+        ]
+        for expert in self._all_experts:
+            for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                getattr(expert, proj_name)._prefer_quantized_execution = True
+        self.experts = LayerList(self._all_experts)
+
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, DLPackArray | WeightData],
+        *,
+        override_quantization_encoding: bool = False,
+        weight_alignment: int | None = None,
+        strict: bool = True,
+    ) -> None:
+        super().load_state_dict(
+            state_dict,
+            override_quantization_encoding=override_quantization_encoding,
+            weight_alignment=weight_alignment,
+            strict=strict,
+        )
+        materialize_gptq_linear_weights(self)
+
+    def _stack_expert_projection(
+        self, proj_name: str, attr_name: str
+    ) -> TensorValue | None:
+        values = [
+            getattr(getattr(expert, proj_name), attr_name)
+            for expert in self.experts
+        ]
+        if values[0] is None:
+            return None
+        return ops.stack(values, axis=0)
+
+    def _stack_expert_packed_weight(self, proj_name: str) -> TensorValue:
+        return ops.stack(
+            [
+                getattr(expert, proj_name).packed_weight
+                for expert in self.experts
+            ],
+            axis=0,
+        )
+
+    @property
+    def gate_proj_weight(self) -> TensorValue:
+        return self._stack_expert_packed_weight("gate_proj")
+
+    @property
+    def gate_proj_perm_idx(self) -> TensorValue | None:
+        return self._stack_expert_projection("gate_proj", "perm_idx")
+
+    @property
+    def up_proj_weight(self) -> TensorValue:
+        return self._stack_expert_packed_weight("up_proj")
+
+    @property
+    def up_proj_perm_idx(self) -> TensorValue | None:
+        return self._stack_expert_projection("up_proj", "perm_idx")
+
+    @property
+    def down_proj_weight(self) -> TensorValue:
+        return self._stack_expert_packed_weight("down_proj")
+
+    @property
+    def down_proj_perm_idx(self) -> TensorValue | None:
+        return self._stack_expert_projection("down_proj", "perm_idx")
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        seq_len = x.shape[0]
+
+        router_idx, router_weight = self.gate(x)
+        router_idx = ops.reshape(router_idx, [-1])
+        routed_positions: list[TensorValue] = []
+        expert_outputs: list[TensorValue] = []
+        router_weight_flat = router_weight.reshape([-1, 1])
+        tokens_per_expert = ops.constant(
+            self.num_experts_per_token, DType.int32, device=router_idx.device
+        )
+
+        for expert_idx, expert in enumerate(self.experts):
+            positions = ops.nonzero(
+                router_idx == expert_idx, f"gptq_expert_{expert_idx}_tokens"
+            )
+            positions = ops.squeeze(positions, axis=1).cast(DType.int32)
+            token_positions = positions
+            if self.num_experts_per_token != 1:
+                token_positions = (positions // tokens_per_expert).cast(
+                    DType.int32
+                )
+
+            expert_input = ops.gather(x, token_positions, axis=0)
+            if self.apply_router_weight_first:
+                expert_input = expert_input * ops.gather(
+                    router_weight_flat, positions, axis=0
+                ).cast(x.dtype)
+
+            routed_positions.append(positions)
+            expert_token_count = ops.shape_to_tensor(expert_input.shape)[
+                0
+            ].reshape(())
+
+            expert_outputs.append(
+                ops.cond(
+                    expert_token_count
+                    > ops.constant(
+                        0, expert_token_count.dtype, DeviceRef.CPU()
+                    ),
+                    [expert_input.type],
+                    partial(_run_gptq_expert, expert, expert_input),
+                    partial(_return_gptq_expert_input, expert_input),
+                )[0]
+            )
+
+        flat_outputs = ops.concat(expert_outputs, axis=0)
+        flat_positions = ops.reshape(
+            ops.concat(routed_positions, axis=0), [-1, 1]
+        )
+        down_projs = ops.scatter_nd(
+            ops.broadcast_to(
+                ops.constant(0.0, x.dtype, x.device),
+                [router_idx.shape[0], self.hidden_dim],
+            ),
+            flat_outputs,
+            flat_positions,
+        ).reshape([seq_len, self.num_experts_per_token, self.hidden_dim])
+
+        if not self.apply_router_weight_first:
+            routed_expert_out = (
+                ops.unsqueeze(router_weight, axis=1) @ down_projs
+            )
+            routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
+                x.dtype
+            )
+        else:
+            routed_expert_out = down_projs.transpose(1, 2)
+            routed_expert_out = ops.squeeze(
+                ops.sum(routed_expert_out, axis=2), axis=2
+            ).cast(x.dtype)
 
         return routed_expert_out

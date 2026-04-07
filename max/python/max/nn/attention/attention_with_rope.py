@@ -44,7 +44,7 @@ from ..kernels import (
 )
 from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
-from ..linear import Linear
+from ..linear import Linear, pack_gptq_weight
 from ..no_opaque_kernels import (
     PagedKVCacheTensorsNoOpaque,
     flash_attention_ragged_no_opaque,
@@ -960,29 +960,10 @@ class GPTQAttentionWithRope(AttentionWithRope):
     @property
     def wqkv(self) -> TensorValue:
         """The concatenation of q, k, and v weight vectors (packed + scales)."""
-        # fmt: off
-        # The `qweight` tensor for a QuantLinear is of type uint32. When allocated as bytes, we reshape the
-        # uint8 tensor to [cols, rows * 4] so concatenating the uint8 tensors along axis=1 is equivalent to
-        # concatenating the original uint32 tensors along axis=1.
-        wq_qweight = ops.reshape(self.q_proj_qweight, (-1, self.hidden_size * 4))
-        wk_qweight = ops.reshape(self.k_proj_qweight, (-1, self.kv_weight_dim * 4))
-        wv_qweight = ops.reshape(self.v_proj_qweight, (-1, self.kv_weight_dim * 4))
-
-        wqkv_qweight = ops.reshape(
-            ops.concat((wq_qweight, wk_qweight, wv_qweight), axis=1),
-            (-1, self.hidden_size + 2 * self.kv_weight_dim),
-        )
-        # `scales` tensor is in f16/bf16 type, so we reshape the uint8 tensor to [cols, rows * 2].
-        wq_scales = ops.reshape(self.q_proj_scales, (-1, self.hidden_size * 2))
-        wk_scales = ops.reshape(self.k_proj_scales, (-1, self.kv_weight_dim * 2))
-        wv_scales = ops.reshape(self.v_proj_scales, (-1, self.kv_weight_dim * 2))
-
-        wqkv_scales = ops.reshape(
-            ops.concat((wq_scales, wk_scales, wv_scales), axis=1),
-            (-1, self.hidden_size + 2 * self.kv_weight_dim),
-        )
-        # fmt: on
-        return ops.concat((wqkv_qweight, wqkv_scales), axis=0)
+        wq = pack_gptq_weight(self.q_proj_qweight, self.q_proj_scales)
+        wk = pack_gptq_weight(self.k_proj_qweight, self.k_proj_scales)
+        wv = pack_gptq_weight(self.v_proj_qweight, self.v_proj_scales)
+        return ops.concat((wq, wk, wv), axis=1)
 
     def __call__(
         self,

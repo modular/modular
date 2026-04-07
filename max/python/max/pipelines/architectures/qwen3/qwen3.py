@@ -15,8 +15,9 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 
+from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -29,20 +30,30 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
+from max.graph.weights import WeightData
 from max.nn.comm import Signals
 from max.nn.comm.allreduce import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import MoE, MoEQuantized
+from max.nn.linear import (
+    MLP,
+    ColumnParallelLinear,
+    GPTQLinear,
+    Linear,
+    materialize_gptq_linear_weights,
+)
+from max.nn.moe import MoE, MoEGPTQ, MoEQuantized
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
-from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
+from max.pipelines.architectures.qwen3.layers.attention import (
+    Qwen3Attention,
+    Qwen3GPTQAttention,
+)
 from max.pipelines.architectures.qwen3.layers.moe import Qwen3MoEGate
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
@@ -65,52 +76,108 @@ class Qwen3TransformerBlock(Module):
         super().__init__()
         self.devices = config.devices
         num_devices = len(config.devices)
+        use_gptq = (
+            config.model_quantization_encoding == QuantizationEncoding.GPTQ
+        )
+        self.self_attn: Module
+        self.self_attn_shards: Sequence[
+            Callable[
+                [
+                    TensorValue,
+                    TensorValue,
+                    PagedCacheValues,
+                    TensorValue,
+                    TensorValue,
+                ],
+                TensorValue,
+            ]
+        ]
+        self.mlp: MLP | MoE
+        self.mlp_shards: Sequence[Callable[[TensorValue], TensorValue]]
+        self.input_layernorm_shards: Sequence[
+            Callable[[TensorValue], TensorValue]
+        ]
+        self.post_attention_layernorm_shards: Sequence[
+            Callable[[TensorValue], TensorValue]
+        ]
+        self.allreduce: Allreduce | None = None
 
         # Create attention layer
-        self.self_attn = Qwen3Attention(
-            num_attention_heads=config.num_attention_heads,
-            num_key_value_heads=config.num_key_value_heads,
-            hidden_size=config.hidden_size,
-            kv_params=config.kv_params,
-            layer_idx=layer_idx,
-            dtype=config.dtype,
-            rope=rope,
-            linear_cls=linear_cls,
-            devices=config.devices,
-            scale=config.attention_multiplier,
-            has_bias=config.attention_bias,
-            norm_dtype=config.norm_dtype or config.dtype,
-            quant_config=config.quant_config,
-        )
-        self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
-            num_devices
-        )
-        self.self_attn_shards = self.self_attn.shard(config.devices)
+        if use_gptq:
+            assert config.quantization_config is not None
+            self.self_attn = Qwen3GPTQAttention(
+                num_attention_heads=config.num_attention_heads,
+                num_key_value_heads=config.num_key_value_heads,
+                hidden_size=config.hidden_size,
+                kv_params=config.kv_params,
+                dtype=config.dtype,
+                rope=rope,
+                devices=config.devices,
+                quantization_config=config.quantization_config,
+                scale=config.attention_multiplier,
+                norm_dtype=config.norm_dtype or config.dtype,
+            )
+            self.self_attn_shards = [self.self_attn]
+        else:
+            dense_self_attn = Qwen3Attention(
+                num_attention_heads=config.num_attention_heads,
+                num_key_value_heads=config.num_key_value_heads,
+                hidden_size=config.hidden_size,
+                kv_params=config.kv_params,
+                layer_idx=layer_idx,
+                dtype=config.dtype,
+                rope=rope,
+                linear_cls=linear_cls,
+                devices=config.devices,
+                scale=config.attention_multiplier,
+                has_bias=config.attention_bias,
+                norm_dtype=config.norm_dtype or config.dtype,
+                quant_config=config.quant_config,
+            )
+            dense_self_attn.sharding_strategy = (
+                ShardingStrategy.tensor_parallel(num_devices)
+            )
+            self.self_attn = dense_self_attn
+            self.self_attn_shards = dense_self_attn.shard(config.devices)
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx, linear_cls)
-        self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
-            num_devices
-        )
-        self.mlp_shards = self.mlp.shard(config.devices)
+        if use_gptq:
+            self.mlp_shards = [self.mlp]
+        else:
+            self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                num_devices
+            )
+            self.mlp_shards = self.mlp.shard(config.devices)
 
         # Create norm layers (replicated across devices)
         self.input_layernorm = create_norm()
-        self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
-            num_devices
-        )
-        self.input_layernorm_shards = self.input_layernorm.shard(config.devices)
+        if use_gptq:
+            self.input_layernorm_shards = [self.input_layernorm]
+        else:
+            self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            self.input_layernorm_shards = self.input_layernorm.shard(
+                config.devices
+            )
 
         self.post_attention_layernorm = create_norm()
-        self.post_attention_layernorm.sharding_strategy = (
-            ShardingStrategy.replicate(num_devices)
-        )
-        self.post_attention_layernorm_shards = (
-            self.post_attention_layernorm.shard(config.devices)
-        )
+        if use_gptq:
+            self.post_attention_layernorm_shards = [
+                self.post_attention_layernorm
+            ]
+        else:
+            self.post_attention_layernorm.sharding_strategy = (
+                ShardingStrategy.replicate(num_devices)
+            )
+            self.post_attention_layernorm_shards = (
+                self.post_attention_layernorm.shard(config.devices)
+            )
 
         # Allreduce for combining sharded outputs
-        self.allreduce = Allreduce(num_accelerators=num_devices)
+        if num_devices > 1:
+            self.allreduce = Allreduce(num_accelerators=num_devices)
         self.residual_multiplier = config.residual_multiplier
 
     def _get_mlp(
@@ -127,6 +194,17 @@ class Qwen3TransformerBlock(Module):
         )
 
         if use_moe:
+            if config.quantization_config is not None:
+                return MoEGPTQ(
+                    devices=config.devices,
+                    hidden_dim=config.hidden_size,
+                    num_experts=config.num_experts,
+                    num_experts_per_token=config.num_experts_per_tok,
+                    moe_dim=config.moe_intermediate_size,
+                    gate_cls=Qwen3MoEGate,
+                    dtype=config.dtype,
+                    quantization_config=config.quantization_config,
+                )
             moe_cls = MoEQuantized if config.quant_config is not None else MoE
             return moe_cls(
                 devices=config.devices,
@@ -188,6 +266,7 @@ class Qwen3TransformerBlock(Module):
 
         # Allreduce attention outputs (passthrough for single GPU)
         if len(self.devices) > 1:
+            assert self.allreduce is not None
             attn_outs = self.allreduce(attn_outs, signal_buffers)
 
         # Residual connection
@@ -205,6 +284,7 @@ class Qwen3TransformerBlock(Module):
 
         # Allreduce MLP outputs (passthrough for single GPU)
         if len(self.devices) > 1:
+            assert self.allreduce is not None
             mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         # Residual connection
@@ -223,9 +303,17 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         self.num_devices = len(config.devices)
 
         # Validate quantization encoding
-        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
-            raise NotImplementedError("GPTQ Qwen3 is not implemented yet")
-        if config.model_quantization_encoding is not None:
+        if (
+            config.model_quantization_encoding == QuantizationEncoding.GPTQ
+            and self.num_devices != 1
+        ):
+            raise ValueError(
+                "GPTQ Qwen3 currently supports single-device execution only."
+            )
+        if (
+            config.model_quantization_encoding is not None
+            and config.model_quantization_encoding != QuantizationEncoding.GPTQ
+        ):
             raise NotImplementedError("GGUFQ Qwen3 is not implemented yet")
 
         # Create RoPE embedding
@@ -255,7 +343,17 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
             multiply_before_cast=False,
         )
 
-        linear_cls = functools.partial(Linear, quant_config=config.quant_config)
+        linear_cls: Callable[..., Linear]
+        if config.quantization_config is not None:
+            linear_cls = functools.partial(
+                GPTQLinear,
+                quantization_encoding=QuantizationEncoding.GPTQ,
+                quantization_config=config.quantization_config,
+            )
+        else:
+            linear_cls = functools.partial(
+                Linear, quant_config=config.quant_config
+            )
 
         # Create transformer layers
         self.layers = LayerList(
@@ -281,6 +379,8 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         # Embedding and output layers - always use parallel versions
         # They work correctly for single GPU too (parallel ops become no-ops)
         embedding_dtype = config.dtype
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
+            embedding_dtype = DType.bfloat16
         if config.quant_config and config.quant_config.embedding_output_dtype:
             embedding_dtype = config.quant_config.embedding_output_dtype
 
@@ -303,6 +403,24 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
         self.embedding_multiplier = config.embedding_multiplier
+
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, DLPackArray | WeightData],
+        *,
+        override_quantization_encoding: bool = False,
+        weight_alignment: int | None = None,
+        strict: bool = True,
+    ) -> None:
+        super().load_state_dict(
+            state_dict,
+            override_quantization_encoding=override_quantization_encoding,
+            weight_alignment=weight_alignment,
+            strict=strict,
+        )
+        # GPTQ attention linears are materialized as dense fallback weights,
+        # while MoEGPTQ experts opt into packed-weight execution explicitly.
+        materialize_gptq_linear_weights(self)
 
     def __call__(
         self,

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Mixture of Experts (MoE) module."""
 
-from .moe import MoE, MoEGate
+from .moe import MoE, MoEGate, MoEGPTQ
 from .moe_fp8 import MoEQuantized
 from .quant_strategy import (
     Fp8Strategy,
@@ -27,6 +27,7 @@ __all__ = [
     "Fp8Strategy",
     "GateUpFormat",
     "MoE",
+    "MoEGPTQ",
     "MoEGate",
     "MoEQuantized",
     "Nvfp4Scales",
