@@ -423,7 +423,7 @@ def bench_max(
     # Use bench_kineto to profile the kernel
     time_s = bench_kineto(
         run_kernel,
-        kernel_names="mha",
+        kernel_names="nn_attention",
         num_tests=100,
         suppress_kineto_output=True,
         flush_l2=True,
