@@ -128,7 +128,7 @@ const mojoSidebars = {
         },
       ],
     },
-    {
+        {
       type : "category",
       label : "Tools",
       className : "sidebar-heading",
@@ -148,6 +148,8 @@ const mojoSidebars = {
             "mojo/cli/package",
             "mojo/cli/repl",
             "mojo/cli/run",
+            { type: "html", value: "<hr/>" },
+            "mojo/cli-docs/compilation-targets",
           ],
         },
         "pixi",
