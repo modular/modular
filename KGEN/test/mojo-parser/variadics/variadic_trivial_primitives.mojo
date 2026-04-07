@@ -13,8 +13,8 @@ from std.builtin.variadics import *
 comptime T = Tuple[*Variadic.splat_type[10, Int]]
 
 
-comptime VA_SIZE[*Ts: AnyType] = Variadic.size_types[Ts]
-# CHECK: lit.alias.decl *"Folded`{{.*}}": !Int = <{3}>
+comptime VA_SIZE[*Ts: AnyType] = TypeList[*Ts].size
+# CHECK: lit.alias.decl *"Folded`{{.*}}": !Int = <sugar_member_alias{{.*}}{3})>
 comptime Folded = VA_SIZE[Int, Int, Int]
 
 comptime AddOne[i: Int] : Int = i + 1
