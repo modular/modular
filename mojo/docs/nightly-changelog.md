@@ -67,8 +67,9 @@ This version is still a work in progress.
   abort("something went wrong", location=loc)
   ```
 
-- `abort(message)` now prints its message on GPU, including block and thread
-  IDs. Previously, the message was silently suppressed on GPU targets.
+- `abort(message)` now prints its message on Nvidia and AMDGPU, including
+  block and thread IDs. Previously, the message was silently suppressed on
+  these GPUs. On Apple GPU, the message is silently suppressed for now.
 
 - `SourceLocation` fields (`line`, `col`, `file_name`) are now private.
   Use the new accessor methods `line()`, `column()`, and `file_name()` instead.

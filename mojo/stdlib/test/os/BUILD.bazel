@@ -42,6 +42,13 @@ _EXPECT_CRASH = [
     for src in _FILECHECK_TESTS
 ]
 
+_EXTRA_CONSTRAINTS = {
+    "test_trap_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-3697
+}
+
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -52,7 +59,7 @@ _EXPECT_CRASH = [
         ],
         expect_crash = src in _EXPECT_CRASH,
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

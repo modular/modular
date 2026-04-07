@@ -27,7 +27,7 @@ from std.io import FileDescriptor
 from std.ffi import c_char, c_int, external_call, get_errno, _CPointer
 from std.reflection import SourceLocation, call_location
 from std.gpu import thread_idx, block_idx
-from std.sys import CompilationTarget, is_gpu
+from std.sys import CompilationTarget, is_gpu, is_apple_gpu
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -251,7 +251,10 @@ def _abort_impl[
 ](message: Some[Writable], *, location: Optional[SourceLocation] = {}) -> Never:
     var loc = location.or_else(call_location[inline_count=2]())
 
-    comptime if is_gpu():
+    comptime if is_apple_gpu():
+        # FIXME: Remove after MOCO-3697 is fixed.
+        pass
+    elif is_gpu():
         # On GPU, gate the print to a single thread to avoid flooding the
         # printf buffer with identical messages from thousands of threads.
         if (
