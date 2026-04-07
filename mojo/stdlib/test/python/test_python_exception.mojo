@@ -30,5 +30,5 @@ def test_python_exception_exists():
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
