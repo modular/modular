@@ -14,7 +14,7 @@
 
 from std.os import abort
 from std.os.atomic import Atomic
-from std.ffi import external_call
+from std.ffi import _CPointer, external_call
 from std.gpu.host.device_context import _DeviceContextPtr
 from std.memory._nonnull import NonNullUnsafePointer
 
@@ -34,20 +34,20 @@ from std.utils import StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Chain(Boolable, Defaultable, TrivialRegisterPassable):
+struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: UnsafePointer[Int, MutExternalOrigin]
+    var storage: _CPointer[Int, MutExternalOrigin]
 
     def __init__(out self):
-        self.storage = {_unsafe_null = ()}
+        self.storage = {}
 
     def __bool__(self) -> Bool:
-        return self.storage._is_not_null()
+        return Bool(self.storage)
 
 
-struct _AsyncContext(TrivialRegisterPassable):
+struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
     pointer argument. It is invoked with the second struct field, which is an

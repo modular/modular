@@ -16,6 +16,7 @@ from std.gpu import global_idx
 from std.gpu.host import DeviceContext, DeviceStream
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
+from std.memory._nonnull import bitcast
 from std.sys.info import has_nvidia_gpu_accelerator
 from std.testing import assert_equal
 
@@ -24,9 +25,9 @@ def native_stream_ptr(
     stream: DeviceStream,
 ) raises -> OpaquePointer[MutAnyOrigin]:
     comptime if has_nvidia_gpu_accelerator():
-        return CUDA(stream).bitcast[NoneType]()
+        return bitcast[NoneType](CUDA(stream))
     else:
-        return HIP(stream).bitcast[NoneType]()
+        return bitcast[NoneType](HIP(stream))
 
 
 def scale_kernel(

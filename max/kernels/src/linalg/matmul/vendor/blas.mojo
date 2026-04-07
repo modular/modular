@@ -1363,7 +1363,7 @@ def _cublasLt_matmul[
                 UnsafePointer(to=heuristic_result.algo),  # algo
                 matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
                 workspace_size,  # workspace_size_in_bytes
-                cuda_stream[],  # stream
+                cuda_stream.value()[],  # stream
             ),
             msg="failed to cublasLtMatmul for c_row_major=True",
         )
@@ -1385,7 +1385,7 @@ def _cublasLt_matmul[
                 UnsafePointer(to=heuristic_result.algo),  # algo
                 matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
                 workspace_size,  # workspace_size_in_bytes
-                cuda_stream[],  # stream
+                cuda_stream.value()[],  # stream
             ),
             msg="failed to cublasLtMatmul for c_row_major=False",
         )

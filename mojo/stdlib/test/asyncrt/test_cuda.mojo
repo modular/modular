@@ -29,19 +29,15 @@ def _run_cuda_context(ctx: DeviceContext) raises:
 
     with ctx.push_context() as cur_ctx:
         # cur_ctx is still equivalent to the ctx passed in.
-        assert_equal(CUDA(ctx)._is_not_null(), CUDA(cur_ctx)._is_not_null())
+        assert_equal(Bool(CUDA(ctx)), Bool(CUDA(cur_ctx)))
         assert_equal(
-            CUDA(ctx.stream())._is_not_null(),
-            CUDA(cur_ctx.stream())._is_not_null(),
+            Bool(CUDA(ctx.stream())),
+            Bool(CUDA(cur_ctx.stream())),
         )
         # Make sure that the current CUcontext matches the pushed CUcontext
-        assert_equal(
-            cuda_ctx._is_not_null(), CUDA_get_current_context()._is_not_null()
-        )
+        assert_equal(Bool(cuda_ctx), Bool(CUDA_get_current_context()))
 
-    assert_equal(
-        initial_ctx._is_not_null(), CUDA_get_current_context()._is_not_null()
-    )
+    assert_equal(Bool(initial_ctx), Bool(CUDA_get_current_context()))
     print("initial CUcontext:", initial_ctx)
     print("CUcontext:", cuda_ctx)
 
@@ -55,40 +51,32 @@ def _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
 
     with ctx0.push_context() as cur_ctx0:
         # cur_ctx is still equivalent to the ctx passed in.
-        assert_equal(CUDA(ctx0)._is_not_null(), CUDA(cur_ctx0)._is_not_null())
+        assert_equal(Bool(CUDA(ctx0)), Bool(CUDA(cur_ctx0)))
         assert_equal(
-            CUDA(ctx0.stream())._is_not_null(),
-            CUDA(cur_ctx0.stream())._is_not_null(),
+            Bool(CUDA(ctx0.stream())),
+            Bool(CUDA(cur_ctx0.stream())),
         )
         # Make sure that the current CUcontext matches the pushed CUcontext
-        assert_equal(
-            cuda_ctx0._is_not_null(), CUDA_get_current_context()._is_not_null()
-        )
+        assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
 
         # Nested context pushes save, push and restore
         with ctx1.push_context() as cur_ctx1:
             # cur_ctx is still equivalent to the ctx passed in.
+            assert_equal(Bool(CUDA(ctx1)), Bool(CUDA(cur_ctx1)))
             assert_equal(
-                CUDA(ctx1)._is_not_null(), CUDA(cur_ctx1)._is_not_null()
-            )
-            assert_equal(
-                CUDA(ctx1.stream())._is_not_null(),
-                CUDA(cur_ctx1.stream())._is_not_null(),
+                Bool(CUDA(ctx1.stream())),
+                Bool(CUDA(cur_ctx1.stream())),
             )
             # Make sure that the current CUcontext matches the pushed CUcontext
             assert_equal(
-                cuda_ctx1._is_not_null(),
-                CUDA_get_current_context()._is_not_null(),
+                Bool(cuda_ctx1),
+                Bool(CUDA_get_current_context()),
             )
 
         # Make sure that the previously pushed CUcontext has been restored.
-        assert_equal(
-            cuda_ctx0._is_not_null(), CUDA_get_current_context()._is_not_null()
-        )
+        assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
 
-    assert_equal(
-        initial_ctx._is_not_null(), CUDA_get_current_context()._is_not_null()
-    )
+    assert_equal(Bool(initial_ctx), Bool(CUDA_get_current_context()))
     print("initial CUcontext:", initial_ctx)
     print("CUcontext(id: 0):", cuda_ctx0)
     print("CUcontext(id: 1):", cuda_ctx1)
