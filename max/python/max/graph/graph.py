@@ -147,6 +147,7 @@ class KernelLibrary:
     """
 
     _analysis: _graph.Analysis
+    _analysis_cache: dict[frozenset[str], _graph.Analysis] = {}
 
     def __init__(self, paths: Iterable[Path] = ()) -> None:
         context = default_mlir_context()
@@ -217,7 +218,18 @@ class KernelLibrary:
             custom_op: The :obj:`mlir.Operation` to be verified against the
                 current kernel library analysis.
         """
-        self._analysis.verify_custom_op(custom_op)
+        paths = self._analysis.library_paths
+        if paths:
+            cache_key = frozenset(str(p) for p in paths)
+            cached = KernelLibrary._analysis_cache.get(cache_key)
+            if cached is not None:
+                self._analysis = cached
+                self._analysis.verify_custom_op(custom_op)
+                return
+            self._analysis.verify_custom_op(custom_op)
+            KernelLibrary._analysis_cache[cache_key] = self._analysis
+        else:
+            self._analysis.verify_custom_op(custom_op)
 
 
 class DevicePlacementPolicy(Enum):

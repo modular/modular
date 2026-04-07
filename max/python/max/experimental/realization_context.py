@@ -52,7 +52,6 @@ import os
 import threading
 import weakref
 from collections import OrderedDict
-from contextvars import ContextVar
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -86,7 +85,8 @@ if TYPE_CHECKING:
 
 Ex = TypeVar("Ex", bound=BaseException)
 
-_SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
+_SESSION_LOCK = threading.Lock()
+_SESSION: engine.api.InferenceSession | None = None
 _SEED: Tensor | None = None
 
 # Each distinct (op name, input dtypes/shapes) combination produces a unique
@@ -179,13 +179,15 @@ def set_seed(value: int) -> None:
 
 def _session() -> engine.api.InferenceSession:
     """A single global inference session for compiling and running kernels on tensors."""
-    device_specs = driver.scan_available_devices()
-    if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
-        device_specs.append(cpu)
-    devices = driver.load_devices(device_specs)
-    if not (session := _SESSION.get(None)):
-        _SESSION.set(session := engine.api.InferenceSession(devices=devices))
-    return session
+    global _SESSION
+    with _SESSION_LOCK:
+        if _SESSION is None:
+            device_specs = driver.scan_available_devices()
+            if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
+                device_specs.append(cpu)
+            devices = driver.load_devices(device_specs)
+            _SESSION = engine.api.InferenceSession(devices=devices)
+        return _SESSION
 
 
 # ─── Shared signal-buffer cache (allocated once per device set) ──────────
@@ -320,9 +322,10 @@ def _load_eager_model(graph: Graph) -> engine.Model:
             _EAGER_MODEL_CACHE.clear()
             _EAGER_MODEL_CACHE_SESSION = session
 
-        if model := _EAGER_MODEL_CACHE.get(key):
+        cached = _EAGER_MODEL_CACHE.get(key)
+        if cached:
             _EAGER_MODEL_CACHE.move_to_end(key)
-            return model
+            return cached
 
     model = session.load(graph)
 
