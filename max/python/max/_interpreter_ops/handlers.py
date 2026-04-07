@@ -3089,3 +3089,52 @@ def _handle_resize_linear(
         target_device._device_context_ptr(),
     )
     return [output]
+
+
+# Distributed operations
+
+
+@register_op_handler(mo.DistributedAllreduceSumOp)
+def _handle_distributed_allreduce_sum(
+    op: mo.DistributedAllreduceSumOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.distributed.allreduce.sum by summing tensors across devices.
+
+    Operands (flat): N input tensors, N signal buffers, 1 input chain.
+    Results: N output tensors (one per device, all holding the sum), 1 output chain.
+
+    The interpreter executes sequentially on the host, so signal buffers
+    and chains are unused.  Each input tensor is transferred to the CPU,
+    summed via NumPy, and the result is placed back on each output device.
+
+    Args:
+        op: The allreduce sum operation.
+        inputs: Flat operand buffers from the interpreter dispatcher.
+
+    Returns:
+        N output buffers (one per device) followed by None for the chain.
+    """
+    num_inputs = len(op.inputs)
+    bufs: list[Buffer] = []
+    for i in range(num_inputs):
+        b = inputs[i]
+        assert isinstance(b, Buffer), f"allreduce input {i} is not a Buffer"
+        bufs.append(b)
+
+    # Sum all inputs on the CPU via NumPy.
+    total = bufs[0].to(CPU()).to_numpy().copy()
+    for buf in bufs[1:]:
+        total += buf.to(CPU()).to_numpy()
+
+    # Place the sum on each output device.
+    results = list(op.results)
+    output_buffers: list[Buffer | None] = []
+    for result in results[:-1]:
+        result_type: mo.TensorType = result.type  # type: ignore[assignment]
+        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
+        output_buffers.append(Buffer.from_numpy(total).to(device))
+
+    # Trailing None for the output chain.
+    output_buffers.append(None)
+    return output_buffers

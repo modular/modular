@@ -448,9 +448,6 @@ class EagerRealizationContext(RealizationContext):
         # applies when the interpreter was auto-selected (not explicitly
         # requested by the caller).
         use_interpreter = self._use_interpreter
-        # Signal-buffer graphs contain collective ops the interpreter can't run.
-        if self.signal_buffers:
-            use_interpreter = False
         if use_interpreter:
             from max._interpreter import MOInterpreter
 

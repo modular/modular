@@ -119,6 +119,9 @@ This version is still a work in progress.
   `InterpolationMode.BILINEAR` by delegating to `resize_linear`.
 - Added `resize_linear` op handler to the experimental eager interpreter
   (CPU) via `max.experimental.functional.resize_linear`.
+- Added `distributed.allreduce.sum` op handler to the experimental eager
+  interpreter, enabling multi-GPU eager execution of allreduce collectives
+  without falling back to compilation.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.
