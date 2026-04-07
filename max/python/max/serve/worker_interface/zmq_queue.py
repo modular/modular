@@ -115,6 +115,11 @@ def _open_zmq_socket(path: str, mode: int) -> zmq.Socket[bytes]:
     zmq_ctx = zmq.Context.instance(io_threads=2)
     socket = zmq_ctx.socket(mode)
 
+    # Enable IPv6 so that bind/connect works when hostnames resolve to
+    # IPv6 addresses (e.g. Kubernetes pods with IPv6-only networking).
+    # With IPV6 enabled, the socket still accepts IPv4 connections.
+    socket.setsockopt(zmq.IPV6, 1)
+
     # Calculate buffer size based on system memory
     GIB = 1024**3
     total_mem_gb = mem.total / GIB

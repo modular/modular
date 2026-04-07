@@ -24,6 +24,7 @@ import time
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 from uuid import uuid4
 
 import msgspec
@@ -31,6 +32,26 @@ from max._core import nixl
 from max.driver import Buffer, Device
 
 logger = logging.getLogger("max.pipelines")
+
+NixlBackendType = Literal["ucx", "libfabric"]
+
+_NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
+_SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric"}
+
+
+def _get_nixl_backend_type() -> NixlBackendType:
+    """Returns the NIXL backend type from the environment.
+
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``).
+    """
+    raw = os.environ.get(_NIXL_BACKEND_ENV_VAR, "ucx").strip().lower()
+    if raw not in _SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unsupported NIXL transfer backend {raw!r} "
+            f"(set via {_NIXL_BACKEND_ENV_VAR}). "
+            f"Supported backends: {sorted(_SUPPORTED_BACKENDS)}"
+        )
+    return raw  # type: ignore[return-value]
 
 
 def available_port(
@@ -62,7 +83,9 @@ def available_port(
     raise RuntimeError("No available port found in the specified range.")
 
 
-def _validate_device_type(devices: Sequence[Device]) -> None:
+def _validate_device_type(
+    devices: Sequence[Device], backend_type: NixlBackendType
+) -> None:
     is_gpu = False
     is_cpu = False
     for d in devices:
@@ -80,7 +103,7 @@ def _validate_device_type(devices: Sequence[Device]) -> None:
         raise ValueError("CPU transfer engine must have exactly one tensor.")
 
     first_device = devices[0]
-    if first_device.api == "hip":
+    if first_device.api == "hip" and backend_type == "ucx":
         raise NotImplementedError("Currently UCX does not support HIP devices.")
 
     if not first_device.is_host and (
@@ -176,8 +199,8 @@ class TensorAgent:
     base_addr: int
     """Base memory address for this tensor."""
 
-    ucx_backend: int
-    """UCX backend for this tensor."""
+    backend: int
+    """NIXL backend handle (UCX or libfabric)."""
 
     device_id: int
     """Device ID for this tensor."""
@@ -197,8 +220,19 @@ class TensorAgent:
         total_num_pages: int,
         elts_per_page: int,
         memory_type: nixl.MemoryType,
+        backend_type: NixlBackendType = "ucx",
     ) -> TensorAgent:
-        """Creates and registers a NIXL agent for the given tensor."""
+        """Creates and registers a NIXL agent for the given tensor.
+
+        Args:
+            agent_name: Unique name for this agent.
+            listen_port: TCP port for the NIXL listener.
+            tensor: GPU/CPU buffer to register.
+            total_num_pages: Total KV cache pages in the tensor.
+            elts_per_page: Elements per page.
+            memory_type: NIXL memory segment type (DRAM or VRAM).
+            backend_type: NIXL transport backend (``"ucx"`` or ``"libfabric"``).
+        """
         # Create NIXL agent
         agent = nixl.Agent(
             agent_name,
@@ -215,22 +249,23 @@ class TensorAgent:
         # Reshape tensor to 2D view
         tensor_2d = tensor.view(tensor.dtype, (total_num_pages, elts_per_page))
 
-        # Check UCX availability
-        if "ucx" not in agent.get_available_plugins():
+        # Check backend availability
+        available = agent.get_available_plugins()
+        if backend_type not in available:
             raise RuntimeError(
-                f"UCX not currently available for agent {agent_name}, please ensure it is supported by your system."
+                f"NIXL backend {backend_type!r} not available for agent "
+                f"{agent_name}. Available plugins: {available}"
             )
 
-        # Configure UCX backend
+        # Configure and create backend
         device = tensor.device
-        ucx_params = agent.get_plugin_params("ucx")[0]
+        backend_params = agent.get_plugin_params(backend_type)[0]
         if not device.is_host:
-            ucx_params["gpu_device_id"] = str(device.id)
+            backend_params["gpu_device_id"] = str(device.id)
 
-        # Create UCX backend
-        ucx_backend = agent.create_backend(
-            type="ucx",
-            init_params=ucx_params,
+        backend = agent.create_backend(
+            type=backend_type,
+            init_params=backend_params,
         )
 
         # Register memory
@@ -242,7 +277,7 @@ class TensorAgent:
             type=memory_type, descs=descs
         )
 
-        status = agent.register_memory(reg_dlist, [ucx_backend])
+        status = agent.register_memory(reg_dlist, [backend])
         if status != nixl.Status.SUCCESS:
             raise ValueError(
                 f"Failed to register memory for {agent_name}: {status}"
@@ -257,7 +292,7 @@ class TensorAgent:
             agent_name=agent_name,
             tensor=tensor_2d,
             base_addr=base_addr,
-            ucx_backend=ucx_backend,
+            backend=backend,
             device_id=device.id,
             agent_metadata=agent_metadata,
             reg_dlist=reg_dlist,
@@ -414,13 +449,17 @@ class KVTransferEngine:
 
         self.dp = len(tensors)
 
+        backend_type = _get_nixl_backend_type()
+
         # Validate each replica independently
         bytes_per_page_list = []
         elts_per_page_list = []
         memory_types = []
 
         for replica_tensors in tensors:
-            _validate_device_type([t.device for t in replica_tensors])
+            _validate_device_type(
+                [t.device for t in replica_tensors], backend_type
+            )
             bytes_per_page, elts_per_page = _validate_tensor_shape(
                 replica_tensors, total_num_pages
             )
@@ -465,14 +504,16 @@ class KVTransferEngine:
                     total_num_pages=total_num_pages,
                     elts_per_page=elts_per_page,
                     memory_type=self.memory_type,
+                    backend_type=backend_type,
                 )
                 replica_agents.append(tensor_agent)
             self.tensor_agents.append(replica_agents)
 
         logger.info(
-            "NIXL memory registration complete for %s: %d agent(s) (dp=%d, tp=%d), "
-            "%d bytes per agent.",
+            "NIXL memory registration complete for %s (%s backend): "
+            "%d agent(s) (dp=%d, tp=%d), %d bytes per agent.",
             self.name,
+            backend_type,
             self.dp * self.tp,
             self.dp,
             self.tp,
@@ -534,18 +575,32 @@ class KVTransferEngine:
                 f"Bytes per page mismatch: {self.bytes_per_page} != {remote.bytes_per_page}"
             )
 
-        # Check if the relevant UCX env vars are set. You can get away with eliding
-        # these for intra-node DI. However, for inter-node DI, loading metadata
-        # appears to hang if these are not set.
+        # Check if the relevant transport env vars are set. You can get away
+        # with eliding these for intra-node DI. However, for inter-node DI,
+        # loading metadata appears to hang (UCX) or performance degrades
+        # severely (libfabric without GPU-direct RDMA) if they are not set.
         hostname = socket.gethostname()
         is_internode = hostname != remote.hostname
-        if is_internode and not (
-            "UCX_NET_DEVICES" in os.environ and "UCX_TLS" in os.environ
-        ):
-            raise ValueError(
-                f"Attempted to connect to a TransferEngine on a different node but UCX transports are not configured ({hostname} <-> {remote.hostname}). "
-                "Please re-run and specify both the UCX_TLS and UCX_NET_DEVICES env vars."
-            )
+        if is_internode:
+            backend_type = _get_nixl_backend_type()
+            if backend_type == "ucx" and not (
+                "UCX_NET_DEVICES" in os.environ and "UCX_TLS" in os.environ
+            ):
+                raise ValueError(
+                    f"Attempted to connect to a TransferEngine on a different node but UCX transports are not configured ({hostname} <-> {remote.hostname}). "
+                    "Please re-run and specify both the UCX_TLS and UCX_NET_DEVICES env vars."
+                )
+            if backend_type == "libfabric" and not os.environ.get(
+                "FI_EFA_USE_DEVICE_RDMA"
+            ):
+                logger.warning(
+                    "Inter-node libfabric connection (%s <-> %s) without "
+                    "FI_EFA_USE_DEVICE_RDMA set. EFA GPU-direct RDMA will "
+                    "be disabled, which may severely impact KV transfer "
+                    "throughput. Set FI_EFA_USE_DEVICE_RDMA=1.",
+                    hostname,
+                    remote.hostname,
+                )
 
         # Connect all replicas pairwise
         for local_agents, remote_agents_meta in itertools.product(
@@ -1205,8 +1260,6 @@ class KVTransferEngine:
         # Deregister NIXL memory for all tensors (all replicas)
         for replica_agents in self.tensor_agents:
             for ta in replica_agents:
-                status = ta.agent.deregister_memory(
-                    ta.reg_dlist, [ta.ucx_backend]
-                )
+                status = ta.agent.deregister_memory(ta.reg_dlist, [ta.backend])
                 if status != nixl.Status.SUCCESS:
                     raise ValueError(f"Failed to deregister memory: {status}")
