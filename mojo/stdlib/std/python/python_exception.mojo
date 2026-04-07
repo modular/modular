@@ -28,7 +28,7 @@ from std.python._cpython import PyObjectPtr
 
 
 @fieldwise_init
-struct PythonException(Movable, ImplicitlyCopyable):
+struct PythonException(ImplicitlyCopyable, Movable):
     """Represents a Python exception raised during execution.
 
     This type is used to safely represent Python exceptions that occur when
