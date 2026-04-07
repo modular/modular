@@ -20,7 +20,6 @@ from std.algorithm import map
 """
 
 from std.collections.string.string_slice import get_static_string
-from std.gpu import PDLLevel
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
@@ -232,7 +231,6 @@ def elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "",
 ](shape: Int, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
@@ -244,7 +242,6 @@ def elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -260,7 +257,6 @@ def elementwise[
         simd_width=simd_width,
         use_blocking_impl=use_blocking_impl,
         target=target,
-        pdl_level=pdl_level,
     ](Index(shape), context)
 
 
@@ -275,7 +271,6 @@ def elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "",
 ](shape: IndexList[rank, ...], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
@@ -288,7 +283,6 @@ def elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -308,7 +302,6 @@ def elementwise[
         simd_width,
         use_blocking_impl=use_blocking_impl,
         target=target,
-        pdl_level=pdl_level,
     ](func_unified, shape, context)
 
 
@@ -323,7 +316,6 @@ def elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "",
 ](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
@@ -336,7 +328,6 @@ def elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -371,7 +362,7 @@ def elementwise[
             ](indices: IndexList[rank]) unified register_passable {}:
                 func[width, rank, alignment](indices)
 
-            _elementwise_impl_gpu[simd_width=simd_width, pdl_level=pdl_level](
+            _elementwise_impl_gpu[simd_width=simd_width](
                 gpu_func_unified, shape=shape, ctx=context[]
             )
         else:
@@ -399,7 +390,6 @@ def _elementwise_impl[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
 ](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext) raises:
     comptime if is_cpu[target]():
         _elementwise_impl_cpu[
@@ -407,10 +397,9 @@ def _elementwise_impl[
             use_blocking_impl=use_blocking_impl,
         ](func, shape=shape)
     else:
-        _elementwise_impl_gpu[
-            simd_width=simd_width,
-            pdl_level=pdl_level,
-        ](func, shape=shape, ctx=context)
+        _elementwise_impl_gpu[simd_width=simd_width](
+            func, shape=shape, ctx=context
+        )
 
 
 # ===-----------------------------------------------------------------------===#
