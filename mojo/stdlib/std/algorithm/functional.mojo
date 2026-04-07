@@ -463,17 +463,23 @@ Parameters:
     stencil_axis: Stencil subdomain axes.
     simd_width: The SIMD vector width to use.
     dtype: The input and output data dtype.
-    map_fn: A function that a point in the output domain to the input co-domain.
-    map_strides: A function that returns the stride for the dim.
-    load_fn: A function that loads a vector of simd_width from input.
-    compute_init_fn: A function that initializes vector compute over the stencil.
-    compute_fn: A function the process the value computed for each point in the stencil.
-    compute_finalize_fn: A function that finalizes the computation of a point in the output domain given a stencil.
+    MapFnType: A closure maps a point in the output domain to input co-domain bounds.
+    MapStridesType: A closure returns the stride for each dimension.
+    LoadFnType: A closure loads a SIMD vector from input.
+    ComputeInitFnType: A closure initializes the stencil accumulator.
+    ComputeFnType: A closure processes the value computed for each stencil point.
+    ComputeFinalizeFnType: A closure finalizes the output value from the stencil result.
 
 Args:
     ctx: The DeviceContext to use for GPU execution.
     shape: The shape of the output buffer.
     input_shape: The shape of the input buffer.
+    map_func: Closure mapping output points to input co-domain bounds.
+    map_strides_func: Closure returning the stride for a given dimension.
+    load_func: Closure loading a SIMD vector from input.
+    compute_init_func: Closure initializing the stencil accumulator.
+    compute_func: Closure processing each stencil point.
+    compute_finalize_func: Closure finalizing the output value.
 
 Raises:
     If the GPU kernel launch fails.
