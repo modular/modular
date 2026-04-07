@@ -137,16 +137,45 @@ def _matmul_float8(
     )
 
     if input_scale is not None:
+        # Static quantization: input scale was pre-computed.
         x = quantize_static_scaled_float8(x, input_scale, out_type=weight.dtype)
-
+        if quant_config.weight_scale.is_tensor and weight_scale.rank >= 2:
+            # Fused QKV: per-projection weight scales were broadcast to
+            # rowwise [N, 1] in qkv_weight_scale. Route through
+            # dynamic_scaled_matmul (colwise/rowwise) because
+            # matmul_static_scaled_float8 requires scalar scales.
+            weight_scale = weight_scale.to(x.device)
+            # Broadcast scalar input_scale to [1, M] to match the
+            # per-token layout that the colwise/rowwise kernel expects.
+            a_scales = ops.broadcast_to(
+                input_scale.reshape([1, 1]).to(x.device), [1, x.shape[0]]
+            )
+            colwise_input_spec = InputScaleSpec(
+                granularity=ScaleGranularity.COLWISE,
+                origin=quant_config.input_scale.origin,
+                dtype=weight_scale.dtype,
+            )
+            rowwise_weight_spec = WeightScaleSpec(
+                granularity=ScaleGranularity.ROWWISE,
+                dtype=weight_scale.dtype,
+            )
+            return dynamic_scaled_matmul(
+                x,
+                weight,
+                a_scales,
+                weight_scale,
+                colwise_input_spec,
+                rowwise_weight_spec,
+                out_type=DType.bfloat16,
+            )
         return matmul_static_scaled_float8(x, weight, input_scale, weight_scale)
     elif (
         quant_config.input_scale.is_tensor
         and quant_config.weight_scale.is_tensor
     ):
-        # Workaround for GEX-3496: force tensor-scale into row-scale
-        # format so we hit the rowwise/colwise kernel path. weight_scale
-        # may already be [N, 1] from MLP fusion; only broadcast scalars.
+        # GEX-3496 workaround for dynamic tensor-wise FP8: force
+        # tensor-scale into row-scale format so we hit the
+        # rowwise/colwise kernel path.
         n_out = weight.shape[0]
         if quant_config.weight_scale.is_tensor and weight_scale.rank < 2:
             weight_scale = ops.broadcast_to(
@@ -185,7 +214,8 @@ def _matmul_float8(
             out_type=DType.bfloat16,
         )
     else:
-        x, x_scales = quantize_dynamic_scaled_float8(
+        # Dynamic non-per-tensor (per-row/block).
+        x, x_scale = quantize_dynamic_scaled_float8(
             x,
             quant_config.input_scale,
             quant_config.weight_scale,
@@ -194,15 +224,15 @@ def _matmul_float8(
         )
         weight_scale = weight_scale.to(x.device)
 
-        return dynamic_scaled_matmul(
-            x,
-            weight,
-            x_scales,
-            weight_scale,
-            quant_config.input_scale,
-            quant_config.weight_scale,
-            out_type=DType.bfloat16,
-        )
+    return dynamic_scaled_matmul(
+        x,
+        weight,
+        x_scale,
+        weight_scale,
+        quant_config.input_scale,
+        quant_config.weight_scale,
+        out_type=DType.bfloat16,
+    )
 
 
 def quantized_matmul(
