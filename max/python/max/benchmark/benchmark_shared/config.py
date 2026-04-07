@@ -689,13 +689,13 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
 
     randomize_starting_turn: bool = Field(
-        default=False,
+        default=True,
         description="Start each multi-turn session at a random turn offset. Prefix turns run densely (no inter-turn delay) to build KV cache context and are excluded from benchmark results.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
     randomize_session_start: bool = Field(
-        default=False,
+        default=True,
         description="Add a random sleep (0 to inter-turn delay) before each session's first measured query to spread out the initial wave of requests.",
         json_schema_extra={"group": "Traffic Control"},
     )
