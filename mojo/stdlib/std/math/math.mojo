@@ -851,7 +851,7 @@ def frexp[
         zero,
     )
     var frac = selector.select(T(from_bits=x_int & ~mask1 | mask2), zero)
-    return StaticTuple[size=2](frac, exp)
+    return {frac, exp}
 
 
 # ===----------------------------------------------------------------------=== #

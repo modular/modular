@@ -230,8 +230,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    def __init__(out self, *elems: Int, __list_literal__: () = ()):
+    def __init__[
+        *Ts: type_of(Int)
+    ](out self, *elems: *Ts, __list_literal__: () = ()):
         """Constructs a static int tuple given a set of arguments.
+
+        Parameters:
+            Ts: The types.
 
         Args:
             elems: The elements to construct the tuple.
@@ -241,14 +246,11 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
-
         comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
-        var num_elements = len(elems)
-
-        assert (
-            Self.size == num_elements
+        comptime assert (
+            elems.__len__() == Self.size
         ), "[IndexList] mismatch in the number of elements"
 
         self = Self()

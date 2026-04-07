@@ -127,20 +127,58 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         ](fill)
 
     @always_inline
-    def __init__(out self, *elems: Self.element_type):
+    def __init__[*Ts: type_of(Self.element_type)](out self, *elems: *Ts):
         """Constructs a static tuple given a set of arguments.
+
+        Parameters:
+            Ts: The types.
 
         Args:
             elems: The element types.
         """
         _static_tuple_construction_checks[Self.element_type, Self.size]()
-        if len(elems) == 1:
-            return Self(fill=elems[0])
+        comptime if elems.__len__() == 1:
+            return Self(fill=rebind[Self.element_type](elems[0]))
 
-        assert Self.size == len(elems), "mismatch in the number of elements"
+        # FIXME(#6376): remove elems.__len__() == 1
+        comptime assert (
+            elems.__len__() == Self.size or elems.__len__() == 1
+        ), String(
+            "mismatch in the number of elements, Self.size: ",
+            Self.size,
+            " len(elems): ",
+            elems.__len__(),
+        )
+
         self = Self()
         comptime for idx in range(Self.size):
-            self[idx] = elems[idx]
+            self[idx] = rebind[Self.element_type](elems[idx])
+
+    # TODO(#6357): remove once implicit conversion in VariadicPack is solved
+    @always_inline
+    def __init__[
+        dtype: DType, *Ts: type_of(Int)
+    ](out self: StaticTuple[Scalar[dtype], Self.size], *elems: *Ts):
+        """Constructs a static tuple given a set of arguments.
+
+        Parameters:
+            dtype: The dtype.
+            Ts: The types.
+
+        Args:
+            elems: The element types.
+        """
+        _static_tuple_construction_checks[Self.element_type, Self.size]()
+        comptime if elems.__len__() == 1:
+            return {fill = self.element_type(elems[0])}
+
+        comptime assert (
+            elems.__len__() == Self.size
+        ), "mismatch in the number of elements"
+
+        self = type_of(self)()
+        comptime for idx in range(Self.size):
+            self[idx] = self.element_type(elems[idx])
 
     @always_inline
     def __init__[*values: Self.element_type](out self):

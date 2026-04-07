@@ -108,13 +108,22 @@ struct RuntimeTuple[
                 self.value[i] = UNKNOWN_VALUE
 
     @always_inline
-    def __init__(out self, *values: Int):
+    def __init__[*Ts: type_of(Int)](out self, *values: *Ts):
         """Initialize a `RuntimeTuple` with the provided values.
 
+        Parameters:
+            Ts: The integers.
+
         Args:
-            values: Variadic number of integer values to initialize the tuple with.
+            values: Variadic number of integer values to initialize the tuple
+                with.
         """
-        self.value = type_of(self.value)(*values)
+        comptime assert (
+            values.__len__() == Self.scalar_length
+        ), "mismatch in the number of elements"
+        self.value = {}
+        comptime for i in range(values.__len__()):
+            self.value[i] = values[i]
 
     @always_inline
     @implicit
@@ -621,31 +630,30 @@ def shape_div[
             comptime assert len(a_t) == len(
                 b_t
             ), "shape and stride length musth match"
-            var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
+            result = {}
 
             comptime for i in range(len(a_t)):
                 var res_i = shape_div(a[i], b[i])
 
                 comptime for j in range(res_i.scalar_length):
-                    res.value[i + j] = res_i.value[j]
-            return res
+                    result.value[i + j] = res_i.value[j]
         else:
-            var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
+            result = {}
             # FIXME: this used to be simpler
             # var vb = Int(to_int(b))
-            var vb = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](Int(b))
+            comptime R = RuntimeTuple[IntTuple(UNKNOWN_VALUE)]
+            var vb = R(Int(b))
 
             comptime for i in range(len(a_t)):
                 var res_i = shape_div(a[i], vb)
 
                 comptime for j in range(res_i.scalar_length):
-                    res.value[i + j] = res_i.value[j]
+                    result.value[i + j] = res_i.value[j]
 
                 # FIXME: this used to be simpler
                 # vb = Int(to_int(shape_div(vb, product(a[i]))))
-                var t = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](product(a[i]))
+                var t = R(product(a[i]))
                 vb = {Int(shape_div(vb, t))}
-            return res
     else:
         comptime if b_t.is_tuple():
             return shape_div(a, b)
