@@ -206,8 +206,9 @@ struct _ListTakeIter[
 
         # Destroy remaining elements from current index to original length
         while self._index < self._original_len:
-            (self._list[].unsafe_ptr().bitcast[TDestructible]() + self._index)
-                .destroy_pointee()
+            (
+                self._list[].unsafe_ptr().bitcast[TDestructible]() + self._index
+            ).destroy_pointee()
             self._index += 1
 
     @always_inline

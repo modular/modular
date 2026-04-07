@@ -1221,7 +1221,7 @@ def test_list_take_items_empty() raises:
 
 def test_list_take_items_partial() raises:
     """Test that take_items works correctly when partially consumed.
-    
+
     Note: The list length is set to 0 immediately when take_items() is called
     to prevent double-free. Remaining elements are tracked in the iterator
     and destroyed when the iterator is dropped.
@@ -1256,13 +1256,14 @@ def test_list_take_items_partial() raises:
 
 
 def test_list_take_items_bounds() raises:
-    """Test that take_items reports correct bounds and list is empty immediately."""
+    """Test that take_items reports correct bounds and list is empty immediately.
+    """
     var my_list = List[Int]()
     my_list.append(1)
     my_list.append(2)
     my_list.append(3)
     assert_equal(len(my_list), 3)
-    
+
     var iter = my_list.take_items()
     # List is immediately empty when iterator is created
     assert_equal(len(my_list), 0)
