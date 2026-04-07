@@ -322,11 +322,10 @@ alias:
 from std.gpu import thread_idx_uint as thread_idx
 ```
 
-To migrate to `Int`, instead import `thread_idx_int` and update uses to reflect
-the change to `Int`:
+To use the default `Int`-returning accessor, import `thread_idx` directly:
 
 ```mojo
-from std.gpu import thread_idx_int as thread_idx
+from std.gpu import thread_idx
 ```
 
 This `thread_idx` accessor will change to yielding `Int` values in a future
