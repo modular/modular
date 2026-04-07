@@ -172,7 +172,7 @@ def spatial_merge[
 ) raises:
     comptime threads_per_block = 256
     var batch_size = Int(grid_thw.dim[0]())
-    var num_blocks = Int(input.dim[0]())
+    var num_blocks = Int(output.dim[0]())
 
     comptime kernel = spatial_merge_kernel[
         dtype,

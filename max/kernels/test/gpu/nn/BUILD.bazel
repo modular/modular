@@ -134,7 +134,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    "test_spatial_merge.mojo": ["@platforms//:incompatible"],  #FIXME: KERN-2727
+    "test_spatial_merge.mojo": select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # TODO(GEX-3342): Metal GPU sorting produces incorrect results
     "test_warp_bitonic_sort.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
