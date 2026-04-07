@@ -136,7 +136,6 @@ from nn.bicubic import resize_bicubic
 from nn.concat import concat, fused_concat
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter as _pack_conv_filter
-from nn.conv.conv import pack_filter_from_fcrs as _pack_conv_filter_from_fcrs
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
 from nn.conv.conv_transpose import (
     conv_transpose_shape,
@@ -9283,24 +9282,6 @@ def layout_transform_conv_filter_common[
     )
 
 
-def _layout_transform_conv_filter_from_fcrs[
-    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
-](
-    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
-    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
-):
-    comptime assert packed_rank == filter_rank + 1
-
-    # With the compiler-level FCRS→RSCF transpose in PatternFusion,
-    # this kernel should no longer be called. But keep it as a fallback
-    # using int64 convention (same as the RSCF path).
-    _pack_conv_filter_from_fcrs(
-        filter.to_tile_tensor[DType.int64](),
-        packed_filter.to_tile_tensor[DType.int64](),
-        num_groups,
-    )
-
-
 @compiler.register("layout_transform_QRSCF_to_FQRSCf")
 struct LayoutTransformQRSCF2FQRSCf:
     @always_inline
@@ -9327,39 +9308,6 @@ struct LayoutTransformRSCF2FRSCf:
         filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
     ):
         layout_transform_conv_filter_common[num_groups=num_groups](
-            packed_filter, filter
-        )
-
-
-# Note: These FCRS/FCQRS kernels are currently unused — the compiler
-# transposes FCRS to RSCF in PatternFusion before packing, so only the
-# RSCF kernels above are invoked. Kept as fallback; can be removed in cleanup.
-@compiler.register("layout_transform_FCRS_to_FRSCf")
-struct LayoutTransformFCRS2FRSCf:
-    @always_inline
-    @staticmethod
-    def execute[
-        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
-    ](
-        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
-        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
-    ):
-        _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
-            packed_filter, filter
-        )
-
-
-@compiler.register("layout_transform_FCQRS_to_FQRSCf")
-struct LayoutTransformFCQRS2FQRSCf:
-    @always_inline
-    @staticmethod
-    def execute[
-        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
-    ](
-        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
-        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
-    ):
-        _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
             packed_filter, filter
         )
 
