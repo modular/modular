@@ -616,5 +616,19 @@ def test_span_with_non_movable_type() raises:
     ptr.free()
 
 
+def test_span_iter_owned() raises:
+    var list = [10, 20, 30]
+    var result = List[Int]()
+    for elem in Span(list):
+        result.append(elem)
+
+    assert_equal(len(result), 3)
+    assert_equal(result[0], 10)
+    assert_equal(result[1], 20)
+    assert_equal(result[2], 30)
+    # Original list is still intact (Span doesn't own data).
+    assert_equal(len(list), 3)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

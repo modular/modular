@@ -72,7 +72,7 @@ struct _SpanIter[
     T: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator):
+](ImplicitlyCopyable, Iterable, IterableOwned, Iterator):
     """Iterator for Span.
 
     Parameters:
@@ -91,6 +91,9 @@ struct _SpanIter[
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+    comptime IteratorOwnedType: Iterator = Self
+    """The owned iterator type for this span iterator."""
+
     comptime Element = Self.T
     """The element type yielded by iteration."""
 
@@ -100,6 +103,10 @@ struct _SpanIter[
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
 
     @always_inline
     def __next__(
@@ -131,6 +138,7 @@ struct Span[
     Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable,
     Iterable,
+    IterableOwned where conforms_to(T, Copyable),
     Sized,
     TrivialRegisterPassable,
     Writable where conforms_to(T, Writable),
@@ -160,6 +168,11 @@ struct Span[
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+    comptime IteratorOwnedType: Iterator = _SpanIter[
+        downcast[Self.T, Copyable], Self.origin
+    ]
+    """The owned iterator type for this `Span`."""
+
     # Fields
     var _data: Self._UnsafePointerType
     var _len: Int
@@ -303,6 +316,20 @@ struct Span[
         var start, end = slc.indices(len(self))
 
         return Self(ptr=(self._data + start), length=end - start)
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the span and return an iterator over its elements.
+
+        Returns:
+            An iterator over the elements of the span.
+        """
+        comptime assert conforms_to(
+            Self.T, Copyable
+        ), "Span iteration requires the element to be `Copyable`"
+        return _SpanIter(
+            0, rebind[Span[downcast[Self.T, Copyable], Self.origin]](self)
+        )
 
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
