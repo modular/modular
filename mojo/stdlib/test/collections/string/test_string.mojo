@@ -1338,7 +1338,9 @@ def test_format_conversion_flags() raises:
     assert_equal("{} {!r}".format(d, d), "42 Int(42)")
     assert_equal("{!s} {!r}".format(d, d), "42 Int(42)")
 
-    assert_true("Mojo Float64(2" in "{} {!r} {} {!r}".format(a, b, c, d))
+    assert_true(
+        "Mojo Float64(2" in "{} {!r} {} {!r}".format(a, b, c, d)
+    )
     assert_true(
         "Mojo Float64(2" in "{!s} {!r} {!s} {!r}".format(a, b, c, d)
     )
@@ -1346,7 +1348,9 @@ def test_format_conversion_flags() raises:
     var e = True
     assert_equal("{} {!r}".format(e, e), "True True")
 
-    assert_true("Mojo Float64(2" in "{0} {1!r} {2} {3}".format(a, b, c, d))
+    assert_true(
+        "Mojo Float64(2" in "{0} {1!r} {2} {3}".format(a, b, c, d)
+    )
     assert_true(
         "Mojo Float64(2" in "{0!s} {1!r} {2} {3!s}".format(a, b, c, d)
     )
