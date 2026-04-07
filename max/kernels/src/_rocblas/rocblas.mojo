@@ -13,7 +13,6 @@
 #
 
 from std.complex import ComplexFloat32, ComplexFloat64
-from std.ffi import _CPointer
 from std.gpu.host._amdgpu_hip import hipStream_t
 
 from .types import (
@@ -46012,10 +46011,10 @@ def rocblas_gemm_ex(
     b_type: DataType,
     ldb: Int32,
     beta: OpaquePointer[_],
-    c: _CPointer[NoneType, _],
+    c: OpaquePointer[_],
     c_type: DataType,
     ldc: Int32,
-    d: _CPointer[NoneType, _],
+    d: OpaquePointer[_],
     d_type: DataType,
     ldd: Int32,
     compute_type: DataType,

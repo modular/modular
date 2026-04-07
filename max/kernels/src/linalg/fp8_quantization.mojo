@@ -38,7 +38,6 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import TensorLayout
-from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -1682,9 +1681,7 @@ def blockwise_scaled_fp8_with_epilogue[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NullableTileTensor[
-        mut=True, c_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
@@ -1725,7 +1722,7 @@ def blockwise_scaled_fp8_with_epilogue[
         )
 
         comptime if not elementwise_lambda_fn:
-            if not c.ptr:
+            if not c.ptr._is_not_null():
                 raise "c must be allocated!"
 
             blockwise_fp8_matmul[
@@ -1733,7 +1730,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 a_scales_type=a_scales_type,
                 b_scales_type=b_scales_type,
                 config=matmul_config,
-            ](c.value(), a, b, a_scales, b_scales, ctx)
+            ](c, a, b, a_scales, b_scales, ctx)
         else:
             comptime epilogue = elementwise_lambda_fn.value()
             # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
@@ -1752,14 +1749,14 @@ def blockwise_scaled_fp8_with_epilogue[
                 simd_width: Int, rank: Int, alignment: Int = 1
             ](idx: IndexList[rank]):
                 var c_coord = Index(idx[0], idx[1])
-                var c_val = c.value().load_linear[simd_width](idx)
+                var c_val = c.load_linear[simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
                     c_coord, c_val
                 )
 
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
-            if c.ptr:
+            if c.ptr._is_not_null():
                 var m = Int(c.dim[0]())
                 var n = Int(c.dim[1]())
 
@@ -1768,7 +1765,7 @@ def blockwise_scaled_fp8_with_epilogue[
                     a_scales_type=a_scales_type,
                     b_scales_type=b_scales_type,
                     config=matmul_config,
-                ](c.value(), a, b, a_scales, b_scales, ctx)
+                ](c, a, b, a_scales, b_scales, ctx)
                 elementwise[epilogue_wrapper, simd_size, target="gpu"](
                     Index(m, n), ctx
                 )

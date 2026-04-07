@@ -113,7 +113,7 @@ struct _DirHandle:
                 String(err),
             )
 
-        self._handle = handle.value()
+        self._handle = handle
 
     def __del__(deinit self):
         """Closes the handle opened via popen."""

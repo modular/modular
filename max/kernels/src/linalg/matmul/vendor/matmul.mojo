@@ -25,7 +25,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_tensor import NullableTileTensor
 
 from std.utils import Index, IndexList
 
@@ -37,7 +36,7 @@ def matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NullableTileTensor[mut=True, ...],
+    c: TileTensor[mut=True, ...],
     a: TileTensor,
     b: TileTensor,
     ctx: DeviceContext,
@@ -50,7 +49,7 @@ def matmul[
     comptime c_type = c.dtype
 
     comptime if not elementwise_lambda_fn:
-        if not c.ptr:
+        if not c.ptr._is_not_null():
             raise "c must be allocated"
         vendor_matmul[use_tf32=True](
             ctx,
@@ -98,7 +97,7 @@ def matmul[
 
         # If c is already allocated, we can just use the vendor matmul and
         # apply the epilogue.
-        if c.ptr:
+        if c.ptr._is_not_null():
             var m = Int(c.dim[0]())
             var n = Int(c.dim[1]())
 

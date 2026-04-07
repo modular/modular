@@ -519,6 +519,71 @@ struct UnsafePointer[
             _type=type_of(self)._mlir_type
         ](other.address)
 
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__(
+        out self,
+        other: Optional[
+            NonNullUnsafePointer[
+                Self.type,
+                origin=Self.origin,
+                address_space=Self.address_space,
+            ]
+        ],
+    ):
+        self.address = __mlir_op.`pop.pointer.bitcast`[_type=Self._mlir_type](
+            UnsafePointer(to=other).bitcast[type_of(self)]()[].address
+        )
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__[
+        other_type: AnyType,
+        other_origin: Origin,
+        other_address_space: AddressSpace,
+        //,
+    ](
+        other: Optional[
+            NonNullUnsafePointer[
+                other_type, other_origin, address_space=other_address_space
+            ]
+        ],
+        out self: UnsafePointer[
+            other_type,
+            ImmutOrigin(other_origin),
+            address_space=other_address_space,
+        ],
+    ):
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type=type_of(self)._mlir_type
+        ](UnsafePointer(to=other).bitcast[type_of(self)]()[].address)
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__[
+        other_type: AnyType,
+        other_origin: Origin[mut=True],
+        other_address_space: AddressSpace,
+        //,
+    ](
+        other: Optional[
+            NonNullUnsafePointer[
+                other_type, other_origin, address_space=other_address_space
+            ]
+        ],
+        out self: UnsafePointer[
+            other_type,
+            MutAnyOrigin,
+            address_space=other_address_space,
+        ],
+    ):
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type=type_of(self)._mlir_type
+        ](UnsafePointer(to=other).bitcast[type_of(self)]()[].address)
+
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#

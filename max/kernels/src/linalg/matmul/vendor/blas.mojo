@@ -91,8 +91,6 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.tile_tensor import NullableTileTensor
-from std.memory._nonnull import NonNullUnsafePointer
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils import IndexList
 from std.utils.variant import Variant
@@ -288,24 +286,6 @@ def _ffi_void_ptr[
     return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr)
 
 
-@always_inline
-def _ffi_void_ptr[
-    T: AnyType, origin: Origin, addr: AddressSpace
-](
-    ptr: Optional[NonNullUnsafePointer[T, origin, address_space=addr]]
-) -> Optional[NonNullUnsafePointer[NoneType, MutAnyOrigin]]:
-    """Cast an optional non-null pointer to a nullable void pointer for vendor
-    FFI calls.
-
-    Returns None when the optional is empty.
-    """
-    if ptr:
-        return rebind[NonNullUnsafePointer[NoneType, MutAnyOrigin]](
-            ptr.unsafe_value()
-        )
-    return None
-
-
 def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
     comptime if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
         check_cublas_error(
@@ -360,7 +340,7 @@ def matmul[
     use_tf32: Bool = False,
 ](
     ctx: DeviceContext,
-    c: NullableTileTensor[mut=True, ...],
+    c: TileTensor[mut=True, ...],
     a: TileTensor,
     b: TileTensor,
     *,
@@ -371,7 +351,7 @@ def matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    """Matmul using the vendor BLAS library for NullableTileTensor operands.
+    """Matmul using the vendor BLAS library for TileTensor operands.
 
     Note: This overload does not support a_scales/b_scales. Add scale
     parameters here when a TileTensor caller needs scaled vendor matmul.
@@ -616,7 +596,7 @@ def matmul[
 ](
     ctx: DeviceContext,
     handle: Handle,
-    c_tensor: NullableTileTensor[mut=True, c_type, ...],
+    c_tensor: TileTensor[mut=True, c_type, ...],
     a_tensor: TileTensor[a_type, ...],
     b_tensor: TileTensor[b_type, ...],
     *,
@@ -741,7 +721,7 @@ def _cublas_matmul[
 ](
     ctx: DeviceContext,
     handle: cublasHandle_t,
-    c: NullableTileTensor[mut=True, c_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     *,
@@ -891,7 +871,7 @@ def _rocblas_matmul[
 ](
     ctx: DeviceContext,
     handle: _rocblas.Handle,
-    c: NullableTileTensor[mut=True, c_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     *,
@@ -1006,7 +986,7 @@ def _cublasLt_matmul[
 ](
     ctx: DeviceContext,
     handle: OpaquePointer[_],
-    d: NullableTileTensor[mut=True, d_type, ...],
+    d: TileTensor[mut=True, d_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     *,
@@ -1430,7 +1410,7 @@ def _hipblasLt_matmul[
 ](
     ctx: DeviceContext,
     handle: hipblasLtHandle_t,
-    d: NullableTileTensor[mut=True, d_type, ...],
+    d: TileTensor[mut=True, d_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     *,

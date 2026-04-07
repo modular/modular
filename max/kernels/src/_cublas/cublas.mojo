@@ -27,12 +27,13 @@ from std.os import abort
 from std.pathlib import Path
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
-from std.ffi import _CPointer, _Global, OwnedDLHandle
+from std.ffi import _Global, OwnedDLHandle
 
 from std.gpu.host._nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
 from .result import Result
+
 
 comptime cublasContext = NoneType
 comptime cublasHandle_t = UnsafePointer[cublasContext, _]
@@ -3851,7 +3852,7 @@ def cublasGemmEx64(
     _btype: DataType,
     ldb: Int64,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: _CPointer[NoneType, MutAnyOrigin],
+    _c: OpaquePointer[MutAnyOrigin],
     _ctype: DataType,
     ldc: Int64,
     compute_type: ComputeType,
@@ -5355,7 +5356,7 @@ def cublasGemmEx(
     _btype: DataType,
     ldb: Int32,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: _CPointer[NoneType, MutAnyOrigin],
+    _c: OpaquePointer[MutAnyOrigin],
     _ctype: DataType,
     ldc: Int32,
     compute_type: ComputeType,

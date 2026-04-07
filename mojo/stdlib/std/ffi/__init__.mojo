@@ -473,10 +473,10 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         var handle = dlopen(file, Int32(flags))
         if not handle:
             var error_message = dlerror()
-            var mesage = StringSlice(
-                unsafe_from_utf8_ptr=error_message.value()
-            ) if error_message else {}
-            raise Error("dlopen failed: ", mesage)
+            raise Error(
+                "dlopen failed: ",
+                StringSlice(unsafe_from_utf8_ptr=error_message),
+            )
         return _DLHandle(handle)
 
     def check_symbol(self, var name: String) -> Bool:
@@ -660,12 +660,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             # Check if an error occurred during the 2nd `dlsym` call.
             var err = dlerror()
             if err:
-                abort(
-                    t"dlsym failed:"
-                    t" {StringSlice(unsafe_from_utf8_ptr=err.value())}"
-                )
+                abort(t"dlsym failed: {String(unsafe_from_utf8_ptr=err)}")
 
-        return res.value()
+        return res
 
     @always_inline
     def call[
