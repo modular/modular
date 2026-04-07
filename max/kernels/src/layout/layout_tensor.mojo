@@ -34,10 +34,10 @@ from std.builtin.dtype import _unsigned_integral_type_of
 from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
-    block_dim_int as block_dim,
+    block_dim,
     block_idx,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
