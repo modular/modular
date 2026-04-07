@@ -387,6 +387,8 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
 
   // Add Metal AIR transformation pass at the very end for Metal GPU targets
   if (isMetalBackend(options)) {
+    // Initial LLVM IR must be correct for Metal
+    mpm.addPass(MetalVerifierPass());
     // Run module-level lowering before per-function rewrites: inlines
     // static_string_* globals and replaces print sentinel calls.
     mpm.addPass(MetalModuleRewritePass());
@@ -576,6 +578,8 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
 
   // Add Metal AIR transformation pass at the very end for Metal GPU targets
   if (isMetalBackend(options)) {
+    // Initial LLVM IR must be correct for Metal
+    mpm.addPass(MetalVerifierPass());
     // Run module-level lowering before per-function rewrites: inlines
     // static_string_* globals and replaces print sentinel calls.
     mpm.addPass(MetalModuleRewritePass());
