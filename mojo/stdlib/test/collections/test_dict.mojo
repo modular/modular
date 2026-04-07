@@ -693,7 +693,11 @@ def test_dict_repr_wrap() raises:
     var tmp_dict = {"one": 1.0, "two": 2.0}
     assert_equal(
         repr(tmp_dict),
-        "Dict[String, Float64]({'one': Float64(1.0), 'two': Float64(2.0)})",
+        (
+            "Dict[String, SIMD[DType.float64, 1]]"
+            "({'one': SIMD[DType.float64, 1](1.0), "
+            "'two': SIMD[DType.float64, 1](2.0)})"
+        ),
     )
 
 
