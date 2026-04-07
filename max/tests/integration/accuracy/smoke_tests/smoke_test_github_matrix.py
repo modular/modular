@@ -78,6 +78,7 @@ HF_MODELS: dict[str, set[str]] = {
     "qwen/qwen2.5-7b-instruct": MULTI,
     "qwen/qwen2.5-vl-3b-instruct": MULTI,
     "qwen/qwen2.5-vl-7b-instruct": MULTI,
+    "qwen/qwen3-235b-a22b-instruct-2507": NON_XL | {"max", "8xMI355"},
     "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@H100"},  # MODELS-1020
     "qwen/qwen3-8b": MULTI,
     "qwen/qwen3-vl-4b-instruct": XL | {"max-ci@H100", "vllm@B200"},  # MODELS-1020
