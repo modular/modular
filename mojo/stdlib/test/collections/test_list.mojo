@@ -1247,9 +1247,9 @@ def test_list_take_items_partial() raises:
     # Iterator now has 3 elements remaining
     assert_equal(iter.bounds()[0], 3)
 
-    # Complete the iteration
+    # Complete the iteration (consume the iterator)
     var count = 0
-    for _ in iter:
+    for _ in iter^:
         count += 1
 
     assert_equal(count, 3)
