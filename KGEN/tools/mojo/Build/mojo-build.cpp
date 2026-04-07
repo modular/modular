@@ -150,11 +150,24 @@ static int printSupportedTargets() {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
 
+  // Collect targets and sort alphabetically for consistent, scannable output.
+  std::vector<std::pair<std::string, std::string>> targets;
+  for (const llvm::Target &tgt : llvm::TargetRegistry::targets())
+    targets.emplace_back(tgt.getName(), tgt.getShortDescription());
+  llvm::sort(targets);
+
   llvm::outs() << "Registered Targets:\n";
-  for (const llvm::Target &tgt : llvm::TargetRegistry::targets()) {
-    llvm::outs() << "  " << tgt.getName() << " - " << tgt.getShortDescription()
-                 << "\n";
+
+  // If no targets found, something is wrong with the LLVM build. Handle
+  // gracefully.
+  if (targets.empty()) {
+    llvm::outs() << "  No targets found.\n";
+    return EXIT_SUCCESS;
   }
+
+  for (const auto &[name, desc] : targets)
+    llvm::outs() << "  " << name << " - " << desc << "\n";
+
   return EXIT_SUCCESS;
 }
 
