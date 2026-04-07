@@ -522,6 +522,16 @@ def _is_sm_120x_or_newer() -> Bool:
 
 
 @always_inline("nodebug")
+def is_apple_m5() -> Bool:
+    """Returns True if the target is an Apple M5 GPU and False otherwise.
+
+    Returns:
+        True if the target is Apple M5 and False otherwise.
+    """
+    return is_apple_gpu() and CompilationTarget.is_apple_m5()
+
+
+@always_inline("nodebug")
 def is_apple_gpu() -> Bool:
     """Returns True if the target triple is for Apple GPU (Metal) and False otherwise.
 

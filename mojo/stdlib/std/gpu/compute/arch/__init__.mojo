@@ -19,6 +19,7 @@ multiply-accumulate (MMA) operations:
 - **mma_nvidia_sm100**: NVIDIA Blackwell (SM100) tensor cores - 5th gen tensor cores
 - **mma_amd**: AMD Matrix Cores (CDNA2/3/4) - Data center GPUs
 - **mma_amd_rdna**: AMD WMMA (RDNA3/4) - Consumer GPUs
+- **mma_apple**: Apple Silicon (M5) - 1st gen neural accelerator
 
 ## Module Organization
 
@@ -47,6 +48,7 @@ The main `gpu.compute.mma` module imports these implementations:
 ```mojo
 from .arch.mma_nvidia import _mma_nvidia
 from .arch.mma_amd import _mma_amd
+from .arch.mma_apple import _mma_apple
 ```
 
 And dispatches based on compile-time architecture detection:
@@ -56,5 +58,7 @@ comptime if is_nvidia_gpu():
     _mma_nvidia(d, a, b, c)
 elif is_amd_gpu():
     _mma_amd[block_size](d, a, b, c)
+elif is_apple_m5():
+    _mma_apple(d, a, b, c)
 ```
 """

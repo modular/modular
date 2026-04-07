@@ -76,6 +76,10 @@ This version is still a work in progress.
 - Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
   targets at compile time. `is_apple_silicon()` now includes M5 in its check.
 
+- Added Apple M5 MMA intrinsics (`apple_mma_load`, `apple_mma_store`,
+  `_mma_apple`) in `std.gpu.compute.arch.mma_apple`, enabling hardware matrix
+  multiply-accumulate on Apple GPU.
+
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `Span`: `Writable`, `Hashable`
