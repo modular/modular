@@ -1007,6 +1007,12 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
         },
     )
 
+    collect_gpu_stats: bool = Field(
+        default=True,
+        description="Enable GPU stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     @classmethod
     def get_default_required_fields(cls) -> set[str]:
         """Get required fields for the sweep benchmark config."""
