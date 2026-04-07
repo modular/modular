@@ -15,7 +15,7 @@ from std.math import ceildiv, exp, inf, log
 
 from std.algorithm.functional import parallelize
 from compiler_internal import register
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 from std.runtime.asyncrt import DeviceContextPtr
@@ -176,9 +176,9 @@ struct LogProbabilitiesRagged:
             @__copy_capture(num_output_tokens)
             def raw_lp_kernel():
                 var output_token_index = global_idx.x
-                if output_token_index < UInt(num_output_tokens):
+                if output_token_index < num_output_tokens:
                     compute_log_probabilities_1tok[target, levels](
-                        output_token_index=Int(output_token_index),
+                        output_token_index=output_token_index,
                         lp_logits=lp_logits,
                         lp_tokens=lp_tokens,
                         logits=logits,
