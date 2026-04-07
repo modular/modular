@@ -21,7 +21,7 @@ from std.python import PythonObject
 
 from std.os import abort
 from std.sys import bit_width_of
-from std.ffi import c_double, c_long, c_size_t, c_ssize_t
+from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
 import std.format._utils as fmt
 
 from std.reflection import get_type_name
@@ -1807,9 +1807,7 @@ struct PythonObject(
 
 def _unsafe_alloc[
     T: AnyType
-](
-    type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin]
-) raises -> PyObjectPtr:
+](type_obj_ptr: _CPointer[PyTypeObject, MutAnyOrigin]) raises -> PyObjectPtr:
     """Allocate an uninitialized Python object for storing a Mojo value.
 
     Parameters:
@@ -1858,7 +1856,7 @@ def _unsafe_alloc_init[
     T: Movable & ImplicitlyDestructible,
     //,
 ](
-    type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin], var mojo_value: T
+    type_obj_ptr: _CPointer[PyTypeObject, MutAnyOrigin], var mojo_value: T
 ) raises -> PythonObject:
     """Allocate a Python object pointer and initialize it with a Mojo value.
 

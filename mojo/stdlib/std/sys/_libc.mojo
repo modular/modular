@@ -306,7 +306,7 @@ def dlopen(
 
 
 @always_inline
-def dlclose(handle: OpaquePointer[mut=True, _]) -> c_int:
+def dlclose(handle: _CPointer[mut=True, NoneType, _]) -> c_int:
     return external_call["dlclose", c_int](handle)
 
 
@@ -315,7 +315,7 @@ def dlsym[
     # Default `dlsym` result is an OpaquePointer.
     result_type: AnyType = NoneType
 ](
-    handle: OpaquePointer,
+    handle: _CPointer[NoneType, _],
     name: UnsafePointer[mut=False, c_char, _],
     out result: _CPointer[result_type, MutExternalOrigin],
 ):

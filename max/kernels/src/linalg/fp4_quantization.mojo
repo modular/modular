@@ -31,6 +31,7 @@ from layout import (
     TileTensor,
     row_major,
 )
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
@@ -1169,7 +1170,7 @@ def block_scaled_matmul_with_epilogue[
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, ...],
+    c: NullableTileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_dtype, ...],
@@ -1243,12 +1244,12 @@ def block_scaled_matmul_with_epilogue[
         task_id=get_safe_task_id(ctx),
     ):
         comptime if not elementwise_lambda_fn:
-            if not c.ptr._is_not_null():
+            if not c.ptr:
                 raise Error("c must be allocated!")
 
             matmul[scales_type=scales_dtype](
                 ctx,
-                c,
+                c.value(),
                 a,
                 b,
                 a_scales=a_scales,
@@ -1272,7 +1273,7 @@ def block_scaled_matmul_with_epilogue[
             ](idx: IndexList[rank]):
                 var c_coord = Index(idx[0], idx[1])
                 var c_val = rebind[SIMD[c_type, simd_width]](
-                    c.ptr.load[width=simd_width](idx[0] * n + idx[1])
+                    c.value().ptr.load[width=simd_width](idx[0] * n + idx[1])
                 )
                 epilogue[c_type, simd_width, alignment=alignment](
                     c_coord, c_val
@@ -1280,10 +1281,10 @@ def block_scaled_matmul_with_epilogue[
 
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
-            if c.ptr._is_not_null():
+            if c.ptr:
                 matmul[scales_type=scales_dtype](
                     ctx,
-                    c,
+                    c.value(),
                     a,
                     b,
                     a_scales=a_scales,

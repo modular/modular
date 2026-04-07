@@ -13,7 +13,7 @@
 
 from std.os import abort
 from std.pathlib import Path
-from std.ffi import _find_dylib
+from std.ffi import _CPointer, _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 
@@ -1549,12 +1549,12 @@ def cublasLtMatmul(
     alpha: OpaquePointer[ImmutAnyOrigin],
     _a: OpaquePointer[ImmutAnyOrigin],
     _adesc: cublasLtMatrixLayout_t,
-    _b: OpaquePointer[ImmutAnyOrigin],
+    _b: _CPointer[NoneType, ImmutAnyOrigin],
     _bdesc: cublasLtMatrixLayout_t,
     beta: OpaquePointer[ImmutAnyOrigin],
     _c: OpaquePointer[ImmutAnyOrigin],
     _cdesc: cublasLtMatrixLayout_t,
-    _d: OpaquePointer[MutAnyOrigin],
+    _d: _CPointer[NoneType, MutAnyOrigin],
     _ddesc: cublasLtMatrixLayout_t,
     algo: UnsafePointer[MatmulAlgorithm, ImmutAnyOrigin],
     workspace: OpaquePointer[MutAnyOrigin],
@@ -1577,21 +1577,21 @@ def cublasLtMatmul(
         "cublasLtMatmul",
         def(
             type_of(light_handle),
-            cublasLtMatmulDesc_t,
-            OpaquePointer[ImmutAnyOrigin],
-            OpaquePointer[ImmutAnyOrigin],
-            cublasLtMatrixLayout_t,
-            OpaquePointer[ImmutAnyOrigin],
-            cublasLtMatrixLayout_t,
-            OpaquePointer[ImmutAnyOrigin],
-            OpaquePointer[ImmutAnyOrigin],
-            cublasLtMatrixLayout_t,
-            OpaquePointer[MutAnyOrigin],
-            cublasLtMatrixLayout_t,
-            UnsafePointer[MatmulAlgorithm, ImmutAnyOrigin],
-            OpaquePointer[MutAnyOrigin],
-            Int,
-            _CUstream_st,
+            type_of(compute_desc),
+            type_of(alpha),
+            type_of(_a),
+            type_of(_adesc),
+            type_of(_b),
+            type_of(_bdesc),
+            type_of(beta),
+            type_of(_c),
+            type_of(_cdesc),
+            type_of(_d),
+            type_of(_ddesc),
+            type_of(algo),
+            type_of(workspace),
+            type_of(workspace_size_in_bytes),
+            type_of(stream),
         ) -> Result,
     ]()(
         light_handle,
