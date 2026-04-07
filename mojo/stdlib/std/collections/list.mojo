@@ -149,7 +149,7 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
 
 @fieldwise_init
 struct _ListTakeIter[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
 ](Movable, IterableOwned, Iterator):
     """Iterator over List elements that moves elements out of the list.
@@ -195,9 +195,19 @@ struct _ListTakeIter[
 
     def __del__(deinit self):
         """Destroy any remaining elements that weren't iterated over."""
+        # Ensure T is ImplicitlyDestructible so we can destroy remaining elements
+        _constrained_conforms_to[
+            conforms_to(Self.T, ImplicitlyDestructible),
+            Parent=Self,
+            Element=Self.T,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
+
         # Destroy remaining elements from current index to original length
         while self._index < self._original_len:
-            (self._list[].unsafe_ptr() + self._index).destroy_pointee()
+            (self._list[].unsafe_ptr().bitcast[TDestructible]() + self._index)
+                .destroy_pointee()
             self._index += 1
 
     @always_inline
@@ -733,11 +743,7 @@ struct List[T: Copyable](
             index=len(self), src=self.unsafe_ptr(), length=self._len
         )
 
-    def take_items(
-        mut self,
-    ) -> _ListTakeIter[Self.T, origin_of(self)] where conforms_to(
-        Self.T, ImplicitlyDestructible
-    ):
+    def take_items(mut self) -> _ListTakeIter[Self.T, origin_of(self)]:
         """Iterate over the list's elements and move them out of the list,
         effectively draining the list.
 
