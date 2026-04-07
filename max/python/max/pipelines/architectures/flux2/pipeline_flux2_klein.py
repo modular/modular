@@ -173,13 +173,19 @@ class Flux2KleinPipeline(Flux2Pipeline):
         batch_size = 1
 
         with Tracer("text_encoder"):
-            prompt_embeds = cast(
-                Buffer,
-                self.text_encoder(
-                    tokens,
-                    attention_mask=attention_mask,
-                ),
-            )
+            if attention_mask is None:
+                prompt_embeds = cast(
+                    Buffer,
+                    self.text_encoder(tokens),
+                )
+            else:
+                prompt_embeds = cast(
+                    Buffer,
+                    self.text_encoder(
+                        tokens,
+                        attention_mask=attention_mask,
+                    ),
+                )
 
         with Tracer("post_process"):
             if num_images_per_prompt != 1:
