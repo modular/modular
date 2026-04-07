@@ -13,13 +13,21 @@
 
 from std.algorithm.functional import stencil, stencil_gpu
 from std.gpu.host import DeviceContext
-from layout import Layout, TileTensor, coord_to_index_list, row_major
+from layout import Layout, TileTensor, row_major
 from layout._utils import ManagedLayoutTensor
 from layout.tile_tensor import stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
 from std.utils.numerics import min_or_neg_inf
+
+comptime _map_fn_type = def[rank: Int](IndexList[rank]) capturing -> Tuple[
+    IndexList[rank],
+    IndexList[rank],
+]
+comptime load_fn_type = def[dtype: DType, rank: Int, simd_width: Int](
+    IndexList[rank]
+) capturing -> SIMD[dtype, simd_width]
 
 
 def fill_buffer[dtype: DType](buf: TileTensor[mut=True, dtype=dtype, ...]):
@@ -89,10 +97,12 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         row_major[1, output_height, output_width, 1](),
     )
 
-    def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) unified register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
+    @parameter
+    def map_fn[
+        rank: Int
+    ](point: IndexList[stencil_rank, ...]) -> Tuple[
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
@@ -100,41 +110,43 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) unified register_passable {} -> Int:
-        return 1
-
     @always_inline
+    @__copy_capture(d_input)
+    @parameter
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) unified register_passable {
-        var d_input,
-    } -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
-    def avg_pool_compute_init_gpu[
-        simd_width: Int
-    ]() unified register_passable {} -> SIMD[dtype, simd_width]:
+    @always_inline
+    @parameter
+    def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    def avg_pool_compute_gpu[
+    @always_inline
+    @parameter
+    def avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) unified register_passable {} -> SIMD[dtype, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
+    @parameter
+    def dilation_fn(dim: Int) -> Int:
+        return 1
+
+    @always_inline
+    @__copy_capture(d_output)
+    @parameter
     def avg_pool_compute_finalize_gpu[
         simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) unified register_passable {
-        var d_output,
-    }:
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
@@ -145,21 +157,13 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         stencil_axis,
         simd_width,
         dtype,
-    ](
-        ctx,
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_output.layout.shape_coord())
-        ),
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_input.layout.shape_coord())
-        ),
-        map_fn_gpu,
-        dilation_fn_gpu,
+        map_fn[stencil_rank],
+        dilation_fn,
         load_fn_gpu,
-        avg_pool_compute_init_gpu,
-        avg_pool_compute_gpu,
+        avg_pool_compute_init,
+        avg_pool_compute,
         avg_pool_compute_finalize_gpu,
-    )
+    ](ctx, output_shape_dyn, input_shape_dyn)
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
     h_output = TileTensor(
@@ -167,6 +171,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         row_major[1, output_height, output_width, 1](),
     )
 
+    # Reference implementation on CPU (unified closures for CPU stencil)
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
@@ -293,10 +298,12 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         row_major[1, output_height, output_width, 1](),
     )
 
-    def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) unified register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
+    @parameter
+    def map_fn[
+        rank: Int
+    ](point: IndexList[stencil_rank, ...]) -> Tuple[
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
@@ -306,41 +313,43 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) unified register_passable {} -> Int:
-        return 1
-
     @always_inline
+    @__copy_capture(d_input)
+    @parameter
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) unified register_passable {
-        var d_input,
-    } -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
-    def avg_pool_compute_init_gpu[
-        simd_width: Int
-    ]() unified register_passable {} -> SIMD[dtype, simd_width]:
+    @always_inline
+    @parameter
+    def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    def avg_pool_compute_gpu[
+    @always_inline
+    @parameter
+    def avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) unified register_passable {} -> SIMD[dtype, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
+    @parameter
+    def dilation_fn(dim: Int) -> Int:
+        return 1
+
+    @always_inline
+    @__copy_capture(d_output)
+    @parameter
     def avg_pool_compute_finalize_gpu[
         simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) unified register_passable {
-        var d_output,
-    }:
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
@@ -351,21 +360,13 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         stencil_axis,
         simd_width,
         dtype,
-    ](
-        ctx,
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_output.layout.shape_coord())
-        ),
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_input.layout.shape_coord())
-        ),
-        map_fn_gpu,
-        dilation_fn_gpu,
+        map_fn[stencil_rank],
+        dilation_fn,
         load_fn_gpu,
-        avg_pool_compute_init_gpu,
-        avg_pool_compute_gpu,
+        avg_pool_compute_init,
+        avg_pool_compute,
         avg_pool_compute_finalize_gpu,
-    )
+    ](ctx, output_shape_dyn, input_shape_dyn)
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
     h_output = TileTensor(
@@ -373,6 +374,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         row_major[1, output_height, output_width, 1](),
     )
 
+    # Reference implementation on CPU (unified closures for CPU stencil)
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
@@ -500,10 +502,12 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         row_major[1, output_height, output_width, 1](),
     )
 
-    def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) unified register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
+    @parameter
+    def map_fn[
+        rank: Int
+    ](point: IndexList[stencil_rank, ...]) -> Tuple[
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
@@ -514,41 +518,43 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) unified register_passable {} -> Int:
-        return 1
-
     @always_inline
+    @__copy_capture(d_input)
+    @parameter
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) unified register_passable {
-        var d_input,
-    } -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
-    def avg_pool_compute_init_gpu[
-        simd_width: Int
-    ]() unified register_passable {} -> SIMD[dtype, simd_width]:
+    @always_inline
+    @parameter
+    def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    def avg_pool_compute_gpu[
+    @always_inline
+    @parameter
+    def avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) unified register_passable {} -> SIMD[dtype, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
+    @parameter
+    def dilation_fn(dim: Int) -> Int:
+        return 1
+
+    @always_inline
+    @__copy_capture(d_output)
+    @parameter
     def avg_pool_compute_finalize_gpu[
         simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) unified register_passable {
-        var d_output,
-    }:
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
@@ -559,21 +565,13 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         stencil_axis,
         simd_width,
         dtype,
-    ](
-        ctx,
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_output.layout.shape_coord())
-        ),
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_input.layout.shape_coord())
-        ),
-        map_fn_gpu,
-        dilation_fn_gpu,
+        map_fn[stencil_rank],
+        dilation_fn,
         load_fn_gpu,
-        avg_pool_compute_init_gpu,
-        avg_pool_compute_gpu,
+        avg_pool_compute_init,
+        avg_pool_compute,
         avg_pool_compute_finalize_gpu,
-    )
+    ](ctx, output_shape_dyn, input_shape_dyn)
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
     h_output = TileTensor(
@@ -581,6 +579,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         row_major[1, output_height, output_width, 1](),
     )
 
+    # Reference implementation on CPU (unified closures for CPU stencil)
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
@@ -716,10 +715,12 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         row_major[1, output_height, output_width, 1](),
     )
 
-    def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) unified register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
+    @parameter
+    def map_fn[
+        rank: Int
+    ](point: IndexList[stencil_rank, ...]) -> Tuple[
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
@@ -730,42 +731,44 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) unified register_passable {} -> Int:
-        return dilation
-
     @always_inline
+    @__copy_capture(d_input)
+    @parameter
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) unified register_passable {
-        var d_input,
-    } -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
-    def max_pool_compute_init_gpu[
-        simd_width: Int
-    ]() unified register_passable {} -> SIMD[dtype, simd_width]:
+    @always_inline
+    @parameter
+    def max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
-    def max_pool_compute_gpu[
+    @always_inline
+    @parameter
+    def max_pool_compute[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) unified register_passable {} -> SIMD[dtype, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         return max(val, result)
 
     @always_inline
-    def max_pool_compute_finalize_gpu[
+    @__copy_capture(d_output)
+    @parameter
+    def max_pool_compute_finalize[
         simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) unified register_passable {
-        var d_output,
-    }:
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         d_output.store_linear(point, val)
+
+    @always_inline
+    @parameter
+    def dilation_fn(dim: Int) -> Int:
+        return dilation
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
@@ -774,28 +777,22 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         stencil_axis,
         simd_width,
         dtype,
-    ](
-        ctx,
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_output.layout.shape_coord())
-        ),
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_input.layout.shape_coord())
-        ),
-        map_fn_gpu,
-        dilation_fn_gpu,
+        map_fn[stencil_rank],
+        dilation_fn,
         load_fn_gpu,
-        max_pool_compute_init_gpu,
-        max_pool_compute_gpu,
-        max_pool_compute_finalize_gpu,
-    )
+        max_pool_compute_init,
+        max_pool_compute,
+        max_pool_compute_finalize,
+    ](ctx, output_shape_dyn, input_shape_dyn)
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
     h_output = TileTensor(
         d_output_managed.tensor().ptr,
         row_major[1, output_height, output_width, 1](),
     )
+    # ctx.enqueue_copy(h_input.data, d_input_buf)
 
+    # Reference implementation on CPU (unified closures for CPU stencil)
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
