@@ -1886,8 +1886,14 @@ ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
   auto alignAttr = dyn_cast_or_null<IntegerAttr>(operands.front());
   auto sizeAttr = dyn_cast_or_null<IntegerAttr>(operands.back());
+
   if (!alignAttr || !sizeAttr)
     return ErrorTree(getLoc(), "non-concrete inputs");
+
+  if (sizeAttr.getInt() < 0) {
+    return ErrorTree(getLoc(), "alloc has negative size");
+  }
+
   return interpretAllocation(sizeAttr.getInt(), alignAttr.getInt(), getLoc(),
                              getType(), state);
 }
