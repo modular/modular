@@ -233,6 +233,7 @@ const maxSidebars = {
             "mojo/manual/decorators/compiler-register",
             "mojo/manual/decorators/copy-capture",
             "mojo/manual/decorators/deprecated",
+            "mojo/manual/decorators/doc-hidden",
             "mojo/manual/decorators/explicit-destroy",
             "mojo/manual/decorators/export",
             "mojo/manual/decorators/fieldwise-init",
