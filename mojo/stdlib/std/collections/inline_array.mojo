@@ -763,14 +763,10 @@ struct InlineArray[ElementType: Copyable, size: Int](
         )
 
     @always_inline
-    def __contains__[
-        T: Equatable & Copyable, //
-    ](self: InlineArray[T, Self.size], value: T) -> Bool:
+    def __contains__(
+        self, value: Self.ElementType
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Tests if a value is present in the array using the `in` operator.
-
-        Parameters:
-            T: The element type, must implement both `Equatable` and
-                `Copyable`.
 
         Args:
             value: The value to search for.
@@ -791,12 +787,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
             This method enables using the `in` operator to check if a value
             exists in the array. It performs a linear search comparing each
             element for equality with the given value. The element type must
-            implement the `Equatable` and `Copyable` traits
-            to support equality comparison.
+            implement the `Equatable` trait to support equality comparison.
         """
-
+        ref rhs = trait_downcast[Equatable](value)
         comptime for i in range(Self.size):
-            if self[i] == value:
+            if trait_downcast[Equatable](self[i]) == rhs:
                 return True
         return False
 

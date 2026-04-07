@@ -551,14 +551,10 @@ struct List[T: Copyable](
         for element in self:
             trait_downcast[Hashable](element).__hash__(hasher)
 
-    def __contains__[
-        U: Equatable & Copyable, //
-    ](self: List[U, ...], value: U) -> Bool:
+    def __contains__(
+        self, value: Self.T
+    ) -> Bool where conforms_to(Self.T, Equatable):
         """Verify if a given value is present in the list.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-              trait `Equatable`.
 
         Args:
             value: The value to find.
@@ -573,18 +569,17 @@ struct List[T: Copyable](
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
+        ref rhs = trait_downcast[Equatable](value)
         for i in self:
-            if i == value:
+            ref lhs = trait_downcast[Equatable](i)
+            if lhs == rhs:
                 return True
         return False
 
-    def __mul__[
-        _T: Copyable & ImplicitlyDestructible, //
-    ](self: List[_T], x: Int) -> List[_T]:
+    def __mul__(
+        self, x: Int
+    ) -> Self where conforms_to(Self.T, ImplicitlyDestructible):
         """Multiplies the list by x and returns a new list.
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
 
         Args:
             x: The multiplier number.
@@ -594,14 +589,14 @@ struct List[T: Copyable](
         """
         # avoid the copy since it would be cleared immediately anyways
         if x == 0:
-            return List[_T]()
+            return Self()
         var result = self.copy()
         result *= x
         return result^
 
-    def __imul__[
-        _T: Copyable & ImplicitlyDestructible, //
-    ](mut self: List[_T], x: Int):
+    def __imul__(
+        mut self, x: Int
+    ) where conforms_to(Self.T, ImplicitlyDestructible):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
 
@@ -609,9 +604,6 @@ struct List[T: Copyable](
         var a = [1, 2]
         a *= 2 # a = [1, 2, 1, 2]
         ```
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
 
         Args:
             x: The multiplier number.
@@ -1018,17 +1010,14 @@ struct List[T: Copyable](
             return
         self._realloc(new_capacity)
 
-    def resize[
-        _T: Copyable & ImplicitlyDestructible, //
-    ](mut self: List[_T], new_size: Int, value: _T):
+    def resize(
+        mut self, new_size: Int, value: Self.T
+    ) where conforms_to(Self.T, ImplicitlyDestructible):
         """Resizes the list to the given new size.
 
         Args:
             new_size: The new size.
             value: The value to use to populate new elements.
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
 
         Notes:
             If the new size is smaller than the current one, elements at the end
@@ -1059,18 +1048,15 @@ struct List[T: Copyable](
             (self._data + i).init_pointee_copy(value)
         self._len = new_size
 
-    def resize[
-        _T: Copyable & ImplicitlyDestructible, //
-    ](mut self: List[_T], *, unsafe_uninit_length: Int):
+    def resize(
+        mut self, *, unsafe_uninit_length: Int
+    ) where conforms_to(Self.T, ImplicitlyDestructible):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
         If the new size is smaller than the current one, elements at the end
         are discarded. If the new size is larger than the current one, the
         list is extended and the new elements are left uninitialized.
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
 
         Args:
             unsafe_uninit_length: The new size.
@@ -1092,13 +1078,10 @@ struct List[T: Copyable](
             self._annotate_increase(unsafe_uninit_length - self._len)
             self._len = unsafe_uninit_length
 
-    def shrink[
-        _T: Copyable & ImplicitlyDestructible, //
-    ](mut self: List[_T], new_size: Int):
+    def shrink(
+        mut self, new_size: Int
+    ) where conforms_to(Self.T, ImplicitlyDestructible):
         """Resizes to the given new size which must be <= the current size.
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
 
         Args:
             new_size: The new size.
@@ -1123,7 +1106,12 @@ struct List[T: Copyable](
                 " size is smaller than the current size."
             )
 
-        destroy_n(self._data + new_size, count=len(self) - new_size)
+        # TODO(MOCO-3679): Use `destroy_n(self._data + new_size, ...)`
+        # directly once where clause bounds propagate to callee inference.
+        var data = self._data.bitcast[
+            downcast[Self.T, ImplicitlyDestructible]
+        ]()
+        destroy_n(data + new_size, count=len(self) - new_size)
 
         var old_size: Int = self._len
         self._len = new_size
@@ -1159,15 +1147,12 @@ struct List[T: Copyable](
             earlier_idx += 1
             later_idx -= 1
 
-    # TODO: Remove explicit self type when issue 1876 is resolved.
-    def index[
-        C: Equatable & Copyable, //
-    ](
-        ref self: List[C, ...],
-        value: C,
+    def index(
+        ref self,
+        value: Self.T,
         start: Int = 0,
         stop: Optional[Int] = None,
-    ) raises -> Int:
+    ) raises -> Int where conforms_to(Self.T, Equatable):
         """Returns the index of the first occurrence of a value in a list
         restricted by the range given the start and stop bounds.
 
@@ -1177,10 +1162,6 @@ struct List[T: Copyable](
                 (defaults to 0).
             stop: The ending index of the search, treated as a slice index
                 (defaults to None, which means the end of the list).
-
-        Parameters:
-            C: The type of the elements in the list. Must implement the
-                `Equatable` trait.
 
         Returns:
             The index of the first occurrence of the value in the list.
@@ -1212,16 +1193,17 @@ struct List[T: Copyable](
         start_normalized = _clip(start_normalized, 0, len(self))
         stop_normalized = _clip(stop_normalized, 0, len(self))
 
+        ref rhs = trait_downcast[Equatable](value)
         for i in range(start_normalized, stop_normalized):
-            if self[i] == value:
+            ref lhs = trait_downcast[Equatable](self[i])
+            if lhs == rhs:
                 return i
         raise "ValueError: Given element is not in list"
 
-    def clear[_T: Copyable & ImplicitlyDestructible, //](mut self: List[_T]):
+    def clear(
+        mut self,
+    ) where conforms_to(Self.T, ImplicitlyDestructible):
         """Clears the elements in the list.
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
 
         Examples:
 
@@ -1232,7 +1214,12 @@ struct List[T: Copyable](
         print(len(list))  # 0
         ```
         """
-        destroy_n(self._data, count=self._len)
+        # TODO(MOCO-3679): Use `destroy_n(self._data, ...)` directly once
+        # where clause bounds propagate to callee inference.
+        var data = self._data.bitcast[
+            downcast[Self.T, ImplicitlyDestructible]
+        ]()
+        destroy_n(data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)
@@ -1348,13 +1335,10 @@ struct List[T: Copyable](
         return (self._data + idx)[]
 
     @always_inline
-    def unsafe_set[
-        _T: Copyable & ImplicitlyDestructible
-    ](mut self: List[_T], idx: Int, var value: _T):
+    def unsafe_set(
+        mut self, idx: Int, var value: Self.T
+    ) where conforms_to(Self.T, ImplicitlyDestructible):
         """Write a value to a given location without checking index bounds.
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
 
         Args:
             idx: The index of the element to set.
@@ -1374,17 +1358,15 @@ struct List[T: Copyable](
             "The index provided must be within the range [0, len(List) -1]"
             " when using List.unsafe_set()"
         )
-        (self._data + idx).destroy_pointee()
+        # TODO(MOCO-3679): Use `(self._data + idx).destroy_pointee()`
+        # directly once where clause bounds propagate to callee inference.
+        (self._data + idx).bitcast[
+            downcast[Self.T, ImplicitlyDestructible]
+        ]().destroy_pointee()
         (self._data + idx).init_pointee_move(value^)
 
-    def count[
-        _T: Equatable & Copyable, //
-    ](self: List[_T, ...], value: _T) -> Int:
+    def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):
         """Counts the number of occurrences of a value in the list.
-
-        Parameters:
-            _T: The type of the elements in the list. Must implement the
-                trait `Equatable`.
 
         Args:
             value: The value to count.
@@ -1399,9 +1381,11 @@ struct List[T: Copyable](
         print(list.count("b")) # 3
         ```
         """
+        ref rhs = trait_downcast[Equatable](value)
         var count = 0
         for elem in self:
-            if elem == value:
+            ref lhs = trait_downcast[Equatable](elem)
+            if lhs == rhs:
                 count += 1
         return count
 
