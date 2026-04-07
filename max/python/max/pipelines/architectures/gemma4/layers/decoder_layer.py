@@ -31,14 +31,14 @@ from max.nn.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
-from max.pipelines.architectures.diancie.layers.attention import (
+from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention,
 )
-from max.pipelines.architectures.diancie.layers.moe import (
+from max.pipelines.architectures.gemma4.layers.moe import (
     Gemma4TextExperts,
     Gemma4TextRouter,
 )
-from max.pipelines.architectures.diancie.layers.rms_norm import Gemma4RMSNorm
+from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 
 
 class Gemma4TextDecoderLayer(Module):

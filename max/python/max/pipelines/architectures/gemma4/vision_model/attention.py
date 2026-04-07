@@ -20,7 +20,7 @@ from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.pipelines.architectures.diancie.layers.rotary_embedding import (
+from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     apply_multidimensional_rope,
 )
 

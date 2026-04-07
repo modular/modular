@@ -39,7 +39,7 @@ from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
 from max.nn.quant_ops import quantized_fused_qkv_matmul
 from max.nn.rotary_embedding import RotaryEmbedding
-from max.pipelines.architectures.diancie.layers.rms_norm import Gemma4RMSNorm
+from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 
 
 class Gemma4Attention(Module, Shardable):

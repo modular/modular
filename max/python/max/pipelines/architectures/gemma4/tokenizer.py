@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Gemma4 tokenizer for the diancie architecture."""
+"""Gemma4 tokenizer for the gemma4 architecture."""
 
 from __future__ import annotations
 

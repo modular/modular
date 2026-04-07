@@ -22,7 +22,7 @@ from max.graph import (
     Weight,
 )
 from max.nn.layer import Module
-from max.pipelines.architectures.diancie.layers.rotary_embedding import (
+from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     compute_vision_freqs_cis,
 )
 

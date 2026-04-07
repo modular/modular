@@ -19,7 +19,7 @@ from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.pipelines.architectures.diancie.layers.rms_norm import Gemma4RMSNorm
+from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 
 
 class Gemma4TextRouter(Module):

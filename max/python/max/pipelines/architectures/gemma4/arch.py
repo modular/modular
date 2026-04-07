@@ -27,7 +27,7 @@ example_repo_ids = [
     "google/gemma-4-26B-A4B-it",
 ]
 
-diancie_arch = SupportedArchitecture(
+gemma4_arch = SupportedArchitecture(
     name="Gemma4ForConditionalGeneration",
     example_repo_ids=example_repo_ids,
     default_encoding="bfloat16",

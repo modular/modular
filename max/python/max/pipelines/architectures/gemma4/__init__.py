@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from .arch import diancie_arch
+from .arch import gemma4_arch
 
-ARCHITECTURES = [diancie_arch]
+ARCHITECTURES = [gemma4_arch]
 
-__all__ = ["ARCHITECTURES", "diancie_arch"]
+__all__ = ["ARCHITECTURES", "gemma4_arch"]

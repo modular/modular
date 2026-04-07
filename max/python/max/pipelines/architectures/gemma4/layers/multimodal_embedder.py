@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.pipelines.architectures.diancie.layers.rms_norm import Gemma4RMSNorm
+from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 
 
 class Gemma4MultimodalEmbedder(Module):
