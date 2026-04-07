@@ -1110,6 +1110,9 @@ class OverlapTextGenerationPipeline(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> AsyncBatch[TextGenerationContextType]:
         """Runs the forward pass, samples logits, and returns an AsyncBatch."""
+        if self._spec_decode_state is not None:
+            return self._execute_spec_decode(inputs)
+
         device0 = self._devices[0]
         assert not device0.is_host
         assert self._sampler is not None
@@ -1171,7 +1174,7 @@ class OverlapTextGenerationPipeline(
 
     def _execute_spec_decode(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
-    ) -> PipelineOutputsDict[TextGenerationOutput]:
+    ) -> AsyncBatch[TextGenerationContextType]:
         """Executes unified EAGLE speculative decoding.
 
         Single graph call handles: merge, target forward, greedy rejection,
@@ -1267,16 +1270,7 @@ class OverlapTextGenerationPipeline(
                 ),
             )
 
-            wrapped_outputs = async_batch.sync_and_process_outputs()
-
-        assert wrapped_outputs.spec_decode_metrics is not None
-        self._spec_decode_state.metrics.update(
-            wrapped_outputs.spec_decode_metrics,
-        )
-
-        self._kv_manager.step(inputs.batches)
-
-        return wrapped_outputs.output_dict
+        return async_batch
 
     @traced
     def execute(
@@ -1314,9 +1308,6 @@ class OverlapTextGenerationPipeline(
                 "Max num steps > 1 is not supported with the Overlap scheduler."
             )
 
-        if self._spec_decode_state is not None:
-            return self._execute_spec_decode(inputs)
-
         if inputs:
             # Run the entire forward pass and output processing if the batch has
             # at least one request.
@@ -1335,6 +1326,11 @@ class OverlapTextGenerationPipeline(
                 "Cannot have a previous batch when overlap is disabled"
             )
             wrapped_outputs = self._prev_batch.sync_and_process_outputs()
+            if self._spec_decode_state is not None:
+                assert wrapped_outputs.spec_decode_metrics is not None
+                self._spec_decode_state.metrics.update(
+                    wrapped_outputs.spec_decode_metrics,
+                )
             outputs = wrapped_outputs.output_dict
 
             self._prev_batch = None
@@ -1342,8 +1338,11 @@ class OverlapTextGenerationPipeline(
             # Empty outputs as there is no previous batch.
             outputs = {}
 
-        for context in inputs.flat_batch:
-            context.update_with_future_token()
+        # Only add a future token if we are not using spec decoding. Spec decoding
+        # does not properly support future tokens and overlap yet!
+        if self._spec_decode_state is None:
+            for context in inputs.flat_batch:
+                context.update_with_future_token()
 
         # Commit the new KV blocks into the prefix cache, ignoring the final
         # placeholder future token.
@@ -1359,6 +1358,11 @@ class OverlapTextGenerationPipeline(
                 # Immediately synchronize after gpu execution and return the
                 # results of the current batch.
                 wrapped_outputs = curr_batch.sync_and_process_outputs()
+                if self._spec_decode_state is not None:
+                    assert wrapped_outputs.spec_decode_metrics is not None
+                    self._spec_decode_state.metrics.update(
+                        wrapped_outputs.spec_decode_metrics,
+                    )
                 outputs = wrapped_outputs.output_dict
             else:
                 # Otherwise, delay the synchronization until the next step.
