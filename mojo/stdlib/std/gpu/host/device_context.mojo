@@ -6380,7 +6380,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         return DeviceStream(result)
 
     def create_external_stream(
-        self, external_stream: OpaquePointer[MutAnyOrigin]
+        self, external_stream: _CPointer[NoneType, MutAnyOrigin]
     ) raises -> DeviceStream:
         """Creates a non-owning stream wrapper around an externally managed GPU stream.
 
