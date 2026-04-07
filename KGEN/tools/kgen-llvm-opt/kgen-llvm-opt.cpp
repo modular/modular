@@ -4,18 +4,27 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// The kgen-llvm-opt tool is similar to LLVM's opt tool, but can only build
-// KGEN's optimization pipeline (i.e. entire pipeline for -O0, -O1, -O2 and
-// -O3). It does not yet support -passes option to specify custom pipeline as it
-// requires to reimplement PassBuilder::parsePassPipeline() function including
-// getting of *.def files from LLVM.
+// The kgen-llvm-opt tool is similar to LLVM's opt tool. It supports two modes:
 //
-// LLVM, however, provides plugin mechanism to load custom passes
-//  llvm/docs/WritingAnLLVMNewPMPass.rst
-// but that has several limitations:
-//  1. It cannot support building of entire mojo pipeline for -O0, -O1, -O2 and
-//     -O3
-//  2. It requires to define passes in LLVM directory.
+//  1. Full KGEN optimization pipeline: specify -O0/-O1/-O2/-O3 to run the
+//     complete Mojo compilation pipeline for that optimization level.
+//
+//  2. Custom pass pipeline via -passes: specify an explicit pass pipeline using
+//     LLVM's pass pipeline syntax (same as `opt -passes=...`). All custom KGEN
+//     passes defined in KGEN/lib/Compiler/ObjectCompiler/LLVM/Transforms are
+//     registered and available under the following names:
+//       module passes:
+//         kgen-metal-air            - MetalAIRPass
+//         kgen-pointer-rewriter     - PointerRewriter
+//         kgen-metal-verifier       - MetalVerifierPass
+//         kgen-metal-rewrite-di     - MetalRewriteDebugInfoPass
+//         kgen-llvmir-downgrade     - LLVMIRDowngradePass
+//         kgen-set-function-attrs   - SetFunctionAttributes
+//       function passes:
+//         kgen-instruction-rewrite  - InstructionRewritePass
+//
+//     Example: kgen-llvm-opt -passes="kgen-metal-air,kgen-pointer-rewriter"
+//     in.bc
 
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
@@ -114,6 +123,26 @@ private:
   M::cl::MOpt<std::string, true> dataLayoutOpt{
       "data-layout", cl::desc("data layout string to use"),
       cl::value_desc("layout-string"), cl::location(dataLayout), cl::cat(cat)};
+
+  M::cl::MOpt<std::string, true> passPipelineOpt{
+      "passes",
+      cl::desc(
+          "A textual description of the pass pipeline (same syntax as "
+          "opt -passes=...). Mutually exclusive with -O0/-O1/-O2/-O3.\n"
+          "Available KGEN module passes:\n"
+          "  kgen-metal-air           Transform IR to Apple AIR for Metal GPU\n"
+          "  kgen-pointer-rewriter    Rewrite opaque pointers to typed "
+          "pointers\n"
+          "  kgen-metal-verifier      Reject IR with float types wider than "
+          "f32\n"
+          "  kgen-metal-rewrite-di    Rewrite DebugInfo for Metal/Instruments\n"
+          "  kgen-llvmir-downgrade    Downgrade IR for older LLVM backends\n"
+          "  kgen-set-function-attrs  Set function attributes for compilation\n"
+          "Available KGEN function passes:\n"
+          "  kgen-instruction-rewrite Rewrite unsupported "
+          "intrinsics/instructions"),
+      cl::value_desc("pipeline"), cl::location(passPipeline), cl::cat(cat)};
+
   M::cl::MOpt<bool, true> noOutputOpt{
       "disable-output", cl::desc("Do not write result bitcode file"),
       cl::Hidden, cl::location(noOutput), cl::cat(cat)};
@@ -168,6 +197,20 @@ static CodeGenOptLevel getCodeGenOptLevel(const CLOptions &clOptions) {
 
 static ModulePassManager
 buildPipeline(PassBuilder &pb, const CLOptions &clOptions, Triple triple) {
+  ModulePassManager mpm;
+
+  // If an explicit pass pipeline is specified via -passes, use it directly.
+  if (!clOptions.passPipeline.empty()) {
+    if (auto err = pb.parsePassPipeline(mpm, clOptions.passPipeline)) {
+      errs() << "error: failed to parse pass pipeline '"
+             << clOptions.passPipeline << "': " << toString(std::move(err))
+             << "\n";
+      exit(1);
+    }
+    return mpm;
+  }
+
+  // Otherwise, build the full KGEN optimization pipeline for the given level.
   M::KGEN::CompilationOptions options(/*optimizationLevel=*/-1U);
   options.targetTriple = triple.str();
   if (clOptions.optLevelO0)
@@ -181,14 +224,11 @@ buildPipeline(PassBuilder &pb, const CLOptions &clOptions, Triple triple) {
 
   if (options.optimizationLevel == -1U) {
     llvm_unreachable(
-        "Specify optimization level. Support of running individual passes or "
-        "custom pipeline is not implemented yet.");
+        "Specify an optimization level (-O0/-O1/-O2/-O3) or a custom pipeline "
+        "(-passes=...).");
   }
-  ModulePassManager mpm = M::KGEN::buildLLVMOptimizationPipeline(pb, options);
+  mpm = M::KGEN::buildLLVMOptimizationPipeline(pb, options);
 
-  if (clOptions.downgradeIR) {
-    M::KGEN::addLLVMIRDowngradePass(mpm);
-  }
   return mpm;
 }
 
@@ -367,9 +407,12 @@ int main(int argc, char **argv) {
   llvm::PassInstrumentationCallbacks pic;
   PassBuilder pb(targetMachine.get(), PipelineTuningOptions(),
                  /*PGOOpt=*/std::nullopt, &pic);
+  M::KGEN::registerKGENLLVMPasses(pb);
   ModulePassManager mpm;
   if (!clOptions.disableOptimizationPasses)
     mpm = buildPipeline(pb, clOptions, module->getTargetTriple());
+  if (clOptions.downgradeIR)
+    M::KGEN::addLLVMIRDowngradePass(mpm);
 
   switch (outputKind) {
   case OK_NoOutput:
