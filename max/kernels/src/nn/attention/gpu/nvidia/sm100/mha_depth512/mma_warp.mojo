@@ -88,6 +88,7 @@ def depth512_mma[
 
     # Full pair-CTA M dimension for mask computations.
     comptime PairBM = BM * 2
+    comptime PairBM_mask: Int = config.BM_eff() * 2
 
     comptime assert BK0 % config.MMA_K == 0, "BK0 must be a multiple of MMA_K"
     comptime assert BK1 % config.MMA_K == 0, "BK1 must be a multiple of MMA_K"
@@ -211,13 +212,18 @@ def depth512_mma[
 
     # ---- Iteration bounds (must match load_warp exactly) ---------------------
 
-    var kv_row: UInt32 = mask.start_column[PairBM, BN, page_size](score_row)
+    var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
+        score_row
+    )
     var iter_count: UInt32 = (
-        mask.last_masked_set_end[PairBM, BN, page_size](score_row, num_keys) - 1
+        mask.last_masked_set_end[PairBM_mask, BN, page_size](
+            score_row, num_keys
+        )
+        - 1
     )
 
     comptime check_mask = (
-        mask.nonfull_sets[PairBM, BN]()[0] == TileMaskStatus.UNKNOWN_MASK
+        mask.nonfull_sets[PairBM_mask, BN]()[0] == TileMaskStatus.UNKNOWN_MASK
     )
 
     # ---- CTA identity --------------------------------------------------------
@@ -331,7 +337,7 @@ def depth512_mma[
             if (
                 mask.status(
                     Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                    Index[dtype=DType.int32](PairBM, BN),
+                    Index[dtype=DType.int32](PairBM_mask, BN),
                 )
                 == TileMaskStatus.FULL_MASK
             ):

@@ -73,6 +73,7 @@ def depth512_correction[
     comptime BM = config.BM
     comptime BN = config.BN
     comptime PairBM = BM * 2
+    comptime PairBM_mask: Int = config.BM_eff() * 2
 
     # Columns per thread per O phase. Each MMA (MMA_N=ov_depth/2) maps:
     #   rows 0-63 → first ov_depth/4 cols, rows 64-127 → second ov_depth/4.
@@ -104,7 +105,7 @@ def depth512_correction[
     pipeline_o_hi = mbars.consumer_o_hi()
 
     var iter_count: UInt32 = (
-        mask.total_iters[PairBM, BN, page_size](score_row, num_keys) - 1
+        mask.total_iters[PairBM_mask, BN, page_size](score_row, num_keys) - 1
     )
 
     # ---- Double-buffer constants for the TMEM rescale loop -------------------

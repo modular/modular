@@ -78,6 +78,7 @@ struct Depth512SM100Config[
     var TMEM_S_odd: Int  # S double-buffer odd
     var tmem_used: Int
 
+    var fuse_gqa: Bool
     var num_kv_stages: Int  # Fused KV pipeline buffer slots
     var smem_used: Int
     var swizzle_mode: TensorMapSwizzle
@@ -96,6 +97,7 @@ struct Depth512SM100Config[
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
         self.group = group
+        self.fuse_gqa = group > 1 and (Self.MMA_M % group == 0)
         self.qk_depth = qk_depth
         self.ov_depth = ov_depth
         self.swizzle_mode = swizzle_mode
@@ -163,6 +165,17 @@ struct Depth512SM100Config[
         smem_use += self.num_kv_stages * bytes_per_slot
 
         self.smem_used = smem_use
+
+    @always_inline
+    def BM_eff(self) -> Int:
+        """Number of distinct sequence positions per CTA tile.
+
+        When fuse_gqa, each CTA tile covers BM // group seq positions
+        × group heads = BM physical rows.
+        """
+        if self.fuse_gqa:
+            return Self.BM // self.group
+        return Self.BM
 
     @always_inline
     def rope_depth(self) -> Int:

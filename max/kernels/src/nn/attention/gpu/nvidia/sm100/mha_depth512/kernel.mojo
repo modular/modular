@@ -103,6 +103,9 @@ struct SM100MHADepth512[
     comptime BN = Self.config.BN
     comptime num_q_heads = Self.config.num_q_heads
     comptime group = Self.config.group
+    comptime fuse_gqa = Self.config.fuse_gqa
+    comptime BM_eff: Int = Self.config.BM_eff()
+    comptime PairBM_mask: Int = Self.BM_eff * 2
     comptime ragged = not Self.ValidLengthType.is_null
     comptime page_size = Self.KVLUTType.page_size
 
@@ -138,6 +141,7 @@ struct SM100MHADepth512[
             depth=Self.config.qk_depth,
             group=Self.config.group,
             decoding=False,
+            fuse_gqa=Self.fuse_gqa,
             num_qk_stages=Self.config.num_qk_stages,
         ],
         k_tma_op: KVTMATile[
@@ -157,6 +161,7 @@ struct SM100MHADepth512[
             Self.config.swizzle_mode,
             BM=Self.config.BM,
             BN=Self.config.ov_depth,
+            group=Self.config.group if Self.fuse_gqa else 1,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -223,8 +228,9 @@ struct SM100MHADepth512[
             # Softmax warp group (warps 0-3, 128 threads).
             warpgroup_reg_alloc[num_reg_softmax]()
             var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM,
-                Self.num_q_heads,
+                Self.PairBM_mask,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
                 pair_cta=True,
             ](batch_size, max_seq_len, valid_length, partition)
@@ -247,13 +253,13 @@ struct SM100MHADepth512[
             gmem_row = Self.PositionType.get_q_gmem_row[ragged=Self.ragged](
                 seq_info, max_seq_len.as_uint32()
             )
-            var out_row_idx = gmem_row + cta_rank * UInt32(Self.BM)
+            var out_row_idx = gmem_row + cta_rank * UInt32(Self.BM_eff)
             var out_head_idx = seq_info.head_idx
             var num_output_rows = min(
                 Int32(seq_info.seq_len)
                 - Int32(seq_info.prompt_offset)
-                - Int32(cta_rank) * Int32(Self.BM),
-                Int32(Self.BM),
+                - Int32(cta_rank) * Int32(Self.BM_eff),
+                Int32(Self.BM_eff),
             )
 
             depth512_softmax[
@@ -279,8 +285,9 @@ struct SM100MHADepth512[
             warpgroup_reg_alloc[num_reg_correction]()
 
             var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM,
-                Self.num_q_heads,
+                Self.PairBM_mask,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
                 pair_cta=True,
             ](batch_size, max_seq_len, valid_length, partition)
@@ -314,8 +321,9 @@ struct SM100MHADepth512[
             warpgroup_reg_dealloc[num_reg_other]()
 
             var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM,
-                Self.num_q_heads,
+                Self.PairBM_mask,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
                 pair_cta=True,
             ](batch_size, max_seq_len, valid_length, partition)
@@ -352,8 +360,9 @@ struct SM100MHADepth512[
             warpgroup_reg_dealloc[num_reg_other]()
 
             var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM,
-                Self.num_q_heads,
+                Self.PairBM_mask,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
                 pair_cta=True,
             ](batch_size, max_seq_len, valid_length, partition)
@@ -405,5 +414,5 @@ struct SM100MHADepth512[
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype=DType.int32](Self.PairBM, Self.BN),
+            Index[dtype=DType.int32](Self.PairBM_mask, Self.BN),
         )

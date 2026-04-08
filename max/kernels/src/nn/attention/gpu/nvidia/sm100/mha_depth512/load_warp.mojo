@@ -79,6 +79,7 @@ def depth512_load[
         depth=config.qk_depth,
         group=config.group,
         decoding=False,
+        fuse_gqa=config.fuse_gqa,
         num_qk_stages=config.num_qk_stages,
     ],
     k_tma_op: KVTMATile[
@@ -105,16 +106,20 @@ def depth512_load[
     comptime num_pv_stages = config.num_pv_stages
     comptime num_kv_stages = config.num_kv_stages
     comptime group = config.group
+    comptime fuse_gqa = config.fuse_gqa
+    comptime BM_eff: Int = config.BM_eff()
     comptime page_size = KVLUTType.page_size
     comptime ragged = not ValidLengthType.is_null
     comptime cta_group = config.cta_group
     comptime qkv_size = size_of[qkv_type]()
 
     # Full pair-CTA M dimension for mask computations.
-    # CRITICAL: Both CTAs must use the same M=128 so they make identical
+    # CRITICAL: Both CTAs must use the same M so they make identical
     # skip/load decisions. If one CTA skips a tile and the other doesn't,
     # pipeline barriers desync and the kernel hangs.
+    # When fuse_gqa, the tile covers fewer seq positions (BM_eff per CTA).
     comptime PairBM = BM * 2
+    comptime PairBM_mask = BM_eff * 2
 
     comptime PositionType = MHAPosition[
         PairBM,
@@ -189,17 +194,27 @@ def depth512_load[
         seq_info, max_seq_len
     )
     # Each CTA loads its own BM rows of Q.
-    q_gmem_row += UInt32(cta_rank) * UInt32(BM)
+    # With fuse_gqa, BM_eff seq positions per CTA (not BM physical rows).
+    q_gmem_row += UInt32(cta_rank) * UInt32(BM_eff)
 
     var q_head_idx: UInt32 = seq_info.head_idx
-    var kv_head_idx: UInt32 = seq_info.head_idx // UInt32(group)
+    var kv_head_idx: UInt32
+    comptime if fuse_gqa:
+        kv_head_idx = seq_info.head_idx
+    else:
+        kv_head_idx = seq_info.head_idx // UInt32(group)
 
     e = elect()
 
-    var kv_row: UInt32 = mask.start_column[PairBM, BN, page_size](score_row)
+    var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
+        score_row
+    )
     var kv_gmem_row: UInt32 = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
     var iter_count: UInt32 = (
-        mask.last_masked_set_end[PairBM, BN, page_size](score_row, num_keys) - 1
+        mask.last_masked_set_end[PairBM_mask, BN, page_size](
+            score_row, num_keys
+        )
+        - 1
     )
 
     # CTA-specific offsets for K rows and V depth columns.
@@ -215,7 +230,7 @@ def depth512_load[
     # Mask check uses PairBM (128) so both CTAs make identical skip decisions.
     # If one CTA skips a tile and the other doesn't, the pipeline barriers
     # desync and the kernel hangs or produces wrong results.
-    comptime check_mask = mask.nonfull_sets[PairBM, BN]()[
+    comptime check_mask = mask.nonfull_sets[PairBM_mask, BN]()[
         0
     ] == TileMaskStatus.UNKNOWN_MASK
 
@@ -234,16 +249,28 @@ def depth512_load[
                 mbar[].expect_bytes(Int32(qk_expect_bytes))
 
         # Both CTAs: load Q depth stage.
+        # With fuse_gqa, Q TMA is 4D (depth, group, kv_head, seq).
         if e != 0:
-            q_tma_op.async_multicast_load_3d[cta_group](
-                QType(
-                    q_smem + q_stage_elements * qk_stage,
-                    tt_row_major[q_elems](),
-                ),
-                mbar[],
-                (d_idx, Int(q_head_idx), Int(q_gmem_row)),
-                local_mask,
-            )
+            comptime if fuse_gqa:
+                q_tma_op.async_multicast_load_4d[cta_group](
+                    QType(
+                        q_smem + q_stage_elements * qk_stage,
+                        tt_row_major[q_elems](),
+                    ),
+                    mbar[],
+                    (d_idx, 0, Int(kv_head_idx), Int(q_gmem_row)),
+                    local_mask,
+                )
+            else:
+                q_tma_op.async_multicast_load_3d[cta_group](
+                    QType(
+                        q_smem + q_stage_elements * qk_stage,
+                        tt_row_major[q_elems](),
+                    ),
+                    mbar[],
+                    (d_idx, Int(q_head_idx), Int(q_gmem_row)),
+                    local_mask,
+                )
 
         # Both CTAs: load K depth stage (each CTA loads its BN//2 half).
         if e != 0:
@@ -331,7 +358,7 @@ def depth512_load[
             if (
                 mask.status(
                     Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                    Index[dtype=DType.int32](PairBM, BN),
+                    Index[dtype=DType.int32](PairBM_mask, BN),
                 )
                 == TileMaskStatus.FULL_MASK
             ):

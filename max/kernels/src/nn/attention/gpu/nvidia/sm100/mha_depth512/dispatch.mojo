@@ -92,7 +92,8 @@ def mha_sm100_depth512_dispatch[
     )
     comptime assert d512_config.supported(), d512_config.description()
     comptime swizzle_mode = d512_config.swizzle_mode
-    comptime PairBM = d512_config.BM * 2  # 128
+    comptime fuse_gqa = d512_config.fuse_gqa
+    comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
 
     var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
@@ -107,12 +108,13 @@ def mha_sm100_depth512_dispatch[
         swizzle_mode,
         BM=d512_config.BM,
         BN=d512_config.ov_depth,
+        group=d512_config.group if fuse_gqa else 1,
     ]
     var ragged_tma_store = RaggedStoreType.create(
         ctx,
         output.unsafe_ptr(),
         rows=num_rows_q,
-        middle_dim=d512_config.num_q_heads,
+        middle_dim=d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads,
     )
 
     # Q: BM=64 per CTA (not halved like 2Q).
@@ -123,6 +125,7 @@ def mha_sm100_depth512_dispatch[
         q_num_heads=d512_config.num_q_heads,
         group=d512_config.group,
         decoding=False,
+        fuse_gqa=fuse_gqa,
         num_qk_stages=d512_config.num_qk_stages,
     ](ctx, q, num_rows_q)
 
@@ -145,8 +148,10 @@ def mha_sm100_depth512_dispatch[
     # ---- Scheduler -----------------------------------------------------------
 
     comptime SchedulerType = TransientScheduler[
-        UInt32(PairBM),
-        UInt32(d512_config.num_q_heads),
+        UInt32(PairBM_eff),
+        UInt32(
+            d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads
+        ),
         flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
         pair_cta=True,
     ]
@@ -184,7 +189,7 @@ def mha_sm100_depth512_dispatch[
             }
 
             var max_num_prompt_tiles: UInt32 = ceildiv(
-                max_prompt_len_arg.as_uint32(), UInt32(PairBM)
+                max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
             )
             var block_x: UInt32 = max_num_prompt_tiles
             # SchedulerType.grid_dim doubles block_x (pair_cta=True).

@@ -109,6 +109,7 @@ def depth512_scale_write_output[
         config.swizzle_mode,
         BM=config.BM,
         BN=config.ov_depth,
+        group=config.group if config.fuse_gqa else 1,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
@@ -244,6 +245,7 @@ def depth512_softmax[
         config.swizzle_mode,
         BM=config.BM,
         BN=config.ov_depth,
+        group=config.group if config.fuse_gqa else 1,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
@@ -253,7 +255,10 @@ def depth512_softmax[
     comptime BM = config.BM
     comptime BN = config.BN
     comptime BN_half = BN // 2
-    comptime PairBM = BM * 2
+    comptime group = config.group
+    comptime fuse_gqa = config.fuse_gqa
+    comptime BM_eff: Int = config.BM_eff()
+    comptime PairBM_mask = BM_eff * 2
     comptime f32x2 = SIMD[DType.float32, 2]
 
     # Batch size for pipelined TMEM loads and exp computation.
@@ -272,7 +277,15 @@ def depth512_softmax[
     var is_lower = row < UInt32(BM)  # True = first half columns
 
     var cta_rank = block_rank_in_cluster() % 2
-    var per_thread_score_row: UInt32 = score_row + cta_rank * UInt32(BM) + m_row
+    var per_thread_score_row: UInt32
+    comptime if fuse_gqa:
+        per_thread_score_row = (
+            score_row
+            + UInt32(cta_rank) * UInt32(BM_eff)
+            + m_row // UInt32(group)
+        )
+    else:
+        per_thread_score_row = score_row + cta_rank * UInt32(BM) + m_row
 
     # Column offset into the full BN score tile.
     # Lower (warps 0-1): columns 0..BN_half-1 → col_offset=0
@@ -308,18 +321,20 @@ def depth512_softmax[
     var s = InlineArray[Scalar[accum_dtype], BN_half](uninitialized=True)
 
     # ---- Iteration bounds (must match MMA and load warps) ----------------
-    var kv_row: UInt32 = mask.start_column[PairBM, BN, page_size](score_row)
+    var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
+        score_row
+    )
 
-    comptime mask_sets = MaskType.nonfull_sets[PairBM, BN]()
-    comptime mask_strategies = MaskType.mask_strategies[PairBM, BN]()
+    comptime mask_sets = MaskType.nonfull_sets[PairBM_mask, BN]()
+    comptime mask_strategies = MaskType.mask_strategies[PairBM_mask, BN]()
     comptime num_sets = len(mask_sets)
 
     var mask_iters: StaticTuple[UInt32, num_sets] = {}
 
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
-        mask_ends = mask.masked_set_ends[BM=PairBM, BN=BN, page_size=page_size](
-            score_row, num_keys
-        )
+        mask_ends = mask.masked_set_ends[
+            BM=PairBM_mask, BN=BN, page_size=page_size
+        ](score_row, num_keys)
         mask_iters[0] = mask_ends[0]
         comptime for i in range(1, num_sets):
             mask_iters[i] = mask_ends[i] - mask_ends[i - 1]
@@ -704,7 +719,7 @@ def depth512_softmax[
                 break
             cur_mask_status = mask.status(
                 Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                Index[dtype=DType.int32](PairBM, BN),
+                Index[dtype=DType.int32](PairBM_mask, BN),
             )
             if cur_mask_status == TileMaskStatus.FULL_MASK:
                 continue
