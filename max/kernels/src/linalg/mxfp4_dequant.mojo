@@ -21,10 +21,10 @@ SF_VECTOR_SIZE (32) consecutive elements.
 
 from std.math import ceildiv
 from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    grid_dim_uint as grid_dim,
-    block_dim_uint as block_dim,
+    block_idx_int as block_idx,
+    thread_idx_int as thread_idx,
+    grid_dim_int as grid_dim,
+    block_dim_int as block_dim,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo
@@ -76,13 +76,11 @@ def _dequant_mxfp4_to_fp8_kernel[
     comptime BYTES_PER_THREAD = ELEMENTS_PER_THREAD // 2
 
     with PDL():
-        for global_row_idx in range(
-            Int(block_idx.x), num_rows, Int(grid_dim.x)
-        ):
+        for global_row_idx in range(block_idx.x, num_rows, grid_dim.x):
             for col_thread_idx in range(
-                Int(thread_idx.x),
+                thread_idx.x,
                 ceildiv(num_cols, ELEMENTS_PER_THREAD),
-                Int(block_dim.x),
+                block_dim.x,
             ):
                 var global_col_idx = col_thread_idx * ELEMENTS_PER_THREAD
 

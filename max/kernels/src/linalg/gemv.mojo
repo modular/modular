@@ -29,12 +29,11 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    global_idx_uint as global_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    block_idx,
+    global_idx,
+    thread_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.host import (
     DeviceAttribute,
@@ -123,10 +122,10 @@ def gemv_kernel[
     k: Int,
 ):
     var tid = global_idx.x
-    var global_warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var global_warp_id = warp.broadcast(ufloordiv(tid, WARP_SIZE))
     var lane_id = lane_id()
 
-    if global_warp_id >= UInt(m):
+    if global_warp_id >= m:
         return
 
     var accum = Scalar[accum_type](0)
@@ -136,10 +135,10 @@ def gemv_kernel[
 
     # Every warp processes a single row of the resultant vector
     for i in range(ceildiv(k, WARP_SIZE)):
-        var idx = i * WARP_SIZE + Int(lane_id)
+        var idx = i * WARP_SIZE + lane_id
         if idx < k:
             accum += (
-                a.load(global_warp_id * UInt(k) + UInt(idx)).cast[accum_type]()
+                a.load(global_warp_id * k + idx).cast[accum_type]()
                 * b.load(idx).cast[accum_type]()
             )
 
@@ -149,7 +148,7 @@ def gemv_kernel[
         comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                reverse_idx[transpose_b](Int(global_warp_id), 0),
+                reverse_idx[transpose_b](global_warp_id, 0),
                 accum.cast[c_type](),
             )
         else:
@@ -168,7 +167,7 @@ def gemv_kernel_vector[
     a_layout: TensorLayout,
     b_layout: TensorLayout,
     *,
-    simd_width: UInt,
+    simd_width: Int,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
@@ -187,13 +186,13 @@ def gemv_kernel_vector[
     comptime assert b.flat_rank == 2, "b must be of rank 2"
 
     var tid = global_idx.x
-    var global_warp_id = Int(warp.broadcast(tid // UInt(WARP_SIZE)))
+    var global_warp_id: Int = warp.broadcast(ufloordiv(tid, WARP_SIZE))
     var lane_id = lane_id()
     if global_warp_id >= m:
         return
 
     # Every warp processes a single row of the resultant vector
-    var local_accum = SIMD[accum_type, Int(simd_width)](0)
+    var local_accum = SIMD[accum_type, simd_width](0)
 
     comptime local_accum_type = type_of(local_accum)
 
@@ -201,18 +200,18 @@ def gemv_kernel_vector[
         wait_on_dependent_grids()
 
     var num_iters = (
-        ceildiv(k // Int(simd_width), WARP_SIZE) if comptime (
+        ceildiv(k // simd_width, WARP_SIZE) if comptime (
             check_bounds
-        ) else ufloordiv(k, WARP_SIZE * Int(simd_width))
+        ) else ufloordiv(k, WARP_SIZE * simd_width)
         + 1
     )
 
     # Main loop: all lanes are in bounds, no check needed.
     for i in range(num_iters - 1):
-        var a_tile = a.tile[1, WARP_SIZE * Int(simd_width)](global_warp_id, i)
-        var b_tile = b.tile[1, WARP_SIZE * Int(simd_width)](0, i)
-        var a_vec = a_tile.vectorize[1, Int(simd_width)]()[0, Int(lane_id)]
-        var b_vec = b_tile.vectorize[1, Int(simd_width)]()[0, Int(lane_id)]
+        var a_tile = a.tile[1, WARP_SIZE * simd_width](global_warp_id, i)
+        var b_tile = b.tile[1, WARP_SIZE * simd_width](0, i)
+        var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
+        var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
         local_accum += rebind[local_accum_type](
             a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
         )
@@ -222,17 +221,11 @@ def gemv_kernel_vector[
     comptime if check_bounds:
         if num_iters > 0:
             var last = num_iters - 1
-            var a_tile = a.tile[1, WARP_SIZE * Int(simd_width)](
-                global_warp_id, last
-            )
-            var b_tile = b.tile[1, WARP_SIZE * Int(simd_width)](0, last)
-            if (lane_id + UInt(last * WARP_SIZE)) * simd_width < UInt(k):
-                var a_vec = a_tile.vectorize[1, Int(simd_width)]()[
-                    0, Int(lane_id)
-                ]
-                var b_vec = b_tile.vectorize[1, Int(simd_width)]()[
-                    0, Int(lane_id)
-                ]
+            var a_tile = a.tile[1, WARP_SIZE * simd_width](global_warp_id, last)
+            var b_tile = b.tile[1, WARP_SIZE * simd_width](0, last)
+            if (lane_id + last * WARP_SIZE) * simd_width < k:
+                var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
+                var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
                 local_accum += rebind[local_accum_type](
                     a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
                 )
@@ -364,7 +357,7 @@ def gemv_split_k[
     var tile_id_m = block_idx.x * tile_m
     # which rows of the weight matrix each thread will process
     var tile_id_n = block_idx.y * tile_n
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var tile_w = LayoutTensor[
         b_type,
         Layout.row_major(tile_n, simd_width),
@@ -407,7 +400,7 @@ def gemv_split_k[
                     continue
             comptime if is_amd_gpu():
                 var b_vec = weight_tile.load[simd_width, non_temporal=True](
-                    Coord(Idx(i), Idx(Int(thread_idx.x) * simd_width))
+                    Coord(Idx(i), Idx(thread_idx.x * simd_width))
                 )
                 tile_w.store(i, 0, rebind[WeightVecType](b_vec))
             else:
@@ -456,7 +449,7 @@ def gemv_split_k[
 
     # Warps are arranged along K.
     comptime k_warp_num = num_threads // WARP_SIZE
-    var warp_id = Int(warp_id())
+    var warp_id = warp_id()
     var lane_id = lane_id()
     var shmem = LayoutTensor[
         accum_type,
@@ -533,10 +526,10 @@ def gevm_kernel[
 ):
     comptime warps_per_block = tile_size // WARP_SIZE
 
-    var warp_id = Int(warp_id())
-    var lane_id = Int(lane_id())
+    var warp_id = warp_id()
+    var lane_id = lane_id()
     var col = block_idx.x * WARP_SIZE + lane_id
-    var global_warp_id = Int(global_idx.x) // warps_per_block
+    var global_warp_id = global_idx.x // warps_per_block
 
     var x_shared = stack_allocation[
         tile_size,
@@ -836,7 +829,7 @@ def gemv_gpu_dispatch[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b).LayoutType,
-                    simd_width=UInt(simd_width),
+                    simd_width=simd_width,
                     transpose_b=False,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     check_bounds=check_bounds_k,
@@ -872,7 +865,7 @@ def gemv_gpu_dispatch[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b_tile_n_major).LayoutType,
-                    simd_width=UInt(simd_width),
+                    simd_width=simd_width,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     check_bounds=check_bounds_k,
@@ -897,7 +890,7 @@ def gemv_gpu_dispatch[
                 type_of(c).LayoutType,
                 type_of(b).LayoutType,
                 type_of(a).LayoutType,
-                simd_width=UInt(simd_width),
+                simd_width=simd_width,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 check_bounds=check_bounds_k,
