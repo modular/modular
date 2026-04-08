@@ -220,56 +220,61 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     // matching signatures exist in a struct).
     auto possibleOverloads = structDecl.lookupInCurrentScope(name);
 
-    bool structDefinesMethod = false;
+    SmallVector<ASTDecl *> structDefinesMethods;
     for (ASTDecl *decl : possibleOverloads) {
-      FnOp possibleImpl =
-          llvm::dyn_cast_if_present<FnOp>(decl->getIfOperation());
-      if (!possibleImpl)
+      auto impl = llvm::dyn_cast_if_present<FnOp>(decl->getIfOperation());
+      if (!impl || isInheritedFnOp(impl))
         continue;
 
-      if (isInheritedFnOp(possibleImpl))
-        continue;
+      structDefinesMethods.push_back(decl);
+    }
 
-      OverloadSet ov(name, possibleOverloads, std::move(bindings),
-                     CallSyntax::kMethodCallSynthetic);
+    // We can't just directly compare signatures because we may be in a
+    // scenario like: trait Foo:
+    //   alias X: AnyType
+    //   def foo(self) -> Self.x
+    //  ...
+    //
+    // struct Bar(Foo):
+    //   alias X: AnyType = Int
+    //   def foo(self) -> Self.X:
+    //     ...
+    //
+    // Foo::foo's signature will be something like:
+    // (self: !lit.ref<Foo>, __result__: !lit.ref<AnyType>)
+    //
+    // while Bar::foo's will be something like:
+    //
+    // (self: !lit.ref<Bar>) -> !lit.struct<Int>
+    //
+    // Defer to using filterOverloadSetForValueType since it already handles
+    // such differences.
+    OverloadSet ov(name, structDefinesMethods, std::move(bindings),
+                   CallSyntax::kMethodCallSynthetic);
 
-      // We can't just directly compare signatures because we may be in a
-      // scenario like: trait Foo:
-      //   alias X: AnyType
-      //   def foo(self) -> Self.x
-      //  ...
-      //
-      // struct Bar(Foo):
-      //   alias X: AnyType = Int
-      //   def foo(self) -> Self.X:
-      //     ...
-      //
-      // Foo::foo's signature will be something like:
-      // (self: !lit.ref<Foo>, __result__: !lit.ref<AnyType>)
-      //
-      // while Bar::foo's will be something like:
-      //
-      // (self: !lit.ref<Bar>) -> !lit.struct<Int>
-      //
-      // Defer to using filterOverloadSetForValueType since it already handles
-      // such differences.
-      auto [result, _] = ov.filterOverloadSetForValueType(
-          wrapperSignature, emitter.getDeclScope(), nullptr);
-      if (!result)
-        continue;
-
+    auto [_, decl] = ov.filterOverloadSetForValueType(
+        wrapperSignature, emitter.getDeclScope(), nullptr);
+    if (decl) {
       // Check if this method's constraints are valid for the conformance.
       // Following overload selection rules, we require constraints to be
       // definitively provable or disproved - unprovable constraints are errors.
-      ConstraintResult status = checkMethodConstraintStatus(
-          possibleImpl, conformanceConstraint, structDecl);
+      ConstraintResult status =
+          checkMethodConstraintStatus(cast<FnOp>(decl->getIfOperation()),
+                                      conformanceConstraint, structDecl);
       switch (status) {
       case ConstraintResult::Satisfied:
-        structDefinesMethod = true;
-        break;
-      case ConstraintResult::Violated:
-        // Method constraints contradict conformance - not a valid override.
-        continue;
+        // Since we are not using the default implementation, set the ASTDecl
+        // which were inserted for referencing default method to be fully
+        // resolved.
+        assert(structFnDecl->resolvedness <= DeclResolvedness::signature &&
+               "synthesizeMethodInStruct is only valid on non-body resolved Fn "
+               "ASTDecls");
+        // This was pointed to the trait default implementation, now that we
+        // know this decl is useless, simply disable it. We mark the ASTDecl as
+        // disabled instead of creating a fake FnOp and mark the FnOp to be
+        // disabled.
+        structFnDecl->markDisabled();
+        return success();
       case ConstraintResult::Unprovable:
         // Cannot prove or disprove - error per overload selection rules.
         shared.emitError(decl->getLoc())
@@ -278,29 +283,15 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
                "conformance constraint; all candidates must have provable "
                "or contradicted constraints";
         return failure();
-      }
-      if (structDefinesMethod)
+      case ConstraintResult::Violated:
+        // Method constraints contradict conformance - not a valid override.
         break;
+      }
     }
 
     // The struct doesn't provide an override, see if the wrapper def we're
     // about to create has a matching signature to an existing wrapper function
     // in the struct.
-    if (structDefinesMethod) {
-      // Since we are not using the default implementation, set the ASTDecl
-      // which were inserted for referencing default method to be fully
-      // resolved.
-      assert(structFnDecl->resolvedness <= DeclResolvedness::signature &&
-             "synthesizeMethodInStruct is only valid on non-body resolved Fn "
-             "ASTDecls");
-      // This was pointed to the trait default implementation, now that we know
-      // this decl is useless, simply disable it. We mark the ASTDecl as
-      // disabled instead of creating a fake FnOp and mark the FnOp to be
-      // disabled.
-      structFnDecl->markDisabled();
-      return success();
-    }
-
     for (ASTDecl *decl : possibleOverloads) {
       // Skip any decls currently pointing to the parent trait method
       if (decl->isDisabled())
@@ -396,8 +387,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     FnOp newFn = structEmitter.synthesizeDefaultTraitMethodWrapper(
         *structFnDecl, name.str(), wrapperSignature, traitFn, traitFnDecl,
-        structDefinesMethod, builder,
-        traitDecl.getSymbolRef().getLeafReference().strref(),
+        builder, traitDecl.getSymbolRef().getLeafReference().strref(),
         conformanceConstraint);
 
     // If newFn is null something went very wrong -- assert

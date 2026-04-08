@@ -135,8 +135,8 @@ public:
   FnOp synthesizeDefaultTraitMethodWrapper(
       ASTDecl &existingDecl, StringRef name,
       FnTypeGeneratorType wrapperSignature, FnOp traitFn, ASTDecl *traitFnDecl,
-      bool structDefinesMethod, ImplicitLocOpBuilder &builder,
-      StringRef suffix = "", ConstraintAttr conformanceConstraint = {});
+      ImplicitLocOpBuilder &builder, StringRef suffix = "",
+      ConstraintAttr conformanceConstraint = {});
 };
 
 } // namespace M::KGEN::LIT

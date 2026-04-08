@@ -48,7 +48,14 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                          bool erroneous)
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()),
       paramBindings(std::move(paramBindings)), syntax(syntax),
-      erroneous(erroneous) {}
+      erroneous(erroneous) {
+  assert(llvm::all_of(fnDecls,
+                      [](ASTDecl *decl) {
+                        return decl->resolvedness >=
+                               DeclResolvedness::signature;
+                      }) &&
+         "Overload set must contain fully resolved declarations");
+}
 
 SMLoc OverloadSet::getExprLoc() const { return getExpr()->getLoc(); }
 
@@ -899,10 +906,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
   SmallVector<ParameterExprArrayAttr> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
     // Skip functions explicitly marked as 'disabled'.
-    if (candidate->isDisabled() ||
-        // FIXME: This candidate should not be put into the overload set at the
-        // first place! There must be some bugs...
-        candidate->resolvedness < DeclResolvedness::signature)
+    if (candidate->isDisabled())
       continue;
 
     Type candidateType =
