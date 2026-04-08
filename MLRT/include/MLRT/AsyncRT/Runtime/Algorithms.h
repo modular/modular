@@ -341,18 +341,18 @@ struct ParallelForEachNUtils {
 
 } // namespace Detail
 
-/// This method invokes the specified element function "N" times with indexes
-/// from [0 ..< N).  This function returns immediately after kicking off the
-/// work: all of the elements are processed on the Runtime's WorkQueue.
-///
-/// When all of the elements have finished, a completion handler is invoked.
-///
-template <typename... CaptureTys, typename ElementFn, typename CompletionFn>
-static inline void parallelForEachNCustomCompletion(Runtime &runtime,
-                                                    size_t totalCount,
-                                                    ElementFn &&elementFn,
-                                                    CompletionFn &&completionFn,
-                                                    CaptureTys &&...captures) {
+namespace Detail {
+
+/// Core implementation of parallelForEachN. Accepts an explicit task-ID
+/// mapping function so callers can pin each element to a specific worker
+/// thread (e.g. for GPU device affinity). Pass `[](size_t) { return
+/// kDefaultTaskId; }` for the default round-robin scheduling.
+template <typename... CaptureTys, typename ElementFn, typename CompletionFn,
+          typename TaskIdFn>
+static inline void
+parallelForEachNImpl(Runtime &runtime, size_t totalCount, ElementFn &&elementFn,
+                     CompletionFn &&completionFn, TaskIdFn &&taskIdFn,
+                     CaptureTys &&...captures) {
   // If there is nothing to do, then we're already done.
   if (totalCount == 0)
     return;
@@ -370,7 +370,7 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
 
     /// This is the state captured by the computation, it is passed to both the
     /// per-element computation as well as to the completion function.
-    Detail::ParallelForEachNUtils::ElementFnCapturesT<ElementFn> capturesList;
+    ParallelForEachNUtils::ElementFnCapturesT<ElementFn> capturesList;
   };
 
   // Allocate the parallel state on the heap since it will out-live the call to
@@ -383,26 +383,52 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
 
   // Enqueue each element of work!
   for (size_t elementIdx = 0; elementIdx != totalCount; ++elementIdx) {
-    addTask(runtime, [state, elementIdx]() {
-      TimeTraceScope scope(AlgorithmProfilerEntry::create(
-          "asyncrt.parallelForEach", (uint64_t)elementIdx));
-      // Invoke the per-element function with the index and all of the captured
-      // state.
-      std::apply(
-          [&](auto &&...args) { (void)state->elementFn(elementIdx, args...); },
-          state->capturesList);
-      // Once that is done we can decrement the count and trigger completion
-      // when the last element is done.
-      if (--state->numElementsLeft != 0)
-        return;
+    addTask(
+        runtime,
+        [state, elementIdx]() {
+          TimeTraceScope scope(AlgorithmProfilerEntry::create(
+              "asyncrt.parallelForEach", (uint64_t)elementIdx));
+          // Invoke the per-element function with the index and all of the
+          // captured state.
+          std::apply(
+              [&](auto &&...args) {
+                (void)state->elementFn(elementIdx, args...);
+              },
+              state->capturesList);
+          // Once that is done we can decrement the count and trigger completion
+          // when the last element is done.
+          if (--state->numElementsLeft != 0)
+            return;
 
-      // Invoke the completion function, since we're done.
-      std::apply(state->completionFn, state->capturesList);
+          // Invoke the completion function, since we're done.
+          std::apply(state->completionFn, state->capturesList);
 
-      // All uses of the state are done, so we can deallocate it.
-      delete state;
-    });
+          // All uses of the state are done, so we can deallocate it.
+          delete state;
+        },
+        taskIdFn(elementIdx));
   }
+}
+
+} // namespace Detail
+
+/// This method invokes the specified element function "N" times with indexes
+/// from [0 ..< N).  This function returns immediately after kicking off the
+/// work: all of the elements are processed on the Runtime's WorkQueue.
+///
+/// When all of the elements have finished, a completion handler is invoked.
+///
+template <typename... CaptureTys, typename ElementFn, typename CompletionFn>
+static inline void parallelForEachNCustomCompletion(Runtime &runtime,
+                                                    size_t totalCount,
+                                                    ElementFn &&elementFn,
+                                                    CompletionFn &&completionFn,
+                                                    CaptureTys &&...captures) {
+  Detail::parallelForEachNImpl(
+      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      std::forward<CompletionFn>(completionFn),
+      [](size_t) { return kDefaultTaskId; },
+      std::forward<CaptureTys>(captures)...);
 }
 
 /// This method invokes the specified element function "N" times with indexes
@@ -467,6 +493,28 @@ parallelForEachNChain(Runtime &runtime, size_t totalCount,
   parallelForEachNCompleteChain(runtime, totalCount, result.copy(),
                                 std::forward<ElementFn>(elementFn),
                                 std::forward<CaptureTys...>(captures)...);
+  return result;
+}
+
+/// Like parallelForEachNChain, but pins each element to the worker thread
+/// returned by `taskIdFn(elementIdx)`. Use this when elements have device
+/// affinity (e.g. one element per GPU, pinned to the GPU's NUMA-local core via
+/// taskIdForDevice). Returning kDefaultTaskId (-1) from taskIdFn falls back to
+/// the global shared queue for that element.
+///
+/// taskIdFn must be callable as (size_t elementIdx) -> int.
+template <typename... CaptureTys, typename ElementFn, typename TaskIdFn>
+static inline AsyncValueRef<Chain>
+parallelForEachNChainWithTaskIds(Runtime &runtime, size_t totalCount,
+                                 TaskIdFn &&taskIdFn, ElementFn &&elementFn,
+                                 CaptureTys &&...captures) {
+  auto result = AsyncValueRef<Chain>::allocate(runtime);
+  Detail::parallelForEachNImpl(
+      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      [chain = result.copy()](auto &&...) mutable {
+        std::move(chain).emplace();
+      },
+      std::forward<TaskIdFn>(taskIdFn), std::forward<CaptureTys>(captures)...);
   return result;
 }
 
