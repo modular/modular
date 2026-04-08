@@ -629,19 +629,22 @@ def _steady_state_metric_values(
     ]
 
 
-def _add_confidence_fields(
-    result: dict[str, Any],
-    metrics_by_prefix: list[tuple[str, Any]],
-) -> None:
-    """Add confidence interval fields to the result dict for each metric."""
-    for prefix, metric_obj in metrics_by_prefix:
-        ci = getattr(metric_obj, "confidence_info", None)
-        if ci:
-            result[f"{prefix}_ci_lower"] = ci.ci_lower
-            result[f"{prefix}_ci_upper"] = ci.ci_upper
-            result[f"{prefix}_ci_relative_width"] = ci.ci_relative_width
-            result[f"{prefix}_confidence"] = ci.confidence
-            result[f"{prefix}_sample_size"] = ci.sample_size
+def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
+    """Parse ``KEY=VALUE`` metadata strings into a flat dict.
+
+    The special key ``server_cpu`` is mapped to ``cpu``.
+    """
+    result: dict[str, str] = {}
+    for item in metadata or ():
+        if "=" not in item:
+            raise ValueError(
+                "Invalid metadata format. Please use KEY=VALUE format."
+            )
+        key, value = item.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        result["cpu" if key == "server_cpu" else key] = value
+    return result
 
 
 def _add_optional_result(
@@ -1042,6 +1045,7 @@ def calculate_metrics(
     )
 
     metrics = BenchmarkMetrics(
+        duration=dur_s,
         completed=completed,
         failures=failures,
         total_input=total_input,
@@ -1133,6 +1137,7 @@ def calculate_pixel_generation_metrics(
     )
 
     return PixelGenerationBenchmarkMetrics(
+        duration=dur_s,
         completed=completed,
         failures=failures,
         max_concurrency=max_concurrency or len(outputs),
@@ -1538,6 +1543,190 @@ async def run_single_test_prompt(
         )
 
 
+def _build_pixel_generation_result(
+    *,
+    outputs: Sequence[BaseRequestFuncOutput],
+    benchmark_duration: float,
+    gpu_metrics: list[dict[str, GPUStats]] | None,
+    cpu_metrics: dict[str, Any],
+    max_concurrency: int | None,
+    collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None,
+) -> tuple[dict[str, object], PixelGenerationBenchmarkMetrics]:
+    """Compute metrics and build the result dict for pixel-generation tasks."""
+    if not _is_pixel_generation_outputs(outputs):
+        raise TypeError(
+            "Expected all outputs to be PixelGenerationRequestFuncOutput"
+            " in pixel-generation benchmark flow."
+        )
+    metrics = calculate_pixel_generation_metrics(
+        outputs=outputs,
+        dur_s=benchmark_duration,
+        gpu_metrics=gpu_metrics,
+        cpu_metrics=cpu_metrics,
+        max_concurrency=max_concurrency,
+        collect_gpu_stats=collect_gpu_stats,
+        server_metrics=server_metrics,
+    )
+    result = metrics.to_result_dict()
+    result.update(
+        {
+            "latencies": [output.latency for output in outputs],
+            "num_generated_outputs": [
+                output.num_generated_outputs for output in outputs
+            ],
+            "errors": [output.error for output in outputs],
+            "request_submit_times": [
+                output.request_submit_time for output in outputs
+            ],
+            "request_complete_times": [
+                output.request_complete_time for output in outputs
+            ],
+        }
+    )
+    return result, metrics
+
+
+def _build_text_generation_result(
+    *,
+    outputs: Sequence[BaseRequestFuncOutput],
+    benchmark_duration: float,
+    tokenizer: PreTrainedTokenizerBase | None,
+    gpu_metrics: list[dict[str, GPUStats]] | None,
+    cpu_metrics: dict[str, Any],
+    skip_first_n_requests: int,
+    skip_last_n_requests: int,
+    max_concurrency: int | None,
+    collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None,
+    spec_decode_stats: dict[str, Any] | None,
+) -> tuple[dict[str, object], BenchmarkMetrics]:
+    """Compute metrics and build the result dict for text-generation tasks."""
+    if not _is_text_generation_outputs(outputs):
+        raise TypeError(
+            "Expected all outputs to be RequestFuncOutput"
+            " in text-generation benchmark flow."
+        )
+    text_metrics, actual_output_lens = calculate_metrics(
+        outputs=outputs,
+        dur_s=benchmark_duration,
+        tokenizer=tokenizer,
+        gpu_metrics=gpu_metrics,
+        cpu_metrics=cpu_metrics,
+        skip_first_n_requests=skip_first_n_requests,
+        skip_last_n_requests=skip_last_n_requests,
+        max_concurrency=max_concurrency,
+        collect_gpu_stats=collect_gpu_stats,
+        server_metrics=server_metrics,
+    )
+
+    result = text_metrics.to_result_dict()
+    result.update(
+        {
+            "skip_first_n_requests": skip_first_n_requests,
+            "skip_last_n_requests": skip_last_n_requests,
+            "input_lens": [output.prompt_len for output in outputs],
+            "output_lens": actual_output_lens,
+            "ttfts": [output.ttft for output in outputs],
+            "itls": [output.itl for output in outputs],
+            "generated_texts": [output.generated_text for output in outputs],
+            "errors": [output.error for output in outputs],
+            "request_submit_times": [
+                output.request_submit_time for output in outputs
+            ],
+            "request_complete_times": [
+                output.request_complete_time for output in outputs
+            ],
+        }
+    )
+
+    _add_spec_decode_result(result, spec_decode_stats)
+
+    for warn in text_metrics.confidence_warnings():
+        logger.warning(f"Confidence: {warn}")
+
+    _add_steady_state_result(
+        result,
+        outputs=outputs,
+        tokenizer=tokenizer,
+        gpu_metrics=gpu_metrics,
+        cpu_metrics=cpu_metrics,
+        max_concurrency=max_concurrency,
+        collect_gpu_stats=collect_gpu_stats,
+        server_metrics=server_metrics,
+    )
+
+    return result, text_metrics
+
+
+def _add_steady_state_result(
+    result: dict[str, object],
+    *,
+    outputs: Sequence[RequestFuncOutput],
+    tokenizer: PreTrainedTokenizerBase | None,
+    gpu_metrics: list[dict[str, GPUStats]] | None,
+    cpu_metrics: dict[str, Any],
+    max_concurrency: int | None,
+    collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None,
+) -> None:
+    """Detect steady-state window and add its metrics to *result*."""
+    steady = detect_steady_state(outputs)
+    result["steady_state_detected"] = steady.detected
+    result["steady_state_start_index"] = steady.start_index
+    result["steady_state_end_index"] = steady.end_index
+    result["steady_state_count"] = steady.steady_state_count
+    result["steady_state_warning"] = steady.warning
+
+    if steady.detected:
+        ss_index_set = set(steady.steady_state_indices)
+        ss_outputs = [
+            out
+            for i, out in enumerate(outputs)
+            if i in ss_index_set and out.success and not out.cancelled
+        ]
+        ss_valid = [
+            out
+            for out in ss_outputs
+            if out.request_submit_time is not None
+            and out.request_complete_time is not None
+        ]
+        if len(ss_valid) >= 2:
+            ss_valid.sort(key=lambda o: o.request_submit_time or 0.0)
+            first_submit = ss_valid[0].request_submit_time
+            last_complete = ss_valid[-1].request_complete_time
+            assert first_submit is not None and last_complete is not None
+            ss_duration = last_complete - first_submit
+            ss_duration = max(ss_duration, 1e-9)
+
+            ss_metrics, _ = calculate_metrics(
+                outputs=ss_outputs,
+                dur_s=ss_duration,
+                tokenizer=tokenizer,
+                gpu_metrics=gpu_metrics,
+                cpu_metrics=cpu_metrics,
+                skip_first_n_requests=0,
+                skip_last_n_requests=0,
+                max_concurrency=max_concurrency,
+                collect_gpu_stats=collect_gpu_stats,
+                server_metrics=server_metrics,
+            )
+            for suffix, value in _steady_state_metric_values(ss_metrics):
+                result[f"steady_state_{suffix}"] = value
+            for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
+                pm = getattr(ss_metrics, name)
+                result.update(
+                    pm.confidence_to_flat_dict(f"steady_state_{name}")
+                )
+        logger.info(
+            f"Steady-state detected: requests [{steady.start_index},"
+            f" {steady.end_index}) ({steady.steady_state_count} of"
+            f" {steady.total_requests} requests)"
+        )
+    elif steady.warning:
+        logger.warning(f"Steady-state detection: {steady.warning}")
+
+
 async def benchmark(
     backend: Backend,
     benchmark_task: BenchmarkTask,
@@ -1570,7 +1759,9 @@ async def benchmark(
     lora_manager: LoRABenchmarkManager | None,
     trace_path: str | None = None,
     trace_session: str | None = None,
-) -> tuple[dict[str, Any], BenchmarkMetrics | PixelGenerationBenchmarkMetrics]:
+) -> tuple[
+    dict[str, object], BenchmarkMetrics | PixelGenerationBenchmarkMetrics
+]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
             "--ignore-first-turn-stats and --skip-first-n-requests both set."
@@ -1843,91 +2034,35 @@ async def benchmark(
             round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
         )
 
+    result: dict[str, object]
+    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics
     if benchmark_task in PIXEL_GENERATION_TASKS:
-        if not _is_pixel_generation_outputs(outputs):
-            raise TypeError(
-                "Expected all outputs to be PixelGenerationRequestFuncOutput"
-                " in pixel-generation benchmark flow."
-            )
-        pixel_metrics = calculate_pixel_generation_metrics(
+        result, metrics = _build_pixel_generation_result(
             outputs=outputs,
-            dur_s=benchmark_duration,
+            benchmark_duration=benchmark_duration,
             gpu_metrics=gpu_metrics,
             cpu_metrics=cpu_metrics,
             max_concurrency=max_concurrency,
             collect_gpu_stats=collect_gpu_stats,
             server_metrics=server_metrics,
         )
-
-        print_benchmark_summary(
-            metrics=pixel_metrics,
+    else:
+        result, metrics = _build_text_generation_result(
+            outputs=outputs,
             benchmark_duration=benchmark_duration,
-            request_rate=request_rate,
-            achieved_request_rate=achieved_request_rate,
+            tokenizer=tokenizer,
+            gpu_metrics=gpu_metrics,
+            cpu_metrics=cpu_metrics,
+            skip_first_n_requests=skip_first_n_requests,
+            skip_last_n_requests=skip_last_n_requests,
             max_concurrency=max_concurrency,
             collect_gpu_stats=collect_gpu_stats,
-            collect_cpu_stats=collect_cpu_stats,
-            spec_decode_stats=None,
-            lora_manager=lora_manager,
+            server_metrics=server_metrics,
+            spec_decode_stats=spec_decode_stats,
         )
-
-        result = {
-            "duration": benchmark_duration,
-            "completed": pixel_metrics.completed,
-            "failures": pixel_metrics.failures,
-            "max_concurrency": pixel_metrics.max_concurrency,
-            "request_throughput": pixel_metrics.request_throughput,
-            "total_generated_outputs": pixel_metrics.total_generated_outputs,
-            "mean_latency_ms": pixel_metrics.latency_ms.mean,
-            "median_latency_ms": pixel_metrics.latency_ms.median,
-            "std_latency_ms": pixel_metrics.latency_ms.std,
-            "p90_latency_ms": pixel_metrics.latency_ms.p90,
-            "p95_latency_ms": pixel_metrics.latency_ms.p95,
-            "p99_latency_ms": pixel_metrics.latency_ms.p99,
-            "latencies": [output.latency for output in outputs],
-            "num_generated_outputs": [
-                output.num_generated_outputs for output in outputs
-            ],
-            "errors": [output.error for output in outputs],
-            "request_submit_times": [
-                output.request_submit_time for output in outputs
-            ],
-            "request_complete_times": [
-                output.request_complete_time for output in outputs
-            ],
-            "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
-            "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
-            "gpu_utilization": pixel_metrics.gpu_utilization,
-        }
-
-        _add_optional_result(
-            result=result,
-            metrics=pixel_metrics,
-            lora_manager=lora_manager,
-        )
-
-        return result, pixel_metrics
-
-    if not _is_text_generation_outputs(outputs):
-        raise TypeError(
-            "Expected all outputs to be RequestFuncOutput"
-            " in text-generation benchmark flow."
-        )
-    text_metrics, actual_output_lens = calculate_metrics(
-        outputs=outputs,
-        dur_s=benchmark_duration,
-        tokenizer=tokenizer,
-        gpu_metrics=gpu_metrics,
-        cpu_metrics=cpu_metrics,
-        skip_first_n_requests=skip_first_n_requests,
-        skip_last_n_requests=skip_last_n_requests,
-        max_concurrency=max_concurrency,
-        collect_gpu_stats=collect_gpu_stats,
-        server_metrics=server_metrics,
-    )
 
     print_benchmark_summary(
-        metrics=text_metrics,
+        metrics=metrics,
         benchmark_duration=benchmark_duration,
         request_rate=request_rate,
         max_concurrency=max_concurrency,
@@ -1938,154 +2073,13 @@ async def benchmark(
         lora_manager=lora_manager,
     )
 
-    result = {
-        "duration": benchmark_duration,
-        "completed": text_metrics.completed,
-        "failures": text_metrics.failures,
-        "max_concurrency": text_metrics.max_concurrency,
-        "skip_first_n_requests": skip_first_n_requests,
-        "skip_last_n_requests": skip_last_n_requests,
-        "total_input_tokens": text_metrics.total_input,
-        "total_output_tokens": text_metrics.total_output,
-        "request_throughput": text_metrics.request_throughput,
-        "mean_input_throughput": text_metrics.input_throughput.mean,
-        "std_input_throughput": text_metrics.input_throughput.std,
-        "median_input_throughput": text_metrics.input_throughput.median,
-        "p90_input_throughput": text_metrics.input_throughput.p90,
-        "p95_input_throughput": text_metrics.input_throughput.p95,
-        "p99_input_throughput": text_metrics.input_throughput.p99,
-        "mean_output_throughput": text_metrics.output_throughput.mean,
-        "std_output_throughput": text_metrics.output_throughput.std,
-        "median_output_throughput": text_metrics.output_throughput.median,
-        "p90_output_throughput": text_metrics.output_throughput.p90,
-        "p95_output_throughput": text_metrics.output_throughput.p95,
-        "p99_output_throughput": text_metrics.output_throughput.p99,
-        "mean_ttft_ms": text_metrics.ttft_ms.mean,
-        "median_ttft_ms": text_metrics.ttft_ms.median,
-        "std_ttft_ms": text_metrics.ttft_ms.std,
-        "p90_ttft_ms": text_metrics.ttft_ms.p90,
-        "p95_ttft_ms": text_metrics.ttft_ms.p95,
-        "p99_ttft_ms": text_metrics.ttft_ms.p99,
-        "mean_tpot_ms": text_metrics.tpot_ms.mean,
-        "median_tpot_ms": text_metrics.tpot_ms.median,
-        "std_tpot_ms": text_metrics.tpot_ms.std,
-        "p90_tpot_ms": text_metrics.tpot_ms.p90,
-        "p95_tpot_ms": text_metrics.tpot_ms.p95,
-        "p99_tpot_ms": text_metrics.tpot_ms.p99,
-        "mean_itl_ms": text_metrics.itl_ms.mean,
-        "median_itl_ms": text_metrics.itl_ms.median,
-        "std_itl_ms": text_metrics.itl_ms.std,
-        "p90_itl_ms": text_metrics.itl_ms.p90,
-        "p95_itl_ms": text_metrics.itl_ms.p95,
-        "p99_itl_ms": text_metrics.itl_ms.p99,
-        "mean_latency_ms": text_metrics.latency_ms.mean,
-        "median_latency_ms": text_metrics.latency_ms.median,
-        "std_latency_ms": text_metrics.latency_ms.std,
-        "p90_latency_ms": text_metrics.latency_ms.p90,
-        "p95_latency_ms": text_metrics.latency_ms.p95,
-        "p99_latency_ms": text_metrics.latency_ms.p99,
-        "input_lens": [output.prompt_len for output in outputs],
-        "output_lens": actual_output_lens,
-        "ttfts": [output.ttft for output in outputs],
-        "itls": [output.itl for output in outputs],
-        "generated_texts": [output.generated_text for output in outputs],
-        "errors": [output.error for output in outputs],
-        "request_submit_times": [
-            output.request_submit_time for output in outputs
-        ],
-        "request_complete_times": [
-            output.request_complete_time for output in outputs
-        ],
-        "peak_gpu_memory_mib": text_metrics.peak_gpu_memory_mib,
-        "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
-        "gpu_utilization": text_metrics.gpu_utilization,
-    }
-
-    _add_spec_decode_result(result, spec_decode_stats)
-
     _add_optional_result(
         result=result,
-        metrics=text_metrics,
+        metrics=metrics,
         lora_manager=lora_manager,
     )
 
-    _add_confidence_fields(
-        result,
-        [
-            ("ttft_ms", text_metrics.ttft_ms),
-            ("tpot_ms", text_metrics.tpot_ms),
-            ("itl_ms", text_metrics.itl_ms),
-            ("latency_ms", text_metrics.latency_ms),
-            ("output_throughput", text_metrics.output_throughput),
-            ("input_throughput", text_metrics.input_throughput),
-        ],
-    )
-
-    for warn in text_metrics.confidence_warnings():
-        logger.warning(f"Confidence: {warn}")
-
-    # Steady-state metrics mirror the full-run metrics above but are
-    # prefixed with "steady_state_" and computed only over the detected window
-    steady = detect_steady_state(outputs)
-    result["steady_state_detected"] = steady.detected
-    result["steady_state_start_index"] = steady.start_index
-    result["steady_state_end_index"] = steady.end_index
-    result["steady_state_count"] = steady.steady_state_count
-    result["steady_state_warning"] = steady.warning
-
-    if steady.detected:
-        ss_index_set = set(steady.steady_state_indices)
-        ss_outputs = [
-            out
-            for i, out in enumerate(outputs)
-            if i in ss_index_set and out.success and not out.cancelled
-        ]
-        ss_valid = [
-            out
-            for out in ss_outputs
-            if out.request_submit_time is not None
-            and out.request_complete_time is not None
-        ]
-        if len(ss_valid) >= 2:
-            ss_valid.sort(key=lambda o: o.request_submit_time or 0.0)
-            first_submit = ss_valid[0].request_submit_time
-            last_complete = ss_valid[-1].request_complete_time
-            assert first_submit is not None and last_complete is not None
-            ss_duration = last_complete - first_submit
-            ss_duration = max(ss_duration, 1e-9)
-
-            ss_metrics, _ = calculate_metrics(
-                outputs=ss_outputs,
-                dur_s=ss_duration,
-                tokenizer=tokenizer,
-                gpu_metrics=gpu_metrics,
-                cpu_metrics=cpu_metrics,
-                skip_first_n_requests=0,
-                skip_last_n_requests=0,
-                max_concurrency=max_concurrency,
-                collect_gpu_stats=collect_gpu_stats,
-                server_metrics=server_metrics,
-            )
-            for suffix, value in _steady_state_metric_values(ss_metrics):
-                result[f"steady_state_{suffix}"] = value
-            _add_confidence_fields(
-                result,
-                [
-                    ("steady_state_ttft_ms", ss_metrics.ttft_ms),
-                    ("steady_state_tpot_ms", ss_metrics.tpot_ms),
-                    ("steady_state_itl_ms", ss_metrics.itl_ms),
-                    ("steady_state_latency_ms", ss_metrics.latency_ms),
-                ],
-            )
-        logger.info(
-            f"Steady-state detected: requests [{steady.start_index},"
-            f" {steady.end_index}) ({steady.steady_state_count} of"
-            f" {steady.total_requests} requests)"
-        )
-    elif steady.warning:
-        logger.warning(f"Steady-state detection: {steady.warning}")
-
-    return result, text_metrics
+    return result, metrics
 
 
 # Backends that only support pixel generation, not text generation.
@@ -2115,7 +2109,12 @@ def validate_task_and_endpoint(
             )
 
 
-def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
+ServingBenchmarkMetrics = BenchmarkMetrics | PixelGenerationBenchmarkMetrics
+
+
+def main_with_parsed_args(
+    args: ServingBenchmarkConfig,
+) -> ServingBenchmarkMetrics | None:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
         datefmt="%H:%M:%S",
@@ -2610,59 +2609,28 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         logger.info("finished benchmark run: Failed.")
         sys.exit(1)
 
-    # Save config and results to json
+    # Optionally persist to file (used by the standalone CLI entry point
+    # and BigQuery upload in the sweep harness).
     if args.result_filename:
-        logger.info("saving results")
-        result_json: dict[str, Any] = {}
-
-        # Setup
-        current_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        result_json["date"] = current_dt
-        result_json["backend"] = backend
-        result_json["benchmark_task"] = benchmark_task
-        result_json["model_id"] = model_id
-        result_json["tokenizer_id"] = tokenizer_id
-        result_json["num_prompts"] = benchmark_result["completed"]
-        result_json["dataset_name"] = args.dataset_name
-        result_json["client_args"] = args.model_dump()
-        # json doesn't allow infinity as numeric, so cast this to string
-        result_json["client_args"]["request_rate"] = str(
-            result_json["client_args"]["request_rate"]
-        )
-
-        # Metadata
-        if args.metadata:
-            for item in args.metadata:
-                if "=" in item:
-                    kvstring = item.split("=")
-                    key = kvstring[0].strip()
-                    value = kvstring[1].strip()
-
-                    if key == "server_cpu":
-                        # Map server_cpu to cpu for consistency with existing data pipeline
-                        result_json["cpu"] = value
-                    else:
-                        result_json[key] = value
-                else:
-                    raise ValueError(
-                        "Invalid metadata format. Please use KEY=VALUE format."
-                    )
-
-        # Traffic
-        result_json["request_rate"] = (
-            request_rate if request_rate < float("inf") else "inf"
-        )
-        result_json["burstiness"] = args.burstiness
-        result_json["max_concurrency"] = args.max_concurrency
-
-        # Merge with benchmark result
-        result_json = {**result_json, **benchmark_result}
-
-        # Add LoRA metrics if present
-        if "lora_metrics" in benchmark_result:
-            result_json["lora_metrics"] = benchmark_result["lora_metrics"]
-
-        # Save to file
+        client_args = args.model_dump()
+        client_args["request_rate"] = str(client_args["request_rate"])
+        result_json: dict[str, Any] = {
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "backend": backend,
+            "benchmark_task": benchmark_task,
+            "model_id": model_id,
+            "tokenizer_id": tokenizer_id,
+            "num_prompts": benchmark_metrics.completed,
+            "dataset_name": args.dataset_name,
+            "client_args": client_args,
+            "request_rate": (
+                request_rate if request_rate < float("inf") else "inf"
+            ),
+            "burstiness": args.burstiness,
+            "max_concurrency": args.max_concurrency,
+            **_parse_metadata(args.metadata),
+            **benchmark_result,
+        }
         file_name = args.result_filename
         logger.info(f"Writing file: {file_name}")
         if os.path.isfile(file_name):
@@ -2676,7 +2644,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
 
     # Save output lengths if requested
     if args.record_output_lengths and benchmark_task == "text-generation":
-        # Save relevant input args for context
         args_to_save = (
             "backend",
             "burstiness",
@@ -2692,7 +2659,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             "top_k",
             "top_p",
         )
-        output_lens_dict = {}
+        output_lens_dict: dict[str, object] = {}
         args_dict = args.model_dump()
         output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
         output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
@@ -2704,6 +2671,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
 
     logger.info("finished benchmark run: Success.")
+    return benchmark_metrics
 
 
 def _extract_metadata_args(

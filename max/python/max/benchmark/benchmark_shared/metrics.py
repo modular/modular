@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
@@ -184,6 +185,30 @@ class PercentileMetrics(Metrics):
             for label, value in metrics_data
         )
 
+    def to_flat_dict(self, name: str) -> dict[str, float]:
+        """Flatten percentile stats into ``{"mean_{name}": v, ...}``."""
+        return {
+            f"mean_{name}": self.mean,
+            f"std_{name}": self.std,
+            f"median_{name}": self.median,
+            f"p90_{name}": self.p90,
+            f"p95_{name}": self.p95,
+            f"p99_{name}": self.p99,
+        }
+
+    def confidence_to_flat_dict(self, name: str) -> dict[str, object]:
+        """Flatten confidence-interval metadata into ``{"{name}_confidence": v, ...}``."""
+        ci = self.confidence_info
+        if ci is None:
+            return {}
+        return {
+            f"{name}_ci_lower": ci.ci_lower,
+            f"{name}_ci_upper": ci.ci_upper,
+            f"{name}_ci_relative_width": ci.ci_relative_width,
+            f"{name}_confidence": ci.confidence,
+            f"{name}_sample_size": ci.sample_size,
+        }
+
     def validate(self) -> tuple[bool, list[str]]:
         """Validate that the mean is finite and positive."""
         if not _is_finite_and_positive(self.mean):
@@ -319,41 +344,102 @@ class LoRAMetrics:
     total_swaps: int = 0
 
 
-@dataclass
-class BenchmarkMetrics(Metrics):
-    """Container for comprehensive benchmark metrics."""
+@dataclass(kw_only=True)
+class BaseBenchmarkMetrics(Metrics):
+    """Shared fields and logic for all benchmark metric containers."""
 
+    duration: float
     completed: int
     failures: int
+    max_concurrency: int
+    request_throughput: float
+
+    latency_ms: StandardPercentileMetrics
+
+    peak_gpu_memory_mib: list[float]
+    available_gpu_memory_mib: list[float]
+    gpu_utilization: list[float]
+
+    cpu_utilization_user: float | None
+    cpu_utilization_system: float | None
+
+    server_metrics: ParsedMetrics | None = None
+
+    def to_result_dict(self) -> dict[str, object]:
+        """Serialize aggregate metrics to a flat dict.
+
+        Produces the key layout that the upload script and the
+        ``--result-filename`` JSON expect (e.g. ``mean_ttft_ms``,
+        ``p99_latency_ms``, ``ttft_ms_confidence``, …).
+
+        Subclasses should call ``super().to_result_dict()`` and merge in
+        their own fields.
+        """
+        d: dict[str, object] = {
+            "duration": self.duration,
+            "completed": self.completed,
+            "failures": self.failures,
+            "max_concurrency": self.max_concurrency,
+            "request_throughput": self.request_throughput,
+            "peak_gpu_memory_mib": self.peak_gpu_memory_mib,
+            "available_gpu_memory_mib": self.available_gpu_memory_mib,
+            "gpu_utilization": self.gpu_utilization,
+        }
+        for f in dataclasses.fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, (StandardPercentileMetrics, ThroughputMetrics)):
+                d.update(val.to_flat_dict(f.name))
+                d.update(val.confidence_to_flat_dict(f.name))
+        return d
+
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate common metric invariants.
+
+        Subclasses should call ``super().validate()`` and extend the error
+        list with their own checks.
+        """
+        errors: list[str] = []
+
+        if self.failures > 0:
+            errors.append(f"Some requests failed (failures={self.failures})")
+
+        if self.completed <= 0:
+            errors.append(f"No requests completed (completed={self.completed})")
+
+        if not _is_finite_and_positive(self.request_throughput):
+            errors.append(
+                "Invalid throughput:"
+                f" request_throughput={self.request_throughput}"
+            )
+
+        for f in dataclasses.fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, Metrics):
+                ok, sub_errors = val.validate()
+                if not ok:
+                    for err in sub_errors:
+                        errors.append(f"{f.name}: {err}")
+
+        return len(errors) == 0, errors
+
+
+@dataclass(kw_only=True)
+class BenchmarkMetrics(BaseBenchmarkMetrics):
+    """Container for comprehensive text-generation benchmark metrics."""
+
     total_input: int
     total_output: int
     nonempty_response_chunks: int
-    max_concurrency: int
-    request_throughput: float
 
     input_throughput: ThroughputMetrics
     output_throughput: ThroughputMetrics
     ttft_ms: StandardPercentileMetrics
     tpot_ms: StandardPercentileMetrics
     itl_ms: StandardPercentileMetrics
-    latency_ms: StandardPercentileMetrics
 
     max_input: int
     max_output: int
     max_total: int
-    # 'benchmark/gpu:i/memory_used (MiB)/max'
-    peak_gpu_memory_mib: list[float]
-    # 'benchmark/gpu:i/memory_free (MiB)/min'
-    available_gpu_memory_mib: list[float]
-    # 'benchmark/gpu:i/gpu_utilization (%)/mean'
-    gpu_utilization: list[float]
-
-    # measured in percent (0-100), combined over server pids
-    cpu_utilization_user: float | None
-    cpu_utilization_system: float | None
-
-    # Server-side metrics (optional, from Prometheus endpoint)
-    server_metrics: ParsedMetrics | None = None
 
     # Convenience properties for common server-side metrics
     @property
@@ -397,49 +483,20 @@ class BenchmarkMetrics(Metrics):
         return int(hist.count) if hist else 0
 
     def validate(self) -> tuple[bool, list[str]]:
-        """Validate that metrics contain meaningful, non-degenerate values.
-
-        Checks scalar fields owned by this class, then delegates to each
-        sub-metric's own ``validate()``.  Intended to be called after metrics
-        are computed and before results are persisted or the process exits
-        successfully.
-
-        Returns:
-            A ``(success, errors)`` tuple where *success* is ``True`` when all
-            checks pass and *errors* is a list of human-readable descriptions
-            of any failed checks.
-        """
-        errors: list[str] = []
-
-        if self.failures > 0:
-            errors.append(f"Some requests failed (failures={self.failures})")
-
-        if self.completed <= 0:
-            errors.append(f"No requests completed (completed={self.completed})")
+        _, errors = super().validate()
 
         if self.total_output <= 0:
             errors.append(
                 f"No output tokens generated (total_output={self.total_output})"
             )
 
-        if not _is_finite_and_positive(self.request_throughput):
-            errors.append(
-                "Invalid throughput:"
-                f" request_throughput={self.request_throughput}"
-            )
-
-        sub_metrics: list[tuple[str, Metrics]] = [
-            ("output_throughput", self.output_throughput),
-            ("ttft_ms", self.ttft_ms),
-            ("latency_ms", self.latency_ms),
-        ]
-        for name, metric in sub_metrics:
-            ok, sub_errors = metric.validate()
-            if not ok:
-                for err in sub_errors:
-                    errors.append(f"{name}: {err}")
-
         return len(errors) == 0, errors
+
+    def to_result_dict(self) -> dict[str, object]:
+        d = super().to_result_dict()
+        d["total_input_tokens"] = self.total_input
+        d["total_output_tokens"] = self.total_output
+        return d
 
     def confidence_warnings(self) -> list[str]:
         """Return warnings for metrics with low or insufficient confidence."""
@@ -459,49 +516,16 @@ class BenchmarkMetrics(Metrics):
         return warns
 
 
-@dataclass
-class PixelGenerationBenchmarkMetrics(Metrics):
+@dataclass(kw_only=True)
+class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
     """Container for pixel generation serving benchmark metrics."""
 
-    completed: int
-    failures: int
-    max_concurrency: int
-    request_throughput: float
     total_generated_outputs: int
 
-    latency_ms: StandardPercentileMetrics
-
-    peak_gpu_memory_mib: list[float]
-    available_gpu_memory_mib: list[float]
-    gpu_utilization: list[float]
-
-    cpu_utilization_user: float | None
-    cpu_utilization_system: float | None
-
-    server_metrics: ParsedMetrics | None = None
-
-    def validate(self) -> tuple[bool, list[str]]:
-        """Validate that pixel generation metrics are meaningful."""
-        errors: list[str] = []
-
-        if self.failures > 0:
-            errors.append(f"Some requests failed (failures={self.failures})")
-
-        if self.completed <= 0:
-            errors.append(f"No requests completed (completed={self.completed})")
-
-        if not _is_finite_and_positive(self.request_throughput):
-            errors.append(
-                "Invalid throughput:"
-                f" request_throughput={self.request_throughput}"
-            )
-
-        ok, sub_errors = self.latency_ms.validate()
-        if not ok:
-            for err in sub_errors:
-                errors.append(f"latency_ms: {err}")
-
-        return len(errors) == 0, errors
+    def to_result_dict(self) -> dict[str, object]:
+        d = super().to_result_dict()
+        d["total_generated_outputs"] = self.total_generated_outputs
+        return d
 
 
 # ---------------------------------------------------------------------------
