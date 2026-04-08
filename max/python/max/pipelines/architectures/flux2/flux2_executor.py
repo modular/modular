@@ -27,7 +27,7 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.profiler import traced
 from typing_extensions import Self
 
-from .components import TextEncoder
+from .components import ImageEncoder, TextEncoder
 
 # ---------------------------------------------------------------------------
 # Input / Output structs
@@ -171,7 +171,7 @@ class Flux2Executor(
     text_encoder: TextEncoder
     """Graph 1: Mistral3 text encoder -> prompt_embeds + text_ids."""
 
-    image_encoder: Model
+    image_encoder: ImageEncoder
     """Graph 2: VAE encode + BN-normalize + patchify + pack."""
 
     denoise_compute: Model
@@ -210,7 +210,7 @@ class Flux2Executor(
 
         # Build and store all compiled graphs.
         self.text_encoder = TextEncoder(manifest, session)
-        self.image_encoder = self._build_image_encode_graph()
+        self.image_encoder = ImageEncoder(manifest, session)
         self.denoise_compute = self._build_denoise_compute_graph()
         self.denoise_predict = self._build_denoise_predict_graph()
         self.decoder = self._build_decode_graph()
@@ -372,18 +372,6 @@ class Flux2Executor(
 
     # -- Graph 2: Image Encode (img2img only) ---------------------------------
 
-    @traced(message="build_image_encode_graph")
-    def _build_image_encode_graph(self) -> Model:
-        """Compile the VAE encoder + BN-normalize + patchify + pack graph.
-
-        Produces ``image_latents`` and ``image_latent_ids`` from a raw
-        input image.
-
-        Returns:
-            Compiled :class:`Model` for Graph 2.
-        """
-        raise NotImplementedError
-
     @traced(message="encode_image")
     def _encode_image(
         self,
@@ -391,7 +379,7 @@ class Flux2Executor(
     ) -> tuple[Buffer, Buffer]:
         """Run Graph 2: encode an input image into packed latents.
 
-        VAE encode -> BN-normalize -> patchify + pack.
+        VAE encode -> mode extraction -> patchify -> BN-normalize -> pack.
 
         Args:
             input_image: Raw input image, shape ``(H, W, C)`` uint8.
@@ -401,7 +389,7 @@ class Flux2Executor(
             - ``image_latents`` has shape ``(B, img_seq, C*4)``
             - ``image_latent_ids`` has shape ``(B, img_seq, 4)`` int64
         """
-        raise NotImplementedError
+        return self.image_encoder(input_image)
 
     # -- Graph 3a: Denoise Compute Step ---------------------------------------
 

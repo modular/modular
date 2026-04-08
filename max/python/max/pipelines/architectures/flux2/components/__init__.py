@@ -13,6 +13,7 @@
 
 """Compiled graph components for Flux2Executor."""
 
+from .image_encoder import ImageEncoder
 from .text_encoder import TextEncoder
 
-__all__ = ["TextEncoder"]
+__all__ = ["ImageEncoder", "TextEncoder"]
