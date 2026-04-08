@@ -157,7 +157,9 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             def _encode_fn(
                 prompt: str,
             ) -> npt.NDArray[np.integer[Any]]:
-                return self.delegate.encode(prompt, allow_special_tokens=True)
+                return np.array(
+                    self.delegate.encode(prompt, allow_special_tokens=True)
+                )
 
             encoded_prompt = await run_with_default_executor(_encode_fn, prompt)
 
