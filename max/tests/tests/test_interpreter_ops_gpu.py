@@ -3461,32 +3461,16 @@ class TestDistributedAllgatherHandler:
             num_gpus * 2, 4
         )
 
-        try:
-            sharded_t = df_shard(
-                Tensor.from_dlpack(np.ascontiguousarray(data)),
-                PlacementMapping(mesh, (Sharded(0),)),
-            )
-        except ValueError as exc:
-            if "Memory manager cannot satisfy allocation" in str(exc):
-                pytest.skip(
-                    "Signal buffer allocation requires more GPU memory "
-                    "than available on this executor"
-                )
-            raise
+        sharded_t = df_shard(
+            Tensor.from_dlpack(np.ascontiguousarray(data)),
+            PlacementMapping(mesh, (Sharded(0),)),
+        )
 
-        try:
-            with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
-                realization_context(ctx),
-            ):
-                result = all_gather(sharded_t, tensor_axis=0)
-        except ValueError as exc:
-            if "Memory manager cannot satisfy allocation" in str(exc):
-                pytest.skip(
-                    "Signal buffer allocation requires more GPU memory "
-                    "than available on this executor"
-                )
-            raise
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = all_gather(sharded_t, tensor_axis=0)
 
         assert result.placements == (Replicated(),)
         for shard in result.local_shards:
