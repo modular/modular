@@ -848,19 +848,20 @@ def test_prefix_turns_dont_count_against_max_requests() -> None:
         return outputs, len(driver.calls), counter.total_sent_requests
 
     outputs, total_calls, counter_value = asyncio.run(run_test())
-    assert total_calls == 4
+    # Prefix turns are built locally, so only measured turns hit the server.
+    assert total_calls == 2
     assert counter_value == 2
     assert len(outputs) == 2
 
 
-def test_prefix_turns_skip_delays() -> None:
-    """Prefix turns should run without inter-turn delays."""
+def test_prefix_turns_no_server_or_delays() -> None:
+    """Prefix turns are built locally: no server calls, no delays."""
     sleep_calls: list[float] = []
 
     async def mock_sleep(seconds: float) -> None:
         sleep_calls.append(seconds)
 
-    async def run_test() -> None:
+    async def run_test() -> int:
         session = _make_4turn_session(prefix_turns=2, delay_ms=5000.0)
         counter = RequestCounter(max_requests=100)
         driver = _CapturingDriver()
@@ -876,9 +877,12 @@ def test_prefix_turns_skip_delays() -> None:
                 top_p=None,
                 top_k=None,
             )
+        return len(driver.calls)
 
-    asyncio.run(run_test())
-    # Only turn 3 has a delay (turn 4 has no delay_until_next_message)
+    total_calls = asyncio.run(run_test())
+    # Prefix turns don't hit the server.
+    assert total_calls == 2
+    # Only turn 3 has a delay (turn 4 has no delay_until_next_message).
     assert len(sleep_calls) == 1
     assert sleep_calls[0] == pytest.approx(5.0)
 

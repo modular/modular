@@ -1193,9 +1193,43 @@ async def chat_session_driver(
     prefix_end_idx = chat_session.prefix_turns * 2
     applied_initial_sleep = False
 
-    while content_idx + 1 < len(messages):
-        is_prefix_turn = content_idx < prefix_end_idx
+    # Build prefix turns locally (no server round-trips). The first
+    # measured turn sends the full history for KV cache prefill.
+    while content_idx < prefix_end_idx and content_idx + 1 < len(messages):
+        chat_len += messages[content_idx].num_tokens
+        output_len = messages[content_idx + 1].num_tokens
+        if chat_len + output_len > max_chat_len:
+            logger.warning(
+                f"Session {chat_session.id}: prefix exceeded max chat"
+                f" length {max_chat_len}, no measured turns possible"
+            )
+            break
 
+        user_prompt = messages[content_idx].content
+        message_history.append(
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": user_prompt}],
+            }
+        )
+        # Synthetic placeholder for the assistant response.
+        assistant_content = messages[content_idx + 1].content
+        if not assistant_content:
+            assistant_content = " ".join(["token"] * max(output_len, 1))
+        message_history.append(
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": assistant_content}],
+            }
+        )
+        chat_len += output_len
+        content_idx += 2
+
+    # If prefix exhausted the chat length budget, skip measured turns.
+    if content_idx < prefix_end_idx:
+        return session_outputs
+
+    while content_idx + 1 < len(messages):
         chat_len += messages[content_idx].num_tokens
         output_len = messages[content_idx + 1].num_tokens
         if chat_len + output_len > max_chat_len:
@@ -1204,10 +1238,9 @@ async def chat_session_driver(
             )
             break
 
-        if not is_prefix_turn:
-            advance_request = request_counter.advance_until_max()
-            if not advance_request:  # reached max_requests
-                break
+        advance_request = request_counter.advance_until_max()
+        if not advance_request:  # reached max_requests
+            break
 
         user_prompt = messages[content_idx].content
         message_history.append(
@@ -1220,7 +1253,7 @@ async def chat_session_driver(
         request_func_input.prompt_len = chat_len
         request_func_input.max_tokens = output_len
 
-        if not is_prefix_turn and not applied_initial_sleep:
+        if not applied_initial_sleep:
             applied_initial_sleep = True
             if randomize_session_start:
                 delay_ms = messages[content_idx + 1].delay_until_next_message
@@ -1242,15 +1275,12 @@ async def chat_session_driver(
                 )
             response = raw_response
 
-        if not is_prefix_turn:
-            if (
-                skip_session_count is None
-                or chat_session.id is None
-                or chat_session.id >= skip_session_count
-            ) and not (
-                ignore_first_turn_stats and content_idx == prefix_end_idx
-            ):
-                session_outputs.append(response)
+        if (
+            skip_session_count is None
+            or chat_session.id is None
+            or chat_session.id >= skip_session_count
+        ) and not (ignore_first_turn_stats and content_idx == prefix_end_idx):
+            session_outputs.append(response)
 
         if not response.success:
             if not response.cancelled:
@@ -1268,9 +1298,8 @@ async def chat_session_driver(
         )
         chat_len += output_len
 
-        if not is_prefix_turn:
-            if delay_ms := messages[content_idx + 1].delay_until_next_message:
-                await asyncio.sleep(delay_ms / 1000)
+        if delay_ms := messages[content_idx + 1].delay_until_next_message:
+            await asyncio.sleep(delay_ms / 1000)
 
         content_idx += 2
 
