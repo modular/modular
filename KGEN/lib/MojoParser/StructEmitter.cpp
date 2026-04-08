@@ -238,9 +238,8 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
 
 FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
     ASTDecl &existingDecl, StringRef name, FnTypeGeneratorType wrapperSignature,
-    FnOp traitFn, ASTDecl *traitFnDecl, bool structDefinesMethod,
-    ImplicitLocOpBuilder &builder, StringRef suffix,
-    ConstraintAttr conformanceConstraint) {
+    FnOp traitFn, ASTDecl *traitFnDecl, ImplicitLocOpBuilder &builder,
+    StringRef suffix, ConstraintAttr conformanceConstraint) {
 
   assert(existingDecl.resolvedness <= DeclResolvedness::signature &&
          "synthesizeMethodInStruct is only valid on non-body resolved Fn "
