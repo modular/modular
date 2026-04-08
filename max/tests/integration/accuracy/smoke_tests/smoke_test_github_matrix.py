@@ -65,6 +65,7 @@ HF_MODELS: dict[str, set[str]] = {
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": MULTI | {"max-ci@H100"},  # TODO(MODELS-1021) and GEX-3248
+    "google/gemma-4-26b-a4b": MULTI,
     "meta-llama/llama-3.1-8b-instruct": MULTI,
     "meta-llama/llama-3.2-1b-instruct": MULTI,
     "microsoft/phi-3.5-mini-instruct": MULTI,

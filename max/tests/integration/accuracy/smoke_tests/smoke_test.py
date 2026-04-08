@@ -617,6 +617,7 @@ def smoke_test(
         kw in model
         for kw in (
             "gemma-3",
+            "gemma-4",
             "idefics",
             "internvl",
             "kimi-k2",
