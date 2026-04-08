@@ -154,6 +154,11 @@ This version is still a work in progress.
   - `InlineArray` now conforms to `IterableOwned`.
   - `Span` now conforms to `IterableOwned` (conditional on `T: Copyable`).
     The owned iterator yields copies of elements by value.
+  - Iterator adaptors (`enumerate`, `zip`, `map`, `peekable`, `take_while`,
+    `drop_while`, `product`, `cycle`, `count`, `repeat`) now conform to
+    `IterableOwned`.
+  - Added owned overloads of `enumerate()`, `zip()`, `map()`, `peekable()`,
+    `take_while()`, and `drop_while()` that consume the input iterable.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same

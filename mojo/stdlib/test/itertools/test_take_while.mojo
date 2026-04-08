@@ -191,5 +191,16 @@ def test_take_while_exhausted_stays_exhausted() raises:
         _ = next(it)
 
 
+def test_take_while_owned() raises:
+    var l: List[Int] = [1, 2, 3, 4, 5, 6]
+    var it = take_while[less_than_5](l^)
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    assert_equal(next(it), 3)
+    assert_equal(next(it), 4)
+    with assert_raises(contains="StopIteration"):
+        _ = next(it)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
