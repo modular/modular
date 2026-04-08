@@ -467,8 +467,9 @@ class Flux2Pipeline(DiffusionPipeline):
 
             # Call the compiled encoder directly, bypassing
             # DiagonalGaussianDistribution to avoid eager recompilation.
-            assert self.vae.encoder_model is not None
-            encoder_moments = self.vae.encoder_model(image)
+            # Encoder compilation is deferred to first img2img use.
+            encoder = self.vae.ensure_encoder_compiled()
+            encoder_moments = encoder(image)
 
             raw_h = int(encoder_moments.shape[2])
             raw_w = int(encoder_moments.shape[3])

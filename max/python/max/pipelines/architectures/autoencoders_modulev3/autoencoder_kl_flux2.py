@@ -219,7 +219,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
         )
 
     @traced(message="AutoencoderKLFlux2Model.load_model")
-    def load_model(self) -> Callable[..., Any]:
+    def load_model(self) -> None:
         """Load encoder and BatchNorm statistics (skip standalone decoder).
 
         The standalone decoder compiled by the base class is never used in
@@ -227,9 +227,6 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
         ``PostprocessAndDecode`` graph built by ``build_fused_decode()``.
         This override avoids that redundant compilation, cutting startup
         time and GPU memory usage.
-
-        Returns:
-            Compiled encoder model callable.
         """
         bn_stats: dict[str, Any] = {}
         encoder_state_dict: dict[str, Any] = {}
@@ -264,21 +261,43 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             self.devices[0]
         )
 
-        # Compile only the encoder; the decoder is compiled later via
-        # build_fused_decode() which wraps it in PostprocessAndDecode.
-        if encoder_state_dict:
-            with F.lazy():
-                autoencoder = AutoencoderKLFlux2(self.config)
-                autoencoder.encoder.to(self.devices[0])
-                self.encoder_model = autoencoder.encoder.compile(
-                    *autoencoder.encoder.input_types(),
-                    weights=encoder_state_dict,
-                )
+        # Defer encoder compilation until first image-to-image request.
+        # Text-to-image never invokes the encoder, so compiling it here
+        # would waste startup time and GPU memory. The decoder is compiled
+        # later via build_fused_decode() which wraps it in PostprocessAndDecode.
+        self._encoder_state_dict = encoder_state_dict
 
-        if self.encoder_model is None:
+    @traced(message="AutoencoderKLFlux2Model.ensure_encoder_compiled")
+    def ensure_encoder_compiled(self) -> Callable[..., Any]:
+        """Compile the VAE encoder on demand (idempotent).
+
+        Called from the image-to-image path on first use. No-op if the
+        encoder has already been compiled.
+
+        Returns:
+            Compiled encoder model callable.
+
+        Raises:
+            RuntimeError: If no encoder weights were found in the checkpoint.
+        """
+        if self.encoder_model is not None:
+            return self.encoder_model
+
+        if not self._encoder_state_dict:
             raise RuntimeError(
-                "Encoder model was not compiled — no encoder weights found."
+                "Cannot compile encoder — no encoder weights were found "
+                "in the checkpoint."
             )
+
+        with F.lazy():
+            autoencoder = AutoencoderKLFlux2(self.config)
+            autoencoder.encoder.to(self.devices[0])
+            self.encoder_model = autoencoder.encoder.compile(
+                *autoencoder.encoder.input_types(),
+                weights=self._encoder_state_dict,
+            )
+
+        assert self.encoder_model is not None
         return self.encoder_model
 
     @traced(message="AutoencoderKLFlux2Model.build_fused_decode")
