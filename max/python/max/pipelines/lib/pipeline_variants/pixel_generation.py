@@ -80,7 +80,7 @@ class PixelGenerationPipeline(
         )
 
         if use_executor:
-            from max.pipelines.architectures.flux2_modulev3.flux2_executor import (  # type: ignore[import-not-found]
+            from max.pipelines.architectures.flux2.flux2_executor import (  # type: ignore[import-not-found]
                 Flux2Executor,
             )
 
