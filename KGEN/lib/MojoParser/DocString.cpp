@@ -147,6 +147,15 @@ static bool requiresDocString(AliasDeclOp op) {
   return false;
 }
 
+/// A module requires a doc string unless its name begins with an underscore.
+/// Note: `__init__` is the public package initializer and does require a doc
+/// string — the leading underscores are part of the Mojo convention for package
+/// init files, not a private-visibility marker.
+static bool requiresDocString(FileModuleOp op) {
+  StringRef name = op.getSymName();
+  return name == "__init__" || !name.starts_with("_");
+}
+
 /// Return if the operation is nested in a private module or package.
 static bool isOpInPrivateModule(Operation *declOp) {
   if (!declOp)
@@ -455,30 +464,25 @@ public:
                 return;
               }
 
-              if (validation == ValidationKind::Strict) {
-                // Check that the summary line is a complete sentence: it begins
-                // with a capital letter (or a punctuator such as '`'), and ends
-                // with a period, '!', '?', or '`'.
-                StringRef summary = docStr->getSummary();
-                if (!summary.empty()) {
-                  if (!isValidFirstCharacter(summary.front()))
-                    emitDiag(docStr->getLoc(),
-                             "doc string summary should begin with "
-                             "a capital letter or non-alpha "
-                             "character, but this begins with '")
-                        << summary.front() << "'";
-
-                  if (!isValidLastCharacter(summary.back()))
-                    emitDiag(docStr->getLoc(),
-                             "doc string summary should end with a period '.', "
-                             "exclamation mark '!', question mark '?', or "
-                             "backtick '`', but this ends with '")
-                        << summary.back() << "'";
-                }
-              }
+              if (validation == ValidationKind::Strict)
+                validateSummary();
 
               validateDecl(decl, op, validation);
-            });
+            })
+        .Case<FileModuleOp>([&](FileModuleOp moduleOp) {
+          if (!requiresDocString(moduleOp) || isOpInPrivateModule(moduleOp))
+            return;
+          if (!docStr) {
+            if (diagnoseMissingDocStrings)
+              emitDiag(moduleOp.getLoc(), "public module ")
+                  << moduleOp.getDeclName() << " is missing a doc string";
+            return;
+          }
+          // All public modules are validated strictly (requiresDocString is the
+          // gate, so reaching here implies strict validation is appropriate).
+          validateSummary();
+          validateDecl(decl, moduleOp, ValidationKind::Strict);
+        });
   }
 
 private:
@@ -784,6 +788,14 @@ private:
   }
 
   //===--------------------------------------------------------------------===//
+  // Modules
+
+  void validateDecl(ASTDecl &decl, FileModuleOp moduleOp,
+                    ValidationKind validation) {
+    // Modules have no parameters, arguments, or return values to validate.
+  }
+
+  //===--------------------------------------------------------------------===//
   // Fields
 
   void validateDecl(ASTDecl &decl, StructFieldOp fieldOp,
@@ -833,6 +845,26 @@ private:
 
   //===--------------------------------------------------------------------===//
   // Diagnostics
+
+  /// Check that the doc string summary is a complete sentence: begins with a
+  /// capital letter (or a punctuator such as '`') and ends with a period,
+  /// exclamation mark, question mark, or backtick.
+  void validateSummary() {
+    StringRef summary = docStr->getSummary();
+    if (summary.empty())
+      return;
+    if (!isValidFirstCharacter(summary.front()))
+      emitDiag(docStr->getLoc(),
+               "doc string summary should begin with a capital letter or "
+               "non-alpha character, but this begins with '")
+          << summary.front() << "'";
+    if (!isValidLastCharacter(summary.back()))
+      emitDiag(docStr->getLoc(),
+               "doc string summary should end with a period '.', "
+               "exclamation mark '!', question mark '?', or "
+               "backtick '`', but this ends with '")
+          << summary.back() << "'";
+  }
 
   /// Emit a diagnostic at the given doc string location.
   MojoInflightDiag emitDiag(const char *loc, const Twine &msg = {}) {

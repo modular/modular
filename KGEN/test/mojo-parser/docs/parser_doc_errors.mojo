@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+"""Tests for doc string validation diagnostics."""
+
 # RUN: %parse-mojo-isolated -o /dev/null -mojo-diagnose-missing-doc-strings -verify-diagnostics %s
 
 
