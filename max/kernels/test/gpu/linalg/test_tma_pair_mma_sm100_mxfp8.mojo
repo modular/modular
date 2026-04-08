@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up
+from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import (
@@ -311,13 +312,13 @@ def blockscaled_pair_cta_mxfp8[
         transpose_b=transpose_b,
     ]()
 
-    var rank_m = UInt(block_id_in_cluster.x)
-    var rank_n = UInt(block_id_in_cluster.y)
+    var rank_m = block_id_in_cluster.x
+    var rank_n = block_id_in_cluster.y
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % UInt(cta_group),
-        rank_m // UInt(cta_group),
+        umod(rank_m, cta_group),
+        ufloordiv(rank_m, cta_group),
         rank_n,
     )
 
@@ -333,7 +334,7 @@ def blockscaled_pair_cta_mxfp8[
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
-    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
+    b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
     var a_mma_mask = a_multicast_mask >> UInt16(peer_cta_coord[0])
     var b_mma_mask = b_multicast_mask >> UInt16(peer_cta_coord[0])
@@ -347,11 +348,11 @@ def blockscaled_pair_cta_mxfp8[
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = (
-                Int(peer_cta_coord[2]) * a_tma_rows + block_idx.x * BM
+                peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
             )
             var b_gmem_slice_coord = (
-                Int(peer_cta_coord[1]) * b_tma_rows
-                + Int(peer_cta_coord[0]) * BN
+                peer_cta_coord[1] * b_tma_rows
+                + peer_cta_coord[0] * BN
                 + block_idx.y * MMA_N
             )
 
@@ -525,9 +526,9 @@ def blockscaled_pair_cta_mxfp8[
     var warp_id = get_warp_id()
 
     var c_gmem_block = c.tile[MMA_M, MMA_N](
-        Int(peer_cta_coord[1]), Int(peer_cta_coord[2])
+        peer_cta_coord[1], peer_cta_coord[2]
     )
-    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](Int(peer_cta_coord[0]), 0)
+    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](peer_cta_coord[0], 0)
 
     comptime if MMA_M == 128:
         var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
