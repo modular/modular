@@ -111,6 +111,7 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_batched_matmul_sm100_scaled.mojo": ["@platforms//:incompatible"],  # TODO: QUA-91
     "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
     "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//:b200_gpu"],
 } | {
