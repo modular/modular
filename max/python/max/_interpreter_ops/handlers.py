@@ -3138,3 +3138,47 @@ def _handle_distributed_allreduce_sum(
     # Trailing None for the output chain.
     output_buffers.append(None)
     return output_buffers
+
+
+@register_op_handler(mo.DistributedAllgatherOp)
+def _handle_distributed_allgather(
+    op: mo.DistributedAllgatherOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.distributed.allgather by copying each input to every device.
+
+    Operands (flat): N input tensors, N signal buffers, 1 input chain.
+    Results: N*N output tensors, 1 output chain.
+
+    The MO-level allgather produces N*N raw outputs: for each device d
+    and each input i, ``results[d*N + i]`` is a copy of ``input[i]`` on
+    ``device[d]``.  The Graph API wraps these with separate ``ConcatOp``
+    calls to produce the final N gathered tensors.
+
+    The interpreter executes sequentially on the host, so signal buffers
+    and chains are unused.
+
+    Args:
+        op: The allgather operation.
+        inputs: Flat operand buffers from the interpreter dispatcher.
+
+    Returns:
+        N*N output buffers followed by None for the chain.
+    """
+    num_inputs = len(op.inputs)
+    bufs: list[Buffer] = []
+    for i in range(num_inputs):
+        b = inputs[i]
+        assert isinstance(b, Buffer), f"allgather input {i} is not a Buffer"
+        bufs.append(b)
+
+    results = list(op.results)
+    output_buffers: list[Buffer | None] = []
+    for idx, result in enumerate(results[:-1]):
+        input_idx = idx % num_inputs
+        result_type: mo.TensorType = result.type  # type: ignore[assignment]
+        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
+        output_buffers.append(bufs[input_idx].to(device))
+
+    output_buffers.append(None)
+    return output_buffers

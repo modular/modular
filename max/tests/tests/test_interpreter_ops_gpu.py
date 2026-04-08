@@ -20,6 +20,7 @@ import operator
 from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
 import pytest
 import torch
 from max._interpreter import MOInterpreter
@@ -28,9 +29,27 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
+from max.experimental.distributed_functional.collectives import (
+    all_gather,
+    all_reduce_sum,
+    to_numpy,
+)
+from max.experimental.distributed_functional.collectives import (
+    shard as df_shard,
+)
 from max.experimental.realization_context import set_seed
+from max.experimental.sharding import (
+    DeviceMesh,
+    Partial,
+    PlacementMapping,
+    Replicated,
+    Sharded,
+)
 from max.experimental.tensor import Tensor, realization_context
+from max.graph import BufferType as GBufferType
 from max.graph import DeviceRef, Graph, TensorType
+from max.graph import Type as GType
+from max.graph import ops as graph_ops
 
 # Mapping from MAX DType to torch dtype
 DTYPE_TO_TORCH = {
@@ -3322,11 +3341,6 @@ class TestDistributedAllreduceSumHandler:
     @_NEED_2_GPUS
     def test_allreduce_sum_low_level(self) -> None:
         """Directly build a graph with ops.allreduce.sum and run via MOInterpreter."""
-        import numpy as np
-        from max.graph import BufferType as GBufferType
-        from max.graph import Type as GType
-        from max.graph import ops as graph_ops
-
         shape = [4, 4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3381,19 +3395,6 @@ class TestDistributedAllreduceSumHandler:
     @_NEED_2_GPUS
     def test_allreduce_sum_distributed_tensor_e2e(self) -> None:
         """End-to-end: all_reduce_sum on a Partial distributed Tensor via interpreter."""
-        import numpy as np
-        from max.experimental.distributed_functional.collectives import (
-            all_reduce_sum,
-            to_numpy,
-        )
-        from max.experimental.sharding import (
-            DeviceMesh,
-            Partial,
-            PlacementMapping,
-            Replicated,
-        )
-        from max.experimental.tensor import Tensor, realization_context
-
         num_gpus = min(accelerator_count(), 2)
         devices = tuple(Accelerator(i) for i in range(num_gpus))
         mesh = DeviceMesh(
@@ -3404,9 +3405,6 @@ class TestDistributedAllreduceSumHandler:
 
         # Replicate data on every device, then re-label as Partial.
         rep_mapping = PlacementMapping(mesh, (Replicated(),))
-        from max.experimental.distributed_functional.collectives import (
-            shard as df_shard,
-        )
 
         try:
             replicated = df_shard(
@@ -3445,3 +3443,51 @@ class TestDistributedAllreduceSumHandler:
         expected = data * num_gpus
         for shard in result.local_shards:
             np.testing.assert_allclose(to_numpy(shard), expected, rtol=1e-5)
+
+
+class TestDistributedAllgatherHandler:
+    """Tests for the DistributedAllgatherOp interpreter handler."""
+
+    @_NEED_2_GPUS
+    def test_allgather_eager(self) -> None:
+        """all_gather on a Sharded distributed Tensor via eager interpreter."""
+        num_gpus = min(accelerator_count(), 2)
+        devices = tuple(Accelerator(i) for i in range(num_gpus))
+        mesh = DeviceMesh(
+            devices=devices, mesh_shape=(num_gpus,), axis_names=("tp",)
+        )
+
+        data = np.arange(num_gpus * 8, dtype=np.float32).reshape(
+            num_gpus * 2, 4
+        )
+
+        try:
+            sharded_t = df_shard(
+                Tensor.from_dlpack(np.ascontiguousarray(data)),
+                PlacementMapping(mesh, (Sharded(0),)),
+            )
+        except ValueError as exc:
+            if "Memory manager cannot satisfy allocation" in str(exc):
+                pytest.skip(
+                    "Signal buffer allocation requires more GPU memory "
+                    "than available on this executor"
+                )
+            raise
+
+        try:
+            with (
+                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                realization_context(ctx),
+            ):
+                result = all_gather(sharded_t, tensor_axis=0)
+        except ValueError as exc:
+            if "Memory manager cannot satisfy allocation" in str(exc):
+                pytest.skip(
+                    "Signal buffer allocation requires more GPU memory "
+                    "than available on this executor"
+                )
+            raise
+
+        assert result.placements == (Replicated(),)
+        for shard in result.local_shards:
+            np.testing.assert_allclose(to_numpy(shard), data, rtol=1e-5)
