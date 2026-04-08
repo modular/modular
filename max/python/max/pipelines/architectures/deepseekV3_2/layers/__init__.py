@@ -13,6 +13,7 @@
 
 """DeepseekV3.2 layer modules."""
 
+from .indexer import Indexer
 from .mlp import DeepseekV3_2MLP
 from .moe import DeepseekV3_2MoE
 from .moe_gate import DeepseekV3_2TopKRouter
@@ -24,5 +25,6 @@ __all__ = [
     "DeepseekV3_2MoE",
     "DeepseekV3_2TopKRouter",
     "HadamardTransform",
+    "Indexer",
     "RMSNormFused",
 ]
