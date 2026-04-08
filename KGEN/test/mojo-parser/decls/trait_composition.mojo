@@ -87,10 +87,10 @@ def use2[T: Trait2](x: T):
 # CHECK-SAME: (%x: !lit.ref<:!Trait1_Trait2 T,
 def use12[T: Trait1 & Trait2](x: T):
     # CHECK: lit.call tail @trait_composition::@"use1
-    # CHECK-SAME: <:!Trait1 !kgen.param<:!Trait1_Trait2 T>>
+    # CHECK-SAME: <:!Trait1 upcast(:!Trait1_Trait2 T)>
     use1[T](x)
     # CHECK: lit.call tail @trait_composition::@"use2
-    # CHECK-SAME: <:!Trait2 !kgen.param<:!Trait1_Trait2 T>>
+    # CHECK-SAME: <:!Trait2 upcast(:!Trait1_Trait2 T)>
     use2[T](x)
 
 
@@ -189,7 +189,7 @@ def useCond1[
     ElementType: Trait1 & Trait2
 ](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
     # CHECK: lit.call {{.*}}@Wrapper::@"cond1
-    # CHECK-SAME: <:!AnyType !kgen.param<:!Trait1_Trait2 ElementType>, :!Trait1 !kgen.param<:!Trait1_Trait2 ElementType>>
+    # CHECK-SAME: <:!AnyType upcast(:!Trait1_Trait2 ElementType), :!Trait1 upcast(:!Trait1_Trait2 ElementType)>
     p1.cond1(p2)
 
 

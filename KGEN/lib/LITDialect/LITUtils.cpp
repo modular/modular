@@ -1138,15 +1138,16 @@ void LIT::canonicalizeTraitCompositionSymbols(
 FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
     TypeConformsToTraitAttr conformsTo,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
+  TypedAttr typeValue = UpcastAttr::strip(conformsTo.getTypeValue());
+
   TraitType traitType;
-  if (auto typeParam = sugarDynCast<TypeParamAttr>(conformsTo.getTypeValue())) {
+  if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue)) {
     if (auto paramType = dyn_cast<ParamType>(typeParam.getMlirType()))
       traitType =
           dyn_cast<TraitType>(getCanonicalType(paramType.getParam().getType()));
   }
   if (!traitType)
-    traitType = dyn_cast<TraitType>(
-        getCanonicalType(conformsTo.getTypeValue().getType()));
+    traitType = dyn_cast<TraitType>(getCanonicalType(typeValue.getType()));
   if (!traitType)
     return failure();
 
@@ -1236,17 +1237,22 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
     }
 
     auto toTrait = sugarDynCast<TraitType>(downcast.getType());
-    auto fromType = sugarDynCast<TypeParamAttr>(downcast.getInputTypeValue());
-    if (!toTrait || !fromType)
-      return failure();
 
-    auto fromParam =
-        sugarDynCast<ParameterTypeInterface>(fromType.getTypeValue());
-    if (!fromParam)
+    // Extract source trait from the input type value.
+    Type fromType = downcast.getInputTypeValue().getType();
+    TraitType fromTrait = sugarDynCast<TraitType>(fromType);
+    if (auto paramTrait = sugarDynCast<ParamType>(fromType);
+        !fromTrait && paramTrait) {
+      // if this is a !param<:anytrait<trait>, trait_val>, we can still get a
+      // loosest bound from the trait meta type.
+      if (auto anyTrait =
+              sugarDynCast<AnyTraitType>(paramTrait.getParam().getType())) {
+        fromTrait = anyTrait.getTraitType();
+      }
       return failure();
+    }
 
-    auto fromTrait = sugarDynCast<TraitType>(fromParam.getMetaType());
-    if (!fromTrait)
+    if (!toTrait || !fromTrait)
       return failure();
 
     // FIXME: TraitType should be canonicalized by default. (Otherwise, you can
@@ -1265,12 +1271,12 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
 
     llvm::SmallPtrSet<SymbolRefAttr, 16> fromSymbols(fromTraitSymbols.begin(),
                                                      fromTraitSymbols.end());
-    // If we are downcasting a more-refined trait to a less-refined trait,
-    // use the original more refined trait.
     for (auto symbol : toTraitsSymbols)
       if (!fromSymbols.contains(symbol))
         return failure();
 
+    // If we are downcasting a more-refined trait to a less-refined trait, this
+    // is actually an upcast.
     return UpcastAttr::get(downcast.getType(), downcast.getInputTypeValue());
   }
 

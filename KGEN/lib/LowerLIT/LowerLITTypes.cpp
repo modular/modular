@@ -190,13 +190,15 @@ FailureOr<TypedAttr> LowerLITEvaluationContext::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
 
-  // Fold DowncastAttr when the input is a concrete struct type value.
-  // Trait-constrained parameters (e.g., T: Movable) wrap concrete type values
-  // in DowncastAttr. Without folding these, nested conforms_to expressions
-  // (used by conditional RegisterPassable) can't resolve the struct type.
-  if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr))
-    if (TypedAttr folded = LIT::foldDowncastToStructType(downcast))
-      return folded;
+  // NOTE: Downcast becomes an no-op after lower-lit. However, we should
+  // probably keep the attr till elaboration time after we preserve traits
+  // properly in KGEN for a better error message.
+  // We simply strip all downcast at the moment otherwise all downcasts will be
+  // in same (useless) form of `#downcast<T> : !kgen.type` anyway.
+  if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
+    return UpcastAttr::get(TypeType::get(downcast.getContext()),
+                           downcast.getInputTypeValue());
+  }
 
   return SymTabEvaluationContext::evaluateContextSpecific(attr);
 }
@@ -235,9 +237,17 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   // We simply strip all downcast at the moment otherwise all downcasts will be
   // in same (useless) form of `#downcast<T> : !kgen.type` anyway.
   replacer.addInferredDomainNonRecursiveReplacement(
-      [&replacer](DowncastAttr typeValue) -> FailureOr<Attribute> {
-        TypedAttr originalTy = typeValue.getInputTypeValue();
-        return replacer.replaceParameter(originalTy);
+      [&replacer](DowncastAttr downcast) -> FailureOr<Attribute> {
+        auto typeOr = replacer.replace(downcast.getType(), TypeDomain::AsType);
+        if (failed(typeOr))
+          return failure();
+        auto downcastValOr =
+            replacer.replaceParameter(downcast.getInputTypeValue());
+        if (failed(downcastValOr))
+          return failure();
+        // Since we are erasing the trait target type, the downcast becomes
+        // essentially an upcast to type.type
+        return UpcastAttr::get(*typeOr, *downcastValOr);
       });
 
   // ParamRefTypes should be TypeValueType if in the value domain.

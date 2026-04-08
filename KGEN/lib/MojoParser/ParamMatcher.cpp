@@ -767,7 +767,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
         if (fixableByUpCast) {
           SmallVector<TypedAttr> casted =
               llvm::map_to_vector(toCheck, [targetMT](TypedAttr toMap) {
-                return TypeParamAttr::get(ASTType(toMap), targetMT);
+                return TypeParamAttr::get(ASTType(UpcastAttr::strip(toMap)),
+                                          targetMT);
               });
 
           if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
