@@ -86,6 +86,11 @@ def distributed_scatter(
         )
 
     # Infer root from where the input chunks live.
+    if root_device not in devices:
+        raise ValueError(
+            f"input chunk device {root_device} not found in signal buffer "
+            f"devices: {devices}"
+        )
     root = devices.index(root_device)
 
     tp_size = math.ceil(ngpus / dp_size)

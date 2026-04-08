@@ -646,17 +646,21 @@ def _distributed_scatter(
     Returns:
         A distributed tensor with one shard per mesh device.
     """
+    from max.graph import DeviceRef
+
     mesh = mapping.mesh
     tvs = [TensorValue(c) for c in chunks]
 
     if _has_multi_device_buffers(mesh):
         bufs = _full_mesh_bufs(mesh)
+        # Ensure chunks are on the root (first) GPU device — callers may
+        # pass CPU tensors created from numpy.
+        root_dev = DeviceRef.from_device(mesh.devices[0])
+        tvs = [ops.transfer_to(tv, root_dev) for tv in tvs]
         results = ops.distributed_scatter(tvs, bufs)
         return make_distributed(results, mapping)
 
     # Simulated: transfer each chunk to its target device.
-    from max.graph import DeviceRef
-
     results = [
         ops.transfer_to(tv, DeviceRef.from_device(mesh.devices[i]))
         for i, tv in enumerate(tvs)
