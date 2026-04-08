@@ -343,6 +343,7 @@ def call_eval(
             "academic-ds",
             "deepseek-r1",
             "deepseek-v3",
+            "gemma-4",
             "gpt-oss",
             "internvl3_5",
             "qwen3",
