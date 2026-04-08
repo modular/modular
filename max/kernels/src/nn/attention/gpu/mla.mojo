@@ -60,6 +60,8 @@ from std.gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
+    Coord,
+    Idx,
     IntTuple,
     LayoutTensor,
     RuntimeLayout,
@@ -67,7 +69,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     coord_to_index_list,
-    lt_to_tt,
+    row_major,
 )
 from layout.layout import *
 from layout.layout_tensor import (
@@ -320,11 +322,9 @@ def flare_mla_decoding[
         )
     )
 
-    var valid_length = lt_to_tt(
-        LayoutTensor[DType.uint32, Layout.row_major(UNKNOWN_VALUE)](
-            UnsafePointer[UInt32, MutExternalOrigin](_unsafe_null=()),
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
-        )
+    var valid_length = TileTensor(
+        UnsafePointer[UInt32, MutExternalOrigin](),
+        row_major(Coord(Idx(0))),
     )
 
     flare_mla_decoding_dispatch[
@@ -504,7 +504,12 @@ def flare_mla_decoding_dispatch[
                 scale,
                 valid_length,
                 mask_functor,
-                lt_to_tt(local_args.gpu_layout_tensor()),
+                TileTensor(
+                    rebind[
+                        UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]
+                    ](local_args.gpu_buf.unsafe_ptr()),
+                    row_major[3](),
+                ),
                 local_args.batch_size,
                 local_args.q_max_seq_len,
                 max_cache_valid_length,
