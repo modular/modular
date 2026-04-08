@@ -120,7 +120,7 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
         ]()
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
-        # Destroy the remaiing elements that have not yet been
+        # Destroy the remaining elements that have not yet been
         # iterated over.
         destroy_n(
             self._list.unsafe_ptr().bitcast[TDestructible]() + self._index,
@@ -408,7 +408,7 @@ struct List[T: Copyable](
         self._annotate_new()
 
     def __init__(out self, *, length: Int, fill: Self.T):
-        """Constructs a list with the given capacity.
+        """Constructs a list with the given length.
 
         Args:
             length: The requested length of the list.

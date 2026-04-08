@@ -951,7 +951,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """Verify if a `StringSlice` is equal to another `String`.
 
         Args:
-            rhs: The `StringSlice` to compare against.
+            rhs: The `String` to compare against.
 
         Returns:
             If the `StringSlice` is equal to the input in length and contents.

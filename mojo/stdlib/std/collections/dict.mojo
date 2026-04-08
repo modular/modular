@@ -287,7 +287,7 @@ struct _DictEntryIter[
         K: The key type of the elements in the dictionary.
         V: The value type of the elements in the dictionary.
         H: The type of the hasher in the dictionary.
-        origin: The origin of the List
+        origin: The origin of the Dict.
         forward: The iteration direction. `False` is backwards.
     """
 
@@ -500,11 +500,11 @@ struct _DictKeyIter[
     """Iterator over immutable Dict key references.
 
     Parameters:
-        mut: Whether the reference to the vector is mutable.
+        mut: Whether the reference to the dictionary is mutable.
         K: The key type of the elements in the dictionary.
         V: The value type of the elements in the dictionary.
         H: The type of the hasher in the dictionary.
-        origin: The origin of the List
+        origin: The origin of the Dict.
         forward: The iteration direction. `False` is backwards.
     """
 
@@ -547,11 +547,11 @@ struct _DictValueIter[
     is mutable.
 
     Parameters:
-        mut: Whether the reference to the vector is mutable.
+        mut: Whether the reference to the dictionary is mutable.
         K: The key type of the elements in the dictionary.
         V: The value type of the elements in the dictionary.
         H: The type of the hasher in the dictionary.
-        origin: The origin of the List
+        origin: The origin of the Dict.
         forward: The iteration direction. `False` is backwards.
     """
 

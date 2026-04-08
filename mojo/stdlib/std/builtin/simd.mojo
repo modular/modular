@@ -2013,7 +2013,7 @@ struct SIMD[dtype: DType, size: Int](
             target: The target DType.
 
         Returns:
-            A new SIMD vector whose elements have been casted to the target
+            A new SIMD vector whose elements have been cast to the target
             element type.
 
         Casting behavior:
