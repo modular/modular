@@ -29,7 +29,7 @@ def mightThrow() raises:
 
 
 def foo(c: Bool):
-    var s = S(len("1234"))
+    var s = S("1234".byte_length())
     try:
         if c:
             mightThrow()  # destruct 's' if returns
@@ -39,9 +39,9 @@ def foo(c: Bool):
 
 
 def fail(str: StringSlice) raises -> S:
-    if len(str) > 5:
+    if str.byte_length() > 5:
         raise Error(str)
-    return S(len(str))
+    return S(str.byte_length())
 
 
 def main():
