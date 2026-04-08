@@ -26,9 +26,10 @@ on a single GPU for development and testing of fused GPU ops.
 
 Placement transitions::
 
-    all_reduce_sum :  Partial      → Replicated
-    all_gather     :  Sharded(k)   → Replicated
-    reduce_scatter :  Partial      → Sharded(dim)
+    all_reduce_sum      :  Partial      → Replicated
+    all_gather          :  Sharded(k)   → Replicated
+    reduce_scatter      :  Partial      → Sharded(dim)
+    distributed_scatter :  pre-split chunks on root → Sharded (root-to-many)
 Multi-device multi-axis mesh strategy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The allreduce kernel indexes signal buffers by **absolute GPU device
@@ -624,6 +625,45 @@ def _shard(
     return make_distributed(shard_tvs, mapping)
 
 
+def _distributed_scatter(
+    chunks: Sequence[tensor.Tensor],
+    mapping: DeviceMapping,
+) -> tensor.Tensor:
+    """Scatter pre-split chunks from root to mesh devices.
+
+    Thin wrapper around ``ops.distributed_scatter`` that handles signal
+    buffer management and wraps the result as a distributed Tensor.
+    The caller is responsible for splitting the source data into chunks.
+
+    Use this for root-to-many fan-out where data lives on one device
+    and must be distributed (e.g., input tokens from root to DP replicas).
+
+    Args:
+        chunks: Pre-split tensor chunks, all on the root device. One per
+            mesh device.
+        mapping: The target device mapping describing distribution.
+
+    Returns:
+        A distributed tensor with one shard per mesh device.
+    """
+    mesh = mapping.mesh
+    tvs = [TensorValue(c) for c in chunks]
+
+    if _has_multi_device_buffers(mesh):
+        bufs = _full_mesh_bufs(mesh)
+        results = ops.distributed_scatter(tvs, bufs)
+        return make_distributed(results, mapping)
+
+    # Simulated: transfer each chunk to its target device.
+    from max.graph import DeviceRef
+
+    results = [
+        ops.transfer_to(tv, DeviceRef.from_device(mesh.devices[i]))
+        for i, tv in enumerate(tvs)
+    ]
+    return make_distributed(results, mapping)
+
+
 # ─── Public API (wrapped for context, no Partial resolution) ──────────────
 
 all_reduce_sum = functional(_all_reduce_sum, linear=None)
@@ -631,6 +671,7 @@ all_gather = functional(_all_gather, linear=None)
 reduce_scatter = functional(_reduce_scatter, linear=None)
 resolve_partials = functional(_resolve_partials, linear=None)
 shard = functional(_shard, linear=None)
+distributed_scatter = functional(_distributed_scatter, linear=None)
 
 
 # ─── Materialization helpers (re-exported from _utils) ────────────────

@@ -6008,3 +6008,45 @@ class TestResizeLinearOp:
         np.testing.assert_allclose(
             np.from_dlpack(out), ref, rtol=1e-4, atol=1e-4
         )
+
+
+class TestDistributedScatterSimulated:
+    """Test distributed_scatter on a simulated CPU mesh."""
+
+    def test_scatter_simulated_fallback(self) -> None:
+        """Simulated mesh: distributed_scatter falls back to transfer_to."""
+        from max.experimental.distributed_functional.collectives import (
+            distributed_scatter as df_scatter,
+        )
+        from max.experimental.distributed_functional.collectives import (
+            to_numpy,
+        )
+        from max.experimental.sharding import (
+            DeviceMesh,
+            PlacementMapping,
+            Sharded,
+        )
+
+        cpu = CPU()
+        mesh = DeviceMesh(
+            devices=(cpu, cpu), mesh_shape=(2,), axis_names=("dp",)
+        )
+
+        data = np.arange(8, dtype=np.float32).reshape(4, 2)
+        chunks = [
+            Tensor.from_dlpack(np.ascontiguousarray(data[:2])),
+            Tensor.from_dlpack(np.ascontiguousarray(data[2:])),
+        ]
+
+        mapping = PlacementMapping(mesh, (Sharded(0),))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = df_scatter(chunks, mapping)
+
+        assert result.placements == (Sharded(0),)
+        assert len(result.local_shards) == 2
+        np.testing.assert_allclose(to_numpy(result.local_shards[0]), data[:2])
+        np.testing.assert_allclose(to_numpy(result.local_shards[1]), data[2:])

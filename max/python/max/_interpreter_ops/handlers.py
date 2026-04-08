@@ -3188,3 +3188,59 @@ def _handle_distributed_allgather(
 
     output_buffers.append(None)
     return output_buffers
+
+
+@register_op_handler(mo.DistributedScatterOp)
+def _handle_distributed_scatter(
+    op: mo.DistributedScatterOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.distributed.scatter by distributing root inputs to devices.
+
+    Operands (flat): N input tensors (all on root), N signal buffers, 1 input chain.
+    Results: N output tensors (one per device), 1 output chain.
+
+    Each input[i] is copied to the device indicated by result[i]'s type.
+
+    The interpreter executes sequentially on the host, so signal buffers
+    and chains are unused.
+
+    Args:
+        op: The scatter operation.
+        inputs: Flat operand buffers from the interpreter dispatcher.
+
+    Returns:
+        N output buffers followed by None for the chain.
+    """
+    num_inputs = len(op.inputs)
+    bufs: list[Buffer] = []
+    for i in range(num_inputs):
+        b = inputs[i]
+        assert isinstance(b, Buffer), f"scatter input {i} is not a Buffer"
+        bufs.append(b)
+
+    # All inputs should reside on the root device.
+    if bufs:
+        root_device = bufs[0].device
+        for i, buf in enumerate(bufs[1:], 1):
+            assert buf.device == root_device, (
+                f"scatter expects all inputs on root device {root_device}, "
+                f"but input {i} is on {buf.device}"
+            )
+
+    results = list(op.results)
+    num_outputs = len(results) - 1  # exclude trailing chain
+    assert num_outputs == num_inputs, (
+        f"scatter expects N inputs and N outputs, "
+        f"got {num_inputs} inputs and {num_outputs} outputs"
+    )
+
+    output_buffers: list[Buffer | None] = []
+    for idx, result in enumerate(results[:-1]):
+        result_type: mo.TensorType = result.type  # type: ignore[assignment]
+        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
+        output_buffers.append(bufs[idx].to(device))
+
+    # Trailing None for the output chain.
+    output_buffers.append(None)
+    return output_buffers
