@@ -408,14 +408,11 @@ def execute_flash_attention_suite[
     num_q_heads: Int,
     kv_params: KVCacheStaticParams,
 ](ctx: DeviceContext) raises:
-    comptime types = (DType.float32, DType.bfloat16)
+    comptime types = (DType.bfloat16,)
 
     for bs in [1, 4, 16]:
         comptime for type_idx in range(len(types)):
             comptime type = types[type_idx]
-            if bs == 16 and type == DType.float32:
-                # This fails for the MI300X
-                continue
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()
             tg_cache_sizes = List[Int]()
@@ -499,7 +496,6 @@ def main() raises:
             8, KVCacheStaticParams(num_heads=4, head_size=256)
         ](ctx)
         # depth=512
-        comptime if has_amd_gpu_accelerator():
-            execute_flash_attention_suite[
-                8, KVCacheStaticParams(num_heads=4, head_size=512)
-            ](ctx)
+        execute_flash_attention_suite[
+            8, KVCacheStaticParams(num_heads=4, head_size=512)
+        ](ctx)

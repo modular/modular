@@ -266,8 +266,8 @@ struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
 
 
 def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
-    return has_nvidia_gpu_accelerator() or (
-        has_amd_gpu_accelerator() and qkv_type == DType.bfloat16
+    return qkv_type == DType.bfloat16 and (
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     )
 
 
@@ -5041,7 +5041,10 @@ def _bmm0_bs[
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
         q_offset = depth * (head + num_heads * max_prompt_len * batch)
-        cur_cache_len = k.cache_length(batch) + cur_query_len
+        comptime if _is_cache_length_accurate:
+            cur_cache_len = cur_query_len
+        else:
+            cur_cache_len = k.cache_length(batch) + cur_query_len
     # When inputs are all dense tensors i.e. all sequences in batch have the same
     # length and same cache length
     else:
@@ -5165,7 +5168,10 @@ def _bmm1_bs[
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
         output_offset = depth * (head + num_heads * max_prompt_len * batch)
-        cur_cache_len = cur_query_len + v.cache_length(batch)
+        comptime if _is_cache_length_accurate:
+            cur_cache_len = cur_query_len
+        else:
+            cur_cache_len = cur_query_len + v.cache_length(batch)
     # When inputs are all dense tensors i.e. all sequences in batch have the same
     # length and same cache length
     else:
