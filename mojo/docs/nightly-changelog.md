@@ -199,6 +199,9 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
+- `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
+  that indexes by unicode codepoint offsets.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
