@@ -435,7 +435,7 @@ class _AsyncMetrics:
     def itl(self, ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.itl", ms, self.extra_attributes),
-            MetricLevel.DETAILED,
+            MetricLevel.BASIC,
         )
 
     def pipeline_load(self, name: str) -> None:
@@ -451,7 +451,7 @@ class _AsyncMetrics:
     def batch_size(self, size: int) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.batch_size", size, self.extra_attributes),
-            MetricLevel.DETAILED,
+            MetricLevel.BASIC,
         )
 
     def batch_execution_time(
@@ -491,7 +491,7 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.cache.hit_rate", hit_rate, self.extra_attributes
             ),
-            MetricLevel.DETAILED,
+            MetricLevel.BASIC,
         )
 
     def cache_hits(self, hits: int) -> None:
