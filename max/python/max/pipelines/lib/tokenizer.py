@@ -43,8 +43,6 @@ from PIL import Image
 from transformers import (
     AutoProcessor,
     AutoTokenizer,
-    PreTrainedTokenizer,
-    PreTrainedTokenizerFast,
 )
 from typing_extensions import ParamSpec
 
@@ -281,64 +279,6 @@ class IdentityPipelineTokenizer(
         if isinstance(encoded, str):
             return encoded
         return ""
-
-
-class PreTrainedPipelineTokenizer(
-    PipelineTokenizer[
-        TokenGeneratorContext,
-        npt.NDArray[np.integer[Any]],
-        TextGenerationRequest,
-    ],
-):
-    """A pipeline tokenizer backed by a Hugging Face pre-trained tokenizer."""
-
-    def __init__(
-        self, delegate: PreTrainedTokenizer | PreTrainedTokenizerFast
-    ) -> None:
-        assert isinstance(
-            delegate, PreTrainedTokenizer | PreTrainedTokenizerFast
-        )
-        self.delegate = delegate
-
-    def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
-    ) -> str:
-        """Applies the delegate's chat template to the messages."""
-        templated_message = self.delegate.apply_chat_template(
-            [msg.model_dump() for msg in messages],
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        assert isinstance(templated_message, str)
-        return templated_message
-
-    @property
-    def eos(self) -> int:
-        """Returns the end-of-sequence token ID from the delegate."""
-        return self.delegate.eos_token_id
-
-    @property
-    def expects_content_wrapping(self) -> bool:
-        """Returns whether this tokenizer expects content wrapping."""
-        return False
-
-    async def encode(
-        self, prompt: str, add_special_tokens: bool = False
-    ) -> npt.NDArray[np.integer[Any]]:
-        """Encodes the prompt to token ids via the delegate."""
-        return np.array(
-            self.delegate.encode(prompt, add_special_tokens=add_special_tokens)
-        )
-
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
-    ) -> str:
-        """Decodes token ids to text via the delegate."""
-        try:
-            return self.delegate.decode(encoded.tolist(), **kwargs)
-        except OverflowError as e:
-            error_msg = _handle_decode_overflow(encoded, len(self.delegate))
-            raise OverflowError(error_msg) from e
 
 
 def max_tokens_to_generate(

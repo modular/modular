@@ -56,7 +56,6 @@ from .lib.sampling.sampling_config import SamplingConfig
 from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
-    PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
@@ -84,7 +83,6 @@ __all__ = [
     "PipelineRole",
     "PixelContext",
     "PixelGenerationPipeline",
-    "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
     "ProfilingConfig",
     "PrometheusMetricsMode",
