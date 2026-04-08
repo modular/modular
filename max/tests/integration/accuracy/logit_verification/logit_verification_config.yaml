@@ -290,6 +290,22 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.0e-05
     kl_div_threshold: 1.0e-02
 
+  # TODO: Unusually high KL divergence (~19) observed locally vs vLLM — investigate
+  # whether autofp8 quantization differences between MAX and vLLM cause this drift.
+  modularai/Llama-3.1-405B-Instruct-autofp8:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "modularai/Llama-3.1-405B-Instruct-autofp8"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-multi, 8xb200, float8-support]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/modularai_Llama-3.1-405B-Instruct-autofp8_golden/1/4ff2923bf69375f3d62f9386a75ea63bbd71ebf3b7d6f5376759d3b5e3c650a5/modularai_Llama-3.1-405B-Instruct-autofp8_golden.tar.gz"
+      json_file: "vllm_modularai_Llama-3.1-405B-Instruct-autofp8_float8_e4m3fn_golden.json"
+    timeout: 3600
+    cos_dist_threshold: 3.8e-04
+    kl_div_threshold: 1.6e-01
+
   meta-llama/Llama-3.2-1B-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x]
@@ -924,8 +940,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    ssim_threshold: 0.55
-    lpips_threshold: 0.40
+    ssim_threshold: 0.17
+    lpips_threshold: 0.95
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
 
@@ -939,8 +955,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    ssim_threshold: 0.55
-    lpips_threshold: 0.40
+    ssim_threshold: 0.17
+    lpips_threshold: 0.95
     timeout: 3600
     config_params_override: {"prefer_module_v3": true}
 

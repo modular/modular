@@ -30,10 +30,16 @@ from std.reflection.traits import (
     AllRegisterPassable,
     AllWritable,
 )
-from ._nicheable import UnsafeNicheable, NicheIndex
+from ._nicheable import (
+    UnsafeNicheable,
+    NicheIndex,
+    NicheStorageTraits,
+    UnsafeCustomNicheStorage,
+)
 from std.os import abort
 from std.reflection import struct_field_count
-from std.sys.intrinsics import _type_is_eq, size_of
+from std.sys import align_of, size_of
+from std.sys.intrinsics import _type_is_eq
 from std.utils.type_functions import ConditionalType
 
 # ===----------------------------------------------------------------------=== #
@@ -45,7 +51,7 @@ comptime _InvalidTypeIndex: Int = -1
 
 @always_inline
 def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime if _type_is_eq[Ts[i], T]():
             return i
     return _InvalidTypeIndex
@@ -82,6 +88,77 @@ trait _VariantStorage(Copyable, ImplicitlyDestructible):
         ...
 
 
+trait _NicheStorage(Defaultable, ImplicitlyCopyable, ImplicitlyDestructible):
+    """Internal abstraction over niche backing storage backends."""
+
+    def as_uninit[
+        T: AnyType
+    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[T], origin_of(self)]:
+        ...
+
+
+struct _DefaultNicheStorage[T: AnyType](Defaultable, _NicheStorage):
+    """Default niche backing: stores the value in `UnsafeMaybeUninit[T]`
+    (lowers to `pop.array<1, T>`)."""
+
+    var _memory: UnsafeMaybeUninit[Self.T]
+
+    @always_inline
+    def __init__(out self):
+        self._memory = {}
+
+    @always_inline
+    def as_uninit[
+        U: AnyType
+    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[U], origin_of(self)]:
+        comptime assert _type_is_eq[Self.T, U]()
+        return (
+            UnsafePointer(to=self._memory)
+            .bitcast[UnsafeMaybeUninit[U]]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
+
+
+struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
+    Defaultable, _NicheStorage
+):
+    """Niche backing that delegates to the user-provided `Storage` type,
+    allowing the nicheable type to control what MLIR type the storage lowers
+    to."""
+
+    var _memory: Self.Storage.NicheStorage
+
+    @always_inline
+    def __init__(out self):
+        self._memory = {}
+
+    @always_inline
+    def as_uninit[
+        T: AnyType
+    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[T], origin_of(self)]:
+        comptime assert (
+            size_of[Self.Storage.NicheStorage]()
+            == size_of[UnsafeMaybeUninit[T]]()
+        ), "Custom storage must be the same size as Self"
+        comptime assert (
+            align_of[Self.Storage.NicheStorage]()
+            == align_of[UnsafeMaybeUninit[T]]()
+        ), "Custom storage must have the the same alignment as Self"
+        return (
+            UnsafePointer(to=self._memory)
+            .bitcast[UnsafeMaybeUninit[T]]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
+
+
+comptime _NicheStorageFor[T: AnyType] = ConditionalType[
+    Trait=_NicheStorage,
+    If=conforms_to(T, UnsafeCustomNicheStorage),
+    Then=_CustomNicheStorage[downcast[T, UnsafeCustomNicheStorage]],
+    Else=_DefaultNicheStorage[T],
+]
+
+
 struct _NichedOptionalStorage[
     T: UnsafeNicheable, EmptyType: TrivialRegisterPassable
 ](
@@ -100,7 +177,7 @@ struct _NichedOptionalStorage[
     comptime __copy_ctor_is_trivial = _all_trivial_copyinit[Self.T]()
     comptime __move_ctor_is_trivial = _all_trivial_moveinit[Self.T]()
 
-    var _memory: UnsafeMaybeUninit[Self.T]
+    var _memory: _NicheStorageFor[Self.T]
 
     @staticmethod
     def _check[U: AnyType]():
@@ -114,14 +191,14 @@ struct _NichedOptionalStorage[
             Self.T.niche_count() > 0
         ), "UnsafeNicheable must specify at least 1 invalid bit pattern"
         self._memory = {}
-        Self.T.write_niche[index=0](UnsafePointer(to=self._memory))
+        Self.T.write_niche[index=0](self._memory.as_uninit[Self.T]())
 
     @always_inline
     def __init__[U: Movable](out self, var value: U):
         Self._check[U]()
         comptime if _type_is_eq[U, Self.T]():
             self._memory = {}
-            rebind[UnsafeMaybeUninit[U]](self._memory).init_from(value^)
+            self._memory.as_uninit[U]()[].init_from(value^)
         else:
             # This is the empty "none" type.
             comptime assert conforms_to(U, TrivialRegisterPassable)
@@ -153,13 +230,13 @@ struct _NichedOptionalStorage[
         comptime assert conforms_to(Self.T, ImplicitlyDestructible)
         if self.isa[Self.T]():
             rebind[UnsafeMaybeUninit[downcast[Self.T, ImplicitlyDestructible]]](
-                self._memory
+                self._memory.as_uninit[Self.T]()[]
             ).unsafe_assume_init_destroy()
 
     @always_inline
     def isa[U: AnyType](self) -> Bool:
         Self._check[U]()
-        var niche = Self.T.classify_niche(UnsafePointer(to=self._memory))
+        var niche = Self.T.classify_niche(self._memory.as_uninit[Self.T]())
         var is_some = niche == NicheIndex.NotANiche
         comptime if _type_is_eq[U, Self.T]():
             return is_some
@@ -170,7 +247,7 @@ struct _NichedOptionalStorage[
     def unsafe_ptr[U: AnyType](ref self) -> UnsafePointer[U, origin_of(self)]:
         Self._check[U]()
         return (
-            self._memory.unsafe_ptr()
+            self._memory.as_uninit[U]()
             .bitcast[U]()
             .unsafe_origin_cast[origin_of(self)]()
         )
@@ -211,7 +288,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = copy.get_discriminant()
 
-        comptime for i in range(Variadic.size_types[Self.Ts]):
+        comptime for i in range(TypeList[*Self.Ts].size):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, Copyable)
             comptime T = downcast[TUnknown, Copyable]
@@ -225,7 +302,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = take.get_discriminant()
 
-        comptime for i in range(Variadic.size_types[Self.Ts]):
+        comptime for i in range(TypeList[*Self.Ts].size):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, Movable)
             comptime T = downcast[TUnknown, Movable]
@@ -238,7 +315,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
     @always_inline
     def __del__(deinit self):
-        comptime for i in range(Variadic.size_types[Self.Ts]):
+        comptime for i in range(TypeList[*Self.Ts].size):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, ImplicitlyDestructible)
             comptime T = downcast[TUnknown, ImplicitlyDestructible]
@@ -282,9 +359,9 @@ comptime _IsNicheablePair[T: AnyType, U: AnyType]: Bool = conforms_to(
 """True if `T` is `UnsafeNicheable` and `U` is an empty type. Called twice with
 swapped args by `_IsNicheEligible` to handle either ordering."""
 
-comptime _IsNicheEligible[*Ts: AnyType]: Bool = (
-    Variadic.size_types[Ts] == 2
-) and (_IsNicheablePair[Ts[0], Ts[1]] or _IsNicheablePair[Ts[1], Ts[0]])
+comptime _IsNicheEligible[*Ts: AnyType]: Bool = (TypeList[*Ts].size == 2) and (
+    _IsNicheablePair[Ts[0], Ts[1]] or _IsNicheablePair[Ts[1], Ts[0]]
+)
 """True if `Ts` qualifies for niche-optimized storage: exactly two types
 where one is `UnsafeNicheable` and the other is an empty type."""
 
@@ -554,7 +631,7 @@ struct Variant[*Ts: Movable](
         Returns:
             True if the variants hold the same type and equal values.
         """
-        comptime for i in range(Variadic.size_types[Self.Ts]):
+        comptime for i in range(TypeList[*Self.Ts].size):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 if not other.isa[T]():
@@ -586,7 +663,7 @@ struct Variant[*Ts: Movable](
         Args:
             hasher: The hasher instance.
         """
-        comptime for i in range(Variadic.size_types[Self.Ts]):
+        comptime for i in range(TypeList[*Self.Ts].size):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 hasher.update(UInt8(i))
@@ -600,7 +677,7 @@ struct Variant[*Ts: Movable](
     def _write_value_to[
         *, is_repr: Bool
     ](self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
-        comptime for i in range(Variadic.size_types[Self.Ts]):
+        comptime for i in range(TypeList[*Self.Ts].size):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 ref value = trait_downcast[Writable](self.unsafe_get[T]())
@@ -862,7 +939,7 @@ struct Variant[*Ts: Movable](
 
 
 def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime T = Ts[i]
         if not conforms_to(T, ImplicitlyDestructible):
             return False
@@ -870,7 +947,7 @@ def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
 
 
 def _all_movable[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime T = Ts[i]
         if not conforms_to(T, Movable):
             return False
@@ -878,7 +955,7 @@ def _all_movable[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
@@ -888,7 +965,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime if conforms_to(Ts[i], Copyable):
             if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
@@ -899,7 +976,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime if conforms_to(Ts[i], Movable):
             if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False

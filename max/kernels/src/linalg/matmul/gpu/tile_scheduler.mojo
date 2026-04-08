@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import block_idx_uint as block_idx, grid_dim_uint as grid_dim
+from std.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
@@ -353,9 +353,7 @@ struct TileScheduler[
         """
 
         self.current_iter += 1
-        var next_block_idx = self.current_iter * Int(grid_dim.x) + Int(
-            block_idx.x
-        )
+        var next_block_idx = self.current_iter * grid_dim.x + block_idx.x
 
         # Check if the calculated index exceeds the total number of blocks
         if next_block_idx >= Int(self.num_blocks):

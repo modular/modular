@@ -480,7 +480,7 @@ struct Person(Writable):
         return 0 <= age <= 130
     # highlight-end
 
-    def write_to(self, mut writer: Some[Writable]):
+    def write_to(self, mut writer: Some[Writer]):
         t"Person({self.name}, {self.age})".write_to(writer)
 ```
 

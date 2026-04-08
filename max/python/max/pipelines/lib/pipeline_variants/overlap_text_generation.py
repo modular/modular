@@ -108,12 +108,11 @@ from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
 from ..speculative_decoding.base import SpeculativeDecodingMetrics
-from ..speculative_decoding.utils import build_response
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     get_eos_tokens,
-    get_weight_paths,
     update_context_and_prepare_responses,
+    update_spec_decode_context_and_prepare_responses,
 )
 
 if TYPE_CHECKING:
@@ -240,7 +239,8 @@ class SpecDecodeState:
         persistent_draft_tokens = Buffer(
             dtype=DType.int64,
             shape=(
-                pipeline_config.runtime.max_batch_size,
+                pipeline_config.runtime.max_batch_size
+                * pipeline_config.model.data_parallel_degree,
                 num_speculative_tokens,
             ),
             device=model.devices[0],
@@ -263,6 +263,50 @@ class _HasRaggedTokens(Protocol):
 @runtime_checkable
 class _SupportsModelCapture(Protocol):
     model: Model
+
+
+@dataclass
+class _AsyncBatchOutput:
+    output_dict: PipelineOutputsDict[TextGenerationOutput]
+    spec_decode_metrics: SpeculativeDecodingMetrics | None = None
+
+
+@dataclass
+class AsyncSpecDecodeBatch:
+    """Extra outputs specific for speculative decoding async batch."""
+
+    draft_tokens_to_verify: np.ndarray[Any]
+    """The draft tokens to verify for the batch.
+
+    The shape of the array is (batch_size, num_draft_tokens_to_verify).
+    """
+
+    next_draft_tokens_device: Buffer
+    """The next draft tokens for the batch on gpu.
+
+    The shape of the buffer is (batch_size, num_speculative_tokens).
+    """
+
+    next_draft_tokens_host: Buffer
+    """The next draft tokens for the batch on pinned gpu memory.
+
+    The shape of the buffer is (batch_size, num_speculative_tokens).
+    """
+
+    num_accepted_draft_tokens_device: Buffer
+    """The number of accepted draft tokens for the batch on gpu.
+
+    The shape of the buffer is (batch_size,).
+    """
+
+    num_accepted_draft_tokens_host: Buffer
+    """The number of accepted draft tokens for the batch on pinned gpu memory.
+
+    The shape of the buffer is (batch_size,).
+    """
+
+    max_seq_len: int
+    """The maximum sequence length for the pipeline model."""
 
 
 @dataclass
@@ -295,10 +339,13 @@ class AsyncBatch(Generic[TextGenerationContextType]):
     _is_processed: bool = False
     """Whether the outputs have been already been processed."""
 
+    spec_decode: AsyncSpecDecodeBatch | None = None
+    """Extra outputs specific for speculative decoding async batch."""
+
     @traced
     def sync_and_process_outputs(
         self,
-    ) -> PipelineOutputsDict[TextGenerationOutput]:
+    ) -> _AsyncBatchOutput:
         """Syncs on completion of this batch and processes the outputs.
 
         Replaces the placeholder future tokens in the TextContext CPU numpy
@@ -315,15 +362,51 @@ class AsyncBatch(Generic[TextGenerationContextType]):
         # Now that we have synced, it is safe to read the contents of the
         # generated_tokens_np on the host.
 
-        # Update the context object, realizing the placeholder future tokens.
-        outputs = update_context_and_prepare_responses(
-            generated_tokens_np,
-            self.inputs.flat_batch,
-            num_steps=1,
-            overwrite_future=True,
-        )
+        if self.spec_decode is None:
+            # Update the context object, realizing the placeholder future tokens.
+            outputs = update_context_and_prepare_responses(
+                generated_tokens_np,
+                self.inputs.flat_batch,
+                num_steps=1,
+                overwrite_future=True,
+            )
+            wrapped_outputs = _AsyncBatchOutput(output_dict=outputs)
+        else:
+            spec_decode_batch = self.spec_decode
+            draft_tokens_np = spec_decode_batch.draft_tokens_to_verify
+            num_accepted_draft_tokens = (
+                spec_decode_batch.num_accepted_draft_tokens_host.to_numpy()
+            )
+            next_draft_tokens = (
+                self.spec_decode.next_draft_tokens_host.to_numpy()
+            )
+            max_seq_len = spec_decode_batch.max_seq_len
 
-        return outputs
+            outputs = update_spec_decode_context_and_prepare_responses(
+                draft_tokens=draft_tokens_np,
+                next_draft_tokens=next_draft_tokens,
+                num_accepted_draft_tokens=num_accepted_draft_tokens,
+                next_tokens=generated_tokens_np,
+                context_batch=self.inputs.flat_batch,
+                max_seq_len=max_seq_len,
+            )
+
+            num_speculative_tokens = next_draft_tokens.shape[1]
+            num_draft_tokens_to_verify = draft_tokens_np.shape[1]
+
+            metrics = SpeculativeDecodingMetrics(
+                num_speculative_tokens=num_speculative_tokens,
+                draft_tokens_accepted=num_accepted_draft_tokens.sum(),
+                draft_tokens_generated=num_draft_tokens_to_verify
+                * len(self.inputs.flat_batch),
+            )
+
+            wrapped_outputs = _AsyncBatchOutput(
+                output_dict=outputs,
+                spec_decode_metrics=metrics,
+            )
+
+        return wrapped_outputs
 
 
 @traced
@@ -573,7 +656,7 @@ class OverlapTextGenerationPipeline(
             raise ValueError("quantization_encoding must not be None")
 
         # Retrieve the weights repo id (falls back to model_path when unset).
-        weight_paths: list[Path] = get_weight_paths(model_config)
+        weight_paths: list[Path] = model_config.resolved_weight_paths()
 
         if not issubclass(pipeline_model, PipelineModelWithKVCache):
             raise ValueError(
@@ -713,9 +796,7 @@ class OverlapTextGenerationPipeline(
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
-    def _warmup_model_inputs(
-        self, batch_size: int, q_max_seq_len: int = 1
-    ) -> Iterator[ModelInputs]:
+    def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
 
@@ -729,13 +810,17 @@ class OverlapTextGenerationPipeline(
                 "Speculative decoding with multiple tokens is not supported with Device Graph Capture."
             )
 
+        # For unified Eagle/MTP models, the graph merges prompt tokens with
+        # draft tokens internally. Each request contributes 1 decode token
+        # as input; the q_max_seq_len only affects KV cache dispatch metadata.
+        num_decode_tokens = 1
         for _replica_idx in range(dp_size):
             replica_batches.append(
                 [
                     TextContext(
                         max_length=self._pipeline_model.max_seq_len,
                         tokens=TokenBuffer(
-                            np.zeros(q_max_seq_len, dtype=np.int64)
+                            np.zeros(num_decode_tokens, dtype=np.int64)
                         ),
                         eos_tracker=EOSTracker(),
                         model_name=self._pipeline_config.model.model_name,
@@ -791,7 +876,7 @@ class OverlapTextGenerationPipeline(
                 assert isinstance(model_inputs, _UnifiedEagleInputs)
                 draft_tokens = Buffer.from_numpy(
                     np.zeros(
-                        (batch_size, num_speculative_tokens),
+                        (batch_size * dp_size, num_speculative_tokens),
                         dtype=np.int64,
                     )
                 )
@@ -799,7 +884,9 @@ class OverlapTextGenerationPipeline(
                     self._spec_decode_state.persistent_draft_tokens
                 )
                 persistent_draft_tokens = _contiguous_prefix_2d(
-                    persistent_draft_tokens, batch_size, num_speculative_tokens
+                    persistent_draft_tokens,
+                    batch_size * dp_size,
+                    num_speculative_tokens,
                 )
                 persistent_draft_tokens.inplace_copy_from(draft_tokens)
                 model_inputs.draft_tokens = persistent_draft_tokens
@@ -1023,6 +1110,9 @@ class OverlapTextGenerationPipeline(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> AsyncBatch[TextGenerationContextType]:
         """Runs the forward pass, samples logits, and returns an AsyncBatch."""
+        if self._spec_decode_state is not None:
+            return self._execute_spec_decode(inputs)
+
         device0 = self._devices[0]
         assert not device0.is_host
         assert self._sampler is not None
@@ -1084,7 +1174,7 @@ class OverlapTextGenerationPipeline(
 
     def _execute_spec_decode(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
-    ) -> PipelineOutputsDict[TextGenerationOutput]:
+    ) -> AsyncBatch[TextGenerationContextType]:
         """Executes unified EAGLE speculative decoding.
 
         Single graph call handles: merge, target forward, greedy rejection,
@@ -1134,14 +1224,13 @@ class OverlapTextGenerationPipeline(
         # Do the copy to host for each model output using pinned memory.
         with Tracer("D2H generated_tokens"):
             device0 = self._devices[0]
-            device0.synchronize()
             num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
-            generated_tokens_host = DevicePinnedBuffer(
+            num_accepted_draft_tokens_host = DevicePinnedBuffer(
                 shape=num_accepted_draft_tokens_device.shape,
                 dtype=num_accepted_draft_tokens_device.dtype,
                 device=device0,
             )
-            generated_tokens_host.inplace_copy_from(
+            num_accepted_draft_tokens_host.inplace_copy_from(
                 num_accepted_draft_tokens_device
             )
 
@@ -1161,48 +1250,27 @@ class OverlapTextGenerationPipeline(
             )
             next_draft_tokens_host.inplace_copy_from(next_draft_tokens_device)
 
-            # Sync to ensure all prior pinned d2h transfers are complete.
-            device0.synchronize()
+            # Record an event to track the completion of the d2h copies.
+            # This will ensure that the subsequent synchronize() call will
+            # block until the d2h copy is complete, and no more.
+            copy_event = device0.default_stream.record_event()
 
-            num_accepted_draft_tokens_np = generated_tokens_host.to_numpy()
-            next_tokens_np = next_tokens_host.to_numpy()
-            next_draft_tokens_np = next_draft_tokens_host.to_numpy()
+            async_batch = AsyncBatch(
+                inputs=inputs,
+                generated_tokens_device=next_tokens_device,
+                generated_tokens_host=next_tokens_host,
+                copy_event=copy_event,
+                spec_decode=AsyncSpecDecodeBatch(
+                    draft_tokens_to_verify=draft_tokens_np,
+                    next_draft_tokens_device=next_draft_tokens_device,
+                    next_draft_tokens_host=next_draft_tokens_host,
+                    num_accepted_draft_tokens_device=num_accepted_draft_tokens_device,
+                    num_accepted_draft_tokens_host=num_accepted_draft_tokens_host,
+                    max_seq_len=self._pipeline_model.max_seq_len,
+                ),
+            )
 
-        assert num_accepted_draft_tokens_np.shape == (len(context_batch),)
-        assert next_tokens_np.shape == (len(context_batch),)
-        assert next_draft_tokens_np.shape == (
-            len(context_batch),
-            num_speculative_tokens,
-        )
-        assert all(
-            num_accept <= num_draft_tokens_to_verify
-            for num_accept in num_accepted_draft_tokens_np
-        )
-
-        for batch_idx, ctx in enumerate(context_batch):
-            for token_idx in range(num_accepted_draft_tokens_np[batch_idx]):
-                if not ctx.is_done:
-                    ctx.update(draft_tokens_np[batch_idx, token_idx])
-            if not ctx.is_done:
-                ctx.update(next_tokens_np[batch_idx])
-                # Save the generated draft tokens for verification in next iteration.
-                ctx.spec_decoding_state.saved_draft_tokens = (
-                    next_draft_tokens_np[batch_idx].copy()
-                )
-
-        self._spec_decode_state.metrics.update(
-            draft_tokens_accepted=num_accepted_draft_tokens_np.sum(),
-            draft_tokens_generated=num_draft_tokens_to_verify
-            * len(context_batch),
-        )
-
-        res = build_response(
-            context_batch=context_batch,
-            max_seq_len=self._pipeline_model.max_seq_len,
-        )
-        self._kv_manager.step(inputs.batches)
-
-        return res
+        return async_batch
 
     @traced
     def execute(
@@ -1240,9 +1308,6 @@ class OverlapTextGenerationPipeline(
                 "Max num steps > 1 is not supported with the Overlap scheduler."
             )
 
-        if self._spec_decode_state is not None:
-            return self._execute_spec_decode(inputs)
-
         if inputs:
             # Run the entire forward pass and output processing if the batch has
             # at least one request.
@@ -1260,17 +1325,24 @@ class OverlapTextGenerationPipeline(
             assert not self._disable_overlap, (
                 "Cannot have a previous batch when overlap is disabled"
             )
-            outputs: PipelineOutputsDict[TextGenerationOutput] = (
-                self._prev_batch.sync_and_process_outputs()
-            )
+            wrapped_outputs = self._prev_batch.sync_and_process_outputs()
+            if self._spec_decode_state is not None:
+                assert wrapped_outputs.spec_decode_metrics is not None
+                self._spec_decode_state.metrics.update(
+                    wrapped_outputs.spec_decode_metrics,
+                )
+            outputs = wrapped_outputs.output_dict
 
             self._prev_batch = None
         else:
             # Empty outputs as there is no previous batch.
             outputs = {}
 
-        for context in inputs.flat_batch:
-            context.update_with_future_token()
+        # Only add a future token if we are not using spec decoding. Spec decoding
+        # does not properly support future tokens and overlap yet!
+        if self._spec_decode_state is None:
+            for context in inputs.flat_batch:
+                context.update_with_future_token()
 
         # Commit the new KV blocks into the prefix cache, ignoring the final
         # placeholder future token.
@@ -1285,7 +1357,13 @@ class OverlapTextGenerationPipeline(
                 )
                 # Immediately synchronize after gpu execution and return the
                 # results of the current batch.
-                outputs = curr_batch.sync_and_process_outputs()
+                wrapped_outputs = curr_batch.sync_and_process_outputs()
+                if self._spec_decode_state is not None:
+                    assert wrapped_outputs.spec_decode_metrics is not None
+                    self._spec_decode_state.metrics.update(
+                        wrapped_outputs.spec_decode_metrics,
+                    )
+                outputs = wrapped_outputs.output_dict
             else:
                 # Otherwise, delay the synchronization until the next step.
                 self._prev_batch = curr_batch

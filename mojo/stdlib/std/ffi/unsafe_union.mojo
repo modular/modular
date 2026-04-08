@@ -44,8 +44,8 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
     Returns True if no type appears more than once, False otherwise.
     """
 
-    comptime for i in range(Variadic.size_types[Ts]):
-        comptime for j in range(i + 1, Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
+        comptime for j in range(i + 1, TypeList[*Ts].size):
             if _type_is_eq[Ts[i], Ts[j]]():
                 return False
     return True
@@ -54,7 +54,7 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
@@ -66,7 +66,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial copy constructors."""
 
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime if conforms_to(Ts[i], Copyable):
             if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
@@ -78,7 +78,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial move constructors."""
 
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(TypeList[*Ts].size):
         comptime if conforms_to(Ts[i], Movable):
             if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False
@@ -97,7 +97,7 @@ def _check_union_types[*Ts: AnyType]():
     - All types must have trivial copy, move, and destroy operations
     """
     comptime assert (
-        Variadic.size_types[Ts] > 0
+        TypeList[*Ts].size > 0
     ), "UnsafeUnion requires at least one type"
     comptime assert _all_types_unique[
         *Ts

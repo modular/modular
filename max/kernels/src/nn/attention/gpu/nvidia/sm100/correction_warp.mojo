@@ -68,8 +68,9 @@ def fa4_correction[
     pipeline_c1 = mbars.consumer_c1()
     pipeline_o = mbars.consumer_o()
 
+    comptime BM_mask: Int = config.BM_eff()
     var iter_count: UInt32 = (
-        mask.total_iters[BM, BN, page_size](score_row, num_keys) - 1
+        mask.total_iters[BM_mask, BN, page_size](score_row, num_keys) - 1
     )
 
     comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8

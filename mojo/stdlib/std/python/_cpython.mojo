@@ -170,8 +170,8 @@ struct PyObjectPtr(
     @always_inline
     def __init__[
         T: AnyType, //
-    ](out self, *, upcast_from: UnsafePointer[T, MutAnyOrigin]):
-        self._unsized_obj_ptr = upcast_from.bitcast[PyObject]()
+    ](out self, *, upcast_from: _CPointer[T, MutAnyOrigin]):
+        self._unsized_obj_ptr = bitcast[PyObject](upcast_from)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1436,7 +1436,7 @@ struct CPython(Defaultable, Movable):
         self.init_error = StaticString(
             unsafe_from_utf8_ptr=external_call[
                 "KGEN_CompilerRT_Python_SetPythonPath",
-                _CPointer[c_char, StaticConstantOrigin],
+                UnsafePointer[c_char, StaticConstantOrigin],
             ]()
         )
 

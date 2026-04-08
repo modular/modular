@@ -35,14 +35,11 @@ Key differences from block_scaled_matmul_kernel.mojo:
 
 from std.collections import Optional
 from std.math import ceildiv
+from std.math.uutils import ufloordiv
 from std.memory import UnsafePointer, Pointer
 from std.sys import size_of
 
-from std.gpu import (
-    WARP_SIZE,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-)
+from std.gpu import WARP_SIZE, block_idx, lane_id
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
@@ -1255,9 +1252,6 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Grouped Tile Scheduler =====
         var scheduler = Self.SchedulerType(problem_sizes, num_groups)
 
-        # Per-warp work iterator
-        var work_iter = scheduler.work_iterator()
-
         # ===== Barrier Initialization =====
         Self.init_barriers(
             ctx,
@@ -1275,7 +1269,8 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
-            var blk = Int(block_idx.x)
+            var load_iter = scheduler.work_iterator()
+            var blk = block_idx.x
             var tensormap_init_done = False
 
             # Tensormap manager for SMEM descriptor updates
@@ -1290,64 +1285,61 @@ struct GroupedBlockScaledMatmulKernel[
             )
 
             with input_pipeline.producer() as producer:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # Wait for MMA warp to init tensormaps (first time only)
-                        if not tensormap_init_done:
-                            Self.TensormapAbInitBarrier.sync()
-                            tensormap_init_done = True
+                for current in load_iter:
+                    # Wait for MMA warp to init tensormaps (first time only)
+                    if not tensormap_init_done:
+                        Self.TensormapAbInitBarrier.sync()
+                        tensormap_init_done = True
 
-                        # === LOOKAHEAD PATTERN (CuteDSL style) ===
-                        # Initialize to "ready" (True), only peek if there's work.
-                        # This avoids wasted try_acquire when num_k_iters == 0.
-                        var num_k_iters = Int(current.k_tile_count)
-                        var next_ready = True
-                        if num_k_iters > 0:
+                    # === LOOKAHEAD PATTERN (CuteDSL style) ===
+                    # Initialize to "ready" (True), only peek if there's work.
+                    # This avoids wasted try_acquire when num_k_iters == 0.
+                    var num_k_iters = Int(current.k_tile_count)
+                    var next_ready = True
+                    if num_k_iters > 0:
+                        next_ready = producer.try_acquire()
+
+                    # Update tensormaps on group change (overlaps with peek)
+                    if current.group_changed:
+                        tensormap_mgr.update_ab_for_group(
+                            current.group_idx,
+                            group_a_ptrs,
+                            group_b_ptrs,
+                            group_sfa_ptrs,
+                            group_sfb_ptrs,
+                            device_tma_a[blk],
+                            device_tma_b[blk],
+                            device_tma_sfa[blk],
+                            device_tma_sfb[blk],
+                        )
+
+                    # Load tiles using lookahead pattern
+                    for k_tile in range(num_k_iters):
+                        with producer.acquire_if_needed(next_ready) as tiles:
+                            Self.load_input_tiles(
+                                device_tma_a[blk][],
+                                device_tma_b[blk][],
+                                device_tma_sfa[blk][],
+                                device_tma_sfb[blk][],
+                                tiles,
+                                ctx.peer_cta_coord,
+                                (
+                                    Int(current.m),
+                                    Int(current.n),
+                                    0,  # batch = 0 for grouped
+                                ),
+                                ctx.a_multicast_mask,
+                                ctx.b_multicast_mask,
+                                UInt32(k_tile),
+                                ctx.elect_one_cta,
+                            )
+                        # Peek for next iteration (CuteDSL style):
+                        # Reset to ready, then conditionally peek.
+                        next_ready = True
+                        if k_tile + 1 < num_k_iters:
                             next_ready = producer.try_acquire()
 
-                        # Update tensormaps on group change (overlaps with peek)
-                        if current.group_changed:
-                            tensormap_mgr.update_ab_for_group(
-                                current.group_idx,
-                                group_a_ptrs,
-                                group_b_ptrs,
-                                group_sfa_ptrs,
-                                group_sfb_ptrs,
-                                device_tma_a[blk],
-                                device_tma_b[blk],
-                                device_tma_sfa[blk],
-                                device_tma_sfb[blk],
-                            )
-
-                        # Load tiles using lookahead pattern
-                        for k_tile in range(num_k_iters):
-                            with producer.acquire_if_needed(
-                                next_ready
-                            ) as tiles:
-                                Self.load_input_tiles(
-                                    device_tma_a[blk][],
-                                    device_tma_b[blk][],
-                                    device_tma_sfa[blk][],
-                                    device_tma_sfb[blk][],
-                                    tiles,
-                                    ctx.peer_cta_coord,
-                                    (
-                                        Int(current.m),
-                                        Int(current.n),
-                                        0,  # batch = 0 for grouped
-                                    ),
-                                    ctx.a_multicast_mask,
-                                    ctx.b_multicast_mask,
-                                    UInt32(k_tile),
-                                    ctx.elect_one_cta,
-                                )
-                            # Peek for next iteration (CuteDSL style):
-                            # Reset to ready, then conditionally peek.
-                            next_ready = True
-                            if k_tile + 1 < num_k_iters:
-                                next_ready = producer.try_acquire()
-
-                        syncwarp()
+                    syncwarp()
 
                 producer.drain()
 
@@ -1360,6 +1352,8 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== MMA WARP =====
         if WarpRole.is_mma():
+            var mma_iter = scheduler.work_iterator()
+
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
@@ -1392,45 +1386,41 @@ struct GroupedBlockScaledMatmulKernel[
             var tmem_region = Self.TmemRegion(tmem)
 
             with mma_ctx:
-                while work_iter.has_work():
-                    # Use wait_and_advance() like working kernel
-                    with work_iter.wait_and_advance() as current:
-                        if ctx.elect_one_cta:
-                            with mma_ctx.output_pipeline.producer() as output_stage:
-                                var tmem_offset = UInt32(
-                                    output_stage.tmem.offset()
-                                )
+                for current in mma_iter:
+                    if ctx.elect_one_cta:
+                        with mma_ctx.output_pipeline.producer() as output_stage:
+                            var tmem_offset = UInt32(output_stage.tmem.offset())
 
-                                with input_pipeline.consumer() as consumer:
-                                    var num_k_iters = Int(current.k_tile_count)
+                            with input_pipeline.consumer() as consumer:
+                                var num_k_iters = Int(current.k_tile_count)
 
-                                    # === LOOKAHEAD PATTERN (CuteDSL style) ===
-                                    # Initialize to "ready" (True), only peek if there's work.
-                                    var next_ready = True
-                                    if num_k_iters > 0:
+                                # === LOOKAHEAD PATTERN (CuteDSL style) ===
+                                # Initialize to "ready" (True), only peek if there's work.
+                                var next_ready = True
+                                if num_k_iters > 0:
+                                    next_ready = consumer.try_acquire()
+
+                                for k_tile in range(num_k_iters):
+                                    with consumer.acquire_if_needed(
+                                        next_ready
+                                    ) as input_tiles:
+                                        Self.mma(
+                                            input_tiles,
+                                            mma_op,
+                                            tmem_offset,
+                                            tmem_region,
+                                            UInt32(k_tile),
+                                            0,  # k_start = 0 for each group
+                                        )
+                                    # Peek for next iteration (CuteDSL style):
+                                    # Reset to ready, then conditionally peek.
+                                    next_ready = True
+                                    if k_tile + 1 < num_k_iters:
                                         next_ready = consumer.try_acquire()
-
-                                    for k_tile in range(num_k_iters):
-                                        with consumer.acquire_if_needed(
-                                            next_ready
-                                        ) as input_tiles:
-                                            Self.mma(
-                                                input_tiles,
-                                                mma_op,
-                                                tmem_offset,
-                                                tmem_region,
-                                                UInt32(k_tile),
-                                                0,  # k_start = 0 for each group
-                                            )
-                                        # Peek for next iteration (CuteDSL style):
-                                        # Reset to ready, then conditionally peek.
-                                        next_ready = True
-                                        if k_tile + 1 < num_k_iters:
-                                            next_ready = consumer.try_acquire()
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
 
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
@@ -1458,32 +1448,33 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
+            var epi_iter = scheduler.work_iterator()
+
             with epi_ctx:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # Update C tensormap on group change
-                        if current.group_changed:
-                            tensormap_mgr.update_c_for_group(
-                                current.group_idx,
-                                group_c_ptrs,
-                                device_tma_c[blk],
-                            )
+                for current in epi_iter:
+                    # Update C tensormap on group change
+                    if current.group_changed:
+                        tensormap_mgr.update_c_for_group(
+                            current.group_idx,
+                            group_c_ptrs,
+                            device_tma_c[blk],
+                        )
 
-                        # Get current group's M, N dimensions
-                        var g = Int(current.group_idx)
-                        var group_m = UInt32(Int(problem_sizes[g, 0]))
-                        var group_n = UInt32(Int(problem_sizes[g, 1]))
+                    # Get current group's M, N dimensions
+                    var g = Int(current.group_idx)
+                    var group_m = UInt32(Int(problem_sizes[g, 0]))
+                    var group_n = UInt32(Int(problem_sizes[g, 1]))
 
-                        # Use per-block GMEM tensormap for epilogue
-                        with epi_ctx.output_pipeline.consumer() as output_stage:
-                            Self.epilogue(
-                                c_tiles,
-                                device_tma_c[blk][],
-                                output_stage,
-                                (current.m, current.n, UInt32(0)),
-                                group_m,
-                                group_n,
-                            )
+                    # Use per-block GMEM tensormap for epilogue
+                    with epi_ctx.output_pipeline.consumer() as output_stage:
+                        Self.epilogue(
+                            c_tiles,
+                            device_tma_c[blk][],
+                            output_stage,
+                            (current.m, current.n, UInt32(0)),
+                            group_m,
+                            group_n,
+                        )
 
     # ========== Load Input Tiles ==========
 
@@ -1766,7 +1757,9 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== Initial Work Info =====
         # Compute initial work from first cluster's tile
-        var initial_linear_idx = UInt32(block_idx.x // 2)  # 2SM: cta_group=2
+        var initial_linear_idx = UInt32(
+            ufloordiv(block_idx.x, 2)
+        )  # 2SM: cta_group=2
         var initial_work = Self._compute_initial_work(
             problem_sizes, num_groups, initial_linear_idx
         )
@@ -1791,7 +1784,7 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
             var tensormap_init_done = False
 
             # Tensormap manager for SMEM descriptor updates
@@ -1824,65 +1817,59 @@ struct GroupedBlockScaledMatmulKernel[
             )
 
             with input_pipeline.producer() as producer:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # Signal throttle (first CTA only)
-                        work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
+                for current in work_iter:
+                    # Wait for MMA warp to init tensormaps (first time only)
+                    if not tensormap_init_done:
+                        Self.TensormapAbInitBarrier.sync()
+                        tensormap_init_done = True
 
-                        # Wait for MMA warp to init tensormaps (first time only)
-                        if not tensormap_init_done:
-                            Self.TensormapAbInitBarrier.sync()
-                            tensormap_init_done = True
+                    # === LOOKAHEAD PATTERN (CuteDSL style) ===
+                    # Initialize to "ready" (True), only peek if there's work.
+                    var num_k_iters = Int(current.k_tile_count)
+                    var next_ready = True
+                    if num_k_iters > 0:
+                        next_ready = producer.try_acquire()
 
-                        # === LOOKAHEAD PATTERN (CuteDSL style) ===
-                        # Initialize to "ready" (True), only peek if there's work.
-                        var num_k_iters = Int(current.k_tile_count)
-                        var next_ready = True
-                        if num_k_iters > 0:
-                            next_ready = producer.try_acquire()
+                    # Update tensormaps on group change (overlaps with peek)
+                    if current.group_changed:
+                        tensormap_mgr.update_ab_for_group(
+                            current.group_idx,
+                            group_a_ptrs,
+                            group_b_ptrs,
+                            group_sfa_ptrs,
+                            group_sfb_ptrs,
+                            device_tma_a[blk],
+                            device_tma_b[blk],
+                            device_tma_sfa[blk],
+                            device_tma_sfb[blk],
+                        )
 
-                        # Update tensormaps on group change (overlaps with peek)
-                        if current.group_changed:
-                            tensormap_mgr.update_ab_for_group(
-                                current.group_idx,
-                                group_a_ptrs,
-                                group_b_ptrs,
-                                group_sfa_ptrs,
-                                group_sfb_ptrs,
-                                device_tma_a[blk],
-                                device_tma_b[blk],
-                                device_tma_sfa[blk],
-                                device_tma_sfb[blk],
+                    # Load tiles using lookahead pattern
+                    for k_tile in range(num_k_iters):
+                        with producer.acquire_if_needed(next_ready) as tiles:
+                            Self.load_input_tiles(
+                                device_tma_a[blk][],
+                                device_tma_b[blk][],
+                                device_tma_sfa[blk][],
+                                device_tma_sfb[blk][],
+                                tiles,
+                                ctx.peer_cta_coord,
+                                (
+                                    Int(current.m),
+                                    Int(current.n),
+                                    0,
+                                ),
+                                ctx.a_multicast_mask,
+                                ctx.b_multicast_mask,
+                                UInt32(k_tile),
+                                ctx.elect_one_cta,
                             )
-
-                        # Load tiles using lookahead pattern
-                        for k_tile in range(num_k_iters):
-                            with producer.acquire_if_needed(
-                                next_ready
-                            ) as tiles:
-                                Self.load_input_tiles(
-                                    device_tma_a[blk][],
-                                    device_tma_b[blk][],
-                                    device_tma_sfa[blk][],
-                                    device_tma_sfb[blk][],
-                                    tiles,
-                                    ctx.peer_cta_coord,
-                                    (
-                                        Int(current.m),
-                                        Int(current.n),
-                                        0,
-                                    ),
-                                    ctx.a_multicast_mask,
-                                    ctx.b_multicast_mask,
-                                    UInt32(k_tile),
-                                    ctx.elect_one_cta,
-                                )
-                            # Peek for next iteration (CuteDSL style):
-                            # Reset to ready, then conditionally peek.
-                            next_ready = True
-                            if k_tile + 1 < num_k_iters:
-                                next_ready = producer.try_acquire()
-                        syncwarp()
+                        # Peek for next iteration (CuteDSL style):
+                        # Reset to ready, then conditionally peek.
+                        next_ready = True
+                        if k_tile + 1 < num_k_iters:
+                            next_ready = producer.try_acquire()
+                    syncwarp()
 
                 producer.drain()
 
@@ -1906,9 +1893,8 @@ struct GroupedBlockScaledMatmulKernel[
                 initial_work,
             )
 
-            while sched_iter.has_work():
-                with sched_iter.next():
-                    sched_iter.signal_and_advance()
+            for _ in sched_iter:
+                sched_iter.signal_and_advance()
 
             sched_iter.drain()
 
@@ -1961,48 +1947,45 @@ struct GroupedBlockScaledMatmulKernel[
                 clc_response.ptr,
                 clc_throttle.ptr,
                 initial_work,
+                use_clc_fetch=True,
             )
 
             with mma_ctx:
-                while work_iter.has_work():
-                    # Wait on CLC for next work (synchronizes both CTAs)
-                    with work_iter.wait_and_advance() as current:
-                        if ctx.elect_one_cta:
-                            with mma_ctx.output_pipeline.producer() as output_stage:
-                                var tmem_offset = UInt32(
-                                    output_stage.tmem.offset()
-                                )
+                for current in work_iter:
+                    if ctx.elect_one_cta:
+                        with mma_ctx.output_pipeline.producer() as output_stage:
+                            var tmem_offset = UInt32(output_stage.tmem.offset())
 
-                                with input_pipeline.consumer() as consumer:
-                                    var num_k_iters = Int(current.k_tile_count)
+                            with input_pipeline.consumer() as consumer:
+                                var num_k_iters = Int(current.k_tile_count)
 
-                                    # === LOOKAHEAD PATTERN (CuteDSL style) ===
-                                    # Initialize to "ready" (True), only peek if there's work.
-                                    var next_ready = True
-                                    if num_k_iters > 0:
+                                # === LOOKAHEAD PATTERN (CuteDSL style) ===
+                                # Initialize to "ready" (True), only peek if there's work.
+                                var next_ready = True
+                                if num_k_iters > 0:
+                                    next_ready = consumer.try_acquire()
+
+                                for k_tile in range(num_k_iters):
+                                    with consumer.acquire_if_needed(
+                                        next_ready
+                                    ) as input_tiles:
+                                        Self.mma(
+                                            input_tiles,
+                                            mma_op,
+                                            tmem_offset,
+                                            tmem_region,
+                                            UInt32(k_tile),
+                                            0,
+                                        )
+                                    # Peek for next iteration (CuteDSL style):
+                                    # Reset to ready, then conditionally peek.
+                                    next_ready = True
+                                    if k_tile + 1 < num_k_iters:
                                         next_ready = consumer.try_acquire()
-
-                                    for k_tile in range(num_k_iters):
-                                        with consumer.acquire_if_needed(
-                                            next_ready
-                                        ) as input_tiles:
-                                            Self.mma(
-                                                input_tiles,
-                                                mma_op,
-                                                tmem_offset,
-                                                tmem_region,
-                                                UInt32(k_tile),
-                                                0,
-                                            )
-                                        # Peek for next iteration (CuteDSL style):
-                                        # Reset to ready, then conditionally peek.
-                                        next_ready = True
-                                        if k_tile + 1 < num_k_iters:
-                                            next_ready = consumer.try_acquire()
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
 
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
@@ -2049,30 +2032,29 @@ struct GroupedBlockScaledMatmulKernel[
             )
 
             with epi_ctx:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # Update C tensormap on group change
-                        if current.group_changed:
-                            tensormap_mgr.update_c_for_group(
-                                current.group_idx,
-                                group_c_ptrs,
-                                device_tma_c[blk],
-                            )
+                for current in work_iter:
+                    # Update C tensormap on group change
+                    if current.group_changed:
+                        tensormap_mgr.update_c_for_group(
+                            current.group_idx,
+                            group_c_ptrs,
+                            device_tma_c[blk],
+                        )
 
-                        # Get current group's M, N dimensions
-                        var g = Int(current.group_idx)
-                        var group_m = UInt32(Int(problem_sizes[g, 0]))
-                        var group_n = UInt32(Int(problem_sizes[g, 1]))
+                    # Get current group's M, N dimensions
+                    var g = Int(current.group_idx)
+                    var group_m = UInt32(Int(problem_sizes[g, 0]))
+                    var group_n = UInt32(Int(problem_sizes[g, 1]))
 
-                        with epi_ctx.output_pipeline.consumer() as output_stage:
-                            Self.epilogue(
-                                c_tiles,
-                                device_tma_c[blk][],
-                                output_stage,
-                                (current.m, current.n, UInt32(0)),
-                                group_m,
-                                group_n,
-                            )
+                    with epi_ctx.output_pipeline.consumer() as output_stage:
+                        Self.epilogue(
+                            c_tiles,
+                            device_tma_c[blk][],
+                            output_stage,
+                            (current.m, current.n, UInt32(0)),
+                            group_m,
+                            group_n,
+                        )
 
     @staticmethod
     @always_inline

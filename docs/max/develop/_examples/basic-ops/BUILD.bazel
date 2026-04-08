@@ -7,7 +7,6 @@ modular_py_binary(
     name = "arithmetic",
     srcs = ["arithmetic.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -29,7 +28,6 @@ modular_py_binary(
     name = "tensor_math_ops",
     srcs = ["tensor_math_ops.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -51,7 +49,6 @@ modular_py_binary(
     name = "tensor_reshape",
     srcs = ["tensor_reshape.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -73,7 +70,6 @@ modular_py_binary(
     name = "tensor_transpose",
     srcs = ["tensor_transpose.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -95,7 +91,6 @@ modular_py_binary(
     name = "tensor_transpose_t",
     srcs = ["tensor_transpose_t.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -117,7 +112,6 @@ modular_py_binary(
     name = "tensor_permute",
     srcs = ["tensor_permute.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -139,7 +133,6 @@ modular_py_binary(
     name = "concat",
     srcs = ["concat.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -161,7 +154,6 @@ modular_py_binary(
     name = "tensor_reductions",
     srcs = ["tensor_reductions.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -183,7 +175,6 @@ modular_py_binary(
     name = "tensor_matmul",
     srcs = ["tensor_matmul.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -205,7 +196,6 @@ modular_py_binary(
     name = "functional_activations",
     srcs = ["functional_activations.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -227,7 +217,6 @@ modular_py_binary(
     name = "random_basic",
     srcs = ["random_basic.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -249,7 +238,6 @@ modular_py_binary(
     name = "compose_linear_layer",
     srcs = ["compose_linear_layer.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],

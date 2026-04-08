@@ -34,10 +34,10 @@ from std.builtin.dtype import _unsigned_integral_type_of
 from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
-    block_dim_int as block_dim,
+    block_dim,
     block_idx,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
@@ -3243,7 +3243,7 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        comptime num_tiles = Variadic.size[tile_sizes]
+        comptime num_tiles = ParameterList[*tile_sizes].size
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3358,7 +3358,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        comptime num_tiles = Variadic.size[tile_sizes]
+        comptime num_tiles = ParameterList[*tile_sizes].size
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3511,7 +3511,7 @@ struct LayoutTensor[
         ```
         """
 
-        comptime tiles_rank = Variadic.size[tile_sizes]
+        comptime tiles_rank = ParameterList[*tile_sizes].size
         comptime __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         comptime assert (
             __tiled_layout[1].rank() == tiles_rank

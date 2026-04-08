@@ -172,6 +172,14 @@ def deepseek_logits_postprocess(
 
     if return_logits == ReturnLogits.VARIABLE:
         if is_data_parallel_attention:
+            # Compute the range on device 0 and broadcast to all devices.
+            # Using distributed_broadcast instead of per-device .to() copies
+            # avoids cross-stream D2D event sync that breaks CUDA graph
+            # capture.
+            # TODO: Ideally we would compute the range on each gpu so no
+            # cross-gpu communication is needed at all. However, I ran into a
+            # weird graph error when I tried that:
+            #   "input device gpu:0 must match result device gpu:1 in rebind()"
             return_n_logits_range = ops.range(
                 start=return_n_logits[0],
                 stop=0,
@@ -180,15 +188,15 @@ def deepseek_logits_postprocess(
                 dtype=DType.int64,
                 device=devices[0],
             )
+            return_n_logits_range_per_dev = ops.distributed_broadcast(
+                return_n_logits_range, signal_buffers
+            )
             variable_tokens_per_dev: list[TensorValue] = []
             for dev_idx in range(len(devices)):
                 h0 = h[dev_idx]
-                dev_return_n_logits_range = return_n_logits_range.to(
-                    devices[dev_idx]
-                )
                 dev_offsets = (
                     ops.unsqueeze(input_row_offsets[dev_idx][1:], -1)
-                    - dev_return_n_logits_range
+                    - return_n_logits_range_per_dev[dev_idx]
                 )
                 indices = ops.reshape(dev_offsets, shape=(-1,))
                 variable_h = ops.gather(h0, indices, axis=0)

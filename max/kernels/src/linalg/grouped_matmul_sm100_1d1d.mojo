@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import ufloordiv
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE
@@ -26,10 +27,10 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.gpu import (
     block_id_in_cluster,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
+    lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
 )
-from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -293,12 +294,12 @@ def copy_accum_to_gmem[
             comptime if is_lower_frag_required:
                 var c_smem_warp_tile_upper = c_smem_tile.tile[
                     tiles_per_frag, stage_contiguous_size
-                ](2 * Int(warp_id), 0).reshape[
+                ](2 * warp_id, 0).reshape[
                     Layout.row_major(stageN, swizzle_width)
                 ]()
                 var c_smem_warp_tile_lower = c_smem_tile.tile[
                     tiles_per_frag, stage_contiguous_size
-                ](2 * Int(warp_id) + 1, 0).reshape[
+                ](2 * warp_id + 1, 0).reshape[
                     Layout.row_major(stageN, swizzle_width)
                 ]()
 
@@ -311,9 +312,7 @@ def copy_accum_to_gmem[
             else:
                 var c_smem_warp_tile_upper = c_smem_tile.tile[
                     tiles_per_frag, stage_contiguous_size
-                ](Int(warp_id), 0).reshape[
-                    Layout.row_major(stageN, swizzle_width)
-                ]()
+                ](warp_id, 0).reshape[Layout.row_major(stageN, swizzle_width)]()
 
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted, lt_to_tt(c_smem_warp_tile_upper)
@@ -330,7 +329,7 @@ def copy_accum_to_gmem[
         else:
             comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
             var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
-                Int(warp_id), 0
+                warp_id, 0
             )
             var c_smem_warp_tt = lt_to_tt(c_smem_warp_tile)
 
@@ -389,7 +388,7 @@ def copy_accum_to_gmem[
         comptime TMA_BM = CG2_TMA_BM if cta_group == 2 else CG1_TMA_BM
 
         var cg2_elect_one_warp = (
-            warp_id == 0 if MMA_M == 256 else warp_id % 2 == 0
+            warp_id == 0 if MMA_M == 256 else ufloordiv(warp_id, 2) == 0
         )
         var cg1_elect_one_warp = warp_id == 0
         var elect_one_warp = (
@@ -398,7 +397,7 @@ def copy_accum_to_gmem[
 
         var coord_n_mma_m256 = c_col + UInt32(stage * stageN)
         var coord_n_mma_m128 = (
-            c_col + UInt32(stage * stageN) + UInt32(BN * Int(warp_id // 2))
+            c_col + UInt32(stage * stageN) + UInt32(BN * ufloordiv(warp_id, 2))
         )
 
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
@@ -568,13 +567,15 @@ def copy_accum_to_gmem[
                 else:
                     c_tma_op.wait_group[0]()
             else:
-                var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
-                var cg1_c_smem_coord_m = UInt(0)
+                var cg2_c_smem_coord_m = 0 if MMA_M == 256 else ufloordiv(
+                    warp_id, 2
+                )
+                var cg1_c_smem_coord_m = 0
                 var c_smem_coord_m = (
                     cg2_c_smem_coord_m if cta_group == 2 else cg1_c_smem_coord_m
                 )
                 var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
-                    Int(c_smem_coord_m), 0
+                    c_smem_coord_m, 0
                 )
 
                 if elect_one_warp and lane == 0:
@@ -683,8 +684,6 @@ def multi_stage_store_C[
     # stmatrix related
     comptime st_matrix_swizzle = c_swizzle
     comptime swizzle = make_swizzle[c_type, st_matrix_swizzle]()
-
-    var warp_id = get_warp_id()
 
     # before i start the process of transferring over num_stages * stageN= MMA_N from tensor memory to global, i should wait
     # on the accum_full_mbar barrier
@@ -1922,13 +1921,12 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     # TODO: (KERN-2238) replace with get_accum_type[a_type]() when KERN-2238 is fixed and we can return FP32 for FP4-E2M1
     comptime accum_type = DType.float32
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = ufloordiv(thread_idx.x, WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = (
         block_rank_in_cluster() % 2 == 0 if config.cta_group == 2 else True
     )
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
-    var warp_id = get_warp_id()
     comptime max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:

@@ -135,7 +135,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_spatial_merge.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     # TODO(GEX-3342): Metal GPU sorting produces incorrect results

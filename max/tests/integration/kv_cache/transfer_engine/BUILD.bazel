@@ -47,6 +47,10 @@ modular_py_test(
         "gpu",
         "no-pydeps",
     ],
+    # UCX currently only supports linux machines
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/engine",
@@ -62,6 +66,10 @@ modular_py_test(
     imports = ["."],
     tags = [
         "no-pydeps",
+    ],
+    # UCX currently only supports linux machines
+    target_compatible_with = [
+        "@platforms//os:linux",
     ],
     deps = [
         "//max/python/max:_core",

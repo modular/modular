@@ -59,7 +59,7 @@ struct FA4Config[
     var num_pv_stages: Int  # Stages for P@V (P writing pipelining)
     var smem_used: Int
     comptime num_threads: Int = 512  # 2x softmax, 1x correction, 1x other
-    var split_m: Bool
+    var fuse_gqa: Bool
     var swizzle_mode: TensorMapSwizzle
     var use_fused_kv: Bool
 
@@ -72,6 +72,15 @@ struct FA4Config[
     comptime sm100_tmem_cols = 512
     comptime mbar_size = size_of[DType.int64]()
     comptime num_correction_cols = 1
+
+    @always_inline
+    def BM_eff(self) -> Int:
+        """Number of distinct sequence positions per full tile.
+        When fuse_gqa, each tile covers BM // group seq positions x group heads.
+        """
+        if self.fuse_gqa:
+            return self.BM // self.group
+        return self.BM
 
     @always_inline
     def num_qo(self) -> Int:
@@ -138,57 +147,36 @@ struct FA4Config[
         self.num_kv_heads = num_q_heads // group
         self.group = group
         self.qk_depth = qk_depth
-        self.split_m = qk_depth > 128 and not is_mla
-        if self.split_m:
-            self.BM = 128
-            self.MMA_M = 64
-        else:
-            self.BM = 256
-            self.MMA_M = 128
+        self.BM = 256
+        self.MMA_M = 128
+        self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
         self.swizzle_mode = swizzle_mode
         swizzle_elems = swizzle_mode.bytes() // Self.qkv_dtype_size
         self.ov_depth = ov_depth
         self.padded_qk_depth = align_up(qk_depth, swizzle_elems)
         self.padded_ov_depth = align_up(ov_depth, swizzle_elems)
 
-        if self.split_m:
-            self.BN = min(
-                256, align_down(Self.sm100_tmem_cols - qk_depth, Self.MMA_K)
-            )
-            # TODO : delete this as soon as we define splitting BN across the pages
-            if page_size % self.BN != 0:
-                self.BN = prev_power_of_two(self.BN)
-            self.TMEM_P0 = Self.TMEM_S0
-            self.TMEM_O0 = Self.TMEM_S0 + self.BN
-            self.TMEM_C0 = Self.TMEM_S0 + self.BN // 2
-
-            self.TMEM_S1 = Self.TMEM_S0 + 16 << 16
-            self.TMEM_P1 = self.TMEM_P0 + 16 << 16
-            self.TMEM_O1 = self.TMEM_O0 + 16 << 16
-            self.TMEM_C1 = self.TMEM_C0 + 16 << 16
-            self.tmem_used = self.TMEM_O1 + ov_depth
-        else:
-            # we use two q and o
-            # determine BN via tmem:
-            # 2*BN + 2*ov_depth <= 512 -> BN + ov_depth <= 256
-            self.BN = min(
-                256,
-                align_down(
-                    (Self.sm100_tmem_cols // 2 - self.padded_ov_depth),
-                    Self.MMA_K,
-                ),
-            )
-            # TODO : delete this as soon as we define splitting BN across the pages
-            if page_size % self.BN != 0:
-                self.BN = prev_power_of_two(self.BN)
-            self.TMEM_S1 = Self.TMEM_S0 + self.BN
-            self.TMEM_P0 = Self.TMEM_S0
-            self.TMEM_P1 = self.TMEM_S1
-            self.TMEM_C0 = self.TMEM_P0 + self.BN // 2
-            self.TMEM_C1 = self.TMEM_P1 + self.BN // 2
-            self.TMEM_O0 = self.TMEM_S1 + self.BN
-            self.TMEM_O1 = self.TMEM_O0 + self.padded_ov_depth
-            self.tmem_used = self.TMEM_O1 + self.padded_ov_depth
+        # we use two q and o
+        # determine BN via tmem:
+        # 2*BN + 2*ov_depth <= 512 -> BN + ov_depth <= 256
+        self.BN = min(
+            256,
+            align_down(
+                (Self.sm100_tmem_cols // 2 - self.padded_ov_depth),
+                Self.MMA_K,
+            ),
+        )
+        # TODO : delete this as soon as we define splitting BN across the pages
+        if page_size % self.BN != 0:
+            self.BN = prev_power_of_two(self.BN)
+        self.TMEM_S1 = Self.TMEM_S0 + self.BN
+        self.TMEM_P0 = Self.TMEM_S0
+        self.TMEM_P1 = self.TMEM_S1
+        self.TMEM_C0 = self.TMEM_P0 + self.BN // 2
+        self.TMEM_C1 = self.TMEM_P1 + self.BN // 2
+        self.TMEM_O0 = self.TMEM_S1 + self.BN
+        self.TMEM_O1 = self.TMEM_O0 + self.padded_ov_depth
+        self.tmem_used = self.TMEM_O1 + self.padded_ov_depth
 
         # We have the following resources that need smem barriers:
         # KV: num_kv_stages

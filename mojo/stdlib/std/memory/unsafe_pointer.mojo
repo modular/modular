@@ -39,6 +39,7 @@ from std.memory import memcpy
 from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
 from std.memory._nonnull import NonNullUnsafePointer
+from std.memory._poison import _check_not_poison, _check_not_poison_masked
 from std.os import abort
 from std.python import PythonObject
 
@@ -517,71 +518,6 @@ struct UnsafePointer[
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type
         ](other.address)
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        out self,
-        other: Optional[
-            NonNullUnsafePointer[
-                Self.type,
-                origin=Self.origin,
-                address_space=Self.address_space,
-            ]
-        ],
-    ):
-        self.address = __mlir_op.`pop.pointer.bitcast`[_type=Self._mlir_type](
-            UnsafePointer(to=other).bitcast[type_of(self)]()[].address
-        )
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__[
-        other_type: AnyType,
-        other_origin: Origin,
-        other_address_space: AddressSpace,
-        //,
-    ](
-        other: Optional[
-            NonNullUnsafePointer[
-                other_type, other_origin, address_space=other_address_space
-            ]
-        ],
-        out self: UnsafePointer[
-            other_type,
-            ImmutOrigin(other_origin),
-            address_space=other_address_space,
-        ],
-    ):
-        self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type=type_of(self)._mlir_type
-        ](UnsafePointer(to=other).bitcast[type_of(self)]()[].address)
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__[
-        other_type: AnyType,
-        other_origin: Origin[mut=True],
-        other_address_space: AddressSpace,
-        //,
-    ](
-        other: Optional[
-            NonNullUnsafePointer[
-                other_type, other_origin, address_space=other_address_space
-            ]
-        ],
-        out self: UnsafePointer[
-            other_type,
-            MutAnyOrigin,
-            address_space=other_address_space,
-        ],
-    ):
-        self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type=type_of(self)._mlir_type
-        ](UnsafePointer(to=other).bitcast[type_of(self)]()[].address)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1141,6 +1077,8 @@ struct UnsafePointer[
                     isInvariant=invariant._mlir_value,
                     isNonTemporal=non_temporal._mlir_value,
                 ]((self + i).address)
+            comptime if dtype.is_floating_point():
+                _check_not_poison[dtype, width](v)
             return v
         elif dtype == DType.bool and width > 1:
             # Bool (i1) is sub-byte, so a vector load of SIMD[bool, N]
@@ -1160,12 +1098,15 @@ struct UnsafePointer[
 
         var address = self.bitcast[SIMD[dtype, width]]().address
 
-        return __mlir_op.`pop.load`[
+        var result = __mlir_op.`pop.load`[
             alignment=alignment._mlir_value,
             isVolatile=volatile._mlir_value,
             isInvariant=invariant._mlir_value,
             isNonTemporal=non_temporal._mlir_value,
         ](address)
+        comptime if dtype.is_floating_point():
+            _check_not_poison[dtype, width](result)
+        return result
 
     @always_inline("nodebug")
     def load[

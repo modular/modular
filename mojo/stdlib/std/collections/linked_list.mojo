@@ -90,19 +90,15 @@ struct Node[
         return self.value^
 
     @no_inline
-    def write_to[
-        _ElementType: Copyable & ImplicitlyDestructible & Writable
-    ](self: Node[_ElementType], mut writer: Some[Writer]):
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Write this node's value to the given writer.
-
-        Parameters:
-            _ElementType: Used to conditionally enable this function if
-                `_ElementType` is `Writable`.
 
         Args:
             writer: The writer to write the value to.
         """
-        writer.write(self.value)
+        writer.write(trait_downcast[Writable](self.value))
 
 
 def _make_node[
@@ -625,14 +621,10 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         other._head = Self._NodePointer()
         other._tail = Self._NodePointer()
 
-    def count[
-        _ElementType: Equatable & Copyable, //
-    ](self: LinkedList[_ElementType], read elem: _ElementType) -> UInt:
+    def count(
+        self, read elem: Self.ElementType
+    ) -> UInt where conforms_to(Self.ElementType, Equatable):
         """Count the occurrences of `elem` in the list.
-
-        Parameters:
-            _ElementType: The list element type, used to conditionally enable the
-                function.
 
         Args:
             elem: The element to search for.
@@ -643,24 +635,22 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self) compares.
         """
+        ref rhs = trait_downcast[Equatable](elem)
         var current = self._head
         var count = 0
         while current:
-            if current.value()[].value == elem:
+            ref lhs = trait_downcast[Equatable](current.value()[].value)
+            if lhs == rhs:
                 count += 1
 
             current = current.value()[].next()
 
         return UInt(count)
 
-    def __contains__[
-        _ElementType: Equatable & Copyable, //
-    ](self: LinkedList[_ElementType], value: _ElementType) -> Bool:
+    def __contains__(
+        self, value: Self.ElementType
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Checks if the list contains `value`.
-
-        Parameters:
-            _ElementType: The list element type, used to conditionally enable the
-                function.
 
         Args:
             value: The value to search for in the list.
@@ -671,9 +661,11 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self) compares.
         """
+        ref rhs = trait_downcast[Equatable](value)
         var current = self._head
         while current:
-            if current.value()[].value == value:
+            ref lhs = trait_downcast[Equatable](current.value()[].value)
+            if lhs == rhs:
                 return True
             current = current.value()[].next()
 

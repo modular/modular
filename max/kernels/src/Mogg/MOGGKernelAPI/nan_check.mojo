@@ -25,12 +25,7 @@ by the NanCheckPass compiler pass. The architecture is:
 """
 
 from std.algorithm import elementwise
-from std.gpu import (
-    barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.host.info import is_cpu
 from std.memory import alloc, stack_allocation
 from std.os import Atomic
@@ -63,7 +58,7 @@ def _nan_check_gpu_kernel[
         inf_local[0] = Int32(0)
     barrier()
 
-    var tid = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var tid = block_idx.x * block_dim.x + thread_idx.x
     var my_nan = Int32(0)
     var my_inf = Int32(0)
     if tid < total_elements:

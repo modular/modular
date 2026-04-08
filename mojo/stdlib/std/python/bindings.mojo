@@ -20,7 +20,7 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from std.ffi import _Global, c_int
+from std.ffi import _Global, _CPointer, c_int
 from std.sys.info import size_of
 
 from std.builtin._startup import _ensure_runtime_init
@@ -517,7 +517,7 @@ struct PythonTypeBuilder(Copyable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, OpaquePointer[MutAnyOrigin]]
+    var _slots: Dict[Int, _CPointer[NoneType, MutAnyOrigin]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]

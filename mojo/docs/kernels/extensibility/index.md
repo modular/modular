@@ -11,7 +11,7 @@ description: "Includes the tensor package."
     to make a package card appear on the API overview page
     because this package doesn't have an __init__.mojo file
     ############### -->
-
+<!-- markdownlint-disable MD033 -->
 <section class='mojo-docs'>
 
 <div class='mojo-module-detail'><!-- here only for Listing component -->
@@ -25,3 +25,4 @@ Includes the tensor package.
 - [​`tensor`](./tensor/): APIs to create and manage tensors in a graph.
 
 </section>
+<!-- markdownlint-enable MD033 -->

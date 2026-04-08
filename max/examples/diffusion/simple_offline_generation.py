@@ -41,11 +41,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import json
 import os
 import time
 from io import BytesIO
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
@@ -84,6 +85,17 @@ _FLUX2_ARCH_NAMES = {
     "Flux2Pipeline_ModuleV3",
     "Flux2KleinPipeline_ModuleV3",
 }
+QWEN_IMAGE_ARCH_NAMES = {
+    "QwenImagePipeline",
+    "QwenImageEditPipeline",
+    "QwenImageEditPlusPipeline",
+}
+QWEN_IMAGE_EDIT_ARCH_NAMES = {
+    "QwenImageEditPipeline",
+    "QwenImageEditPlusPipeline",
+}
+QWEN_DEFAULT_GUIDANCE_SCALE = 1.0
+QWEN_DEFAULT_TRUE_CFG_SCALE = 4.0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -159,8 +171,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--guidance-scale",
         type=float,
-        default=3.5,
-        help="Guidance scale for classifier-free guidance. Set to 1.0 to disable CFG.",
+        default=None,
+        help=(
+            "Guidance scale for classifier-free guidance. "
+            "If omitted, defaults to 1.0 for QwenImage family and 3.5 otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--true-cfg-scale",
+        type=float,
+        default=None,
+        help=(
+            "True classifier-free guidance scale. "
+            "If omitted, defaults to 4.0 for QwenImage family when negative prompt is provided, "
+            "and 1.0 otherwise."
+        ),
     )
     parser.add_argument(
         "--strength",
@@ -206,8 +231,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--input-image",
         type=str,
+        action="append",
         default=None,
-        help="Input image for image-to-image generation.",
+        help="Input image for image-to-image generation. Can be specified multiple times.",
     )
     parser.add_argument(
         "--profile-timings",
@@ -290,6 +316,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Prefer the ModuleV3 implementation when the selected model provides one.",
     )
+    parser.add_argument(
+        "--model-override",
+        type=str,
+        action="append",
+        default=None,
+        help=(
+            "Per-component overrides in 'component.field=value' format. "
+            "Repeatable. Example: "
+            "'transformer.quantization_encoding=float4_e2m1fnx2'."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -302,18 +339,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     assert args.num_inference_steps > 0, (
         "num-inference-steps must be a positive integer."
     )
-    assert args.guidance_scale > 0.0, "guidance-scale must be positive."
+    if args.guidance_scale is not None:
+        assert args.guidance_scale > 0.0, "guidance-scale must be positive."
+    if args.true_cfg_scale is not None:
+        assert args.true_cfg_scale > 0.0, "true-cfg-scale must be positive."
     assert 0.0 < args.strength <= 1.0, "strength must be in (0, 1]."
     assert args.cfg_truncation > 0.0, "cfg-truncation must be positive."
     if args.residual_threshold is not None:
         assert args.residual_threshold >= 0.0, (
             "residual-threshold must be non-negative."
         )
-    if args.taylorseer_cache_interval is not None:
+    if (
+        hasattr(args, "taylorseer_cache_interval")
+        and args.taylorseer_cache_interval is not None
+    ):
         assert args.taylorseer_cache_interval >= 1, (
             "taylorseer-cache-interval must be >= 1."
         )
-    if args.taylorseer_warmup_steps is not None:
+    if (
+        hasattr(args, "taylorseer_warmup_steps")
+        and args.taylorseer_warmup_steps is not None
+    ):
         assert args.taylorseer_warmup_steps >= 1, (
             "taylorseer-warmup-steps must be >= 1."
         )
@@ -383,21 +429,68 @@ async def generate_image(args: argparse.Namespace) -> None:
     print(f"Loading model: {args.model}")
 
     # Step 1: Initialize pipeline configuration
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=args.model,
-                    device_specs=[DeviceSpec.accelerator()],
-                    weight_path=(
-                        [Path(p) for p in args.weight_path]
-                        if args.weight_path
-                        else []
-                    ),
-                    quantization_encoding=args.quantization_encoding,
+    # Use from_model_path to get full diffusers component expansion.
+    manifest = ModelManifest.from_model_path(
+        args.model,
+        device_specs=[DeviceSpec.accelerator()],
+    )
+
+    # Apply legacy single-component overrides for backward compat.
+    if args.weight_path:
+        manifest = manifest.with_override(
+            "transformer",
+            weight_path=[Path(p) for p in args.weight_path],
+        )
+    if args.quantization_encoding:
+        manifest = manifest.with_override(
+            "transformer",
+            quantization_encoding=args.quantization_encoding,
+        )
+
+    # Apply flexible per-component overrides from --model-override.
+    if args.model_override:
+        from pydantic import TypeAdapter
+
+        for override in args.model_override:
+            dot_pos = override.find(".")
+            if dot_pos < 1:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
                 )
-            }
-        ),
+            eq_pos = override.find("=", dot_pos)
+            if eq_pos < dot_pos + 2:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            component = override[:dot_pos]
+            field_name = override[dot_pos + 1 : eq_pos]
+            raw_value = override[eq_pos + 1 :]
+
+            if field_name not in MAXModelConfig.model_fields:
+                raise ValueError(
+                    f"Unknown MAXModelConfig field: {field_name!r}. "
+                    f"Valid fields: "
+                    f"{sorted(MAXModelConfig.model_fields.keys())}"
+                )
+            if component not in manifest:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(manifest.keys())}"
+                )
+
+            field_info = MAXModelConfig.model_fields[field_name]
+            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+            try:
+                parsed = json.loads(raw_value)
+            except (json.JSONDecodeError, ValueError):
+                parsed = raw_value
+            value = adapter.validate_python(parsed)
+            manifest = manifest.with_override(component, **{field_name: value})
+
+    config = PipelineConfig(
+        models=manifest,
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=args.prefer_module_v3,
         ),
@@ -418,15 +511,34 @@ async def generate_image(args: argparse.Namespace) -> None:
     max_length = args.max_length
     secondary_max_length = args.secondary_max_length
     if max_length is None and "tokenizer" in models:
-        tokenizer_cfg = models["tokenizer"].huggingface_config.to_dict()
-        max_length = tokenizer_cfg.get("model_max_length", None)
         if arch.name in _FLUX2_ARCH_NAMES or arch.name == "ZImagePipeline":
             max_length = 512
+        elif arch.name in QWEN_IMAGE_ARCH_NAMES:
+            max_length = 512
+        else:
+            # Load tokenizer_config.json directly — tokenizer subfolders
+            # don't carry a HuggingFace model config.json.
+            from huggingface_hub import hf_hub_download
+
+            tok_cfg_path = hf_hub_download(
+                repo_id=args.model,
+                filename="tokenizer/tokenizer_config.json",
+            )
+            with open(tok_cfg_path) as f:
+                tok_cfg = json.load(f)
+            max_length = tok_cfg.get("model_max_length", None)
         print(f"Using max length: {max_length} for tokenizer")
 
     if secondary_max_length is None and has_tokenizer_2:
-        tokenizer_2_cfg = models["tokenizer_2"].huggingface_config.to_dict()
-        secondary_max_length = tokenizer_2_cfg.get("model_max_length", None)
+        from huggingface_hub import hf_hub_download
+
+        tok2_cfg_path = hf_hub_download(
+            repo_id=args.model,
+            filename="tokenizer_2/tokenizer_config.json",
+        )
+        with open(tok2_cfg_path) as f:
+            tok2_cfg = json.load(f)
+        secondary_max_length = tok2_cfg.get("model_max_length", None)
         print(
             f"Using secondary max length: {secondary_max_length} for tokenizer_2"
         )
@@ -469,27 +581,50 @@ async def generate_image(args: argparse.Namespace) -> None:
     print(f"Generating image for prompt: '{args.prompt}'")
 
     # Step 4: Create an OpenResponsesRequest
-    # Load input image if provided and convert to data URI
-    input_image_data_uri = load_image_as_data_uri(args.input_image)
+    # Load input images if provided and convert to data URIs
+    input_image_data_uris: list[str] = []
+    if args.input_image:
+        for img_path in args.input_image:
+            uri = load_image_as_data_uri(img_path)
+            if uri is not None:
+                input_image_data_uris.append(uri)
 
-    # Create request with structured message if image is provided
-    if input_image_data_uri:
+    is_qwen_image_edit_family = arch.name in QWEN_IMAGE_EDIT_ARCH_NAMES
+    guidance_scale = args.guidance_scale
+    if guidance_scale is None:
+        guidance_scale = (
+            QWEN_DEFAULT_GUIDANCE_SCALE if is_qwen_image_edit_family else 3.5
+        )
+
+    true_cfg_scale = args.true_cfg_scale
+    if true_cfg_scale is None:
+        if is_qwen_image_edit_family and args.negative_prompt is not None:
+            true_cfg_scale = QWEN_DEFAULT_TRUE_CFG_SCALE
+        else:
+            true_cfg_scale = 1.0
+
+    # Create request with structured message if images are provided
+    if input_image_data_uris:
         # Image-to-image: Use structured message with InputImageContent + InputTextContent
+        image_content_items: list[InputImageContent | InputTextContent] = [
+            InputImageContent(
+                type="input_image",
+                image_url=uri,
+            )
+            for uri in input_image_data_uris
+        ]
+        image_content_items.append(
+            InputTextContent(
+                type="input_text",
+                text=args.prompt,
+            )
+        )
         body = OpenResponsesRequestBody(
             model=args.model,
             input=[
                 UserMessage(
                     role="user",
-                    content=[
-                        InputImageContent(
-                            type="input_image",
-                            image_url=input_image_data_uri,
-                        ),
-                        InputTextContent(
-                            type="input_text",
-                            text=args.prompt,
-                        ),
-                    ],
+                    content=image_content_items,
                 )
             ],
             seed=args.seed,
@@ -499,7 +634,8 @@ async def generate_image(args: argparse.Namespace) -> None:
                     height=args.height,
                     width=args.width,
                     steps=args.num_inference_steps,
-                    guidance_scale=args.guidance_scale,
+                    guidance_scale=guidance_scale,
+                    true_cfg_scale=true_cfg_scale,
                     strength=args.strength,
                     cfg_normalization=args.cfg_normalization,
                     cfg_truncation=args.cfg_truncation,
@@ -518,7 +654,8 @@ async def generate_image(args: argparse.Namespace) -> None:
                     height=args.height,
                     width=args.width,
                     steps=args.num_inference_steps,
-                    guidance_scale=args.guidance_scale,
+                    guidance_scale=guidance_scale,
+                    true_cfg_scale=true_cfg_scale,
                     strength=args.strength,
                     cfg_normalization=args.cfg_normalization,
                     cfg_truncation=args.cfg_truncation,
@@ -530,7 +667,7 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     print(
         "Parameters: "
-        f"steps={args.num_inference_steps}, guidance={args.guidance_scale}, "
+        f"steps={args.num_inference_steps}, guidance={guidance_scale}, true_cfg={true_cfg_scale}, "
         f"cfg_norm={args.cfg_normalization}, cfg_trunc={args.cfg_truncation}"
     )
 
@@ -601,7 +738,8 @@ async def generate_image(args: argparse.Namespace) -> None:
                     height=args.height,
                     width=args.width,
                     steps=args.num_inference_steps,
-                    guidance_scale=args.guidance_scale,
+                    guidance_scale=guidance_scale,
+                    true_cfg_scale=true_cfg_scale,
                     strength=args.strength,
                     cfg_normalization=args.cfg_normalization,
                     cfg_truncation=args.cfg_truncation,
@@ -611,9 +749,11 @@ async def generate_image(args: argparse.Namespace) -> None:
         request_warmup = OpenResponsesRequest(
             request_id=RequestID(), body=body_warmup
         )
-        input_image = Image.open(args.input_image) if args.input_image else None
+        warmup_image = (
+            Image.open(args.input_image[0]) if args.input_image else None
+        )
         context_warmup = await tokenizer.new_context(
-            request_warmup, input_image=input_image
+            request_warmup, input_image=warmup_image
         )
         inputs_warmup = PixelGenerationInputs[PixelContext](
             batch={context_warmup.request_id: context_warmup}

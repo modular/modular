@@ -22,7 +22,7 @@ from layout import (
     row_major,
 )
 
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 
 from kv_cache.types import KVCollectionT
@@ -58,24 +58,22 @@ def apply_mask_kernel[
     var seq_idx = block_idx.y * 16 + thread_idx.x
     var key_idx = block_idx.z * 16 + thread_idx.y
 
-    var start_of_seq = valid_length.ptr[Int(batch_idx)]
-    var end_of_seq = valid_length.ptr[Int(batch_idx) + 1]
+    var start_of_seq = valid_length.ptr[batch_idx]
+    var end_of_seq = valid_length.ptr[batch_idx + 1]
     var seq_len = end_of_seq - start_of_seq
 
-    if seq_idx >= UInt(seq_len) or key_idx >= UInt(max_num_keys):
+    if seq_idx >= Int(seq_len) or key_idx >= Int(max_num_keys):
         return
 
     var global_seq_idx = start_of_seq + UInt32(seq_idx)
-    var current_val = output.ptr[
-        Int(global_seq_idx) * max_num_keys + Int(key_idx)
-    ]
+    var current_val = output.ptr[Int(global_seq_idx) * max_num_keys + key_idx]
 
     # Apply mask: coord = [batch, head, q_idx, k_idx]
     # For causal mask: q_idx >= k_idx means visible
-    var coord = Index(Int(batch_idx), 0, Int(seq_idx), Int(key_idx))
+    var coord = Index(batch_idx, 0, seq_idx, key_idx)
     var masked_val = mask.mask(coord, current_val)
 
-    output.ptr[Int(global_seq_idx) * max_num_keys + Int(key_idx)] = masked_val
+    output.ptr[Int(global_seq_idx) * max_num_keys + key_idx] = masked_val
 
 
 def fill_invalid_topk_kernel[
@@ -111,8 +109,8 @@ def fill_invalid_topk_kernel[
     """
     comptime assert cache_lengths.flat_rank == 1
 
-    var token_idx = Int(block_idx.x)
-    var k_idx = Int(thread_idx.x)
+    var token_idx = block_idx.x
+    var k_idx = thread_idx.x
 
     if token_idx >= total_seq_len or k_idx >= top_k:
         return

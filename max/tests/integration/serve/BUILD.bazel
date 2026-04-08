@@ -22,7 +22,6 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
-    tags = ["manual"],  # FIXME: MODELS-1295
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],

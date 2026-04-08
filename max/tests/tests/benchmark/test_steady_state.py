@@ -20,7 +20,7 @@ import random
 from max.benchmark.benchmark_serving import _steady_state_metric_values
 from max.benchmark.benchmark_shared.request import RequestFuncOutput
 from max.benchmark.benchmark_shared.steady_state import (
-    _rolling_cv,
+    _rolling_mad_over_median,
     detect_steady_state,
 )
 
@@ -44,18 +44,27 @@ def _make_output(
     )
 
 
-def test_rolling_cv_basic() -> None:
-    """Rolling CV over a constant series should be 0."""
+def test_rolling_mad_basic() -> None:
+    """Rolling MAD/median over a constant series should be 0."""
     values = [5.0] * 10
-    cvs = _rolling_cv(values, window=5)
-    assert len(cvs) == 6
-    for cv in cvs:
-        assert cv == 0.0
+    mads = _rolling_mad_over_median(values, window=5)
+    assert len(mads) == 6
+    for mad in mads:
+        assert mad == 0.0
 
 
-def test_rolling_cv_too_few_values() -> None:
-    """Rolling CV with fewer values than window returns empty."""
-    assert _rolling_cv([1.0, 2.0], window=5) == []
+def test_rolling_mad_too_few_values() -> None:
+    """Rolling MAD/median with fewer values than window returns empty."""
+    assert _rolling_mad_over_median([1.0, 2.0], window=5) == []
+
+
+def test_rolling_mad_heavy_tail() -> None:
+    """MAD/median stays low on data with stable center but heavy tails."""
+    # 90% at 1.0, 10% outliers at 10.0: stable central tendency, heavy tails
+    values = ([1.0] * 45 + [10.0] * 5) * 4
+    mads = _rolling_mad_over_median(values, window=50)
+    assert len(mads) > 0
+    assert all(m < 0.5 for m in mads)
 
 
 def test_steady_state_stable_run() -> None:
@@ -73,7 +82,7 @@ def test_steady_state_stable_run() -> None:
         )
 
     result = detect_steady_state(
-        outputs, window_size=20, ttft_cv_threshold=0.5, tpot_cv_threshold=0.3
+        outputs, window_size=20, ttft_threshold=0.5, tpot_threshold=0.3
     )
 
     assert result.detected is True
@@ -119,7 +128,7 @@ def test_steady_state_with_warmup_and_cooldown() -> None:
         )
 
     result = detect_steady_state(
-        outputs, window_size=30, ttft_cv_threshold=0.15, tpot_cv_threshold=0.15
+        outputs, window_size=30, ttft_threshold=0.15, tpot_threshold=0.15
     )
 
     assert result.detected is True
@@ -160,7 +169,7 @@ def test_steady_state_never_stabilizes() -> None:
     result = detect_steady_state(
         outputs,
         window_size=20,
-        ttft_cv_threshold=0.05,
+        ttft_threshold=0.05,
     )
 
     assert result.detected is False

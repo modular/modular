@@ -21,9 +21,7 @@ _MACOS_INCOMPATIBLE_TESTS = [
         name = src.split("/")[-1].split(".")[0],
         size = "large",
         srcs = [src],
-        mojo_deps = ["//max:MOGGKernelAPI"],
         tags = [
-            "manual",  # FIXME: MODELS-1295
             "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
         ] + (
             ["external-exclusive"] if src in [
@@ -55,7 +53,6 @@ _MACOS_INCOMPATIBLE_TESTS = [
 modular_py_test(
     name = "test_di",
     srcs = ["test_di.py"],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
     ],
@@ -90,7 +87,6 @@ modular_py_test(
             "//:apple_gpu": ["@platforms//:incompatible"],
             "//conditions:default": [],
         }),
-        mojo_deps = ["//max:MOGGKernelAPI"],
         tags = [
             "gpu",
             "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps

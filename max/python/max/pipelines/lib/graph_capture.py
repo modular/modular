@@ -48,7 +48,7 @@ logger = logging.getLogger("max.pipelines")
 
 GraphKey = tuple[int, int, int]
 GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
-WarmupModelInputs = Callable[[int, int], AbstractContextManager[ModelInputs]]
+WarmupModelInputs = Callable[[int], AbstractContextManager[ModelInputs]]
 
 
 def _release_graph_capture_outputs_to_borrowed(
@@ -66,8 +66,11 @@ def _release_graph_capture_outputs_to_borrowed(
         "next_token_logits",
         "logit_offsets",
         "hidden_states",
+        "num_accepted_draft_tokens",
+        "next_tokens",
+        "next_draft_tokens",
     ):
-        value = getattr(outputs, field_name)
+        value = getattr(outputs, field_name, None)
         if isinstance(value, Buffer):
             buffer_field_names.append(field_name)
             buffers.append(value)
@@ -305,13 +308,14 @@ class ServeGraphCaptureRunner:
         )
         # Conservative/defensive warmup: capture largest-first so peak
         # allocations happen up front and oversized configs fail fast.
+        q_max_seq_len = self._num_speculative_tokens + 1
         for batch_size in range(self._max_batch_size, 0, -1):
             dispatch_entries = sorted(
-                self.dispatch_metadata(batch_size, 1),
+                self.dispatch_metadata(batch_size, q_max_seq_len),
                 key=lambda entry: _unpack_dispatch_metadata(entry[1])[0],
                 reverse=True,
             )
-            with self._warmup_model_inputs(batch_size, 1) as model_inputs:
+            with self._warmup_model_inputs(batch_size) as model_inputs:
                 batch_token_count = int(model_inputs.buffers[0].shape[0])
                 source_ragged = _ragged_kv_inputs_from_model_inputs(
                     model_inputs

@@ -67,8 +67,8 @@ benchmark_config:
   skip_last_n_requests: null  # null = auto-set to max_concurrency; 0 = no skip
   chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions
   ignore_first_turn_stats: false # Ignore the first turn in a multi-turn chat.
-  randomize_starting_turn: false  # Start each session at a random turn offset (prefix runs densely)
-  randomize_session_start: false  # Random sleep before each session's first measured query
+  randomize_starting_turn: true  # Start each session at a random turn offset (prefix runs densely)
+  randomize_session_start: true  # Random sleep before each session's first measured query
 
   # Dataset-specific parameters (serving workloads)
   arxiv_summarization_input_len: 15000
@@ -82,6 +82,7 @@ benchmark_config:
   random_num_turns: 1
   random_output_len: 128
   random_sys_prompt_ratio: 0.0
+  fit_distributions: false
   sonnet_input_len: 550
   sonnet_prefix_len: 200
 

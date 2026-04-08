@@ -43,12 +43,7 @@ from std.memory import Pointer, bitcast
 from std.math.uutils import ufloordiv, umod
 from std.sys import align_of, size_of
 
-from std.gpu import (
-    WARP_SIZE,
-    block_id_in_cluster,
-    lane_id_uint as lane_id,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import WARP_SIZE, block_id_in_cluster, thread_idx, lane_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -700,14 +695,6 @@ struct Grouped1D1DMatmulKernel[
 
         var mma_op = Self.MmaOp()
 
-        # ===== Work Iterator Setup =====
-        var work_iter = Self.WorkIterator(
-            num_active_experts,
-            a_offsets,
-            expert_ids,
-            expert_scales,
-        )
-
         # ===== TMA LOAD WARP =====
         # For cta_group=2: BOTH CTAs run the production loop to keep
         # pipeline state in sync.  UMMA multicast arrives on both
@@ -716,14 +703,15 @@ struct Grouped1D1DMatmulKernel[
         # expect_bytes and the cta_group parameter on TMA ops ensures
         # only the leader CTA issues loads.
         if WarpRole1D1D.is_load():
-            with input_pipeline.producer() as producer:
-                while True:
-                    var ctx = work_iter.next()
-                    if ctx.info.is_done():
-                        break
-                    if not ctx.info.is_valid():
-                        continue
+            var load_iter = Self.WorkIterator(
+                num_active_experts,
+                a_offsets,
+                expert_ids,
+                expert_scales,
+            )
 
+            with input_pipeline.producer() as producer:
+                for ctx in load_iter:
                     var next_ready = True
                     if num_k_iters > 0:
                         next_ready = producer.try_acquire()
@@ -754,6 +742,12 @@ struct Grouped1D1DMatmulKernel[
 
         # ===== MMA WARP =====
         if WarpRole1D1D.is_mma():
+            var mma_iter = Self.WorkIterator(
+                num_active_experts,
+                a_offsets,
+                expert_ids,
+                expert_scales,
+            )
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
@@ -781,13 +775,7 @@ struct Grouped1D1DMatmulKernel[
             ](smem.sfb_tma_mbars_ptr())
 
             with mma_ctx:
-                while True:
-                    var ctx = work_iter.next()
-                    if ctx.info.is_done():
-                        break
-                    if not ctx.info.is_valid():
-                        continue
-
+                for ctx in mma_iter:
                     if elect_one_cta:
                         with mma_ctx.output_pipeline.producer() as output_stage:
                             var tmem_offset = UInt32(output_stage.tmem.offset())
@@ -841,6 +829,12 @@ struct Grouped1D1DMatmulKernel[
 
         # ===== EPILOGUE WARPS =====
         if WarpRole1D1D.is_epilogue():
+            var epi_iter = Self.WorkIterator(
+                num_active_experts,
+                a_offsets,
+                expert_ids,
+                expert_scales,
+            )
             Self.MmaEpilogueSync.wait()
 
             var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
@@ -853,13 +847,7 @@ struct Grouped1D1DMatmulKernel[
             )
 
             with epi_ctx:
-                while True:
-                    var ctx = work_iter.next()
-                    if ctx.info.is_done():
-                        break
-                    if not ctx.info.is_valid():
-                        continue
-
+                for ctx in epi_iter:
                     with epi_ctx.output_pipeline.consumer() as output_stage:
                         Self.epilogue(
                             c_tiles,
@@ -905,13 +893,14 @@ struct Grouped1D1DMatmulKernel[
                     ),
                 )
 
-                while True:
-                    var ctx = work_iter.next()
-                    if ctx.info.is_done():
-                        break
-                    if not ctx.info.is_valid():
-                        continue
+                var sfb_tma_iter = Self.WorkIterator(
+                    num_active_experts,
+                    a_offsets,
+                    expert_ids,
+                    expert_scales,
+                )
 
+                for ctx in sfb_tma_iter:
                     # Hoist loop-invariant SF coords outside k_tile loop.
                     # These depend only on the work context, not k_tile.
                     var row_in_atom: Int = 0
@@ -1023,13 +1012,14 @@ struct Grouped1D1DMatmulKernel[
                 ]()
                 var sfb_mbars = smem.sfb_load_mbars_ptr()
 
-                while True:
-                    var ctx = work_iter.next()
-                    if ctx.info.is_done():
-                        break
-                    if not ctx.info.is_valid():
-                        continue
+                var sfb_tmem_iter = Self.WorkIterator(
+                    num_active_experts,
+                    a_offsets,
+                    expert_ids,
+                    expert_scales,
+                )
 
+                for ctx in sfb_tmem_iter:
                     for k_tile in range(num_k_iters):
                         var stage = sfb_input_pipeline.consumer_stage()
                         sfb_input_pipeline.wait_producer()
@@ -1079,7 +1069,7 @@ struct Grouped1D1DMatmulKernel[
 
             comptime for sf_idx in range(Self.config.num_sf_k_tiles):
                 var sfb_scales = SIMD[Self.sfb_dtype, SF_ATOM_K]()
-                if lane_id() < UInt(Self.MMA_N):
+                if lane_id() < Self.MMA_N:
                     # Compute N-position within SF group.
                     # work_ctx.n() is in element space (not tile index),
                     # so no multiplication by MMA_N needed.
@@ -1089,12 +1079,13 @@ struct Grouped1D1DMatmulKernel[
                         var m_in_group = UInt(work_ctx.m()) - UInt(
                             work_ctx.m_start()
                         )
-                        outer = m_in_group % UInt(SF_MN_GROUP_SIZE) + lane_id()
-                    else:
-                        outer = (
-                            UInt(work_ctx.n()) % UInt(SF_MN_GROUP_SIZE)
-                            + lane_id()
+                        outer = m_in_group % UInt(SF_MN_GROUP_SIZE) + UInt(
+                            lane_id()
                         )
+                    else:
+                        outer = UInt(work_ctx.n()) % UInt(
+                            SF_MN_GROUP_SIZE
+                        ) + UInt(lane_id())
 
                     var scales_offset = (
                         UInt(sf_idx) * UInt(SFB_TILE_BYTES)

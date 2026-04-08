@@ -24,6 +24,7 @@ import argparse
 import ast
 import os
 import sys
+from collections.abc import Set
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,11 @@ INIT_FILE = ARCH_BASE / "__init__.py"
 
 OUTPUT_FILE = REPO_ROOT / "oss" / "modular" / "docs" / "max" / "models.mdx"
 
+GITHUB_ARCH_URL = (
+    "https://github.com/modular/modular/tree/main/"
+    "max/python/max/pipelines/architectures"
+)
+
 OUTPUT_LABELS: dict[str, str] = {
     "TEXT_GENERATION": "text",
     "EMBEDDINGS_GENERATION": "embeddings",
@@ -52,22 +58,27 @@ OUTPUT_LABELS: dict[str, str] = {
 
 
 def derive_modality_labels(
-    modality: str | None, context_type: str | None
+    task: str | None, input_modalities: Set[str]
 ) -> list[str]:
     """Derive human-readable input-to-output modality labels.
 
-    Uses the ``task`` enum name from the source architecture for the output
-    type and the ``context_type`` class name for the input type.
-    Vision-capable context types are detected by checking for ``"Vision"``
-    in the name, which covers ``TextAndVisionContext`` and all model-specific
-    subclasses.
+    Uses the ``task`` enum name for the output type and the explicit
+    ``input_modalities`` set (declared on each ``SupportedArchitecture``)
+    for the input types.
     """
-    output = OUTPUT_LABELS.get(modality, modality) if modality else "unknown"
-    has_vision = bool(context_type and "Vision" in context_type)
-
-    labels = [f"text-to-{output}"]
-    if has_vision:
+    output = OUTPUT_LABELS.get(task, task) if task else "unknown"
+    labels: list[str] = []
+    if "TEXT" in input_modalities:
+        labels.append(f"text-to-{output}")
+    if "IMAGE" in input_modalities:
         labels.append(f"image-to-{output}")
+    if "VIDEO" in input_modalities:
+        labels.append(f"video-to-{output}")
+    if not labels:
+        raise ValueError(
+            f"Architecture has no recognized input modalities for task"
+            f" {task!r}. Check the input_modalities declaration in arch.py."
+        )
     return labels
 
 
@@ -223,12 +234,15 @@ def parse_arch_file(arch_path: Path) -> list[dict[str, Any]]:
             e for e in supported_encodings if not e.startswith("q4_")
         }
 
-        ctx_node = extract_keyword_value(call, "context_type")
-        context_type = None
-        if isinstance(ctx_node, ast.Name):
-            context_type = ctx_node.id
-        elif isinstance(ctx_node, ast.Attribute):
-            context_type = ctx_node.attr
+        modalities_node = extract_keyword_value(call, "input_modalities")
+        input_modalities: set[str] = {"TEXT"}
+        if isinstance(modalities_node, (ast.Set, ast.List)):
+            parsed = set()
+            for elt in modalities_node.elts:
+                if isinstance(elt, ast.Attribute):
+                    parsed.add(elt.attr)
+            if parsed:
+                input_modalities = parsed
 
         multi_gpu_node = extract_keyword_value(call, "multi_gpu_supported")
         multi_gpu = False
@@ -244,7 +258,7 @@ def parse_arch_file(arch_path: Path) -> list[dict[str, Any]]:
                 "name": name,
                 "example_repo_ids": example_repo_ids,
                 "modality": modality,
-                "context_type": context_type,
+                "input_modalities": input_modalities,
                 "supported_encodings": supported_encodings,
                 "multi_gpu_supported": multi_gpu,
             }
@@ -270,6 +284,7 @@ def collect_architectures() -> list[dict[str, Any]]:
         parsed = parse_arch_file(arch_path)
         for arch in parsed:
             if arch["var_name"] in var_names:
+                arch["module_name"] = module_name
                 all_archs.append(arch)
 
     return all_archs
@@ -318,9 +333,10 @@ def merge_architectures(archs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             insert_order.append(display_name)
             grouped[display_name] = {
                 "name": display_name,
+                "module_name": arch["module_name"],
                 "example_repo_ids": list(arch["example_repo_ids"]),
-                "modality_context_pairs": {
-                    (arch["modality"], arch["context_type"])
+                "modality_input_pairs": {
+                    (arch["modality"], frozenset(arch["input_modalities"]))
                 },
                 "supported_encodings": set(arch["supported_encodings"]),
                 "multi_gpu_supported": arch["multi_gpu_supported"],
@@ -328,8 +344,8 @@ def merge_architectures(archs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         else:
             entry = grouped[display_name]
             entry["example_repo_ids"].extend(arch["example_repo_ids"])
-            entry["modality_context_pairs"].add(
-                (arch["modality"], arch["context_type"])
+            entry["modality_input_pairs"].add(
+                (arch["modality"], frozenset(arch["input_modalities"]))
             )
             entry["supported_encodings"] |= arch["supported_encodings"]
             entry["multi_gpu_supported"] = (
@@ -373,13 +389,13 @@ def format_table(archs: list[dict[str, Any]]) -> str:
             )
         examples_inner = ",<br/>\n".join(repo_links)
 
-        # Derive modality labels from all (modality, context_type) pairs
+        # Derive modality labels from all (task, input_modalities) pairs
         all_labels: set[str] = set()
-        for modality, context_type in sorted(
-            arch["modality_context_pairs"],
-            key=lambda p: (p[0] or "", p[1] or ""),
+        for task, input_mods in sorted(
+            arch["modality_input_pairs"],
+            key=lambda p: (p[0] or ""),
         ):
-            all_labels.update(derive_modality_labels(modality, context_type))
+            all_labels.update(derive_modality_labels(task, input_mods))
         modality_cell = (
             ",<br/>".join(sorted(all_labels)) if all_labels else "Unknown"
         )
@@ -388,9 +404,12 @@ def format_table(archs: list[dict[str, Any]]) -> str:
 
         multi_gpu = "Yes" if arch["multi_gpu_supported"] else "No"
 
+        arch_url = f"{GITHUB_ARCH_URL}/{arch['module_name']}"
+
         lines.append(f"{ind}{ind}<tr>")
         lines.append(
-            f"{ind}{ind}{ind}<td className='arch'><code>{display_name}</code></td>"
+            f"{ind}{ind}{ind}<td className='arch'>"
+            f'<a href="{arch_url}"><code>{display_name}</code></a></td>'
         )
         lines.append(f"{ind}{ind}{ind}<td className='models'>")
         lines.append(examples_inner)

@@ -46,10 +46,13 @@ in another Graph API usage.
 from __future__ import annotations
 
 import functools
+import hashlib
 import logging
 import os
+import threading
 import weakref
-from contextvars import ContextVar
+from collections import OrderedDict
+from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -82,8 +85,20 @@ if TYPE_CHECKING:
 
 Ex = TypeVar("Ex", bound=BaseException)
 
-_SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
+_SESSION_LOCK = threading.Lock()
+_SESSION: engine.api.InferenceSession | None = None
 _SEED: Tensor | None = None
+
+# Each distinct (op name, input dtypes/shapes) combination produces a unique
+# graph and thus a unique cache entry.  128 is generous for typical workloads
+# (a handful of custom ops x a few shape variants) while bounding memory.
+_EAGER_MODEL_CACHE_MAX_SIZE = 128
+_EAGER_MODEL_CACHE_LOCK = threading.Lock()
+_EAGER_MODEL_CACHE: OrderedDict[
+    tuple[str, tuple[tuple[str, str], ...]],
+    engine.Model,
+] = OrderedDict()
+_EAGER_MODEL_CACHE_SESSION: engine.api.InferenceSession | None = None
 
 # Environment variable to control interpreter usage.
 # Set to "0" or "false" to disable the interpreter (always compile).
@@ -164,13 +179,15 @@ def set_seed(value: int) -> None:
 
 def _session() -> engine.api.InferenceSession:
     """A single global inference session for compiling and running kernels on tensors."""
-    device_specs = driver.scan_available_devices()
-    if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
-        device_specs.append(cpu)
-    devices = driver.load_devices(device_specs)
-    if not (session := _SESSION.get(None)):
-        _SESSION.set(session := engine.api.InferenceSession(devices=devices))
-    return session
+    global _SESSION
+    with _SESSION_LOCK:
+        if _SESSION is None:
+            device_specs = driver.scan_available_devices()
+            if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
+                device_specs.append(cpu)
+            devices = driver.load_devices(device_specs)
+            _SESSION = engine.api.InferenceSession(devices=devices)
+        return _SESSION
 
 
 # ─── Shared signal-buffer cache (allocated once per device set) ──────────
@@ -238,6 +255,87 @@ def _make_unrealized(
             state, mapping.mesh, placements, global_shape
         )
     return Tensor(state=state)
+
+
+# ─── In-memory cache for compiled custom-op models ───────────────────────
+
+
+def _eager_model_cache_key(
+    graph: Graph,
+) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Builds a compact, stable cache key for a finalized eager graph.
+
+    Uses a SHA-256 hash of the MLIR module ASM (with debug info stripped)
+    combined with the resolved kernel library paths and SHA-256 hashes of
+    their contents.  Hashing file contents (rather than ``st_mtime``)
+    avoids a time-of-check/time-of-use race and produces a deterministic
+    key regardless of filesystem timestamp granularity.
+
+    Args:
+        graph: A finalized graph ready for compilation.
+
+    Returns:
+        A tuple of ``(asm_hex_digest, ((resolved_path, content_hash), ...))``.
+    """
+    module_asm = graph._module.operation.get_asm(
+        assume_verified=True,
+        enable_debug_info=False,
+        pretty_debug_info=False,
+        use_local_scope=True,
+    )
+    asm_hash = hashlib.sha256(module_asm.encode()).hexdigest()
+    kernel_paths = tuple(
+        (
+            str(Path(p).resolve()),
+            hashlib.sha256(Path(p).read_bytes()).hexdigest(),
+        )
+        for p in graph.kernel_libraries_paths
+    )
+    return (asm_hash, kernel_paths)
+
+
+def _load_eager_model(graph: Graph) -> engine.Model:
+    """Loads or retrieves a cached compiled model for an eager graph.
+
+    Only caches graphs that use custom kernel libraries (custom ops),
+    since those bypass the interpreter and incur expensive per-call
+    compilation.  Regular graphs use the interpreter fast path and are
+    not cached.
+
+    The compiled ``Model`` is keyed by a hash of the graph IR plus the
+    resolved kernel library paths and content hashes so that recompiling
+    a ``.mojopkg`` automatically invalidates the cache.
+
+    Returns:
+        A compiled ``engine.Model`` ready for execution.
+    """
+    global _EAGER_MODEL_CACHE_SESSION
+
+    session = _session()
+    if not graph.kernel_libraries_paths:
+        return session.load(graph)
+
+    key = _eager_model_cache_key(graph)
+
+    with _EAGER_MODEL_CACHE_LOCK:
+        if _EAGER_MODEL_CACHE_SESSION is not session:
+            _EAGER_MODEL_CACHE.clear()
+            _EAGER_MODEL_CACHE_SESSION = session
+
+        cached = _EAGER_MODEL_CACHE.get(key)
+        if cached:
+            _EAGER_MODEL_CACHE.move_to_end(key)
+            return cached
+
+    model = session.load(graph)
+
+    with _EAGER_MODEL_CACHE_LOCK:
+        if _EAGER_MODEL_CACHE_SESSION is session:
+            _EAGER_MODEL_CACHE[key] = model
+            if len(_EAGER_MODEL_CACHE) > _EAGER_MODEL_CACHE_MAX_SIZE:
+                _EAGER_MODEL_CACHE.popitem(last=False)
+
+    return model
 
 
 class EagerRealizationContext(RealizationContext):
@@ -350,9 +448,6 @@ class EagerRealizationContext(RealizationContext):
         # applies when the interpreter was auto-selected (not explicitly
         # requested by the caller).
         use_interpreter = self._use_interpreter
-        # Signal-buffer graphs contain collective ops the interpreter can't run.
-        if self.signal_buffers:
-            use_interpreter = False
         if use_interpreter:
             from max._interpreter import MOInterpreter
 
@@ -381,7 +476,7 @@ class EagerRealizationContext(RealizationContext):
             else:
                 results = interp.execute(graph, input_buffers)
         if not use_interpreter:
-            model = _session().load(graph)
+            model = _load_eager_model(graph)
             results = model(*input_buffers)
 
         # Update tensors to realized.

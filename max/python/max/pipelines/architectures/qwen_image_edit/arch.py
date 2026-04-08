@@ -1,0 +1,52 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from max.graph.weights import WeightsFormat
+from max.interfaces import InputModality, PipelineTask
+from max.pipelines.core import PixelContext
+from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
+
+from ..qwen_image.arch import QwenImageArchConfig
+from .pipeline_qwen_image_edit import QwenImageEditPipeline
+
+qwen_image_edit_arch = SupportedArchitecture(
+    name="QwenImageEditPipeline",
+    task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16"},
+    example_repo_ids=[
+        "Qwen/Qwen-Image-Edit-2511",
+    ],
+    pipeline_model=QwenImageEditPipeline,  # type: ignore[arg-type]
+    context_type=PixelContext,
+    default_weights_format=WeightsFormat.safetensors,
+    tokenizer=PixelGenerationTokenizer,
+    config=QwenImageArchConfig,
+)
+
+qwen_image_edit_plus_arch = SupportedArchitecture(
+    name="QwenImageEditPlusPipeline",
+    task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16"},
+    example_repo_ids=[
+        "Qwen/Qwen-Image-Edit-2511",
+    ],
+    pipeline_model=QwenImageEditPipeline,  # type: ignore[arg-type]
+    context_type=PixelContext,
+    default_weights_format=WeightsFormat.safetensors,
+    tokenizer=PixelGenerationTokenizer,
+    config=QwenImageArchConfig,
+)

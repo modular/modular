@@ -15,12 +15,13 @@ from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.pathlib import Path
 from std.algorithm import elementwise
 from std.utils import IndexList
-from std.ffi import _get_global_or_null, external_call
+from std.ffi import _CPointer, _get_global_or_null, external_call
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor
+from std.memory._nonnull import bitcast
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
@@ -31,7 +32,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 # Safety: don't use `ExternalOrigin` here as that will turn of extending the
 # lifetime of any Mojo structs that pass an internal pointer to the functions
 # below.
-comptime ncclComm_t = OpaquePointer[AnyOrigin[mut=True]]
+comptime ncclComm_t = _CPointer[NoneType, AnyOrigin[mut=True]]
 
 
 @fieldwise_init
@@ -220,11 +221,11 @@ def _ccl_broadcast(
 @always_inline
 def _ccl_stream_ptr(
     ctx: DeviceContext,
-) raises -> OpaquePointer[ExternalOrigin[mut=True]]:
+) raises -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
-        return HIP(ctx.stream()).bitcast[NoneType]()
+        return bitcast[NoneType](HIP(ctx.stream()))
     else:
-        return CUDA(ctx.stream()).bitcast[NoneType]()
+        return bitcast[NoneType](CUDA(ctx.stream()))
 
 
 @fieldwise_init
@@ -262,7 +263,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     if ngpus > MAX_GPUS:
         raise Error("too many GPUs for CCL")
 
-    var comms = InlineArray[ncclComm_t, MAX_GPUS](fill={_unsafe_null = ()})
+    var comms = InlineArray[ncclComm_t, MAX_GPUS](fill={})
     var devlist = InlineArray[Int32, MAX_GPUS](fill={})
     for i in range(ngpus):
         devlist[i] = Int32(i)

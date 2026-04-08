@@ -72,7 +72,7 @@ def PyInit_elementwise_comparison_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_comparison_ops")
 
         # Binary comparison operations
-        comptime for i in range(Variadic.size_types[BINARY_COMPARISON_OPS]):
+        comptime for i in range(TypeList[*BINARY_COMPARISON_OPS].size):
             comptime op = BINARY_COMPARISON_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(

@@ -653,10 +653,7 @@ class InternVLModel(
         batch_offset = 0
 
         for ctx in context_batch:
-            if (
-                ctx.needs_vision_encoding
-                and "image_token_indices" in ctx.extra_model_args
-            ):
+            if "image_token_indices" in ctx.extra_model_args:
                 indices = ctx.extra_model_args["image_token_indices"]
                 indices_and_offsets.append(indices + batch_offset)
             batch_offset += ctx.tokens.active_length

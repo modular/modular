@@ -81,7 +81,7 @@ from .request import (
 )
 from .scheduler import Scheduler, SchedulerResult
 from .status import GenerationStatus
-from .task import PipelineTask
+from .task import InputModality, PipelineTask
 from .tokenizer import PipelineTokenizer
 from .tokens import TokenBuffer, TokenSlice
 from .tool_parsing import (
@@ -134,6 +134,7 @@ __all__ = [
     "GenerationStatus",
     "ImageContentPart",
     "ImageMetadata",
+    "InputModality",
     "LoRAOperation",
     "LoRARequest",
     "LoRAResponse",

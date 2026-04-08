@@ -4,7 +4,7 @@ bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_a
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "curl", version = "8.12.0")
-bazel_dep(name = "gazelle", version = "0.47.0")
+bazel_dep(name = "gazelle", version = "0.50.0")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
 bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "imgui", version = "1.91.8")
@@ -42,19 +42,6 @@ archive_override(
     strip_prefix = "rules_mojo-ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f",
     urls = [
         "https://github.com/modular/rules_mojo/archive/ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f.tar.gz",
-    ],
-)
-
-single_version_override(
-    module_name = "gazelle",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazel-contrib/bazel-gazelle/pull/2249
-        "//bazel/public-patches:gazelle-package-top.patch",
-        # https://github.com/bazel-contrib/bazel-gazelle/pull/2248
-        "//bazel/public-patches:gazelle-exports-files.patch",
-        # https://github.com/bazel-contrib/bazel-gazelle/pull/2247
-        "//bazel/public-patches:gazelle-default-features.patch",
     ],
 )
 

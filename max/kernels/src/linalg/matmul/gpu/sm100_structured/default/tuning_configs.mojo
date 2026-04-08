@@ -36,6 +36,8 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
     var num_split_k: Int
     var is_small_bn: Bool
 
+    var batch_size: Int
+
     def __init__(
         out self,
         M: Int,
@@ -53,6 +55,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
         is_small_bn: Bool = False,
+        batch_size: Int = 1,
     ):
         self.M = M
         self.M_end = M + 1
@@ -70,6 +73,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_split_k = num_split_k
         self.is_small_bn = is_small_bn  # only used for block-scaled matmul
+        self.batch_size = batch_size
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
@@ -77,7 +81,17 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         Args:
             writer: The writer to write to.
         """
-        writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+        writer.write(
+            "config: ",
+            "m:",
+            self.M,
+            "/n:",
+            self.N,
+            "/k:",
+            self.K,
+            "/b:",
+            self.batch_size,
+        )
 
     def __init__(
         out self,
@@ -96,6 +110,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
         is_small_bn: Bool = False,  # only used for block-scaled matmul
+        batch_size: Int = 1,
     ):
         self.M = M
         self.M_end = M_end
@@ -117,6 +132,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_split_k = num_split_k
         self.is_small_bn = is_small_bn
+        self.batch_size = batch_size
 
 
 # codegen template
@@ -1875,6 +1891,29 @@ def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
             swapAB=True,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
+        ),
+    ]
+
+    return materialize[config_list]()
+
+
+def _get_tuning_list_sm100_batched_bf16() -> List[TuningConfigSM100]:
+    comptime config_list = [
+        TuningConfigSM100(
+            batch_size=64,
+            M=1,
+            M_end=16 + 1,
+            N=128,
+            K=512,
+            mma_shape=Index(128, 16, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=4,
         ),
     ]
 

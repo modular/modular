@@ -893,7 +893,7 @@ def MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
         A LayoutList containing layouts for each tile size.
     """
 
-    comptime num_tiles = Variadic.size[tile_sizes]
+    comptime num_tiles = ParameterList[*tile_sizes].size
 
     var layout_list = LayoutList(capacity=num_tiles)
 

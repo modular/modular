@@ -12,17 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
+from std.math.uutils import umod
 from std.os.atomic import Atomic
 from std.sys import size_of
 
 from std.gpu import NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.info import H100
-from std.gpu import (
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor, RuntimeLayout
 from std.bit import log2_floor
 
@@ -535,7 +532,7 @@ struct SplitKTileScheduler[
             reduction_tile_idx * num_barriers
         ) + warp_group_local_idx
 
-        var warp_group_thread_idx = thread_idx.x % UInt(WARPGROUP_SIZE)
+        var warp_group_thread_idx = umod(thread_idx.x, WARPGROUP_SIZE)
 
         if not self.is_last_split(work_tile_info):
             if work_tile_info.k_start == 0:
@@ -554,7 +551,7 @@ struct SplitKTileScheduler[
                     Self.wait_eq(
                         self.locks_ptr,
                         Int32(warp_group_local_idx),
-                        Int(warp_group_thread_idx),
+                        warp_group_thread_idx,
                         lock_idx,
                         work_tile_info.k_start,
                     )
@@ -563,7 +560,7 @@ struct SplitKTileScheduler[
                     Self.wait_lt(
                         self.locks_ptr,
                         Int32(warp_group_local_idx),
-                        Int(warp_group_thread_idx),
+                        warp_group_thread_idx,
                         lock_idx,
                         1,
                     )
@@ -581,7 +578,7 @@ struct SplitKTileScheduler[
             Self.arrive_set(
                 self.locks_ptr,
                 Int32(warp_group_local_idx),
-                Int(warp_group_thread_idx),
+                warp_group_thread_idx,
                 lock_idx,
                 increment,
             )
@@ -591,7 +588,7 @@ struct SplitKTileScheduler[
             Self.wait_eq(
                 self.locks_ptr,
                 Int32(warp_group_local_idx),
-                Int(warp_group_thread_idx),
+                warp_group_thread_idx,
                 lock_idx,
                 work_tile_info.k_start,
             )

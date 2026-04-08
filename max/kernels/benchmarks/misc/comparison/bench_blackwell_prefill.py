@@ -258,7 +258,7 @@ def bench_max(
     # Use bench_kineto_with_cupti_warmup to handle CUPTI warmup
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
-        kernel_names="mha",
+        kernel_names="nn_attention",
         num_tests=num_iters,
         suppress_kineto_output=True,
         flush_l2=True,

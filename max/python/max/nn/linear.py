@@ -882,6 +882,7 @@ class MLP(Module, Shardable):
         if (
             self.quant_config is not None
             and self.quant_config.weight_scale.is_tensor
+            and not self.quant_config.is_static
         ):
             ffl = self.gate_proj.weight.shape[0]
             gate_row_scale = ops.broadcast_to(

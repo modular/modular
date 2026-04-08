@@ -13,7 +13,7 @@
 
 from std.os import abort
 from std.pathlib import Path
-from std.ffi import _find_dylib
+from std.ffi import _CPointer, _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 
@@ -415,9 +415,9 @@ def hipblasLtMatmul(
     _b: OpaquePointer[_],
     _bdesc: hipblasLtMatrixLayout_t,
     beta: OpaquePointer[_],
-    _c: OpaquePointer[_],
+    _c: _CPointer[NoneType, _],
     _cdesc: hipblasLtMatrixLayout_t,
-    _d: OpaquePointer[_],
+    _d: _CPointer[NoneType, _],
     _ddesc: hipblasLtMatrixLayout_t,
     algo: UnsafePointer[hipblasLtMatmulAlgo_t, _],
     workspace: OpaquePointer[_],

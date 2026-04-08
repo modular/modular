@@ -460,32 +460,6 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=list_ptr)
 
     @staticmethod
-    def _list[
-        *Ts: ConvertibleToPython & Copyable
-    ](
-        values: VariadicPack[True, ConvertibleToPython & Copyable, *Ts]
-    ) raises -> PythonObject:
-        """Initialize the object from a list literal.
-
-        Parameters:
-            Ts: The list element types.
-
-        Args:
-            values: The values to initialize the list with.
-
-        Returns:
-            A PythonObject representing the list.
-        """
-        ref cpy = Self().cpython()
-        var list_ptr = cpy.PyList_New(len(values))
-
-        comptime for i in range(Variadic.size_types[Ts]):
-            var obj = values[i].copy().to_python_object()
-            _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
-        return PythonObject(from_owned=list_ptr)
-
-    @always_inline
-    @staticmethod
     def list[
         *Ts: ConvertibleToPython & Copyable
     ](var *values: *Ts) raises -> PythonObject:
@@ -503,34 +477,14 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Raises:
             If the operation fails.
         """
-        return Self._list(values)
-
-    @staticmethod
-    def _tuple[
-        *Ts: ConvertibleToPython & Copyable
-    ](
-        values: VariadicPack[True, ConvertibleToPython & Copyable, *Ts]
-    ) raises -> PythonObject:
-        """Initialize the object from a tuple literal.
-
-        Parameters:
-            Ts: The tuple element types.
-
-        Args:
-            values: The values to initialize the tuple with.
-
-        Returns:
-            A PythonObject representing the tuple.
-        """
         ref cpy = Self().cpython()
-        var tup_ptr = cpy.PyTuple_New(len(values))
+        var list_ptr = cpy.PyList_New(len(values))
 
-        comptime for i in range(Variadic.size_types[Ts]):
+        comptime for i in range(TypeList[*Ts].size):
             var obj = values[i].copy().to_python_object()
-            _ = cpy.PyTuple_SetItem(tup_ptr, i, obj.steal_data())
-        return PythonObject(from_owned=tup_ptr)
+            _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
+        return PythonObject(from_owned=list_ptr)
 
-    @always_inline
     @staticmethod
     def tuple[
         *Ts: ConvertibleToPython & Copyable
@@ -549,7 +503,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Raises:
             If the operation fails.
         """
-        return Self._tuple(values)
+        ref cpy = Self().cpython()
+        var tup_ptr = cpy.PyTuple_New(len(values))
+
+        comptime for i in range(TypeList[*Ts].size):
+            var obj = values[i].copy().to_python_object()
+            _ = cpy.PyTuple_SetItem(tup_ptr, i, obj.steal_data())
+        return PythonObject(from_owned=tup_ptr)
 
     @no_inline
     def as_string_slice(self, obj: PythonObject) -> StringSlice[ImmutAnyOrigin]:

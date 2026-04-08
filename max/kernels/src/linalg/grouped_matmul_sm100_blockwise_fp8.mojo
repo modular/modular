@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
 from std.math import ceildiv, gcd
+from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of, simd_width_of
 from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -27,11 +28,11 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
+    thread_idx,
+    block_idx,
+    lane_id,
+    warp_id as get_warp_id,
 )
-from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -141,7 +142,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         accum_type == DType.float32
     ), "Only support float32 for accumulator"
 
-    var expert_idx = Int(block_idx.z)
+    var expert_idx = block_idx.z
     M = rebind[UInt32](a_offsets[expert_idx + 1]) - rebind[UInt32](
         a_offsets[expert_idx]
     )
@@ -173,11 +174,11 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
     b_start_row = expert * Int32(N)
 
-    m_start = block_idx.y * UInt(BM)
-    n_start = block_idx.x * UInt(BN)
-    a_m_start = UInt(a_start_row) + m_start
-    b_n_start = UInt(b_start_row) + n_start
-    if m_start >= UInt(M) or n_start >= UInt(N):
+    m_start = block_idx.y * BM
+    n_start = block_idx.x * BN
+    a_m_start = Int(a_start_row) + m_start
+    b_n_start = Int(b_start_row) + n_start
+    if m_start >= Int(M) or n_start >= N:
         # print("m_start: ", m_start, "n_start: ", n_start, "M: ", M, "N: ", N)
         return
 
@@ -300,7 +301,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     var mma_phase: UInt32 = 0
 
     var warp_id = get_warp_id()
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = ufloordiv(thread_idx.x, WARP_SIZE) == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
@@ -349,14 +350,14 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (k_start, Int(a_m_start)),
+                (k_start, a_m_start),
             )
 
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (k_start, Int(b_n_start)) if transpose_b else (
-                    Int(b_n_start),
+                (k_start, b_n_start) if transpose_b else (
+                    b_n_start,
                     k_start,
                 ),
             )
@@ -389,15 +390,15 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             tcgen05_load_wait()  # wait for the load to finish
 
             var b_scale: Scalar[accum_type]
-            b_scale_m_offset = UInt(expert * Int32(b_scales_n))
+            b_scale_m_offset = Int(expert * Int32(b_scales_n))
 
             comptime if BN != BK:
-                var global_n = block_idx.x * UInt(BN)
+                var global_n = block_idx.x * BN
 
-                var begin_n = min(BN, BK - Int(global_n % UInt(BK)))
+                var begin_n = min(BN, BK - umod(global_n, BK))
                 comptime end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
 
-                var idx0 = global_n // UInt(BK)
+                var idx0 = ufloordiv(global_n, BK)
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
@@ -414,11 +415,11 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                     b_scales_2d[b_scale_m_offset + block_idx.x, k_iter]
                 ).cast[accum_type]()
 
-            var m_offset = (warp_id * 16) + (lane_id() // 4)
+            var m_offset = (warp_id * 16) + ufloordiv(lane_id(), 4)
 
             # TODO: this is an ugly way to calculate the m offset, need to rethink how we can make this more efficient
             comptime for j in range(temp_cfrags_size // 2):
-                var local_m = m_offset + UInt((j % 2) * 8)
+                var local_m = m_offset + (j % 2) * 8
                 var a_scale = a_scales[k_iter, a_m_start + local_m].cast[
                     accum_type
                 ]()
@@ -442,7 +443,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
-    warp_id = thread_idx.x // UInt(WARP_SIZE)
+    warp_id = ufloordiv(thread_idx.x, WARP_SIZE)
 
     comptime c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     comptime c_gmem_type = LayoutTensor[
@@ -463,7 +464,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     )
 
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
-        Int(block_idx.y), Int(block_idx.x)
+        block_idx.y, block_idx.x
     )
     comptime c_coord_type = type_of(ctile_coords)
 
@@ -473,7 +474,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
                 ctile.tile_with_offset[MMA_M // Int(num_warps), MMA_N](
-                    4 * m_mma + Int(warp_id), n_mma
+                    4 * m_mma + warp_id, n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
@@ -482,7 +483,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
             c_gmem_frag, _c_gmem_frag_coords, _ = c_gmem_warp_tile.vectorize[
                 1, 2
-            ]().distribute_with_offset[Layout.row_major(8, 4)](Int(lane_id()))
+            ]().distribute_with_offset[Layout.row_major(8, 4)](lane_id())
             new_c_gmem_frag_coords = rebind[c_coord_type](_c_gmem_frag_coords)
             new_c_gmem_frag_coords[1] *= 2
             c_gmem_frag_coords = (
@@ -968,7 +969,7 @@ def multi_stage_reg_epilogue[
         ](c_smem_base + (stage % 2) * c_smem_tile_size)
         comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
         var c_smem_warp_tt = lt_to_tt(c_smem_tile).tile[c_smem_tile_m, stageN](
-            Int(warp_id), 0
+            warp_id, 0
         )
 
         var c_smem_warp_tile_upper = c_smem_warp_tt.tile[data_paths, stageN](
@@ -1024,7 +1025,7 @@ def multi_stage_reg_epilogue[
         comptime TMA_BM = CG2_TMA_BM if cta_group == 2 else CG1_TMA_BM
 
         var cg2_elect_one_warp = (
-            warp_id == 0 if MMA_M == 256 else warp_id % 2 == 0
+            warp_id == 0 if MMA_M == 256 else ufloordiv(warp_id, 2) == 0
         )
         var cg1_elect_one_warp = warp_id == 0
         var elect_one_warp = (
@@ -1033,15 +1034,15 @@ def multi_stage_reg_epilogue[
 
         var coord_n_mma_m256 = c_coord[1] + UInt(stage * stageN)
         var coord_n_mma_m128 = (
-            c_coord[1] + UInt(stage * stageN) + UInt(BN * Int(warp_id // 2))
+            c_coord[1] + UInt(stage * stageN) + UInt(BN * ufloordiv(warp_id, 2))
         )
 
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
         var cg1_coord_n = coord_n_mma_m256
         var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
         var coord_m = c_coord[0]
-        var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
-        var cg1_c_smem_coord_m = UInt(0)
+        var cg2_c_smem_coord_m = 0 if MMA_M == 256 else ufloordiv(warp_id, 2)
+        var cg1_c_smem_coord_m = 0
         var c_smem_coord_m = (
             cg2_c_smem_coord_m if cta_group == 2 else cg1_c_smem_coord_m
         )
@@ -1083,7 +1084,7 @@ def multi_stage_reg_epilogue[
                 comptime for j in range(zipped.shape[1][0].value()):
                     var input_crd = RuntimeTuple[
                         IntTuple(UNKNOWN_VALUE, j), element_type=DType.uint32
-                    ](Int(thread_idx.x), j)
+                    ](thread_idx.x, j)
                     var linear_idx = zipped_rt(input_crd) * UInt32(simd_size)
                     var linear_tup = RuntimeTuple[
                         IntTuple(UNKNOWN_VALUE), element_type=DType.uint32
@@ -1108,7 +1109,7 @@ def multi_stage_reg_epilogue[
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
         else:
             var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
-                Int(c_smem_coord_m), 0
+                c_smem_coord_m, 0
             )
 
             if elect_one_warp and lane == 0:
@@ -1304,31 +1305,31 @@ def promote_accumulators[
     var warp_id = get_warp_id()
 
     # we update the column offset to include the current stage
-    var staged_c_row: UInt
-    var staged_c_col: UInt
+    var staged_c_row: Int
+    var staged_c_col: Int
 
     comptime if MMA_M == 256 or (MMA_M == 128 and cta_group == 1):
         # based on layout A/D (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-a)
-        staged_c_row = warp_id * UInt(WARP_SIZE)
-        staged_c_col = UInt(0)
+        staged_c_row = warp_id * WARP_SIZE
+        staged_c_col = 0
     elif MMA_M == 64 and cta_group == 1:
         # based on layout F (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-f)
-        staged_c_row = warp_id * UInt(WARP_SIZE // 2)
-        staged_c_col = UInt(0)
+        staged_c_row = warp_id * (WARP_SIZE // 2)
+        staged_c_col = 0
     else:
         # based on layout B (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-b)
-        staged_c_row = (warp_id % 2) * UInt(WARP_SIZE)
-        staged_c_col = UInt(BN) * (warp_id // 2)
+        staged_c_row = umod(warp_id, 2) * WARP_SIZE
+        staged_c_col = BN * ufloordiv(warp_id, 2)
 
     # this is the tensor memory layout
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-matrix-fragments-shape-16256b
     # we use it to figure out the starting coordinate
-    comptime threads_per_row = UInt(
+    comptime threads_per_row = (
         stageN // repeats // load_width
     )  # 4 threads per row
     var top_frag_upper_coord = StaticTuple[UInt32, 2](
-        UInt32(lane_id() // threads_per_row),
-        UInt32(lane_id() % threads_per_row * load_width),
+        UInt32(ufloordiv(lane_id(), threads_per_row)),
+        UInt32(umod(lane_id(), threads_per_row) * load_width),
     )
 
     # getting the other 3 coordinates is straightforward. Each fragment is spaced out by 16 rows
@@ -1381,7 +1382,7 @@ def promote_accumulators[
         )
 
     syncwarp()
-    if lane_id() < UInt(CLUSTER_SIZE):
+    if lane_id() < Int(CLUSTER_SIZE):
         _ = load_mma_pipeline.consumer_mbar(tma_load_stage_index)[0].arrive()
     syncwarp()
 
@@ -1429,7 +1430,7 @@ def promote_accumulators[
         comptime if MMA_N != BK:
             # check if we cross the border between the two scale_b
             b_scale = (
-                b_scale_0 if (stage * stageN + Int(staged_c_col))
+                b_scale_0 if (stage * stageN + staged_c_col)
                 < b_scale_next_n else b_scale_1
             )
         else:
@@ -1674,13 +1675,12 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
     tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = ufloordiv(thread_idx.x, WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = (
         block_rank_in_cluster() % 2 == 0 if config.cta_group == 2 else True
     )
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
-    var warp_id = get_warp_id()
     comptime max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:

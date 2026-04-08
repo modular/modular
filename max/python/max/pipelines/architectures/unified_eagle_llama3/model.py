@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     UnifiedEagleOutputs,
 )
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
-from max.pipelines.lib.pipeline_variants.utils import get_weight_paths
 from max.pipelines.lib.registry import AutoConfig
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
@@ -155,7 +154,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
 
             assert self.pipeline_config.draft_model is not None
             draft_model_config = self.pipeline_config.draft_model
-            draft_weight_paths = get_weight_paths(draft_model_config)
+            draft_weight_paths = draft_model_config.resolved_weight_paths()
             draft_weights = load_weights(draft_weight_paths)
             draft_hf_config = draft_model_config.huggingface_config
             assert draft_hf_config is not None

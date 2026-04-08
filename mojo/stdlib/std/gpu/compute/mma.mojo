@@ -24,6 +24,7 @@ from std.sys.info import (
     _is_amd_rdna3,
     _is_amd_rdna4,
     is_amd_gpu,
+    is_apple_m5,
 )
 
 from std.gpu._utils import (
@@ -43,6 +44,7 @@ from std.utils.index import Index
 # Import architecture-specific MMA implementations
 from .arch.mma_nvidia import _mma_nvidia
 from .arch.mma_amd import _mma_amd
+from .arch.mma_apple import _mma_apple
 
 
 def get_amd_fp8_dtype() -> DType:
@@ -222,6 +224,9 @@ def mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         _mma_nvidia(d, a, b, c)
     elif is_amd_gpu():
         _mma_amd[block_size](d, a, b, c)
+    # MSTDL-2556: Compilation Target Check doesn't match above
+    elif is_apple_m5() and CompilationTarget._has_feature["metal4_0"]():
+        _mma_apple(d, a, b, c)
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
@@ -733,7 +738,7 @@ def wgmma_async[
         _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
                 width._mlir_value,
@@ -860,7 +865,7 @@ def wgmma_async[
         _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
                 width._mlir_value,

@@ -7,7 +7,6 @@ modular_py_binary(
     name = "eager_simple",
     srcs = ["eager_simple.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -30,7 +29,6 @@ modular_py_binary(
     name = "graph_simple",
     srcs = ["graph_simple.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -56,7 +54,6 @@ modular_py_binary(
     name = "arithmetic_ops",
     srcs = ["arithmetic_ops.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -78,7 +75,6 @@ modular_py_binary(
     name = "functional_api",
     srcs = ["functional_api.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -101,7 +97,6 @@ modular_py_binary(
     name = "when_to_use_eager",
     srcs = ["when_to_use_eager.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -125,7 +120,6 @@ modular_py_binary(
     name = "eager_workflow",
     srcs = ["eager_workflow.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",

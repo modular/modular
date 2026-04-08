@@ -20,8 +20,8 @@ This module contains common components used by all SM100 matmul kernel variants:
 - _Batched3DLayout / _to_batched_3d: Reshape 2D TileTensor to 3D (batch=1)
 """
 
-from std.gpu import thread_idx_uint as thread_idx
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import thread_idx
+from std.gpu import warp_id as get_warp_id
 from std.gpu import block_id_in_cluster
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -75,7 +75,7 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
@@ -87,7 +87,7 @@ struct WarpRole(TrivialRegisterPassable):
         return self._role != other._role
 
     @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod

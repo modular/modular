@@ -341,14 +341,14 @@ def main() raises:
             DType.bfloat16,
             depth,
             24,
-            group=3,
+            group=8,
         ](1024, 1024, CausalMask(), ctx)
 
         test[
             DType.bfloat16,
             depth,
             24,
-            group=3,
+            group=8,
         ](1024, 1024, SlidingWindowCausalMask[128](), ctx)
 
         # BF16 with sequence length not multiple of 128

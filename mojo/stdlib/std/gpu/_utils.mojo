@@ -37,6 +37,25 @@ def to_llvm_shared_cluster_mem_ptr[
 
 
 @always_inline
+def to_llvm_global_mem_ptr[
+    type: AnyType
+](
+    ptr: UnsafePointer[type, address_space=AddressSpace.GLOBAL, ...]
+) -> __mlir_type.`!llvm.ptr<1>`:
+    """Cast global memory pointer to LLVMPointer Type.
+
+    Args:
+        ptr: Global memory pointer.
+
+    Returns:
+        A pointer of type !llvm.ptr<1>.
+    """
+    return __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<1>`
+    ](ptr)
+
+
+@always_inline
 def to_llvm_shared_mem_ptr[
     type: AnyType
 ](
@@ -167,7 +186,7 @@ comptime llvm_struct_splat[
 ] = __mlir_type[
     `!llvm.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         +field_type,
         `, `,
         repeat._mlir_value,
@@ -181,7 +200,7 @@ comptime kgen_struct_splat[
 ] = __mlir_type[
     `!kgen.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         +field_type,
         `, `,
         repeat._mlir_value,

@@ -689,13 +689,13 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
 
     randomize_starting_turn: bool = Field(
-        default=False,
+        default=True,
         description="Start each multi-turn session at a random turn offset. Prefix turns run densely (no inter-turn delay) to build KV cache context and are excluded from benchmark results.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
     randomize_session_start: bool = Field(
-        default=False,
+        default=True,
         description="Add a random sleep (0 to inter-turn delay) before each session's first measured query to spread out the initial wave of requests.",
         json_schema_extra={"group": "Traffic Control"},
     )
@@ -768,6 +768,16 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=0.0,
         description="Ratio to determine the system prompt length, used only for random sampling.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
+    )
+    fit_distributions: bool = Field(
+        default=False,
+        description=(
+            "With --num-chat-sessions on instruct-coder or agentic-code, reshape "
+            "workloads to match random_* and delay_between_chat_turns (same "
+            "semantics as random multiturn). Unsupported for code-debug multiturn. "
+            "Random/synthetic datasets already follow these distributions."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
     )
     sonnet_input_len: int = Field(
         default=550,
@@ -995,6 +1005,12 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
             "group": "Sweep Configuration",
             "cli_flag": "--num-prompts-multiplier",
         },
+    )
+
+    collect_gpu_stats: bool = Field(
+        default=True,
+        description="Enable GPU stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
     )
 
     @classmethod

@@ -81,6 +81,9 @@ from max.benchmark.benchmark_shared.datasets import (
     SyntheticPixelBenchmarkDataset,
     VisionArenaBenchmarkDataset,
 )
+from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
+    resolve_constant_delay_ms,
+)
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
     PixelGenerationSampledRequest,
@@ -2180,6 +2183,14 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         if isinstance(benchmark_dataset, CodeDebugBenchmarkDataset):
             # code_debug is a long-context dataset based on InfiniteBench
             if args.num_chat_sessions:
+                if args.fit_distributions:
+                    raise ValueError(
+                        "--fit-distributions is not supported for --dataset-name "
+                        "code-debug with --num-chat-sessions. Use random, "
+                        "instruct-coder, or agentic-code for distribution-shaped "
+                        "multiturn workloads, or omit --fit-distributions to keep "
+                        "code-debug's fixed two-turn template."
+                    )
                 if output_lengths is not None:
                     raise NotImplementedError(
                         "TODO: Add support for fixed output lengths with multi-turn"
@@ -2285,11 +2296,28 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             )
         elif isinstance(benchmark_dataset, InstructCoderBenchmarkDataset):
             if args.num_chat_sessions:
-                samples = benchmark_dataset.gen_multiturn_sessions(
-                    num_sessions=args.num_chat_sessions,
-                    tokenizer=tokenizer,
-                    shuffle=(not args.record_output_lengths),
-                )
+                if args.fit_distributions:
+                    samples = benchmark_dataset.gen_multiturn_sessions(
+                        num_sessions=args.num_chat_sessions,
+                        tokenizer=tokenizer,
+                        shuffle=(not args.record_output_lengths),
+                        fit_length_distributions=True,
+                        num_turns=args.random_num_turns,
+                        input_len=args.random_input_len,
+                        output_len=args.random_output_len,
+                        delay_between_turns_dist=args.delay_between_chat_turns,
+                        sys_prompt_ratio=args.random_sys_prompt_ratio,
+                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                    )
+                else:
+                    samples = benchmark_dataset.gen_multiturn_sessions(
+                        num_sessions=args.num_chat_sessions,
+                        tokenizer=tokenizer,
+                        shuffle=(not args.record_output_lengths),
+                        delay_between_chat_turns=resolve_constant_delay_ms(
+                            args.delay_between_chat_turns
+                        ),
+                    )
             else:
                 assert args.num_prompts is not None
                 samples = benchmark_dataset.sample_requests(
@@ -2339,10 +2367,26 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             )
         elif isinstance(benchmark_dataset, AgenticCodeBenchmarkDataset):
             if args.num_chat_sessions:
-                samples = benchmark_dataset.gen_multiturn_sessions(
-                    num_sessions=args.num_chat_sessions,
-                    shuffle=(not args.record_output_lengths),
-                )
+                if args.fit_distributions:
+                    samples = benchmark_dataset.gen_multiturn_sessions(
+                        num_sessions=args.num_chat_sessions,
+                        tokenizer=tokenizer,
+                        shuffle=(not args.record_output_lengths),
+                        fit_length_distributions=True,
+                        num_turns=args.random_num_turns,
+                        input_len=args.random_input_len,
+                        output_len=args.random_output_len,
+                        delay_between_turns_dist=args.delay_between_chat_turns,
+                        sys_prompt_ratio=args.random_sys_prompt_ratio,
+                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                        enable_tool_calls=args.tool_calls,
+                    )
+                else:
+                    samples = benchmark_dataset.gen_multiturn_sessions(
+                        num_sessions=args.num_chat_sessions,
+                        shuffle=(not args.record_output_lengths),
+                        enable_tool_calls=args.tool_calls,
+                    )
             else:
                 assert args.num_prompts is not None
                 samples = benchmark_dataset.sample_requests(

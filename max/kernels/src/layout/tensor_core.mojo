@@ -67,8 +67,8 @@ from std.sys.info import (
 
 from std.gpu import (
     WARP_SIZE,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.intrinsics import lop, ds_read_tr16_b64
 from std.gpu.compute.mma import (
@@ -81,7 +81,6 @@ from layout._utils import load_to_simd, idx2crd
 from layout.int_tuple import product
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from layout.tile_tensor import TileTensor
 from layout.swizzle import (
     ComposedLayout,
     Swizzle,
@@ -1581,55 +1580,6 @@ struct TiledTensorCore[
                 a_reg_k.vectorize[1, a_frag_size](),
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
-
-    @staticmethod
-    @always_inline
-    def mma[
-        swap_a_b: Bool = False
-    ](
-        a_reg_tile: LayoutTensor,
-        b_reg_tile: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-        c_reg_tile: LayoutTensor[mut=True, ...],
-    ):
-        """Perform a matrix multiply-accumulate with TileTensor b operand.
-
-        Converts b_reg_tile to LayoutTensor preserving the origin, so the
-        compiler can track aliases back to the stack allocation.
-
-        Parameters:
-            swap_a_b: If True, swap A and B operands before the MMA.
-
-        Args:
-            a_reg_tile: The A operand as a LayoutTensor in registers.
-            b_reg_tile: The B operand as a TileTensor in registers.
-            c_reg_tile: The C accumulator as a mutable LayoutTensor.
-        """
-        Self.mma[swap_a_b](
-            a_reg_tile, b_reg_tile.to_layout_tensor(), c_reg_tile
-        )
-
-    @staticmethod
-    @always_inline
-    def mma[
-        swap_a_b: Bool = False
-    ](
-        a_reg_tile: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-        b_reg_tile: LayoutTensor,
-        c_reg_tile: LayoutTensor[mut=True, ...],
-    ):
-        """Perform a matrix multiply-accumulate with TileTensor a operand.
-
-        Parameters:
-            swap_a_b: If True, swap A and B operands before the MMA.
-
-        Args:
-            a_reg_tile: The A operand as a TileTensor in registers.
-            b_reg_tile: The B operand as a LayoutTensor in registers.
-            c_reg_tile: The C accumulator as a mutable LayoutTensor.
-        """
-        Self.mma[swap_a_b](
-            a_reg_tile.to_layout_tensor(), b_reg_tile, c_reg_tile
-        )
 
 
 @always_inline

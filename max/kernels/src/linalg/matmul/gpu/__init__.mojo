@@ -29,8 +29,8 @@ from std.algorithm.functional import elementwise, tile_and_unswitch
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
+    global_idx,
+    thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
@@ -157,54 +157,50 @@ def matmul_kernel[
         var a_val: Scalar[a_type]
 
         comptime if not full_tile:
-            a_val = rebind[Scalar[a_type]](
-                a[Int(row), offset + Int(localCol)]
-            ) if (row < UInt(m) and offset + Int(localCol) < k) else 0.0
+            a_val = rebind[Scalar[a_type]](a[row, offset + localCol]) if (
+                row < m and offset + localCol < k
+            ) else 0.0
         else:
             a_val = (
-                rebind[Scalar[a_type]](
-                    a[Int(row), offset + Int(localCol)]
-                ) if row
-                < UInt(m) else 0.0
+                rebind[Scalar[a_type]](a[row, offset + localCol]) if row
+                < m else 0.0
             )
-        a_shared[localRow * UInt(tile_size) + localCol] = a_val
+        a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Scalar[b_type]
 
         comptime if not full_tile:
-            b_val = rebind[Scalar[b_type]](
-                b[offset + Int(localRow), Int(col)]
-            ) if (col < UInt(n) and offset + Int(localRow) < k) else 0.0
+            b_val = rebind[Scalar[b_type]](b[offset + localRow, col]) if (
+                col < n and offset + localRow < k
+            ) else 0.0
         else:
             b_val = (
-                rebind[Scalar[b_type]](
-                    b[offset + Int(localRow), Int(col)]
-                ) if col
-                < UInt(n) else 0.0
+                rebind[Scalar[b_type]](b[offset + localRow, col]) if col
+                < n else 0.0
             )
-        b_shared[localRow * UInt(tile_size) + localCol] = b_val
+        b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
 
         for kk in range(tile_size):
             result += (
-                a_shared[localRow * UInt(tile_size) + UInt(kk)].cast[s_type]()
-                * b_shared[kk * tile_size + Int(localCol)].cast[s_type]()
+                a_shared[localRow * tile_size + kk].cast[s_type]()
+                * b_shared[kk * tile_size + localCol].cast[s_type]()
             )
 
         barrier()
 
     tile_and_unswitch[update_tile](0, k, tile_size, K_remainder)
 
-    if row < UInt(m) and col < UInt(n):
+    if row < m and col < n:
         comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
                 Index(row, col), result.cast[c_type]()
             )
         else:
-            c[Int(row), Int(col)] = result.cast[c_type]()
+            c[row, col] = result.cast[c_type]()
 
 
 def matmul_kernel_naive[
@@ -230,8 +226,8 @@ def matmul_kernel_naive[
     comptime assert a.flat_rank == 2, "expected 2D tensor for a"
     comptime assert b.flat_rank == 2, "expected 2D tensor for b"
 
-    var x = Int(global_idx.x)
-    var y = Int(global_idx.y)
+    var x = global_idx.x
+    var y = global_idx.y
 
     if x >= m or y >= n:
         return
@@ -664,20 +660,27 @@ def _matmul_gpu[
                         elementwise_lambda_fn=elementwise_lambda_wrapper,
                     ](c, a, b, ctx)
 
-                # M threshold above which vendor BLAS (hipBLASLt) outperforms
-                # all custom kernels for these (N, K) shapes.
-                # Derived from Llama3-405B TP=4 benchmarks on MI355X.
-                # Format: Index(N, K, M_threshold) — vendor BLAS used when m >= threshold.
+                # M thresholds where vendor BLAS (hipBLASLt) outperforms
+                # all custom kernels. Derived from Llama3-405B TP=4 on MI355X.
+                # Also includes M ranges where vendor wins for small M
+                # (standard kernel can't match hipBLASLt's tiny-tile configs).
+                # Format: Index(N, K, M_low, M_high) — vendor BLAS for M_low <= m < M_high.
                 comptime vendor_blas_NK_m = [
+                    # N=2304: vendor wins at M=4-16 and M>=4096
                     Index(2304, 16384, 4096),
-                    Index(16384, 2048, 225),
-                    Index(13312, 16384, 600),
+                    # N=16384 K=2048: vendor wins at M>=150 (except M=450 skinny)
+                    Index(16384, 2048, 150),
+                    # N=16384 K=6656: vendor wins at M=4-16 and M>=600
                     Index(16384, 6656, 600),
+                    # N=13312: vendor wins at M>=600 (borderline)
+                    Index(13312, 16384, 600),
                 ]
                 comptime for i in range(len(vendor_blas_NK_m)):
                     comptime nk_m = vendor_blas_NK_m[i]
                     comptime if static_N == nk_m[0] and static_K == nk_m[1]:
-                        if m >= nk_m[2]:
+                        if m >= nk_m[2] or (
+                            n == 16384 and k == 6656 and m > 1 and m < 64
+                        ):
                             logger.info(
                                 "Executing: vendor BLAS (hipBLASLt) for AMD"
                             )
@@ -688,15 +691,79 @@ def _matmul_gpu[
 
                 comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
-                elif get_defined_bool["AUTOTUNING_MODE", False]():
+
+                comptime if get_defined_bool["AUTOTUNING_MODE", False]():
                     comptime block_m = get_defined_int["TUNE_BM", 128]()
                     comptime block_n = get_defined_int["TUNE_BN", 128]()
+                    comptime block_k = get_defined_int[
+                        "TUNE_BK", _bk_base[a_type, True]()
+                    ]()
                     comptime num_k_partitions = get_defined_int[
                         "TUNE_NUM_K_PARTITIONS", 1
                     ]()
-                    return kernel_helper[
-                        block_m, block_n, num_k_partitions=num_k_partitions
-                    ]()
+                    comptime config = MatmulConfig[
+                        a_type, b_type, c_type, transpose_b
+                    ](
+                        block_tile_shape=Index(block_m, block_n, block_k),
+                        warp_tile_shape=Index(
+                            block_m // 2, block_n // 2, block_k
+                        ),
+                        mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
+                        num_pipeline_stages=1,
+                        num_k_partitions=UInt(num_k_partitions),
+                        pdl_level=pdl_level,
+                    )
+                    return _multistage_gemm[config]()
+
+                # Shape-specific FP8 configs for small M (128-256).
+                # These match hipBLASLt's tile choices which use deeper K
+                # tiles and adapted block shapes for better per-block
+                # throughput at low CU occupancy.
+                # Format: Index(N, K, BM, BN, BK)
+                # Small-M FP8 dispatch (M=128-256): use autotuned block
+                # shapes that outperform the generic auto-tuner.
+                # Derived from sweep over BM/BN/BK on MI355X.
+                comptime if a_type.is_float8() and transpose_b:
+                    if m >= 128 and m <= 256:
+
+                        @always_inline
+                        @parameter
+                        def _small_m_gemm[
+                            _bm: Int, _bn: Int, _bk: Int
+                        ]() raises:
+                            comptime config = MatmulConfig[
+                                a_type, b_type, c_type, transpose_b
+                            ](
+                                block_tile_shape=Index(_bm, _bn, _bk),
+                                warp_tile_shape=Index(_bm // 2, _bn // 2, _bk),
+                                mma_shape=_amdgpu_get_mma_shape[
+                                    a_type, transpose_b
+                                ](),
+                                num_pipeline_stages=1,
+                                pdl_level=pdl_level,
+                            )
+                            return _multistage_gemm[config]()
+
+                        comptime if static_N < 4096:
+                            # Narrow N (e.g. N=2304): deep BK=512,
+                            # square blocks for balanced compute.
+                            # Guard: K must be >= BK to avoid OOB reads.
+                            if k >= 512:
+                                if m <= 160:
+                                    return _small_m_gemm[32, 64, 512]()
+                                else:
+                                    return _small_m_gemm[64, 64, 512]()
+                        else:
+                            if m <= 150:
+                                # Small M with wide N: BM=64 for
+                                # occupancy, BN=128 for N-coverage
+                                if k >= 256:
+                                    return _small_m_gemm[64, 128, 256]()
+                            else:
+                                # Larger M (200-256): square 128x128
+                                # tiles with BK=256
+                                if k >= 256:
+                                    return _small_m_gemm[128, 128, 256]()
 
                 comptime sm_count = ctx.default_device_info.sm_count
                 comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[
@@ -1074,18 +1141,16 @@ def multistage_gemm[
 
             # Dispatch heuristic from Llama3-405B TP=4 benchmarks on MI355X.
             #
-            # Three kernels: standard GEMM, pingpong 256x256, skinny 128x256.
-            # Skinny pingpong dominates at small M (128-512) with 35-56%
-            # advantage over 256x256 due to better occupancy.
-            # 256x256 pingpong dominates at large M (>=640) with 15-25%
-            # advantage due to higher compute density per barrier.
-            # Crossover is consistent at M ~= 512-640 across all (N,K).
+            # For N >= 4096:
+            #   M < 225:  autotuned standard GEMM (small-M configs handle 128-256)
+            #   225 <= M < 600: skinny pingpong (1.1-1.3x vs vendor BLAS)
+            #   M >= 600: pingpong 256x256 (~1.0x vs vendor, best custom)
             #
-            # N >= 4096: skinny at M 128-512, 256x256 at M >= 640
-            # N <  4096: standard GEMM at small M, skinny at M >= 512
-
+            # For N < 4096 (e.g. N=2304):
+            #   M < 750:  autotuned standard GEMM (1.4-2.2x vs vendor BLAS)
+            #   M >= 750: skinny pingpong (1.2-1.3x vs vendor BLAS)
             if N >= 4096:
-                if M >= 640:
+                if M >= 600:
                     logger.info("Executing: AMD ping-pong matmul (256x256)")
                     ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
                         a,
@@ -1097,7 +1162,7 @@ def multistage_gemm[
                         ),
                         block_dim=pingpong_config.num_threads(),
                     )
-                elif M >= 128:
+                elif M >= 256:
                     logger.info("Executing: AMD skinny pingpong matmul")
                     ctx.enqueue_function[skinny_kernel, skinny_kernel](
                         a,
@@ -1119,7 +1184,7 @@ def multistage_gemm[
                         block_dim=config.block_dim(),
                     )
             else:
-                if M >= 512:
+                if M >= 750:
                     logger.info("Executing: AMD skinny pingpong matmul")
                     ctx.enqueue_function[skinny_kernel, skinny_kernel](
                         a,
@@ -1353,19 +1418,8 @@ def multistage_gemm[
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
 
-            # Dispatch heuristic from Llama3-405B TP=4 benchmarks on MI355X.
-            #
-            # Three kernels: standard GEMM, pingpong 256x256, skinny 128x256.
-            # Skinny pingpong dominates at small M (128-512) with 35-56%
-            # advantage over 256x256 due to better occupancy.
-            # 256x256 pingpong dominates at large M (>=640) with 15-25%
-            # advantage due to higher compute density per barrier.
-            # Crossover is consistent at M ~= 512-640 across all (N,K).
-            #
-            # N >= 4096: skinny at M 128-512, 256x256 at M >= 640
-            # N <  4096: standard GEMM at small M, skinny at M >= 512
             if N >= 4096:
-                if M >= 640:
+                if M >= 600:
                     logger.info("Executing: AMD ping-pong matmul (256x256)")
                     ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
                         a,
@@ -1377,7 +1431,7 @@ def multistage_gemm[
                         ),
                         block_dim=pingpong_config.num_threads(),
                     )
-                elif M >= 128:
+                elif M >= 256:
                     logger.info("Executing: AMD skinny pingpong matmul")
                     ctx.enqueue_function[skinny_kernel, skinny_kernel](
                         a,
@@ -1399,7 +1453,7 @@ def multistage_gemm[
                         block_dim=config.block_dim(),
                     )
             else:
-                if M >= 512:
+                if M >= 750:
                     logger.info("Executing: AMD skinny pingpong matmul")
                     ctx.enqueue_function[skinny_kernel, skinny_kernel](
                         a,

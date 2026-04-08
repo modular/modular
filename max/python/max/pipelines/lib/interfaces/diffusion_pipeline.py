@@ -29,7 +29,6 @@ from max._core.driver import Device
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
@@ -37,6 +36,9 @@ from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from tqdm import tqdm
+
+from .first_block_cache import FirstBlockCache
+from .taylorseer import TaylorSeer, run_denoising_step
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -255,28 +257,14 @@ class DiffusionPipeline(ABC):
         ``weight_path`` and ``huggingface_weight_repo`` resolved after
         ``ModelManifest.resolve()``).
         """
-        from ..hf_utils import download_weight_files
-
-        weight_repo = component_config.huggingface_weight_repo
-        if not component_config.weight_path:
-            return []
-
-        if weight_repo.repo_type == "online":
-            return download_weight_files(
-                huggingface_model_id=weight_repo.repo_id,
-                filenames=[str(x) for x in component_config.weight_path],
-                revision=component_config.huggingface_weight_revision,
-                force_download=component_config.force_download,
-            )
-        else:
-            local_path = Path(weight_repo.repo_id)
-            return [local_path / x for x in component_config.weight_path]
+        return component_config.resolved_weight_paths()
 
     # -----------------------------------------------------------------
     # Denoising cache support (FBCache + TaylorSeer)
     # -----------------------------------------------------------------
 
-    _cache_taylor_max_order_tensor: Tensor | None = None
+    _taylorseer: TaylorSeer | None = None
+    _fbc: FirstBlockCache | None = None
     _cache_dtype: DType
     _cache_device: Device
 
@@ -286,22 +274,21 @@ class DiffusionPipeline(ABC):
         Call once during ``init_remaining_components()``, after the
         transformer has been loaded and compiled.
         """
-        self._cache_taylor_max_order_tensor = None
+        self._taylorseer = None
         if self.cache_config.taylorseer:
-            self._cache_taylor_max_order_tensor = Tensor(
-                storage=Buffer.from_dlpack(
-                    np.array(
-                        [self.cache_config.taylorseer_max_order],
-                        dtype=np.int32,
-                    )
-                ).to(device)
+            assert self.cache_config.taylorseer_max_order is not None
+            self._taylorseer = TaylorSeer(
+                max_order=self.cache_config.taylorseer_max_order,
+                dtype=dtype,
+                device=device,
             )
+
+        self._fbc = None
+        if self.cache_config.first_block_caching:
+            self._fbc = FirstBlockCache(dtype=dtype, device=device)
 
         self._cache_dtype = dtype
         self._cache_device = device
-
-        if self.cache_config.taylorseer:
-            self.build_taylorseer(dtype, device)
 
     def create_cache_state(
         self,
@@ -357,22 +344,21 @@ class DiffusionPipeline(ABC):
             )
 
         if self.cache_config.first_block_caching:
-            state.prev_residual = _device_zeros(
-                (batch_size, seq_len, residual_dim)
+            assert self._fbc is not None
+            fbc_state = self._fbc.create_state(
+                batch_size, seq_len, residual_dim, output_dim
             )
-            state.prev_output = _device_zeros((batch_size, seq_len, output_dim))
+            state.prev_residual = fbc_state.prev_residual
+            state.prev_output = fbc_state.prev_output
 
         if self.cache_config.taylorseer:
-            for attr in (
-                "taylor_factor_0",
-                "taylor_factor_1",
-                "taylor_factor_2",
-            ):
-                setattr(
-                    state,
-                    attr,
-                    _device_zeros((batch_size, seq_len, output_dim)),
-                )
+            assert self._taylorseer is not None
+            ts_state = self._taylorseer.create_state(
+                batch_size, seq_len, output_dim
+            )
+            state.taylor_factor_0 = ts_state.factor_0
+            state.taylor_factor_1 = ts_state.factor_1
+            state.taylor_factor_2 = ts_state.factor_2
 
         if self.cache_config.teacache:
             state.teacache_prev_modulated_input = _device_zeros(
@@ -389,35 +375,25 @@ class DiffusionPipeline(ABC):
 
         return state
 
+    # Deprecated: use TaylorSeer directly.
     def build_taylorseer(self, dtype: DType, device: Device) -> None:
-        """Build compiled graphs for TaylorSeer predict and update."""
-        tensor_type = TensorType(
-            dtype, shape=["batch", "seq", "channels"], device=device
-        )
-        scalar_type = TensorType(DType.float32, shape=[1], device=device)
-        order_type = TensorType(DType.int32, shape=[1], device=device)
+        """Build compiled graphs for TaylorSeer predict and update.
 
-        self.__dict__["taylor_predict"] = max_compile(
-            self.taylor_predict,
-            input_types=[
-                tensor_type,  # factor_0
-                tensor_type,  # factor_1
-                tensor_type,  # factor_2
-                scalar_type,  # step_offset
-                order_type,  # max_order
-            ],
-        )
-        self.__dict__["taylor_update"] = max_compile(
-            self.taylor_update,
-            input_types=[
-                tensor_type,  # new_output
-                tensor_type,  # old_factor_0
-                tensor_type,  # old_factor_1
-                scalar_type,  # delta_step
-                order_type,  # max_order
-            ],
+        .. deprecated::
+            Use ``TaylorSeer`` from ``taylorseer.py`` directly.
+            This is now a no-op when ``_init_cache_state`` has already
+            constructed the standalone ``TaylorSeer`` instance.
+        """
+        if self._taylorseer is not None:
+            return
+        assert self.cache_config.taylorseer_max_order is not None
+        self._taylorseer = TaylorSeer(
+            max_order=self.cache_config.taylorseer_max_order,
+            dtype=dtype,
+            device=device,
         )
 
+    # Deprecated: use TaylorSeer.predict directly.
     @staticmethod
     def taylor_predict(
         factor_0: Tensor,
@@ -426,24 +402,16 @@ class DiffusionPipeline(ABC):
         step_offset: Tensor,
         max_order: Tensor,
     ) -> Tensor:
-        """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2."""
-        offset = F.cast(step_offset, factor_0.dtype)
-        result = factor_0 + factor_1 * offset
-        offset_sq_half = (
-            offset
-            * offset
-            * F.constant(0.5, factor_0.dtype, device=factor_0.device)
-        )
-        order2_term = factor_2 * offset_sq_half
-        use_order2 = max_order >= F.constant(
-            2, DType.int32, device=max_order.device
-        )
-        use_order2_cast = F.cast(
-            F.broadcast_to(use_order2, order2_term.shape), order2_term.dtype
-        )
-        result = result + order2_term * use_order2_cast
-        return result
+        """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2.
 
+        .. deprecated::
+            Use ``TaylorSeer.predict`` from ``taylorseer.py`` directly.
+        """
+        return TaylorSeer.predict(
+            factor_0, factor_1, factor_2, step_offset, max_order
+        )
+
+    # Deprecated: use TaylorSeer.update directly.
     @staticmethod
     def taylor_update(
         new_output: Tensor,
@@ -452,33 +420,26 @@ class DiffusionPipeline(ABC):
         delta_step: Tensor,
         max_order: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Compute Taylor factors via divided differences."""
-        delta = F.cast(delta_step, new_output.dtype)
-        eps = F.constant(1e-9, new_output.dtype, device=new_output.device)
-        safe_delta = delta + eps
+        """Compute Taylor factors via divided differences.
 
-        new_factor_0 = new_output
-        new_factor_1 = (new_output - old_factor_0) / safe_delta
-        new_factor_2 = (new_factor_1 - old_factor_1) / safe_delta
-        use_order2 = max_order >= F.constant(
-            2, DType.int32, device=max_order.device
+        .. deprecated::
+            Use ``TaylorSeer.update`` from ``taylorseer.py`` directly.
+        """
+        return TaylorSeer.update(
+            new_output, old_factor_0, old_factor_1, delta_step, max_order
         )
-        use_order2_cast = F.cast(
-            F.broadcast_to(use_order2, new_factor_2.shape),
-            new_factor_2.dtype,
-        )
-        new_factor_2 = new_factor_2 * use_order2_cast
 
-        return new_factor_0, new_factor_1, new_factor_2
-
+    # Deprecated: use TaylorSeer.should_skip directly.
     @staticmethod
     def taylorseer_skip_transformer(
         step: int, warmup_steps: int, cache_interval: int
     ) -> bool:
-        """Return True when the full transformer pass can be skipped at *step*."""
-        if step < warmup_steps:
-            return False
-        return (step - warmup_steps - 1) % cache_interval != 0
+        """Return True when the full transformer pass can be skipped at *step*.
+
+        .. deprecated::
+            Use ``TaylorSeer.should_skip`` from ``taylorseer.py`` directly.
+        """
+        return TaylorSeer.should_skip(step, warmup_steps, cache_interval)
 
     def run_transformer(
         self,
@@ -521,90 +482,14 @@ class DiffusionPipeline(ABC):
         Returns:
             noise_pred tensor for this step.
         """
-        cache_config = self.cache_config
-
-        # 1. TaylorSeer scheduling decision
-        skip_transformer = False
-        warmup_steps = cache_config.taylorseer_warmup_steps
-        cache_interval = cache_config.taylorseer_cache_interval
-        max_order_tensor = self._cache_taylor_max_order_tensor
-        if cache_config.taylorseer:
-            assert warmup_steps is not None
-            assert cache_interval is not None
-            skip_transformer = self.taylorseer_skip_transformer(
-                step,
-                warmup_steps,
-                cache_interval,
-            )
-
-        # 2. Compute TaylorSeer step delta
-        taylor_delta_tensor: Tensor | None = None
-        if cache_config.taylorseer:
-            assert max_order_tensor is not None
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            delta = (
-                float(step - cache_state.taylor_last_compute_step)
-                if cache_state.taylor_last_compute_step is not None
-                else 1.0
-            )
-            taylor_delta_tensor = Tensor(
-                storage=Buffer.from_dlpack(
-                    np.array([delta], dtype=np.float32)
-                ).to(device)
-            )
-
-        # 3. Predict path (skip transformer)
-        if cache_config.taylorseer and skip_transformer:
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            assert cache_state.taylor_factor_2 is not None
-            assert taylor_delta_tensor is not None
-            assert max_order_tensor is not None
-            return self.taylor_predict(
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                cache_state.taylor_factor_2,
-                taylor_delta_tensor,
-                max_order_tensor,
-            )
-
-        # 4. Full compute path
-        result = self.run_transformer(cache_state, **kwargs)
-        if cache_config.teacache:
-            (
-                cache_state.teacache_prev_modulated_input,
-                cache_state.teacache_cached_residual,
-                cache_state.teacache_accumulated_rel_l1,
-                noise_pred,
-            ) = result
-        elif cache_config.first_block_caching:
-            new_residual, noise_pred = result
-            cache_state.prev_residual = new_residual
-            cache_state.prev_output = noise_pred
-        else:
-            noise_pred = result[0]
-
-        # 5. TaylorSeer factor update
-        if cache_config.taylorseer:
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            assert taylor_delta_tensor is not None
-            assert max_order_tensor is not None
-            (
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                cache_state.taylor_factor_2,
-            ) = self.taylor_update(
-                noise_pred,
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                taylor_delta_tensor,
-                max_order_tensor,
-            )
-            cache_state.taylor_last_compute_step = step
-
-        return noise_pred
+        return run_denoising_step(
+            step=step,
+            cache_state=cache_state,
+            cache_config=self.cache_config,
+            device=device,
+            compute_fn=lambda: self.run_transformer(cache_state, **kwargs),
+            taylorseer=self._taylorseer,
+        )
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]

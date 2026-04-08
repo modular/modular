@@ -1,4 +1,6 @@
-This directory contains code examples for the
+# Code examples and tests for tips for Python devs
+
+This directory contains Code examples and tests for the
 [Tips for Python devs](../../../../docs/manual/python-to-mojo)
 section of the Mojo Manual.
 

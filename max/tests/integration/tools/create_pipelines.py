@@ -1134,17 +1134,22 @@ class ImageGenerationOracle(PipelineOracle):
     num_steps: int
     """Number of denoising steps."""
 
+    config_params: dict[str, Any]
+    """Additional config parameters (e.g. prefer_module_v3)."""
+
     def __init__(
         self,
         model_path: str = "black-forest-labs/FLUX.1-dev",
         num_steps: int = 50,
         requests: list[Any] = test_data.DEFAULT_PIXEL_GENERATION,
+        config_params: dict[str, Any] = {},  # noqa: B006
     ) -> None:
         super().__init__()
         self.model_path = model_path
         self.task = PipelineTask.PIXEL_GENERATION
         self.num_steps = num_steps
         self._inputs = requests
+        self.config_params = config_params
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -1165,16 +1170,18 @@ class ImageGenerationOracle(PipelineOracle):
     ) -> MaxPipelineAndTokenizer:
         """Create MAX FLUX pixel generation pipeline."""
 
+        prefer_module_v3 = self.config_params.get("prefer_module_v3", True)
+
+        models = ModelManifest.from_model_path(
+            self.model_path,
+            device_specs=device_specs,
+        )
+
         config = pipelines.PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": pipelines.MAXModelConfig(
-                        model_path=self.model_path,
-                        device_specs=device_specs,
-                    )
-                }
+            models=models,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=prefer_module_v3,
             ),
-            runtime=PipelineRuntimeConfig(prefer_module_v3=True),
         )
 
         if self.model_path.startswith("black-forest-labs/FLUX.2"):
@@ -1349,6 +1356,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": GenericOracle(
         model_path="RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
+        },
+    ),
+    "modularai/Llama-3.1-405B-Instruct-autofp8": GenericOracle(
+        model_path="modularai/Llama-3.1-405B-Instruct-autofp8",
         config_params={"max_length": 512},
         device_encoding_map={
             "gpu": ["float8_e4m3fn"],

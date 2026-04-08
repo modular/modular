@@ -22,8 +22,8 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx_int as block_idx,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
+    global_idx_int as global_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
@@ -38,6 +38,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import TensorLayout
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -107,7 +108,13 @@ def quantize_static_scaled_fp8[
         in_dtype, target=get_gpu_target()
     ]()
 
-    _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
+    def scaled_fp8_quant_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]) unified register_passable {}:
+        scaled_fp8_quant[width, rank, alignment](idx)
+
+    _elementwise_impl_gpu[simd_width=target_simd_width](
+        scaled_fp8_quant_unified,
         shape=IndexList[2](Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
     )
@@ -430,7 +437,7 @@ def quantize_fp8_kernel[
     var group_idx = block_idx.y
 
     with PDL():
-        for i in range(Int(tid), group_size // simd_width, num_threads):
+        for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
             input_vec = input_fn[simd_width, simd_width](row, idx).cast[
                 accum_type
@@ -461,7 +468,7 @@ def quantize_fp8_kernel[
         if tid == 0:
             scales.store_linear(Index(group_idx, row), scale_factor)
 
-        for i in range(Int(tid), group_size // simd_width, num_threads):
+        for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
 
             comptime if use_warp_tiling:
@@ -719,7 +726,7 @@ def batched_quantize_fp8_kernel[
     var batch_idx = block_idx.z
 
     with PDL():
-        for i in range(Int(tid), group_size // simd_width, num_threads):
+        for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
             input_vec = input_fn[simd_width, simd_width](
                 batch_idx, row, idx
@@ -737,7 +744,7 @@ def batched_quantize_fp8_kernel[
         if tid == 0:
             scales.store_linear(Index(batch_idx, group_idx, row), scale_factor)
 
-        for i in range(Int(tid), group_size // simd_width, num_threads):
+        for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
 
             comptime if use_warp_tiling:
@@ -1300,7 +1307,7 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
     var x = global_idx.x
     var y = global_idx.y
 
-    if x >= UInt(M) or y >= UInt(N):
+    if x >= M or y >= N:
         return
 
     var MAT_A_ROWS_SCALE_SIZE: UInt
@@ -1336,14 +1343,14 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
 
     var accum = Scalar[accum_type](0)
     for k in range(K):
-        var a_val = rebind[Scalar[a_type]](
-            a.load_linear(Index(Int(x), k))
-        ).cast[accum_type]()
+        var a_val = rebind[Scalar[a_type]](a.load_linear(Index(x, k))).cast[
+            accum_type
+        ]()
         var a_scale_factor = rebind[Scalar[a_scales_type]](
             a_scales.load_linear(
                 Index(
                     k // Int(MAT_A_ROWS_SCALE_SIZE),
-                    Int(x // MAT_A_COLS_SCALE_SIZE),
+                    Int(UInt(x) // MAT_A_COLS_SCALE_SIZE),
                 )
             )
         ).cast[accum_type]()
@@ -1352,26 +1359,26 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
         var b_scale_factor: Scalar[accum_type]
 
         comptime if transpose_b:
-            b_val = rebind[Scalar[b_type]](
-                b.load_linear(Index(Int(y), k))
-            ).cast[accum_type]()
+            b_val = rebind[Scalar[b_type]](b.load_linear(Index(y, k))).cast[
+                accum_type
+            ]()
             b_scale_factor = rebind[Scalar[b_scales_type]](
                 b_scales.load_linear(
                     Index(
-                        Int(y // MAT_B_ROWS_SCALE_SIZE),
+                        Int(UInt(y) // MAT_B_ROWS_SCALE_SIZE),
                         k // Int(MAT_B_COLS_SCALE_SIZE),
                     )
                 )
             ).cast[accum_type]()
         else:
-            b_val = rebind[Scalar[b_type]](
-                b.load_linear(Index(k, Int(y)))
-            ).cast[accum_type]()
+            b_val = rebind[Scalar[b_type]](b.load_linear(Index(k, y))).cast[
+                accum_type
+            ]()
             b_scale_factor = rebind[Scalar[b_scales_type]](
                 b_scales.load_linear(
                     Index(
                         k // Int(MAT_B_ROWS_SCALE_SIZE),
-                        Int(y // MAT_B_COLS_SCALE_SIZE),
+                        Int(UInt(y) // MAT_B_COLS_SCALE_SIZE),
                     )
                 )
             ).cast[accum_type]()
@@ -1382,7 +1389,7 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
     else:
-        c.store_linear(Index(Int(x), Int(y)), accum.cast[c_type]())
+        c.store_linear(Index(x, y), accum.cast[c_type]())
 
 
 def naive_blockwise_scaled_fp8_grouped_matmul[
@@ -1523,8 +1530,8 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     var K = b.dim[2]()
 
     # Indices in current expert's matmul tile
-    var n = Int(global_idx.x)
-    var m_local = Int(global_idx.y)
+    var n = global_idx.x
+    var m_local = global_idx.y
 
     var expert_idx = block_idx.z
 
@@ -1644,7 +1651,13 @@ def convert_e4m3fn_to_e4m3fnuz(
         DType.float8_e4m3fn, target=get_gpu_target()
     ]()
 
-    _elementwise_impl_gpu[func=convert_kernel, simd_width=target_simd_width](
+    def convert_kernel_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]) unified register_passable {}:
+        convert_kernel[width, rank, alignment](idx)
+
+    _elementwise_impl_gpu[simd_width=target_simd_width](
+        convert_kernel_unified,
         shape=IndexList[2](
             Int(input_buffer.dim[0]()), Int(input_buffer.dim[1]())
         ),
@@ -1669,7 +1682,9 @@ def blockwise_scaled_fp8_with_epilogue[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    c: NullableTileTensor[
+        mut=True, c_type, address_space=AddressSpace.GENERIC, ...
+    ],
     a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
@@ -1710,7 +1725,7 @@ def blockwise_scaled_fp8_with_epilogue[
         )
 
         comptime if not elementwise_lambda_fn:
-            if not c.ptr._is_not_null():
+            if not c.ptr:
                 raise "c must be allocated!"
 
             blockwise_fp8_matmul[
@@ -1718,7 +1733,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 a_scales_type=a_scales_type,
                 b_scales_type=b_scales_type,
                 config=matmul_config,
-            ](c, a, b, a_scales, b_scales, ctx)
+            ](c.value(), a, b, a_scales, b_scales, ctx)
         else:
             comptime epilogue = elementwise_lambda_fn.value()
             # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
@@ -1737,14 +1752,14 @@ def blockwise_scaled_fp8_with_epilogue[
                 simd_width: Int, rank: Int, alignment: Int = 1
             ](idx: IndexList[rank]):
                 var c_coord = Index(idx[0], idx[1])
-                var c_val = c.load_linear[simd_width](idx)
+                var c_val = c.value().load_linear[simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
                     c_coord, c_val
                 )
 
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
-            if c.ptr._is_not_null():
+            if c.ptr:
                 var m = Int(c.dim[0]())
                 var n = Int(c.dim[1]())
 
@@ -1753,7 +1768,7 @@ def blockwise_scaled_fp8_with_epilogue[
                     a_scales_type=a_scales_type,
                     b_scales_type=b_scales_type,
                     config=matmul_config,
-                ](c, a, b, a_scales, b_scales, ctx)
+                ](c.value(), a, b, a_scales, b_scales, ctx)
                 elementwise[epilogue_wrapper, simd_size, target="gpu"](
                     Index(m, n), ctx
                 )

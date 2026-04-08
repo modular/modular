@@ -23,13 +23,9 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.interfaces import (
-    GenerationStatus,
-    RequestID,
     TextGenerationContextType,
-    TextGenerationOutput,
 )
 from max.pipelines.core import TextContext
-from max.pipelines.lib.utils import upper_bounded_default
 
 from ..pipeline_variants.text_generation import calculate_num_steps
 
@@ -80,16 +76,11 @@ class SpeculativeDecodingMetrics:
             draft_tokens_generated=0,
         )
 
-    def update(
-        self,
-        draft_tokens_accepted: int,
-        draft_tokens_generated: int,
-    ) -> None:
+    def update(self, metrics: SpeculativeDecodingMetrics) -> None:
         """Update metrics with results from a batch."""
-        assert draft_tokens_generated % self.num_speculative_tokens == 0
-        assert draft_tokens_accepted <= draft_tokens_generated
-        self.draft_tokens_accepted += draft_tokens_accepted
-        self.draft_tokens_generated += draft_tokens_generated
+        assert metrics.num_speculative_tokens == self.num_speculative_tokens
+        self.draft_tokens_accepted += metrics.draft_tokens_accepted
+        self.draft_tokens_generated += metrics.draft_tokens_generated
 
     @property
     def acceptance_rate(self) -> float:
@@ -166,38 +157,6 @@ def update_contexts_and_compute_metrics_standalone(
 
     total_draft_generated = num_draft_tokens_generated * len(context_batch)
     return total_draft_accepted, total_draft_generated
-
-
-def build_response(
-    context_batch: list[TextGenerationContextType], max_seq_len: int
-) -> dict[RequestID, TextGenerationOutput]:
-    """Build response from updated contexts.
-
-    Args:
-        context_batch: The list of context objects
-        max_seq_len: The maximum sequence length
-
-    Returns:
-        Dictionary mapping request IDs to TextGenerationOutput objects
-    """
-    res: dict[RequestID, TextGenerationOutput] = {}
-
-    for context in context_batch:
-        # Identify the Max Length
-        context_max_length = upper_bounded_default(
-            upper_bound=max_seq_len, default=context.max_length
-        )
-
-        # Break early if beyond max length
-        current_length = context.tokens.processed_length + 1
-        if current_length >= context_max_length:
-            context.status = GenerationStatus.MAXIMUM_LENGTH
-
-        output = context.to_generation_output()
-        if output.tokens:
-            res[context.request_id] = output
-
-    return res
 
 
 def compute_max_num_draft_steps(

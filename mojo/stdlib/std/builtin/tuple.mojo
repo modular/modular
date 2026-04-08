@@ -94,20 +94,6 @@ struct Tuple[*element_types: Movable](
         Args:
             args: Initial values.
         """
-        self = Self(storage=args^)
-
-    @always_inline("nodebug")
-    def __init__(
-        out self,
-        *,
-        var storage: VariadicPack[_, Movable, *Self.element_types],
-    ):
-        """Construct the tuple from a low-level internal representation.
-
-        Args:
-            storage: The variadic pack storage to construct from.
-        """
-
         # Mark 'self._mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
@@ -118,7 +104,7 @@ struct Tuple[*element_types: Movable](
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
             UnsafePointer(to=self[idx]).init_pointee_move(elt^)
 
-        storage^.consume_elements[init_elt]()
+        args^.consume_elements[init_elt]()
 
     def __del__(deinit self):
         """Destructor that destroys all of the elements."""
@@ -185,7 +171,7 @@ struct Tuple[*element_types: Movable](
             The tuple length.
         """
 
-        comptime result = Variadic.size_types[Self.element_types]
+        comptime result = TypeList[*Self.element_types].size
         return result
 
     @always_inline("nodebug")
@@ -564,7 +550,7 @@ struct Tuple[*element_types: Movable](
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
                     UnsafePointer(
-                        to=self[Variadic.size_types[Self.element_types] - 1 - i]
+                        to=self[TypeList[*Self.element_types].size - 1 - i]
                     )
                 )
             )

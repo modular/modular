@@ -1241,7 +1241,12 @@ def get_tool_parser(app: FastAPI) -> ToolParser | None:
     pipeline_config = get_app_pipeline_config(app)
 
     # Get architecture name from HuggingFace config
-    hf_config = pipeline_config.model.huggingface_config
+    try:
+        hf_config = pipeline_config.model.huggingface_config
+    except ValueError:
+        # Model doesn't have a valid HuggingFace config (e.g., mock models, local models)
+        return None
+
     if not hf_config.architectures:
         return None
 

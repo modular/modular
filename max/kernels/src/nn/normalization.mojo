@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_down, ceildiv, clamp, rsqrt
+from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
@@ -24,13 +25,13 @@ from std.algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
-    barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
     syncwarp,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    barrier,
+    thread_idx,
+    block_dim,
+    block_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
@@ -100,7 +101,7 @@ def block_reduce[
 
         # Only read lanes corresponding to active warps to avoid
         # reading uninitialized shared memory.
-        if lane_idx < block_dim.x // UInt(WARP_SIZE):
+        if lane_idx < ufloordiv(block_dim.x, WARP_SIZE):
             block_m2 = m2_shared[lane_idx]
 
         # On some GPUs, the warp-level reduction implicitly requires all lanes
@@ -148,7 +149,7 @@ def block_reduce_dual_sum[
         var block_sum0 = Scalar[dtype](0)
         var block_sum1 = Scalar[dtype](0)
 
-        if lane_idx < block_dim.x // UInt(WARP_SIZE):
+        if lane_idx < ufloordiv(block_dim.x, WARP_SIZE):
             block_sum0 = shared0[lane_idx]
             block_sum1 = shared1[lane_idx]
 
@@ -271,7 +272,7 @@ def welford_block_all_reduce[
     barrier()
 
     if warp_idx == 0:
-        if thread_idx.x < block_dim.x // UInt(WARP_SIZE):
+        if thread_idx.x < ufloordiv(block_dim.x, WARP_SIZE):
             warp_mean = mean_shared[lane_idx]
             warp_m2 = m2_shared[lane_idx]
             warp_count = count_shared[lane_idx]
@@ -330,21 +331,19 @@ def layer_norm_gpu_warp_tiling[
     comptime accum_type = get_accum_type[dtype]()
 
     var num_cols = shape[1]
-    var tid: UInt = thread_idx.x
-    var row: UInt = block_idx.x
+    var tid = thread_idx.x
+    var row = block_idx.x
 
     var vec_data = SIMD[accum_type, Int(simd_width)]()
 
-    var idx: UInt = tid * simd_width
+    var idx: Int = tid * Int(simd_width)
 
     with PDL():
         var row_mean: Scalar[accum_type]
         var row_var: Scalar[accum_type]
 
-        if idx < UInt(num_cols):
-            vec_data = input_fn[Int(simd_width)](Int(row), Int(idx)).cast[
-                accum_type
-            ]()
+        if idx < num_cols:
+            vec_data = input_fn[Int(simd_width)](row, idx).cast[accum_type]()
 
         var thread_sum = vec_data.reduce_add()
         var n = Scalar[accum_type](num_cols)
@@ -367,7 +366,7 @@ def layer_norm_gpu_warp_tiling[
             ](thread_sum)
             row_mean = total_sum / n
             var thread_centered_sq = Scalar[accum_type](0)
-            if idx < UInt(num_cols):
+            if idx < num_cols:
                 thread_centered_sq = ((vec_data - row_mean) ** 2).reduce_add()
             var total_centered_sq = block_reduce[
                 max_warps_per_block=max_warps_per_block
@@ -376,15 +375,13 @@ def layer_norm_gpu_warp_tiling[
 
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
-        if idx < UInt(num_cols):
+        if idx < num_cols:
             var gamma_val = gamma_fn[Int(simd_width)](Index(idx))
             var beta_val = beta.load[width=Int(simd_width)](Coord(Idx(idx)))
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
                 accum_type
             ]() + beta_val.cast[accum_type]()
-            output_fn[Int(simd_width), align](
-                Int(row), Int(idx), norm_val.cast[dtype]()
-            )
+            output_fn[Int(simd_width), align](row, idx, norm_val.cast[dtype]())
 
 
 def layer_norm_gpu_block[
@@ -427,13 +424,17 @@ def layer_norm_gpu_block[
     with PDL():
         # First pass: compute per-tile mean and m2 using SIMD reductions,
         # then combine via Welford for numerical stability.
-        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-            var offset = x * block_dim.x * simd_width + tid * simd_width
+        for x in range(
+            ceildiv(ufloordiv(Int(num_cols), Int(simd_width)), block_dim.x)
+        ):
+            var offset = x * block_dim.x * Int(simd_width) + tid * Int(
+                simd_width
+            )
 
-            if offset < num_cols:
-                var vec_data = input_fn[Int(simd_width)](
-                    Int(row), Int(offset)
-                ).cast[accum_type]()
+            if offset < Int(num_cols):
+                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
+                    accum_type
+                ]()
 
                 # SIMD-optimized per-tile statistics.
                 var tile_sum = vec_data.reduce_add()
@@ -462,26 +463,30 @@ def layer_norm_gpu_block[
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         # Second pass: normalize.
-        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-            var offset = x * block_dim.x * simd_width + tid * simd_width
+        for x in range(
+            ceildiv(ufloordiv(Int(num_cols), Int(simd_width)), block_dim.x)
+        ):
+            var offset = x * block_dim.x * Int(simd_width) + tid * Int(
+                simd_width
+            )
 
-            if offset < num_cols:
+            if offset < Int(num_cols):
                 var gamma_val = gamma_fn[Int(simd_width)](Index(offset))
                 var beta_offset = beta.layout(Idx(offset))
                 var beta_val = beta.ptr.load[
                     width=Int(simd_width), alignment=align
                 ](beta_offset)
 
-                var vec_data = input_fn[Int(simd_width)](
-                    Int(row), Int(offset)
-                ).cast[accum_type]()
+                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
+                    accum_type
+                ]()
                 var norm_val = (
                     (vec_data - row_mean)
                     * norm_factor
                     * gamma_val.cast[accum_type]()
                 ) + beta_val.cast[accum_type]()
                 output_fn[Int(simd_width), align](
-                    Int(row), Int(offset), norm_val.cast[dtype]()
+                    row, offset, norm_val.cast[dtype]()
                 )
 
 
@@ -975,20 +980,18 @@ def rms_norm_gpu_warp_tiling_128[
     var vec_data = SIMD[accum_type, simd_width](0)
     var tid = thread_idx.x
     # Each warp handles 2 rows, so total rows per block is warps_per_block * 2
-    var block_row = block_idx.x * UInt(warps_per_block * 2)
-    var warp_id = tid // UInt(WARP_SIZE)
-    var sub_warp_id = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
+    var block_row = block_idx.x * warps_per_block * 2
+    var warp_id = ufloordiv(tid, WARP_SIZE)
+    var sub_warp_id = ufloordiv(umod(tid, WARP_SIZE), half_warp_size)
     # Each warp handles 2 rows, offset by the block's base row
-    var row = block_row + (warp_id * 2) + sub_warp_id
-    var local_tid = tid % UInt(half_warp_size)
-    var idx = local_tid * UInt(simd_width)
+    var row = block_row + warp_id * 2 + Int(sub_warp_id)
+    var local_tid = umod(tid, half_warp_size)
+    var idx = local_tid * simd_width
 
     with PDL():
         var gamma_val = SIMD[dtype, simd_width](0)
-        if row < UInt(num_rows) and idx < UInt(num_cols):
-            vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
-                accum_type
-            ]()
+        if row < num_rows and idx < num_cols:
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
             # Prefetch gamma before reduction to overlap load with compute.
             gamma_val = gamma.load[width=simd_width, alignment=align](
                 Coord(Idx(idx))
@@ -997,16 +1000,16 @@ def rms_norm_gpu_warp_tiling_128[
         var norm_val = _rms_norm_warp_tiling_subkernel[
             warps_per_block, multiply_before_cast, rows_per_warp=2
         ](
-            Int(row),
-            Int(idx),
+            row,
+            idx,
             vec_data,
             gamma_val,
             eps_accum,
             weight_offset_accum,
             num_cols,
         )
-        if row < UInt(num_rows) and idx < UInt(num_cols):
-            output_fn[simd_width, align](Int(row), Int(idx), norm_val)
+        if row < num_rows and idx < num_cols:
+            output_fn[simd_width, align](row, idx, norm_val)
 
 
 def rms_norm_gpu_warp_tiling[
@@ -1042,14 +1045,12 @@ def rms_norm_gpu_warp_tiling[
     var vec_data = SIMD[accum_type, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * UInt(simd_width)
+    var idx = tid * simd_width
 
     with PDL():
         var gamma_val = SIMD[dtype, simd_width](0)
-        if idx < UInt(num_cols):
-            vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
-                accum_type
-            ]()
+        if idx < num_cols:
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
             # Prefetch gamma before reduction to overlap load with compute.
             gamma_val = gamma.load[width=simd_width, alignment=align](
                 Coord(Idx(idx))
@@ -1058,16 +1059,16 @@ def rms_norm_gpu_warp_tiling[
         var norm_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
         ](
-            Int(row),
-            Int(idx),
+            row,
+            idx,
             vec_data,
             gamma_val,
             eps_accum,
             weight_offset_accum,
             num_cols,
         )
-        if idx < UInt(num_cols):
-            output_fn[simd_width, align](Int(row), Int(idx), norm_val)
+        if idx < num_cols:
+            output_fn[simd_width, align](row, idx, norm_val)
 
 
 @always_inline
@@ -1102,14 +1103,10 @@ def _rms_norm_gpu_block_subkernel[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     # Every block has a single row to process
-    for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
-        var offset = x * Int(block_dim.x) * simd_width + Int(
-            tid * UInt(simd_width)
-        )
+    for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+        var offset = x * block_dim.x * simd_width + tid * simd_width
         if offset < num_cols:
-            var vec_data = input_fn[simd_width](Int(row), offset).cast[
-                accum_type
-            ]()
+            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             thread_m2 += (vec_data**2).reduce_add()
 
     var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
@@ -1118,15 +1115,11 @@ def _rms_norm_gpu_block_subkernel[
     var norm_factor = rsqrt((row_m2 / Scalar[accum_type](num_cols)) + eps_accum)
 
     # Need a pass again to perform in place normalization.
-    for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
-        var offset = x * Int(block_dim.x) * simd_width + Int(
-            tid * UInt(simd_width)
-        )
+    for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+        var offset = x * block_dim.x * simd_width + tid * simd_width
 
         if offset < num_cols:
-            var vec_data = input_fn[simd_width](Int(row), offset).cast[
-                accum_type
-            ]()
+            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             var norm_val: SIMD[dtype, simd_width]
             var gamma_val = gamma.load[width=simd_width, alignment=align](
                 Coord(Idx(offset))
@@ -1142,7 +1135,7 @@ def _rms_norm_gpu_block_subkernel[
                     gamma_val + weight_offset
                 )
 
-            output_fn[simd_width, align](Int(row), offset, norm_val)
+            output_fn[simd_width, align](row, offset, norm_val)
 
 
 def rms_norm_gpu_block[
@@ -1600,12 +1593,12 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     var vec_data = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * UInt(simd_width)
+    var idx = tid * simd_width
 
     with PDL():
         var gamma1_val = SIMD[dtype, simd_width](0)
-        if idx < UInt(num_cols):
-            vec_data = input_fn[simd_width](Int(row), Int(idx))
+        if idx < num_cols:
+            vec_data = input_fn[simd_width](row, idx)
             # Prefetch gamma1 before reduction to overlap load with compute.
             gamma1_val = gamma1.load[width=simd_width, alignment=align](
                 Coord(Idx(idx))
@@ -1614,8 +1607,8 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
         var norm1_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
         ](
-            Int(row),
-            Int(idx),
+            row,
+            idx,
             vec_data.cast[accum_type](),
             gamma1_val,
             eps_accum1,
@@ -1624,9 +1617,9 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
         )
 
         var gamma2_val = SIMD[dtype, simd_width](0)
-        if idx < UInt(num_cols):
-            norm1_val += residual_input_fn[simd_width](Int(row), Int(idx))
-            output_residual_fn[simd_width, align](Int(row), Int(idx), norm1_val)
+        if idx < num_cols:
+            norm1_val += residual_input_fn[simd_width](row, idx)
+            output_residual_fn[simd_width, align](row, idx, norm1_val)
             # Prefetch gamma2 before second reduction.
             gamma2_val = gamma2.load[width=simd_width, alignment=align](
                 Coord(Idx(idx))
@@ -1635,8 +1628,8 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
         var norm2_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
         ](
-            Int(row),
-            Int(idx),
+            row,
+            idx,
             norm1_val.cast[accum_type](),
             gamma2_val,
             eps_accum2,
@@ -1644,8 +1637,8 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
             num_cols,
         )
 
-        if idx < UInt(num_cols):
-            output_fn[simd_width, align](Int(row), Int(idx), norm2_val)
+        if idx < num_cols:
+            output_fn[simd_width, align](row, idx, norm2_val)
 
 
 def rms_norm_fused_residual_add_gpu_block[
@@ -1721,12 +1714,10 @@ def rms_norm_fused_residual_add_gpu_block[
 
         # Pass 1: Accumulate sum-of-squares for stage 1 from global input.
         var thread_m2_1 = Scalar[accum_type](0)
-        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
-            var offset = x * Int(block_dim.x) * simd_width + Int(
-                tid * UInt(simd_width)
-            )
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < num_cols:
-                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
                 thread_m2_1 += (vec_data**2).reduce_add()
@@ -1741,12 +1732,10 @@ def rms_norm_fused_residual_add_gpu_block[
         # Pass 2: Re-read input, normalize with gamma1, add residual,
         # write residual output, accumulate m2 for stage 2, write to shmem.
         var thread_m2_2 = Scalar[accum_type](0)
-        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
-            var offset = x * Int(block_dim.x) * simd_width + Int(
-                tid * UInt(simd_width)
-            )
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < num_cols:
-                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
                 var gamma1_val = gamma1.load[width=simd_width, alignment=align](
@@ -1767,12 +1756,10 @@ def rms_norm_fused_residual_add_gpu_block[
                         gamma1_val + weight_offset1
                     )
 
-                var residual_val = residual_input_fn[simd_width](
-                    Int(row), offset
-                )
+                var residual_val = residual_input_fn[simd_width](row, offset)
                 var residual_add_val = norm1_val + residual_val
                 output_residual_fn[simd_width, align](
-                    Int(row), offset, residual_add_val
+                    row, offset, residual_add_val
                 )
 
                 # Accumulate for stage 2.
@@ -1793,10 +1780,8 @@ def rms_norm_fused_residual_add_gpu_block[
         )
 
         # Pass 3: Read from shmem, normalize with gamma2, write final output.
-        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
-            var offset = x * Int(block_dim.x) * simd_width + Int(
-                tid * UInt(simd_width)
-            )
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < num_cols:
                 var stage2_input = shared_mem.load[width=simd_width](
                     offset
@@ -1819,7 +1804,7 @@ def rms_norm_fused_residual_add_gpu_block[
                         gamma2_val + weight_offset2
                     )
 
-                output_fn[simd_width, align](Int(row), offset, norm2_val)
+                output_fn[simd_width, align](row, offset, norm2_val)
 
 
 def rms_norm_fused_residual_add_gpu_block_no_shmem[
@@ -1884,9 +1869,9 @@ def rms_norm_fused_residual_add_gpu_block_no_shmem[
 
     var wid = warp_id[broadcast=True]()
     var lid = lane_id()
-    var row = block_idx.x * UInt(max_warps_per_block) + wid
+    var row = block_idx.x * max_warps_per_block + wid
 
-    if row >= UInt(num_rows):
+    if row >= num_rows:
         return
 
     with PDL():
@@ -1894,11 +1879,9 @@ def rms_norm_fused_residual_add_gpu_block_no_shmem[
         # Pass 1: Accumulate sum-of-squares for stage 1.
         var thread_m2_1 = Scalar[accum_type](0)
         for x in range(ceildiv(num_cols // simd_width, WARP_SIZE)):
-            var offset = x * WARP_SIZE * simd_width + Int(
-                lid * UInt(simd_width)
-            )
+            var offset = x * WARP_SIZE * simd_width + lid * simd_width
             if offset < num_cols:
-                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
                 thread_m2_1 += (vec_data**2).reduce_add()
@@ -1912,11 +1895,9 @@ def rms_norm_fused_residual_add_gpu_block_no_shmem[
         # and accumulate sum-of-squares for stage 2.
         var thread_m2_2 = Scalar[accum_type](0)
         for x in range(ceildiv(num_cols // simd_width, WARP_SIZE)):
-            var offset = x * WARP_SIZE * simd_width + Int(
-                lid * UInt(simd_width)
-            )
+            var offset = x * WARP_SIZE * simd_width + lid * simd_width
             if offset < num_cols:
-                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
                 var gamma1_val = gamma1.load[width=simd_width, alignment=align](
@@ -1937,12 +1918,10 @@ def rms_norm_fused_residual_add_gpu_block_no_shmem[
                         gamma1_val + weight_offset1
                     )
 
-                var residual_val = residual_input_fn[simd_width](
-                    Int(row), offset
-                )
+                var residual_val = residual_input_fn[simd_width](row, offset)
                 var residual_add_val = norm1_val + residual_val
                 output_residual_fn[simd_width, align](
-                    Int(row), offset, residual_add_val
+                    row, offset, residual_add_val
                 )
 
                 # Accumulate for stage 2.
@@ -1958,12 +1937,10 @@ def rms_norm_fused_residual_add_gpu_block_no_shmem[
         # Pass 3: Recompute stage 1 output (input norm + residual add),
         # then normalize with gamma2 and write final output.
         for x in range(ceildiv(num_cols // simd_width, WARP_SIZE)):
-            var offset = x * WARP_SIZE * simd_width + Int(
-                lid * UInt(simd_width)
-            )
+            var offset = x * WARP_SIZE * simd_width + lid * simd_width
             if offset < num_cols:
                 # Recompute the residual-added value from stage 1.
-                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
                 var gamma1_val = gamma1.load[width=simd_width, alignment=align](
@@ -1984,9 +1961,7 @@ def rms_norm_fused_residual_add_gpu_block_no_shmem[
                         gamma1_val + weight_offset1
                     )
 
-                var residual_val = residual_input_fn[simd_width](
-                    Int(row), offset
-                )
+                var residual_val = residual_input_fn[simd_width](row, offset)
                 var stage2_input = (norm1_val + residual_val).cast[accum_type]()
 
                 var gamma2_val = gamma2.load[width=simd_width, alignment=align](
@@ -2007,7 +1982,7 @@ def rms_norm_fused_residual_add_gpu_block_no_shmem[
                         gamma2_val + weight_offset2
                     )
 
-                output_fn[simd_width, align](Int(row), offset, norm2_val)
+                output_fn[simd_width, align](row, offset, norm2_val)
 
 
 def rms_norm_fused_residual_add_gpu[
@@ -2622,7 +2597,7 @@ def group_norm_gpu_warp_tiling[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var idx = Int(thread_idx.x) * simd_width
+    var idx = thread_idx.x * simd_width
 
     var vec_data = SIMD[accum_type, simd_width]()
     var group_size = channels_per_group * spatial
@@ -2638,7 +2613,7 @@ def group_norm_gpu_warp_tiling[
 
     with PDL():
         if idx + simd_width <= group_size:
-            vec_data = input_fn[simd_width](Int(row), idx).cast[accum_type]()
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
             comptime for i in range(simd_width):
                 welford_update(
@@ -2653,12 +2628,12 @@ def group_norm_gpu_warp_tiling[
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         if idx + simd_width <= group_size:
-            var g = row % UInt(num_groups)
-            var c_base = g * UInt(channels_per_group)
+            var g = umod(row, num_groups)
+            var c_base = g * channels_per_group
             var norm_val = SIMD[accum_type, simd_width]()
             for i in range(simd_width):
                 var offset = (idx + i) // spatial
-                var c = c_base + UInt(offset)
+                var c = c_base + offset
                 var gamma_val = gamma_fn[1](Index(c))
                 var beta_val = beta_fn[1](Index(c))
                 norm_val[i] = (
@@ -2708,14 +2683,12 @@ def group_norm_gpu_block[
         var thread_m2 = Scalar[accum_type]()
         var thread_count = Scalar[accum_type]()
 
-        for x in range(
-            ceildiv(group_size // Int(simd_width), Int(block_dim.x))
-        ):
-            var offset = x * Int(block_dim.x) * Int(simd_width) + Int(
-                tid * simd_width
+        for x in range(ceildiv(group_size // Int(simd_width), block_dim.x)):
+            var offset = x * block_dim.x * Int(simd_width) + tid * Int(
+                simd_width
             )
             if offset < group_size:
-                var vec_data = input_fn[Int(simd_width)](Int(row), offset).cast[
+                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
                     accum_type
                 ]()
 
@@ -2736,24 +2709,22 @@ def group_norm_gpu_block[
         var row_var = row_m2 / row_count
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
-        for x in range(
-            ceildiv(group_size // Int(simd_width), Int(block_dim.x))
-        ):
-            var offset = x * Int(block_dim.x) * Int(simd_width) + Int(
-                tid * simd_width
+        for x in range(ceildiv(group_size // Int(simd_width), block_dim.x)):
+            var offset = x * block_dim.x * Int(simd_width) + tid * Int(
+                simd_width
             )
             if offset < group_size:
-                var vec_data = input_fn[Int(simd_width)](Int(row), offset).cast[
+                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
                     accum_type
                 ]()
 
-                var g = row % UInt(num_groups)
-                var c_base = g * UInt(channels_per_group)
+                var g = umod(row, num_groups)
+                var c_base = g * channels_per_group
 
                 var norm_val = SIMD[accum_type, Int(simd_width)]()
                 for i in range(simd_width):
                     var offset_c = (offset + Int(i)) // spatial
-                    var c = c_base + UInt(offset_c)
+                    var c = c_base + offset_c
                     var gamma_val = gamma_fn[1](Index(c))
                     var beta_val = beta_fn[1](Index(c))
                     norm_val[Int(i)] = (
@@ -2794,7 +2765,7 @@ def group_norm_gpu_multi_block_stats[
     """
     comptime accum_type = get_accum_type[dtype]()
 
-    var block_id = Int(block_idx.x)
+    var block_id = block_idx.x
     var row, split_id = divmod(block_id, num_splits)
     var tid = thread_idx.x
 
@@ -2806,7 +2777,7 @@ def group_norm_gpu_multi_block_stats[
     var chunk_end = min(
         chunk_start + chunk_simd_size * Int(simd_width), group_size
     )
-    var chunk_iters = ceildiv(chunk_simd_size, Int(block_dim.x))
+    var chunk_iters = ceildiv(chunk_simd_size, block_dim.x)
 
     with PDL():
         var thread_mean = Scalar[accum_type]()
@@ -2816,8 +2787,8 @@ def group_norm_gpu_multi_block_stats[
         for x in range(chunk_iters):
             var offset = (
                 chunk_start
-                + x * Int(block_dim.x) * Int(simd_width)
-                + Int(tid * simd_width)
+                + x * block_dim.x * Int(simd_width)
+                + tid * Int(simd_width)
             )
             if offset < chunk_end:
                 var vec_data = input_fn[Int(simd_width)](row, offset).cast[
@@ -2884,7 +2855,7 @@ def group_norm_gpu_multi_block_norm[
     comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var block_id = Int(block_idx.x)
+    var block_id = block_idx.x
     var row, split_id = divmod(block_id, num_splits)
     var tid = thread_idx.x
 
@@ -2895,7 +2866,7 @@ def group_norm_gpu_multi_block_norm[
     var chunk_end = min(
         chunk_start + chunk_simd_size * Int(simd_width), group_size
     )
-    var chunk_iters = ceildiv(chunk_simd_size, Int(block_dim.x))
+    var chunk_iters = ceildiv(chunk_simd_size, block_dim.x)
 
     with PDL():
         # Reduce all partial stats for this group (num_splits is small,
@@ -2924,8 +2895,8 @@ def group_norm_gpu_multi_block_norm[
         for x in range(chunk_iters):
             var offset = (
                 chunk_start
-                + x * Int(block_dim.x) * Int(simd_width)
-                + Int(tid * simd_width)
+                + x * block_dim.x * Int(simd_width)
+                + tid * Int(simd_width)
             )
             if offset < chunk_end:
                 var vec_data = input_fn[Int(simd_width)](row, offset).cast[

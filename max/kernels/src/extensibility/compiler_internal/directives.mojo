@@ -72,7 +72,7 @@ comptime _IndexListToCoordLike[
     list: IndexList
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.types[
+    ParamListType=Variadic.types[
         T=CoordLike,
         *Variadic.splat_type[Trait=CoordLike, list.size, RuntimeInt[]],
     ],

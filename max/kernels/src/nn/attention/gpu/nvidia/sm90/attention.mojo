@@ -713,13 +713,26 @@ def q_smem_shape[
     group: Int,
     depth: Int,
     decoding: Bool,
+    fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
-](out res: IndexList[4 if decoding else 3]):
+](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
     comptime L = res.size
     comptime assert L in (3, 4)
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
-    comptime if L == 3:  # prefill
+    comptime if decoding:
+        return {1, 1, max(group, 8), swizzle_granularity}
+    elif fuse_gqa:
+        comptime if num_qk_stages == 1:
+            return {BM // group, 1, group, depth}
+        else:
+            return {
+                BM // group,
+                1,
+                group,
+                align_up(depth, swizzle_granularity) // num_qk_stages,
+            }
+    else:
         comptime if num_qk_stages == 1:
             return {BM, 1, depth}
         else:
@@ -728,8 +741,6 @@ def q_smem_shape[
                 1,
                 align_up(depth, swizzle_granularity) // num_qk_stages,
             }
-    else:
-        return {1, 1, max(group, 8), swizzle_granularity}
 
 
 def q_gmem_shape[
@@ -740,13 +751,14 @@ def q_gmem_shape[
     q_num_heads: Int,
     depth: Int,
     decoding: Bool,
-](out res: IndexList[4 if decoding else 3]):
+    fuse_gqa: Bool = False,
+](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
     comptime L = res.size
     comptime assert L in (3, 4)
 
-    comptime if L == 3:  # prefill
+    comptime if L == 3:  # prefill, no fusion
         return {UNKNOWN_VALUE, q_num_heads, depth}
-    else:
+    else:  # decoding or fuse_gqa prefill
         return {UNKNOWN_VALUE, q_num_heads // group, group, depth}
 
 
@@ -758,6 +770,7 @@ comptime QTMATile[
     depth: Int,
     group: Int,
     decoding: Bool,
+    fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
 ] = SplitLastDimTMATensorTile[
     dtype,
@@ -768,6 +781,7 @@ comptime QTMATile[
         group=group,
         depth=depth,
         decoding=decoding,
+        fuse_gqa=fuse_gqa,
         num_qk_stages=num_qk_stages,
     ](),
     swizzle_mode,
@@ -797,6 +811,7 @@ def q_tma[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
+    fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
 ](
     ctx: DeviceContext,
@@ -809,6 +824,7 @@ def q_tma[
     depth=depth,
     group=group,
     decoding=decoding,
+    fuse_gqa=fuse_gqa,
     num_qk_stages=num_qk_stages,
 ]:
     comptime smem_dim = q_smem_shape[
@@ -818,6 +834,7 @@ def q_tma[
         group=group,
         depth=depth,
         decoding=decoding,
+        fuse_gqa=fuse_gqa,
         num_qk_stages=num_qk_stages,
     ]()
     comptime gmem_dim = q_gmem_shape[
@@ -827,6 +844,7 @@ def q_tma[
         q_num_heads=q_num_heads,
         depth=depth,
         decoding=decoding,
+        fuse_gqa=fuse_gqa,
     ]()
     return create_split_tma[smem_dim, gmem_dim, swizzle_mode](ctx, ptr, rows)
 

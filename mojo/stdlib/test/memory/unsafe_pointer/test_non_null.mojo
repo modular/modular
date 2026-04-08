@@ -18,6 +18,7 @@ from std.testing import (
     TestSuite,
 )
 
+from std.compile import compile_info
 from std.ffi import external_call
 from std.memory import UnsafeMaybeUninit
 from std.memory._nonnull import NonNullUnsafePointer
@@ -61,6 +62,24 @@ def test_optional_non_null_across_c_ffi() raises:
     ](string.as_c_string_slice(), Int8(ord("a")))
     assert_true(found)
     assert_equal(Int(found[]), Int(string.unsafe_ptr()))
+
+
+def _test_lower(
+    pointer: Optional[NonNullUnsafePointer[Int32, MutAnyOrigin]]
+) -> Bool:
+    return Bool(pointer)
+
+
+def test_optional_nonnull_llvm_lowering() raises:
+    var info = String(compile_info[_test_lower, emission_kind="llvm-opt"]())
+
+    for line in info.splitlines():
+        if "define" in line and '@"test_non_null::_test_lower' in line:
+            assert_true("ptr" in line, info)
+            assert_false("[1 x ptr]" in line)
+            return
+
+    raise Error("did not find _test_lower function")
 
 
 def main() raises:

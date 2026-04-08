@@ -93,6 +93,11 @@ struct SM100MHA2Q[
     comptime padded_depth = Self.config.padded_qk_depth
     comptime num_q_heads = Self.config.num_q_heads
     comptime group = Self.config.group
+    comptime fuse_gqa = Self.config.fuse_gqa
+    # BM_eff: sequence positions per full tile (BM // group when fusing)
+    comptime BM_eff: Int = Self.config.BM_eff()
+    # BM_mask: the BM value passed to mask functions
+    comptime BM_mask: Int = Self.BM_eff
     comptime ragged = not Self.ValidLengthType.is_null
     comptime page_size = Self.KVLUTType.page_size
 
@@ -182,6 +187,7 @@ struct SM100MHA2Q[
             depth=Self.config.qk_depth,
             group=Self.config.group,
             decoding=False,
+            fuse_gqa=Self.fuse_gqa,
             num_qk_stages=Self.config.num_qk_stages,
         ],
         k_tma_op: KVTMATile[
@@ -201,6 +207,7 @@ struct SM100MHA2Q[
             Self.config.swizzle_mode,
             BM=Self.config.BM // 2,
             BN=Self.config.ov_depth,
+            group=Self.config.group if Self.fuse_gqa else 1,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -286,8 +293,9 @@ struct SM100MHA2Q[
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
             var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
+                Self.BM_eff,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
             ](batch_size, max_seq_len, valid_length, partition)
 
@@ -323,8 +331,9 @@ struct SM100MHA2Q[
             warpgroup_reg_dealloc[num_reg_correction]()
 
             var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
+                Self.BM_eff,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
             ](batch_size, max_seq_len, valid_length, partition)
             if not seq_info.is_valid():
@@ -346,8 +355,9 @@ struct SM100MHA2Q[
             if warp_idx == 13:  # produce
                 warpgroup_reg_dealloc[num_reg_other]()
                 var seq_info: SeqInfo = get_seq_info[
-                    Self.BM,
-                    Self.num_q_heads,
+                    Self.BM_eff,
+                    Self.num_q_heads
+                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
                     Self.MaskType.get_type_name() == "CausalMask",
                 ](batch_size, max_seq_len, valid_length, partition)
 
@@ -386,8 +396,9 @@ struct SM100MHA2Q[
             elif warp_idx == 12:  # Q @ K', P @ V
                 warpgroup_reg_dealloc[num_reg_other]()
                 var seq_info: SeqInfo = get_seq_info[
-                    Self.BM,
-                    Self.num_q_heads,
+                    Self.BM_eff,
+                    Self.num_q_heads
+                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
                     Self.MaskType.get_type_name() == "CausalMask",
                 ](batch_size, max_seq_len, valid_length, partition)
 
@@ -427,7 +438,7 @@ struct SM100MHA2Q[
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype=DType.int32](Self.BM, Self.BN),
+            Index[dtype=DType.int32](Self.BM_mask, Self.BN),
         )
 
     @staticmethod

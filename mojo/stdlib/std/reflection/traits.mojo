@@ -17,7 +17,7 @@ from std.builtin.variadics import _ReduceVariadicAndIdxToValue
 
 comptime AllWritable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllWritableReducer,
 ][0]
 """Evaluates to `True` if all types in `Ts` conform to `Writable`, `False` otherwise.
@@ -34,7 +34,7 @@ comptime _AllWritableReducer[
 
 comptime AllMovable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllMovableReducer,
 ][0]
 """Evaluates to `True` if all types in `Ts` conform to `Movable`, `False` otherwise.
@@ -51,7 +51,7 @@ comptime _AllMovableReducer[
 
 comptime AllCopyable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllCopyableReducer,
 ][0]
 """Evaluates to `True` if all types in `Ts` conform to `Copyable`, `False` otherwise.
@@ -70,7 +70,7 @@ comptime AllImplicitlyCopyable[
     *Ts: AnyType
 ]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllImplicitlyCopyableReducer,
 ][
     0
@@ -89,7 +89,7 @@ comptime _AllImplicitlyCopyableReducer[
 
 comptime AllDefaultable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllDefaultableReducer,
 ][0]
 """Evaluates to `True` if all types in `Ts` conform to `Defaultable`, `False` otherwise.
@@ -106,7 +106,7 @@ comptime _AllDefaultableReducer[
 
 comptime AllEquatable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllEquatableReducer,
 ][0]
 """Evaluates to `True` if all types in `Ts` conform to `Equatable`, `False` otherwise.
@@ -123,7 +123,7 @@ comptime _AllEquatableReducer[
 
 comptime AllHashable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllHashableReducer,
 ][0]
 """Evaluates to `True` if all types in `Ts` conform to `Hashable`, `False` otherwise.
@@ -142,7 +142,7 @@ comptime AllImplicitlyDestructible[
     *Ts: AnyType
 ]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllImplicitlyDestructibleReducer,
 ][
     0
@@ -161,7 +161,7 @@ comptime _AllImplicitlyDestructibleReducer[
 
 comptime AllRegisterPassable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
-    VariadicType=Ts,
+    ParamListType=Ts,
     Reducer=_AllRegisterPassableReducer,
 ][0]
 """Evaluates to `True` if all types in `Ts` conform to `RegisterPassable`, `False` otherwise.

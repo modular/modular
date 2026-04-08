@@ -22,10 +22,10 @@ from std.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx_uint as block_idx,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_int as thread_idx,
+    block_idx,
+    global_idx,
+    grid_dim,
+    thread_idx,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -164,23 +164,21 @@ def fused_rope_rmsnorm_kernel[
     var num_tokens = q_rope.dim(0)
 
     with PDL():
-        for global_token_idx in range(
-            Int(worker_idx), Int(num_tokens), Int(num_workers)
-        ):
+        for global_token_idx in range(worker_idx, Int(num_tokens), num_workers):
             var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
             # First n_rope_blocks blocks of this worker process RoPE.
-            if block_idx.x < UInt(n_rope_blocks):
+            if block_idx.x < n_rope_blocks:
                 comptime q_width = simd_width_of[dtype]()
                 comptime assert (
                     rope_dim % q_width == 0
                 ), "rope_dim should be divisible by q_width"
 
                 var head_idx, head_dim_idx = divmod(
-                    Int(global_idx.x) * q_width, rope_dim
+                    global_idx.x * q_width, rope_dim
                 )
                 var f_c = freqs_cis.load[width=q_width](
                     (Idx(post_seq_idx), Idx(head_dim_idx))
@@ -360,23 +358,21 @@ def fused_rope_rmsnorm_quantization_kernel[
     var num_tokens = q_rope.dim(0)
 
     with PDL():
-        for global_token_idx in range(
-            Int(worker_idx), Int(num_tokens), Int(num_workers)
-        ):
+        for global_token_idx in range(worker_idx, Int(num_tokens), num_workers):
             var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
             # First n_rope_blocks blocks of this worker process RoPE.
-            if block_idx.x < UInt(n_rope_blocks):
+            if block_idx.x < n_rope_blocks:
                 comptime q_width = simd_width_of[dtype]()
                 comptime assert (
                     rope_dim % q_width == 0
                 ), "rope_dim should be divisible by q_width"
 
                 var head_idx, head_dim_idx = divmod(
-                    Int(global_idx.x) * q_width, rope_dim
+                    global_idx.x * q_width, rope_dim
                 )
                 var f_c = freqs_cis.load[width=q_width](
                     (Idx(post_seq_idx), Idx(head_dim_idx))
@@ -1428,10 +1424,14 @@ def convert_bf16_to_fp8_e4m3fn(
         DType.bfloat16, target=get_gpu_target()
     ]()
 
+    def convert_kernel_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]) unified register_passable {}:
+        convert_kernel[width, rank, alignment](idx)
+
     comptime if input_buffer.rank == 2:
-        _elementwise_impl_gpu[
-            func=convert_kernel, simd_width=target_simd_width
-        ](
+        _elementwise_impl_gpu[simd_width=target_simd_width](
+            convert_kernel_unified,
             shape=IndexList[2](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
@@ -1439,9 +1439,8 @@ def convert_bf16_to_fp8_e4m3fn(
             ctx=context,
         )
     else:
-        _elementwise_impl_gpu[
-            func=convert_kernel, simd_width=target_simd_width
-        ](
+        _elementwise_impl_gpu[simd_width=target_simd_width](
+            convert_kernel_unified,
             shape=IndexList[3](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),

@@ -47,7 +47,6 @@ from ..interfaces import PipelineModel, PipelineModelWithKVCache
 from ..pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
     get_eos_tokens,
-    get_weight_paths,
 )
 from ..sampling import SamplingConfig
 from .ragged_token_merger import RaggedTokenMergerRunner
@@ -178,7 +177,7 @@ class SpeculativeDecodingPipelineBase(
         self._session = InferenceSession(devices=[*self.devices])
         self.pipeline_config.configure_session(self._session)
 
-        weight_paths = get_weight_paths(target_config)
+        weight_paths = target_config.resolved_weight_paths()
         self._target_model = pipeline_model(
             pipeline_config=self.pipeline_config,
             session=self._session,
@@ -200,7 +199,7 @@ class SpeculativeDecodingPipelineBase(
             self._target_model,
             actual_draft_pipeline_model,
         )
-        draft_weight_paths = get_weight_paths(draft_config)
+        draft_weight_paths = draft_config.resolved_weight_paths()
         self._draft_model = actual_draft_pipeline_model(
             pipeline_config=self.pipeline_config,
             session=self._session,

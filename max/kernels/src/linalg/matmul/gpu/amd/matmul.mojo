@@ -18,9 +18,9 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    lane_id_int as lane_id,
-    warp_id_uint as warp_id,
+    block_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.sync import (
     AMDScheduleBarrierMask,
@@ -357,7 +357,7 @@ def gemm_kernel_amd[
     ), "c_stride should be known at compile time"
 
     # Thread and warp indices
-    var warp_id = Int(warp_id())
+    var warp_id = warp_id()
     var warp_km, warp_n = divmod(warp_id, num_warps_n)
     var warp_k, warp_m = divmod(warp_km, num_warps_m)
 
@@ -464,10 +464,10 @@ def gemm_kernel_amd[
         warp_rows=WM,
         warp_cols=WK,
         swizzle=swizzle,
-    ](a, warp_m, warp_k, Int(block_idx.y))
+    ](a, warp_m, warp_k, block_idx.y)
 
     # A tensor block
-    var a_gmem_block = a.tile[BM, stride](Int(block_idx.y), 0)
+    var a_gmem_block = a.tile[BM, stride](block_idx.y, 0)
     # A tensor tile iterator
     var a_gmem_iter = a_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
     # A tensor data movement delegate
@@ -485,10 +485,10 @@ def gemm_kernel_amd[
         warp_rows=WN,
         warp_cols=WK,
         swizzle=swizzle,
-    ](b, warp_n, warp_k, Int(block_idx.x))
+    ](b, warp_n, warp_k, block_idx.x)
 
     # B tensor block
-    var b_gmem_block = b.tile[BN, stride](Int(block_idx.x), 0)
+    var b_gmem_block = b.tile[BN, stride](block_idx.x, 0)
     # B tensor tile iterator
     var b_gmem_iter = b_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
     # B tensor data movement delegate
@@ -627,7 +627,7 @@ def gemm_kernel_amd[
 
     # --- Write results to output tensor ---
     # Output stage: Transfer results from registers to global memory
-    var c_block_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var c_block_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
     var c_warp_tile = c_block_tile.tile[WM, WN](warp_m, warp_n)
 
     # Equivalent to Layout.col_major(MMA_M, WARP_SIZE // MMA_M)
@@ -657,8 +657,8 @@ def gemm_kernel_amd[
         ]().distribute[output_thread_layout](lane_id())
 
         # Warp tile coordinates
-        var warp_tile_m = block_idx.y * UInt(BM) + UInt(warp_m * WM)
-        var warp_tile_n = block_idx.x * UInt(BN) + UInt(warp_n * WN)
+        var warp_tile_m = block_idx.y * BM + warp_m * WM
+        var warp_tile_n = block_idx.x * BN + warp_n * WN
 
         # Write output fragments
         write_output_fragments[
@@ -671,8 +671,8 @@ def gemm_kernel_amd[
         ](
             c_reg_fragment,
             c_gmem_fragment,
-            Int(warp_tile_m),
-            Int(warp_tile_n),
+            warp_tile_m,
+            warp_tile_n,
             M,
             N,
         )

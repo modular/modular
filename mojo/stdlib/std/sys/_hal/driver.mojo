@@ -73,10 +73,10 @@ struct Driver(Movable):
             var err = plugin.get_status_message(status)
             raise HALError(
                 err.status,
-                message="Failed to initialise driver plugin from "
-                + plugin.so_path
-                + ": "
-                + err.message,
+                message=String(
+                    t"Failed to initialise driver plugin from {plugin.so_path}:"
+                    t" {err.message}"
+                ),
             )
 
         var driver_handle = handle.unsafe_assume_init_ref()
@@ -90,7 +90,7 @@ struct Driver(Movable):
             var err = plugin.get_status_message(status)
             raise HALError(
                 err.status,
-                message="Failed to get device count: " + err.message,
+                message=String(t"Failed to get device count: {err.message}"),
             )
 
         return Driver(

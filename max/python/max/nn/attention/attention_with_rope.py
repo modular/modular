@@ -29,7 +29,6 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
-from max.nn.kernels import convert_weights_to_fp8_fnuz_if_needed
 from max.nn.quant_config import QuantConfig
 
 from ..clamp import clamp
@@ -38,7 +37,6 @@ from ..kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul_quantized,
-    quantize_static_scaled_float8,
     rope_split_store_ragged,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
@@ -452,38 +450,7 @@ class AttentionWithRope(Module, Shardable):
                 wk = clamp(wk, min=-self.clip_qkv, max=self.clip_qkv)
                 wv = clamp(wv, min=-self.clip_qkv, max=self.clip_qkv)
 
-            # For static per-tensor FP8: dequant each projection with its
-            # own scale, then requant under the unified max scale.
-            # Dynamic tensor-wise FP8 skips this: per-projection scales
-            # are broadcast to rowwise in qkv_weight_scale instead.
-            if (
-                self.quant_config
-                and self.quant_config.is_static
-                and self.quant_config.weight_scale.is_tensor
-                and self.q_proj.weight_scale is not None
-                and self.k_proj.weight_scale is not None
-                and self.v_proj.weight_scale is not None
-                and self.q_proj.weight_scale.rank != 2
-                and self.k_proj.weight_scale.rank != 2
-                and self.v_proj.weight_scale.rank != 2
-            ):
-                wq = wq * self.q_proj.weight_scale.to(wq.device)
-                wk = wk * self.k_proj.weight_scale.to(wk.device)
-                wv = wv * self.v_proj.weight_scale.to(wv.device)
-
             wqkv = ops.concat((wq, wk, wv))
-            if self.quant_config and self.quant_config.is_nvfp4:
-                return wqkv
-            if self.quant_config and self.quant_config.is_static:
-                assert self.qkv_weight_scale is not None
-
-                wqkv, qkv_weight_scale = convert_weights_to_fp8_fnuz_if_needed(
-                    wqkv, self.qkv_weight_scale.to(DeviceRef.CPU())
-                )
-                wqkv = quantize_static_scaled_float8(
-                    wqkv, qkv_weight_scale.to(DeviceRef.CPU())
-                )
-
             return wqkv
 
     @property
@@ -553,17 +520,10 @@ class AttentionWithRope(Module, Shardable):
 
         weight_scale = ops.concat((q_scale, k_scale, v_scale))
 
-        if weight_scale.rank == 2:
-            return weight_scale
-
-        # For dynamic tensor-wise FP8: broadcast each projection's
-        # scalar scale to [dim, 1] and concatenate so each row keeps
-        # its exact original scale (matches MLP per-projection approach).
-        if (
-            self.quant_config
-            and self.quant_config.weight_scale.is_tensor
-            and self.quant_config.is_dynamic
-        ):
+        if self.quant_config.weight_scale.is_tensor:
+            # Fused QKV: broadcast each projection's scalar scale to
+            # [dim, 1] rowwise and concatenate so each output row keeps
+            # its exact original per-projection scale.
             q_dim = self.n_heads * self.kv_params.head_dim
             kv_dim = self.num_key_value_heads * self.kv_params.head_dim
             q_row = ops.broadcast_to(q_scale.reshape([1, 1]), [q_dim, 1])
@@ -571,7 +531,9 @@ class AttentionWithRope(Module, Shardable):
             v_row = ops.broadcast_to(v_scale.reshape([1, 1]), [kv_dim, 1])
             return ops.concat((q_row, k_row, v_row))
 
-        return ops.max(weight_scale).reshape([])
+        # Per-row / per-block scaling: each row (or block) of the fused QKV
+        # weight has its own scale, so return the concatenated scales directly.
+        return weight_scale
 
     @property
     def qkv_weight_scale_2(self) -> TensorValue | None:

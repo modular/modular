@@ -381,7 +381,7 @@ all operations in its queue.
 
 ## 5. Manage grid dimensions
 
-The grid in the previous step consisted of a one-dimensional grid of 2 thread
+The previous step used a one-dimensional grid of 2 thread
 blocks with 64 threads in each block. However, you can also organize the thread
 blocks in a two- or three-dimensional grid. Similarly, you can arrange
 the threads in a thread block across one, two, or three dimensions. Typically,
@@ -522,7 +522,7 @@ def main() raises:
         # Initialize the input vectors
         for i in range(vector_size):
             lhs_host_buffer[i] = Float32(i)
-            rhs_host_buffer[i] = Float32(Float64(i) * 0.5)
+            rhs_host_buffer[i] = Float32(i * 0.5)
 
         print("LHS buffer: ", lhs_host_buffer)
         print("RHS buffer: ", rhs_host_buffer)

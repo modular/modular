@@ -169,7 +169,6 @@ modular_py_test(
         "test_shard_and_stack.py",
         "test_symbolic_dimension_validation.py",
     ],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     tags = [
         "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
     ],

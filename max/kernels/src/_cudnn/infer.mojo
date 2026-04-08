@@ -2644,7 +2644,7 @@ def cudnnGetAlgorithmPerformance(
     ]()(algo_perf, algo_desc, status, time, memory)
 
 
-struct cudnnDebugStruct(TrivialRegisterPassable):
+struct cudnnDebugStruct(ImplicitlyCopyable, RegisterPassable):
     var cudnn_version: Int16
     var cudnnStatus: cudnnStatus_t
     var time_sec: Int16

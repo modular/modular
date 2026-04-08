@@ -13,7 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv, recip
-from std.math.uutils import ufloordiv
+from std.math.uutils import umod, ufloordiv, udivmod
 from nn.attention.mha_utils import DynamicInt
 from std.math.constants import log2e
 from std.sys import (
@@ -38,12 +38,11 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    global_idx_uint as global_idx,
-    lane_id_uint as lane_id,
-    thread_idx_int as thread_idx,
-    warp_id_uint as warp_id,
+    thread_idx,
+    block_idx,
+    global_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.host import (
     DeviceContext,
@@ -669,12 +668,12 @@ def mla_decoding[
 
     # split-k offsets
     var partition_idx = block_idx.x
-    var output_batch_offset = (
-        depth_v * num_heads * batch_idx
-        + depth_v * num_heads * UInt(batch_size) * partition_idx
+    var output_batch_offset = Int(
+        depth_v * num_heads * UInt(batch_idx)
+        + depth_v * num_heads * UInt(batch_size) * UInt(partition_idx)
     )
     var qk_max_offset = (
-        num_heads * batch_idx + num_heads * UInt(batch_size) * partition_idx
+        Int(num_heads) * batch_idx + Int(num_heads) * batch_size * partition_idx
     )
     var exp_sum_offset = qk_max_offset
 
@@ -698,13 +697,13 @@ def mla_decoding[
         q_batch_offset = start_of_seq * Int(depth) * Int(num_heads)
     elif _use_valid_length:
         # treat valid_lengths as valid lengths
-        q_batch_offset = Int(depth * num_heads * batch_idx)
+        q_batch_offset = Int(depth) * Int(num_heads) * batch_idx
         seq_len = Int(valid_length[batch_idx])
     else:
         seq_len = 1
-        q_batch_offset = Int(depth * num_heads * batch_idx)
+        q_batch_offset = Int(depth) * Int(num_heads) * batch_idx
 
-    var num_keys = k.cache_length(Int(batch_idx))
+    var num_keys = k.cache_length(batch_idx)
 
     comptime if not _is_cache_length_accurate:
         num_keys += seq_len
@@ -734,7 +733,7 @@ def mla_decoding[
             UInt(num_partitions),
             UInt(max_cache_valid_length),
             mask,
-            Int(batch_idx),
+            batch_idx,
         )
     elif is_amd_gpu():
         comptime config = MHAConfig[q_type](
@@ -766,7 +765,7 @@ def mla_decoding[
             k,
             mask,
             None,
-            Int(batch_idx),
+            batch_idx,
             scale,
             seq_len,
             num_keys,
@@ -837,11 +836,11 @@ def mla_decoding_single_batch[
     ), "mla_decoding doesn't support warp split-k."
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(UInt(ufloordiv(tid, WARP_SIZE)))
+    var warp_id = warp.broadcast(ufloordiv(tid, WARP_SIZE))
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    var warp_y, warp_x = divmod(warp_id, num_warps_n)
+    var warp_y, warp_x = udivmod(warp_id, Int(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
@@ -990,7 +989,7 @@ def mla_decoding_single_batch[
 
     comptime kv_num_heads = 1
     comptime kv_head_idx = 0
-    var q_head_group = block_idx.y
+    var q_head_group = UInt(block_idx.y)
 
     var q_offset = depth * BM * q_head_group
 
@@ -1001,13 +1000,13 @@ def mla_decoding_single_batch[
     )
 
     start, end = get_start_and_end_for_partitions[Int(BN)](
-        Int(num_keys), Int(num_partitions), Int(block_idx.x)
+        Int(num_keys), Int(num_partitions), block_idx.x
     )
 
     # Mask global memory iterator, seq_len = 1
     comptime seq_len = 1
     var stride = max_cache_valid_length
-    var mask_warp_col = warp_x * WN + UInt(start)
+    var mask_warp_col = warp_x * Int(WN) + start
 
     comptime q_num_vecs = BM * BK // UInt(simd_size)
 
@@ -1171,21 +1170,23 @@ def mla_decoding_single_batch[
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
-                    var q_head_idx = q_head_group * BM + m_mma * UInt(MMA_M)
-                    var mask_frag_col = mask_warp_col + n_mma * UInt(MMA_N)
+                    var q_head_idx = Int(q_head_group) * Int(BM + m_mma) * MMA_M
+                    var mask_frag_col = mask_warp_col + Int(n_mma) * MMA_N
 
                     # Offset to current thread's fragment
-                    mask_frag_col += lane * UInt(p_frag_simdwidth) % UInt(MMA_N)
+                    mask_frag_col += umod(lane * p_frag_simdwidth, MMA_N)
 
                     # Offset to current thread's head idx
-                    q_head_idx += lane // UInt(MMA_N // p_frag_simdwidth)
+                    q_head_idx += ufloordiv(
+                        lane, ufloordiv(MMA_N, p_frag_simdwidth)
+                    )
 
                     comptime for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
                         var score_col = mask_frag_col
 
-                        var score_head_idx = q_head_idx + UInt(i * MMA_M // 2)
+                        var score_head_idx = q_head_idx + (i * MMA_M // 2)
 
                         var score_row_with_start_pos = num_keys - 1
                         var score_row = (
@@ -1195,10 +1196,10 @@ def mla_decoding_single_batch[
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 IndexList[4, element_type=DType.uint32](
-                                    Int(block_idx.z),
-                                    Int(score_head_idx),
+                                    block_idx.z,
+                                    score_head_idx,
                                     Int(score_row_with_start_pos),
-                                    Int(score_col),
+                                    score_col,
                                 ),
                                 p_reg_vec2[mma_id, i] * scale_log2e,
                             )
@@ -1215,7 +1216,7 @@ def mla_decoding_single_batch[
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
                                 IndexList[2, element_type=DType.uint32](
-                                    score_row, Int(score_col)
+                                    score_row, score_col
                                 ),
                                 IndexList[2, element_type=DType.uint32](
                                     seq_len,
@@ -1236,7 +1237,7 @@ def mla_decoding_single_batch[
         )
 
         # Increment mask to next BM x BN block.
-        mask_warp_col += BN
+        mask_warp_col += Int(BN)
 
         comptime reg_layout_by_mma_unit = Layout.row_major(
             2 * Int(num_m_mmas) * Int(num_n_mmas), 2
@@ -1259,7 +1260,7 @@ def mla_decoding_single_batch[
                 1, 2
             ](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, warp_y),
             rowmax,
             rowsum,
         )
@@ -1316,16 +1317,16 @@ def mla_decoding_single_batch[
                     n_mma * Int(num_m_mmas) + Int(m_mma), i + p_frag_size // 2
                 ] *= rowsum_inv1
 
-    var o_offset = nope_dim * BM * q_head_group
+    var o_offset = Int(nope_dim) * Int(BM) * Int(q_head_group)
 
     comptime output_gmem_layout = Layout(
         IntTuple(Int(BM), Int(nope_dim)), IntTuple(Int(nope_dim), 1)
     )
     var output_gmem_tile = LayoutTensor[output_type, output_gmem_layout](
-        output_ptr + Int(o_offset),
+        output_ptr + o_offset,
     )
     var output_gmem_warp_tile = output_gmem_tile.tile[Int(WM), WN_O](
-        Int(warp_y), Int(warp_x)
+        warp_y, warp_x
     )
 
     # Write to global memory.
@@ -1341,7 +1342,7 @@ def mla_decoding_single_batch[
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[Int(WM), WN_O](
-            Int(warp_y), Int(warp_x)
+            warp_y, warp_x
         )
 
         copy_local_to_shared[
@@ -2231,7 +2232,7 @@ def mla_prefill[
 ):
     var valid_length = valid_length_tt.to_layout_tensor()
     comptime depth = config.depth
-    var batch_idx = block_idx.z
+    var batch_idx = UInt(block_idx.z)
 
     # mha inputs
     var seq_len: Int
@@ -2246,14 +2247,14 @@ def mla_prefill[
     seq_len = end_of_seq - start_of_seq
 
     @always_inline
-    def q_block_idx() -> UInt:
+    def q_block_idx() -> Int:
         return block_idx.x if is_nvidia_gpu() else block_idx.y
 
-    @always_inline
-    def head_idx() -> UInt:
-        return block_idx.y if is_nvidia_gpu() else block_idx.x
+    # @always_inline
+    # def head_idx() -> Int:
+    #     return block_idx.y if is_nvidia_gpu() else block_idx.x
 
-    if seq_len < Int(q_block_idx() * config.block_m()):
+    if seq_len < q_block_idx() * Int(config.block_m()):
         return
 
     comptime if _ndbuffer_mha_operand:
@@ -2837,8 +2838,8 @@ def mla_prefill_single_batch[
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 IndexList[4, element_type=DType.uint32](
-                                    Int(block_idx.z),
-                                    Int(block_idx.y),
+                                    block_idx.z,
+                                    block_idx.y,
                                     Int(score_row_with_start_pos),
                                     Int(score_col_with_cache_start_pos),
                                 ),
@@ -3222,7 +3223,7 @@ def mla_prefill_plan_kernel[
     comptime page_size = cache_t.page_size_
     comptime assert page_size != 0, "Only PagedKVCache is supported."
 
-    if seq_idx >= UInt(batch_size):
+    if seq_idx >= batch_size:
         return
 
     # Calculate starting position for this sequence.
@@ -3230,7 +3231,7 @@ def mla_prefill_plan_kernel[
     var prev_row_offset = Int(input_row_offsets[0])
     for i in range(seq_idx):
         # The cache length that has been prefilled in previous forward passes.
-        var cache_length = k_cache.cache_length(Int(i))
+        var cache_length = k_cache.cache_length(i)
 
         # account for the new input tokens.
         var row_offset_i = Int(input_row_offsets[i + 1])
@@ -3240,7 +3241,7 @@ def mla_prefill_plan_kernel[
         seq_start_pos += align_up(cache_length, page_size)
 
     var curr_seq_len = align_up(
-        k_cache.cache_length(Int(seq_idx))
+        k_cache.cache_length(seq_idx)
         + Int(input_row_offsets[seq_idx + 1])
         - prev_row_offset,
         page_size,
@@ -3272,7 +3273,7 @@ def mla_prefill_plan_kernel[
         seq_len_left -= chunk_len
 
     # If this is the last sequence in the batch
-    if seq_idx == UInt(batch_size - 1):
+    if seq_idx == batch_size - 1:
         var seq_end_pos = seq_start_pos + curr_seq_len
         var end_chunk = (seq_end_pos + buffer_size - 1) // buffer_size - 1
 
@@ -3355,6 +3356,11 @@ def _k_cache_to_buffer[
     )
     comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
-        shape=launch_shape, ctx=context
+    def copy_fn_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]) unified register_passable {}:
+        copy_fn[width, rank, alignment](idx)
+
+    _elementwise_impl_gpu[simd_width=target_simd_width](
+        copy_fn_unified, shape=launch_shape, ctx=context
     )

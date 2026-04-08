@@ -382,10 +382,7 @@ struct Plugin(Movable):
         except e:
             raise HALError(
                 STATUS_UNKNOWN_ERROR,
-                message="Failed to load plugin '"
-                + so_path
-                + "': "
-                + String.write(e),
+                message=String(t"Failed to load plugin '{so_path}': {e}"),
             )
 
     def get_status_message(self, status: Int64) raises HALError -> HALError:

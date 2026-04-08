@@ -13,6 +13,7 @@
 
 from std.collections import Optional
 from std.math import align_down, ceildiv
+from std.math.uutils import udivmod
 
 
 from std.os import abort
@@ -92,11 +93,7 @@ from buffer.buffer import (
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUDA
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import (
     Idx,
     IntTuple,
@@ -3185,7 +3182,7 @@ def conv2d_gpu_naive_nhwc_rscf[
     var h = block_idx.y * block_dim.y + thread_idx.y
     var w = block_idx.x * block_dim.x + thread_idx.x
 
-    if h >= UInt(H_out) or w >= UInt(W_out):
+    if h >= H_out or w >= W_out:
         return
 
     for co in range(C_out):
@@ -3195,15 +3192,13 @@ def conv2d_gpu_naive_nhwc_rscf[
         var ci_base = g * C_per_group
         for r in range(R):
             for s in range(S):
-                var h_in = h * UInt(stride_h) - UInt(pad_h) + UInt(r * dil_h)
-                var w_in = w * UInt(stride_w) - UInt(pad_w) + UInt(s * dil_w)
-                if 0 <= Int(h_in) < H and 0 <= Int(w_in) < W:
+                var h_in = h * stride_h - pad_h + r * dil_h
+                var w_in = w * stride_w - pad_w + s * dil_w
+                if 0 <= h_in < H and 0 <= w_in < W:
                     for ci in range(C_per_group):
                         value += (
                             input.load[width=1](
-                                IndexList[4](
-                                    Int(n), Int(h_in), Int(w_in), ci_base + ci
-                                )
+                                IndexList[4](n, h_in, w_in, ci_base + ci)
                             ).cast[accum_type]()
                             * filter.load[width=1](
                                 IndexList[4](r, s, ci, co)
@@ -3213,12 +3208,12 @@ def conv2d_gpu_naive_nhwc_rscf[
         comptime if maybe_epilogue_func:
             comptime epilogue_func = maybe_epilogue_func.value()
             epilogue_func(
-                IndexList[4](Int(n), Int(h), Int(w), co),
+                IndexList[4](n, h, w, co),
                 value.cast[output_type](),
             )
         else:
             output.store(
-                IndexList[4](Int(n), Int(h), Int(w), co),
+                IndexList[4](n, h, w, co),
                 value.cast[output_type](),
             )
 
@@ -4711,18 +4706,13 @@ def conv3d_gpu_naive_ndhwc_qrscf[
     var x_thread_id = block_idx.x * block_dim.x + thread_idx.x
 
     # map back to separate height and width
-    var h_out_idx, w_out_idx = divmod(x_thread_id, UInt(W_out))
+    var h_out_idx, w_out_idx = udivmod(x_thread_id, W_out)
 
     # calculate depth from y-dimension
     var d_out_idx = block_idx.y * block_dim.y + thread_idx.y
 
     # bounds check
-    if (
-        n >= UInt(N)
-        or d_out_idx >= UInt(D_out)
-        or h_out_idx >= UInt(H_out)
-        or w_out_idx >= UInt(W_out)
-    ):
+    if n >= N or d_out_idx >= D_out or h_out_idx >= H_out or w_out_idx >= W_out:
         return
 
     # ============= convolution =============
@@ -4735,28 +4725,16 @@ def conv3d_gpu_naive_ndhwc_qrscf[
         for q in range(Q):
             for r in range(R):
                 for s in range(S):
-                    var d_in = Int(
-                        d_out_idx * UInt(stride_d)
-                        + UInt(q * dil_d)
-                        - UInt(pad_d)
-                    )
-                    var h_in = Int(
-                        h_out_idx * UInt(stride_h)
-                        + UInt(r * dil_h)
-                        - UInt(pad_h)
-                    )
-                    var w_in = Int(
-                        w_out_idx * UInt(stride_w)
-                        + UInt(s * dil_w)
-                        - UInt(pad_w)
-                    )
+                    var d_in = d_out_idx * stride_d + q * dil_d - pad_d
+                    var h_in = h_out_idx * stride_h + r * dil_h - pad_h
+                    var w_in = w_out_idx * stride_w + s * dil_w - pad_w
 
                     if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
                         for ci in range(C_per_group):
                             value += (
                                 input.load[width=1](
                                     IndexList[5](
-                                        Int(n), d_in, h_in, w_in, ci_base + ci
+                                        n, d_in, h_in, w_in, ci_base + ci
                                     )
                                 ).cast[accum_type]()
                                 * filter.load[width=1](
@@ -4767,16 +4745,12 @@ def conv3d_gpu_naive_ndhwc_qrscf[
         comptime if maybe_epilogue_func:
             comptime epilogue_func = maybe_epilogue_func.value()
             epilogue_func(
-                IndexList[5](
-                    Int(n), Int(d_out_idx), Int(h_out_idx), Int(w_out_idx), co
-                ),
+                IndexList[5](n, d_out_idx, h_out_idx, w_out_idx, co),
                 value.cast[output_type](),
             )
         else:
             output.store(
-                IndexList[5](
-                    Int(n), Int(d_out_idx), Int(h_out_idx), Int(w_out_idx), co
-                ),
+                IndexList[5](n, d_out_idx, h_out_idx, w_out_idx, co),
                 value.cast[output_type](),
             )
 

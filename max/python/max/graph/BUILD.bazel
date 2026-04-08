@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "graph",
     srcs = glob(["**/*.py"]),
+    data = ["//max:MOGGKernelAPI"],
     ignore_unresolved_imports = [
         # `buffer_utils` imports `max.engine.InferenceSession` but `engine` depends
         # on `graph`, so `engine` cannot be added to this library's deps.

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -48,6 +49,9 @@ class Qwen3Config(Llama3Config):
     decoder_sparse_step: int = 1
     """Sparse step for the decoder. Controls which layers use MoE."""
 
+    ep_config: EPConfig | None = None
+    """Expert parallelism configuration. None means no EP."""
+
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
@@ -72,10 +76,6 @@ class Qwen3Config(Llama3Config):
             KVCacheParams object with the correct head_dim from config.
         """
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-        if data_parallel_degree > 1:
-            raise ValueError(
-                "Data parallelism is not supported for Qwen3 models"
-            )
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
@@ -212,13 +212,14 @@ class Qwen3Config(Llama3Config):
             model_quantization_encoding=base_config.model_quantization_encoding,
             quantization_config=base_config.quantization_config,
             max_seq_len=base_config.max_seq_len,
-            kv_params=qwen3_kv_params,  # Use Qwen3-specific KV params
-            attention_multiplier=qwen3_attention_multiplier,  # Use Qwen3-specific attention multiplier
+            kv_params=qwen3_kv_params,
+            attention_multiplier=qwen3_attention_multiplier,
             embedding_multiplier=base_config.embedding_multiplier,
             residual_multiplier=base_config.residual_multiplier,
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
+            data_parallel_degree=base_config.data_parallel_degree,
             # MoE parameters
             num_experts=num_experts,
             num_experts_per_tok=num_experts_per_tok,

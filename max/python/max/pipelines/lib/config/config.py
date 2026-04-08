@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
 import sys
@@ -125,6 +126,7 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "KimiK25ForConditionalGeneration",
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
+    "UnifiedMTPDeepseekV3ForCausalLM",
 )
 
 
@@ -159,6 +161,16 @@ class PipelineConfig(ConfigFileModel):
         description="The model manifest containing all model configs keyed by role.",
     )
     """The model manifest containing all model configs keyed by role."""
+
+    model_override: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Per-component overrides for the ModelManifest, in the format "
+            "'component.field=value'. Applied before resolution. Repeatable. "
+            "Example: 'transformer.quantization_encoding=float4_e2m1fnx2'."
+        ),
+    )
+    """Per-component model overrides applied before resolution."""
 
     @staticmethod
     def _normalize_models_dict(data: dict[str, Any]) -> dict[str, Any]:
@@ -386,6 +398,65 @@ class PipelineConfig(ConfigFileModel):
                 draft_config.create_kv_cache_config(**kv_cache_kwargs)
             self.models = self.models.with_override(
                 "draft", config=draft_config
+            )
+
+        # Apply per-component overrides from --model-override flags
+        if self.model_override:
+            self._apply_model_overrides()
+
+    def _apply_model_overrides(self) -> None:
+        """Apply --model-override entries to the manifest.
+
+        Each entry has the form ``component.field=value``. The value is
+        coerced to the target field's type via Pydantic's TypeAdapter.
+        Overrides are applied sequentially via ``with_override()``.
+        """
+        from pydantic import TypeAdapter
+
+        for override_str in self.model_override:
+            # Parse "component.field=value"
+            dot_pos = override_str.find(".")
+            if dot_pos < 1:
+                raise ValueError(
+                    f"Invalid --model-override format: {override_str!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            eq_pos = override_str.find("=", dot_pos)
+            if eq_pos < dot_pos + 2:
+                raise ValueError(
+                    f"Invalid --model-override format: {override_str!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            component = override_str[:dot_pos]
+            field_name = override_str[dot_pos + 1 : eq_pos]
+            raw_value = override_str[eq_pos + 1 :]
+
+            if field_name not in MAXModelConfig.model_fields:
+                raise ValueError(
+                    f"Unknown MAXModelConfig field: {field_name!r}. "
+                    f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
+                )
+
+            if component not in self.models:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(self.models.keys())}"
+                )
+
+            # Coerce value using the field's type annotation.
+            # For compound types (list, dict) the raw CLI string is JSON,
+            # so we attempt json.loads first before falling back to the
+            # raw string for scalar fields.
+            field_info = MAXModelConfig.model_fields[field_name]
+            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+            try:
+                parsed_value = json.loads(raw_value)
+            except (json.JSONDecodeError, ValueError):
+                parsed_value = raw_value
+            value = adapter.validate_python(parsed_value)
+
+            self.models = self.models.with_override(
+                component, **{field_name: value}
             )
 
     def _create_speculative_config_if_needed(

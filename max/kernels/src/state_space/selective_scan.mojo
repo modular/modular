@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
+    block_dim,
+    block_idx,
+    thread_idx,
 )
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from std.utils.index import IndexList
@@ -113,11 +113,10 @@ def selective_scan_fwd_gpu[
     """
     # Calculate which (batch, dim) this thread is responsible for
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    var thread_id_int = Int(thread_id)
-    if thread_id_int >= total_batch_dim:
+    if thread_id >= total_batch_dim:
         return
 
-    var b, d = divmod(thread_id_int, dim)
+    var b, d = divmod(thread_id, dim)
 
     # Additional bounds checking
     if b >= batch or d >= dim:
@@ -462,11 +461,10 @@ def selective_scan_fwd_gpu_minimal[
     """Minimal GPU kernel for selective scan forward - no D, z, or delta_bias.
     """
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    var thread_id_int = Int(thread_id)
-    if thread_id_int >= total_batch_dim:
+    if thread_id >= total_batch_dim:
         return
 
-    var b, d = divmod(thread_id_int, dim)
+    var b, d = divmod(thread_id, dim)
 
     if b >= batch or d >= dim:
         return
@@ -640,11 +638,10 @@ def selective_scan_update_gpu[
     """
     # Calculate which (batch, dim) this thread is responsible for
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    var thread_id_int = Int(thread_id)
-    if thread_id_int >= total_batch_dim:
+    if thread_id >= total_batch_dim:
         return
 
-    var b, d = divmod(thread_id_int, dim)
+    var b, d = divmod(thread_id, dim)
 
     # Additional bounds checking
     if b >= batch or d >= dim:
@@ -1465,11 +1462,10 @@ def ssd_combined_gpu[
     var gamma_stride = UInt32(1)
 
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    var thread_id_int = Int(thread_id)
-    if thread_id_int >= total_batch_dim:
+    if thread_id >= total_batch_dim:
         return
 
-    var b, d = divmod(thread_id_int, dim)
+    var b, d = divmod(thread_id, dim)
 
     if b >= batch or d >= dim:
         return
@@ -2823,11 +2819,10 @@ def mamba_split_conv1d_scan_combined_gpu[
     var outproj_bias_stride = UInt32(1)
 
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    var thread_id_int = Int(thread_id)
-    if thread_id_int >= total_batch_dim:
+    if thread_id >= total_batch_dim:
         return
 
-    var b, d = divmod(thread_id_int, dim)
+    var b, d = divmod(thread_id, dim)
 
     if b >= batch or d >= dim:
         return

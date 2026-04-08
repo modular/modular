@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
@@ -58,6 +58,7 @@ kimik2_5_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=KimiK2_5Model,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
@@ -84,6 +85,7 @@ kimivl_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=KimiK2_5Model,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,

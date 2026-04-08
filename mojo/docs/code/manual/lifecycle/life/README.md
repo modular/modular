@@ -1,4 +1,6 @@
-This directory contains code examples for the
+# Code examples and tests for life of a value
+
+This directory contains Code examples and tests for the
 [Life of a value](../../../../../docs/manual/lifecycle/life.mdx) section of the
 Mojo Manual.
 

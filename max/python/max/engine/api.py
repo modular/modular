@@ -416,6 +416,27 @@ class InferenceSession:
         if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
             self.use_fi_topk_kernel(use_fi_topk)
 
+        if val := os.getenv("ENABLE_PER_TENSOR_FP8_QUANTIZE"):
+            self.enable_per_tensor_fp8_quantize(val)
+
+        if (
+            os.environ.get("MODULAR_MAX_UNINITIALIZED_READ_CHECK", "").lower()
+            == "true"
+        ):
+            # Enable debug allocator poison
+            existing = os.environ.get("MODULAR_DEBUG_DEVICE_ALLOCATOR", "")
+            if existing:
+                if "uninitialized-poison" not in existing:
+                    os.environ["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = (
+                        existing + ",uninitialized-poison"
+                    )
+            else:
+                os.environ["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = (
+                    "uninitialized-poison"
+                )
+            # Enable compile-time checks
+            self._set_mojo_define("MOJO_STDLIB_SIMD_UNINIT_CHECK", "true")
+
     def __repr__(self) -> str:
         if self.num_threads:
             return f"<modular engine InferenceSession(num_threads={self.num_threads})>"
@@ -715,6 +736,18 @@ class InferenceSession:
             return
 
         self._set_mojo_define("USE_FI_TOPK_KERNEL", 1)
+
+    def enable_per_tensor_fp8_quantize(self, mode: str) -> None:
+        """Enables per-tensor FP8 quantization.
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("ENABLE_PER_TENSOR_FP8_QUANTIZE", 1)
 
     def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""

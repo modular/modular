@@ -24,12 +24,7 @@ Supports two write modes:
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import (
-    WARP_SIZE,
-    lane_id_uint as lane_id,
-    thread_idx_int as thread_idx,
-)
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import WARP_SIZE, thread_idx, lane_id, warp_id as get_warp_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import named_barrier
@@ -367,7 +362,7 @@ struct BlockwiseFP8TileWriter[
             # Write register fragments to SMEM using stsm_helper
             # (handles bf16 correctly with stsmx instead of stmtx)
             var c_smem_warp_tt = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-                Int(warp_id), 0
+                warp_id, 0
             )
             var c_smem_warp_tile_upper = c_smem_warp_tt.tile[
                 Self.data_paths, Self.stageN

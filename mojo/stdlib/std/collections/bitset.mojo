@@ -10,12 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides a compact, grow-only set of non-negative integers.
+"""Provides a compact set of non-negative integers backed by inline storage.
 
 Optimized for space (1 bit per element) and speed (O(1) operations).
-Offers set/clear/test/toggle and fast population count. The underlying
-storage grows automatically but does not shrink unless `shrink_to_fit`
-is called (not implemented yet).
+Offers set/clear/test/toggle and fast population count.
 
 Example:
 ```mojo

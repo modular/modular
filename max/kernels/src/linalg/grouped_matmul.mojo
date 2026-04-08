@@ -21,9 +21,9 @@ from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import H100, _is_sm10x_gpu
 from std.gpu import (
-    block_idx_uint as block_idx,
-    global_idx_uint as global_idx,
-    warp_id_uint as warp_id,
+    block_idx_int as block_idx,
+    global_idx_int as global_idx,
+    warp_id_int as warp_id,
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )
@@ -112,23 +112,21 @@ def naive_grouped_matmul_kernel[
     comptime assert a.flat_rank == 2, "a must be rank 2"
     comptime assert b.flat_rank == 3, "b must be rank 3"
 
-    var M: UInt = UInt(
-        a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)]
-    )
+    var M: Int = Int(a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
     N = Int(b.dim[1]())
     K = Int(b.dim[2]())
 
-    a_start_row = a_offsets[Int(block_idx.z)]
+    a_start_row = a_offsets[block_idx.z]
     a_by_expert = a.ptr + Int64(a_start_row) * Int64(K)
 
-    expert = expert_ids[Int(block_idx.z)]
+    expert = expert_ids[block_idx.z]
     b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul
     n = global_idx.x
     m = global_idx.y
 
-    if n >= UInt(N) or m >= M:
+    if n >= N or m >= M:
         return
 
     comptime accum_type = get_accum_type[a_type]()
@@ -141,8 +139,8 @@ def naive_grouped_matmul_kernel[
     if expert != -1:
         for k in range(K):
             accum += (
-                a_by_expert[m * UInt(K) + UInt(k)].cast[accum_type]()
-                * b_by_expert[n * UInt(K) + UInt(k)].cast[accum_type]()
+                a_by_expert[m * K + k].cast[accum_type]()
+                * b_by_expert[n * K + k].cast[accum_type]()
             )
 
     comptime if elementwise_lambda_fn:
@@ -152,7 +150,7 @@ def naive_grouped_matmul_kernel[
         )
     else:
         c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
-        c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
+        c_by_expert[m * N + n] = accum.cast[c_type]()
 
 
 def naive_epilogue[
@@ -187,7 +185,7 @@ def naive_epilogue_kernel[
 ](c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],):
     comptime simd_size = simd_width_of[c_type]()
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
-    var n = global_idx.x * UInt(simd_size)
+    var n = global_idx.x * simd_size
     var m = global_idx.y
     comptime N = c.static_shape[1]
     var M = Int(c.dim[0]())
@@ -195,7 +193,7 @@ def naive_epilogue_kernel[
     # note that the most naive implementation of simd_size=1 won't work because
     # different threads will be loading and storing in the same 32-bit region
     # leading to synchronization/data race issues.
-    if m < UInt(M) and n < UInt(N):
+    if m < M and n < N:
         var val = c.load_linear[width=simd_size, alignment=alignment](
             Index(m, n)
         )
@@ -253,7 +251,7 @@ def grouped_matmul_kernel_sm100[
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
-    M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
+    M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
     comptime N = c.static_shape[1]
     comptime K = b_layout.shape[1].value()
 
@@ -267,15 +265,15 @@ def grouped_matmul_kernel_sm100[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    a_start_row = a_offsets[Int(block_idx.z)]
-    expert = expert_ids[Int(block_idx.z)]
+    a_start_row = a_offsets[block_idx.z]
+    expert = expert_ids[block_idx.z]
     b_start_row = expert * Int32(N)
 
-    m_start = block_idx.y * UInt(BM)
-    n_start = block_idx.x * UInt(BN)
-    a_m_start = UInt(a_start_row) + m_start
-    b_n_start = UInt(b_start_row) + n_start
-    if m_start >= UInt(M) or n_start >= UInt(N):
+    m_start = block_idx.y * BM
+    n_start = block_idx.x * BN
+    a_m_start = Int(a_start_row) + m_start
+    b_n_start = Int(b_start_row) + n_start
+    if m_start >= Int(M) or n_start >= N:
         return
 
     # we don't do the whole mma_shape_A vibes, rather, we directly declare it
@@ -424,17 +422,17 @@ def grouped_matmul_kernel_sm100[
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
                 # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
                 # so the async_copy takes care of that. TMA engine will copy the data from global tensor into smem tile A
-                k_start = UInt(i) * UInt(BK) + UInt(k)
+                var k_start: Int = i * BK + k
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (Int(k_start), Int(a_m_start)),
+                    (k_start, a_m_start),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
-                    (Int(k_start), Int(b_n_start)),
+                    (k_start, b_n_start),
                 )
         # wait for the copy to finish
         tma_mbar[0].wait(tma_phase)
@@ -493,7 +491,7 @@ def grouped_matmul_kernel_sm100[
     )
 
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
-        Int(block_idx.y), Int(block_idx.x)
+        block_idx.y, block_idx.x
     )
     comptime c_coord_type = type_of(ctile_coords)
 
@@ -503,7 +501,7 @@ def grouped_matmul_kernel_sm100[
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
                 ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + Int(warp_id), n_mma
+                    4 * m_mma + warp_id, n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
@@ -679,12 +677,12 @@ def grouped_matmul_amd_kernel_launcher[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert transpose_b, "Only support transposed B in grouped matmul."
 
-    var M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
+    var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
     comptime N = c_tensor.static_shape[1]
     comptime K = b_tensor.static_shape[1]
 
-    var expert_id = expert_ids[Int(block_idx.z)]
-    var a_start_row = a_offsets[Int(block_idx.z)]
+    var expert_id = expert_ids[block_idx.z]
+    var a_start_row = a_offsets[block_idx.z]
 
     var a_ptr = a_tensor.ptr + a_start_row * UInt32(K)
     var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K)
@@ -732,8 +730,8 @@ def grouped_matmul_amd_kernel_launcher[
             comptime vec_width = simd_width_of[c_type]()
             comptime alignment = align_of[SIMD[c_type, vec_width]]()
 
-            var block_m = Int(block_idx.y)
-            var block_n = Int(block_idx.x)
+            var block_m = block_idx.y
+            var block_n = block_idx.x
 
             # Early exit if this block is completely outside the matrix bounds
             if UInt32(block_m * BM) >= M:

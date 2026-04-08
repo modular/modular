@@ -25,8 +25,7 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from std.gpu import block_id_in_cluster, lane_id_uint as lane_id
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import block_id_in_cluster, lane_id, warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     async_copy,
@@ -131,7 +130,7 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
@@ -143,11 +142,11 @@ struct WarpRole(TrivialRegisterPassable):
         return self._role != other._role
 
     @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @always_inline
-    def __le__(self, other: UInt) -> Bool:
+    def __le__(self, other: Int) -> Bool:
         return self._role <= Int32(other)
 
     @staticmethod
@@ -607,10 +606,10 @@ def sfb_smem_to_tmem_cpasync[
     """Load SFB from SMEM (packed cp.async layout) to TMEM."""
     comptime for sf_idx in range(num_sf_k_tiles):
         var sfb_scales = SIMD[sfb_dtype, SF_ATOM_K]()
-        if lane_id() < UInt(MMA_N):
-            var scales_offset = UInt(
+        if lane_id() < MMA_N:
+            var scales_offset = (
                 sf_idx * MMA_N * SF_ATOM_K
-            ) + lane_id() * UInt(SF_ATOM_K)
+            ) + lane_id() * SF_ATOM_K
             sfb_scales = sfb_smem_ptr.load[
                 width=SF_ATOM_K,
                 alignment=align_of[SIMD[sfb_dtype, SF_ATOM_K]](),
@@ -652,10 +651,10 @@ def sfb_smem_to_tmem_tma[
 
     comptime for sf_idx in range(num_sf_k_tiles):
         var sfb_scales = SIMD[sfb_dtype, SF_ATOM_K]()
-        if lane_id() < UInt(MMA_N):
+        if lane_id() < MMA_N:
             var outer = (work_tile_n * UInt(MMA_N)) % UInt(
                 SF_MN_GROUP_SIZE
-            ) + lane_id()
+            ) + UInt(lane_id())
             var scales_offset = (
                 UInt(sf_idx) * UInt(SFB_TILE_BYTES)
                 + (outer % UInt(SF_ATOM_M[0]))
@@ -741,7 +740,7 @@ def _sfb_cpasync_produce_tile[
     # Per-tile address components (all lanes compute).
     var outer = (UInt(work_info.n) * UInt(MMA_N)) % UInt(
         SF_MN_GROUP_SIZE
-    ) + lane_id()
+    ) + UInt(lane_id())
     var row_in_atom = outer % UInt(SF_ATOM_M[0])
     var sub_column = outer / UInt(SF_ATOM_M[0])
     var n_group = (Int(work_info.n) * MMA_N) // SF_MN_GROUP_SIZE
@@ -764,11 +763,10 @@ def _sfb_cpasync_produce_tile[
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
             comptime for k_atom in range(num_sf_k_tiles):
-                if lane_id() < UInt(MMA_N):
+                if lane_id() < MMA_N:
                     # Stored sequentially to avoid SMEM bank conflicts.
                     var smem_offset = (
-                        k_atom * (MMA_N * SF_ATOM_K)
-                        + Int(lane_id()) * SF_ATOM_K
+                        k_atom * (MMA_N * SF_ATOM_K) + lane_id() * SF_ATOM_K
                     )
                     # K bounds check: OOB k-atoms are zero-filled
                     # because cp.async has no auto-fill and NaN
@@ -815,7 +813,7 @@ def _sfb_cpasync_produce_tile[
 
         # async_copy_arrive: pending_count +1 (auto -1 on completion).
         # mbar.arrive: arrive_count -1.
-        if lane_id() < UInt(MMA_N):
+        if lane_id() < MMA_N:
             async_copy_arrive(sfb_tma_mbar[0].unsafe_ptr())
             _ = sfb_tma_mbar[0].arrive()
 
@@ -883,9 +881,9 @@ def _sfb_cpasync_produce_tile_warpwide[
     )
 
     # Map lane_id to (k_atom, position) across the full warp.
-    var my_k_atom = Int(lane_id()) // MMA_N
-    var my_pos = Int(lane_id()) % MMA_N
-    var active = lane_id() < UInt(MMA_N * num_sf_k_tiles)
+    var my_k_atom = lane_id() // MMA_N
+    var my_pos = lane_id() % MMA_N
+    var active = lane_id() < MMA_N * num_sf_k_tiles
 
     # Per-tile address components for this lane's position.
     var outer = (UInt(work_info.n) * UInt(MMA_N)) % UInt(

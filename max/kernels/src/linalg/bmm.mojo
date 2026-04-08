@@ -25,7 +25,7 @@ from std.sys.info import (
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
-from std.gpu import block_idx_uint as block_idx, global_idx_uint as global_idx
+from std.gpu import block_idx, global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target
@@ -142,9 +142,9 @@ def _slice_types[
     """
     Slice the last n_dims dimensions of the Coord element types.
     """
-    comptime rank = Variadic.size_types[stride_types]
-    comptime assert 0 <= rank - n_dims <= Variadic.size_types[stride_types]
-    comptime assert rank <= Variadic.size_types[stride_types]
+    comptime rank = TypeList[*stride_types].size
+    comptime assert 0 <= rank - n_dims <= TypeList[*stride_types].size
+    comptime assert rank <= TypeList[*stride_types].size
 
     return Variadic.slice_types[stride_types, rank - n_dims]
 
@@ -158,7 +158,7 @@ def _shape_types_to_3d[
     first dimension will be the product of the batch dimensions if all the batch
     dimensions are static, otherwise it's a runtime dimension.
     """
-    comptime rank = Variadic.size_types[shape_types]
+    comptime rank = TypeList[*shape_types].size
     comptime last_two_dims = _slice_types[shape_types, 2]()
     comptime batch_dims = _slice_types[
         Variadic.reverse[*shape_types], rank - 2
@@ -527,9 +527,9 @@ def naive_batched_matmul_kernel[
     var n = UInt(c_tensor.dim(2))
     var k = UInt(a_tensor.dim(2))
 
-    var x = Int(global_idx.x)
-    var y = Int(global_idx.y)
-    var z = Int(block_idx.z)
+    var x = global_idx.x
+    var y = global_idx.y
+    var z = block_idx.z
 
     if UInt(z) >= batch_size or UInt(x) >= n or UInt(y) >= m:
         return
@@ -570,7 +570,7 @@ def batched_matmul_kernel_gpu[
     n: Int,
     k: Int,
 ):
-    var batch_idx = Int(block_idx.z)
+    var batch_idx = block_idx.z
     var a_ptr = a_tensor.ptr + batch_idx * a_tensor.layout.stride[0]().value()
     var b_ptr = b_tensor.ptr + batch_idx * b_tensor.layout.stride[0]().value()
     var c_ptr = c_tensor.ptr + batch_idx * c_tensor.layout.stride[0]().value()
@@ -606,7 +606,7 @@ def batched_matmul_kernel_gpu[
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
-            var batch_coords = IndexList[3](Int(block_idx.z))
+            var batch_coords = IndexList[3](block_idx.z)
             batch_coords[2] = out_coords[1]
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)
@@ -1101,9 +1101,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     var N = c_tensor.dim(2)
 
     var b_scales_ptr = b_scales_tensor.ptr + (
-        block_idx.z
-        * UInt(b_scales_tensor.dim(1))
-        * UInt(b_scales_tensor.dim(2))
+        block_idx.z * b_scales_tensor.dim(1) * b_scales_tensor.dim(2)
     )
 
     var c = LayoutTensor[c_type, c_2d_layout](
@@ -1127,7 +1125,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
-            var batch_coords = IndexList[3](Int(block_idx.z))
+            var batch_coords = IndexList[3](block_idx.z)
             batch_coords[2] = out_coords[1]
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)
@@ -1156,7 +1154,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
-        num_threads=num_threads,
+        num_threads=Int(num_threads),
         elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
             elementwise_epilogue_fn_wrapper
         ) if elementwise_lambda_fn else None,
@@ -1166,7 +1164,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         c,
         a_scales_tma_op,
         b_scales,
-        num_iters,
+        Int(num_iters),
     )
 
 

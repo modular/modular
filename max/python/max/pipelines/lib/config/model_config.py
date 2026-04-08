@@ -32,6 +32,7 @@ from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.device_specs import coerce_device_specs_input
 from max.pipelines.lib.hf_utils import (
     HuggingFaceRepo,
+    download_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
@@ -466,7 +467,18 @@ class MAXModelConfig(MAXModelConfigBase):
         # the subfolder.  Prepend the subfolder so that all downstream code
         # (encoding detection, validation, downloading) sees repo-relative
         # paths that include the subfolder prefix.
-        if self.subfolder and self.weight_path:
+        #
+        # Skip this when weights come from a different repo (parsed_repo_id
+        # differs from model_path) — cross-repo weight paths are relative to
+        # that external repo's root, not the base model's subfolder.
+        weights_from_external_repo = (
+            parsed_repo_id is not None and parsed_repo_id != self.model_path
+        )
+        if (
+            self.subfolder
+            and self.weight_path
+            and not weights_from_external_repo
+        ):
             prefix = self.subfolder + "/"
             adjusted: list[Path] = []
             for p in self.weight_path:
@@ -732,11 +744,19 @@ class MAXModelConfig(MAXModelConfigBase):
     @property
     def huggingface_weight_repo(self) -> HuggingFaceRepo:
         """Returns the Hugging Face repo handle for weight files."""
+        weights_repo_id = self.huggingface_weight_repo_id
+        # When weights come from an external repo, don't apply the
+        # component subfolder — the external repo has its own layout.
+        weights_from_external_repo = (
+            self._weights_repo_id is not None
+            and self._weights_repo_id != self.model_path
+        )
+        subfolder = None if weights_from_external_repo else self.subfolder
         return HuggingFaceRepo(
-            repo_id=self.huggingface_weight_repo_id,
+            repo_id=weights_repo_id,
             revision=self.huggingface_weight_revision,
             trust_remote_code=self.trust_remote_code,
-            subfolder=self.subfolder,
+            subfolder=subfolder,
         )
 
     @computed_field  # type: ignore[prop-decorator]
@@ -1273,6 +1293,30 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"Unexpected repository type encountered: {repo.repo_type}"
             )
             return None
+
+    def resolved_weight_paths(self) -> list[Path]:
+        """Resolve weight paths to absolute local paths, downloading if needed.
+
+        For online repos, downloads weight files from HuggingFace Hub.
+        For local repos, constructs absolute paths from the repo root.
+
+        Returns:
+            Absolute paths to weight files on disk.
+        """
+        if not self.weight_path:
+            return []
+
+        weight_repo = self.huggingface_weight_repo
+        if weight_repo.repo_type == "online":
+            return download_weight_files(
+                huggingface_model_id=weight_repo.repo_id,
+                filenames=[str(x) for x in self.weight_path],
+                revision=self.huggingface_weight_revision,
+                force_download=self.force_download,
+            )
+        else:
+            local_path = Path(weight_repo.repo_id)
+            return [local_path / x for x in self.weight_path]
 
     @property
     def default_device_spec(self) -> DeviceSpec:

@@ -101,7 +101,6 @@ struct MLAConfig[
     var num_pv_stages: Int  # Stages for P@V (P writing pipelining)
     var smem_used: Int
     comptime num_threads: Int = 512  # 2x softmax, 1x correction, 1x other
-    var split_m: Bool
     var qkv_swizzle_mode: TensorMapSwizzle
     var rope_mma_swizzle_mode: TensorMapSwizzle
     var rope_gmem_swizzle_mode: TensorMapSwizzle
@@ -165,7 +164,6 @@ struct MLAConfig[
         self.num_qk_stages = self.fa4_config.num_qk_stages
         self.num_pv_stages = self.fa4_config.num_pv_stages
         self.smem_used = self.fa4_config.smem_used
-        self.split_m = self.fa4_config.split_m
         self.group = self.fa4_config.group
         self.num_q_heads = self.fa4_config.num_q_heads
         self.num_kv_heads = self.fa4_config.num_kv_heads

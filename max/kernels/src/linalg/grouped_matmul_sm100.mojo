@@ -13,6 +13,7 @@
 
 from std.collections import Optional
 from std.math import ceildiv
+from std.math.uutils import umod, ufloordiv
 from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
 from std.bit import next_power_of_two
@@ -28,9 +29,9 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu import (
     block_id_in_cluster,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as get_warp_id,
+    thread_idx,
+    lane_id,
+    warp_id as get_warp_id,
 )
 from std.gpu.memory import (
     AddressSpace,
@@ -92,7 +93,7 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
@@ -104,7 +105,7 @@ struct WarpRole(TrivialRegisterPassable):
         return self._role != other._role
 
     @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
@@ -484,10 +485,8 @@ def stsm_helper[
         layout, element_type=DType.uint32, linear_idx_type=DType.uint32
     ]
     var stsm_lane_offset = UInt32(
-        (lane & 15) * UInt(stride0) + (lane >> 4)
-    ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(
-        Int(lane)
-    )
+        (lane & 15) * stride0 + (lane >> 4)
+    ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx4_row_size):
@@ -651,10 +650,10 @@ def multi_stage_store_C[
             # contiguous row_major(stageN, 16) chunks.
             var c_smem_warp_tile_upper = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
-            ](2 * Int(warp_id), 0).reshape[Layout.row_major(stageN, 16)]()
+            ](2 * warp_id, 0).reshape[Layout.row_major(stageN, 16)]()
             var c_smem_warp_tile_lower = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
-            ](2 * Int(warp_id) + 1, 0).reshape[Layout.row_major(stageN, 16)]()
+            ](2 * warp_id + 1, 0).reshape[Layout.row_major(stageN, 16)]()
 
             # Pack the upper frag to shared memory
             stsm_helper[swizzle, transpose_c=transpose_c](
@@ -668,7 +667,7 @@ def multi_stage_store_C[
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
         else:
-            var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
+            var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
 
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
@@ -693,7 +692,8 @@ def multi_stage_store_C[
         ].value() if MMA_M == 256 or cta_group == 1 else BM
 
         var elect_one_warp = (
-            warp_id == 0 if MMA_M == 256 or cta_group == 1 else warp_id % 2 == 0
+            warp_id == 0 if MMA_M == 256
+            or cta_group == 1 else umod(warp_id, 2) == 0
         )
         # var coord_n_mma_m256 = work_tile_coord[1] * MMA_N + stage * stageN
         # var coord_n_mma_m128 = (
@@ -703,7 +703,7 @@ def multi_stage_store_C[
         var coord_n_mma_m128 = (
             work_tile_coord[1]
             + UInt(stage * stageN)
-            + UInt(BN * Int(warp_id // 2))
+            + UInt(BN * ufloordiv(warp_id, 2))
         )
 
         var coord_n = Int(
@@ -735,9 +735,11 @@ def multi_stage_store_C[
                             ),
                         )
                 else:
-                    var c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
+                    var c_smem_coord_m = 0 if MMA_M == 256 else ufloordiv(
+                        warp_id, 2
+                    )
                     var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
-                        Int(c_smem_coord_m), 0
+                        c_smem_coord_m, 0
                     )
                     c_tma_op.async_store(
                         c_smem_split,
@@ -851,7 +853,7 @@ def zero_output[
     var M = group_end_idx - coord[1]
     if UInt32(thread_idx.x) < min(row_thread_num, row_boundary):
         for i in range(min(M, UInt32(output_tile_shape[0]))):
-            (ptr + thread_idx.x * UInt(simd_size)).store[alignment=alignment](
+            (ptr + thread_idx.x * simd_size).store[alignment=alignment](
                 zero_vec
             )
             ptr += c_stride

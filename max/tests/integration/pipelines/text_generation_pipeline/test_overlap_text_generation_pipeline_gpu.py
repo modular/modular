@@ -15,6 +15,7 @@ import math
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -147,6 +148,9 @@ class FakeModelConfig(ConfigFileModel):
     quantization_encoding: SupportedEncoding = "float32"
     enable_echo: bool = False
     data_parallel_degree: int = 1
+
+    def resolved_weight_paths(self) -> list[Path]:
+        return []
 
 
 class FakeRuntimeConfig(ConfigFileModel):
@@ -358,7 +362,6 @@ def monkeypatch_weight_and_kvcache_loading(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for func in [
-        "get_weight_paths",
         "load_weights",
         "weights_format",
         "load_kv_manager",

@@ -14,7 +14,17 @@
 from std.sys import simd_width_of
 
 from std.gpu import barrier, block_idx
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout import (
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    Layout,
+    MixedLayout,
+    RuntimeInt,
+    TileTensor,
+)
+from std.builtin.variadics import Variadic
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
 
@@ -115,7 +125,7 @@ __extension Attention:
                 UInt32(tile_size), end - kv_tile_start_row
             )
 
-            var k_tile = self.gmem_manager.get_kv_tensor(
+            var k_tile = self.gmem_manager.get_kv_tile(
                 self.k.block_paged_ptr[Int(Self.BN)](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
@@ -125,7 +135,7 @@ __extension Attention:
                 kv_tile_num_rows,
             )
 
-            var v_tile = self.gmem_manager.get_kv_tensor(
+            var v_tile = self.gmem_manager.get_kv_tile(
                 self.v.block_paged_ptr[Int(Self.BN)](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
@@ -137,9 +147,10 @@ __extension Attention:
 
             self.zero_p_buffer()
 
-            var num_b_rows = Int(kv_tile_num_rows)
+            comptime kv_layout = Self.GlobalMemoryManagerType.KvTileLayout
 
             var k_buffer = KBuffer[
+                kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
                 BN=Int(Self.BN),
@@ -150,11 +161,11 @@ __extension Attention:
                 num_stages=Self.num_stages,
             ](
                 k_tile,
-                num_b_rows,
                 self.smem_manager.get_k_ptr[k_tile.dtype](),
             )
 
             var v_buffer = VBufferTransposeLoads[
+                kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_pv(),
                 BN=Int(Self.BN),
                 BK=Int(Self.BK),
@@ -163,35 +174,44 @@ __extension Attention:
                 num_stages=Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
-            comptime k_rope_gmem_layout = Layout(
-                IntTuple(Int(Self.BN), Int(cache_depth)),
-                IntTuple(Int(cache_num_heads * cache_depth), 1),
-            )
-
-            var k_rope_runtime_layout = RuntimeLayout[k_rope_gmem_layout](
-                {Int(kv_tile_num_rows), Int(cache_depth)},
-                {Int(cache_num_heads * cache_depth), 1},
-            )
-
             comptime cache_group = self.num_heads // UInt(cache_num_heads)
             comptime rope_depth = q_depth - Int(Self.depth)
 
-            var k_rope_tile = LayoutTensor[
-                k_rope_t.dtype,
-                k_rope_gmem_layout,
-                ImmutAnyOrigin,
-                masked=True,
+            # Build k_rope TileTensor with RuntimeInt valid_rows.
+            comptime _k_rope_stride0 = Int(cache_num_heads * cache_depth)
+            comptime KRopeTileLayout = MixedLayout[
+                Variadic.types[
+                    T=CoordLike,
+                    RuntimeInt[DType.int64],
+                    ComptimeInt[Int(Self.depth)],
+                ],
+                Variadic.types[
+                    T=CoordLike,
+                    ComptimeInt[_k_rope_stride0],
+                    ComptimeInt[1],
+                ],
+            ]
+
+            var k_rope_tile = TileTensor[
+                k_rope_t.dtype, KRopeTileLayout, ImmutAnyOrigin
             ](
-                k_rope.block_paged_ptr[Int(Self.BN)](
+                ptr=k_rope.block_paged_ptr[Int(Self.BN)](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row + UInt32(self.cache_start_pos),
                     UInt32(Int(Self.kv_head_idx() // cache_group)),
                     UInt32(cache_depth - rope_depth),
                 ),
-                k_rope_runtime_layout,
+                layout=KRopeTileLayout(
+                    Coord(
+                        RuntimeInt[DType.int64](Int64(kv_tile_num_rows)),
+                        Idx[Int(Self.depth)](),
+                    ),
+                    Coord(Idx[_k_rope_stride0](), Idx[1]()),
+                ),
             )
 
             var k_rope_buffer = KBuffer[
+                kv_tile_layout=KRopeTileLayout,
                 tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
                 BN=Int(Self.BN),
@@ -202,17 +222,29 @@ __extension Attention:
                 num_stages=2,
             ](
                 k_rope_tile,
-                num_b_rows,
                 self.smem_manager.get_k_ptr[k_rope_tile.dtype](),
             )
 
-            @parameter
-            @always_inline
-            def prefetch_function1():
-                k_rope_buffer.load_from_dram()
+            # WORKAROUND: The k_rope prefetch during k_buffer MMA combined
+            # with prefetched_b_tile=True triggers a miscompilation at -O2
+            # (the optimization level used by bazel for nn.mojopkg), producing
+            # wrong results for seq_len > 128 (multiple Q tiles). The same
+            # code is correct at -O3. The LayoutTensor version of this code
+            # does not exhibit the issue — only the TileTensor path.
+            # Restore the prefetch once the bug is fixed:
+
+            # @parameter
+            # @always_inline
+            # def prefetch_function1():
+            #     k_rope_buffer.load_from_dram()
+
+            # self.mma_qk[
+            #     prefetch_function=prefetch_function1,
+            #     beg_iter=0,
+            #     num_iters=Int(Self.depth // Self.BK),
+            # ](k_buffer)
 
             self.mma_qk[
-                prefetch_function=prefetch_function1,
                 beg_iter=0,
                 num_iters=Int(Self.depth // Self.BK),
             ](k_buffer)
@@ -226,7 +258,7 @@ __extension Attention:
                 prefetch_function=prefetch_function2,
                 beg_iter=Int(Self.depth // Self.BK),
                 num_iters=rope_depth // Int(Self.BK),
-                prefetched_b_tile=True,
+                # prefetched_b_tile=True,
             ](k_rope_buffer)
 
             self.scale_p_reg()

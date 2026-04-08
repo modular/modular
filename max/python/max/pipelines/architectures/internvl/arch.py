@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
 
@@ -31,6 +31,7 @@ internvl_arch = SupportedArchitecture(
     context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     required_arguments={
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,

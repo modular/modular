@@ -18,11 +18,7 @@ from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-)
+from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
@@ -278,7 +274,7 @@ struct TileScheduler[
     ) -> PipelineState[Self.num_stages]:
         comptime multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
-        var pred = UInt32(1) if lane_id < UInt(Self.cluster_size) else UInt32(0)
+        var pred = UInt32(1) if lane_id < Self.cluster_size else UInt32(0)
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())
         self.full_mbar[clc_state.index()].arrive_and_expect_bytes(
             Int32(size_of[UInt128]()),

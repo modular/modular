@@ -171,6 +171,18 @@ def _make_connector(
     connector._inflight_writes = []
     connector._nixl_read_blocks = 0
     connector._nixl_write_blocks = 0
+    connector._nixl_read_latency_total_ms = 0.0
+    connector._nixl_read_latency_count = 0
+    connector._nixl_write_latency_total_ms = 0.0
+    connector._nixl_write_latency_count = 0
+    connector._rpc_acquire_latency_total_ms = 0.0
+    connector._rpc_acquire_latency_count = 0
+    connector._rpc_read_latency_total_ms = 0.0
+    connector._rpc_read_latency_count = 0
+    connector._nixl_read_bytes = 0
+    connector._nixl_write_bytes = 0
+    connector._nixl_read_blocks_local = 0
+    connector._nixl_read_blocks_remote = 0
     connector._needs_reconnect = False
     connector._last_reconnect_attempt = 0.0
     connector._reconnect_cooldown_s = 5.0
@@ -1348,6 +1360,359 @@ class TestNIXLReadLogs:
         assert "MiB" in log_msg
         assert "ms" in log_msg
         assert "GiB/s" in log_msg
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: metrics
+# ---------------------------------------------------------------------------
+
+
+class TestMetrics:
+    """Tests for dKV latency and classification metrics."""
+
+    def test_save_accumulates_acquire_latency(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector.save([0, 1], [100, 200])
+
+        assert connector._rpc_acquire_latency_count == 1
+        assert connector._rpc_acquire_latency_total_ms > 0
+
+    def test_load_accumulates_read_blocks_latency(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc, transfer_engine=remote_metadata
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        assert connector._rpc_read_latency_count == 1
+        assert connector._rpc_read_latency_total_ms > 0
+
+    def test_sync_accumulates_nixl_read_latency(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc, transfer_engine=remote_metadata
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+        connector.sync()
+
+        assert connector._nixl_read_latency_count == 1
+        assert connector._nixl_read_latency_total_ms > 0
+
+    def test_flush_drain_accumulates_nixl_write_latency(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("local-dkv")
+        transfer_req = MagicMock()
+        assert connector._engine is not None
+        connector._engine.initiate_send_transfer.return_value = transfer_req
+
+        connector.connect_block_store(remote_metadata)
+        connector.save([0], [100])
+        connector.flush()
+
+        # First flush posts the NIXL write. Mark it complete and drain.
+        connector._engine.is_complete.return_value = True
+        connector.flush()
+
+        assert connector._nixl_write_latency_count == 1
+        assert connector._nixl_write_latency_total_ms > 0
+
+    def test_load_classifies_local_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        remote_metadata = _make_transfer_metadata("default-dkv")
+        connector._default_remote_metadata = remote_metadata
+
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc, transfer_engine=remote_metadata
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        assert connector._nixl_read_blocks_local == 1
+        assert connector._nixl_read_blocks_remote == 0
+
+    def test_load_classifies_remote_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        default_metadata = _make_transfer_metadata("default-dkv")
+        remote_metadata = _make_transfer_metadata("other-dkv")
+        connector._default_remote_metadata = default_metadata
+
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc, transfer_engine=remote_metadata
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        assert connector._nixl_read_blocks_local == 0
+        assert connector._nixl_read_blocks_remote == 1
+
+    def test_metrics_property_returns_all_fields(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        connector._nixl_read_latency_total_ms = 10.0
+        connector._nixl_read_latency_count = 2
+        connector._rpc_acquire_latency_total_ms = 5.0
+        connector._rpc_acquire_latency_count = 1
+        connector._nixl_read_blocks_local = 3
+        connector._nixl_read_blocks_remote = 1
+
+        m = connector.metrics
+        assert m.nixl_read_latency_total_ms == 10.0
+        assert m.nixl_read_latency_count == 2
+        assert m.nixl_read_latency_avg_ms == 5.0
+        assert m.rpc_acquire_latency_avg_ms == 5.0
+        assert m.nixl_read_blocks_local == 3
+        assert m.nixl_read_blocks_remote == 1
+        assert m.remote_read_ratio == 0.25
+
+    def test_rpc_failure_does_not_accumulate_latency(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        mock_server.set_error_response("simulated failure")
+
+        connector.save([0], [100])
+
+        assert connector._rpc_acquire_latency_count == 0
+        assert connector._rpc_acquire_latency_total_ms == 0.0
+
+    def test_metrics_add_sums_latency_pairs(self) -> None:
+        from max.nn.kv_cache.metrics import KVCacheMetrics
+
+        a = KVCacheMetrics(
+            nixl_read_latency_total_ms=10.0,
+            nixl_read_latency_count=2,
+            rpc_acquire_latency_total_ms=5.0,
+            rpc_acquire_latency_count=1,
+            nixl_read_blocks_local=3,
+            nixl_read_blocks_remote=1,
+        )
+        b = KVCacheMetrics(
+            nixl_read_latency_total_ms=20.0,
+            nixl_read_latency_count=3,
+            rpc_acquire_latency_total_ms=15.0,
+            rpc_acquire_latency_count=2,
+            nixl_read_blocks_local=2,
+            nixl_read_blocks_remote=4,
+        )
+        c = a + b
+
+        assert c.nixl_read_latency_total_ms == 30.0
+        assert c.nixl_read_latency_count == 5
+        assert c.nixl_read_latency_avg_ms == 6.0
+        assert c.rpc_acquire_latency_total_ms == 20.0
+        assert c.rpc_acquire_latency_count == 3
+        assert c.nixl_read_blocks_local == 5
+        assert c.nixl_read_blocks_remote == 5
+        assert c.remote_read_ratio == 0.5
+
+    def test_remote_read_ratio_zero_when_empty(self) -> None:
+        from max.nn.kv_cache.metrics import KVCacheMetrics
+
+        m = KVCacheMetrics()
+        assert m.remote_read_ratio == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: DKV capability
+# ---------------------------------------------------------------------------
+
+
+class TestDKVCapability:
+    """Capability tests exercising full dKV PUT/GET lifecycle and edge cases."""
+
+    def test_full_put_get_lifecycle(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """save → flush → lookup → load → sync → on_request_complete."""
+        # PUT: save + flush
+        connector.save([0, 1], [100, 200])
+        connector.flush()
+
+        assert len(mock_server.registered_blocks) == 1
+        assert connector.metrics.nixl_write_blocks == 2
+
+        # GET: lookup + load + sync + complete
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100, offset=0)
+        desc_200 = _make_descriptor(200, offset=4096)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100, desc_200, transfer_engine=remote_metadata
+            )
+        )
+
+        tokens = connector.lookup(ctx, [100, 200])
+        assert tokens == 2 * connector._block_size
+
+        loaded = connector.load(ctx, [10, 11])
+        assert loaded == [100, 200]
+
+        connector.sync()
+        assert len(mock_server.decremented_blocks) == 1
+
+        connector.on_request_complete(ctx.request_id, [10, 11])
+        # Already decremented in sync, so no double-decrement.
+        assert len(mock_server.decremented_blocks) == 1
+
+    def test_multi_remote_read_groups(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Blocks from different transfer metadata should initiate separate transfers."""
+        remote_a = _make_transfer_metadata("remote-a")
+        remote_b = _make_transfer_metadata("remote-b")
+
+        desc_100 = _make_descriptor(100, offset=0)
+        desc_200 = _make_descriptor(200, offset=4096)
+
+        ctx = _make_ctx(
+            external_block_metadata={
+                100: DKVExternalBlockMetadata.from_descriptor(
+                    desc_100, transfer_engine=remote_a
+                ),
+                200: DKVExternalBlockMetadata.from_descriptor(
+                    desc_200, transfer_engine=remote_b
+                ),
+            }
+        )
+
+        connector.lookup(ctx, [100, 200])
+        connector.load(ctx, [10, 11])
+
+        assert connector._engine is not None
+        assert connector._engine.initiate_read_transfer.call_count == 2
+
+    def test_concurrent_requests_isolated(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Two requests should have independent inflight state."""
+        remote_metadata = _make_transfer_metadata()
+        desc_a = _make_descriptor(100)
+        desc_b = _make_descriptor(200)
+
+        ctx_a = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_a, transfer_engine=remote_metadata
+            )
+        )
+        ctx_b = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_b, transfer_engine=remote_metadata
+            )
+        )
+
+        connector.lookup(ctx_a, [100])
+        connector.lookup(ctx_b, [200])
+        connector.load(ctx_a, [10])
+        connector.load(ctx_b, [11])
+
+        req_a = str(ctx_a.request_id)
+        req_b = str(ctx_b.request_id)
+        assert req_a in connector._inflight_reads
+        assert req_b in connector._inflight_reads
+        assert req_a in connector._held_blocks
+        assert req_b in connector._held_blocks
+
+        # Complete A, B should be unaffected.
+        connector.on_request_complete(ctx_a.request_id, [10])
+        assert req_a not in connector._inflight_reads
+        assert req_b in connector._inflight_reads
+
+    def test_partial_prefix_stops_at_gap(self, connector: DKVConnector) -> None:
+        """lookup should return contiguous prefix only."""
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100)
+        # 200 is missing, 300 is present → only 100 should match.
+        desc_300 = _make_descriptor(300)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100, desc_300, transfer_engine=remote_metadata
+            )
+        )
+
+        tokens = connector.lookup(ctx, [100, 200, 300])
+        assert tokens == 1 * connector._block_size
+
+    def test_save_flush_interleaving(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Multiple save batches before flush should all register."""
+        connector.save([0], [100])
+        connector.save([1, 2], [200, 300])
+        connector.flush()
+
+        assert len(mock_server.registered_blocks) == 1
+        registered = mock_server.registered_blocks[0]
+        assert len(registered) == 3
+        hashes = {b.seq_hash for b in registered}
+        assert hashes == {100, 200, 300}
+
+    def test_request_complete_before_sync(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """on_request_complete before sync should handle inflight reads."""
+        remote_metadata = _make_transfer_metadata()
+        desc = _make_descriptor(100)
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc, transfer_engine=remote_metadata
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        connector.load(ctx, [10])
+
+        # Complete without sync first.
+        connector.on_request_complete(ctx.request_id, [10])
+
+        # sync should see nothing for this request.
+        connector.sync()
+        assert len(mock_server.decremented_blocks) == 1
+
+    def test_double_lookup_replaces_pending(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Second lookup for same request should replace first pending loads."""
+        remote_metadata = _make_transfer_metadata()
+        desc_100 = _make_descriptor(100)
+        desc_200 = _make_descriptor(200)
+
+        ctx = _make_ctx(
+            external_block_metadata=_make_external_metadata(
+                desc_100, desc_200, transfer_engine=remote_metadata
+            )
+        )
+
+        connector.lookup(ctx, [100])
+        req_id = str(ctx.request_id)
+        assert len(connector._pending_loads[req_id]) == 1
+
+        connector.lookup(ctx, [100, 200])
+        assert len(connector._pending_loads[req_id]) == 2
 
 
 # ---------------------------------------------------------------------------

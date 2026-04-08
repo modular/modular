@@ -82,10 +82,7 @@ def _make_kv_per_device() -> KVCacheInputsPerDevice:
 
 
 @contextmanager
-def _warmup_model_inputs(
-    batch_size: int, num_steps: int
-) -> Iterator[MockModelInputs]:
-    del num_steps
+def _warmup_model_inputs(batch_size: int) -> Iterator[MockModelInputs]:
     yield MockModelInputs(
         active_batch_size=batch_size,
         eos_prob=0.0,

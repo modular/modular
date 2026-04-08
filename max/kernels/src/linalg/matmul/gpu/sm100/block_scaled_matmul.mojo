@@ -26,7 +26,7 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu import block_id_in_cluster
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,

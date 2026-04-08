@@ -280,6 +280,7 @@ class Qwen3Attention(Module, Shardable):
 
         devices_list = list(devices)
         num_devices = len(devices_list)
+        is_replicate = self._sharding_strategy.is_replicate
 
         # Shard all projection layers
         q_proj_shards = self.q_proj.shard(devices_list)
@@ -294,19 +295,20 @@ class Qwen3Attention(Module, Shardable):
         shards: list[Qwen3Attention] = []
 
         for shard_idx, device in enumerate(devices_list):
-            # Compute the number of attention heads for this shard
-            head_start, head_end = _compute_shard_range(
-                self.n_heads, shard_idx, num_devices
-            )
-            sharded_num_heads = head_end - head_start
+            if is_replicate:
+                sharded_num_heads = self.n_heads
+                sharded_num_kv_heads = self.num_key_value_heads
+            else:
+                head_start, head_end = _compute_shard_range(
+                    self.n_heads, shard_idx, num_devices
+                )
+                sharded_num_heads = head_end - head_start
 
-            # Compute the number of KV heads for this shard
-            kv_head_start, kv_head_end = _compute_shard_range(
-                self.num_key_value_heads, shard_idx, num_devices
-            )
-            sharded_num_kv_heads = kv_head_end - kv_head_start
+                kv_head_start, kv_head_end = _compute_shard_range(
+                    self.num_key_value_heads, shard_idx, num_devices
+                )
+                sharded_num_kv_heads = kv_head_end - kv_head_start
 
-            # Create a new attention layer for this shard
             sharded = Qwen3Attention(
                 rope=self.rope,
                 num_attention_heads=sharded_num_heads,
@@ -324,13 +326,11 @@ class Qwen3Attention(Module, Shardable):
                 quant_config=self.quant_config,
             )
 
-            # Replace the projection layers with sharded versions
             sharded.q_proj = q_proj_shards[shard_idx]
             sharded.k_proj = k_proj_shards[shard_idx]
             sharded.v_proj = v_proj_shards[shard_idx]
             sharded.o_proj = o_proj_shards[shard_idx]
 
-            # Replace norm layers with sharded versions
             sharded.q_norm = q_norm_shards[shard_idx]
             sharded.k_norm = k_norm_shards[shard_idx]
 

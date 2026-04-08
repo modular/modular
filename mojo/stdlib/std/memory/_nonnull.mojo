@@ -22,15 +22,19 @@ from std.builtin.format_int import _write_int
 from std.compile import get_type_name
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.sys import align_of, is_gpu, size_of
-from std.utils._nicheable import UnsafeSingleNicheable
+from std.utils._nicheable import (
+    UnsafeSingleNicheable,
+    UnsafeCustomNicheStorage,
+    NicheStorageTraits,
+)
 
 
-struct _Null[address_space: AddressSpace = AddressSpace.GENERIC](
-    Defaultable, Intable, TrivialRegisterPassable
-):
+struct _Null[
+    type: AnyType = NoneType, address_space: AddressSpace = AddressSpace.GENERIC
+](Defaultable, Intable, TrivialRegisterPassable):
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
-        NoneType,
+        Self.type,
         `, `,
         Self.address_space._value._mlir_value,
         `>`,
@@ -52,6 +56,38 @@ def _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
 
 
+struct _NonNullNicheStorage[
+    type: AnyType,
+    address_space: AddressSpace,
+](NicheStorageTraits):
+    """Custom niche backing for `NonNullUnsafePointer` that lowers directly to
+    `kgen.pointer` instead of `pop.array<1, kgen.pointer>`."""
+
+    comptime _mlir_type = __mlir_type[
+        `!kgen.pointer<`,
+        Self.type,
+        `, `,
+        Self.address_space._value._mlir_value,
+        `>`,
+    ]
+
+    var address: Self._mlir_type
+
+    @always_inline
+    def __init__(out self):
+        self.address = _Null[Self.type, Self.address_space]().address
+
+    @always_inline
+    def as_uninit[
+        U: AnyType
+    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[U], origin_of(self)]:
+        return (
+            UnsafePointer(to=self.address)
+            .bitcast[UnsafeMaybeUninit[U]]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
+
+
 struct NonNullUnsafePointer[
     mut: Bool,
     //,
@@ -64,6 +100,7 @@ struct NonNullUnsafePointer[
     ImplicitlyCopyable,
     Intable,
     TrivialRegisterPassable,
+    UnsafeCustomNicheStorage,
     UnsafeSingleNicheable,
     Writable,
 ):
@@ -90,6 +127,11 @@ struct NonNullUnsafePointer[
     # ===-------------------------------------------------------------------===#
     # Aliases
     # ===-------------------------------------------------------------------===#
+
+    @doc_hidden
+    comptime NicheStorage: NicheStorageTraits = _NonNullNicheStorage[
+        Self.type, Self.address_space
+    ]
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
@@ -150,7 +192,7 @@ struct NonNullUnsafePointer[
             size_of[type_of(self)]() == size_of[Int]()
         ), "Pointer/Int size mismatch"
         assert unsafe_from_address != Int(
-            _Null[Self.address_space]()
+            _Null[Self.type, Self.address_space]()
         ), "cannot create a non-null pointer from the null address"
         self = NonNullUnsafePointer(to=unsafe_from_address).bitcast[
             type_of(self)
@@ -320,7 +362,9 @@ struct NonNullUnsafePointer[
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
-        memory.bitcast[_Null[Self.address_space]]().init_pointee_move({})
+        memory.bitcast[
+            _Null[Self.type, Self.address_space]
+        ]().init_pointee_move({})
 
     @staticmethod
     @always_inline
@@ -328,7 +372,7 @@ struct NonNullUnsafePointer[
     def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
-        comptime NullType = _Null[Self.address_space]
+        comptime NullType = _Null[Self.type, Self.address_space]
         return Int(memory.bitcast[NullType]()[]) == Int(NullType())
 
     # ===-------------------------------------------------------------------===#

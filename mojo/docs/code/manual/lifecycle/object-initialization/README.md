@@ -1,4 +1,6 @@
-This directory contains code examples for the
+# Code examples and tests for object initialization
+
+This directory contains Code examples and tests for the
 [object initialization](../../../../docs/manual/)
 section of the Mojo Manual.
 

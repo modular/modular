@@ -16,23 +16,18 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    GenerationStatus,
     LogProbabilities,
     RequestID,
     TextGenerationContextType,
     TextGenerationOutput,
 )
+from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
-
-from ..hf_utils import download_weight_files
-
-if TYPE_CHECKING:
-    from ..config.model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -66,6 +61,38 @@ def calculate_num_steps(
         )
 
     return min(num_available_steps, num_steps)
+
+
+def build_response(
+    context_batch: list[TextGenerationContextType], max_seq_len: int
+) -> dict[RequestID, TextGenerationOutput]:
+    """Build response from updated contexts.
+
+    Args:
+        context_batch: The list of context objects
+        max_seq_len: The maximum sequence length
+
+    Returns:
+        Dictionary mapping request IDs to TextGenerationOutput objects
+    """
+    res: dict[RequestID, TextGenerationOutput] = {}
+
+    for context in context_batch:
+        # Identify the Max Length
+        context_max_length = upper_bounded_default(
+            upper_bound=max_seq_len, default=context.max_length
+        )
+
+        # Break early if beyond max length
+        current_length = context.tokens.processed_length + 1
+        if current_length >= context_max_length:
+            context.status = GenerationStatus.MAXIMUM_LENGTH
+
+        output = context.to_generation_output()
+        if output.tokens:
+            res[context.request_id] = output
+
+    return res
 
 
 def update_context_and_prepare_responses(
@@ -133,6 +160,46 @@ def update_context_and_prepare_responses(
     return res
 
 
+def update_spec_decode_context_and_prepare_responses(
+    draft_tokens: npt.NDArray[np.int32],
+    next_draft_tokens: npt.NDArray[np.int32],
+    num_accepted_draft_tokens: npt.NDArray[np.int32],
+    next_tokens: npt.NDArray[np.int32],
+    context_batch: list[TextGenerationContextType],
+    max_seq_len: int,
+) -> dict[RequestID, TextGenerationOutput]:
+    """Updates context objects and prepares response objects after speculative decoding."""
+    num_draft_tokens_to_verify = draft_tokens.shape[1]
+    num_speculative_tokens = next_draft_tokens.shape[1]
+
+    assert num_accepted_draft_tokens.shape == (len(context_batch),)
+    assert next_tokens.shape == (len(context_batch),)
+    assert next_draft_tokens.shape == (
+        len(context_batch),
+        num_speculative_tokens,
+    )
+    assert all(
+        num_accept <= num_draft_tokens_to_verify
+        for num_accept in num_accepted_draft_tokens
+    )
+
+    for batch_idx, ctx in enumerate(context_batch):
+        for token_idx in range(num_accepted_draft_tokens[batch_idx]):
+            if not ctx.is_done:
+                ctx.update(draft_tokens[batch_idx, token_idx])
+        if not ctx.is_done:
+            ctx.update(next_tokens[batch_idx])
+            # Save the generated draft tokens for verification in next iteration.
+            ctx.spec_decoding_state.saved_draft_tokens = next_draft_tokens[
+                batch_idx
+            ].copy()
+
+    return build_response(
+        context_batch=context_batch,
+        max_seq_len=max_seq_len,
+    )
+
+
 def get_rope_theta(config: AutoConfig) -> float:
     """Gets rope_theta from a HuggingFace config, compatible with transformers v4 and v5.
 
@@ -175,27 +242,3 @@ def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
         msg = f"eos_token_id in huggingface_config is neither int or list: {hf_eos_tokens}"
         logger.warning(msg)
         return set([eos_token_id])
-
-
-def get_weight_paths(model_config: MAXModelConfig) -> list[Path]:
-    """Resolves local paths or downloads weight files for the model config.
-
-    Args:
-        model_config: Model configuration containing weight repo and paths.
-
-    Returns:
-        List of paths to weight files (local or downloaded).
-    """
-    weight_repo = model_config.huggingface_weight_repo
-    if weight_repo.repo_type == "online":
-        # Download weight files if not existent.
-        return download_weight_files(
-            huggingface_model_id=weight_repo.repo_id,
-            filenames=[str(x) for x in model_config.weight_path],
-            revision=model_config.huggingface_weight_revision,
-            force_download=model_config.force_download,
-        )
-    else:
-        # Use the resolved repo_id (which points to local cache in offline mode)
-        local_path = Path(weight_repo.repo_id)
-        return [local_path / x for x in model_config.weight_path]

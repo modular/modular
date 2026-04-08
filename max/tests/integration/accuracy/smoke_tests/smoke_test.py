@@ -170,7 +170,7 @@ def is_huge_moe(model: str) -> bool:
     """Large MoE models that need expert parallelism instead of tensor parallelism."""
     if "deepseek" in model and "lite" not in model:
         return True
-    return any(x in model for x in ["minimax-m", "kimi-k"])
+    return any(x in model for x in ["minimax-m", "kimi-k", "qwen3-235b"])
 
 
 def validate_hf_token() -> None:

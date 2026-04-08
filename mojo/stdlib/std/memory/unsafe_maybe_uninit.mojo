@@ -17,8 +17,8 @@ from std.memory import memset_zero
 
 
 struct UnsafeMaybeUninit[T: AnyType](
-    Copyable,
     Defaultable,
+    ImplicitlyCopyable,
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
     """A wrapper type to represent memory that may or may not be initialized.

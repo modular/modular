@@ -18,8 +18,6 @@ from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
 import pytest
-
-# Import the module under test
 from max.benchmark.benchmark_shared.datasets import (
     DATASET_REGISTRY,
     ArxivSummarizationBenchmarkDataset,
@@ -28,6 +26,7 @@ from max.benchmark.benchmark_shared.datasets import (
     CodeDebugBenchmarkDataset,
     DatasetRegistryEntry,
     HuggingFaceBenchmarkDataset,
+    InstructCoderBenchmarkDataset,
     LocalBenchmarkDataset,
     LocalImageBenchmarkDataset,
     ObfuscatedConversationsBenchmarkDataset,
@@ -38,6 +37,11 @@ from max.benchmark.benchmark_shared.datasets import (
     SonnetBenchmarkDataset,
     SyntheticPixelBenchmarkDataset,
     VisionArenaBenchmarkDataset,
+)
+
+# Import the module under test
+from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
+    resolve_constant_delay_ms,
 )
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -778,3 +782,61 @@ def test_randomize_starting_turn_disabled_gives_zero_prefix() -> None:
     )
 
     assert all(s.prefix_turns == 0 for s in samples.chat_sessions)
+
+
+def test_resolve_constant_delay_ms() -> None:
+    assert resolve_constant_delay_ms(None) is None
+    assert resolve_constant_delay_ms(12) == 12.0
+    assert resolve_constant_delay_ms("0") == 0.0
+
+
+@patch.object(InstructCoderBenchmarkDataset, "_load_pairs")
+def test_instruct_coder_multiturn_fit_distributions(
+    mock_load_pairs: Mock,
+) -> None:
+    """``fit_length_distributions`` honors turn count, lengths, and delay."""
+    body = "hello world " * 80
+    mock_load_pairs.return_value = [(body, "line\n" * 60)] * 400
+
+    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
+    mock_tokenizer.model_max_length = 50_000
+    mock_tokenizer.vocab_size = 1000
+    mock_tokenizer.all_special_ids = {0, 1}
+    mock_tokenizer.unk_token_id = None
+    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=99)
+
+    def _tok(text: str, add_special_tokens: bool = False) -> Mock:
+        out = Mock()
+        out.input_ids = list(range(max(4, len(text))))
+        return out
+
+    mock_tokenizer.side_effect = _tok
+    mock_tokenizer.decode = Mock(
+        side_effect=lambda ids, skip_special_tokens=False: "Z" * len(ids)
+    )
+
+    dataset = InstructCoderBenchmarkDataset()
+    dataset.dataset_path = "/tmp/instruct_coder_mock.json"
+
+    samples = dataset.gen_multiturn_sessions(
+        num_sessions=4,
+        tokenizer=mock_tokenizer,
+        shuffle=False,
+        fit_length_distributions=True,
+        num_turns="DU(3,3)",
+        input_len="80",
+        output_len="20",
+        delay_between_turns_dist="100",
+        sys_prompt_ratio=0.0,
+    )
+
+    assert len(samples.chat_sessions) == 4
+    for session in samples.chat_sessions:
+        assert len(session.messages) == 6
+        for assistant in session.messages[1::2]:
+            assert assistant.source == "assistant"
+            assert assistant.num_tokens == 20
+            assert assistant.delay_until_next_message == 100.0
+        for user in session.messages[0::2]:
+            assert user.source == "user"
+            assert user.num_tokens == 80

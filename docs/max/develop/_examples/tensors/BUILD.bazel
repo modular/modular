@@ -7,7 +7,6 @@ modular_py_binary(
     name = "create_first_tensor",
     srcs = ["create_first_tensor.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -29,7 +28,6 @@ modular_py_binary(
     name = "create_multi_dim",
     srcs = ["create_multi_dim.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -51,7 +49,6 @@ modular_py_binary(
     name = "create_factory",
     srcs = ["create_factory.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -75,7 +72,6 @@ modular_py_binary(
     name = "create_random",
     srcs = ["create_random.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -97,7 +93,6 @@ modular_py_binary(
     name = "properties_shape",
     srcs = ["properties_shape.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -119,7 +114,6 @@ modular_py_binary(
     name = "properties_rank",
     srcs = ["properties_rank.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -141,7 +135,6 @@ modular_py_binary(
     name = "properties_dtype",
     srcs = ["properties_dtype.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/dtype",
@@ -164,7 +157,6 @@ modular_py_binary(
     name = "properties_device",
     srcs = ["properties_device.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -187,7 +179,6 @@ modular_py_binary(
     name = "properties_num_elements",
     srcs = ["properties_num_elements.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],

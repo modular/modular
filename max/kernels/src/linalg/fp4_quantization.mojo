@@ -13,13 +13,13 @@
 
 from std.math import align_up, ceildiv
 from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    grid_dim_uint as grid_dim,
-    block_dim_uint as block_dim,
-    global_idx_uint as global_idx,
+    block_idx_int as block_idx,
+    thread_idx_int as thread_idx,
+    grid_dim_int as grid_dim,
+    block_dim_int as block_dim,
+    global_idx_int as global_idx,
+    lane_id_int as lane_id,
     MAX_THREADS_PER_BLOCK_METADATA,
-    lane_id_uint as lane_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import (
@@ -31,6 +31,7 @@ from layout import (
     TileTensor,
     row_major,
 )
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
@@ -250,14 +251,10 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     var num_sf_threads = num_sf_cols // ELEMENTS_PER_THREAD
 
     with PDL():
-        for global_row_idx in range(
-            Int(block_idx.x), num_rows_padded, Int(grid_dim.x)
-        ):
+        for global_row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
             var is_padded_row = global_row_idx >= num_rows
 
-            for col_idx in range(
-                Int(thread_idx.x), num_sf_threads, Int(block_dim.x)
-            ):
+            for col_idx in range(thread_idx.x, num_sf_threads, block_dim.x):
                 var global_col_idx = col_idx * ELEMENTS_PER_THREAD
 
                 if is_padded_row:
@@ -446,10 +443,8 @@ def block_scales_interleave_fp4_kernel[
     var num_cols = input_scales.dim(1)
     var num_col_padded = align_up(num_cols, SF_ATOM_K)
 
-    for row_idx in range(Int(block_idx.x), num_rows_padded, Int(grid_dim.x)):
-        for col_idx in range(
-            Int(thread_idx.x), num_col_padded, Int(block_dim.x)
-        ):
+    for row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
+        for col_idx in range(thread_idx.x, num_col_padded, block_dim.x):
             var scale_factor = Scalar[scales_dtype](0.0)
             if row_idx < num_rows and col_idx < num_cols:
                 scale_factor = rebind[Scalar[scales_dtype]](
@@ -659,16 +654,16 @@ def naive_block_scaled_matmul_kernel[
     var row_idx = global_idx.x
     var col_idx = global_idx.y
 
-    if row_idx >= UInt(M) or col_idx >= UInt(N):
+    if row_idx >= M or col_idx >= N:
         return
 
     var accum = Scalar[accum_type](0.0)
     for k in range(0, K, K_STEPS):
         var a_scale = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-            a_scales, Int(row_idx), k
+            a_scales, row_idx, k
         )
         var b_scale = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-            b_scales, Int(col_idx), k
+            b_scales, col_idx, k
         )
 
         comptime if is_fp4:
@@ -831,7 +826,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
 
     var tma_mbar = mbar_ptr.bitcast[SharedMemBarrier]()
 
-    var local_row_idx = Int(thread_idx.x)
+    var local_row_idx = thread_idx.x
 
     if thread_idx.x == 0:
         comptime for idx in range(NUM_PIPELINES_STAGES):
@@ -859,10 +854,10 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                         tma_mbar[iter_idx],
                         (
                             Int(
-                                (block_idx.y * SF_K_GROUP_SIZE)
+                                (UInt(block_idx.y) * SF_K_GROUP_SIZE)
                                 + (iter_idx * STAGE_GROUP_SIZE)
                             ),
-                            Int(block_idx.x) * SF_MN_GROUP_SIZE,
+                            block_idx.x * SF_MN_GROUP_SIZE,
                         ),
                     )
 
@@ -981,7 +976,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                 output_tma_op.async_store(
                     output_smem,
                     StaticTuple[UInt32, 2](
-                        UInt32(block_idx.y * (SF_K_GROUP_SIZE) // 2),
+                        UInt32(UInt(block_idx.y) * (SF_K_GROUP_SIZE) // 2),
                         UInt32(block_idx.x) * UInt32(SF_MN_GROUP_SIZE),
                     ),
                 )
@@ -1169,7 +1164,7 @@ def block_scaled_matmul_with_epilogue[
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, ...],
+    c: NullableTileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_dtype, ...],
@@ -1243,12 +1238,12 @@ def block_scaled_matmul_with_epilogue[
         task_id=get_safe_task_id(ctx),
     ):
         comptime if not elementwise_lambda_fn:
-            if not c.ptr._is_not_null():
+            if not c.ptr:
                 raise Error("c must be allocated!")
 
             matmul[scales_type=scales_dtype](
                 ctx,
-                c,
+                c.value(),
                 a,
                 b,
                 a_scales=a_scales,
@@ -1272,7 +1267,7 @@ def block_scaled_matmul_with_epilogue[
             ](idx: IndexList[rank]):
                 var c_coord = Index(idx[0], idx[1])
                 var c_val = rebind[SIMD[c_type, simd_width]](
-                    c.ptr.load[width=simd_width](idx[0] * n + idx[1])
+                    c.value().ptr.load[width=simd_width](idx[0] * n + idx[1])
                 )
                 epilogue[c_type, simd_width, alignment=alignment](
                     c_coord, c_val
@@ -1280,10 +1275,10 @@ def block_scaled_matmul_with_epilogue[
 
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
-            if c.ptr._is_not_null():
+            if c.ptr:
                 matmul[scales_type=scales_dtype](
                     ctx,
-                    c,
+                    c.value(),
                     a,
                     b,
                     a_scales=a_scales,

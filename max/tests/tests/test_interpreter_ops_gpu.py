@@ -20,17 +20,36 @@ import operator
 from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
 import pytest
 import torch
 from max._interpreter import MOInterpreter
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
+from max.experimental.distributed_functional.collectives import (
+    all_gather,
+    all_reduce_sum,
+    to_numpy,
+)
+from max.experimental.distributed_functional.collectives import (
+    shard as df_shard,
+)
 from max.experimental.realization_context import set_seed
+from max.experimental.sharding import (
+    DeviceMesh,
+    Partial,
+    PlacementMapping,
+    Replicated,
+    Sharded,
+)
 from max.experimental.tensor import Tensor, realization_context
+from max.graph import BufferType as GBufferType
 from max.graph import DeviceRef, Graph, TensorType
+from max.graph import Type as GType
+from max.graph import ops as graph_ops
 
 # Mapping from MAX DType to torch dtype
 DTYPE_TO_TORCH = {
@@ -3308,3 +3327,151 @@ class TestScatterNdGPU:
         torch.testing.assert_close(
             torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
         )
+
+
+_NEED_2_GPUS = pytest.mark.skipif(
+    accelerator_count() < 2,
+    reason="Requires at least 2 accelerator devices",
+)
+
+
+class TestDistributedAllreduceSumHandler:
+    """Tests for the DistributedAllreduceSumOp interpreter handler."""
+
+    @_NEED_2_GPUS
+    def test_allreduce_sum_low_level(self) -> None:
+        """Directly build a graph with ops.allreduce.sum and run via MOInterpreter."""
+        shape = [4, 4]
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+
+        input_types: list[GType[Any]] = [
+            TensorType(DType.float32, shape, gpu0),
+            TensorType(DType.float32, shape, gpu1),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("allreduce_test", input_types=input_types) as graph:
+            t0, t1, b0, b1 = graph.inputs
+            results = graph_ops.allreduce.sum(
+                [t0.tensor, t1.tensor], [b0.buffer, b1.buffer]
+            )
+            graph.output(*results)
+
+        a_np = np.array(
+            [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]],
+            dtype=np.float32,
+        )
+        b_np = np.array(
+            [
+                [10, 20, 30, 40],
+                [50, 60, 70, 80],
+                [90, 100, 110, 120],
+                [130, 140, 150, 160],
+            ],
+            dtype=np.float32,
+        )
+        expected = a_np + b_np
+
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_numpy(a_np).to(dev0),
+            Buffer.from_numpy(b_np).to(dev1),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph)
+        outputs = interp.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        for out in outputs:
+            assert isinstance(out, Buffer)
+            np.testing.assert_allclose(
+                out.to(CPU()).to_numpy(), expected, rtol=1e-5
+            )
+
+    @_NEED_2_GPUS
+    def test_allreduce_sum_distributed_tensor_e2e(self) -> None:
+        """End-to-end: all_reduce_sum on a Partial distributed Tensor via interpreter."""
+        num_gpus = min(accelerator_count(), 2)
+        devices = tuple(Accelerator(i) for i in range(num_gpus))
+        mesh = DeviceMesh(
+            devices=devices, mesh_shape=(num_gpus,), axis_names=("tp",)
+        )
+
+        data = np.ones((4, 4), dtype=np.float32)
+
+        # Replicate data on every device, then re-label as Partial.
+        rep_mapping = PlacementMapping(mesh, (Replicated(),))
+
+        try:
+            replicated = df_shard(
+                Tensor.from_dlpack(np.ascontiguousarray(data)), rep_mapping
+            )
+        except ValueError as exc:
+            if "Memory manager cannot satisfy allocation" in str(exc):
+                pytest.skip(
+                    "Signal buffer allocation requires more GPU memory "
+                    "than available on this executor"
+                )
+            raise
+
+        partial_t = Tensor._from_shards(
+            tuple(s.driver_tensor for s in replicated.local_shards),
+            mesh,
+            (Partial(),),
+            data.shape,
+        )
+
+        try:
+            with (
+                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                realization_context(ctx),
+            ):
+                result = all_reduce_sum(partial_t)
+        except ValueError as exc:
+            if "Memory manager cannot satisfy allocation" in str(exc):
+                pytest.skip(
+                    "Signal buffer allocation requires more GPU memory "
+                    "than available on this executor"
+                )
+            raise
+
+        assert result.placements == (Replicated(),)
+        expected = data * num_gpus
+        for shard in result.local_shards:
+            np.testing.assert_allclose(to_numpy(shard), expected, rtol=1e-5)
+
+
+class TestDistributedAllgatherHandler:
+    """Tests for the DistributedAllgatherOp interpreter handler."""
+
+    @_NEED_2_GPUS
+    def test_allgather_eager(self) -> None:
+        """all_gather on a Sharded distributed Tensor via eager interpreter."""
+        num_gpus = min(accelerator_count(), 2)
+        devices = tuple(Accelerator(i) for i in range(num_gpus))
+        mesh = DeviceMesh(
+            devices=devices, mesh_shape=(num_gpus,), axis_names=("tp",)
+        )
+
+        data = np.arange(num_gpus * 8, dtype=np.float32).reshape(
+            num_gpus * 2, 4
+        )
+
+        sharded_t = df_shard(
+            Tensor.from_dlpack(np.ascontiguousarray(data)),
+            PlacementMapping(mesh, (Sharded(0),)),
+        )
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = all_gather(sharded_t, tensor_axis=0)
+
+        assert result.placements == (Replicated(),)
+        for shard in result.local_shards:
+            np.testing.assert_allclose(to_numpy(shard), data, rtol=1e-5)

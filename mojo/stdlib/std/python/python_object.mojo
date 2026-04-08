@@ -21,7 +21,7 @@ from std.python import PythonObject
 
 from std.os import abort
 from std.sys import bit_width_of
-from std.ffi import c_double, c_long, c_size_t, c_ssize_t
+from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
 import std.format._utils as fmt
 
 from std.reflection import get_type_name
@@ -324,7 +324,7 @@ struct PythonObject(
         Raises:
             If the list construction fails.
         """
-        self = Python._list(values)
+        self = Python.list(*values^)
 
     @always_inline
     def __init__[
@@ -348,7 +348,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var set_ptr = cpy.PySet_New({})
 
-        comptime for i in range(Variadic.size_types[Ts]):
+        comptime for i in range(TypeList[*Ts].size):
             var obj = values[i].copy().to_python_object()
             var errno = cpy.PySet_Add(set_ptr, obj.steal_data())
             if errno == -1:
@@ -563,7 +563,7 @@ struct PythonObject(
             If setting the item fails.
         """
         ref cpy = Python().cpython()
-        comptime size = Variadic.size_types[Ks]
+        comptime size = TypeList[*Ks].size
         var key_ptr: PyObjectPtr
         if size == 1:
             var single = args[0].copy().to_python_object()
@@ -1522,7 +1522,7 @@ struct PythonObject(
         Returns:
             The return value from the called object.
         """
-        comptime size = Variadic.size_types[Ts]
+        comptime size = TypeList[*Ts].size
 
         ref cpy = Python().cpython()
         var args_ptr = cpy.PyTuple_New(size)
@@ -1807,9 +1807,7 @@ struct PythonObject(
 
 def _unsafe_alloc[
     T: AnyType
-](
-    type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin]
-) raises -> PyObjectPtr:
+](type_obj_ptr: _CPointer[PyTypeObject, MutAnyOrigin]) raises -> PyObjectPtr:
     """Allocate an uninitialized Python object for storing a Mojo value.
 
     Parameters:
@@ -1858,7 +1856,7 @@ def _unsafe_alloc_init[
     T: Movable & ImplicitlyDestructible,
     //,
 ](
-    type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin], var mojo_value: T
+    type_obj_ptr: _CPointer[PyTypeObject, MutAnyOrigin], var mojo_value: T
 ) raises -> PythonObject:
     """Allocate a Python object pointer and initialize it with a Mojo value.
 

@@ -41,6 +41,11 @@ from std.gpu import (
     global_idx,
     grid_dim,
 )
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from std.utils import StaticTuple
@@ -182,45 +187,46 @@ def _allgather_p2p_kernel[
         out_ptrs_rr[i] = outputs[target]
         lengths_rr[i] = lengths[target]
 
-    # Synchronize before reading.
-    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+    with PDL():
+        # Synchronize before reading.
+        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    # Copy data from each source GPU to corresponding output buffer.
-    # outputs[i] should contain data from GPU i.
-    comptime for gpu_idx in range(ngpus):
-        var length = lengths_rr[gpu_idx]
-        var num_simd_vectors, remainder = divmod(length, simd_width)
+        # Copy data from each source GPU to corresponding output buffer.
+        # outputs[i] should contain data from GPU i.
+        comptime for gpu_idx in range(ngpus):
+            var length = lengths_rr[gpu_idx]
+            var num_simd_vectors, remainder = divmod(length, simd_width)
 
-        # Grid-strided loop for this source (vectorized).
-        for idx in range(global_tid, num_simd_vectors, stride):
-            var elem_idx = idx * simd_width
-            # Read directly from source GPU.
-            var data = (
-                src_ptrs_rr[gpu_idx]
-                .address_space_cast[_target_address_space]()
-                .load[
-                    width=simd_width,
-                    alignment=alignment,
-                ](elem_idx)
-            )
-            # Write to output buffer for this source GPU.
-            out_ptrs_rr[gpu_idx].address_space_cast[
-                _target_address_space
-            ]().store[width=simd_width, alignment=alignment](elem_idx, data)
+            # Grid-strided loop for this source (vectorized).
+            for idx in range(global_tid, num_simd_vectors, stride):
+                var elem_idx = idx * simd_width
+                # Read directly from source GPU.
+                var data = (
+                    src_ptrs_rr[gpu_idx]
+                    .address_space_cast[_target_address_space]()
+                    .load[
+                        width=simd_width,
+                        alignment=alignment,
+                    ](elem_idx)
+                )
+                # Write to output buffer for this source GPU.
+                out_ptrs_rr[gpu_idx].address_space_cast[
+                    _target_address_space
+                ]().store[width=simd_width, alignment=alignment](elem_idx, data)
 
-        # Handle remainder elements with scalar operations.
-        if remainder > 0:
-            var tail_start = num_simd_vectors * simd_width
-            # Use first warp to handle tail to minimize divergence.
-            if global_tid < WARP_SIZE:
-                for i in range(global_tid, remainder, WARP_SIZE):
-                    var elem_idx = tail_start + i
-                    out_ptrs_rr[gpu_idx][elem_idx] = src_ptrs_rr[gpu_idx][
-                        elem_idx
-                    ]
+            # Handle remainder elements with scalar operations.
+            if remainder > 0:
+                var tail_start = num_simd_vectors * simd_width
+                # Use first warp to handle tail to minimize divergence.
+                if global_tid < WARP_SIZE:
+                    for i in range(global_tid, remainder, WARP_SIZE):
+                        var elem_idx = tail_start + i
+                        out_ptrs_rr[gpu_idx][elem_idx] = src_ptrs_rr[gpu_idx][
+                            elem_idx
+                        ]
 
-    # Synchronize after writing.
-    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        # Synchronize after writing.
+        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @always_inline
@@ -232,6 +238,7 @@ def _allgather_p2p[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
@@ -303,6 +310,7 @@ def _allgather_p2p[
         my_rank,
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -314,6 +322,7 @@ def allgather[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
@@ -340,6 +349,7 @@ def allgather[
         in_origin: Origin of the input TileTensors.
         out_layout: Layout of the output TileTensors.
         out_origin: Origin of the output TileTensors.
+        pdl_level: Controls PDL behavior for P2P kernels.
 
     Args:
         input_buffers: Input buffers from ALL GPUs as TileTensors.
@@ -366,7 +376,7 @@ def allgather[
     if not is_p2p_enabled():
         return _allgather_naive(input_buffers, output_buffers, ctx)
     else:
-        return _allgather_p2p[rank=1](
+        return _allgather_p2p[rank=1, pdl_level=pdl_level](
             input_buffers,
             output_buffers,
             rank_sigs,

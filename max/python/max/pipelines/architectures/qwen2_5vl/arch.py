@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import SupportedArchitecture
@@ -61,6 +61,7 @@ qwen2_5_vl_arch = SupportedArchitecture(
     ],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={
         "float32",

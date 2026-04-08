@@ -30,6 +30,16 @@ This version is still a work in progress.
 
 ## Language changes
 
+- All Mojo functions now has a unique "function literal type". In practice, it
+  means that:
+
+  ```mojo
+  # type_of(foo) != type_of(bar)
+
+  def foo(): pass
+  def bar(): pass
+  ```
+
 - Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
   this will upgrade to an error in the future.
 
@@ -57,14 +67,30 @@ This version is still a work in progress.
   abort("something went wrong", location=loc)
   ```
 
+- `abort(message)` now prints its message on Nvidia and AMDGPU, including
+  block and thread IDs. Previously, the message was silently suppressed on
+  these GPUs. On Apple GPU, the message is silently suppressed for now.
+
 - `SourceLocation` fields (`line`, `col`, `file_name`) are now private.
   Use the new accessor methods `line()`, `column()`, and `file_name()` instead.
 
 - Fixed default alignment in `TileTensor.load()` and `TileTensor.store()` to
   use the caller-specified `width` parameter instead of `Self.element_size`.
 
+- Added uninitialized memory read detection for float loads. When compiled
+  with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`, every float load is checked
+  against the debug allocator's poison patterns (0xFF host fill and canonical
+  qNaN device fill). A match triggers `abort()` with a descriptive message.
+  When disabled (the default), zero runtime overhead. For MAX pipelines, set
+  `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` to enable both the debug
+  allocator and the load-time checks automatically.
+
 - Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
   targets at compile time. `is_apple_silicon()` now includes M5 in its check.
+
+- Added Apple M5 MMA intrinsics (`apple_mma_load`, `apple_mma_store`,
+  `_mma_apple`) in `std.gpu.compute.arch.mma_apple`, enabling hardware matrix
+  multiply-accumulate on Apple GPU.
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
@@ -126,6 +152,8 @@ This version is still a work in progress.
   - `Set` now conforms to `IterableOwned`.
   - `Counter` now conforms to `IterableOwned`.
   - `InlineArray` now conforms to `IterableOwned`.
+  - `Span` now conforms to `IterableOwned` (conditional on `T: Copyable`).
+    The owned iterator yields copies of elements by value.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same

@@ -58,6 +58,7 @@ def create_mock_pipeline() -> Mock:
     pipeline.execute = Mock(side_effect=next_token_behavior)
     pipeline.release = Mock()
     pipeline._pipeline_model = Mock(_lora_manager=None)
+    pipeline.extra_kv_managers = []
     return pipeline
 
 
@@ -427,6 +428,7 @@ def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
     lora_manager.activate_adapter = Mock()
     lora_manager.max_num_loras = 4
     pipeline._pipeline_model = Mock(_lora_manager=lora_manager)
+    pipeline.extra_kv_managers = []
 
     return TokenGenerationScheduler(
         scheduler_config=TokenGenerationSchedulerConfig(
