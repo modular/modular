@@ -38,7 +38,7 @@ from max.interfaces.request.open_responses import (
     InputTextContent,
 )
 from max.pipelines.core import PixelContext
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from .diffusion_schedulers import SchedulerFactory
 
@@ -64,6 +64,50 @@ async def run_with_default_executor(
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args, **kwargs)
+
+
+def _load_diffusion_tokenizer(
+    model_path: str,
+    *,
+    subfolder: str,
+    revision: str | None,
+    trust_remote_code: bool,
+    model_max_length: int | None,
+) -> Any:
+    """Load a diffusion-pipeline tokenizer subfolder.
+
+    Loads `tokenizer.json` directly via `PreTrainedTokenizerFast`,
+    falling back to `AutoTokenizer` only if that fails. We avoid
+    `AutoTokenizer` as the primary path because it dispatches on the
+    `tokenizer_class` field in `tokenizer_config.json`, and in
+    `transformers` v5 some of those classes (notably `LlamaTokenizerFast`,
+    now aliased to the slow `LlamaTokenizer`) overwrite the loaded
+    pre-tokenizer with a SentencePiece `Metaspace` regardless of what
+    was in `tokenizer.json`. That silently breaks ByteLevel-BPE
+    tokenizers like FLUX.2's Mistral-Small-3.
+    """
+    try:
+        return PreTrainedTokenizerFast.from_pretrained(
+            model_path,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+            model_max_length=model_max_length,
+            subfolder=subfolder,
+        )
+    except Exception:
+        logger.warning(
+            "PreTrainedTokenizerFast.from_pretrained failed for %s/%s; "
+            "falling back to AutoTokenizer.",
+            model_path,
+            subfolder,
+        )
+        return AutoTokenizer.from_pretrained(
+            model_path,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+            model_max_length=model_max_length,
+            subfolder=subfolder,
+        )
 
 
 class LockedTokenizer:
@@ -167,23 +211,23 @@ class PixelGenerationTokenizer(
 
         try:
             self.delegate = LockedTokenizer(
-                AutoTokenizer.from_pretrained(
+                _load_diffusion_tokenizer(
                     model_path,
+                    subfolder=subfolder,
                     revision=revision,
                     trust_remote_code=trust_remote_code,
                     model_max_length=self.max_length,
-                    subfolder=subfolder,
                 )
             )
 
             if subfolder_2 is not None:
                 self.delegate_2 = LockedTokenizer(
-                    AutoTokenizer.from_pretrained(
+                    _load_diffusion_tokenizer(
                         model_path,
+                        subfolder=subfolder_2,
                         revision=revision,
                         trust_remote_code=trust_remote_code,
                         model_max_length=self.secondary_max_length,
-                        subfolder=subfolder_2,
                     )
                 )
             else:
