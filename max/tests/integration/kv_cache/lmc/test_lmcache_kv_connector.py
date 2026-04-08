@@ -86,7 +86,7 @@ def get_connector(kv_cache_manager: PagedKVCacheManager) -> LMCacheConnector:
 
 def get_device_buffer(kv_cache_manager: PagedKVCacheManager) -> Buffer:
     replica = get_replica(kv_cache_manager)
-    device_buffer = replica.device_buffer
+    device_buffer = replica.device_buffers[0]
     return device_buffer.values[0]
 
 

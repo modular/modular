@@ -83,7 +83,7 @@ def _dump_k_or_v_cache_to_torch_tensor(
     """
     req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
 
-    params = cache.params
+    params = cache.cache_params()
     torch_dtype = max_dtype_to_torch(params.dtype)
     page_size = params.page_size
 

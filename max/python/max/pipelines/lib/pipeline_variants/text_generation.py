@@ -53,7 +53,6 @@ from max.kv_cache import (
     IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
     load_kv_manager,
-    load_multi_kv_managers,
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
@@ -113,15 +112,6 @@ class TextGenerationPipelineInterface(
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache managers for this pipeline."""
         ...
-
-    @property
-    def extra_kv_managers(self) -> list[PagedKVCacheManager]:
-        """Returns extra KV cache managers (e.g. indexer).
-
-        Defaults to empty.  Subclasses with multi-cache architectures
-        override this to return their additional managers.
-        """
-        return []
 
 
 class TextGenerationPipeline(
@@ -225,34 +215,25 @@ class TextGenerationPipeline(
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
         kv_params = self._pipeline_model.kv_params
-        self._extra_kv_managers: list[PagedKVCacheManager] = []
-        if isinstance(kv_params, MultiKVCacheParams):
-            kv_managers = load_multi_kv_managers(
-                params=kv_params,
-                max_batch_size=self._pipeline_config.runtime.max_batch_size,
-                max_seq_len=self._pipeline_model.max_seq_len,
-                session=session,
-                available_cache_memory=available_cache_memory,
-            )
-            self._kv_manager = kv_managers[0]
-            kv_params = kv_managers[0].params
+        self._kv_manager = load_kv_manager(
+            params=kv_params,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_seq_len=self._pipeline_model.max_seq_len,
+            session=session,
+            available_cache_memory=available_cache_memory,
+        )
 
-            # Extra KV managers (e.g. global attention, indexer cache)
-            # are managed by the batch constructor alongside the primary cache.
-            self._extra_kv_managers = kv_managers[1:]
-            self._pipeline_model.extra_kv_managers = self._extra_kv_managers
+        # Use the model's kv_params (not the manager's) because in
+        # compile-only mode the manager is a Mock.
+        if isinstance(kv_params, MultiKVCacheParams):
+            primary_params = kv_params.params[0]
         else:
             assert isinstance(kv_params, KVCacheParams)
-            self._kv_manager = load_kv_manager(
-                params=kv_params,
-                max_batch_size=pipeline_config.runtime.max_batch_size,
-                max_seq_len=self._pipeline_model.max_seq_len,
-                session=session,
-                available_cache_memory=available_cache_memory,
-            )
-
+            primary_params = kv_params
         self._increment_cache_lengths_processor = (
-            IncrementCacheLengthsProcessor(session=session, params=kv_params)
+            IncrementCacheLengthsProcessor(
+                session=session, params=primary_params
+            )
         )
 
         # Load sampler.
@@ -664,8 +645,6 @@ class TextGenerationPipeline(
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
         self._kv_manager.step(inputs.batches)
-        for extra_kv_manager in self._extra_kv_managers:
-            extra_kv_manager.step(inputs.batches)
 
         return res
 
@@ -683,8 +662,3 @@ class TextGenerationPipeline(
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
-
-    @property
-    def extra_kv_managers(self) -> list[PagedKVCacheManager]:
-        """Returns extra KV cache managers (e.g. global attention, indexer)."""
-        return self._extra_kv_managers

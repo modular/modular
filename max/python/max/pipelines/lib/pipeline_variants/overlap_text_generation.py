@@ -62,7 +62,7 @@ from __future__ import annotations
 import copy
 import logging
 from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -98,9 +98,8 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.interfaces.tokens import TokenBuffer
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager, load_multi_kv_managers
 from max.kv_cache.paged_kv_cache.cache_manager import _contiguous_prefix_2d
-from max.kv_cache.registry import load_multi_kv_managers
 from max.nn import kernels
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
@@ -685,37 +684,18 @@ class OverlapTextGenerationPipeline(
         available_cache_memory = model_config.kv_cache._available_cache_memory
         kv_params = self._pipeline_model.kv_params
 
-        # Load the KVCache manager. This is pretty cursed at the moment because
-        # we do not have a KVCache manager that has first class support for
-        # speculative decoding.
+        # Load the KVCache manager.  For models with multiple KV caches
+        # (e.g. sliding-window + global attention), a single manager
+        # handles all caches natively via MultiKVCacheParams.
         self._spec_decode_state: SpecDecodeState | None = None
-        self._extra_kv_managers: list[PagedKVCacheManager] = []
         if not is_spec_decode:
-            if isinstance(kv_params, MultiKVCacheParams):
-                kv_managers = load_multi_kv_managers(
-                    params=kv_params,
-                    max_batch_size=self._pipeline_config.runtime.max_batch_size,
-                    max_seq_len=self._pipeline_model.max_seq_len,
-                    session=session,
-                    available_cache_memory=available_cache_memory,
-                )
-                self._kv_manager = kv_managers[0]
-
-                # Extra managers (e.g. global attention KV for multimodal models) must
-                # be exposed on the pipeline so the serve scheduler can claim/alloc
-                # them alongside the primary cache — same contract as generate.py and
-                # TextGenerationPipeline.
-                self._extra_kv_managers = kv_managers[1:]
-                self._pipeline_model.extra_kv_managers = self._extra_kv_managers
-            else:
-                assert isinstance(kv_params, KVCacheParams)
-                self._kv_manager = load_kv_manager(
-                    params=kv_params,
-                    max_batch_size=self._pipeline_config.runtime.max_batch_size,
-                    max_seq_len=self._pipeline_model.max_seq_len,
-                    session=session,
-                    available_cache_memory=available_cache_memory,
-                )
+            self._kv_manager = load_kv_manager(
+                params=kv_params,
+                max_batch_size=self._pipeline_config.runtime.max_batch_size,
+                max_seq_len=self._pipeline_model.max_seq_len,
+                session=session,
+                available_cache_memory=available_cache_memory,
+            )
         else:
             self._spec_decode_state = SpecDecodeState.load(
                 session=session,
@@ -759,14 +739,11 @@ class OverlapTextGenerationPipeline(
 
     @property
     def _effective_max_cache_length(self) -> int:
-        """Max cache length capped to the smallest KV pool capacity."""
-        all_managers = [self._kv_manager] + self._extra_kv_managers
+        """Max cache length capped to the KV pool capacity."""
         return min(
             self._pipeline_model.max_seq_len,
-            *(
-                mgr._total_num_pages * mgr.params.page_size
-                for mgr in all_managers
-            ),
+            self._kv_manager._total_num_pages
+            * self._kv_manager.params.page_size,
         )
 
     @property
@@ -831,25 +808,11 @@ class OverlapTextGenerationPipeline(
                     for idx in range(batch_size)
                 ]
             )
-        # TODO(b-rod): ExitStack is needed to reserve multiple KV managers.
-        # Once MultiKVCacheManager exposes a single reserve() that covers
-        # all caches, replace with a plain `with` statement.
-        with ExitStack() as stack:
-            stack.enter_context(
-                self._kv_manager.reserve(
-                    replica_batches,
-                    num_steps=1,
-                    num_speculative_steps=num_speculative_tokens,
-                )
-            )
-            for ekm in self._extra_kv_managers:
-                stack.enter_context(
-                    ekm.reserve(
-                        replica_batches,
-                        num_steps=1,
-                        num_speculative_steps=num_speculative_tokens,
-                    )
-                )
+        with self._kv_manager.reserve(
+            replica_batches,
+            num_steps=1,
+            num_speculative_steps=num_speculative_tokens,
+        ):
             max_cache_length = self._effective_max_cache_length
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
@@ -925,15 +888,6 @@ class OverlapTextGenerationPipeline(
                 max_capture_batch_size,
             )
 
-        # TODO(b-rod): Reaching into _replica[0].attention_dispatch_resolver
-        # is fragile. The KV manager should expose this via a public API.
-        # Also only handles one extra manager — generalize for N.
-        extra_resolver = (
-            self._extra_kv_managers[0]._replica[0].attention_dispatch_resolver
-            if self._extra_kv_managers
-            else None
-        )
-
         num_speculative_tokens = (
             self._spec_decode_state.num_speculative_tokens
             if self._spec_decode_state is not None
@@ -943,12 +897,12 @@ class OverlapTextGenerationPipeline(
             model=self._pipeline_model.model,
             execute_model=self._pipeline_model.execute,
             session=self.session,
-            kv_params=self._kv_manager.params,
+            kv_params=self._kv_manager.cache_params(),
             warmup_model_inputs=self._warmup_model_inputs,
             max_cache_length_upper_bound=self._effective_max_cache_length,
             max_batch_size=max_capture_batch_size,
-            extra_dispatch_resolver=extra_resolver,
             num_speculative_tokens=num_speculative_tokens,
+            num_kv_caches=self._kv_manager.num_caches,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size
@@ -1347,8 +1301,6 @@ class OverlapTextGenerationPipeline(
         # Commit the new KV blocks into the prefix cache, ignoring the final
         # placeholder future token.
         self._kv_manager.step(inputs.batches)
-        for extra_kv_manager in self._extra_kv_managers:
-            extra_kv_manager.step(inputs.batches)
 
         if curr_batch is not None:
             if self._disable_overlap:
@@ -1386,11 +1338,6 @@ class OverlapTextGenerationPipeline(
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
-
-    @property
-    def extra_kv_managers(self) -> list[PagedKVCacheManager]:
-        """Returns extra KV cache managers (e.g. global attention for Diancie)."""
-        return self._extra_kv_managers
 
     def spec_decode_metrics(self) -> SpeculativeDecodingMetrics | None:
         """Returns the draft token acceptance metrics for speculative decoding."""

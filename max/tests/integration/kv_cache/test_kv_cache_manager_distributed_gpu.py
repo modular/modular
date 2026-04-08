@@ -163,7 +163,7 @@ def test_increment_cache_lengths() -> None:
     )
     increment_cache_lengths_processor = IncrementCacheLengthsProcessor(
         session=session,
-        params=kv_manager.params,
+        params=kv_manager.cache_params(),
     )
 
     # Create five text contexts and externally claim each using their request_id

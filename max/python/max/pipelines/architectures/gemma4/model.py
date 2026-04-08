@@ -26,7 +26,6 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import RequestID
-from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
     IncrementCacheLengthsProcessor,
 )
@@ -85,10 +84,9 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         input_row_offsets: Input row offsets (ragged tensors).
         return_n_logits: Number of logits to return.
         signal_buffers: Device buffers for distributed communication.
-        kv_cache_inputs: Inputs for the KV cache.
+        kv_cache_inputs: Combined KV cache inputs (sliding-window + global).
         images: Inputs to the image encoder.
         video: Inputs to the video encoder.
-        extra_kv_cache_inputs: Global attention KV cache (via ModelInputs).
     """
 
     tokens: npt.NDArray[np.integer[Any]] | Buffer
@@ -108,7 +106,6 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         assert self.combined_embeds is not None
         assert self.combined_indices is not None
         assert self.kv_cache_inputs is not None
-        assert self.extra_kv_cache_inputs, "Expected global KV cache inputs"
         return (
             self.tokens,
             self.return_n_logits,
@@ -117,8 +114,6 @@ class Gemma3MultiModalModelInputs(ModelInputs):
             *self.combined_indices,
             *self.signal_buffers,
             *self.kv_cache_inputs,
-            # Global KV cache is the first (and only) extra cache.
-            *self.extra_kv_cache_inputs[0],
         )
 
 
@@ -153,9 +148,6 @@ class Gemma3_MultiModalModel(
 
     vision_model: Model
     """The compiled and initialized MAX Engine vision model ready for inference."""
-    # Set by pipeline for extra KV cache managers
-    extra_kv_managers: list[PagedKVCacheManager]
-
     # The vision and text towers are in the same weights file, but are in
     # separate models, so load_state_dict will naturally be loading subsets in
     # each case.
@@ -209,19 +201,8 @@ class Gemma3_MultiModalModel(
         """
         return self.language_model
 
-    @property
-    def global_kv_manager(self) -> PagedKVCacheManager:
-        """Returns the KV cache manager for the full attention layers."""
-        assert len(self.extra_kv_managers) == 1, (
-            "Expected exactly one extra KV manager (global cache)"
-        )
-        return self.extra_kv_managers[0]
-
     def release(self, request_id: RequestID) -> None:
-        """Release vision encoder cache for a completed request.
-
-        Global KV cache release is handled by the pipeline.
-        """
+        """Release vision encoder cache for a completed request."""
         self._ve_cache.release_request(request_id)
 
     @classmethod
@@ -562,7 +543,6 @@ class Gemma3_MultiModalModel(
             *combined_indices,
             *model_inputs.signal_buffers,
             *model_inputs.kv_cache_inputs,
-            *model_inputs.extra_kv_cache_inputs[0],
         )
 
         if len(model_outputs) == 3:
@@ -596,19 +576,6 @@ class Gemma3_MultiModalModel(
         dev = self.devices[0]
         pinned = not dev.is_host
         assert kv_cache_inputs is not None
-
-        # Derive max_cache_length from the primary KV's LUT shape so the
-        # global cache uses the same sizing (important for graph capture
-        # where both caches must have consistent buffer shapes).
-        # LUT shape = (batch_size, num_pages); num_pages * page_size = max_cache_length.
-        primary_lut = kv_cache_inputs.inputs[0].lookup_table
-        assert isinstance(self.kv_params, MultiKVCacheParams)
-        primary_page_size = self.kv_params.params[0].page_size
-        primary_max_cache = primary_lut.shape[1] * primary_page_size
-        global_kv_cache_inputs = self.global_kv_manager.runtime_inputs(
-            replica_batches,
-            max_cache_length=primary_max_cache,
-        )
 
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
@@ -679,7 +646,10 @@ class Gemma3_MultiModalModel(
         k = self.config.vision_config.pooling_kernel_size
 
         needs_images = (
-            any(ctx.needs_vision_encoding for ctx in context_batch)
+            any(
+                getattr(ctx, "needs_vision_encoding", False)
+                for ctx in context_batch
+            )
             if context_batch
             else False
         )
@@ -697,7 +667,10 @@ class Gemma3_MultiModalModel(
             image_inputs = None
 
         needs_video = (
-            any(ctx.needs_video_encoding for ctx in context_batch)
+            any(
+                getattr(ctx, "needs_video_encoding", False)
+                for ctx in context_batch
+            )
             if context_batch
             else False
         )
@@ -716,7 +689,6 @@ class Gemma3_MultiModalModel(
             return_n_logits=return_n_logits_buf,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-            extra_kv_cache_inputs=[global_kv_cache_inputs],
             images=image_inputs,
             video=video_inputs,
             combined_embeds=self._empty_embeddings(),
@@ -729,8 +701,17 @@ class Gemma3_MultiModalModel(
     ) -> ModelInputs:
         prev_model_inputs = cast(Gemma3MultiModalModelInputs, prev_model_inputs)
 
+        # Extract the global cache portion from combined kv_cache_inputs.
+        # Combined layout per replica: [primary_tp0..tpN, global_tp0..tpN].
+        n_devices = len(self.devices)
+        assert prev_model_inputs.kv_cache_inputs is not None
+        global_kv_inputs = KVCacheInputs(
+            inputs=prev_model_inputs.kv_cache_inputs.inputs[
+                n_devices : 2 * n_devices
+            ]
+        )
         self._increment_global_cache_lengths_processor.execute(
-            kv_cache_inputs=prev_model_inputs.extra_kv_cache_inputs[0],
+            kv_cache_inputs=global_kv_inputs,
             prev_model_inputs=prev_model_inputs,
         )
 
@@ -748,7 +729,6 @@ class Gemma3_MultiModalModel(
             return_n_logits=prev_model_inputs.return_n_logits,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            extra_kv_cache_inputs=prev_model_inputs.extra_kv_cache_inputs,
             combined_embeds=self._empty_embeddings(),
             combined_indices=self._empty_indices(),
         )

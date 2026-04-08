@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, Mock
 from max.driver import is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
-    KVCacheParams,
+    KVCacheParamInterface,
     MultiKVCacheParams,
     compute_num_device_blocks,
     compute_num_host_blocks,
@@ -33,7 +33,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 def _load_single_kv_manager(
-    params: KVCacheParams,
+    params: KVCacheParamInterface,
     total_num_pages: int,
     total_num_host_pages: int,
     session: InferenceSession,
@@ -63,15 +63,18 @@ def _load_single_kv_manager(
 
 
 def load_kv_manager(
-    params: KVCacheParams,
+    params: KVCacheParamInterface,
     max_batch_size: int | None,
     max_seq_len: int,
     session: InferenceSession,
     available_cache_memory: int | None,
 ) -> PagedKVCacheManager:
-    """Loads a single KV cache manager from the given params."""
-    # FIXME: This is very very cursed. We can fix this by making `load_kv_manager`
-    # a method on the KVCacheParams class.
+    """Loads a KV cache manager from the given params.
+
+    Accepts both ``KVCacheParams`` (single cache) and ``MultiKVCacheParams``
+    (multiple caches).  The returned ``PagedKVCacheManager`` natively handles
+    all caches with a single ``BlockManager`` and ``KVConnector``.
+    """
     if isinstance(params, MagicMock):
         return MagicMock()
 
@@ -113,9 +116,14 @@ def load_multi_kv_managers(
     session: InferenceSession,
     available_cache_memory: int | None,
 ) -> list[PagedKVCacheManager]:
-    """Loads a list of KV cache managers from the given params."""
-    # FIXME: This is very very cursed. We can fix this by making `load_multi_kv_managers`
-    # a method on the MultiKVCacheParams class.
+    """Loads a list of KV cache managers from the given params.
+
+    .. deprecated::
+        Use ``load_kv_manager(params)`` instead, which returns a single
+        ``PagedKVCacheManager`` that natively handles multiple caches.
+        This function is retained for backward compatibility with
+        speculative decoding.
+    """
     if isinstance(params, MagicMock):
         return [MagicMock() for _ in range(len(params.params))]
 
@@ -143,11 +151,11 @@ def load_multi_kv_managers(
 
     return [
         _load_single_kv_manager(
-            params=params,
+            params=p,
             total_num_pages=total_num_pages,
             total_num_host_pages=total_num_host_pages,
             session=session,
             max_batch_size=max_batch_size,
         )
-        for params in params.params
+        for p in params.params
     ]
