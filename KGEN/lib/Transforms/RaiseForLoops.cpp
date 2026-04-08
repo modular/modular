@@ -11,6 +11,7 @@
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Dominance.h"
@@ -279,6 +280,45 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
                          ? HLCF::ForLoopBoundCmpPredicate::SGT
                          : HLCF::ForLoopBoundCmpPredicate::SLT;
     }
+  } else if (auto castOp = dyn_cast_if_present<POP::CastToBuiltinOp>(
+                 ifCond.getDefiningOp())) {
+    // Because hlcf.if expectes `i1` type, also check if there's a sequence
+    // `pop.cast_to_builtin(pop.cmp)`. That's a special case, because `pop.cmp`
+    // produces `!pop.scalar<bool>`, i.e. IR looks like
+    //
+    //  %prd = pop.cmp gt(%arg1, %simd_1) : <1, si64>
+    //  %i1 = pop.cast_to_builtin %1 : !pop.scalar<bool> to i1
+    //  hlcf.if %i1 ...
+    auto cmp = castOp.getInput().getDefiningOp<POP::CmpOp>();
+    if (!cmp)
+      return {};
+
+    POP::CmpPredicate pred = cmp.getPred();
+    if (pred != POP::CmpPredicate::LT && pred != POP::CmpPredicate::GT)
+      return {};
+    auto simdTy = dyn_cast<POP::SIMDType>(cmp.getLhs().getType());
+    auto dtype = simdTy ? simdTy.getResolvedDType() : std::nullopt;
+
+    // For now allow signed integers only, which is aligned to code above that
+    // pattern-matches `index`-ops.
+    if (!dtype || !dtype->isSInt())
+      return {};
+    cmpPredicate = pred == POP::CmpPredicate::LT
+                       ? HLCF::ForLoopBoundCmpPredicate::SLT
+                       : HLCF::ForLoopBoundCmpPredicate::SGT;
+
+    start =
+        getValueAtLoopEntry(cmp.getLhs(), inductionVarArgNumber, loop, domInfo);
+    if (inductionVarArgNumber.has_value()) {
+      end = getValueIfLoopInvariant(cmp.getRhs(), loop, continueOp, domInfo);
+    } else {
+      end = start;
+      start = getValueAtLoopEntry(cmp.getRhs(), inductionVarArgNumber, loop,
+                                  domInfo);
+      cmpPredicate = pred == POP::CmpPredicate::LT
+                         ? HLCF::ForLoopBoundCmpPredicate::SGT
+                         : HLCF::ForLoopBoundCmpPredicate::SLT;
+    }
   }
 
   if (!start || !end || !inductionVarArgNumber)
@@ -288,12 +328,13 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
   Value nextIter = continueOp.getOperand(inductionVarArgNumber.value());
   Value stride;
   Operation *nextIterOp = nextIter.getDefiningOp();
-  if (isa<mlir::index::AddOp, mlir::index::SubOp>(nextIterOp)) {
+  if (isa<mlir::index::AddOp, mlir::index::SubOp, POP::AddOp, POP::SubOp>(
+          nextIterOp)) {
     Value input0 = nextIterOp->getOperand(0);
     Value input1 = nextIterOp->getOperand(1);
     if (auto blockArg = dyn_cast<BlockArgument>(input0)) {
       stride = getValueIfLoopInvariant(input1, loop, continueOp, domInfo);
-      indVarCompute = isa<mlir::index::AddOp>(nextIterOp)
+      indVarCompute = isa<mlir::index::AddOp, POP::AddOp>(nextIterOp)
                           ? HLCF::ForLoopIndVarCompute::ADD
                           : HLCF::ForLoopIndVarCompute::SUB;
     }
@@ -497,6 +538,26 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 
   IRRewriter rewriter{OpBuilder(loop)};
 
+  // hlcf.for requires bounds, step, and induction variable to be MLIR `index`
+  // type. If they come from a pop.cmp branch they may be !pop.scalar<si64>;
+  // insert casts.
+  mlir::IndexType indexTy = rewriter.getIndexType();
+  auto *ctx = loop->getContext();
+  POP::SIMDType popIndexTy =
+      POP::SIMDType::get(ctx, 1, KGENDType(KGENDType::index));
+
+  auto castToIndex = [&](Value v) -> Value {
+    if (v.getType() == indexTy)
+      return v;
+    rewriter.setInsertionPoint(loop);
+    Value cast = POP::CastOp::create(rewriter, loop->getLoc(), popIndexTy, v);
+    return POP::CastToBuiltinOp::create(rewriter, loop->getLoc(), indexTy,
+                                        cast);
+  };
+  loopInfo->lowerBound = castToIndex(loopInfo->lowerBound);
+  loopInfo->upperBound = castToIndex(loopInfo->upperBound);
+  loopInfo->step = castToIndex(loopInfo->step);
+
   // Collect return value arg numbers (indices).
   llvm::SetVector<int64_t> returnValueArgNumbers;
   for (auto op : breakOp.getOperands()) {
@@ -515,6 +576,16 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
       reorderValues(loop->getOperands(), returnValueArgNumbers,
                     loopInfo->inductionVarArgNumber);
 
+  // The first forOperand is the initial value for the induction variable block
+  // argument. hlcf.for requires it to be index typed when the bounds are index.
+  if (!forOperands.empty() && forOperands[0].getType() != indexTy) {
+    rewriter.setInsertionPoint(loop);
+    Value cast = POP::CastOp::create(rewriter, loop->getLoc(), popIndexTy,
+                                     forOperands[0]);
+    forOperands[0] =
+        POP::CastToBuiltinOp::create(rewriter, loop->getLoc(), indexTy, cast);
+  }
+
   // Create the new ForOp with reordered operands.
   auto forOp = HLCF::ForOp::create(
       rewriter, loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
@@ -529,9 +600,27 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   SmallVector<Value> reorderedArgs =
       reorderValues(body.getArguments(), returnValueArgNumbers,
                     loopInfo->inductionVarArgNumber);
-  for (Value arg : reorderedArgs) {
-    rewriter.replaceAllUsesWith(
-        arg, block->addArgument(arg.getType(), arg.getLoc()));
+
+  // When the induction variable is not index-typed (e.g. !pop.scalar<si64>),
+  // hlcf.for still requires an index block arg. After adding it, insert casts
+  // at the start of the block to convert index back to the original type, and
+  // replace all uses of the original block arg with the cast result.
+  Type origIndVarType = reorderedArgs[0].getType();
+  Operation *lastInsertedOp = nullptr;
+  for (auto [i, arg] : llvm::enumerate(reorderedArgs)) {
+    if (i == 0 && origIndVarType != indexTy) {
+      Value idxArg = block->addArgument(indexTy, arg.getLoc());
+      rewriter.setInsertionPointToStart(block);
+      Value fromBuiltin = POP::CastFromBuiltinOp::create(rewriter, arg.getLoc(),
+                                                         popIndexTy, idxArg);
+      Value asOrigType = POP::CastOp::create(rewriter, arg.getLoc(),
+                                             origIndVarType, fromBuiltin);
+      lastInsertedOp = asOrigType.getDefiningOp();
+      rewriter.replaceAllUsesWith(arg, asOrigType);
+    } else {
+      rewriter.replaceAllUsesWith(
+          arg, block->addArgument(arg.getType(), arg.getLoc()));
+    }
   }
 
   Operation *prevOp = nullptr;
@@ -543,8 +632,12 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 
     // Move op to the ForOp body.
     if (prevOp == nullptr) {
-      // Move the first op to the beginning of the block.
-      op.moveBefore(block, block->begin());
+      // Move the first op after any pre-inserted cast ops (or to block begin
+      // if there are none).
+      if (lastInsertedOp)
+        op.moveAfter(lastInsertedOp);
+      else
+        op.moveBefore(block, block->begin());
     } else {
       op.moveAfter(prevOp);
       if (auto c = dyn_cast<ContinueOp>(op)) {
@@ -556,6 +649,17 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
         SmallVector<SmallVector<Value>> reorderedOperands =
             reorderValueIntoGroups(c.getOperands(), returnValueArgNumbers,
                                    loopInfo->inductionVarArgNumber);
+
+        // If the induction variable is not index-typed, cast it back to index
+        // before creating hlcf.for.yield.
+        if (origIndVarType != indexTy) {
+          Value nextIndVar = reorderedOperands[0].front();
+          Value castToIdx = POP::CastOp::create(rewriter, op.getLoc(),
+                                                popIndexTy, nextIndVar);
+          reorderedOperands[0][0] = POP::CastToBuiltinOp::create(
+              rewriter, op.getLoc(), indexTy, castToIdx);
+        }
+
         // Create `hlcf.for.yield` with the reordered operands.
         HLCF::ForYieldOp::create(rewriter, op.getLoc(),
                                  reorderedOperands[0].front(),
