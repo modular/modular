@@ -17,7 +17,7 @@ from std.gpu import barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from std.gpu.host import DeviceContext, Dim
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import cluster_dim, cluster_idx, thread_idx
+from std.gpu import cluster_idx, thread_idx
 from std.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
@@ -92,10 +92,10 @@ def tma_swizzle_multicast_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].expect_bytes(Int32(expected_bytes))
-        var slice_cord_y = cluster_idx.y * UInt(cluster_tileM) + UInt(
+        var slice_cord_y = cluster_idx.y * cluster_tileM + (
             rank_m * subcluster_tileM
         )
-        var slice_cord_x = cluster_idx.x * UInt(cluster_tileN) + UInt(
+        var slice_cord_x = cluster_idx.x * cluster_tileN + (
             rank_n * subcluster_tileN
         )
         var copy_offset = (
@@ -105,7 +105,7 @@ def tma_swizzle_multicast_load_kernel[
         tma_tile.async_multicast_load(
             type_of(tile)(tile.ptr + copy_offset),
             mbar[0],
-            (Int(slice_cord_x), Int(slice_cord_y)),
+            (slice_cord_x, slice_cord_y),
             UInt16(tma_multicast_mask),
         )
 
@@ -119,7 +119,7 @@ def tma_swizzle_multicast_load_kernel[
 
     if block_rank == 0 and thread_idx.x == 0:
         dst_tile = dst.tile[cluster_tileM, cluster_tileN](
-            Int(cluster_idx.y), Int(cluster_idx.x)
+            cluster_idx.y, cluster_idx.x
         )
         dst_tile.copy_from(tile)
 

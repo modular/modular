@@ -1767,8 +1767,8 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var work_info = scheduler.fetch_next_work()
 
-    var rank_m = block_id_in_cluster.x
-    var rank_n = block_id_in_cluster.y
+    var rank_m = UInt(block_id_in_cluster.x)
+    var rank_n = UInt(block_id_in_cluster.y)
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (

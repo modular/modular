@@ -225,8 +225,8 @@ def bulk_mma_pair_cta_kernel[
         cta_group=cta_group,
     ]
 
-    var rank_m = Int(block_id_in_cluster.x)
-    var rank_n = Int(block_id_in_cluster.y)
+    var rank_m = block_id_in_cluster.x
+    var rank_n = block_id_in_cluster.y
 
     var peer_cta_coord = (
         umod(rank_m, cta_group),

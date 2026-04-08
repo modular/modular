@@ -311,8 +311,8 @@ def blockscaled_pair_cta_mxfp8[
         transpose_b=transpose_b,
     ]()
 
-    var rank_m = block_id_in_cluster.x
-    var rank_n = block_id_in_cluster.y
+    var rank_m = UInt(block_id_in_cluster.x)
+    var rank_n = UInt(block_id_in_cluster.y)
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (

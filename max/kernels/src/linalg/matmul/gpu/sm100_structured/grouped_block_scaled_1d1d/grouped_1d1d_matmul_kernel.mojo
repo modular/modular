@@ -626,8 +626,8 @@ struct Grouped1D1DMatmulKernel[
         )
 
         # CTA coordinates in cluster (matches KernelContext pattern)
-        var rank_m = Int(block_id_in_cluster.x)
-        var rank_n = Int(block_id_in_cluster.y)
+        var rank_m = block_id_in_cluster.x
+        var rank_n = block_id_in_cluster.y
 
         # Peer CTA coordinates: (peer_id, mma_coord_m, mma_coord_n)
         # Following KernelContext convention:
@@ -1420,7 +1420,7 @@ struct Grouped1D1DMatmulKernel[
         # writes its portion: CTA0 writes n..n+BM-1, CTA1 writes n+BM..n+2*BM-1.
         var n_abs = work_ctx.n()
         comptime if Self.config.AB_swapped and Self.cta_group > 1:
-            var rank_m = Int(block_id_in_cluster.x)
+            var rank_m = block_id_in_cluster.x
             var cta_n_offset = umod(rank_m, Self.cta_group) * Self.BM
             n_abs = UInt32(Int(n_abs) + cta_n_offset)
 

@@ -201,7 +201,7 @@ def _warp_id[
 
 
 @always_inline("nodebug")
-def sm_id() -> UInt:
+def sm_id() -> Int:
     """Returns the Streaming Multiprocessor (SM) ID of the current thread.
 
     The SM ID uniquely identifies which physical streaming multiprocessor the thread is
@@ -217,14 +217,12 @@ def sm_id() -> UInt:
 
     comptime if is_nvidia_gpu():
         return warp.broadcast(
-            UInt(
-                Int(
-                    llvm_intrinsic[
-                        "llvm.nvvm.read.ptx.sreg.smid",
-                        Int32,
-                        has_side_effect=False,
-                    ]().cast[DType.uint32]()
-                )
+            Int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.smid",
+                    Int32,
+                    has_side_effect=False,
+                ]().cast[DType.uint32]()
             )
         )
     else:
@@ -547,7 +545,7 @@ struct _ClusterDim(Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StaticString](self) -> UInt:
+    def __getattr_param__[dim: StaticString](self) -> Int:
         """Gets the `x`, `y`, or `z` dimension of the cluster.
 
         Returns:
@@ -559,8 +557,8 @@ struct _ClusterDim(Defaultable, TrivialRegisterPassable):
         _verify_xyz[dim]()
 
         comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
-        return UInt(
-            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+        return Int(
+            llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]()
         )
 
 
@@ -587,7 +585,7 @@ struct _ClusterIdx(Defaultable, TrivialRegisterPassable):
         return "llvm.nvvm.read.ptx.sreg.clusterid." + dim
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StringLiteral](self) -> UInt:
+    def __getattr_param__[dim: StringLiteral](self) -> Int:
         """Gets the `x`, `y`, or `z` coordinates of a cluster within a grid.
 
         Returns:
@@ -598,8 +596,8 @@ struct _ClusterIdx(Defaultable, TrivialRegisterPassable):
         ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
+        return Int(
+            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 
@@ -626,7 +624,7 @@ struct _ClusterBlockIdx(Defaultable, TrivialRegisterPassable):
         return "llvm.nvvm.read.ptx.sreg.cluster.ctaid." + dim
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StringLiteral](self) -> UInt:
+    def __getattr_param__[dim: StringLiteral](self) -> Int:
         """Gets the `x`, `y`, or `z` coordinates of a threadblock within a cluster.
 
         Returns:
@@ -637,8 +635,8 @@ struct _ClusterBlockIdx(Defaultable, TrivialRegisterPassable):
         ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
+        return Int(
+            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 

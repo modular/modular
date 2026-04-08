@@ -236,8 +236,8 @@ def kernel_5[
 
     tmem_addr = ptr_tmem_addr[0]
 
-    var rank_m = block_id_in_cluster.x
-    var rank_n = block_id_in_cluster.y
+    var rank_m = UInt(block_id_in_cluster.x)
+    var rank_n = UInt(block_id_in_cluster.y)
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_quot, peer_cta_rem = divmod(rank_m, UInt(cta_group))

@@ -761,8 +761,8 @@ def kernel_8[
 
     var work_info = scheduler.initial_work_info()
 
-    var rank_m = block_id_in_cluster.x
-    var rank_n = block_id_in_cluster.y
+    var rank_m = UInt(block_id_in_cluster.x)
+    var rank_n = UInt(block_id_in_cluster.y)
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_quot, peer_cta_rem = divmod(rank_m, UInt(cta_group))

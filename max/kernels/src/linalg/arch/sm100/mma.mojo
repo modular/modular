@@ -189,7 +189,7 @@ struct MmaOpSM100_SS[
             #             o x o o
             self.mask = (
                 dim0_mask
-                << UInt16((block_id_in_cluster.y * UInt(Self.cluster_shape[0])))
+                << UInt16(block_id_in_cluster.y * Self.cluster_shape[0])
             ) | (dim1_mask << UInt16(block_id_in_cluster.x))
 
             # Include peer cta's row
@@ -359,7 +359,7 @@ struct MmaOpSM100_BlockScaled_SS[
             #             o x o o
             self.mask = (
                 dim0_mask
-                << UInt16((block_id_in_cluster.y * UInt(Self.cluster_shape[0])))
+                << UInt16(block_id_in_cluster.y * Self.cluster_shape[0])
             ) | (dim1_mask << UInt16(block_id_in_cluster.x))
 
             # Include peer cta's row
@@ -369,7 +369,7 @@ struct MmaOpSM100_BlockScaled_SS[
             #             o x o o
             #             o x o o
             comptime if Self.cta_group == 2:
-                self.mask |= dim1_mask << UInt16((block_id_in_cluster.x ^ 1))
+                self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
     @always_inline
     def mma(
