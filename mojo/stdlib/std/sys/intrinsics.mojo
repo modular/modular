@@ -236,14 +236,6 @@ def scatter[
             ptr.store(value[0])
         return
 
-    comptime if is_gpu():
-        comptime for i in range(size):
-            if mask[i]:
-                UnsafePointer[Scalar[dtype], MutExternalOrigin](
-                    unsafe_from_address=Int(base[i])
-                ).store(value[i])
-        return
-
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
         UnsafePointer(to=base).bitcast[
