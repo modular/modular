@@ -103,7 +103,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     k_group_size: Int = 1,
     num_clc_pipeline_stages: Int = 2,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
-    use_cpasync_sfb: Optional[Bool] = None,
     is_small_bn: Bool = False,
     normal_epilogue: Bool = False,
 ](
@@ -323,7 +322,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
         num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
-        use_cpasync_sfb=use_cpasync_sfb,
         is_small_bn=is_small_bn,
     )
 
