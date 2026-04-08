@@ -27,7 +27,7 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.profiler import traced
 from typing_extensions import Self
 
-from .components import ImageEncoder, TextEncoder
+from .components import ImageEncoder, TextEncoder, VaeDecoder
 
 # ---------------------------------------------------------------------------
 # Input / Output structs
@@ -181,7 +181,7 @@ class Flux2Executor(
     """Graph 3b: Taylor predict + scheduler step. ``None`` when TaylorSeer
     is disabled."""
 
-    decoder: Model
+    decoder: VaeDecoder
     """Graph 4: BN-denormalize + unpatchify + VAE decode -> uint8."""
 
     # Default residual threshold when FBCache is enabled but the request
@@ -211,9 +211,9 @@ class Flux2Executor(
         # Build and store all compiled graphs.
         self.text_encoder = TextEncoder(manifest, session)
         self.image_encoder = ImageEncoder(manifest, session)
+        self.decoder = VaeDecoder(manifest, session)
         self.denoise_compute = self._build_denoise_compute_graph()
         self.denoise_predict = self._build_denoise_predict_graph()
-        self.decoder = self._build_decode_graph()
 
     # -- PipelineExecutor interface -------------------------------------------
 
@@ -500,17 +500,6 @@ class Flux2Executor(
 
     # -- Graph 4: Decode ------------------------------------------------------
 
-    @traced(message="build_decode_graph")
-    def _build_decode_graph(self) -> Model:
-        """Compile the BN-denormalize + unpatchify + VAE decode graph.
-
-        Produces uint8 images from denoised packed latents.
-
-        Returns:
-            Compiled :class:`Model` for Graph 4.
-        """
-        raise NotImplementedError
-
     @traced(message="decode_latents")
     def _decode_latents(
         self,
@@ -530,7 +519,7 @@ class Flux2Executor(
         Returns:
             Decoded images, shape ``(B, H, W, C)`` uint8.
         """
-        raise NotImplementedError
+        return self.decoder(latents, h_carrier, w_carrier)
 
     # -- Denoising loop orchestration -----------------------------------------
 

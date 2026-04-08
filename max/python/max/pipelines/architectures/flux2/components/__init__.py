@@ -15,5 +15,6 @@
 
 from .image_encoder import ImageEncoder
 from .text_encoder import TextEncoder
+from .vae_decoder import VaeDecoder
 
-__all__ = ["ImageEncoder", "TextEncoder"]
+__all__ = ["ImageEncoder", "TextEncoder", "VaeDecoder"]

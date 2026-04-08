@@ -647,3 +647,324 @@ class Encoder(Module):
             device=self.device,
         )
         return (image_type,)
+
+
+# ---------------------------------------------------------------------------
+# Decoder-side components (mirror of the encoder-side above)
+# ---------------------------------------------------------------------------
+
+
+def interpolate_2d_nearest(
+    x: TensorValue,
+    scale_factor: int = 2,
+) -> TensorValue:
+    """Upsample a 2D tensor using nearest-neighbor interpolation.
+
+    Workaround using reshape + broadcast because ``ops.resize`` does not
+    support NEAREST mode.  Only ``scale_factor=2`` is implemented.
+
+    Args:
+        x: Input tensor of shape ``[N, C, H, W]`` (NCHW).
+        scale_factor: Upsampling factor (must be 2).
+
+    Returns:
+        Upsampled tensor of shape ``[N, C, H*2, W*2]``.
+    """
+    if x.rank != 4:
+        raise ValueError(f"Input tensor must have rank 4, got {x.rank}")
+    if scale_factor != 2:
+        raise NotImplementedError(
+            f"Only scale_factor=2 is currently supported, got {scale_factor}"
+        )
+
+    n, c, h, w = x.shape
+    target_shape = [n, c, h * scale_factor, w * scale_factor]
+
+    # [N, C, H, W] -> [N, C, H, 1, W, 1]
+    x_reshaped = ops.reshape(x, [n, c, h, 1, w, 1])
+
+    ones_scalar = ops.constant(1.0, dtype=x.dtype, device=x.device)
+    ones = ops.broadcast_to(
+        ones_scalar,
+        [1, 1, 1, scale_factor, 1, scale_factor],
+    )
+
+    # [N, C, H, 1, W, 1] * [1, 1, 1, 2, 1, 2] -> [N, C, H, 2, W, 2]
+    x_expanded = x_reshaped * ones
+
+    # [N, C, H, 2, W, 2] -> [N, C, H*2, W*2]
+    return ops.reshape(x_expanded, target_shape)
+
+
+class Upsample2D(Module):
+    """2D upsampling layer with nearest-neighbor interpolation and optional conv."""
+
+    def __init__(
+        self,
+        channels: int,
+        use_conv: bool = False,
+        out_channels: int | None = None,
+        kernel_size: int = 3,
+        padding: int = 1,
+        bias: bool = True,
+        interpolate: bool = True,
+        device: DeviceRef | None = None,
+        dtype: DType | None = None,
+    ) -> None:
+        super().__init__()
+        self.channels = channels
+        self.out_channels = out_channels or channels
+        self.use_conv = use_conv
+        self._interpolate = interpolate
+
+        self.conv: Conv2d | None = None
+        if use_conv:
+            self.conv = Conv2d(
+                kernel_size=kernel_size,
+                in_channels=self.channels,
+                out_channels=self.out_channels,
+                dtype=dtype or DType.bfloat16,
+                stride=1,
+                padding=padding,
+                has_bias=bias,
+                device=device,
+                permute=True,
+            )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        if self._interpolate:
+            x = interpolate_2d_nearest(x, scale_factor=2)
+        if self.use_conv and self.conv is not None:
+            x = self.conv(x)
+        return x
+
+
+class UpDecoderBlock2D(Module):
+    """Upsampling decoder block with ResNet layers and optional spatial upsampling."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        num_layers: int = 1,
+        resnet_eps: float = 1e-6,
+        resnet_act_fn: str = "swish",
+        resnet_groups: int = 32,
+        add_upsample: bool = True,
+        temb_channels: int | None = None,
+        device: DeviceRef | None = None,
+        dtype: DType | None = None,
+    ) -> None:
+        super().__init__()
+        resnets_list = []
+        for i in range(num_layers):
+            input_channels = in_channels if i == 0 else out_channels
+            resnets_list.append(
+                ResnetBlock2D(
+                    in_channels=input_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    groups=resnet_groups,
+                    groups_out=resnet_groups,
+                    eps=resnet_eps,
+                    non_linearity=resnet_act_fn,
+                    use_conv_shortcut=False,
+                    conv_shortcut_bias=True,
+                    device=device,
+                    dtype=dtype,
+                )
+            )
+        self.resnets = LayerList(resnets_list)
+
+        self.upsamplers: LayerList | None = None
+        if add_upsample:
+            self.upsamplers = LayerList(
+                [
+                    Upsample2D(
+                        channels=out_channels,
+                        use_conv=True,
+                        out_channels=out_channels,
+                        kernel_size=3,
+                        padding=1,
+                        bias=True,
+                        interpolate=True,
+                        device=device,
+                        dtype=dtype,
+                    )
+                ]
+            )
+
+    def __call__(
+        self, hidden_states: TensorValue, temb: TensorValue | None = None
+    ) -> TensorValue:
+        for resnet in self.resnets:
+            hidden_states = resnet(hidden_states, temb)
+        if self.upsamplers is not None:
+            hidden_states = self.upsamplers[0](hidden_states)
+        return hidden_states
+
+
+class Decoder(Module):
+    """VAE decoder that maps latent representations back to images.
+
+    Progressively upsamples through decoder blocks with ResNet layers,
+    attention, and nearest-neighbor interpolation.
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 3,
+        up_block_types: tuple[str, ...] = ("UpDecoderBlock2D",),
+        block_out_channels: tuple[int, ...] = (64,),
+        layers_per_block: int = 2,
+        norm_num_groups: int = 32,
+        act_fn: str = "silu",
+        norm_type: str = "group",
+        mid_block_add_attention: bool = True,
+        use_post_quant_conv: bool = True,
+        device: DeviceRef | None = None,
+        dtype: DType | None = None,
+    ) -> None:
+        super().__init__()
+        self.layers_per_block = layers_per_block
+        self.in_channels = in_channels
+        self.device = device
+        self.dtype = dtype
+
+        self.post_quant_conv: Conv2d | None = None
+        if use_post_quant_conv:
+            self.post_quant_conv = Conv2d(
+                kernel_size=1,
+                in_channels=in_channels,
+                out_channels=in_channels,
+                dtype=dtype or DType.bfloat16,
+                stride=1,
+                padding=0,
+                dilation=1,
+                num_groups=1,
+                has_bias=True,
+                device=device,
+                permute=True,
+            )
+
+        self.conv_in = Conv2d(
+            kernel_size=3,
+            in_channels=in_channels,
+            out_channels=block_out_channels[-1],
+            dtype=dtype or DType.bfloat16,
+            stride=1,
+            padding=1,
+            dilation=1,
+            num_groups=1,
+            has_bias=True,
+            device=device,
+            permute=True,
+        )
+
+        temb_channels = in_channels if norm_type == "spatial" else None
+        self.mid_block = MidBlock2D(
+            in_channels=block_out_channels[-1],
+            temb_channels=temb_channels,
+            dropout=0.0,
+            num_layers=1,
+            resnet_eps=1e-6,
+            resnet_time_scale_shift=(
+                "default" if norm_type == "group" else norm_type
+            ),
+            resnet_act_fn=act_fn,
+            resnet_groups=norm_num_groups,
+            resnet_pre_norm=True,
+            add_attention=mid_block_add_attention,
+            attention_head_dim=block_out_channels[-1],
+            output_scale_factor=1.0,
+            device=device,
+            dtype=dtype,
+        )
+
+        up_blocks_list = []
+        reversed_block_out_channels = list(reversed(block_out_channels))
+        output_channel = reversed_block_out_channels[0]
+        for i, up_block_type in enumerate(up_block_types):
+            prev_output_channel = output_channel
+            output_channel = reversed_block_out_channels[i]
+            is_final_block = i == len(block_out_channels) - 1
+
+            if up_block_type != "UpDecoderBlock2D":
+                raise ValueError(
+                    f"Unsupported up_block_type: {up_block_type}. "
+                    "Currently only 'UpDecoderBlock2D' is supported."
+                )
+
+            up_blocks_list.append(
+                UpDecoderBlock2D(
+                    in_channels=prev_output_channel,
+                    out_channels=output_channel,
+                    num_layers=self.layers_per_block + 1,
+                    resnet_eps=1e-6,
+                    resnet_act_fn=act_fn,
+                    resnet_groups=norm_num_groups,
+                    add_upsample=not is_final_block,
+                    temb_channels=temb_channels,
+                    device=device,
+                    dtype=dtype,
+                )
+            )
+
+        self.up_blocks = LayerList(up_blocks_list)
+
+        self.conv_norm_out = GroupNorm(
+            num_groups=norm_num_groups,
+            num_channels=block_out_channels[0],
+            eps=1e-6,
+            affine=True,
+            device=device or DeviceRef.GPU(),
+        )
+
+        self.conv_out = Conv2d(
+            kernel_size=3,
+            in_channels=block_out_channels[0],
+            out_channels=out_channels,
+            dtype=dtype or DType.bfloat16,
+            stride=1,
+            padding=1,
+            dilation=1,
+            num_groups=1,
+            has_bias=True,
+            device=device,
+            permute=True,
+        )
+
+    def __call__(
+        self, z: TensorValue, temb: TensorValue | None = None
+    ) -> TensorValue:
+        if self.post_quant_conv is not None:
+            z = self.post_quant_conv(z)
+        sample = self.conv_in(z)
+        sample = self.mid_block(sample, temb)
+
+        for up_block in self.up_blocks:
+            sample = up_block(sample, temb)
+
+        sample = self.conv_norm_out(sample)
+        sample = ops.silu(sample)
+        sample = self.conv_out(sample)
+        return sample
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        if self.dtype is None:
+            raise ValueError("dtype must be set for input_types")
+        if self.device is None:
+            raise ValueError("device must be set for input_types")
+        return (
+            TensorType(
+                self.dtype,
+                shape=[
+                    "batch_size",
+                    self.in_channels,
+                    "latent_height",
+                    "latent_width",
+                ],
+                device=self.device,
+            ),
+        )
