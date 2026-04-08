@@ -19,14 +19,23 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
+from max.benchmark.benchmark_shared.datasets.types import (
+    PixelGenerationImageOptions,
+)
 from max.benchmark.benchmark_shared.request import (
     OpenAIChatCompletionsRequestDriver,
     OpenAICompletionsRequestDriver,
+    OpenResponsesRequestDriver,
+    PixelGenerationRequestFuncInput,
     ProgressBarRequestDriver,
     RequestCounter,
     RequestFuncInput,
     RequestFuncOutput,
+    SglangPixelGenerationRequestDriver,
     TRTLLMRequestDriver,
+    VllmOmniPixelGenerationRequestDriver,
+    _build_sglang_pixel_generation_payload,
+    _build_vllm_omni_pixel_generation_payload,
     async_request_lora_load,
     async_request_lora_unload,
     get_request_driver_class,
@@ -669,3 +678,203 @@ class TestRequestDriverSelection:
     def test_get_request_driver_class_invalid_url(self) -> None:
         with pytest.raises(ValueError, match="Unsupported API URL"):
             get_request_driver_class("http://localhost:8000/unsupported")
+
+    # Pixel generation driver selection tests
+
+    def test_get_request_driver_class_pixel_gen_responses(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/responses",
+                task="text-to-image",
+            )
+            is OpenResponsesRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_sglang(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/images/generations",
+                task="text-to-image",
+            )
+            is SglangPixelGenerationRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_vllm_omni(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/chat/completions",
+                task="text-to-image",
+            )
+            is VllmOmniPixelGenerationRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_image_to_image(self) -> None:
+        """image-to-image task should also dispatch to pixel gen drivers."""
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/images/generations",
+                task="image-to-image",
+            )
+            is SglangPixelGenerationRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_invalid_url(self) -> None:
+        with pytest.raises(ValueError, match="pixel-generation"):
+            get_request_driver_class(
+                "http://localhost:8000/v1/completions",
+                task="text-to-image",
+            )
+
+    def test_get_request_driver_class_text_gen_chat_not_pixel(self) -> None:
+        """text-generation + /v1/chat/completions should return chat driver,
+        not VllmOmniPixelGenerationRequestDriver."""
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/chat/completions",
+                task="text-generation",
+            )
+            is OpenAIChatCompletionsRequestDriver
+        )
+
+
+class TestPixelGenerationPayloadBuilders:
+    """Tests for sglang and vllm-omni pixel generation payload builders."""
+
+    def _make_input(
+        self,
+        image_options: PixelGenerationImageOptions | None = None,
+    ) -> PixelGenerationRequestFuncInput:
+        return PixelGenerationRequestFuncInput(
+            model="black-forest-labs/FLUX.2-dev",
+            session_id=None,
+            prompt="A beautiful sunset",
+            input_image_paths=None,
+            api_url="http://localhost:8000/v1/images/generations",
+            image_options=image_options,
+        )
+
+    def test_sglang_payload_all_options(self) -> None:
+        opts = PixelGenerationImageOptions(
+            width=1024,
+            height=768,
+            steps=28,
+            guidance_scale=3.5,
+            seed=42,
+            negative_prompt="blurry",
+        )
+        payload = _build_sglang_pixel_generation_payload(self._make_input(opts))
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert payload["prompt"] == "A beautiful sunset"
+        assert payload["size"] == "1024x768"
+        assert payload["num_inference_steps"] == 28
+        assert payload["guidance_scale"] == 3.5
+        assert payload["seed"] == 42
+        assert payload["n"] == 1
+        assert payload["response_format"] == "b64_json"
+        # negative_prompt is intentionally not supported
+        assert "negative_prompt" not in payload
+
+    def test_sglang_payload_no_options(self) -> None:
+        payload = _build_sglang_pixel_generation_payload(self._make_input(None))
+        assert payload["prompt"] == "A beautiful sunset"
+        assert "size" not in payload
+        assert "num_inference_steps" not in payload
+
+    def test_sglang_payload_partial_options(self) -> None:
+        opts = PixelGenerationImageOptions(steps=20)
+        payload = _build_sglang_pixel_generation_payload(self._make_input(opts))
+        assert payload["num_inference_steps"] == 20
+        # size requires both width and height
+        assert "size" not in payload
+        assert "guidance_scale" not in payload
+
+    def test_vllm_omni_payload_all_options(self) -> None:
+        opts = PixelGenerationImageOptions(
+            width=1024,
+            height=768,
+            steps=28,
+            guidance_scale=3.5,
+            seed=42,
+            negative_prompt="blurry",
+        )
+        payload = _build_vllm_omni_pixel_generation_payload(
+            self._make_input(opts)
+        )
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert payload["messages"] == [
+            {"role": "user", "content": "A beautiful sunset"}
+        ]
+        extra = payload["extra_body"]
+        assert extra["height"] == 768
+        assert extra["width"] == 1024
+        assert extra["num_inference_steps"] == 28
+        assert extra["guidance_scale"] == 3.5
+        assert extra["seed"] == 42
+        # negative_prompt is intentionally not supported
+        assert "negative_prompt" not in extra
+
+    def test_vllm_omni_payload_no_options(self) -> None:
+        payload = _build_vllm_omni_pixel_generation_payload(
+            self._make_input(None)
+        )
+        assert "extra_body" not in payload
+        assert payload["messages"][0]["content"] == "A beautiful sunset"
+
+    def test_vllm_omni_payload_partial_options(self) -> None:
+        opts = PixelGenerationImageOptions(height=512, width=512)
+        payload = _build_vllm_omni_pixel_generation_payload(
+            self._make_input(opts)
+        )
+        extra = payload["extra_body"]
+        assert extra["height"] == 512
+        assert extra["width"] == 512
+        assert "num_inference_steps" not in extra
+
+
+class TestValidateTaskAndEndpoint:
+    """Tests for validate_task_and_endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def _import_validate(self) -> None:
+        from max.benchmark.benchmark_serving import validate_task_and_endpoint
+
+        self.validate = validate_task_and_endpoint
+
+    def test_text_gen_modular_chat_ok(self) -> None:
+        self.validate("text-generation", "/v1/chat/completions", "modular")
+
+    def test_text_gen_modular_completions_ok(self) -> None:
+        self.validate("text-generation", "/v1/completions", "modular")
+
+    def test_text_gen_responses_rejected(self) -> None:
+        with pytest.raises(ValueError, match="does not support"):
+            self.validate("text-generation", "/v1/responses", "modular")
+
+    def test_text_gen_images_rejected(self) -> None:
+        with pytest.raises(ValueError, match="does not support"):
+            self.validate("text-generation", "/v1/images/generations", "sglang")
+
+    def test_text_gen_vllm_omni_rejected(self) -> None:
+        """vllm-omni is pixel-gen-only — reject for text-generation."""
+        with pytest.raises(ValueError, match="only supports pixel"):
+            self.validate(
+                "text-generation",
+                "/v1/chat/completions",
+                "vllm-omni",
+            )
+
+    def test_pixel_gen_responses_ok(self) -> None:
+        self.validate("text-to-image", "/v1/responses", "modular")
+
+    def test_pixel_gen_images_ok(self) -> None:
+        self.validate("text-to-image", "/v1/images/generations", "sglang")
+
+    def test_pixel_gen_chat_ok(self) -> None:
+        self.validate("text-to-image", "/v1/chat/completions", "vllm-omni")
+
+    def test_pixel_gen_completions_rejected(self) -> None:
+        with pytest.raises(ValueError, match="requires --endpoint"):
+            self.validate("text-to-image", "/v1/completions", "modular")
+
+    def test_image_to_image_responses_ok(self) -> None:
+        self.validate("image-to-image", "/v1/responses", "modular")

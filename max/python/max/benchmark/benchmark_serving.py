@@ -53,6 +53,8 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
+    PIXEL_GEN_DEFAULT_ENDPOINT,
+    PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
     Backend,
     BenchmarkTask,
@@ -2086,20 +2088,30 @@ async def benchmark(
     return result, text_metrics
 
 
+# Backends that only support pixel generation, not text generation.
+PIXEL_GEN_ONLY_BACKENDS: frozenset[str] = frozenset({"vllm-omni"})
+
+
 def validate_task_and_endpoint(
-    benchmark_task: BenchmarkTask, endpoint: Endpoint
+    benchmark_task: BenchmarkTask, endpoint: Endpoint, backend: str
 ) -> None:
     if benchmark_task == "text-generation":
-        if endpoint == "/v1/responses":
+        if backend in PIXEL_GEN_ONLY_BACKENDS:
             raise ValueError(
-                "--benchmark-task text-generation does not support "
-                "--endpoint /v1/responses"
+                f"Backend {backend!r} only supports pixel generation"
+                f" tasks, not --benchmark-task text-generation."
+            )
+        if endpoint in ("/v1/responses", "/v1/images/generations"):
+            raise ValueError(
+                f"--benchmark-task text-generation does not support "
+                f"--endpoint {endpoint}"
             )
     elif benchmark_task in PIXEL_GENERATION_TASKS:
-        if endpoint != "/v1/responses":
+        if endpoint not in PIXEL_GENERATION_ENDPOINTS:
             raise ValueError(
-                "--benchmark-task pixel-generation requires "
-                "--endpoint /v1/responses"
+                f"--benchmark-task {benchmark_task} requires --endpoint"
+                f" to be one of {sorted(PIXEL_GENERATION_ENDPOINTS)},"
+                f" got {endpoint!r}"
             )
 
 
@@ -2124,7 +2136,34 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     benchmark_task: BenchmarkTask = args.benchmark_task
     endpoint: Endpoint = args.endpoint
 
-    validate_task_and_endpoint(benchmark_task, endpoint)
+    # Auto-select the correct endpoint for pixel generation based on the
+    # backend. Each pixel-gen backend requires a specific endpoint (e.g.,
+    # sglang needs /v1/images/generations, vllm-omni needs
+    # /v1/chat/completions). We auto-select when the current endpoint
+    # doesn't match this backend's expected pixel-gen endpoint.
+    if benchmark_task in PIXEL_GENERATION_TASKS:
+        backend_key = args.backend.removesuffix("-chat")
+        if backend_key in PIXEL_GEN_DEFAULT_ENDPOINT:
+            expected = PIXEL_GEN_DEFAULT_ENDPOINT[backend_key]
+            if endpoint != expected:
+                logger.info(
+                    "Auto-selected endpoint %s for backend %s"
+                    " (pixel generation task)",
+                    expected,
+                    args.backend,
+                )
+                endpoint = expected
+        else:
+            raise ValueError(
+                f"Backend {args.backend!r} does not have a default"
+                f" pixel-generation endpoint. Explicitly pass --endpoint"
+                f" with one of {sorted(PIXEL_GENERATION_ENDPOINTS)}."
+            )
+
+    validate_task_and_endpoint(benchmark_task, endpoint, args.backend)
+    # chat is only meaningful for text-generation (enables chat template
+    # formatting). For pixel generation via /v1/chat/completions
+    # (vllm-omni), the pixel-gen code path ignores this flag.
     chat = endpoint == "/v1/chat/completions"
 
     if args.base_url is not None:
