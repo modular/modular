@@ -2180,7 +2180,7 @@ struct NullableTileTensor[
         Returns:
             A `TileTensor` backed by the stored pointer and layout.
         """
-        assert Bool(self.ptr), t"TileTensor cannot be null - {call_location()}"
+        assert Bool(self.ptr), "TileTensor cannot be null"
         return TileTensor[
             Self.dtype,
             Self.LayoutType,
