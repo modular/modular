@@ -142,6 +142,14 @@ def isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         True if the path is a directory or a link to a directory and
         False otherwise.
+
+    Example:
+    ```mojo
+    from std.os.path import isdir
+
+    isdir("/tmp")       # returns True
+    isdir("noexist")    # returns False
+    ```
     """
     var fspath = path.__fspath__()
     try:
@@ -169,6 +177,14 @@ def isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Returns True if the path is a regular file.
+
+    Example:
+    ```mojo
+    from std.os.path import isfile
+
+    isfile("/etc/hosts")  # returns True
+    isfile("/tmp")        # returns False (it's a directory)
+    ```
     """
     var fspath = path.__fspath__()
     try:
@@ -195,6 +211,13 @@ def islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         True if the path is a link to a directory and False otherwise.
+
+    Example:
+    ```mojo
+    from std.os.path import islink
+
+    islink("/etc/hosts")  # returns False (regular file, not a symlink)
+    ```
     """
     try:
         return S_ISLNK(_get_lstat_st_mode(path.__fspath__()))
@@ -218,6 +241,14 @@ def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 
     Returns:
         The directory component of a pathname.
+
+    Example:
+    ```mojo
+    from std.os.path import dirname
+
+    dirname("/a/b/c.txt")  # returns "/a/b"
+    dirname("c.txt")       # returns ""
+    ```
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
@@ -304,6 +335,14 @@ def exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Returns True if the path exists and is not a broken symbolic link.
+
+    Example:
+    ```mojo
+    from std.os.path import exists
+
+    exists("/tmp")       # returns True
+    exists("noexist")    # returns False
+    ```
     """
     try:
         _ = _get_stat_st_mode(path.__fspath__())
@@ -376,6 +415,14 @@ def is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Return `True` if path is an absolute path name.
+
+    Example:
+    ```mojo
+    from std.os.path import is_absolute
+
+    is_absolute("/usr/bin")   # returns True
+    is_absolute("relative")   # returns False
+    ```
     """
     return path.__fspath__().startswith(sep)
 
@@ -400,6 +447,14 @@ def join(var path: String, *paths: String) -> String:
 
     Returns:
         The joined path.
+
+    Example:
+    ```mojo
+    from std.os.path import join
+
+    join("a", "b", "c")     # returns "a/b/c"
+    join("a", "/b", "c")    # returns "/b/c" (absolute resets)
+    ```
     """
     var joined_path = path
 
@@ -436,6 +491,14 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
 
     Returns:
         A tuple containing two strings: (head, tail).
+
+    Example:
+    ```mojo
+    from std.os.path import split
+
+    split("/a/b/c.txt")  # returns ("/a/b", "c.txt")
+    split("/a/b/")       # returns ("/a/b", "")
+    ```
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
@@ -554,6 +617,14 @@ def split_extension[
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.os.path import split_extension
+
+    split_extension("foo.tar.gz")  # returns ("foo.tar", ".gz")
+    split_extension("README")      # returns ("README", "")
+    ```
     """
     return _split_extension(path.__fspath__(), sep, "", ".")
 
