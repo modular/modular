@@ -411,6 +411,22 @@ def test_slice_tensor() -> None:
     assert result.real
 
 
+def test_slice_tensor_negative_int_index() -> None:
+    """Regression test for MXF-243: hidden[:, -1] fails at compile time."""
+    hidden = Tensor.ones((2, 4, 8), dtype=DType.float32, device=CPU())
+    last_token = hidden[:, -1]
+    assert last_token.shape == [2, 8]
+    np.testing.assert_allclose(np.from_dlpack(last_token), 1.0)
+
+    second_to_last = hidden[:, -2]
+    assert second_to_last.shape == [2, 8]
+    np.testing.assert_allclose(np.from_dlpack(second_to_last), 1.0)
+
+    last_batch = hidden[-1]
+    assert last_batch.shape == [4, 8]
+    np.testing.assert_allclose(np.from_dlpack(last_batch), 1.0)
+
+
 def test_split() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     splits = cast(

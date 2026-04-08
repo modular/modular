@@ -951,6 +951,12 @@ def _handle_slice(
     stop_np = stops_buffer.to_numpy().astype(np.int64)
     step_np = steps_buffer.to_numpy().astype(np.int64)
 
+    # Normalize negative starts/stops relative to input dims (NumPy
+    # convention: -1 means last element, etc.).
+    input_shape_np = np.array(input_buffer.shape, dtype=np.int64)
+    start_np = np.where(start_np < 0, start_np + input_shape_np, start_np)
+    stop_np = np.where(stop_np < 0, stop_np + input_shape_np, stop_np)
+
     rank = len(start_np)
     output_shape = tuple(
         int(max(0, int(np.ceil((stop_np[i] - start_np[i]) / step_np[i]))))

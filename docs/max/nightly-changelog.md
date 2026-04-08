@@ -36,6 +36,8 @@ This version is still a work in progress.
 
 ### Python API {#26-3-max-python}
 
+- Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)
+  which previously raised a `RuntimeError` at compile time.
 - Setting `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` enables detection of
   uninitialized memory reads in Mojo kernels. `InferenceSession` automatically
   enables the debug allocator poison and compiles kernels with load-time
