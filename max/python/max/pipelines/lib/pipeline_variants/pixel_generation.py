@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Generic
 
+import numpy as np
 from max.driver import load_devices
 from max.interfaces import (
     GenerationStatus,
@@ -70,14 +72,41 @@ class PixelGenerationPipeline(
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
-        # Weight paths are resolved per-component inside _load_sub_models.
-        self._pipeline_model = pipeline_model(
-            pipeline_config=self._pipeline_config,
-            session=session,
-            devices=self._devices,
-            weight_paths=[],
-            cache_config=cache_config or DenoisingCacheConfig(),
+        # Experimental: opt into the PipelineExecutor-based Flux2Executor
+        # for development testing.  The default path is unchanged.
+        use_executor = (
+            os.environ.get("MODULAR_FLUX2_USE_EXECUTOR", "").lower() == "true"
+            and pipeline_model.__name__ == "Flux2Pipeline"
         )
+
+        if use_executor:
+            from max.pipelines.architectures.flux2_modulev3.flux2_executor import (  # type: ignore[import-not-found]
+                Flux2Executor,
+            )
+
+            logger.info(
+                "MODULAR_FLUX2_USE_EXECUTOR is set: using Flux2Executor "
+                "instead of Flux2Pipeline."
+            )
+            self._use_executor = True
+            self._executor = Flux2Executor(
+                manifest=pipeline_config.models,
+                session=session,
+                runtime_config=pipeline_config.runtime,
+            )
+            self._pipeline_model: DiffusionPipeline | None = None
+        else:
+            self._use_executor = False
+            self._executor = None
+            # Weight paths are resolved per-component inside
+            # _load_sub_models.
+            self._pipeline_model = pipeline_model(
+                pipeline_config=self._pipeline_config,
+                session=session,
+                devices=self._devices,
+                weight_paths=[],
+                cache_config=cache_config or DenoisingCacheConfig(),
+            )
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -93,26 +122,43 @@ class PixelGenerationPipeline(
         if not flat_batch or model_inputs is None:
             return {}
 
-        try:
-            model_outputs = self._pipeline_model.execute(
-                model_inputs=model_inputs
-            )
-        except Exception:
-            batch_size = len(flat_batch)
-            logger.error(
-                "Encountered an exception while executing pixel batch: "
-                "batch_size=%d, num_images_per_prompt=%s, height=%s, width=%s, "
-                "num_inference_steps=%s",
-                batch_size,
-                model_inputs.num_images_per_prompt,
-                model_inputs.height,
-                model_inputs.width,
-                model_inputs.num_inference_steps,
-            )
-            raise
+        if self._use_executor:
+            assert self._executor is not None
+            try:
+                executor_outputs = self._executor.execute(model_inputs)
+            except Exception:
+                logger.error(
+                    "Encountered an exception while executing pixel "
+                    "batch (executor path): batch_size=%d",
+                    len(flat_batch),
+                )
+                raise
+            images = np.from_dlpack(executor_outputs.images)
+            num_images_per_prompt = np.from_dlpack(
+                model_inputs.num_images_per_prompt
+            ).item()
+            assert isinstance(num_images_per_prompt, int)
+        else:
+            assert self._pipeline_model is not None
+            try:
+                model_outputs = self._pipeline_model.execute(
+                    model_inputs=model_inputs
+                )
+            except Exception:
+                logger.error(
+                    "Encountered an exception while executing pixel "
+                    "batch: batch_size=%d, num_images_per_prompt=%s, "
+                    "height=%s, width=%s, num_inference_steps=%s",
+                    len(flat_batch),
+                    model_inputs.num_images_per_prompt,
+                    model_inputs.height,
+                    model_inputs.width,
+                    model_inputs.num_inference_steps,
+                )
+                raise
+            images = model_outputs.images
+            num_images_per_prompt = model_inputs.num_images_per_prompt
 
-        images = model_outputs.images
-        num_images_per_prompt = model_inputs.num_images_per_prompt
         expected_images = len(flat_batch) * num_images_per_prompt
 
         if images.shape[0] != expected_images:
@@ -172,7 +218,13 @@ class PixelGenerationPipeline(
                 "Batching of different requests is not supported yet."
             )
 
-        model_inputs = self._pipeline_model.prepare_inputs(flat_batch[0][1])
+        if self._use_executor:
+            assert self._executor is not None
+            contexts = [ctx for _rid, ctx in flat_batch]
+            model_inputs = self._executor.prepare_inputs(contexts)
+        else:
+            assert self._pipeline_model is not None
+            model_inputs = self._pipeline_model.prepare_inputs(flat_batch[0][1])
         return model_inputs, flat_batch
 
     def release(self, request_id: RequestID) -> None:
