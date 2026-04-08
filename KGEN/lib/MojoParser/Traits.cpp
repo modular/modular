@@ -1365,5 +1365,5 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   }
 
   // Create the new type value with the trait metatype.
-  return TypeParamAttr::get(type, trait);
+  return UpcastAttr::get(trait, typePValue);
 }

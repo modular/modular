@@ -363,7 +363,8 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
   // Check for the simple case.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
     if (MLValue refValue = lValue.getIfMLValue()) {
-      if (lValue.getRValueType().isEqualCanon(resultType) &&
+      if (emitter.canZeroCostConvert(lValue.getRValueType(), resultType,
+                                     emitter.shared) &&
           lValue.getMValueType().isDefaultAddrSpace())
         return refValue;
     }

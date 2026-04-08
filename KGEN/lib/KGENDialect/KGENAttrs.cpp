@@ -646,10 +646,17 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
     if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
       return CastAttr::get(type, upcast.getInputTypeValue());
 
-  // downcast(downcast(x)) = downcast(x)
-  if constexpr (std::is_same_v<CastAttr, DowncastAttr>)
+  if constexpr (std::is_same_v<CastAttr, DowncastAttr>) {
+    // downcast(downcast(x)) = downcast(x)
     if (auto downcast = sugarDynCast<DowncastAttr>(inputTypeValue))
-      return CastAttr::get(type, downcast.getInputTypeValue());
+      return DowncastAttr::get(type, downcast.getInputTypeValue());
+
+    // If we are downcasting an upcasted type value, we can not guarantee that
+    // the outcome is an upcast. However, we can still fold it to a downcast,
+    // and downcast knows how to fold it back to an upcast when it is provable.
+    if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
+      return DowncastAttr::get(type, upcast.getInputTypeValue());
+  }
 
   return CastAttr::Base::get(type.getContext(), type, inputTypeValue);
 }

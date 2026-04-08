@@ -204,7 +204,7 @@ def returnTup2b() -> Tuple[Int, FloatDyn]:
 
 
 # CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable>
-# CHECK-SAME: #Tuple <:param_list<!Movable> [!kgen.param<:!ImplicitlyCopyable T>, !kgen.param<:!ImplicitlyCopyable T>]>
+# CHECK-SAME: #Tuple <:param_list<!Movable> [upcast(:!ImplicitlyCopyable T), upcast(:!ImplicitlyCopyable T)]>
 def takesSugarTuple[T: ImplicitlyCopyable](elements: Tuple[T, T]):
     pass
 

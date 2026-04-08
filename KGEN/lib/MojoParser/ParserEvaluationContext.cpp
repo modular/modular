@@ -12,6 +12,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "Traits.h"
 
 using namespace M;
 using namespace KGEN;

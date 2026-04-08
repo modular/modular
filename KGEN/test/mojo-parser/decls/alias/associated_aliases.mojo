@@ -905,10 +905,8 @@ def fa[T: A]() -> T.Type:
 
 # CHECK-LABEL: lit.fn @"fb
 def fb[T: B]() -> T.Type:
-    # CHECK: %__call_result_tmp__ = lit.var.decl "
-    # CHECK: lit.call{{.*}}fa{{.*}}(%__call_result_tmp__)
-    # CHECK: [[REBIND:%.*]] = kgen.rebind %__call_result_tmp__ : !lit.ref<:!AA {{.*}}#kgen.get_witness<:!A !kgen.param<:!B T>, "associated_aliases::A", "Type">
-    # CHECK-NEXT: lit.call{{.*}}"__init__(take:$0$)">{{.*}}([[REBIND]], %__result__)
+    # CHECK: [[REBIND:%.*]] = kgen.rebind %__result__ : {{.*}} to !lit.ref<:!AA {{.*}}#kgen.get_witness<:!A upcast(:!B T), "associated_aliases::A", "Type">
+    # CHECK-NEXT: lit.call{{.*}}fa{{.*}}([[REBIND]])
     return fa[T]()
 
 
@@ -1044,7 +1042,7 @@ def bitwidth_from_instance[T: MyTrait, Inst: T]() -> ZInt:
 
 # CHECK-LABEL: lit.fn @"bitwidth_from_composition_instance
 def bitwidth_from_composition_instance[T: MyTrait & MyTrait2, Inst: T]() -> ZInt:
-    # CHECK-NEXT: #kgen.get_witness<:!MyTrait !kgen.param<:!MyTrait_MyTrait2 T>, "associated_aliases::MyTrait", "BIT_WIDTH">
+    # CHECK-NEXT: #kgen.get_witness<:!MyTrait upcast(:!MyTrait_MyTrait2 T), "associated_aliases::MyTrait", "BIT_WIDTH">
     return Inst.BIT_WIDTH
 
 

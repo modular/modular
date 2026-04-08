@@ -659,7 +659,7 @@ def infer_grand_father[T: GrandFather](x: T):
 # CHECK-LABEL: lit.fn @"pass_up_trait
 # CHECK-SAME: <T: !Father>
 def pass_up_trait[T: Father](x: T):
-    # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:!GrandFather !kgen.param<:!Father T>>(%x)
+    # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:!GrandFather upcast(:!Father T)>(%x)
     infer_grand_father(x)
 
 
@@ -835,7 +835,7 @@ struct Foo[T: EmptyTrait]:
 
 # CHECK-LABEL: lit.fn @"test_infer_sub_trait
 def test_infer_sub_trait[T: OtherEmptyTrait](var foo: Foo[T], bar: Bar[T]):
-    # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait !kgen.param<:!OtherEmptyTrait T>, :!OtherEmptyTrait T>(%foo, %bar)
+    # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait upcast(:!OtherEmptyTrait T), :!OtherEmptyTrait T>(%foo, %bar)
     var copy = foo.infer_sub_trait(bar)
 
 
@@ -943,7 +943,7 @@ def take_anytype_ref[type: AnyType](ref value: type): pass
 # CHECK-LABEL: lit.fn @"pass_movable_mt_ref
 def pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: PassT):
     # CHECK-NEXT: lit.call {{.*}}@"take_anytype_ref
-    # CHECK-SAME: <:!AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>,
+    # CHECK-SAME: <:!AnyType upcast(:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT),
     # CHECK-SAME: : !lit.generator<("value":{{.*}} elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
