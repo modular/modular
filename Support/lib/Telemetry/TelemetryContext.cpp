@@ -369,6 +369,9 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
   provider->AddView(std::move(instrumentSelector), std::move(meterSelector),
                     std::move(view));
 
+  // Shared one-time warning flag for all HTTP exporters in this context.
+  auto exportWarned = std::make_shared<std::atomic<bool>>(false);
+
   // Get metrics exporter config.
   auto httpEndpoint =
       settings.getValue("telemetry.exporters.metrics.http_endpoint");
@@ -397,13 +400,17 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
 
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
+    otlpOptions.timeout = kOtlpRequestTimeout;
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
             otlpOptions);
 #endif
+    // Wrap to detect and report export failures.
+    auto warningExporter = std::make_unique<WarningMetricExporter>(
+        std::move(exporter), httpEndpoint.str(), exportWarned);
     auto reader = std::make_shared<
         opentelemetry::sdk::metrics::PeriodicExportingMetricReader>(
-        std::move(exporter), options);
+        std::move(warningExporter), options);
     provider->AddMetricReader(reader);
   }
 
@@ -444,13 +451,17 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
         otlpLogOptions;
 
     otlpLogOptions.url = (httpEndpoint + "/v1/logs").str();
+    otlpLogOptions.timeout = kOtlpRequestTimeout;
     auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
             otlpLogOptions);
 #endif
+    // Wrap to detect and report export failures.
+    auto warningExporter = std::make_unique<WarningLogRecordExporter>(
+        std::move(logExporter), httpEndpoint.str(), exportWarned);
     processors.emplace_back(
         opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
-            std::move(logExporter)));
+            std::move(warningExporter)));
   }
 
   loggerProvider = opentelemetry::sdk::logs::LoggerProviderFactory::Create(

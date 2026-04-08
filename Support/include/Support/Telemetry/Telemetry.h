@@ -15,6 +15,9 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 
+#include "llvm/Support/raw_ostream.h"
+
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -27,6 +30,9 @@
 #include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
+#include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/logs/exporter.h"
+#include "opentelemetry/sdk/metrics/push_metric_exporter.h"
 
 namespace M::Telemetry {
 
@@ -43,6 +49,107 @@ constexpr auto kExportInterval = std::chrono::seconds(600);
 /// (OTel-managed thread). NOTE: this value must be smaller than the export
 /// interval.
 constexpr auto kExportTimeout = std::chrono::milliseconds(1000);
+
+/// Timeout for OTLP HTTP export requests. Without this, when the telemetry
+/// endpoint is unreachable (e.g. firewall silently drops packets), TCP SYN
+/// retries can block for ~20s per attempt. This sets CURLOPT_TIMEOUT_MS on the
+/// underlying libcurl handle, providing a hard deadline on the entire HTTP
+/// request (including connection establishment).
+constexpr auto kOtlpRequestTimeout = std::chrono::milliseconds(3000);
+
+/// Emit a one-time warning to stderr when a telemetry export fails. The warned
+/// flag is injectable so that tests can create isolated instances. Production
+/// code shares a single flag across all exporters in TelemetryContext.
+inline void warnOnExportFailure(std::shared_ptr<std::atomic<bool>> warned,
+                                const std::string &endpoint) {
+  if (warned && !warned->exchange(true)) {
+    llvm::errs() << "Warning: telemetry export to "
+                 << (endpoint.empty() ? "<unknown>" : endpoint)
+                 << " failed (endpoint may be unreachable). "
+                    "Set MODULAR_TELEMETRY_ENABLED=0 to disable telemetry "
+                    "if you are in a restricted network environment.\n";
+  }
+}
+
+/// Metric exporter wrapper that emits a one-time warning on export failure.
+/// Delegates all calls to the underlying exporter.
+class WarningMetricExporter
+    : public opentelemetry::sdk::metrics::PushMetricExporter {
+public:
+  WarningMetricExporter(
+      std::unique_ptr<opentelemetry::sdk::metrics::PushMetricExporter> delegate,
+      std::string endpoint, std::shared_ptr<std::atomic<bool>> warned)
+      : delegate_(std::move(delegate)), endpoint_(std::move(endpoint)),
+        warned_(std::move(warned)) {}
+
+  opentelemetry::sdk::common::ExportResult
+  Export(const opentelemetry::sdk::metrics::ResourceMetrics &data) noexcept
+      override {
+    auto result = delegate_->Export(data);
+    if (result != opentelemetry::sdk::common::ExportResult::kSuccess)
+      warnOnExportFailure(warned_, endpoint_);
+    return result;
+  }
+
+  opentelemetry::sdk::metrics::AggregationTemporality GetAggregationTemporality(
+      opentelemetry::sdk::metrics::InstrumentType instrumentType)
+      const noexcept override {
+    return delegate_->GetAggregationTemporality(instrumentType);
+  }
+
+  bool ForceFlush(std::chrono::microseconds timeout) noexcept override {
+    return delegate_->ForceFlush(timeout);
+  }
+
+  bool Shutdown(std::chrono::microseconds timeout) noexcept override {
+    return delegate_->Shutdown(timeout);
+  }
+
+private:
+  std::unique_ptr<opentelemetry::sdk::metrics::PushMetricExporter> delegate_;
+  std::string endpoint_;
+  std::shared_ptr<std::atomic<bool>> warned_;
+};
+
+/// Log record exporter wrapper that emits a one-time warning on export failure.
+/// Delegates all calls to the underlying exporter.
+class WarningLogRecordExporter
+    : public opentelemetry::sdk::logs::LogRecordExporter {
+public:
+  WarningLogRecordExporter(
+      std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> delegate,
+      std::string endpoint, std::shared_ptr<std::atomic<bool>> warned)
+      : delegate_(std::move(delegate)), endpoint_(std::move(endpoint)),
+        warned_(std::move(warned)) {}
+
+  std::unique_ptr<opentelemetry::sdk::logs::Recordable>
+  MakeRecordable() noexcept override {
+    return delegate_->MakeRecordable();
+  }
+
+  opentelemetry::sdk::common::ExportResult
+  Export(const opentelemetry::nostd::span<
+         std::unique_ptr<opentelemetry::sdk::logs::Recordable>>
+             &records) noexcept override {
+    auto result = delegate_->Export(records);
+    if (result != opentelemetry::sdk::common::ExportResult::kSuccess)
+      warnOnExportFailure(warned_, endpoint_);
+    return result;
+  }
+
+  bool ForceFlush(std::chrono::microseconds timeout) noexcept override {
+    return delegate_->ForceFlush(timeout);
+  }
+
+  bool Shutdown(std::chrono::microseconds timeout) noexcept override {
+    return delegate_->Shutdown(timeout);
+  }
+
+private:
+  std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> delegate_;
+  std::string endpoint_;
+  std::shared_ptr<std::atomic<bool>> warned_;
+};
 
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.
