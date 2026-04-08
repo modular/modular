@@ -225,6 +225,8 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
+  size_t oldClosureCaptureSize =
+      unresolvedCaptures ? unresolvedCaptures->size() : 0;
   // Parameterized type constants are by definition unresolved expressions.
   bool hasNestedConstExpr = false;
   size_t nestedRequiredDepth = 0;
@@ -243,7 +245,9 @@ void ParameterCollector::collectUsesFromAttrImpl(
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
-  if (oldSize == uses.size() && !nestedRequiredDepth) {
+  if (oldSize == uses.size() && !nestedRequiredDepth &&
+      (!unresolvedCaptures ||
+       oldClosureCaptureSize == unresolvedCaptures->size())) {
     // Check whether this is a parameterless expression.
     hasNestedConstExpr |= isa<ContextuallyEvaluatedAttrInterface>(attr);
     cache.parameterLess.try_emplace(
@@ -294,6 +298,8 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
+  size_t oldClosureCaptureSize =
+      unresolvedCaptures ? unresolvedCaptures->size() : 0;
   // Types that reference external symbols must be treated as implicitly
   // parametric because the external type definition could contain parametric
   // types. We don't want to assume that the type is concrete.
@@ -315,7 +321,9 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // If the type had parameter uses or constant expressions, don't consider it
   // "parameterless".  We want other operations using the same type to record
   // the uses as well.
-  if (oldSize == uses.size() && !nestedRequiredDepth) {
+  if (oldSize == uses.size() && !nestedRequiredDepth &&
+      (!unresolvedCaptures ||
+       oldClosureCaptureSize == unresolvedCaptures->size())) {
     cache.parameterLess.try_emplace(
         type.getAsOpaquePointer(),
         Analysis::ParameterlessInfo{hasNestedConstExpr, nestedRequiredDepth});

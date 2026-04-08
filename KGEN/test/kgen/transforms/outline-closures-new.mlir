@@ -933,3 +933,62 @@ kgen.generator @bar<C: type>(%arg0: index) {
 
   kgen.return
 }
+
+// -----
+
+// COM: Verify that repeated nested closure references hidden behind aliased
+// COM: register-passable closure values do not get cached as parameterless.
+// CHECK: kgen.struct.generator @"foo::_kernelWrapper3"<FuncType: type> = struct<(struct<(FuncType)>)>{
+
+#type_value_inner = #kgen.type<typevalue<#kgen.genref<@"foo::_kernel"<:!kgen.param_closure<@foo "_kernel"> #kgen.closure<@foo "_kernel">>>>, !kgen.closure<@foo, "_kernel" register_passable>> : !kgen.type
+#type_value_outer = #kgen.type<typevalue<#kgen.genref<@"foo::_kernelWrapper2"<:!kgen.param_closure<@foo "_kernelWrapper2"> #kgen.closure<@foo "_kernelWrapper2">>>>, !kgen.closure<@foo, "_kernelWrapper2" register_passable>> : !kgen.type
+
+kgen.struct.generator @"foo::_kernel"<CAPTURES: !kgen.param_closure<@foo "_kernel">> = !kgen.closure<@foo, "_kernel" register_passable> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.closure<@foo, "_kernel" register_passable>) -> index = #kgen.closure.symbol<@foo, "_kernel", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "_kernel"> CAPTURES>>
+  }
+}
+
+kgen.struct.generator @"foo::_kernelWrapper2"<CAPTURES: !kgen.param_closure<@foo "_kernelWrapper2">> = !kgen.closure<@foo, "_kernelWrapper2" register_passable> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.closure<@foo, "_kernelWrapper2" register_passable>) -> index = #kgen.closure.symbol<@foo, "_kernelWrapper2", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "_kernelWrapper2"> CAPTURES>>
+  }
+}
+kgen.struct.generator @"foo::_kernelWrapper3"<CAPTURES: !kgen.param_closure<@foo "_kernelWrapper3">> = !kgen.closure<@foo, "_kernelWrapper3" register_passable> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.closure<@foo, "_kernelWrapper3" register_passable>) -> index = #kgen.closure.symbol<@foo, "_kernelWrapper3", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "_kernelWrapper3"> CAPTURES>>
+  }
+}
+kgen.generator @consume<x: type>(%arg0: !kgen.param<x>) -> index {
+  kgen.param.declare call: (!kgen.param<x>) -> index = <#kgen.get_witness<x, "closure_trait", "__call__">>
+  %0 = kgen.call_param[(!kgen.param<x>) -> index: call](%arg0)
+  kgen.return %0 : index
+}
+
+kgen.generator @foo<FuncType: type, flag: i1>(%arg1: !kgen.param<FuncType>) {
+  %0 = kgen.closure.init(%arg1)() -> index {
+    kgen.param.declare call: (!kgen.param<FuncType>) -> index = <#kgen.get_witness<FuncType, "closure_trait", "__call__">>
+    %1 = kgen.call_param[(!kgen.param<FuncType>) -> index: call](%arg1)
+    kgen.return %1 : index
+  } : (!kgen.param<FuncType>), !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+  %27 = pop.load %0 : !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+  %28 = pop.stack_allocation 1 x !kgen.closure<@foo, "_kernel" register_passable> align 1
+  pop.store %27, %28 align<1> : !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+  kgen.param.if <flag> {
+    %29 = pop.load %28 : !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+    %2 = kgen.closure.init(%29)() -> index {
+      %3 = kgen.call @consume<:type #type_value_inner>(%29) : (!kgen.closure<@foo, "_kernel" register_passable>) -> index
+      kgen.return %3 : index
+    } : (!kgen.closure<@foo, "_kernel" register_passable>), !kgen.pointer<!kgen.closure<@foo, "_kernelWrapper2" register_passable>>
+    kgen.param.yield
+  } else {
+    %30 = pop.load %28 : !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+    %4 = kgen.closure.init(%30)() -> index {
+      %5 = kgen.call @consume<:type #type_value_inner>(%30) : (!kgen.closure<@foo, "_kernel" register_passable>) -> index
+      kgen.return %5 : index
+    } : (!kgen.closure<@foo, "_kernel" register_passable>), !kgen.pointer<!kgen.closure<@foo, "_kernelWrapper3" register_passable>>
+    kgen.param.yield
+  }
+
+  kgen.return
+}
