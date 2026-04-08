@@ -339,48 +339,68 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
 class Graph:
     """Represents a single MAX graph.
 
-    A :class:`Graph` is a callable routine in MAX. Like functions, graphs have a
-    name and signature. Unlike a function, which follows an imperative
-    programming model, a :class:`Graph` follows a dataflow programming model, using
-    lazily-executed, parallel operations instead of sequential instructions.
+    A :class:`Graph` defines a model's computation. You build a graph by
+    composing operations that describe how input tensors are transformed into
+    outputs. Unlike imperative code that executes operations, a :class:`Graph`
+    captures the data flow between operations, which allows MAX to optimize and
+    parallelize execution at compile time. Operations run on the compiled object.
 
-    When you instantiate a graph, you must specify the input shapes as one or
-    more :class:`TensorType` values. Then, build a sequence of ops and set the
-    graph output with :meth:`output()`. For example:
+    The following code examples show two different strategies for constructing
+    graphs.
+
+    **Use the context manager:** Use :class:`Graph` as a context manager to
+    define the active graph. Inside the ``with`` block, retrieve inputs from
+    :attr:`inputs`, call ops to build nodes, and set the graph output with
+    :meth:`output()`. Ops called inside the block find the active graph
+    automatically. Ops called outside the block fail because there is no active
+    graph.
 
     .. code-block:: python
 
-        from dataclasses import dataclass
-
-        import numpy as np
         from max.dtype import DType
-        from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+        from max.graph import DeviceRef, Graph, TensorType, Weight
 
-        @dataclass
+        W = Weight("W", DType.float32, [3, 2], DeviceRef.CPU())
+        b = Weight("b", DType.float32, [2], DeviceRef.CPU())
+
+        with Graph(
+            "linear_relu",
+            input_types=[TensorType(DType.float32, ["batch", 3], device=DeviceRef.CPU())],
+        ) as graph:
+            x = graph.inputs[0].tensor
+            y = x @ W + b
+            graph.output(y)
+
+    **Use the graph constructor:** Pass a callable as the ``forward`` argument.
+    The graph automatically passes the input :class:`TensorValue` to the
+    callable and records the return value as the graph output. Under the hood,
+    this still opens and closes a graph context.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
+
         class Linear:
-            weight: np.ndarray
-            bias: np.ndarray
+            def __init__(self, in_dim: int, out_dim: int):
+                self.weight = Weight("W", DType.float32, [in_dim, out_dim], DeviceRef.CPU())
+                self.bias = Weight("b", DType.float32, [out_dim], DeviceRef.CPU())
 
             def __call__(self, x: TensorValue) -> TensorValue:
-                weight_tensor = ops.constant(self.weight, dtype=DType.float32, device=DeviceRef.CPU())
-                bias_tensor = ops.constant(self.bias, dtype=DType.float32, device=DeviceRef.CPU())
-                return ops.matmul(x, weight_tensor) + bias_tensor
+                return ops.matmul(x, self.weight) + self.bias
 
-        linear_graph = Graph(
+        linear_layer = Linear(2, 2)
+
+        graph = Graph(
             "linear",
-            Linear(np.ones((2, 2), dtype=np.float32), np.ones((2,), dtype=np.float32)),
-            input_types=[TensorType(DType.float32, (2,), DeviceRef.CPU())]
+            linear_layer,
+            input_types=[TensorType(DType.float32, (2,), DeviceRef.CPU())],
         )
 
-    You can't call a :class:`Graph` directly from Python. You must compile it and
-    execute it with MAX. For more detail, see the
-    `build a graph with MAX Graph tutorial </max/develop/get-started-with-max-graph-in-python>`_.
-
-    When creating a graph, a global sequence of chains is initialized to
-    sequence side-effecting ops. Every side-effecting op, such as
-    ``buffer_load()``, ``buffer_store()``, and
-    ``buffer_store_slice()``, consumes the current chain and produces a new
-    one. Each chain can be used at most once, which prevents data races.
+    These examples only use the :obj:`max.graph` package, but most models also
+    use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
+    To learn more, see `Build a model graph with Module
+    </max/develop/get-started-with-max-graph-in-python>_`.
 
     Args:
         name: A name for the graph.
