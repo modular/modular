@@ -684,3 +684,42 @@ TEST(Telemetry, ModularEmployee) {
 
   checkTelemetry(true);
 }
+
+/// Verify that the OTLP request timeout constant is positive and within a
+/// reasonable range (under 30 seconds).
+TEST(Telemetry, OtlpRequestTimeout) {
+  EXPECT_GT(kOtlpRequestTimeout.count(), 0);
+  EXPECT_LE(kOtlpRequestTimeout.count(), 30000);
+}
+
+/// Verify that warnOnExportFailure emits a one-time warning to stderr with
+/// the endpoint URL, stays silent on subsequent calls with the same flag,
+/// and that independent flags produce independent warnings.
+TEST(Telemetry, ExportFailureWarning) {
+  // Each test gets its own warned flag (no process-global state).
+  auto warned = std::make_shared<std::atomic<bool>>(false);
+
+  // First call should produce a warning on stderr with the endpoint URL.
+  testing::internal::CaptureStderr();
+  warnOnExportFailure(warned, "https://telemetry.example.com:443");
+  std::string firstStderr = testing::internal::GetCapturedStderr();
+  EXPECT_THAT(firstStderr, testing::HasSubstr("telemetry export to"));
+  EXPECT_THAT(firstStderr,
+              testing::HasSubstr("https://telemetry.example.com:443"));
+  EXPECT_THAT(firstStderr, testing::HasSubstr("MODULAR_TELEMETRY_ENABLED=0"));
+  EXPECT_TRUE(warned->load());
+
+  // Second call with the same flag should NOT produce another warning.
+  testing::internal::CaptureStderr();
+  warnOnExportFailure(warned, "https://telemetry.example.com:443");
+  std::string secondStderr = testing::internal::GetCapturedStderr();
+  EXPECT_EQ(secondStderr, "");
+
+  // A fresh flag should produce a new warning (flags are independent).
+  auto warned2 = std::make_shared<std::atomic<bool>>(false);
+  testing::internal::CaptureStderr();
+  warnOnExportFailure(warned2, "https://other.endpoint.com:443");
+  std::string thirdStderr = testing::internal::GetCapturedStderr();
+  EXPECT_THAT(thirdStderr,
+              testing::HasSubstr("https://other.endpoint.com:443"));
+}
