@@ -288,6 +288,7 @@ def load_AB_SFA[
     a_type: DType,
     b_type: DType,
     sfa_dtype: DType,
+    sfa_tma_dtype: DType,  # may differ from sfa_dtype (uint16 for 4D TMA)
     a_rank: Int,
     a_tile_shape: IndexList[a_rank],
     a_desc_shape: IndexList[a_rank],
@@ -299,7 +300,6 @@ def load_AB_SFA[
     sfa_desc_shape: IndexList[sfa_rank],
     a_smem_layout: Layout,
     b_smem_layout: Layout,
-    sfa_smem_layout: Layout,
     num_pipeline_stages: Int,
     /,
     *,
@@ -312,7 +312,7 @@ def load_AB_SFA[
     a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
     sfa_tma_op: TMATensorTile[
-        sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
+        sfa_tma_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
     ],
     a_smem: LayoutTensorIter[
         a_type,
@@ -328,13 +328,7 @@ def load_AB_SFA[
         address_space=AddressSpace.SHARED,
         alignment=128,
     ],
-    sfa_smem: LayoutTensorIter[
-        sfa_dtype,
-        sfa_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
+    sfa_smem_tiles: SMemTileArrayWithLayout[sfa_dtype, ...],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int, Int],
@@ -352,7 +346,9 @@ def load_AB_SFA[
 
     comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
-    comptime sfa_expected_bytes = sfa_smem_layout.size() * size_of[sfa_dtype]()
+    comptime sfa_expected_bytes = (
+        type_of(sfa_smem_tiles).tile_size * size_of[sfa_dtype]()
+    )
 
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = (
@@ -388,7 +384,7 @@ def load_AB_SFA[
             var offset = stage * UInt32(k_group_size) + j
             var a_smem_tile = a_smem.next(offset)[]
             var b_smem_tile = b_smem.next(offset)[]
-            var sfa_smem_tile = sfa_smem.next(offset)[]
+            var sfa_smem_tile = sfa_smem_tiles[offset]
 
             var a_smem_slice = type_of(a_smem_tile)(
                 a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
@@ -418,11 +414,26 @@ def load_AB_SFA[
                 ),
                 b_multicast_mask,
             )
-            sfa_tma_op.async_copy_5d[cta_group](
-                sfa_smem_tile,
+            # 4D uint16 TMA for SF (avoids 2× overfetch from 16-byte innermost)
+            var sfa_smem_u16 = TileTensor[
+                sfa_tma_dtype,
+                sfa_smem_tile.LayoutType,
+                MutAnyOrigin,
+                address_space=AddressSpace.SHARED,
+            ](
+                rebind[
+                    UnsafePointer[
+                        Scalar[sfa_tma_dtype],
+                        MutAnyOrigin,
+                        address_space=AddressSpace.SHARED,
+                    ]
+                ](sfa_smem_tile.ptr),
+                sfa_smem_tile.layout,
+            )
+            sfa_tma_op.async_copy_4d[cta_group](
+                sfa_smem_u16,
                 tma_mbar[0],
                 (
-                    0,
                     0,
                     Int(iter_idx + j) * num_sf_k_tiles,
                     work_tile_coord[0] * (BM // SF_MN_GROUP_SIZE),
@@ -898,6 +909,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     c_rank: Int,
     c_tile_shape: IndexList[c_rank],
     c_desc_shape: IndexList[c_rank],
+    sfa_tma_dtype: DType,  # may differ from sfa_dtype (e.g. uint16 for 4D SF TMA)
     sfa_rank: Int,
     sfa_tile_shape: IndexList[sfa_rank],
     sfa_desc_shape: IndexList[sfa_rank],
@@ -918,7 +930,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
     sfa_tma_op: TMATensorTile[
-        sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
+        sfa_tma_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
     ],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
@@ -1110,16 +1122,6 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ]
     comptime OutputStageType = OutputStage[opc]
 
-    var sfa_smem = LayoutTensorIter[
-        sfa_dtype,
-        sfa_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](
-        sfa_smem_storage.unsafe_ptr(),
-        SmemType.sfa_smem_size,
-    )
     var sfb_smem = LayoutTensorIter[
         sfb_dtype,
         sfb_smem_layout,
@@ -1399,7 +1401,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfa_tma_op,
                         a_smem,
                         b_smem,
-                        sfa_smem,
+                        sfa_smem_tt,
                         load_mma_pipeline,
                         peer_cta_coord,
                         (
@@ -1821,19 +1823,44 @@ def _create_tma_and_launch[
     ](ctx, c_3d)
     # fmt: on
 
-    # Scale factor TMAs (from LayoutTensor)
+    # Scale factor TMAs — use flattened 4D uint16 to avoid TMA 2× overfetch.
+    #
+    # SM100 TMA hardware rounds boxDim[0] up to 32 bytes minimum.
+    # Original 5D tile (1, mn, k, 32, 16) has innermost=16 bytes → doubled!
+    # Fix: reinterpret as 4D uint16 (1, mn, k, 256) like CUTLASS does.
+    # 256 uint16 = 512 bytes innermost → boxDim[0]=256 ≤ 256 max, ≥ 32 min.
+    comptime sf_atom_u16 = (
+        SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
+    ) // 2  # 512 bytes / 2 = 256 uint16 elements
+
+    var sfa_4d_shape = Coord(
+        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[0]()))),
+        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[1]()))),
+        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[2]()))),
+        Idx[sf_atom_u16](),
+    )
+    var sfa_4d_layout = tt_row_major(sfa_4d_shape)
+    var sfa_4d_tensor = TileTensor[
+        DType.uint16, type_of(sfa_4d_layout), ImmutAnyOrigin
+    ](
+        rebind[UnsafePointer[Scalar[DType.uint16], ImmutAnyOrigin]](
+            sfa_5d_tensor.ptr
+        ),
+        sfa_4d_layout,
+    )
+
     comptime sfa_tma_tile_shape = Index(
         1,
         BM // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
+        sf_atom_u16,
     )
     var sfa_tma_op = create_tensor_tile[
         sfa_tma_tile_shape,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         __tile_shape=sfa_tma_tile_shape,
-    ](ctx, sfa_5d_tensor)
+        __desc_shape=sfa_tma_tile_shape,
+    ](ctx, sfa_4d_tensor)
 
     # SFB uses cp.async — no SFB TMA descriptor needed.
 
@@ -1884,6 +1911,7 @@ def _create_tma_and_launch[
         type_of(c_tma_op).rank,
         type_of(c_tma_op).tile_shape,
         type_of(c_tma_op).desc_shape,
+        DType.uint16,  # sfa_tma_dtype (4D uint16 for TMA boxDim fix)
         type_of(sfa_tma_op).rank,
         type_of(sfa_tma_op).tile_shape,
         type_of(sfa_tma_op).desc_shape,
