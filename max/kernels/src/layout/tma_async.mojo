@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-Tensor Memory Accelerator (TMA) Asynchronous Operations Module
+Tensor Memory Accelerator (TMA) Asynchronous Operations Module.
 
 Provides high-performance abstractions for NVIDIA's Tensor Memory Accelerator (TMA),
 enabling efficient asynchronous data movement between global and shared memory in GPU kernels.

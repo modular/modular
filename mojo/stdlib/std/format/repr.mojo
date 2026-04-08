@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the `repr()` function for producing string representations of values."""
 
 
 def repr[T: Writable](value: T) -> String:

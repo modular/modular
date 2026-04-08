@@ -10,5 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides the MAX compiler public API."""
 
 from compiler_internal import StaticTensorSpec, register, view_kernel

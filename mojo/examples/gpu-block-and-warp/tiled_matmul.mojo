@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 """
-Tiled Matrix Multiplication GPU Kernel Example
+Tiled Matrix Multiplication GPU Kernel Example.
 
 This example demonstrates a basic tiled matrix multiplication GPU kernel
 implementation in Mojo, with a specific focus on using gpu.sync.barrier()

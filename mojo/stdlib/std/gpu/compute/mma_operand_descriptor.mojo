@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# """This module includes traits abstracting WGMMA operand descriptors."""
+"""Implements traits for abstracting MMA operand descriptors in GPU matrix operations."""
 
 
 trait MMAOperandDescriptor(TrivialRegisterPassable):

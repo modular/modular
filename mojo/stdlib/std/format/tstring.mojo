@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements `TString`, a template string that captures interpolated values at compile-time."""
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
 from std.utils import Variant
 import std.format._utils as fmt

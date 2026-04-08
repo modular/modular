@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides test types for validating reflection-based trait implementations."""
 
 
 @fieldwise_init

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the list strategy for generating random `List` values in property tests."""
 
 from std.testing.prop.random import Rng
 from std.builtin.simd import SIMD

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides general test utility functions for the Mojo standard library tests."""
 
 from std.ffi import external_call
 

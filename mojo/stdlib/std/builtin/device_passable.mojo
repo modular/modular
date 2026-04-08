@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the `DevicePassable` trait for types transferable to accelerator devices."""
 
 from std.sys.intrinsics import _type_is_eq
 from std.builtin.rebind import downcast
