@@ -102,6 +102,13 @@ def b64encode(input_string: StringSlice[mut=False, _]) -> String:
 
     Returns:
         The ASCII base64 encoded string.
+
+    Example:
+    ```mojo
+    from std.base64 import b64encode
+
+    print(b64encode("Hello"))  # SGVsbG8=
+    ```
     """
     return b64encode(input_string.as_bytes())
 
@@ -142,6 +149,13 @@ def b64decode[
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.base64 import b64decode
+
+    print(b64decode("SGVsbG8="))  # Hello
+    ```
     """
     comptime `=` = Byte(ord("="))
     var data = str.as_bytes()
@@ -186,6 +200,13 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
 
     Returns:
         Base16 encoding of the input string.
+
+    Example:
+    ```mojo
+    from std.base64 import b16encode
+
+    print(b16encode("Hi"))  # 4869
+    ```
     """
     comptime lookup = "0123456789ABCDEF"
     var b16chars = lookup.unsafe_ptr()
@@ -217,6 +238,13 @@ def b16decode(str: StringSlice[mut=False, _]) -> String:
 
     Returns:
         The decoded string.
+
+    Example:
+    ```mojo
+    from std.base64 import b16decode
+
+    print(b16decode("4869"))  # Hi
+    ```
     """
 
     comptime `A` = Byte(ord("A"))
