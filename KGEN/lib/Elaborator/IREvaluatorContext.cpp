@@ -7,6 +7,7 @@
 #include "IREvaluatorContext.h"
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/POPDialect/POPUtils.h"
@@ -117,6 +118,33 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
     return failure();
   }
   return {StringAttr::get(*sourceName, getSourceNameAttr.getType())};
+}
+
+FailureOr<TypedAttr> IREvaluatorContext::concretizeLinkageNameImpl(
+    FuncOp func, GeneratorOp gen, SymbolConstantAttr symbol,
+    ParameterEvaluationContext *evalCtx) {
+  // If the FuncOp is already elaborated, prefer its resolved linkageName.
+  if (func) {
+    if (auto resolved =
+            dyn_cast_if_present<StringAttr>(func.getLinkageNameAttr()))
+      return TypedAttr(resolved);
+  }
+
+  // Fall back to evaluating the generator's linkageName expression directly.
+  Attribute genLinkageName = gen.getLinkageNameAttr();
+  if (!genLinkageName)
+    return failure();
+  if (auto strAttr = dyn_cast<StringAttr>(genLinkageName))
+    return TypedAttr(strAttr);
+
+  // Evaluate the parametric linkageName expression by substituting the
+  // generator's parameters with the symbol's concrete values.
+  ParameterEvaluator tempEval(gen.getInputParams(), symbol.getParamValues());
+  tempEval.setEvaluationContext(evalCtx);
+  if (auto resolved = dyn_cast_if_present<StringAttr>(
+          tempEval.getReboundAttribute(genLinkageName)))
+    return TypedAttr(resolved);
+  return failure();
 }
 
 FailureOr<TypedAttr>

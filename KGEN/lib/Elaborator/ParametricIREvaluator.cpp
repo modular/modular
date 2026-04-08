@@ -762,39 +762,17 @@ ImplNodeBase *ParametricIREvaluator::getParentNode() { return parent; }
 FailureOr<TypedAttr>
 ParametricIREvaluator::concretizeLinkageName(GeneratorOp gen,
                                              SymbolConstantAttr symbol) {
-  // Try to read the resolved linkageName from the already-elaborated FuncOp.
+  FuncOp func;
   ErrorTreeOr<FuncOp> funcOr =
       elaborator->getConcreteFunction(parent, gen.getLoc(), symbol);
   if (!funcOr.isError()) {
-    FuncOp func = *funcOr;
-    if (!func) {
+    func = *funcOr;
+    if (!func)
       // The FuncOp is not ready yet. getConcreteFunction has set up a blocker
       // so the current node will be resumed when elaboration completes.
-      // Return null to signal retry (skipNode).
       return TypedAttr();
-    }
-    // Read the concretized linkageName from the elaborated FuncOp.
-    if (auto resolved =
-            dyn_cast_if_present<StringAttr>(func.getLinkageNameAttr())) {
-      return TypedAttr(resolved);
-    }
   }
-
-  // Fall back to evaluating the generator's linkageName expression directly.
-  Attribute genLinkageName = gen.getLinkageNameAttr();
-  if (!genLinkageName)
-    return failure();
-  if (auto strAttr = dyn_cast<StringAttr>(genLinkageName))
-    return TypedAttr(strAttr);
-
-  // Evaluate the parametric linkageName expression by substituting the
-  // generator's parameters with the symbol's concrete values.
-  ParameterEvaluator tempEval(gen.getInputParams(), symbol.getParamValues());
-  tempEval.setEvaluationContext(this);
-  if (auto resolved = dyn_cast_if_present<StringAttr>(
-          tempEval.getReboundAttribute(genLinkageName)))
-    return TypedAttr(resolved);
-  return failure();
+  return concretizeLinkageNameImpl(func, gen, symbol, this);
 }
 
 //===----------------------------------------------------------------------===//
