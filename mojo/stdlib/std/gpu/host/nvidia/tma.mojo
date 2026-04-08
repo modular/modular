@@ -104,6 +104,8 @@ struct TensorMapDataType(TrivialRegisterPassable):
             return Self.FLOAT32
         elif dtype == DType.float16:
             return Self.FLOAT16
+        elif dtype == DType.uint16:
+            return Self.UINT16
         elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
             return Self.UINT8
         elif dtype == DType.uint16:
