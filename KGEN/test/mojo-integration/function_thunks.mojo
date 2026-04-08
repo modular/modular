@@ -38,7 +38,8 @@ def test_fn():
 
 # Checking for 'postParseModule' ensures it was loaded from bytecode.
 
-# CHECK-LABEL: lit.package @std attributes {postParseModule =
+# CHECK-LABEL: lit.package @std attributes {
+# CHECK-SAME: postParseModule =
 
 # CHECK-NOT: lit.fn @"def(::Int, /) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
