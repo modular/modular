@@ -993,43 +993,26 @@ static StringAttr getFullName(ClosureType closureType) {
 }
 
 static LogicalResult
-liftClosuresFromRegion(ModuleOp theModule, ClosureLifter &lifter,
-                       Operation *enclosingOp,
-                       std::optional<ParameterUseDefGraph> &uses) {
-  SmallVector<std::pair<ClosureType, StructGeneratorOp>> structGenerators;
-  bool hasFailure = false;
-  GeneratorOp parent = isa<GeneratorOp>(enclosingOp)
-                           ? cast<GeneratorOp>(enclosingOp)
-                           : enclosingOp->getParentOfType<GeneratorOp>();
-  for (Region &region : enclosingOp->getRegions()) {
-    for (ClosureInitOp closureInit :
-         llvm::make_early_inc_range(region.getOps<ClosureInitOp>())) {
-      if (!uses) {
-        uses.emplace(parent.getBodyRegion());
-        uses->calculate(lifter.paramCache);
-      }
-      ClosureType closureType = getClosureType(closureInit);
-      StringAttr symbol = getFullName(closureType);
-      if (StructGeneratorOp structGeneratorOp =
-              lifter.symtab.lookup<StructGeneratorOp>(symbol)) {
-        hasFailure = hasFailure |
-                     failed(lifter.liftClosureInit(closureInit, parent,
-                                                   structGeneratorOp, *uses));
-      } else {
-        mlir::emitError(theModule.getLoc())
-            << "missing struct generator op for closure "
-            << getClosureType(closureInit).getName();
-        hasFailure = true;
-      }
-    }
+liftClosureInit(ModuleOp theModule, ClosureLifter &lifter,
+                ClosureInitOp closureInit,
+                std::optional<ParameterUseDefGraph> &uses) {
+  GeneratorOp parent = closureInit->getParentOfType<GeneratorOp>();
+  assert(parent && "closure init should be nested within a generator");
+  if (!uses) {
+    uses.emplace(parent.getBodyRegion());
+    uses->calculate(lifter.paramCache);
   }
 
-  if (hasFailure)
-    return failure();
-  if (lifter.closureTypeToStructTypes.empty())
-    return success();
+  ClosureType closureType = getClosureType(closureInit);
+  StringAttr symbol = getFullName(closureType);
+  if (StructGeneratorOp structGeneratorOp =
+          lifter.symtab.lookup<StructGeneratorOp>(symbol))
+    return lifter.liftClosureInit(closureInit, parent, structGeneratorOp,
+                                  *uses);
 
-  return hasFailure ? failure() : success();
+  mlir::emitError(theModule.getLoc())
+      << "missing struct generator op for closure " << closureType.getName();
+  return failure();
 }
 
 // lift closures and replace closure.init
@@ -1041,19 +1024,14 @@ void OutlineClosuresNewPass::runOnOperation() {
   ClosureLifter lifter(symtab, paramCache, debugBuild);
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     std::optional<ParameterUseDefGraph> uses;
-
-    WalkResult walkResult =
-        generator.walk<mlir::WalkOrder::PostOrder>([&](Operation *operation) {
-          if (operation->getRegions().empty())
-            return WalkResult::advance();
-          if (failed(
-                  liftClosuresFromRegion(theModule, lifter, operation, uses)))
-            return WalkResult::interrupt();
-
-          return WalkResult::advance();
-        });
-    if (walkResult.wasInterrupted())
-      return signalPassFailure();
+    SmallVector<ClosureInitOp> closuresToLift;
+    generator.walk<mlir::WalkOrder::PostOrder>([&](ClosureInitOp closureInit) {
+      closuresToLift.push_back(closureInit);
+    });
+    for (ClosureInitOp closureInit : closuresToLift) {
+      if (failed(liftClosureInit(theModule, lifter, closureInit, uses)))
+        return signalPassFailure();
+    }
   }
   // nested operations appear first.
   mlir::AttrTypeReplacer closureTypeReplacer;
