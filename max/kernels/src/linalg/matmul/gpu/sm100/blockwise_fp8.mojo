@@ -312,6 +312,15 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         tma_mbar[0].wait(tma_phase)
         tma_phase ^= 1  # flips between 0 and 1 representing the pipeline stage
 
+        # Preload a_scales from SMEM into registers while all threads
+        # are synchronized (right after tma_mbar.wait). This eliminates
+        # the SMEM read in the scaling loop below, preventing a race
+        # where the next iteration's TMA loads could overwrite a_scales
+        # in SMEM while slower warps are still reading it.
+        var m_offset = warp_id * 16 + ufloordiv(lane_id(), 4)
+        var a_scale_0 = a_scales_smem_tile_2D_view[0, m_offset]
+        var a_scale_1 = a_scales_smem_tile_2D_view[0, m_offset + 8]
+
         if elect_one_thread:
             mma_op.mma(
                 a_smem_tile,
@@ -324,6 +333,13 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
+
+        # Ensure all warps have finished reading a_scales from SMEM
+        # (preloaded above) before the scaling loop, where warp divergence
+        # could let the fastest warp loop back and start new TMA loads
+        # that overwrite a_scales_smem. This barrier is effectively free
+        # because all warps just converged at mma_mbar.wait().
+        barrier()
 
         comptime for ld_iter in range(total_repeat // repeat):
             c_frag_temp = tcgen05_ld[
@@ -361,12 +377,9 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     b_scales[block_idx.x, k_iter]
                 )
 
-            var m_offset = warp_id * 16 + ufloordiv(lane_id(), 4)
-
-            # TODO: this is an ugly way to calculate the m offset, need to rethink how we can make this more efficient
+            # Use preloaded a_scales from registers (not SMEM)
             comptime for j in range(temp_cfrags_size // 2):
-                var local_m = m_offset + (j % 2) * 8
-                var a_scale = a_scales_smem_tile_2D_view[0, local_m]
+                var a_scale = a_scale_0 if j % 2 == 0 else a_scale_1
 
                 var scale = rebind[Scalar[accum_type]](a_scale) * rebind[
                     Scalar[accum_type]
