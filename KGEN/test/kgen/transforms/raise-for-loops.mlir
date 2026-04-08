@@ -534,6 +534,153 @@ kgen.func @dynamic_bounds(%arg0: index) {
 
 // -----
 
+// CHECK-LABEL: @pop_cmp_si64_countdown
+kgen.func @pop_cmp_si64_countdown() {
+  %simd   = kgen.param.constant: scalar<si64> = <10>
+  %simd_0 = kgen.param.constant: scalar<si64> = <0>
+  %simd_1 = kgen.param.constant: scalar<si64> = <1>
+
+  // CHECK: pop.cast {{.*}} : !pop.scalar<si64> to !pop.scalar<index>
+  // CHECK: pop.cast_to_builtin {{.*}} : !pop.scalar<index> to index
+  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} sgt sub] (%arg0 = {{.*}} : index) {
+  // CHECK-NEXT:   [[FROM_BUILTIN:%.*]] = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
+  // CHECK-NEXT:   [[IND:%.*]] = pop.cast [[FROM_BUILTIN]] : !pop.scalar<index> to !pop.scalar<si64>
+  // CHECK:        [[NEXT:%.*]] = pop.sub [[IND]], {{.*}} : !pop.scalar<si64>
+  // CHECK:        [[NEXT_POP:%.*]] = pop.cast [[NEXT]] : !pop.scalar<si64> to !pop.scalar<index>
+  // CHECK-NEXT:   [[NEXT_IDX:%.*]] = pop.cast_to_builtin [[NEXT_POP]] : !pop.scalar<index> to index
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT_IDX]] : index)] [retvals ()] [iterargs ()]
+  // CHECK-NEXT: }
+
+  hlcf.loop (%arg0 = %simd : !pop.scalar<si64>) {
+    %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, si64>
+    %cond = pop.cast_to_builtin %cmp : !pop.scalar<bool> to i1
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.sub %arg0, %simd_1 : !pop.scalar<si64>
+    hlcf.continue %next : !pop.scalar<si64>
+  }
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @pop_cmp_si8_countdown
+kgen.func @pop_cmp_si8_countdown() {
+  %simd   = kgen.param.constant: scalar<si8> = <10>
+  %simd_0 = kgen.param.constant: scalar<si8> = <0>
+  %simd_1 = kgen.param.constant: scalar<si8> = <1>
+
+  // CHECK: pop.cast {{.*}} : !pop.scalar<si8> to !pop.scalar<index>
+  // CHECK: pop.cast_to_builtin {{.*}} : !pop.scalar<index> to index
+  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} sgt sub] (%arg0 = {{.*}} : index) {
+  // CHECK-NEXT:   [[FROM_BUILTIN:%.*]] = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
+  // CHECK-NEXT:   [[IND:%.*]] = pop.cast [[FROM_BUILTIN]] : !pop.scalar<index> to !pop.scalar<si8>
+  // CHECK:        [[NEXT:%.*]] = pop.sub [[IND]], {{.*}} : !pop.scalar<si8>
+  // CHECK:        [[NEXT_POP:%.*]] = pop.cast [[NEXT]] : !pop.scalar<si8> to !pop.scalar<index>
+  // CHECK-NEXT:   [[NEXT_IDX:%.*]] = pop.cast_to_builtin [[NEXT_POP]] : !pop.scalar<index> to index
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT_IDX]] : index)] [retvals ()] [iterargs ()]
+  // CHECK-NEXT: }
+
+  hlcf.loop (%arg0 = %simd : !pop.scalar<si8>) {
+    %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, si8>
+    %cond = pop.cast_to_builtin %cmp : !pop.scalar<bool> to i1
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.sub %arg0, %simd_1 : !pop.scalar<si8>
+    hlcf.continue %next : !pop.scalar<si8>
+  }
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @pop_cmp_f32_no_raise
+kgen.func @pop_cmp_f32_no_raise() {
+  %simd   = kgen.param.constant: scalar<f32> = <"10.0">
+  %simd_0 = kgen.param.constant: scalar<f32> = <"0.0">
+  %simd_1 = kgen.param.constant: scalar<f32> = <"1.0">
+
+  // CHECK-NOT: hlcf.for
+
+  hlcf.loop (%arg0 = %simd : !pop.scalar<f32>) {
+    %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, f32>
+    %cond = pop.cast_to_builtin %cmp : !pop.scalar<bool> to i1
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.sub %arg0, %simd_1 : !pop.scalar<f32>
+    hlcf.continue %next : !pop.scalar<f32>
+  }
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @pop_cmp_index_countdown
+kgen.func @pop_cmp_index_countdown() {
+  %simd   = kgen.param.constant: scalar<index> = <10>
+  %simd_0 = kgen.param.constant: scalar<index> = <0>
+  %simd_1 = kgen.param.constant: scalar<index> = <1>
+
+  // CHECK: pop.cast {{.*}} : !pop.scalar<index> to !pop.scalar<index>
+  // CHECK: pop.cast_to_builtin {{.*}} : !pop.scalar<index> to index
+  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} sgt sub] (%arg0 = {{.*}} : index) {
+  // CHECK-NEXT:   [[FROM_BUILTIN:%.*]] = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
+  // CHECK-NEXT:   [[IND:%.*]] = pop.cast [[FROM_BUILTIN]] : !pop.scalar<index> to !pop.scalar<index>
+  // CHECK:        [[NEXT:%.*]] = pop.sub [[IND]], {{.*}} : !pop.scalar<index>
+  // CHECK:        [[NEXT_POP:%.*]] = pop.cast [[NEXT]] : !pop.scalar<index> to !pop.scalar<index>
+  // CHECK-NEXT:   [[NEXT_IDX:%.*]] = pop.cast_to_builtin [[NEXT_POP]] : !pop.scalar<index> to index
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT_IDX]] : index)] [retvals ()] [iterargs ()]
+  // CHECK-NEXT: }
+
+  hlcf.loop (%arg0 = %simd : !pop.scalar<index>) {
+    %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, index>
+    %cond = pop.cast_to_builtin %cmp : !pop.scalar<bool> to i1
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.sub %arg0, %simd_1 : !pop.scalar<index>
+    hlcf.continue %next : !pop.scalar<index>
+  }
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @pop_cmp_uindex_countdown
+kgen.func @pop_cmp_uindex_countdown() {
+  %simd   = kgen.param.constant: scalar<uindex> = <10>
+  %simd_0 = kgen.param.constant: scalar<uindex> = <0>
+  %simd_1 = kgen.param.constant: scalar<uindex> = <1>
+
+  // CHECK-NOT: hlcf.for
+
+  hlcf.loop (%arg0 = %simd : !pop.scalar<uindex>) {
+    %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, uindex>
+    %cond = pop.cast_to_builtin %cmp : !pop.scalar<bool> to i1
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.sub %arg0, %simd_1 : !pop.scalar<uindex>
+    hlcf.continue %next : !pop.scalar<uindex>
+  }
+  kgen.return
+}
+
+// -----
+
 // COM: MOCO-718 fix test.
 // CHECK-LABEL: @donnot_crash_with_block_argument_cond()
 kgen.func @donnot_crash_with_block_argument_cond() {
