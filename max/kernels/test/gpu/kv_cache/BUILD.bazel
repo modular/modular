@@ -63,6 +63,34 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "kv_cache_test_utils.mojo",  # Imported source, not a test
+            "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test
         ],
     )
 ]
+
+# TODO(KERN-2734): Remove "manual" tag once the FA4 TMA barrier deadlock is fixed.
+mojo_test(
+    name = "test_mha_inflight_batching_gemma3_hang.mojo.test",
+    size = "large",
+    srcs = [
+        "test_mha_inflight_batching_gemma3_hang.mojo",
+    ],
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "test_mha_inflight_batching_gemma3_hang.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
