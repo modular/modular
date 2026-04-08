@@ -53,6 +53,7 @@ from .tuning_configs import (
     _get_tuning_list_sm100_fp8,
     TuningConfigSM100,
     _get_tuning_list_sm100_bf16,
+    _get_tuning_list_sm100_batched_bf16,
 )
 
 comptime DISPATCH_MISS = 0
@@ -835,6 +836,7 @@ def batched_matmul_dispatch_sm100_bf16[
     a_type: DType,
     b_type: DType,
     transpose_b: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
@@ -849,6 +851,67 @@ def batched_matmul_dispatch_sm100_bf16[
     comptime MMA_K = 16
     comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
 
+    var batch_size = Int(c.dim(0))
+    var m = Int(c.dim(1))
+    comptime static_K = a.LayoutType._shape_types[2].static_value
+    comptime static_N = c.LayoutType._shape_types[2].static_value
+
+    comptime static_NK = Index(static_N, static_K)
+
+    logger.info(
+        "Dispatching to Batched BF16 matmul B= ",
+        batch_size,
+        " M= ",
+        m,
+        " N= ",
+        static_N,
+        " K= ",
+        static_K,
+    )
+
+    comptime outliers = Table(
+        _get_tuning_list_sm100_batched_bf16(), "batched_bf16_heuristic_outliers"
+    )
+
+    @parameter
+    @always_inline
+    def rule(x: TuningConfigSM100) -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    comptime outlier_configs = outliers.find[rule]()
+
+    comptime for tuning_config in outlier_configs:
+        if (
+            batch_size == tuning_config.batch_size
+            and m >= tuning_config.M
+            and m < tuning_config.M_end
+        ):
+            comptime matmul_config = MatmulConfig[
+                a_type, b_type, c_type, transpose_b
+            ](
+                mma_shape=tuning_config.mma_shape,
+                cta_group=tuning_config.cta_group,
+                cluster_shape=tuning_config.cluster_shape,
+                block_swizzle_size=tuning_config.block_swizzle_size,
+                raster_order=tuning_config.rasterize_order,
+                AB_swapped=tuning_config.swapAB,
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
+                num_split_k=tuning_config.num_split_k,
+            )
+
+            logger.info("Using batched tuning config: ", matmul_config)
+
+            blackwell_batched_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=matmul_config,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+
+            return
+
+    # fallback to default config
     comptime block_tile_shape = Index(128, 128, BK)
     comptime umma_shape = Index(
         block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
