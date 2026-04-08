@@ -2063,7 +2063,7 @@ struct DeviceFunction[
                 self._func_impl.module_name.as_c_string_slice(),
                 self._func_impl.function_name.as_c_string_slice(),
                 self._func_impl.asm.as_c_string_slice(),
-                c_size_t(len(self._func_impl.asm)),
+                c_size_t(self._func_impl.asm.byte_length()),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice(),
                 Int32(Int(OptimizationLevel)),
@@ -2090,7 +2090,7 @@ struct DeviceFunction[
             ](
                 self._handle,
                 mapping.name.as_c_string_slice(),
-                c_size_t(len(mapping.name)),
+                c_size_t(mapping.name.byte_length()),
                 mapping.ptr,
                 c_size_t(mapping.byte_count),
             )
@@ -3164,7 +3164,7 @@ struct DeviceExternalFunction:
                 module_name.as_c_string_slice(),
                 function_name.as_c_string_slice(),
                 asm.as_c_string_slice(),
-                c_size_t(len(asm)),
+                c_size_t(asm.byte_length()),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice(),
                 Int32(Int(OptimizationLevel)),
@@ -3200,7 +3200,7 @@ struct DeviceExternalFunction:
             ](
                 self._handle,
                 mapping.name.as_c_string_slice(),
-                c_size_t(len(mapping.name)),
+                c_size_t(mapping.name.byte_length()),
                 mapping.ptr,
                 c_size_t(mapping.byte_count),
             )
