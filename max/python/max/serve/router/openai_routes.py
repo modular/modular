@@ -959,6 +959,7 @@ async def openai_create_chat_completion(
                 request, completion_request.target_endpoint
             ),
             dkv_cache_hint=completion_request.dkv_cache_hint,
+            chat_template_options=completion_request.chat_template_kwargs,
         )
 
         if completion_request.stream:
