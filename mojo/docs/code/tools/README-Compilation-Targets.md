@@ -3,7 +3,7 @@
 ## About this document
 
 **What:** A manual test plan for verifying the examples and claims on
-the Mojo compilation-targets documentation page (`compilation-targets.mdx`).
+the Mojo compilation-targets documentation page (`docs/tools/compilation.mdx`).
 
 **Who:** The docs team and compiler team. Anyone updating the
 compilation targets page or the underlying compiler flags should re-run
