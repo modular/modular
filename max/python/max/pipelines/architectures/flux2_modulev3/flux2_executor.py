@@ -27,6 +27,8 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.profiler import traced
 from typing_extensions import Self
 
+from .components import TextEncoder
+
 # ---------------------------------------------------------------------------
 # Input / Output structs
 # ---------------------------------------------------------------------------
@@ -166,7 +168,7 @@ class Flux2Executor(
 
     # -- Compiled graphs (set during __init__) --------------------------------
 
-    text_encoder: Model
+    text_encoder: TextEncoder
     """Graph 1: Mistral3 text encoder -> prompt_embeds + text_ids."""
 
     image_encoder: Model
@@ -207,7 +209,7 @@ class Flux2Executor(
         self._default_residual_threshold = self._DEFAULT_RESIDUAL_THRESHOLD
 
         # Build and store all compiled graphs.
-        self.text_encoder = self._build_text_encode_graph()
+        self.text_encoder = TextEncoder(manifest, session)
         self.image_encoder = self._build_image_encode_graph()
         self.denoise_compute = self._build_denoise_compute_graph()
         self.denoise_predict = self._build_denoise_predict_graph()
@@ -349,17 +351,6 @@ class Flux2Executor(
 
     # -- Graph 1: Text Encode -------------------------------------------------
 
-    @traced(message="build_text_encode_graph")
-    def _build_text_encode_graph(self) -> Model:
-        """Compile the Mistral3 text encoder graph.
-
-        Produces ``prompt_embeds`` and ``text_ids`` from token IDs.
-
-        Returns:
-            Compiled :class:`Model` for Graph 1.
-        """
-        raise NotImplementedError
-
     @traced(message="encode_prompts")
     def _encode_prompts(
         self,
@@ -377,7 +368,7 @@ class Flux2Executor(
             - ``prompt_embeds`` has shape ``(B, S, L*D)``
             - ``text_ids`` has shape ``(B, S, 4)`` int64
         """
-        raise NotImplementedError
+        return self.text_encoder(tokens)
 
     # -- Graph 2: Image Encode (img2img only) ---------------------------------
 
