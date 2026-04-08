@@ -327,6 +327,33 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         assert isinstance(templated_message, str)
         return templated_message
 
+    def _build_eos_tracker(self, request: TextGenerationRequest) -> EOSTracker:
+        """Builds an EOSTracker synchronously for use in new_context_blocking.
+
+        All tokenizer access must happen in the same executor to avoid
+        concurrent borrow errors from the HuggingFace tokenizer's Rust internals.
+        """
+        params = request.sampling_params
+        eos_token_ids = set(self._default_eos_token_ids)
+        eos_sequences: list[list[int]] = []
+        if params.ignore_eos:
+            eos_token_ids = set()
+        else:
+            if params.stop_token_ids:
+                eos_token_ids.update(params.stop_token_ids)
+            if params.stop:
+                for stop_string in params.stop:
+                    tokenized = self.delegate.encode(
+                        stop_string, add_special_tokens=False
+                    )
+                    if tokenized:
+                        eos_sequences.append(list(tokenized))
+        return EOSTracker(
+            eos_token_ids=eos_token_ids,
+            eos_sequences=eos_sequences,
+            eos_stop_strings=params.stop or [],
+        )
+
     async def new_context(
         self, request: TextGenerationRequest
     ) -> Qwen2_5VLTextAndVisionContext:
@@ -337,15 +364,16 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         """
         if self.executor is None:
             # lazy init the executor because the tokenizer gets pickled
-            # when launching the model worker, and the executor is not pickle-safe
-            self.executor = ThreadPoolExecutor(max_workers=2)
+            # when launching the model worker, and the executor is not pickle-safe.
+            # max_workers=1 to serialize all tokenizer access — the HF
+            # tokenizer's Rust internals are not thread-safe and concurrent
+            # calls to delegate.encode trigger a borrow error.
+            self.executor = ThreadPoolExecutor(max_workers=1)
 
-        eos_tracker = await self.create_eos_tracker(request)
         return await asyncio.get_running_loop().run_in_executor(
             self.executor,
             self.new_context_blocking,
             request,
-            eos_tracker,
         )
 
     def _retrieve_prompt(self, request: TextGenerationRequest) -> str:
@@ -556,8 +584,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     def new_context_blocking(
         self,
         request: TextGenerationRequest,
-        eos_tracker: EOSTracker,
     ) -> Qwen2_5VLTextAndVisionContext:
+        eos_tracker = self._build_eos_tracker(request)
         # Exit early, if no images are provided.
         if not request.images:
             input_ids, attention_mask = self._tokenize_inputs(request, None)
