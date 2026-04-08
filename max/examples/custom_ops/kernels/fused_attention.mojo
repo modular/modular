@@ -56,7 +56,7 @@ from std.math import exp
 
 from compiler import register
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx_uint as block_idx
+from std.gpu import block_idx
 from std.gpu.memory import AddressSpace
 from std.gpu.sync import barrier
 from layout import Layout, LayoutTensor
@@ -315,7 +315,7 @@ def fused_attention_kernel[
     comptime N = Q.shape[0]()
     comptime D = Q.shape[1]()
 
-    Q_tile = Q.tile[BN, D](Int(block_idx.y), 0)
+    Q_tile = Q.tile[BN, D](block_idx.y, 0)
 
     m_1 = (
         LayoutTensor[q_dtype, Layout(BN, 1), MutAnyOrigin]
@@ -337,7 +337,7 @@ def fused_attention_kernel[
 
     for tile_n_idx in range(N // BN_1):
         K_tile = K.tile[BN_1, D](tile_n_idx, 0)
-        V_tile = V.tile[BN_1, BD](tile_n_idx, Int(block_idx.x))
+        V_tile = V.tile[BN_1, BD](tile_n_idx, block_idx.x)
         S = matmul["gpu", transpose_b=True](Q_tile, K_tile)
         m_2 = max(m_1, rebind[type_of(m_1)](max[axis=1](S)))
         l_2 = exp(m_1 - m_2) * l_1 + sum[axis=1](exp(S - m_2))
@@ -346,7 +346,7 @@ def fused_attention_kernel[
         m_1.copy_from(m_2)
         l_1.copy_from(rebind[type_of(l_1)](l_2))
         O_i.copy_from(O_j)
-    O.tile[BN, BD](Int(block_idx.y), Int(block_idx.x)).copy_from(O_i)
+    O.tile[BN, BD](block_idx.y, block_idx.x).copy_from(O_i)
 
 
 def fused_attention_gpu[
