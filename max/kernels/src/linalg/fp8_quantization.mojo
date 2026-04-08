@@ -21,9 +21,9 @@ from std.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx_int as block_idx,
-    global_idx_int as global_idx,
-    thread_idx_int as thread_idx,
+    block_idx,
+    global_idx,
+    thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target

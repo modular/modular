@@ -44,7 +44,7 @@ from std.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
 from ....structuring import SMemTile, RegTile
 from layout.swizzle import Swizzle
-from std.gpu import lane_id_int as lane_id
+from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
 from std.gpu.compute.mma import st_matrix

@@ -13,12 +13,12 @@
 
 from std.math import align_up, ceildiv
 from std.gpu import (
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
-    grid_dim_int as grid_dim,
-    block_dim_int as block_dim,
-    global_idx_int as global_idx,
-    lane_id_int as lane_id,
+    block_idx,
+    thread_idx,
+    grid_dim,
+    block_dim,
+    global_idx,
+    lane_id,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target

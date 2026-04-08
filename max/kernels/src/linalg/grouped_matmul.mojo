@@ -20,13 +20,7 @@ from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import H100, _is_sm10x_gpu
-from std.gpu import (
-    block_idx_int as block_idx,
-    global_idx_int as global_idx,
-    warp_id_int as warp_id,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import block_idx, global_idx, warp_id, lane_id, thread_idx
 from std.gpu.memory import external_memory
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id

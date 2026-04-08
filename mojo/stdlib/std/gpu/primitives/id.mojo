@@ -77,19 +77,6 @@ def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
 
 # Note: MOCO-3600 prevents this being a comptime alias.
 @always_inline("nodebug")
-def lane_id_int() -> Int:
-    """Returns the lane ID of the current thread within its warp.
-
-    See `lane_id()`.
-
-    Returns:
-        The lane ID (0 to WARP_SIZE-1) of the current thread.
-    """
-    return _lane_id[Int]()
-
-
-# Note: MOCO-3600 prevents this being a comptime alias.
-@always_inline("nodebug")
 def lane_id_uint() -> UInt:
     """Returns the lane ID of the current thread within its warp.
 
@@ -159,24 +146,6 @@ def _lane_id[ResultType: _FromInt]() -> ResultType:
 
 # Note: MOCO-3600 prevents this being a comptime alias.
 @always_inline("nodebug")
-def warp_id_int[*, broadcast: Bool = False]() -> Int:
-    """Returns the warp ID of the current thread within its block.
-
-    See `warp_id()`.
-
-    Parameters:
-        broadcast: If true, broadcasts the warp ID to all threads in the warp,
-                   ensuring that all threads in the same warp have the same
-                   value. This can be useful for certain warp-level algorithms.
-
-    Returns:
-        The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
-    """
-    return _warp_id[Int, broadcast=broadcast]()
-
-
-# Note: MOCO-3600 prevents this being a comptime alias.
-@always_inline("nodebug")
 def warp_id_uint[*, broadcast: Bool = False]() -> UInt:
     """Returns the warp ID of the current thread within its block.
 
@@ -217,7 +186,7 @@ def _warp_id[
     *,
     broadcast: Bool = False,
 ]() -> ResultType:
-    var res = ufloordiv(thread_idx_int.x, WARP_SIZE)
+    var res = ufloordiv(thread_idx.x, WARP_SIZE)
     comptime if broadcast:
         comptime if is_amd_gpu():
             res = Int(readfirstlane(Int32(res)))
@@ -332,9 +301,6 @@ This `thread_idx` accessor will change to yielding `Int` values in a future
 nightly.
 """
 
-comptime thread_idx_int = _ThreadIdx[Int]()
-"""Contains the thread index in the block, as `x`, `y`, and `z` values."""
-
 comptime thread_idx_uint = _ThreadIdx[UInt]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
@@ -385,9 +351,6 @@ struct _BlockIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
 
 
 comptime block_idx = _BlockIdx[Int]()
-"""Contains the block index in the grid, as `x`, `y`, and `z` values."""
-
-comptime block_idx_int = _BlockIdx[Int]()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 comptime block_idx_uint = _BlockIdx[UInt]()
@@ -451,11 +414,6 @@ struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
 
 
 comptime block_dim = _BlockDim[Int]()
-"""Contains the dimensions of the block as `x`, `y`, and `z` values.
-
-For example: `block_dim.y`."""
-
-comptime block_dim_int = _BlockDim[Int]()
 """Contains the dimensions of the block as `x`, `y`, and `z` values.
 
 For example: `block_dim.y`."""
@@ -533,10 +491,6 @@ comptime grid_dim = _GridDim[Int]()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
-comptime grid_dim_int = _GridDim[Int]()
-"""Provides accessors for getting the `x`, `y`, and `z`
-dimensions of a grid."""
-
 comptime grid_dim_uint = _GridDim[UInt]()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
@@ -571,10 +525,6 @@ struct _GlobalIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
 
 
 comptime global_idx = _GlobalIdx[Int]()
-"""Contains the global offset of the kernel launch, as `x`, `y`, and `z`
-values."""
-
-comptime global_idx_int = _GlobalIdx[Int]()
 """Contains the global offset of the kernel launch, as `x`, `y`, and `z`
 values."""
 
