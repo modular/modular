@@ -22,8 +22,9 @@ For new code, use sm100_structured directly:
 """
 
 from std.sys import simd_width_of, size_of
+from std.math.uutils import umod, ufloordiv, udivmod
 
-from std.gpu import WARP_SIZE, lane_id_uint as lane_id, warp_id_uint as warp_id
+from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.primitives.cluster import elect_one_sync
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.mma import st_matrix
@@ -75,7 +76,7 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
@@ -87,7 +88,7 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
         return self._role != other._role
 
     @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
@@ -211,7 +212,7 @@ def f32_frag_to_smem[
     # Manual implementation of dst.vectorize[1, 2]().distribute[row_major(8, 4)]
     # because the compiler can't prove `all_dims_known` through layout types
     # produced by `lt_to_tt()`. See MSTDL-2422.
-    comptime stride0 = dst.static_stride[0]
+    comptime stride0: Int = dst.static_stride[0]
     comptime shape0 = dst.static_shape[0]
     comptime shape1 = dst.static_shape[1]
 
@@ -222,9 +223,9 @@ def f32_frag_to_smem[
     ), "2*frag_rows*frag_cols must be equal to vec_size"
 
     var lane = lane_id()
-    var thread_row = Int((lane >> 2) & 7)
-    var thread_col = Int(lane & 3)
-    var base_offset = thread_row * Int(stride0) + thread_col * 2
+    var thread_row = (lane >> 2) & 7
+    var thread_col = lane & 3
+    var base_offset = thread_row * stride0 + thread_col * 2
 
     comptime for i in range(frag_rows):
         comptime for j in range(frag_cols):
@@ -233,7 +234,7 @@ def f32_frag_to_smem[
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec]),
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec + 1]),
             )
-            var offset = base_offset + i * 8 * Int(stride0) + j * 8
+            var offset = base_offset + i * 8 * stride0 + j * 8
             (dst.ptr + offset).store(val)
 
 
@@ -292,8 +293,8 @@ def stsm_helper[
 
     var lane = lane_id()
     var stsm_lane_offset = UInt32(
-        (lane & 15) * UInt(stride0) + (lane >> 4) * 8
-    ) if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(Int(lane))
+        (lane & 15) * stride0 + (lane >> 4) * 8
+    ) if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx_row_size):
@@ -365,7 +366,7 @@ def shared_memory_epilogue_transpose[
             thread_layout.shape_types,
         ]()
         var lane = lane_id()
-        var crd = thread_layout.idx2crd[out_dtype=DType.uint32](Int(lane))
+        var crd = thread_layout.idx2crd[out_dtype=DType.uint32](lane)
         comptime thread_shape = IntTuple(0, UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
 
         comptime for iter_i in range(
@@ -427,14 +428,14 @@ def shared_memory_epilogue_transpose[
             c_smem.LayoutType.flat_rank == 3
         ), "c_smem_layout must be 3D"
         comptime thread_layout = row_major[min(16, Int(stageN)), 1, 2]()
-        comptime thread_bound = UInt(thread_layout.cosize())
+        comptime thread_bound = Int(thread_layout.cosize())
         var lane = lane_id()
         if lane < thread_bound:
             comptime result = ZippedDivideLayout[
                 UpcastLayout[c_smem.LayoutType, simd_size],
                 thread_layout.shape_types,
             ]()
-            var crd = thread_layout.idx2crd[out_dtype=DType.uint32](Int(lane))
+            var crd = thread_layout.idx2crd[out_dtype=DType.uint32](lane)
             comptime thread_shape = IntTuple(UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
             comptime layout_2d = row_major[Int(stageN), swizzle_dim]()
 
@@ -524,7 +525,7 @@ def shared_memory_epilogue_transpose[
         var lane = lane_id()
         var crd = idx2crd(
             RuntimeTuple[IntTuple(UNKNOWN_VALUE), element_type=DType.uint32](
-                Int(lane)
+                lane
             ),
             rt_thread_layout.shape,
             rt_thread_layout.stride,
@@ -539,9 +540,9 @@ def shared_memory_epilogue_transpose[
                 var coord = RuntimeTuple[
                     [thread_shape, rest_shape], element_type=DType.uint32
                 ](
-                    Int(0),
+                    0,
                     Int(crd[1].get_int()),
-                    Int(0),
+                    0,
                     Int(crd[3].get_int()),
                     Int(warp_j),
                     iter_j,
@@ -593,7 +594,7 @@ def shared_memory_epilogue_transpose[
         # Layout F: https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-f
         comptime assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
         comptime thread_layout = Layout.row_major(min(16, Int(stageN)), 1, 2)
-        comptime thread_bound = UInt(thread_layout.cosize())
+        comptime thread_bound = Int(thread_layout.cosize())
         var lane = lane_id()
         if lane < thread_bound:
             comptime result = zipped_divide(
@@ -603,7 +604,7 @@ def shared_memory_epilogue_transpose[
             var crd = idx2crd(
                 RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE), element_type=DType.uint32
-                ](Int(lane)),
+                ](lane),
                 rt_thread_layout.shape,
                 rt_thread_layout.stride,
             )
@@ -622,7 +623,7 @@ def shared_memory_epilogue_transpose[
                         [thread_shape, rest_shape], element_type=DType.uint32
                     ](
                         Int(crd[0].get_int()),
-                        Int(0),
+                        0,
                         Int(crd[2].get_int()),
                         iter_j,
                         Int(warp_i),
@@ -697,32 +698,32 @@ def shared_memory_epilogue[
     var warp_id = warp_id()
     var shared_memory_row = warp_id * 32
 
-    var shared_memory_row_upper_half = shared_memory_row
-    var shared_memory_row_lower_half = shared_memory_row + 16
+    var shared_memory_row_upper_half: Int = shared_memory_row
+    var shared_memory_row_lower_half: Int = shared_memory_row + 16
 
     # This distribute layout allocates vectors to corresponding threads. If stageN is 32, 8 x 4 is used since each row of
     # 4 threads can access 8 elements (8 x 4 = 32). If stageN is 16 then 16 x 2 is used. Since each fragment contains 16 rows,
     # there will be 2 chunks created when using 8x4.
 
-    comptime distribute_cols = stageN // simd_size
-    comptime distribute_rows = WARP_SIZE // Int(distribute_cols)
+    comptime distribute_cols = Int(stageN) // Int(simd_size)
+    comptime distribute_rows = WARP_SIZE // distribute_cols
 
     comptime distribute_layout = Layout.row_major(
-        distribute_rows, Int(distribute_cols)
+        distribute_rows, distribute_cols
     )
     var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
         1, Int(simd_size)
-    ]().distribute[distribute_layout, swizzle=swizzle](Int(lane_id()))
+    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
         1, Int(simd_size)
-    ]().distribute[distribute_layout, swizzle=swizzle](Int(lane_id()))
+    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     comptime fragment_size = c_smem_upper_frag.layout.size()
 
-    var local_row, local_col = divmod(lane_id(), distribute_cols)
+    var local_row, local_col = udivmod(lane_id(), distribute_cols)
 
-    var shared_memory_col = local_col * simd_size
+    var shared_memory_col = local_col * Int(simd_size)
     shared_memory_row_lower_half += local_row
     shared_memory_row_upper_half += local_row
 
@@ -732,14 +733,14 @@ def shared_memory_epilogue[
         # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
         # luckily removing the swizzle is as simple as swizzling a second time
         var swz_offset_upper = (
-            shared_memory_row_upper_half * shared_n + shared_memory_col
+            shared_memory_row_upper_half * Int(shared_n) + shared_memory_col
         )
         var swz_offset_lower = (
-            shared_memory_row_lower_half * shared_n + shared_memory_col
+            shared_memory_row_lower_half * Int(shared_n) + shared_memory_col
         )
 
-        var offset_upper = swizzle(Int(swz_offset_upper))
-        var offset_lower = swizzle(Int(swz_offset_lower))
+        var offset_upper = swizzle(swz_offset_upper)
+        var offset_lower = swizzle(swz_offset_lower)
 
         var shared_upper_row: Int64
         var shared_upper_col: Int64
@@ -843,8 +844,8 @@ def shared_memory_epilogue[
         # If more than one chunk is created (happens when 8x4 is used)
         # they will be spaced 8 rows away from each other
 
-        shared_memory_row_upper_half += UInt(distribute_rows)
-        shared_memory_row_lower_half += UInt(distribute_rows)
+        shared_memory_row_upper_half += distribute_rows
+        shared_memory_row_lower_half += distribute_rows
 
     named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
@@ -888,25 +889,23 @@ def shared_memory_epilogue[
     # 4 threads can access 8 elements (8 x 4 = 32). If stageN is 16 then 16 x 2 is used. Since each fragment contains 16 rows,
     # there will be 2 chunks created when using 8x4.
 
-    comptime distribute_cols = stageN // simd_size
-    comptime distribute_rows = WARP_SIZE // Int(distribute_cols)
+    comptime distribute_cols = Int(stageN) // Int(simd_size)
+    comptime distribute_rows = WARP_SIZE // distribute_cols
 
-    comptime distribute_layout = row_major[
-        distribute_rows, Int(distribute_cols)
-    ]()
+    comptime distribute_layout = row_major[distribute_rows, distribute_cols]()
     var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
         1, Int(simd_size)
-    ]().distribute[distribute_layout, swizzle=swizzle](Int(lane_id()))
+    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
         1, Int(simd_size)
-    ]().distribute[distribute_layout, swizzle=swizzle](Int(lane_id()))
+    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     comptime fragment_size = c_smem_upper_frag.LayoutType.static_product
 
-    var local_row, local_col = divmod(lane_id(), distribute_cols)
+    var local_row, local_col = udivmod(lane_id(), distribute_cols)
 
-    var shared_memory_col = local_col * simd_size
+    var shared_memory_col = local_col * Int(simd_size)
     shared_memory_row_lower_half += local_row
     shared_memory_row_upper_half += local_row
 
@@ -916,14 +915,14 @@ def shared_memory_epilogue[
         # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
         # luckily removing the swizzle is as simple as swizzling a second time
         var swz_offset_upper = (
-            shared_memory_row_upper_half * shared_n + shared_memory_col
+            shared_memory_row_upper_half * Int(shared_n) + shared_memory_col
         )
         var swz_offset_lower = (
-            shared_memory_row_lower_half * shared_n + shared_memory_col
+            shared_memory_row_lower_half * Int(shared_n) + shared_memory_col
         )
 
-        var offset_upper = swizzle(Int(swz_offset_upper))
-        var offset_lower = swizzle(Int(swz_offset_lower))
+        var offset_upper = swizzle(swz_offset_upper)
+        var offset_lower = swizzle(swz_offset_lower)
 
         var shared_upper_row: Int64
         var shared_upper_col: Int64
@@ -1012,8 +1011,8 @@ def shared_memory_epilogue[
         # If more than one chunk is created (happens when 8x4 is used)
         # they will be spaced 8 rows away from each other
 
-        shared_memory_row_upper_half += UInt(distribute_rows)
-        shared_memory_row_lower_half += UInt(distribute_rows)
+        shared_memory_row_upper_half += distribute_rows
+        shared_memory_row_lower_half += distribute_rows
 
     named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
@@ -1106,7 +1105,7 @@ def register_epilogue[
         bits == 256 and data_paths == 16
     ), "Only 16x256b tensor memory load is supported"
 
-    comptime load_width = UInt(2)
+    comptime load_width = 2
 
     var warp_id = warp_id()
 
@@ -1124,16 +1123,16 @@ def register_epilogue[
         staged_c_row += UInt32(warp_id * 16)
     else:
         # based on layout B (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-b)
-        staged_c_row += UInt32((warp_id % 2) * 32)
-        staged_c_col += UInt32((warp_id // 2) * UInt(num_stages * stageN))
+        staged_c_row += UInt32(umod(warp_id, 2) * 32)
+        staged_c_col += UInt32(ufloordiv(warp_id, 2) * num_stages * stageN)
 
     # this is the tensor memory layout
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-matrix-fragments-shape-16256b
     # we use it to figure out the starting coordinate
-    comptime threads_per_row = UInt(stageN) // UInt(repeats) // load_width
+    comptime threads_per_row = stageN // repeats // load_width
     var top_frag_upper_coord_left = StaticTuple[UInt32, 2](
-        UInt32(lane_id() // threads_per_row),
-        UInt32(lane_id() % threads_per_row * load_width),
+        UInt32(ufloordiv(lane_id(), threads_per_row)),
+        UInt32(umod(lane_id(), threads_per_row) * load_width),
     )
 
     # getting the other 3 coordinates is straightforward. Each fragment is spaced out by 16 rows

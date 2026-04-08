@@ -29,11 +29,11 @@ from std.gpu.primitives.grid_controls import (
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
-    block_idx_int as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_int as thread_idx,
+    block_idx,
+    grid_dim,
+    thread_idx,
+    warp_id,
 )
-from std.gpu import warp_id_uint as warp_id
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import (
     AddressSpace,
@@ -453,7 +453,7 @@ struct HopperMatmulSM90Kernel[
         var rank_m = Int(block_id_in_cluster.y)
         var rank_n = Int(block_id_in_cluster.x)
 
-        var warp_id = Int(warp_id())
+        var warp_id = warp_id()
         var lane_predicate = elect_one_sync()
 
         return (
@@ -546,7 +546,7 @@ struct HopperMatmulSM90Kernel[
         comptime if not use_cluster:
             comptime if Self.hilbert_swizzle:
                 # Hilbert curve ordering maximizes spatial locality
-                var linear = UInt32(block_idx.y * Int(grid_dim.x) + block_idx.x)
+                var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
                 var packed = lut_ptr[linear]
                 var new_x = packed & 0xFFFF
                 var new_y = packed >> 16

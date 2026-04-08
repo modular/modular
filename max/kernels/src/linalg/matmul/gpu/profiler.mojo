@@ -13,11 +13,7 @@
 
 
 from std.time.time import global_perf_counter_ns
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    WARP_SIZE,
-)
+from std.gpu import WARP_SIZE, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu import sm_id
 

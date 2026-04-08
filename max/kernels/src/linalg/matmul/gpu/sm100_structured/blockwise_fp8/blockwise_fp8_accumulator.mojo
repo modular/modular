@@ -26,11 +26,7 @@ requires per-K-iteration scaling in CUDA cores:
 from std.math import gcd
 from std.math.uutils import umod, ufloordiv
 
-from std.gpu import (
-    WARP_SIZE,
-    lane_id_int as lane_id,
-    warp_id_uint as get_warp_id,
-)
+from std.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
 from std.gpu.memory import AddressSpace
 from std.gpu.sync import syncwarp
 from layout import (
@@ -283,7 +279,7 @@ struct BlockwiseFP8Accumulator[
             )
             b_scale_1 = 0.0
 
-        var warp_id = Int(get_warp_id())
+        var warp_id = get_warp_id()
 
         # Compute row/col offset based on MMA layout
         var staged_c_row: UInt32

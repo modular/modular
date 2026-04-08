@@ -35,14 +35,11 @@ Key differences from block_scaled_matmul_kernel.mojo:
 
 from std.collections import Optional
 from std.math import ceildiv
+from std.math.uutils import ufloordiv
 from std.memory import UnsafePointer, Pointer
 from std.sys import size_of
 
-from std.gpu import (
-    WARP_SIZE,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-)
+from std.gpu import WARP_SIZE, block_idx, lane_id
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
@@ -1273,7 +1270,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
             var load_iter = scheduler.work_iterator()
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
             var tensormap_init_done = False
 
             # Tensormap manager for SMEM descriptor updates
@@ -1423,7 +1420,7 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
 
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
@@ -1760,7 +1757,9 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== Initial Work Info =====
         # Compute initial work from first cluster's tile
-        var initial_linear_idx = UInt32(block_idx.x // 2)  # 2SM: cta_group=2
+        var initial_linear_idx = UInt32(
+            ufloordiv(block_idx.x, 2)
+        )  # 2SM: cta_group=2
         var initial_work = Self._compute_initial_work(
             problem_sizes, num_groups, initial_linear_idx
         )
@@ -1785,7 +1784,7 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
             var tensormap_init_done = False
 
             # Tensormap manager for SMEM descriptor updates
@@ -1986,7 +1985,7 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
 
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(

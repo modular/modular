@@ -17,10 +17,10 @@ from std.sys import simd_width_of, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx_int as block_idx,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
-    warp_id_uint as warp_id,
+    block_idx,
+    lane_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import AMDBufferResource
@@ -1355,7 +1355,7 @@ struct AMDPingPongMatmul[
         # Thread and warp identification
         var thread_id = thread_idx.x
         var lane_id = lane_id()
-        var warp_id = readfirstlane(Int(warp_id()))
+        var warp_id = readfirstlane(warp_id())
 
         # Block coordinates from block indices
         var n = block_idx.x * BN

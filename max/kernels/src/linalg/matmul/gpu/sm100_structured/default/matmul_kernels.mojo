@@ -32,7 +32,7 @@ The kernel implements a warp-specialized architecture:
 from std.math import ceildiv
 from std.sys import align_of, size_of
 
-from std.gpu import WARP_SIZE, barrier, warp_id_uint as warp_id
+from std.gpu import WARP_SIZE, barrier, warp_id as get_warp_id
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -44,7 +44,6 @@ from std.gpu import (
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )
-from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -1795,7 +1794,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         var tma_phase: UInt32 = 0
         var mma_phase: UInt32 = 0
 
-        var elect_one_warp = warp_id() == 0
+        var elect_one_warp = get_warp_id() == 0
         var elect_one_thread = thread_idx.x == 0
         var elect_one_cta = block_rank_in_cluster() % 2 == 0
 
@@ -1896,7 +1895,7 @@ struct BlackwellMatmulSM100FallbackKernel[
                     stride_layout=Self.CGmemStrideLayout,
                 ](
                     Coord(
-                        Idx(4 * m_mma + Int(warp_id)),
+                        Idx(4 * m_mma + warp_id),
                         Idx(n_mma),
                     )
                 )

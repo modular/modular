@@ -43,12 +43,7 @@ from std.memory import Pointer, bitcast
 from std.math.uutils import ufloordiv, umod
 from std.sys import align_of, size_of
 
-from std.gpu import (
-    WARP_SIZE,
-    block_id_in_cluster,
-    lane_id_uint as lane_id,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import WARP_SIZE, block_id_in_cluster, thread_idx, lane_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -1074,7 +1069,7 @@ struct Grouped1D1DMatmulKernel[
 
             comptime for sf_idx in range(Self.config.num_sf_k_tiles):
                 var sfb_scales = SIMD[Self.sfb_dtype, SF_ATOM_K]()
-                if lane_id() < UInt(Self.MMA_N):
+                if lane_id() < Self.MMA_N:
                     # Compute N-position within SF group.
                     # work_ctx.n() is in element space (not tile index),
                     # so no multiplication by MMA_N needed.
@@ -1084,12 +1079,13 @@ struct Grouped1D1DMatmulKernel[
                         var m_in_group = UInt(work_ctx.m()) - UInt(
                             work_ctx.m_start()
                         )
-                        outer = m_in_group % UInt(SF_MN_GROUP_SIZE) + lane_id()
-                    else:
-                        outer = (
-                            UInt(work_ctx.n()) % UInt(SF_MN_GROUP_SIZE)
-                            + lane_id()
+                        outer = m_in_group % UInt(SF_MN_GROUP_SIZE) + UInt(
+                            lane_id()
                         )
+                    else:
+                        outer = UInt(work_ctx.n()) % UInt(
+                            SF_MN_GROUP_SIZE
+                        ) + UInt(lane_id())
 
                     var scales_offset = (
                         UInt(sf_idx) * UInt(SFB_TILE_BYTES)

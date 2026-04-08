@@ -29,8 +29,8 @@ from std.algorithm.functional import elementwise, tile_and_unswitch
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
+    global_idx,
+    thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
@@ -157,54 +157,50 @@ def matmul_kernel[
         var a_val: Scalar[a_type]
 
         comptime if not full_tile:
-            a_val = rebind[Scalar[a_type]](
-                a[Int(row), offset + Int(localCol)]
-            ) if (row < UInt(m) and offset + Int(localCol) < k) else 0.0
+            a_val = rebind[Scalar[a_type]](a[row, offset + localCol]) if (
+                row < m and offset + localCol < k
+            ) else 0.0
         else:
             a_val = (
-                rebind[Scalar[a_type]](
-                    a[Int(row), offset + Int(localCol)]
-                ) if row
-                < UInt(m) else 0.0
+                rebind[Scalar[a_type]](a[row, offset + localCol]) if row
+                < m else 0.0
             )
-        a_shared[localRow * UInt(tile_size) + localCol] = a_val
+        a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Scalar[b_type]
 
         comptime if not full_tile:
-            b_val = rebind[Scalar[b_type]](
-                b[offset + Int(localRow), Int(col)]
-            ) if (col < UInt(n) and offset + Int(localRow) < k) else 0.0
+            b_val = rebind[Scalar[b_type]](b[offset + localRow, col]) if (
+                col < n and offset + localRow < k
+            ) else 0.0
         else:
             b_val = (
-                rebind[Scalar[b_type]](
-                    b[offset + Int(localRow), Int(col)]
-                ) if col
-                < UInt(n) else 0.0
+                rebind[Scalar[b_type]](b[offset + localRow, col]) if col
+                < n else 0.0
             )
-        b_shared[localRow * UInt(tile_size) + localCol] = b_val
+        b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
 
         for kk in range(tile_size):
             result += (
-                a_shared[localRow * UInt(tile_size) + UInt(kk)].cast[s_type]()
-                * b_shared[kk * tile_size + Int(localCol)].cast[s_type]()
+                a_shared[localRow * tile_size + kk].cast[s_type]()
+                * b_shared[kk * tile_size + localCol].cast[s_type]()
             )
 
         barrier()
 
     tile_and_unswitch[update_tile](0, k, tile_size, K_remainder)
 
-    if row < UInt(m) and col < UInt(n):
+    if row < m and col < n:
         comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
                 Index(row, col), result.cast[c_type]()
             )
         else:
-            c[Int(row), Int(col)] = result.cast[c_type]()
+            c[row, col] = result.cast[c_type]()
 
 
 def matmul_kernel_naive[
@@ -230,8 +226,8 @@ def matmul_kernel_naive[
     comptime assert a.flat_rank == 2, "expected 2D tensor for a"
     comptime assert b.flat_rank == 2, "expected 2D tensor for b"
 
-    var x = Int(global_idx.x)
-    var y = Int(global_idx.y)
+    var x = global_idx.x
+    var y = global_idx.y
 
     if x >= m or y >= n:
         return

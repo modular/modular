@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
 from std.sys import (
     align_of,
     has_amd_gpu_accelerator,
@@ -26,10 +27,10 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    lane_id_int as lane_id,
-    thread_idx_uint as thread_idx,
+    block_idx,
+    grid_dim,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.memory import (
     async_copy_commit_group,
@@ -114,7 +115,7 @@ def warp_split_k_reduction[
     comptime c_frag_size = c_layout.shape[1].value()
 
     var i_red = num_warp_k_partitions // 2
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     while i_red > 0:
         barrier()
@@ -257,7 +258,7 @@ def multistage_mma[
     # In the slice-K method, we pass `num_threads_per_warp_k_part` as `num_threads`
     # in the parameters. This ensures that `tid` represents the relative thread position
     # within each warp_k_part_id groups.
-    var tid = UInt32(thread_idx.x % UInt(num_threads))
+    var tid = UInt32(umod(thread_idx.x, num_threads))
     var warp_id = warp.broadcast(tid // UInt32(WARP_SIZE))
 
     comptime num_warps_m = BM // WM
@@ -739,22 +740,23 @@ def multistage_gemm_kernel[
     comptime BK = config.block_tile_shape[2]
     comptime WM = config.warp_tile_shape[0]
     comptime WN = config.warp_tile_shape[1]
-    comptime num_pipeline_stages = config.num_pipeline_stages
+    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
 
     comptime num_warps_m = config.num_warps_m()
-    comptime num_warps_n = config.num_warps_n()
-    comptime num_threads = config.num_threads()
+    comptime num_warps_n = Int(config.num_warps_n())
+    comptime num_threads = Int(config.num_threads())
 
-    comptime num_warp_k_partitions = config.num_warp_k_partitions
+    comptime num_warp_k_partitions = Int(config.num_warp_k_partitions)
     comptime num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
 
     var tid = thread_idx.x
     var ln_id = lane_id()
     var warp_k_part_id = (
-        tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+        ufloordiv(tid, num_threads_per_warp_k_part) if num_warp_k_partitions
+        > 1 else 0
     )
     var warp_id = warp.broadcast(
-        (tid % num_threads_per_warp_k_part) // UInt(WARP_SIZE)
+        ufloordiv(umod(tid, num_threads_per_warp_k_part), WARP_SIZE)
     )
 
     # Only apply block swizzling for half precision types.
@@ -768,7 +770,7 @@ def multistage_gemm_kernel[
     ) if swizzle_block else Index[dtype=DType.uint32](block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, num_warps_n)
+    warp_y, warp_x = udivmod(warp_id, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
@@ -778,7 +780,7 @@ def multistage_gemm_kernel[
         address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
-    comptime a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
+    comptime a_smem_size: Int = num_pipeline_stages * BM * BK
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
@@ -796,7 +798,7 @@ def multistage_gemm_kernel[
     var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
         Scalar[b_type]
     ]()
-    comptime b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN)
+    comptime b_smem_size: Int = num_pipeline_stages * BK * BN
     comptime BD_0 = BN if transpose_b else BK
     comptime BD_1 = BK if transpose_b else BN
     comptime b_smem_layout = Layout.row_major(BD_0, BD_1)
@@ -814,8 +816,8 @@ def multistage_gemm_kernel[
 
     # create input layout tensors A and Bv
     # global memory iterator
-    var bk_start: Int = Int(
-        (K // UInt(BK) // num_warp_k_partitions) * warp_k_part_id
+    var bk_start: Int = (
+        Int(K // UInt(BK) // UInt(num_warp_k_partitions)) * warp_k_part_id
     )
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](
         block_idx_swizzle[1], bk_start
@@ -861,8 +863,8 @@ def multistage_gemm_kernel[
         BK,
         WM,
         WN,
-        Int(num_threads_per_warp_k_part),
-        Int(num_pipeline_stages),
+        num_threads_per_warp_k_part,
+        num_pipeline_stages,
         transpose_b,
         k_group_size=config.k_group_size,
         swizzle_a=is_nvidia_gpu(),
@@ -872,7 +874,7 @@ def multistage_gemm_kernel[
         b_gmem_iter,
         a_smem_iter,
         b_smem_iter,
-        Int(ceildiv(K // num_warp_k_partitions, UInt(BK))),
+        uceildiv(ufloordiv(Int(K), num_warp_k_partitions), BK),
     )
 
     # reduce within the threadblock
@@ -880,10 +882,10 @@ def multistage_gemm_kernel[
         warp_split_k_reduction[
             BM,
             BN,
-            Int(num_threads_per_warp_k_part),
-            Int(num_warp_k_partitions),
+            num_threads_per_warp_k_part,
+            num_warp_k_partitions,
         ](
-            Int(warp_k_part_id),
+            warp_k_part_id,
             c_reg_tile,
         )
         if warp_k_part_id > 0:
@@ -891,7 +893,7 @@ def multistage_gemm_kernel[
 
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](block_idx_swizzle[1], block_idx_swizzle[0])
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     @always_inline
     @parameter
@@ -958,7 +960,7 @@ def multistage_gemm_kernel[
             Layout.row_major(WM, WN),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * UInt(WM) * UInt(WN))
+        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
 
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4),
@@ -981,10 +983,10 @@ def multistage_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](Int(thread_idx.x))
+            ]().distribute[warp_layout](thread_idx.x)
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](Int(thread_idx.x))
+            ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
             comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
@@ -1097,10 +1099,10 @@ def multistage_gemm_split_k_kernel[
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
     var a_part = a.split[axis=1, split_alignment=BK](
-        num_partitions, Int(block_idx.z)
+        num_partitions, block_idx.z
     )
     var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
-        num_partitions, Int(block_idx.z)
+        num_partitions, block_idx.z
     )
 
     comptime work_space_tensor_type = LayoutTensor[
@@ -1108,7 +1110,7 @@ def multistage_gemm_split_k_kernel[
     ]
 
     var work_space_part = work_space_tensor_type(
-        work_space.ptr + block_idx.z * UInt(M) * UInt(N),
+        work_space.ptr + block_idx.z * M * N,
         RuntimeLayout[
             c_layout,
             element_type=work_space_tensor_type.layout_int_type,

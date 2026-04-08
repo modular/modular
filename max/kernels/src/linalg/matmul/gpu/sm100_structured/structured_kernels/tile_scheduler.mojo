@@ -18,11 +18,7 @@ from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_int as lane_id,
-)
+from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 

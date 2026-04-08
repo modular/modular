@@ -24,11 +24,9 @@ Key characteristics:
 """
 
 from std.math import ceildiv
+from std.math.uutils import ufloordiv
 
-from std.gpu import (
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-)
+from std.gpu import block_idx, grid_dim
 from layout import TileTensor
 
 from structured_kernels.tile_types import GMEMLayout1D
@@ -283,8 +281,8 @@ struct GroupedWorkIterator1D1D[
         # Normalize by cta_group so all CTAs in a cluster get the same
         # work tile.  For cta_group==1 this is a no-op.
         var next_block_idx = UInt32(self.current_iter) * UInt32(
-            grid_dim.x // Scalar[DType.uint](Self.cta_group)
-        ) + UInt32(block_idx.x // Scalar[DType.uint](Self.cta_group))
+            ufloordiv(grid_dim.x, Self.cta_group)
+        ) + UInt32(ufloordiv(block_idx.x, Self.cta_group))
         var start_idx = rebind[Scalar[DType.uint32]](
             self.group_offsets[Int(self.current_group_idx)]
         )

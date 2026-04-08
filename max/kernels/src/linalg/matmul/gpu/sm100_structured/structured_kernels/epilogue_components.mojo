@@ -26,7 +26,7 @@ The SM100 epilogue pipeline flows as:
 
 from std.sys import align_of, simd_width_of
 
-from std.gpu import WARP_SIZE, lane_id_int as lane_id, warp_id_uint as warp_id
+from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
@@ -1883,8 +1883,8 @@ def shared_memory_epilogue[
 
     # Each warp owns 32 rows: upper half (0-15) and lower half (16-31)
     var warp_base_row = warp_id() * 32
-    var upper_row = Int(warp_base_row)
-    var lower_row = Int(warp_base_row + 16)
+    var upper_row = warp_base_row
+    var lower_row = warp_base_row + 16
 
     # Distribute layout: maps stageN elements across warp threads
     # e.g., stageN=32 → 8x4 (8 rows × 4 cols), stageN=16 → 16x2, stageN=8 → 16x1
