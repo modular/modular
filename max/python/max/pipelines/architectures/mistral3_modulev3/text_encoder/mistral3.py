@@ -170,11 +170,15 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         h = self.embed_tokens(tokens)
 
         selected: dict[int, Tensor] = {}
-        max_layer = self._sorted_hidden_state_layers[-1]
+        # Use 1-indexed layer numbering to match diffusers convention
+        # where hidden_states[0] = embedding output and hidden_states[k]
+        # = output of transformer layer k-1. So hidden_states[10] means
+        # the output after the 10th transformer block (0-indexed layer 9).
+        max_layer = self._sorted_hidden_state_layers[-1] - 1
         for i, layer in enumerate(self.layers):
             h = layer(h, self.rope)
-            if i in self._hidden_state_layers:
-                selected[i] = h
+            if (i + 1) in self._hidden_state_layers:
+                selected[i + 1] = h
             if i == max_layer:
                 break
 
