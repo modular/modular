@@ -572,7 +572,13 @@ class PipelineRegistry:
                 # Fallback for non-transformers models (e.g. diffusers
                 # components): load the raw config.json and wrap it in a
                 # PretrainedConfig so callers get uniform attribute access.
+                # If the config declares a model_type, re-raise so the
+                # user gets a clear error about the unrecognized type
+                # rather than a confusing downstream AttributeError from
+                # nested dicts.
                 config_dict = _load_raw_config_json(huggingface_repo)
+                if "model_type" in config_dict:
+                    raise
                 self._cached_huggingface_configs[huggingface_repo] = (
                     PretrainedConfig.from_dict(config_dict)
                 )

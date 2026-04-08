@@ -49,6 +49,16 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_autoconfig_error_propagation",
+    size = "small",
+    srcs = ["test_autoconfig_error_propagation.py"],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
     name = "test_model_manifest",
     srcs = ["test_model_manifest.py"],
     deps = [
@@ -82,6 +92,7 @@ modular_py_test(
         ["**/*.py"],
         exclude = [
             "**/*_gpu.py",
+            "test_autoconfig_error_propagation.py",
             "test_device_graph_capture_release.py",
             "test_model_config_encoding_resolution.py",
             "test_model_config_subfolder.py",
