@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.lib import SupportedArchitecture
 
 from .context import Gemma4Context
@@ -39,6 +39,11 @@ gemma4_arch = SupportedArchitecture(
     tokenizer=Gemma4Tokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
+    input_modalities={
+        InputModality.TEXT,
+        InputModality.IMAGE,
+        InputModality.VIDEO,
+    },
     rope_type="normal",
     required_arguments={"max_num_steps": 1},
     context_type=Gemma4Context,

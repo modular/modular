@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
@@ -66,6 +66,7 @@ class Flux2ArchConfig(ArchConfig):
 flux2_modulev3_arch = SupportedArchitecture(
     name="Flux2Pipeline_ModuleV3",
     task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     example_repo_ids=[
@@ -82,6 +83,7 @@ flux2_modulev3_arch = SupportedArchitecture(
 flux2_klein_arch = SupportedArchitecture(
     name="Flux2KleinPipeline",
     task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     example_repo_ids=[
@@ -100,6 +102,7 @@ flux2_klein_arch = SupportedArchitecture(
 flux2_klein_modulev3_arch = SupportedArchitecture(
     name="Flux2KleinPipeline_ModuleV3",
     task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     example_repo_ids=[

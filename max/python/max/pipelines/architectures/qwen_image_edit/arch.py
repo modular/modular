@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
 
@@ -22,6 +22,7 @@ from .pipeline_qwen_image_edit import QwenImageEditPipeline
 qwen_image_edit_arch = SupportedArchitecture(
     name="QwenImageEditPipeline",
     task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     example_repo_ids=[
@@ -37,6 +38,7 @@ qwen_image_edit_arch = SupportedArchitecture(
 qwen_image_edit_plus_arch = SupportedArchitecture(
     name="QwenImageEditPlusPipeline",
     task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     example_repo_ids=[

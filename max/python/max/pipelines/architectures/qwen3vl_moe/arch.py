@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.lib import SupportedArchitecture
 
 from .context import Qwen3VLTextAndVisionContext
@@ -29,6 +29,7 @@ qwen3vl_moe_arch = SupportedArchitecture(
     ],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={
         "float32",
@@ -55,6 +56,7 @@ qwen3vl_arch = SupportedArchitecture(
     example_repo_ids=["Qwen/Qwen3-VL-4B-Instruct", "Qwen/Qwen3-VL-2B-Instruct"],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={
         "float32",

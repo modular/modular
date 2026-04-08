@@ -27,6 +27,7 @@ import numpy.typing as npt
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     EmbeddingsContext,
+    InputModality,
     Pipeline,
     PipelineTask,
     PipelineTokenizer,
@@ -277,6 +278,16 @@ class SupportedArchitecture:
 
     multi_gpu_supported: bool = False
     """Whether the architecture supports multi-GPU execution."""
+
+    input_modalities: set[InputModality] = field(
+        default_factory=lambda: {InputModality.TEXT}
+    )
+    """The set of input modalities this architecture accepts.
+
+    Defaults to text-only. Multimodal architectures should declare all
+    supported input types explicitly, e.g.
+    ``{InputModality.TEXT, InputModality.IMAGE}`` for vision-language models.
+    """
 
     required_arguments: dict[str, bool | int | float] = field(
         default_factory=dict
