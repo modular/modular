@@ -266,8 +266,8 @@ struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
 
 
 def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
-    return qkv_type == DType.bfloat16 and (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+    return has_nvidia_gpu_accelerator() or (
+        qkv_type == DType.bfloat16 and has_amd_gpu_accelerator()
     )
 
 
