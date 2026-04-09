@@ -10,6 +10,7 @@
 #include "Cache/CachedTransform.h"
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/Support/PluginUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/ToolCommon/PassManagerConfigOptions.h"
