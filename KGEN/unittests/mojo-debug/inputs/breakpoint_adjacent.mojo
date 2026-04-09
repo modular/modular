@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# Test that three truly adjacent breakpoint() calls (no statements between)
+# each produce a separate stop and can each be resumed past.
+
 
 def main():
-    var sum = 0
-    for i in range(0, 10):
-        sum += i
-        if i == 8:
-            breakpoint()
-            print(i)
+    breakpoint()
+    breakpoint()
+    breakpoint()
+    print("done")
