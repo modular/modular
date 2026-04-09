@@ -101,6 +101,7 @@ HF_MODELS: dict[str, set[str]] = {
 CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/llama-3.1-8b-instruct__modulev3": MULTI,
     "meta-llama/llama-3.2-1b-instruct__modulev3": MULTI,
+    "google/gemma-3-1b-it__modulev3": MULTI,
     "unsloth/gpt-oss-20b-bf16__modulev3": DISABLE,  # TODO(MXF-121)
     "microsoft/phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
