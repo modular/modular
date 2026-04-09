@@ -20,7 +20,33 @@ _CPU_TEST_SRCS = glob(
 
 # Tests that need a longer timeout on remote GPU CI.
 _LONG_TIMEOUT_TESTS = [
+    "test_gemma4_decoder_layer_per_expert_scale_gpu.py",
+    "test_gemma4_decoder_layer_rms_norm_gpu.py",
     "test_sampling_gpu.py",
+    "test_gemma4_moe_expected_count_gpu.py",
+    "test_gemma4_moe_indices_gpu.py",
+    "test_gemma4_moe_reorder_gpu.py",
+    "test_gemma4_sampling_gpu.py",
+    "test_gemma4_router_topk_gpu.py",
+    "test_gemma4_router_per_expert_scale_gpu.py",
+    "test_gemma4_router_experts_per_expert_scale_gpu.py",
+    "test_gemma4_router_select_gpu.py",
+    "test_gemma4_moe_grouped_matmul_stats_gpu.py",
+    "test_gemma4_moe_combine_gpu.py",
+    "test_gemma4_moe_module_gpu.py",
+    "test_gemma4_moe_module_expected_count_gpu.py",
+    "test_gemma4_moe_gateup_batched_matmul_gpu.py",
+]
+
+_ARCHITECTURE_TESTS = [
+    "test_gemma4_decoder_layer_per_expert_scale_gpu.py",
+    "test_gemma4_decoder_layer_rms_norm_gpu.py",
+    "test_gemma4_moe_combine.py",
+    "test_gemma4_moe_module_gpu.py",
+    "test_gemma4_moe_module_expected_count_gpu.py",
+    "test_gemma4_rms_norm.py",
+    "test_gemma4_rms_norm_gpu.py",
+    "test_gemma4_router_experts_per_expert_scale_gpu.py",
 ]
 
 [
@@ -34,6 +60,7 @@ _LONG_TIMEOUT_TESTS = [
             src,
         ],
         gpu_constraints = ["//:has_gpu"] if "_gpu.py" in src else [],
+        mojo_deps = ["//max:MOGGKernelAPI"],
         tags = ["no-pydeps"] + (["skip-external-ci"] if src in [
             # FIXME: SDLC-3032
             "test_module.py",
@@ -54,6 +81,27 @@ _LONG_TIMEOUT_TESTS = [
             # pipelines/lib is only needed by the GPU sampling test; keep it
             # out of the default dep list so cpu_tests stays lightweight.
             ["//max/python/max/pipelines/lib"] if src == "test_sampling_gpu.py" else []
+        ) + (
+            ["//max/python/max/pipelines/architectures"] if src in _ARCHITECTURE_TESTS else []
+        ) + (
+            [requirement("torch")] if src in [
+                "test_gemma4_decoder_layer_per_expert_scale_gpu.py",
+                "test_gemma4_decoder_layer_rms_norm_gpu.py",
+                "test_gemma4_moe_expected_count_gpu.py",
+                "test_gemma4_moe_indices_gpu.py",
+                "test_gemma4_moe_reorder_gpu.py",
+                "test_gemma4_rms_norm_gpu.py",
+                "test_gemma4_sampling_gpu.py",
+                "test_gemma4_router_topk_gpu.py",
+                "test_gemma4_router_per_expert_scale_gpu.py",
+                "test_gemma4_router_experts_per_expert_scale_gpu.py",
+                "test_gemma4_router_select_gpu.py",
+                "test_gemma4_moe_grouped_matmul_stats_gpu.py",
+                "test_gemma4_moe_combine_gpu.py",
+                "test_gemma4_moe_module_gpu.py",
+                "test_gemma4_moe_module_expected_count_gpu.py",
+                "test_gemma4_moe_gateup_batched_matmul_gpu.py",
+            ] else []
         ),
     )
     for src in glob(["test_*.py"])

@@ -52,7 +52,11 @@ from std.memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
-from nn.topk_fi import topk_topp_sampling_from_prob
+from nn.topk_fi import (
+    topk_sampling_from_prob,
+    topk_softmax_sample,
+    topk_topp_sampling_from_prob,
+)
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -947,7 +951,7 @@ def _topk_stage1_old_no_shmem[
             partial.insert(_in_buffer[i], i)
 
         var k_batch = max_k
-        if K._is_not_null():
+        if K:
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1053,7 +1057,7 @@ def _topk_stage1_old[
             topk_sram[tid].insert(_in_buffer[i], i)
         barrier()
         var k_batch = max_k
-        if K._is_not_null():
+        if K:
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
         # Prepare for K iterations to find the local top-K elements
@@ -1134,7 +1138,7 @@ def _topk_stage1_no_shmem[
     var out_idxs = local_topk_idxs + bid * max_k
 
     var k_batch = max_k
-    if K._is_not_null():
+    if K:
         var k_raw = Int(K[batch_id])
         k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1260,7 +1264,7 @@ def _topk_stage1[
     var out_idxs = local_topk_idxs + bid * max_k
 
     var k_batch = max_k
-    if K._is_not_null():
+    if K:
         var k_raw = Int(K[batch_id])
         k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1421,13 +1425,13 @@ def _topk_stage2[
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
     # These values are only read from in the sampling case.
-    var s_val2 = type_of(vals_sram)(_unsafe_null=())
-    var s_id = type_of(idxs_sram)(_unsafe_null=())
+    var s_val2 = type_of(vals_sram)()
+    var s_id = type_of(idxs_sram)()
 
     with PDL():
         # Handle the case where stage 1 is executed with a single block
         var k_batch = max_k
-        if K._is_not_null():
+        if K:
             var k_raw = Int(K[batch_id])
             k_batch = max_k if k_raw == -1 else k_raw
 
@@ -1504,7 +1508,7 @@ def _topk_stage2[
                     batch_i_topk_vals[k] = total.u
                     s_id[k] = total.p
                     var temp_val = Float32(1.0)
-                    if temperature._is_not_null():
+                    if temperature:
                         temp_val = temperature[batch_id]
                     total.u = exp(
                         (total.u - max_logit) / max(temp_val.cast[T](), 1e-6)
@@ -1525,7 +1529,7 @@ def _topk_stage2[
         comptime if sampling:
             if tid == 0:
                 var top_p_val = Scalar[T](1.0)
-                if top_p._is_not_null():
+                if top_p:
                     top_p_val = top_p[batch_id].cast[T]()
                 var _top_p = _adjust_top_p[T](
                     top_p_val, s_val2, k_batch, s_sum[0]
@@ -1535,7 +1539,7 @@ def _topk_stage2[
                 # generator, so that we don't use the same random number for every
                 # token in the sequence.
                 var seed_val = UInt64(0)
-                if seed._is_not_null():
+                if seed:
                     seed_val = seed[batch_id]
                 var rng_state = Random(seed=seed_val)
                 var rng = rng_state.step_uniform()
@@ -1681,9 +1685,7 @@ def _topk_gpu[
     if k:
         k_ptr = rebind[UnsafePointer[Int64, ImmutAnyOrigin]](k.value().ptr)
     else:
-        k_ptr = UnsafePointer[Int64, ImmutAnyOrigin](
-            _unsafe_null=()
-        )  # null pointer
+        k_ptr = UnsafePointer[Int64, ImmutAnyOrigin]()  # null pointer
 
     var k_size = k.value().num_elements() if k else 0
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
@@ -1796,9 +1798,7 @@ def _topk_gpu[
             temperature.value().ptr
         )
     else:
-        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
-            _unsafe_null=()
-        )  # null pointer
+        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
     var temp_size = temperature.value().num_elements() if temperature else 0
 
     # Handle optional top_p parameter
@@ -1808,9 +1808,7 @@ def _topk_gpu[
             top_p.value().ptr
         )
     else:
-        top_p_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
-            _unsafe_null=()
-        )  # null pointer
+        top_p_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
     var top_p_size = top_p.value().num_elements() if top_p else 0
 
     # Handle optional seed parameter
@@ -1818,9 +1816,7 @@ def _topk_gpu[
     if seed:
         seed_ptr = seed.value().ptr
     else:
-        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin](
-            _unsafe_null=()
-        )  # null pointer
+        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
     var seed_size = seed.value().num_elements() if seed else 0
 
     var temp_device = DeviceBuffer[DType.float32](
@@ -2065,6 +2061,59 @@ def topk_gpu[
             ceildiv(N, block_size_), 8
         ) if not num_blocks_per_input else num_blocks_per_input.value()
 
+        # Exact top-k on a single small row does not need the generic two-stage
+        # pipeline. Skip the temporary buffers, input copy, and stage-2 merge
+        # when one block already covers the full row.
+        if not sampling and num_blocks_per_input_ == 1 and bound_max_k <= 32:
+            var k_ptr: UnsafePointer[Int64, ImmutAnyOrigin]
+            if k:
+                k_ptr = rebind[UnsafePointer[Int64, ImmutAnyOrigin]](
+                    k.value().ptr
+                )
+            else:
+                k_ptr = UnsafePointer[Int64, ImmutAnyOrigin]()
+
+            var k_size = k.value().num_elements() if k else 0
+            var k_device = DeviceBuffer[DType.int64](
+                ctx, k_ptr, k_size, owning=False
+            )
+
+            comptime if has_apple_gpu_accelerator():
+                comptime fastpath_kernel = _topk_stage1_old_no_shmem[
+                    dtype, out_idx_type, largest
+                ]
+                ctx.enqueue_function[fastpath_kernel, fastpath_kernel](
+                    k_device,
+                    bound_max_k,
+                    N,
+                    num_blocks_per_input_,
+                    internal_input.to_device_buffer(ctx),
+                    internal_out_vals.to_device_buffer(ctx),
+                    internal_out_idxs.to_device_buffer(ctx),
+                    grid_dim=internal_bs,
+                    block_dim=block_size_,
+                    attributes=pdl_launch_attributes(PDLLevel(1)),
+                )
+            else:
+                var shared_mem_bytes = _get_shmem_size_stg_1[dtype](block_size_)
+                comptime fastpath_kernel = _topk_stage1_old[
+                    dtype, out_idx_type, largest
+                ]
+                ctx.enqueue_function[fastpath_kernel, fastpath_kernel](
+                    k_device,
+                    bound_max_k,
+                    N,
+                    num_blocks_per_input_,
+                    internal_input.to_device_buffer(ctx),
+                    internal_out_vals.to_device_buffer(ctx),
+                    internal_out_idxs.to_device_buffer(ctx),
+                    grid_dim=internal_bs,
+                    block_dim=block_size_,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=pdl_launch_attributes(PDLLevel(1)),
+                )
+            return
+
         # Define shape for the kernel's internal cache buffers
         var internal_cache_shape = IndexList[2](
             internal_bs, num_blocks_per_input_ * bound_max_k
@@ -2156,30 +2205,68 @@ def _topk_topp_sampling_fi[
         probs_buf.unsafe_ptr(),
         row_major(Coord(IndexList[2](batch_size, d))),
     )
-    softmax_with_temperature(
-        ctx,
-        input,
-        probs,
-        temperature_arr=temperature,
-    )
 
-    # Step 2: top-k + top-p rejection sampling from probabilities.
+    # Step 2: sample from probabilities. When the whole batch is pure top-k,
+    # skip the heavier top-p wrapper and use the dedicated top-k kernel.
     # Reshape out_idxs from [batch, 1] (rank 2) to [batch] (rank 1).
     var out_shape = coord_to_index_list(out_idxs.layout.shape_coord())
     var out_1d = TileTensor(
         out_idxs.ptr,
         row_major(Idx(out_shape[0])),
     )
-    topk_topp_sampling_from_prob[dtype, out_idx_type](
-        ctx,
-        probs,
-        out_1d,
-        max_k,
-        top_p_val=min_top_p,
-        top_k_arr=k,
-        top_p_arr=top_p,
-        rng_seed=rng_seed,
-    )
+
+    if d >= 65536 and min_top_p == 1.0:
+        var row_max_prob_buf = ctx.enqueue_create_buffer[DType.float32](
+            batch_size
+        )
+        var row_max_prob = TileTensor(
+            row_max_prob_buf.unsafe_ptr(),
+            row_major(Idx(batch_size)),
+        )
+        softmax_with_temperature(
+            ctx,
+            input,
+            probs,
+            temperature_arr=temperature,
+            row_max_prob_arr=row_max_prob,
+        )
+        topk_sampling_from_prob[dtype, out_idx_type](
+            ctx,
+            probs,
+            out_1d,
+            max_k,
+            top_k_arr=k,
+            rng_seed=rng_seed,
+            row_max_prob_arr=row_max_prob.as_immut(),
+        )
+        _ = row_max_prob_buf^
+    else:
+        softmax_with_temperature(
+            ctx,
+            input,
+            probs,
+            temperature_arr=temperature,
+        )
+        if min_top_p == 1.0:
+            topk_sampling_from_prob[dtype, out_idx_type](
+                ctx,
+                probs,
+                out_1d,
+                max_k,
+                top_k_arr=k,
+                rng_seed=rng_seed,
+            )
+        else:
+            topk_topp_sampling_from_prob[dtype, out_idx_type](
+                ctx,
+                probs,
+                out_1d,
+                max_k,
+                top_p_val=min_top_p,
+                top_k_arr=k,
+                top_p_arr=top_p,
+                rng_seed=rng_seed,
+            )
 
     _ = probs_buf^
 
@@ -2259,11 +2346,40 @@ def fused_token_sampling_gpu[
 
         comptime assert input.flat_rank == 2
 
+        var batch_size = Int(input.dim[0]())
         var vocab_size = input.layout.shape[1]().value()
         var adjusted_max_k = vocab_size if max_k == -1 else max_k
 
-        # softmax with temperature, then top-k+top-p rejection sampling.
+        # For finite large-k sampling, avoid materializing the full
+        # probability matrix when enough rows amortize the setup cost. On
+        # B200, single-row decode is still faster through the dense
+        # softmax-with-temperature path plus the FlashInfer top-k/top-p sampler,
+        # even for pure top-k sampling. Only use the logits-space sampler once
+        # multiple rows are available.
+        if max_k != -1 and adjusted_max_k >= 64 and batch_size > 1:
+            var out_shape = coord_to_index_list(out_idxs.layout.shape_coord())
+            var out_1d = TileTensor(
+                out_idxs.ptr,
+                row_major(Idx(out_shape[0])),
+            )
+            topk_softmax_sample[dtype, out_idx_type](
+                ctx,
+                input,
+                out_1d,
+                adjusted_max_k,
+                top_k_arr=rebind[
+                    Optional[
+                        TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]
+                    ]
+                ](k),
+                temperature=temperature,
+                top_p_val=min_top_p,
+                top_p_arr=top_p,
+                seed=seed,
+            )
+            return
 
+        # softmax with temperature, then top-k+top-p rejection sampling.
         if adjusted_max_k >= 64:
             _topk_topp_sampling_fi[dtype, out_idx_type](
                 ctx,
@@ -2353,11 +2469,11 @@ def apply_gumbel_noise_kernel[
 
         for tok_idx in range(group_id, Int(num_tokens), num_groups):
             var temp_val = Float32(1.0)
-            if temperature._is_not_null():
+            if temperature:
                 temp_val = temperature[tok_idx]
 
             var seed_val = UInt64(0)
-            if seed._is_not_null():
+            if seed:
                 seed_val = seed[tok_idx]
 
             var ld_ptr = input.ptr + tok_idx * N
@@ -2476,9 +2592,7 @@ def gumbel_sampling_gpu[
                 temperature.value().ptr
             )
         else:
-            temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
-                _unsafe_null=()
-            )  # null pointer
+            temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
         var temp_size = temperature.value().num_elements() if temperature else 0
 
         # Handle optional seed parameter
@@ -2488,9 +2602,7 @@ def gumbel_sampling_gpu[
                 seed.value().ptr
             )
         else:
-            seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin](
-                _unsafe_null=()
-            )  # null pointer
+            seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
         var seed_size = seed.value().num_elements() if seed else 0
 
         comptime hw_info = ctx.default_device_info

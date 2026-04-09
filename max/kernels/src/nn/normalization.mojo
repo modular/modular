@@ -2373,6 +2373,258 @@ def rms_norm[
         ](shape, gamma, epsilon, weight_offset, ctx)
 
 
+def _rms_norm_then_residual_add_impl[
+    dtype: DType,
+    rank: Int,
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    residual_input_fn: def[width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
+    output_fn: def[width: Int, alignment: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing -> None,
+    /,
+    target: StaticString = "cpu",
+    multiply_before_cast: Bool = True,
+](
+    shape: IndexList[rank],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContextPtr,
+) raises:
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+
+    if gamma.layout.shape[0]().value() != shape[rank - 1]:
+        raise Error(
+            "Gamma size "
+            + String(gamma.layout.shape[0]().value())
+            + " does not match dimension of reduction "
+            + String(shape[rank - 1])
+            + "."
+        )
+
+    if shape.flattened_length() == 0:
+        return
+
+    comptime if is_gpu[target]():
+        rms_norm_then_residual_add_gpu[
+            input_0_fn,
+            residual_input_fn,
+            output_fn,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            shape,
+            gamma,
+            epsilon,
+            weight_offset,
+            ctx.get_device_context(),
+        )
+    else:
+        @parameter
+        @always_inline
+        def fused_output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+            output_fn[width, alignment](
+                idx, val + residual_input_fn[width, rank](idx)
+            )
+
+        rms_norm_cpu[
+            input_0_fn,
+            fused_output_fn,
+            multiply_before_cast=multiply_before_cast,
+        ](shape, gamma, epsilon, weight_offset)
+
+
+@always_inline
+def rms_norm_then_residual_add[
+    dtype: DType,
+    rank: Int,
+    //,
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    residual_input_fn: def[width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
+    output_0_fn: def[width: Int, rank: Int, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    /,
+    target: StaticString = "cpu",
+    multiply_before_cast: Bool = True,
+](
+    shape: IndexList[rank],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContextPtr,
+) raises:
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+
+    @always_inline
+    @parameter
+    def output_fn_wrapper[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        output_0_fn[width, rank, alignment](idx, val)
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return trace_arg("input", shape, dtype)
+
+    with Trace[TraceLevel.OP, target=target](
+        "rms_norm_then_residual_add",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
+    ):
+        _rms_norm_then_residual_add_impl[
+            dtype,
+            rank,
+            input_0_fn,
+            residual_input_fn,
+            output_fn_wrapper,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](shape, gamma, epsilon, weight_offset, ctx)
+
+
+def _rms_norm_then_residual_add_scaled_impl[
+    dtype: DType,
+    rank: Int,
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    residual_input_fn: def[width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
+    output_fn: def[width: Int, alignment: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing -> None,
+    /,
+    target: StaticString = "cpu",
+    multiply_before_cast: Bool = True,
+](
+    shape: IndexList[rank],
+    gamma: TileTensor[dtype, ...],
+    output_scale: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContextPtr,
+) raises:
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert output_scale.flat_rank == 1, "output_scale must have rank 1"
+
+    if gamma.layout.shape[0]().value() != shape[rank - 1]:
+        raise Error(
+            "Gamma size "
+            + String(gamma.layout.shape[0]().value())
+            + " does not match dimension of reduction "
+            + String(shape[rank - 1])
+            + "."
+        )
+
+    if output_scale.layout.shape[0]().value() != 1:
+        raise Error("output_scale must contain exactly one element.")
+
+    if shape.flattened_length() == 0:
+        return
+
+    comptime if is_gpu[target]():
+        rms_norm_then_residual_add_scaled_gpu[
+            input_0_fn,
+            residual_input_fn,
+            output_fn,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            shape,
+            gamma,
+            output_scale,
+            epsilon,
+            weight_offset,
+            ctx.get_device_context(),
+        )
+    else:
+        var output_scale_scalar = rebind[Scalar[dtype]](output_scale[0])
+
+        @parameter
+        @always_inline
+        def fused_output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+            output_fn[width, alignment](
+                idx,
+                (val + residual_input_fn[width, rank](idx))
+                * SIMD[dtype, width](output_scale_scalar),
+            )
+
+        rms_norm_cpu[
+            input_0_fn,
+            fused_output_fn,
+            multiply_before_cast=multiply_before_cast,
+        ](shape, gamma, epsilon, weight_offset)
+
+
+@always_inline
+def rms_norm_then_residual_add_scaled[
+    dtype: DType,
+    rank: Int,
+    //,
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    residual_input_fn: def[width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
+    output_0_fn: def[width: Int, rank: Int, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    /,
+    target: StaticString = "cpu",
+    multiply_before_cast: Bool = True,
+](
+    shape: IndexList[rank],
+    gamma: TileTensor[dtype, ...],
+    output_scale: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContextPtr,
+) raises:
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert output_scale.flat_rank == 1, "output_scale must have rank 1"
+
+    @always_inline
+    @parameter
+    def output_fn_wrapper[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        output_0_fn[width, rank, alignment](idx, val)
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return trace_arg("input", shape, dtype)
+
+    with Trace[TraceLevel.OP, target=target](
+        "rms_norm_then_residual_add_scaled",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
+    ):
+        _rms_norm_then_residual_add_scaled_impl[
+            dtype,
+            rank,
+            input_0_fn,
+            residual_input_fn,
+            output_fn_wrapper,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](shape, gamma, output_scale, epsilon, weight_offset, ctx)
+
+
 def _rms_norm_fused_residual_add_impl[
     dtype: DType,
     rank: Int,
@@ -3248,3 +3500,93 @@ def group_norm[
             num_groups,
             ctx=ctx.get_device_context(),
         )
+
+
+def rms_norm_then_residual_add_gpu[
+    dtype: DType,
+    rank: Int,
+    //,
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    residual_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[width: Int, alignment: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel(1),
+](
+    shape: IndexList[rank, ...],
+    gamma: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    @parameter
+    @always_inline
+    def fused_output_fn[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        output_fn[width, alignment](idx, val + residual_fn[width, rank](idx))
+
+    rms_norm_gpu[
+        input_fn, fused_output_fn, multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
+    ](
+        shape,
+        gamma,
+        epsilon,
+        weight_offset,
+        ctx,
+    )
+
+
+def rms_norm_then_residual_add_scaled_gpu[
+    dtype: DType,
+    rank: Int,
+    //,
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    residual_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[width: Int, alignment: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel(1),
+](
+    shape: IndexList[rank, ...],
+    gamma: TileTensor[dtype, ...],
+    output_scale: TileTensor[dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    comptime assert output_scale.flat_rank == 1, "output_scale must have rank 1"
+    var output_scale_scalar = rebind[Scalar[dtype]](output_scale[0])
+
+    @parameter
+    @always_inline
+    def fused_output_fn[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        output_fn[width, alignment](
+            idx,
+            (val + residual_fn[width, rank](idx))
+            * SIMD[dtype, width](output_scale_scalar),
+        )
+
+    rms_norm_gpu[
+        input_fn, fused_output_fn, multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
+    ](
+        shape,
+        gamma,
+        epsilon,
+        weight_offset,
+        ctx,
+    )
