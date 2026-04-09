@@ -661,14 +661,8 @@ def _sfb_cpasync_produce_tile[
         Coord(Idx[sfb_smem_tile_elems]()),
     )
 
-    # Per-tile address components (all lanes compute).
-    var outer = (UInt(work_info.n) * UInt(MMA_N)) % UInt(
-        SF_MN_GROUP_SIZE
-    ) + UInt(lane_id())
-    var row_in_atom = outer % UInt(SF_ATOM_M[0])
-    var sub_column = outer / UInt(SF_ATOM_M[0])
-    var n_group = (Int(work_info.n) * MMA_N) // SF_MN_GROUP_SIZE
     var batch = Int(work_info.k_start)
+    comptime num_passes = ceildiv(MMA_N, WARP_SIZE)
 
     for i in range(num_iters // UInt32(k_group_size)):
         sfb_pipeline.wait_consumer()
@@ -687,60 +681,67 @@ def _sfb_cpasync_produce_tile[
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
             comptime for k_atom in range(num_sf_k_tiles):
-                if lane_id() < MMA_N:
-                    # SMEM row = lane_id(), sub_col = 0 always. Data lands
-                    # at dp 0..MMA_N-1, TMEM column 0 (no sfb_tmem_adj needed).
-                    var smem_offset = (
-                        k_atom * K_TILE_ELEMS + lane_id() * ROW_STRIDE
-                    )
-                    # K bounds check: OOB k-atoms are zero-filled
-                    # because cp.async has no auto-fill and NaN
-                    # scales would corrupt the accumulator.
-                    # N bounds check is unnecessary: the scale
-                    # tensor is allocated with align_up(MMA_N,
-                    # SF_MN_GROUP_SIZE) padding, so OOB lanes
-                    # read valid memory whose values are harmless
-                    # (multiplied against zero-padded B tiles).
-                    if k_tile_base + k_atom < sfb_k_tiles:
-                        var global_offset = (
-                            batch * sfb_batch_stride
-                            + n_group * sfb_n_stride
-                            + Int(
-                                sfb_global_atom_layout(
-                                    Coord(
-                                        RuntimeInt(
-                                            Scalar[DType.int64](
-                                                k_tile_base + k_atom
-                                            )
-                                        ),
-                                        RuntimeInt(
-                                            Scalar[DType.int64](row_in_atom)
-                                        ),
-                                        RuntimeInt(
-                                            Scalar[DType.int64](sub_column)
-                                        ),
+                comptime for p in range(num_passes):
+                    var pos = p * WARP_SIZE + lane_id()
+                    if pos < MMA_N:
+                        # Global address: compute per-position to handle
+                        # tiles that straddle SF_MN_GROUP boundaries.
+                        var abs_pos = UInt(Int(work_info.n) * MMA_N + Int(pos))
+                        var n_group = Int(abs_pos) // SF_MN_GROUP_SIZE
+                        var outer = abs_pos % UInt(SF_MN_GROUP_SIZE)
+                        var row_in_atom = outer % UInt(SF_ATOM_M[0])
+                        var sub_column = outer / UInt(SF_ATOM_M[0])
+                        # SMEM atom layout: row within 32-row atom + sub_col.
+                        var smem_row = Int(pos) % SF_ATOM_M[0]
+                        var smem_sub_col = Int(pos) // SF_ATOM_M[0]
+                        var smem_offset = (
+                            k_atom * K_TILE_ELEMS
+                            + smem_row * ROW_STRIDE
+                            + smem_sub_col * SF_ATOM_K
+                        )
+                        # K bounds check: OOB k-atoms are zero-filled.
+                        if k_tile_base + k_atom < sfb_k_tiles:
+                            var global_offset = (
+                                batch * sfb_batch_stride
+                                + n_group * sfb_n_stride
+                                + Int(
+                                    sfb_global_atom_layout(
+                                        Coord(
+                                            RuntimeInt(
+                                                Scalar[DType.int64](
+                                                    k_tile_base + k_atom
+                                                )
+                                            ),
+                                            RuntimeInt(
+                                                Scalar[DType.int64](row_in_atom)
+                                            ),
+                                            RuntimeInt(
+                                                Scalar[DType.int64](sub_column)
+                                            ),
+                                        )
                                     )
                                 )
                             )
-                        )
-                        async_copy[size=SF_ATOM_K * size_of[sfb_dtype](),](
-                            (sfb_global_ptr + global_offset).address_space_cast[
-                                AddressSpace.GLOBAL
-                            ](),
-                            (
-                                sfb_smem_tile_ptr + smem_offset
-                            ).address_space_cast[AddressSpace.SHARED](),
-                        )
-                    else:
-                        (sfb_smem_tile_ptr + smem_offset).store(
-                            SIMD[sfb_dtype, SF_ATOM_K]()
-                        )
+                            async_copy[size=SF_ATOM_K * size_of[sfb_dtype](),](
+                                (
+                                    sfb_global_ptr + global_offset
+                                ).address_space_cast[AddressSpace.GLOBAL](),
+                                (
+                                    sfb_smem_tile_ptr + smem_offset
+                                ).address_space_cast[AddressSpace.SHARED](),
+                            )
+                        else:
+                            (sfb_smem_tile_ptr + smem_offset).store(
+                                SIMD[sfb_dtype, SF_ATOM_K]()
+                            )
 
-        # async_copy_arrive: pending_count +1 (auto -1 on completion).
-        # mbar.arrive: arrive_count -1.
-        if lane_id() < MMA_N:
-            async_copy_arrive(sfb_mbar[0].unsafe_ptr())
-            _ = sfb_mbar[0].arrive()
+        # async_copy_arrive + mbar.arrive for each active position.
+        # Multi-pass: same thread may arrive multiple times for MMA_N > 32.
+        comptime for p in range(num_passes):
+            var pos = p * WARP_SIZE + lane_id()
+            if pos < MMA_N:
+                async_copy_arrive(sfb_mbar[0].unsafe_ptr())
+                _ = sfb_mbar[0].arrive()
 
         sfb_pipeline.producer_step()
 
@@ -2095,15 +2096,16 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime if config.cta_group == 2:
         comptime assert MMA_M == 256 and MMA_N in (
             16,
-            24,
             32,
+            48,
             64,
+            96,
             128,
             192,
             256,
         ), (
             "Only support cta_group == 2 with MMA_M == 256 and MMA_N in (16,"
-            " 24, 32, 64, 128, 192, 256)"
+            " 32, 48, 64, 96, 128, 192, 256)"
         )
 
     else:
@@ -2112,13 +2114,15 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             16,
             24,
             32,
+            48,
             64,
+            96,
             128,
             192,
             256,
         ), (
-            "Only support MMA_M == 128 and MMA_N in (8, 16, 24, 32, 64, 128,"
-            " 192, 256) when cta_group == 1"
+            "Only support MMA_M == 128 and MMA_N in (8, 16, 24, 32, 48, 64,"
+            " 96, 128, 192, 256) when cta_group == 1"
         )
     comptime register_based_epilogue = config.register_based_epilogue
 

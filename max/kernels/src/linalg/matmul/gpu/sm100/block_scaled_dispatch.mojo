@@ -163,6 +163,10 @@ def heuristic_and_outliers_dispatch[
                 num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
                 k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
+                num_pipeline_stages=Optional(
+                    tuning_config.num_pipeline_stages
+                ) if tuning_config.num_pipeline_stages
+                > 0 else None,
                 is_small_bn=tuning_config.is_small_bn,
             )
 

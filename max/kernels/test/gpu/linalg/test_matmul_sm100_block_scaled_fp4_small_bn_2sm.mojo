@@ -44,7 +44,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
 
         # 2SM tests: sweep MMA_N in [16, 32].
         # Note: MMA_N=24 is valid HW but BN=12 breaks TMA tile layout.
-        comptime for mma_n in [16, 32]:
+        comptime for mma_n in [16, 32, 48, 64, 96]:
             comptime block_tile = Index(128, mma_n // 2, BK)
             comptime umma = Index(256, mma_n, MMA_K)
 
@@ -189,7 +189,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
         # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path
         # with 2SM (cta_group=2).
         print("\n--- 2SM Epilogue fusion tests ---")
-        comptime for mma_n in [16, 32]:
+        comptime for mma_n in [16, 32, 48, 64, 96]:
             comptime epi_block_tile = Index(128, mma_n // 2, BK)
             comptime epi_umma = Index(256, mma_n, MMA_K)
 

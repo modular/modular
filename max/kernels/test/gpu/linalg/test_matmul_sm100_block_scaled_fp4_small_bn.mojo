@@ -35,7 +35,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        comptime for mma_n in [8, 16, 32]:
+        comptime for mma_n in [8, 16, 24, 32, 48, 64, 96]:
             comptime block_tile_shape = Index(128, mma_n, BK)
             comptime umma_shape = Index(128, mma_n, MMA_K)
 
@@ -271,7 +271,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
 
         # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path.
         print("\n--- Epilogue fusion tests ---")
-        comptime for mma_n in [8, 16, 32]:
+        comptime for mma_n in [8, 16, 24, 32, 48, 64, 96]:
             comptime epi_block_tile = Index(128, mma_n, BK)
             comptime epi_umma = Index(128, mma_n, MMA_K)
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
