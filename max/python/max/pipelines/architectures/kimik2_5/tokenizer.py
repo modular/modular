@@ -31,6 +31,7 @@ from max.interfaces import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TextGenerationRequestTool,
     TokenBuffer,
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
@@ -175,12 +176,15 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         return encoded_prompt
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Applies the tokenizer's chat template to messages."""
         templated = self.delegate.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
+            tools=tools,
             add_generation_prompt=True,
         )
         assert isinstance(templated, str)

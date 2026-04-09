@@ -27,6 +27,7 @@ from max.interfaces import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TextGenerationRequestTool,
     TokenBuffer,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import to_rgb
@@ -39,6 +40,15 @@ from transformers import AutoTokenizer
 from .context import Gemma4Context
 from .image_processor import Gemma4ImageProcessor
 from .processing_utils import load_processor_config
+from .tool_parser import (
+    STRING_DELIM,
+    TOOL_CALL_END,
+    TOOL_CALL_START,
+    TOOL_END,
+    TOOL_RESPONSE_END,
+    TOOL_RESPONSE_START,
+    TOOL_START,
+)
 from .video_processor import Gemma4VideoProcessor, VideoMetadata
 
 
@@ -133,6 +143,26 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
 
         self._patch_chat_template_for_video()
 
+        # Pre-compute special token IDs that should be skipped during decoding
+        # Gemma4 marks tool tokens as special, but we need to preserve them
+        tool_token_strings = [
+            TOOL_CALL_START,
+            TOOL_CALL_END,
+            TOOL_START,
+            TOOL_END,
+            TOOL_RESPONSE_START,
+            TOOL_RESPONSE_END,
+            STRING_DELIM,
+        ]
+        tool_token_ids = {
+            self.delegate.convert_tokens_to_ids(token)
+            for token in tool_token_strings
+        }
+        # Skip all special tokens except tool-related ones
+        self._skipped_token_ids = (
+            set(self.delegate.all_special_ids) - tool_token_ids
+        )
+
     def _patch_chat_template_for_video(self) -> None:
         """Patch the chat template to handle ``type == 'video'`` if missing.
 
@@ -167,16 +197,45 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             )
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         # Override to use the tokenizer's (not processor) apply_chat_template.
         templated_message = self.delegate.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
+            tools=tools,
             add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
         return templated_message
+
+    async def decode(
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+    ) -> str:
+        """Decode tokens, preserving tool-related special tokens.
+
+        Gemma4 marks tool tokens as special (unlike Kimi), so we need
+        to selectively preserve them when skip_special_tokens=True by filtering
+        unwanted special tokens before decoding.
+        """
+        skip_special_tokens = kwargs.get("skip_special_tokens", True)
+
+        if not skip_special_tokens:
+            # No filtering needed
+            return await super().decode(encoded, **kwargs)
+
+        # Filter out special tokens that should be skipped (all except tool tokens)
+        filtered_ids = [
+            token_id
+            for token_id in encoded.tolist()
+            if token_id not in self._skipped_token_ids
+        ]
+
+        # Decode with skip_special_tokens=False since we already filtered
+        kwargs_no_skip = {**kwargs, "skip_special_tokens": False}
+        return await super().decode(np.array(filtered_ids), **kwargs_no_skip)
 
     async def new_context(
         self, request: TextGenerationRequest
@@ -188,7 +247,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages)
+            prompt = self.apply_chat_template(request.messages, request.tools)
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")

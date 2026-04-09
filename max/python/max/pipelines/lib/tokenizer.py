@@ -760,7 +760,9 @@ class TextAndVisionTokenizer(
             self.vision_token_ids.append(image_break_token_id)
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Applies the processor's chat template to the messages."""
         # This converts between the Pydantic TextGenerationRequestMessage
@@ -768,6 +770,7 @@ class TextAndVisionTokenizer(
         templated_message = self.processor.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
+            tools=tools,
             add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
@@ -846,7 +849,7 @@ class TextAndVisionTokenizer(
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages)
+            prompt = self.apply_chat_template(request.messages, request.tools)
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
