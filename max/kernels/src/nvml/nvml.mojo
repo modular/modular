@@ -56,7 +56,7 @@ def _init_dylib() -> OwnedDLHandle:
     try:
         var dylib = _try_find_dylib(_get_nvml_library_paths())
         _check_error(
-            dylib._handle.get_function[def() -> Result]("nvmlInit_v2")()
+            dylib._handle._get_function["nvmlInit_v2", def() -> Result]()()
         )
         return dylib^
     except e:

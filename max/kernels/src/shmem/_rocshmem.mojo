@@ -708,5 +708,5 @@ def rocshmem_signal_wait_until[
 
 
 @extern("rocshmem_fence")
-def rocshmem_fence():
+def rocshmem_fence() abi("C"):
     ...

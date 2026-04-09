@@ -517,6 +517,37 @@ class ExportKindAttr(max._core.Attribute):
     @property
     def value(self) -> ExportKind: ...
 
+class FnTypeIsCABIAttr(max._core.Attribute):
+    """
+    The `#kgen.fn_type_is_cabi` attribute returns true if the given type value
+    refers to a Mojo function pointer type annotated with the `abi("C")` effect,
+    and false otherwise (including for non-function types).
+
+    This is used to enforce that `DLHandle.get_function` is always called with
+    an explicit `abi("C")` function pointer type, ensuring dynamically-loaded
+    symbols are called with the correct C ABI.
+
+    Example:
+
+    ```mlir
+    #kgen.fn_type_is_cabi<#kgen.type<!kgen.generator<(f64) cabi -> f64>>> : i1
+    // evaluates to true
+
+    #kgen.fn_type_is_cabi<#kgen.type<!kgen.generator<(f64) -> f64>>> : i1
+    // evaluates to false
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        type: max._core.dialects.builtin.IntegerType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IntegerType: ...
+
 class FuncLiteralAttr(max._core.Attribute):
     """
     The `#kgen.func.literal` attribute represent a instance of a function
@@ -2126,6 +2157,8 @@ class FnEffects(enum.Enum):
     register_passable = 128
 
     extern = 256
+
+    cabi = 512
 
 class InlineLevel(enum.Enum):
     automatic = 0

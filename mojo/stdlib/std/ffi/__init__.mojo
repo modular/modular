@@ -39,7 +39,7 @@ from std.ffi import OwnedDLHandle
 
 def main() raises:
     var lib = OwnedDLHandle("libm.so")
-    var sqrt = lib.get_function[def(Float64) -> Float64]("sqrt")
+    var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
     print(sqrt(4.0))  # 2.0
 ```
 """
@@ -207,7 +207,7 @@ struct OwnedDLHandle(Movable):
 
     def main() raises:
         var lib = OwnedDLHandle("libm.so")
-        var sqrt = lib.get_function[def(Float64) -> Float64]("sqrt")
+        var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
         print(sqrt(4.0))  # Prints: 2.0
         # Library automatically closed when lib goes out of scope
     ```
@@ -302,8 +302,18 @@ struct OwnedDLHandle(Movable):
         """Returns a handle to the function with the given name in the dynamic
         library.
 
+        `result_type` must be a C-ABI function type (using the `abi("C")` effect)
+        to ensure correct argument and return-value passing. Using a plain Mojo
+        function type (`fn(...) -> T`) produces silent ABI corruption for any
+        struct argument or return value.
+
+        Example:
+        ```mojo
+        var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+        ```
+
         Parameters:
-            result_type: The type of the function pointer to return.
+            result_type: The C-ABI function pointer type to return.
 
         Args:
             name: The name of the function to get the handle for.
@@ -405,6 +415,26 @@ struct OwnedDLHandle(Movable):
             The result.
         """
         return self._handle.call[name, return_type](*args)
+
+
+def __fn_type_is_cabi[T: AnyType]() -> Bool:
+    """Returns `True` if `T` is a function pointer type with the `abi("C")` effect.
+
+    This is used to enforce that `DLHandle.get_function` is called with an
+    explicit C-ABI function pointer type.  A plain Mojo function type (without
+    `abi("C")`) returns `False`.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has the `abi("C")` effect, `False` otherwise.
+    """
+    return __mlir_attr[
+        `#kgen.fn_type_is_cabi<`,
+        T,
+        `> : i1`,
+    ]
 
 
 @fieldwise_init
@@ -523,14 +553,24 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         library.
 
         Parameters:
-            result_type: The type of the function pointer to return.
+            result_type: The C-ABI function pointer type to return.
 
         Args:
             name: The name of the function to get the handle for.
 
         Returns:
             A handle to the function.
+
+        Constraints:
+            `result_type` must be a function pointer type annotated with
+            `abi("C")` (e.g. `def(Float64) abi("C") -> Float64`). Using a
+            plain Mojo function type causes silent ABI corruption for struct
+            arguments and return values.
         """
+        comptime assert __fn_type_is_cabi[result_type](), (
+            'result_type must be a C-ABI function pointer type: use abi("C") on'
+            ' the function type, e.g. `def(Float64) abi("C") -> Float64`'
+        )
 
         return self._get_function[result_type](
             cstr_name=name.as_c_string_slice().unsafe_ptr()
@@ -693,9 +733,12 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
         debug_assert[_check_symbol]("symbol not found: ", name)
         var v = args.get_loaded_kgen_pack()
-        return self.get_function[def(type_of(v)) -> return_type](String(name))(
-            v
-        )
+        # TODO(MOCO-3692): This uses Mojo calling convention instead of C ABI.
+        # We cannot add abi("C") here because `type_of(v)` is a kgen pack type,
+        # not the expanded individual argument types, and Mojo function type
+        # syntax has no variadic parameter form. Safe in practice only for
+        # scalar/register-passable arguments where Mojo and C conventions agree.
+        return self._get_function[name, def(type_of(v)) -> return_type]()(v)
 
 
 @always_inline
