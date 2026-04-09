@@ -922,6 +922,54 @@ struct TileTensor[
         )
 
     @always_inline("nodebug")
+    def tile[
+        tile_shape_types: Variadic.TypesOfTrait[CoordLike],
+        //,
+    ](
+        self, tile_shape: Coord[*tile_shape_types], coordinates: Coord
+    ) -> TileTensor[
+        dtype=Self.dtype,
+        origin=Self.origin,
+        LayoutType=Layout[
+            shape_types=tile_shape_types,
+            stride_types=Self.LayoutType._stride_types,
+        ],
+        address_space=Self.address_space,
+        element_size=Self.element_size,
+    ]:
+        """Extract a tile (sub-tensor) with shape specified as a Coord argument.
+
+        This overload accepts the tile shape as a Coord value rather than
+        compile-time Int parameters, enabling use cases where tile shapes
+        are constructed programmatically or passed as values.
+
+        Parameters:
+            tile_shape_types: Types of the tile shape elements (inferred).
+
+        Args:
+            tile_shape: The dimensions of the tile as a Coord.
+            coordinates: The tile coordinates as a Coord.
+
+        Returns:
+            A view into the original tensor representing the specified tile.
+
+        Example:
+
+        ```mojo
+        from layout.tile_layout import row_major
+        from layout import TileTensor
+        from layout.coord import coord
+
+        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var tensor = TileTensor(storage, row_major[4, 4]()).fill(1.0)
+
+        # Extract the tile at position (1, 0) with tile size 2x2
+        var t = tensor.tile(coord[2, 2](), coord[1, 0]())
+        ```
+        """
+        return _tile(self, tile_shape, coordinates)
+
+    @always_inline("nodebug")
     def tile_with_offset[
         *tile_sizes: Int
     ](self, coordinates: Coord) -> Tuple[
