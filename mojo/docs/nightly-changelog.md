@@ -8,6 +8,23 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Added `abi("C")` as a function effect for declaring C calling convention on
+  function definitions and function pointer types. Functions marked with
+  `abi("C")` use the platform C ABI (System V x86-64 / ARM64 AAPCS) for
+  struct arguments and return values, enabling safe interop with C libraries:
+
+  ```mojo
+  # C-ABI function definition (safe as a callback into C code)
+  def add(a: Int32, b: Int32) abi("C") -> Int32:
+      return a + b
+
+  # C-ABI function pointer type (safe for use with DLHandle.get_function)
+  var f = handle.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+  ```
+
+  `DLHandle.get_function[]` now enforces that the type parameter carries
+  `abi("C")`, preventing silent ABI mismatches when loading C symbols.
+
 - String literals now support `\uXXXX` and `\UXXXXXXXX` unicode escape
   sequences, matching Python. The resulting code point is stored as UTF-8.
   Invalid code points and surrogates are rejected at parse time.
