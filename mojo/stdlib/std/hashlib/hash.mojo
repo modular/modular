@@ -112,6 +112,14 @@ def hash[
 
     Returns:
         A 64-bit integer hash based on the underlying implementation.
+
+    Example:
+    ```mojo
+    from hashlib import hash
+
+    var h = hash(42)
+    print(h)  # prints a UInt64 hash value
+    ```
     """
     var hasher = HasherType()
     hasher.update(hashable)
@@ -133,6 +141,15 @@ def hash[
 
     Returns:
         A 64-bit integer hash value.
+
+    Example:
+    ```mojo
+    from hashlib import hash
+
+    var msg = String("hello")
+    var h = hash(msg.unsafe_ptr(), len(msg))
+    print(h)  # prints a UInt64 hash value
+    ```
     """
     var hasher = HasherType()
     hasher._update_with_bytes(Span(ptr=bytes, length=n))
