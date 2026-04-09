@@ -4457,14 +4457,11 @@ class ClosureType(max._core.Type):
 
     def __init__(
         self,
-        parent_symbol: max._core.dialects.builtin.SymbolRefAttr,
-        name: max._core.dialects.builtin.StringAttr,
+        closure_attr: max._core.dialects.builtin.TypedAttr,
         closure_memory_kind: ClosureMemoryKind,
     ) -> None: ...
     @property
-    def parent_symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
-    @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
+    def closure_attr(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def closure_memory_kind(self) -> ClosureMemoryKind: ...
 
