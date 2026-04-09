@@ -34,6 +34,19 @@ ParseResult parseLoop(OpAsmParser &p,
 void printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
                TypeRange operandTypes, TypeRange resultTypes, Region &body);
 
+/// Custom assembly parser for `hlcf.for` bounds (`lb to ub step s`).
+/// An optional `: type` annotation after `s` sets the type for all three
+/// bounds; when absent, `index` is assumed (backward-compatible with
+/// existing IR that always used `index` bounds).
+ParseResult parseForBoundsWithOptionalType(
+    OpAsmParser &parser, OpAsmParser::UnresolvedOperand &lowerBound,
+    Type &lowerBoundType, OpAsmParser::UnresolvedOperand &upperBound,
+    Type &upperBoundType, OpAsmParser::UnresolvedOperand &step, Type &stepType);
+void printForBoundsWithOptionalType(OpAsmPrinter &printer, Operation *op,
+                                    Value lowerBound, Type lowerBoundType,
+                                    Value upperBound, Type upperBoundType,
+                                    Value step, Type stepType);
+
 } // namespace M::HLCF
 
 #endif // KGEN_HLCFDIALECT_HLCFUTILS_H
