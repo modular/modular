@@ -1218,6 +1218,8 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/MojoTooling/*.h"]),
     deps = [
         ":MojoParser",
+        "//Config",
+        "//Support:Driver",
     ],
 )
 
