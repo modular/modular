@@ -4,11 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/ToolCommon/KGENPasses.h"
-
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -68,29 +71,43 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   Value inductionVar = body.getArgument(0);
   HLCF::ForLoopBoundCmpPredicate cmpPredicate = forLoop.getCmpPredicateType();
 
+  // Cast a POP scalar value to builtin index for use in index.cmp.
+  auto toIndex = [&](Value v) -> Value {
+    if (v.getType().isIndex())
+      return v;
+    mlir::Location loc = forLoop->getLoc();
+    auto popIndexTy =
+        POP::SIMDType::get(v.getContext(), 1, KGENDType(KGENDType::index));
+    Value asPopIndex = POP::CastOp::create(rewriter, loc, popIndexTy, v);
+    return POP::CastToBuiltinOp::create(rewriter, loc, rewriter.getIndexType(),
+                                        asPopIndex);
+  };
+  Value inductionVarIdx = toIndex(inductionVar);
+  Value upperBoundIdx = toIndex(forLoop.getUpperBound());
+
   mlir::index::CmpOp cmpOp;
   switch (cmpPredicate) {
   case HLCF::ForLoopBoundCmpPredicate::SGT:
     cmpOp = mlir::index::CmpOp::create(rewriter, forLoop->getLoc(),
                                        mlir::index::IndexCmpPredicate::SGT,
-                                       inductionVar, forLoop.getUpperBound());
+                                       inductionVarIdx, upperBoundIdx);
     break;
 
   case HLCF::ForLoopBoundCmpPredicate::SLT:
     cmpOp = mlir::index::CmpOp::create(rewriter, forLoop->getLoc(),
                                        mlir::index::IndexCmpPredicate::SLT,
-                                       inductionVar, forLoop.getUpperBound());
+                                       inductionVarIdx, upperBoundIdx);
     break;
   case HLCF::ForLoopBoundCmpPredicate::SGE:
     cmpOp = mlir::index::CmpOp::create(rewriter, forLoop->getLoc(),
                                        mlir::index::IndexCmpPredicate::SGE,
-                                       inductionVar, forLoop.getUpperBound());
+                                       inductionVarIdx, upperBoundIdx);
     break;
 
   case HLCF::ForLoopBoundCmpPredicate::SLE:
     cmpOp = mlir::index::CmpOp::create(rewriter, forLoop->getLoc(),
                                        mlir::index::IndexCmpPredicate::SLE,
-                                       inductionVar, forLoop.getUpperBound());
+                                       inductionVarIdx, upperBoundIdx);
     break;
   }
 

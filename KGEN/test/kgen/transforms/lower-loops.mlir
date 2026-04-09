@@ -173,3 +173,28 @@ kgen.func @loop_carried_dependency() {
    kgen.call @foo(%idx5) : (index) -> ()
    kgen.return %idx5 : index
  }
+
+// hlcf.for with !pop.scalar<si64> bounds: casts to index before index.cmp.
+// CHECK-LABEL: @pop_scalar_si64_bounds
+kgen.func @pop_scalar_si64_bounds(%lb: !pop.scalar<si64>, %ub: !pop.scalar<si64>,
+                                   %step: !pop.scalar<si64>) {
+  // CHECK:      hlcf.loop ([[ARG:%.*]] = %arg0 : !pop.scalar<si64>) {
+  // CHECK-NEXT:   [[C0:%.*]] = pop.cast [[ARG]] : !pop.scalar<si64> to !pop.scalar<index>
+  // CHECK-NEXT:   [[I0:%.*]] = pop.cast_to_builtin [[C0]] : !pop.scalar<index> to index
+  // CHECK-NEXT:   [[C1:%.*]] = pop.cast %arg1 : !pop.scalar<si64> to !pop.scalar<index>
+  // CHECK-NEXT:   [[I1:%.*]] = pop.cast_to_builtin [[C1]] : !pop.scalar<index> to index
+  // CHECK-NEXT:   [[CMP:%.*]] = index.cmp slt([[I0]], [[I1]])
+  // CHECK-NEXT:   hlcf.if [[CMP]] {
+  // CHECK-NEXT:     hlcf.yield
+  // CHECK-NEXT:   } else {
+  // CHECK-NEXT:     hlcf.break
+  // CHECK-NEXT:   }
+  // CHECK-NEXT:   [[NEXT:%.*]] = pop.add [[ARG]], %arg2 : !pop.scalar<si64>
+  // CHECK-NEXT:   hlcf.continue [[NEXT]] : !pop.scalar<si64>
+  // CHECK-NEXT: }
+  hlcf.for [%lb to %ub step %step : !pop.scalar<si64> slt add] (%arg0 = %lb : !pop.scalar<si64>) {
+    %next = pop.add %arg0, %step : !pop.scalar<si64>
+    hlcf.for.yield [induction_var (%next : !pop.scalar<si64>)] [retvals ()] [iterargs ()]
+  }
+  kgen.return
+}
