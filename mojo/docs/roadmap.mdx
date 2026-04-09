@@ -125,11 +125,11 @@ therefore support higher order functions like `map` that propagate the
 - 🚧 **Closure refinement**: Improve capture modeling and unify
 compile-time/runtime representations.
 
-- 🚧 **`where` clauses**: Enable early constraint checking and better error
+- ✅ **`where` clauses**: Enable early constraint checking and better error
 messages for generics. See the
 [where clauses proposal](https://github.com/modular/modular/blob/main/mojo/proposals/where_clauses.md).
 
-- 🚧 **Conditional conformance**: Allow trait conformance based on predicates
+- ✅ **Conditional conformance**: Allow trait conformance based on predicates
 over parameters.
 
 - 🚧 **Struct extensions**: Post-hoc type extension and better modular
@@ -137,9 +137,9 @@ refactoring. See the
 [struct extension proposal](https://github.com/modular/modular/blob/main/mojo/proposals/struct-extensions.md).
 
 - 🚧 **Linear types**: Support ownership patterns; blocked on conditional
-conformance.
+  conformance.
 
-- ⬜ **Stabilization markers**: Mechanism to tag standard library APIs with
+- 🚧 **Stabilization markers**: Mechanism to tag standard library APIs with
 maturity levels.
 
 ### Python interoperability
@@ -151,10 +151,8 @@ code. We'd like to incorporate the key features of popular libraries like
 - ✅ **Build integration**: Seamless connection between Mojo's build system and
 Python packaging.
 
-- 🚧 **Python export**: Support for exposing functions and initializers to
+- ✅ **Python export**: Support for exposing functions and initializers to
 Python.
-
-- ⬜ **Debugger/LSP support** for mixed Python/Mojo applications.
 
 ### Core language usability and ergonomics
 
@@ -173,7 +171,7 @@ instance, see
 and the
 [string type proposal](https://github.com/modular/modular/blob/main/mojo/proposals/string-design.md).
 
-- 🚧 **Unsafe programming**: Refine `UnsafePointer` and low-level primitives.
+- ✅ **Unsafe programming**: Refine `UnsafePointer` and low-level primitives.
 
 - 🚧 **Variadic args**: Full support for `*args`, `**kwargs`.
 
@@ -183,6 +181,16 @@ and the
 system, testing and benchmarking framework in the standard library, debugger,
 profiler etc. We expect to make a big dent on this, but won't fully complete
 everything interesting in this space in phase 1.
+
+  - 🚧 Mojo Language Server Protocol support and VSCode Extension
+  - 🚧 Testing Framework
+  - ⬜ Benchmarking framework
+  - 🚧 Debugger
+  - ⬜ Profiler
+  - ⬜ Packaging and build system
+
+- 🚧 **GPU programmability abstractions**: Rich and easy to use abstractions
+for a tensor type, data layout, and basic algorithms.
 
 ### Syntax and surface language polish
 
