@@ -13,8 +13,9 @@
 
 """Compiled graph components for Flux2Executor."""
 
+from .denoiser import Denoiser
 from .image_encoder import ImageEncoder
 from .text_encoder import TextEncoder
 from .vae_decoder import VaeDecoder
 
-__all__ = ["ImageEncoder", "TextEncoder", "VaeDecoder"]
+__all__ = ["Denoiser", "ImageEncoder", "TextEncoder", "VaeDecoder"]
