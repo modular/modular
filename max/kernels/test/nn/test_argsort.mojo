@@ -20,7 +20,7 @@ from std.testing import assert_true
 def test_argsort[
     *,
     ascending: Bool,
-    filler: def(Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
 ]() raises:
     print("== test_argsort")
 

@@ -201,7 +201,7 @@ def test_closure_non_capturing() raises:
         writer.write("Hello Mojo!")
 
     def write_non_capturing[
-        func: def(mut writer: Some[Writer]) raises -> None
+        func: def(mut writer: Some[Writer]) thin raises -> None
     ]() raises:
         var writer2 = String()
         func(writer2)

@@ -52,15 +52,15 @@ struct PyObjectFunction[
     # 0 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _0er = def() raises -> PO
-    comptime _0r = def() -> PO
-    comptime _0e = def() raises
-    comptime _0 = def()
+    comptime _0er = def() thin raises -> PO
+    comptime _0r = def() thin -> PO
+    comptime _0e = def() thin raises
+    comptime _0 = def() thin
 
-    comptime _0er_kwargs = def(OwnedKwargsDict[PO]) raises -> PO
-    comptime _0r_kwargs = def(OwnedKwargsDict[PO]) -> PO
-    comptime _0e_kwargs = def(OwnedKwargsDict[PO]) raises
-    comptime _0_kwargs = def(OwnedKwargsDict[PO])
+    comptime _0er_kwargs = def(OwnedKwargsDict[PO]) thin raises -> PO
+    comptime _0r_kwargs = def(OwnedKwargsDict[PO]) thin -> PO
+    comptime _0e_kwargs = def(OwnedKwargsDict[PO]) thin raises
+    comptime _0_kwargs = def(OwnedKwargsDict[PO]) thin
 
     @doc_hidden
     @implicit
@@ -118,15 +118,15 @@ struct PyObjectFunction[
     # 1 argument
     # ===-------------------------------------------------------------------===#
 
-    comptime _1er = def(PO) raises -> PO
-    comptime _1r = def(PO) -> PO
-    comptime _1e = def(PO) raises
-    comptime _1 = def(PO)
+    comptime _1er = def(PO) thin raises -> PO
+    comptime _1r = def(PO) thin -> PO
+    comptime _1e = def(PO) thin raises
+    comptime _1 = def(PO) thin
 
-    comptime _1er_kwargs = def(PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _1r_kwargs = def(PO, OwnedKwargsDict[PO]) -> PO
-    comptime _1e_kwargs = def(PO, OwnedKwargsDict[PO]) raises
-    comptime _1_kwargs = def(PO, OwnedKwargsDict[PO])
+    comptime _1er_kwargs = def(PO, OwnedKwargsDict[PO]) thin raises -> PO
+    comptime _1r_kwargs = def(PO, OwnedKwargsDict[PO]) thin -> PO
+    comptime _1e_kwargs = def(PO, OwnedKwargsDict[PO]) thin raises
+    comptime _1_kwargs = def(PO, OwnedKwargsDict[PO]) thin
 
     @doc_hidden
     @implicit
@@ -202,23 +202,27 @@ struct PyObjectFunction[
 
     comptime _1er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin]
-    ) raises -> PO
-    comptime _1r_self = def(UnsafePointer[Self.self_type, MutAnyOrigin]) -> PO
-    comptime _1e_self = def(UnsafePointer[Self.self_type, MutAnyOrigin]) raises
-    comptime _1_self = def(UnsafePointer[Self.self_type, MutAnyOrigin])
+    ) thin raises -> PO
+    comptime _1r_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin]
+    ) thin -> PO
+    comptime _1e_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin]
+    ) thin raises
+    comptime _1_self = def(UnsafePointer[Self.self_type, MutAnyOrigin]) thin
 
     comptime _1er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _1r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
-    ) -> PO
+    ) thin -> PO
     comptime _1e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
-    ) raises
+    ) thin raises
     comptime _1_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
-    )
+    ) thin
 
     @doc_hidden
     @implicit
@@ -298,27 +302,27 @@ struct PyObjectFunction[
 
     comptime _2er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _2r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
-    ) -> PO
+    ) thin -> PO
     comptime _2e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
-    ) raises
-    comptime _2_self = def(UnsafePointer[Self.self_type, MutAnyOrigin], PO)
+    ) thin raises
+    comptime _2_self = def(UnsafePointer[Self.self_type, MutAnyOrigin], PO) thin
 
     comptime _2er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _2r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
-    ) -> PO
+    ) thin -> PO
     comptime _2e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
-    ) raises
+    ) thin raises
     comptime _2_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
-    )
+    ) thin
 
     @doc_hidden
     @implicit
@@ -398,27 +402,29 @@ struct PyObjectFunction[
 
     comptime _3er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _3r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
-    ) -> PO
+    ) thin -> PO
     comptime _3e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
-    ) raises
-    comptime _3_self = def(UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO)
+    ) thin raises
+    comptime _3_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
+    ) thin
 
     comptime _3er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _3r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
-    ) -> PO
+    ) thin -> PO
     comptime _3e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
-    ) raises
+    ) thin raises
     comptime _3_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
-    )
+    ) thin
 
     @doc_hidden
     @implicit
@@ -498,16 +504,16 @@ struct PyObjectFunction[
 
     comptime _4er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _4r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
-    ) -> PO
+    ) thin -> PO
     comptime _4e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
-    ) raises
+    ) thin raises
     comptime _4_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
-    )
+    ) thin
 
     comptime _4er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
@@ -515,28 +521,28 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _4r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) -> PO
+    ) thin -> PO
     comptime _4e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises
+    ) thin raises
     comptime _4_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    )
+    ) thin
 
     @doc_hidden
     @implicit
@@ -614,15 +620,15 @@ struct PyObjectFunction[
     # 2 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _2er = def(PO, PO) raises -> PO
-    comptime _2r = def(PO, PO) -> PO
-    comptime _2e = def(PO, PO) raises
-    comptime _2 = def(PO, PO)
+    comptime _2er = def(PO, PO) thin raises -> PO
+    comptime _2r = def(PO, PO) thin -> PO
+    comptime _2e = def(PO, PO) thin raises
+    comptime _2 = def(PO, PO) thin
 
-    comptime _2er_kwargs = def(PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _2r_kwargs = def(PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _2e_kwargs = def(PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _2_kwargs = def(PO, PO, OwnedKwargsDict[PO])
+    comptime _2er_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin raises -> PO
+    comptime _2r_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin -> PO
+    comptime _2e_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin raises
+    comptime _2_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin
 
     @doc_hidden
     @implicit
@@ -696,15 +702,17 @@ struct PyObjectFunction[
     # 3 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _3er = def(PO, PO, PO) raises -> PO
-    comptime _3r = def(PO, PO, PO) -> PO
-    comptime _3e = def(PO, PO, PO) raises
-    comptime _3 = def(PO, PO, PO)
+    comptime _3er = def(PO, PO, PO) thin raises -> PO
+    comptime _3r = def(PO, PO, PO) thin -> PO
+    comptime _3e = def(PO, PO, PO) thin raises
+    comptime _3 = def(PO, PO, PO) thin
 
-    comptime _3er_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _3r_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _3e_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _3_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO])
+    comptime _3er_kwargs = def(
+        PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin raises -> PO
+    comptime _3r_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin -> PO
+    comptime _3e_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin raises
+    comptime _3_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin
 
     @doc_hidden
     @implicit
@@ -778,15 +786,17 @@ struct PyObjectFunction[
     # 4 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _4er = def(PO, PO, PO, PO) raises -> PO
-    comptime _4r = def(PO, PO, PO, PO) -> PO
-    comptime _4e = def(PO, PO, PO, PO) raises
-    comptime _4 = def(PO, PO, PO, PO)
+    comptime _4er = def(PO, PO, PO, PO) thin raises -> PO
+    comptime _4r = def(PO, PO, PO, PO) thin -> PO
+    comptime _4e = def(PO, PO, PO, PO) thin raises
+    comptime _4 = def(PO, PO, PO, PO) thin
 
-    comptime _4er_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _4r_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _4e_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _4_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO])
+    comptime _4er_kwargs = def(
+        PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin raises -> PO
+    comptime _4r_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin -> PO
+    comptime _4e_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin raises
+    comptime _4_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
 
     @doc_hidden
     @implicit
@@ -862,16 +872,16 @@ struct PyObjectFunction[
 
     comptime _5er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _5r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
-    ) -> PO
+    ) thin -> PO
     comptime _5e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
-    ) raises
+    ) thin raises
     comptime _5_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
-    )
+    ) thin
 
     comptime _5er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
@@ -880,7 +890,7 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _5r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
@@ -888,7 +898,7 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) -> PO
+    ) thin -> PO
     comptime _5e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
@@ -896,7 +906,7 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises
+    ) thin raises
     comptime _5_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
@@ -904,7 +914,7 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    )
+    ) thin
 
     @doc_hidden
     @implicit
@@ -982,17 +992,21 @@ struct PyObjectFunction[
     # 5 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _5er = def(PO, PO, PO, PO, PO) raises -> PO
-    comptime _5r = def(PO, PO, PO, PO, PO) -> PO
-    comptime _5e = def(PO, PO, PO, PO, PO) raises
-    comptime _5 = def(PO, PO, PO, PO, PO)
+    comptime _5er = def(PO, PO, PO, PO, PO) thin raises -> PO
+    comptime _5r = def(PO, PO, PO, PO, PO) thin -> PO
+    comptime _5e = def(PO, PO, PO, PO, PO) thin raises
+    comptime _5 = def(PO, PO, PO, PO, PO) thin
 
     comptime _5er_kwargs = def(
         PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
-    ) raises -> PO
-    comptime _5r_kwargs = def(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _5e_kwargs = def(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _5_kwargs = def(PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
+    ) thin raises -> PO
+    comptime _5r_kwargs = def(
+        PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin -> PO
+    comptime _5e_kwargs = def(
+        PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin raises
+    comptime _5_kwargs = def(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
 
     @doc_hidden
     @implicit
@@ -1068,16 +1082,16 @@ struct PyObjectFunction[
 
     comptime _6er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _6r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
-    ) -> PO
+    ) thin -> PO
     comptime _6e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
-    ) raises
+    ) thin raises
     comptime _6_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
-    )
+    ) thin
 
     comptime _6er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
@@ -1087,7 +1101,7 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises -> PO
+    ) thin raises -> PO
     comptime _6r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
@@ -1096,7 +1110,7 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) -> PO
+    ) thin -> PO
     comptime _6e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
@@ -1105,7 +1119,7 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises
+    ) thin raises
     comptime _6_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
@@ -1114,7 +1128,7 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    )
+    ) thin
 
     @doc_hidden
     @implicit
@@ -1192,19 +1206,21 @@ struct PyObjectFunction[
     # 6 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _6er = def(PO, PO, PO, PO, PO, PO) raises -> PO
-    comptime _6r = def(PO, PO, PO, PO, PO, PO) -> PO
-    comptime _6e = def(PO, PO, PO, PO, PO, PO) raises
-    comptime _6 = def(PO, PO, PO, PO, PO, PO)
+    comptime _6er = def(PO, PO, PO, PO, PO, PO) thin raises -> PO
+    comptime _6r = def(PO, PO, PO, PO, PO, PO) thin -> PO
+    comptime _6e = def(PO, PO, PO, PO, PO, PO) thin raises
+    comptime _6 = def(PO, PO, PO, PO, PO, PO) thin
 
     comptime _6er_kwargs = def(
         PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
-    ) raises -> PO
-    comptime _6r_kwargs = def(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    ) thin raises -> PO
+    comptime _6r_kwargs = def(
+        PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin -> PO
     comptime _6e_kwargs = def(
         PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
-    ) raises
-    comptime _6_kwargs = def(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
+    ) thin raises
+    comptime _6_kwargs = def(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
 
     @doc_hidden
     @implicit

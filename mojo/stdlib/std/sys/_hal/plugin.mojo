@@ -143,18 +143,18 @@ struct Plugin(Movable):
             status: Int64,
             message_buffer: MutPointer[Int8, MutAnyOrigin],
             message_buffer_size: Int64,
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var create: HALFunction[
         "M_driver_create",
         def(
             version: ImmutPointer[DriverVersion, ImmutAnyOrigin],
             driver: OutParam[DriverHandle],
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var destroy: HALFunction[
         "M_driver_destroy",
-        def(driver: DriverHandle) -> PluginResultCode,
+        def(driver: DriverHandle) thin -> PluginResultCode,
     ]
     var property: HALFunction[
         "M_driver_property",
@@ -162,11 +162,13 @@ struct Plugin(Movable):
             handle: DriverHandle,
             property_name: CStringSlice,
             value: OutParam[OpaquePointer[ImmutExternalOrigin]],
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var device_count: HALFunction[
         "M_driver_device_count",
-        def(driver: DriverHandle, count: OutParam[Int64]) -> PluginResultCode,
+        def(
+            driver: DriverHandle, count: OutParam[Int64]
+        ) thin -> PluginResultCode,
     ]
     var device_get: HALFunction[
         "M_driver_device_get",
@@ -174,17 +176,17 @@ struct Plugin(Movable):
             driver: DriverHandle,
             device_id: Int64,
             device: OutParam[DeviceHandle],
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var context_create: HALFunction[
         "M_driver_context_create",
         def(
             device: DeviceHandle, context: OutParam[ContextHandle]
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var context_destroy: HALFunction[
         "M_driver_context_destroy",
-        def(context: ContextHandle) -> PluginResultCode,
+        def(context: ContextHandle) thin -> PluginResultCode,
     ]
     var memory_alloc_pinned: HALFunction[
         "M_driver_memory_alloc_pinned",
@@ -192,14 +194,14 @@ struct Plugin(Movable):
             context: ContextHandle,
             size: UInt64,
             memory: OutParam[MemoryHandle],
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var memory_free_pinned: HALFunction[
         "M_driver_memory_free_pinned",
         def(
             context: ContextHandle,
             memory: MemoryHandle,
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var memory_alloc_sync: HALFunction[
         "M_driver_memory_alloc_sync",
@@ -207,14 +209,14 @@ struct Plugin(Movable):
             context: ContextHandle,
             size: UInt64,
             memory: OutParam[MemoryHandle],
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var memory_free_sync: HALFunction[
         "M_driver_memory_free_sync",
         def(
             context: ContextHandle,
             memory: MemoryHandle,
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var memory_alloc_async: HALFunction[
         "M_driver_memory_alloc_async",
@@ -222,24 +224,26 @@ struct Plugin(Movable):
             queue: QueueHandle,
             size: UInt64,
             memory: OutParam[MemoryHandle],
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var memory_free_async: HALFunction[
         "M_driver_memory_free_async",
         def(
             queue: QueueHandle,
             memory: MemoryHandle,
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var queue_create: HALFunction[
         "M_driver_queue_create",
         def(
             context: ContextHandle, queue: OutParam[QueueHandle]
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var queue_destroy: HALFunction[
         "M_driver_queue_destroy",
-        def(context: ContextHandle, queue: QueueHandle) -> PluginResultCode,
+        def(
+            context: ContextHandle, queue: QueueHandle
+        ) thin -> PluginResultCode,
     ]
     var queue_copy_to_device: HALFunction[
         "M_driver_queue_copy_to_device",
@@ -248,7 +252,7 @@ struct Plugin(Movable):
             dst: MemoryHandle,
             src: UnsafePointer[UInt8, MutAnyOrigin],
             size: UInt64,
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var queue_copy_from_device: HALFunction[
         "M_driver_queue_copy_from_device",
@@ -257,7 +261,7 @@ struct Plugin(Movable):
             dst: UnsafePointer[UInt8, MutAnyOrigin],
             src: UnsafePointer[UInt8, MutAnyOrigin],
             size: UInt64,
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var queue_set_memory: HALFunction[
         "M_driver_queue_set_memory",
@@ -267,21 +271,25 @@ struct Plugin(Movable):
             size: UInt64,
             value: UInt64,
             value_size: UInt64,
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var event_create: HALFunction[
         "M_driver_event_create",
         def(
             context: ContextHandle, event: OutParam[EventHandle]
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var event_destroy: HALFunction[
         "M_driver_event_destroy",
-        def(context: ContextHandle, event: EventHandle) -> PluginResultCode,
+        def(
+            context: ContextHandle, event: EventHandle
+        ) thin -> PluginResultCode,
     ]
     var event_synchronize: HALFunction[
         "M_driver_event_synchronize",
-        def(context: ContextHandle, event: EventHandle) -> PluginResultCode,
+        def(
+            context: ContextHandle, event: EventHandle
+        ) thin -> PluginResultCode,
     ]
     var is_event_ready: HALFunction[
         "M_driver_is_event_ready",
@@ -289,7 +297,7 @@ struct Plugin(Movable):
             context: ContextHandle,
             event: EventHandle,
             is_ready: OutParam[Bool],
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var function_load: HALFunction[
         "M_driver_function_load",
@@ -299,13 +307,13 @@ struct Plugin(Movable):
             function_name: CStringSlice,
             function_name_len: UInt64,
             function: OutParam[FunctionHandle],
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
     var function_unload: HALFunction[
         "M_driver_function_unload",
         def(
             context: ContextHandle, function: FunctionHandle
-        ) -> PluginResultCode,
+        ) thin -> PluginResultCode,
     ]
 
     def __init__(

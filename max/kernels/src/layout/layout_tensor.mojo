@@ -135,7 +135,9 @@ def _project_on_axis[
     return p_t
 
 
-comptime _swizzle_signature = def[dtype: DType](Scalar[dtype]) -> Scalar[dtype]
+comptime _swizzle_signature = def[dtype: DType](Scalar[dtype]) thin -> Scalar[
+    dtype
+]
 
 
 def _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
@@ -6823,7 +6825,7 @@ def copy_dram_to_sram_async[
 
 comptime binary_op_type = def[dtype: DType, width: Int](
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
-) -> SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
 """
 Type alias for binary operations on SIMD vectors.
 

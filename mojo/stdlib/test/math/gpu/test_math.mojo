@@ -19,7 +19,7 @@ from std.testing import TestSuite
 
 def run_func[
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
@@ -95,7 +95,7 @@ def test_math() raises:
         def test[
             *kernel_fns: def[dtype: DType, width: Int](
                 SIMD[dtype, width]
-            ) -> SIMD[dtype, width]
+            ) thin -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
             comptime ls = ParameterList[*kernel_fns].size
 

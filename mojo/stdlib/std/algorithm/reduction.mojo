@@ -742,7 +742,7 @@ def map_reduce[
     ) capturing[origins_vec] -> SIMD[acc_type, width],
     reduce_vec_to_scalar_fn: def[dtype: DType, width: Int](
         SIMD[dtype, width]
-    ) -> Scalar[dtype],
+    ) thin -> Scalar[dtype],
 ](dst: Span[mut=True, Scalar[dtype], _], init: Scalar[acc_type]) -> Scalar[
     acc_type
 ]:
@@ -808,7 +808,7 @@ def map_reduce[
     ) capturing[origins_vec] -> SIMD[acc_type, width],
     reduce_vec_to_scalar_fn: def[dtype: DType, width: Int](
         SIMD[dtype, width]
-    ) -> Scalar[dtype],
+    ) thin -> Scalar[dtype],
     output_fn: def[dtype_: DType, width: Int, alignment: Int](
         idx: Int, val: SIMD[dtype_, width]
     ) capturing -> None,

@@ -25,7 +25,7 @@ def test_operation[
     target_arch: StaticString,
     op_fn: def[width: Int](
         x: SIMD[dtype, width], y: type_of(x)
-    ) raises -> type_of(x),
+    ) thin raises -> type_of(x),
     op_name: StaticString,
 ]() raises:
     var scalar: String

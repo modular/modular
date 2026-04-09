@@ -79,7 +79,7 @@ def cudnnBackendInitialize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendInitialize",
-        def(type_of(descriptor)) -> cudnnStatus_t,
+        def(type_of(descriptor)) thin -> cudnnStatus_t,
     ]()(descriptor)
 
 
@@ -594,7 +594,7 @@ def cudnnBackendSetAttribute(
             type_of(attribute_type),
             type_of(element_count),
             type_of(array_of_elements),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         descriptor,
         attribute_name,
@@ -840,7 +840,9 @@ def cudnnBackendCreateDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
-        def(type_of(descriptor_type), type_of(descriptor)) -> cudnnStatus_t,
+        def(
+            type_of(descriptor_type), type_of(descriptor)
+        ) thin -> cudnnStatus_t,
     ]()(descriptor_type, descriptor)
 
 
@@ -999,7 +1001,7 @@ struct cudnnRngDistribution_t(
 
 def cudnnBackendFinalize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendFinalize", def(type_of(descriptor)) -> cudnnStatus_t
+        "cudnnBackendFinalize", def(type_of(descriptor)) thin -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -2056,7 +2058,7 @@ def cudnnBackendDestroyDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendDestroyDescriptor",
-        def(type_of(descriptor)) -> cudnnStatus_t,
+        def(type_of(descriptor)) thin -> cudnnStatus_t,
     ]()(descriptor)
 
 
@@ -2071,7 +2073,7 @@ def cudnnBackendExecute(
             type_of(handle),
             type_of(execution_plan),
             type_of(variant_pack),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, execution_plan, variant_pack)
 
 
@@ -2140,7 +2142,7 @@ def cudnnBackendGetAttribute(
             type_of(requested_element_count),
             type_of(element_count),
             type_of(array_of_elements),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         descriptor,
         attribute_name,

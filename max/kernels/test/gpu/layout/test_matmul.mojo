@@ -36,7 +36,7 @@ comptime run_gemm_kernel_type = def(
     a: LayoutTensor,
     b: LayoutTensor,
     c: LayoutTensor,
-) raises -> None
+) thin raises -> None
 
 
 struct test_matmul[

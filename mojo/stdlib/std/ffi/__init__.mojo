@@ -39,7 +39,9 @@ from std.ffi import OwnedDLHandle
 
 def main() raises:
     var lib = OwnedDLHandle("libm.so")
-    var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+    var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
+        "sqrt"
+    )
     print(sqrt(4.0))  # 2.0
 ```
 """
@@ -207,7 +209,9 @@ struct OwnedDLHandle(Movable):
 
     def main() raises:
         var lib = OwnedDLHandle("libm.so")
-        var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+        var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
+            "sqrt"
+        )
         print(sqrt(4.0))  # Prints: 2.0
         # Library automatically closed when lib goes out of scope
     ```
@@ -741,7 +745,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # not the expanded individual argument types, and Mojo function type
         # syntax has no variadic parameter form. Safe in practice only for
         # scalar/register-passable arguments where Mojo and C conventions agree.
-        return self._get_function[name, def(type_of(v)) -> return_type]()(v)
+        return self._get_function[name, def(type_of(v)) thin -> return_type]()(
+            v
+        )
 
 
 @always_inline
@@ -845,7 +851,7 @@ def _find_dylib[
 
 
 def _find_dylib[
-    msg: def() -> String, abort_on_failure: Bool = True
+    msg: def() thin -> String, abort_on_failure: Bool = True
 ](paths: List[Path]) -> OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
 
@@ -895,8 +901,8 @@ struct _Global[
     StorageType: Movable,
     //,
     name: StaticString,
-    init_fn: def() -> StorageType,
-    on_error_msg: Optional[def() -> Error] = None,
+    init_fn: def() thin -> StorageType,
+    on_error_msg: Optional[def() thin -> Error] = None,
 ](Defaultable):
     comptime ResultType = UnsafePointer[Self.StorageType, MutExternalOrigin]
 
@@ -967,8 +973,8 @@ struct _Global[
 @always_inline
 def _get_global[
     name: StaticString,
-    init_fn: def() -> _CPointer[NoneType, ExternalOrigin[mut=True]],
-    destroy_fn: def(_CPointer[NoneType, ExternalOrigin[mut=True]]) -> None,
+    init_fn: def() thin -> _CPointer[NoneType, ExternalOrigin[mut=True]],
+    destroy_fn: def(_CPointer[NoneType, ExternalOrigin[mut=True]]) thin -> None,
 ]() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
     return external_call[
         "KGEN_CompilerRT_GetOrCreateGlobal",

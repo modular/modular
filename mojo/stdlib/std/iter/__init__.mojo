@@ -867,7 +867,7 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: def(var InnerIteratorType.Element) -> OutputType,
+    function: def(var InnerIteratorType.Element) thin -> OutputType,
 ](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
@@ -913,7 +913,9 @@ def map[
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: def(var IterableType.IteratorType[origin].Element) -> ResultType,
+    function: def(
+        var IterableType.IteratorType[origin].Element
+    ) thin -> ResultType,
 ](ref[origin] iterable: IterableType) -> _MapIterator[function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable.
@@ -959,7 +961,9 @@ def map[
     IterableType: IterableOwned,
     ResultType: Copyable,
     //,
-    function: def(var IterableType.IteratorOwnedType.Element) -> ResultType,
+    function: def(
+        var IterableType.IteratorOwnedType.Element
+    ) thin -> ResultType,
 ](var iterable: IterableType) -> _MapIterator[function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable, consuming the iterable.

@@ -2731,7 +2731,9 @@ struct SIMD[dtype: DType, size: Int](
     # TODO: remove when non-capturing can be converted to capturing.
     @always_inline
     def reduce[
-        func: def[width: Int](Self._T[width], Self._T[width]) -> Self._T[width],
+        func: def[width: Int](Self._T[width], Self._T[width]) thin -> Self._T[
+            width
+        ],
         size_out: Int = 1,
     ](self) -> Self._T[size_out]:
         """Reduces the vector using a provided reduce operator.

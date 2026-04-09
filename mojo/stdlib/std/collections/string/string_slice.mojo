@@ -2130,8 +2130,8 @@ def _to_string_list[
     O: ImmutOrigin,
     T: Copyable,
     //,
-    len_fn: def(T) -> Int,
-    unsafe_ptr_fn: def(T) -> UnsafePointer[Byte, O],
+    len_fn: def(T) thin -> Int,
+    unsafe_ptr_fn: def(T) thin -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
     var i_len = len(items)
 

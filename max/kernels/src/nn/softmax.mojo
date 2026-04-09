@@ -284,12 +284,12 @@ def _softmax_3_pass_step_2[
     input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    pre_update_func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
-        dtype, width
-    ],
-    post_update_func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
-        dtype, width
-    ],
+    pre_update_func: def[dtype: DType, width: Int](
+        SIMD[dtype, width]
+    ) thin -> SIMD[dtype, width],
+    post_update_func: def[dtype: DType, width: Int](
+        SIMD[dtype, width]
+    ) thin -> SIMD[dtype, width],
 ](
     output: TileTensor[mut=True, dtype, ...],
     max_val: Scalar[dtype],
@@ -332,12 +332,12 @@ def _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    accum_proc_func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
-        dtype, width
-    ],
+    accum_proc_func: def[dtype: DType, width: Int](
+        SIMD[dtype, width]
+    ) thin -> SIMD[dtype, width],
     accum_apply_func: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) -> SIMD[dtype, width],
+    ) thin -> SIMD[dtype, width],
 ](output: TileTensor[mut=True, dtype, ...], accum: Scalar[dtype],):
     comptime assert output.rank == 1
     # STEP 3: normalize each batch
@@ -371,16 +371,16 @@ def _softmax_3_pass_base[
     ],
     step2_pre_update_func: def[dtype: DType, width: Int](
         SIMD[dtype, width]
-    ) -> SIMD[dtype, width],
+    ) thin -> SIMD[dtype, width],
     step2_post_update_func: def[dtype: DType, width: Int](
         SIMD[dtype, width]
-    ) -> SIMD[dtype, width],
+    ) thin -> SIMD[dtype, width],
     step3_accum_proc_func: def[dtype: DType, width: Int](
         SIMD[dtype, width]
-    ) -> SIMD[dtype, width],
+    ) thin -> SIMD[dtype, width],
     step3_accum_apply_func: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) -> SIMD[dtype, width],
+    ) thin -> SIMD[dtype, width],
 ](output: TileTensor[mut=True, dtype, ...]) raises:
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.

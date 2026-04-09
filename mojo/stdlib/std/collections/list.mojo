@@ -689,7 +689,7 @@ struct List[T: Copyable](
         return len(self) > 0
 
     def _write_self_to[
-        f: def(Self.T, mut Some[Writer])
+        f: def(Self.T, mut Some[Writer]) thin
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 

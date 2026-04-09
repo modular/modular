@@ -431,7 +431,7 @@ struct Span[
         return False
 
     def _write_self_to[
-        f: def(Self.T, mut Some[Writer])
+        f: def(Self.T, mut Some[Writer]) thin
     ](self, mut writer: Some[Writer]):
         var iterator = self.__iter__()
 
@@ -923,7 +923,7 @@ struct Span[
         return Optional(cursor) if value == needle else None
 
     def binary_search_by[
-        func: def(Self.T) -> Int,
+        func: def(Self.T) thin -> Int,
     ](self) -> Optional[Int]:
         """Finds an element using binary search with a custom comparison function.
 

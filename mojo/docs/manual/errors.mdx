@@ -542,9 +542,12 @@ compile-time parameter for the error type:
 ```mojo
 def run_action[
     ErrorType: AnyType
-](action: fn() raises ErrorType -> Int) raises ErrorType -> Int:
+](action: def() thin raises ErrorType -> Int) raises ErrorType -> Int:
     return action()
 ```
+
+The function type uses `thin` because `action` is a noncapturing function
+value.
 
 The `ErrorType` parameter is inferred from the function you pass in. If the
 function raises `NetworkError`, then `run_action` raises `NetworkError`. If the

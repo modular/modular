@@ -402,7 +402,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         return (self._data + offset)[]
 
     def _write_self_to[
-        f: def(Self.ElementType, mut Some[Writer])
+        f: def(Self.ElementType, mut Some[Writer]) thin
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.ElementType, Writable
     ):

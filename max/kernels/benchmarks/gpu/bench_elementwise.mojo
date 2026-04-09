@@ -55,7 +55,7 @@ def run_elementwise[
     rank: Int,
     //,
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
 ](

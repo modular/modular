@@ -3812,7 +3812,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: def(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) thin -> None,
         *,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
@@ -3890,7 +3890,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: def(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) thin -> None,
         *,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
@@ -4570,7 +4570,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: def(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -4702,7 +4702,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: def(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,

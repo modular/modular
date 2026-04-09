@@ -613,7 +613,7 @@ def cycle[
 struct _TakeWhileIterator[
     InnerIteratorType: Iterator,
     //,
-    predicate: def(InnerIteratorType.Element) -> Bool,
+    predicate: def(InnerIteratorType.Element) thin -> Bool,
 ](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
@@ -686,7 +686,7 @@ def take_while[
     origin: ImmutOrigin,
     IterableType: Iterable,
     //,
-    predicate: def(IterableType.IteratorType[origin].Element) -> Bool,
+    predicate: def(IterableType.IteratorType[origin].Element) thin -> Bool,
 ](ref[origin] iterable: IterableType) -> _TakeWhileIterator[
     InnerIteratorType=IterableType.IteratorType[origin],
     predicate=predicate,
@@ -738,7 +738,7 @@ def take_while[
 def take_while[
     IterableType: IterableOwned,
     //,
-    predicate: def(IterableType.IteratorOwnedType.Element) -> Bool,
+    predicate: def(IterableType.IteratorOwnedType.Element) thin -> Bool,
 ](var iterable: IterableType) -> _TakeWhileIterator[
     InnerIteratorType=IterableType.IteratorOwnedType,
     predicate=predicate,
@@ -776,7 +776,7 @@ def take_while[
 struct _DropWhileIterator[
     InnerIteratorType: Iterator,
     //,
-    predicate: def(InnerIteratorType.Element) -> Bool,
+    predicate: def(InnerIteratorType.Element) thin -> Bool,
 ](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
@@ -850,7 +850,7 @@ def drop_while[
     origin: ImmutOrigin,
     IterableType: Iterable,
     //,
-    predicate: def(IterableType.IteratorType[origin].Element) -> Bool,
+    predicate: def(IterableType.IteratorType[origin].Element) thin -> Bool,
 ](ref[origin] iterable: IterableType) -> _DropWhileIterator[
     InnerIteratorType=IterableType.IteratorType[origin],
     predicate=predicate,
@@ -903,7 +903,7 @@ def drop_while[
 def drop_while[
     IterableType: IterableOwned,
     //,
-    predicate: def(IterableType.IteratorOwnedType.Element) -> Bool,
+    predicate: def(IterableType.IteratorOwnedType.Element) thin -> Bool,
 ](var iterable: IterableType) -> _DropWhileIterator[
     InnerIteratorType=IterableType.IteratorOwnedType,
     predicate=predicate,

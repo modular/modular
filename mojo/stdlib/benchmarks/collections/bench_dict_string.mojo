@@ -427,7 +427,7 @@ struct StringDict[
     def upsert(
         mut self,
         key: StringSlice,
-        update: def(value: Optional[Self.V]) -> Self.V,
+        update: def(value: Optional[Self.V]) thin -> Self.V,
     ):
         var key_index = self._find_key_index(key)
         if key_index == 0:
