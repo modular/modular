@@ -33,3 +33,24 @@ def test_functype_with_return_type():
     source = "def takes_bar[bar: def[x: Int]() -> Int](): pass"
     expected = "def takes_bar[bar: def[x: Int]() -> Int]():\n    pass\n"
     assert_mojo_format(source, expected)
+
+
+def test_named_effect_no_space_before_parens():
+    """No space between effect name and parens (e.g., abi("C"))."""
+    source = 'def foo() abi ("C"):\n    pass\n'
+    expected = 'def foo() abi("C"):\n    pass\n'
+    assert_mojo_format(source, expected)
+
+
+def test_named_effect_no_space_already_correct():
+    """abi("C") without space should remain unchanged."""
+    source = 'def foo() abi("C"):\n    pass\n'
+    expected = 'def foo() abi("C"):\n    pass\n'
+    assert_mojo_format(source, expected)
+
+
+def test_named_effect_in_functype_no_space():
+    """No space before ( in named effects inside function types."""
+    source = "def takes_f[f: def(Int) abi (\"C\") -> Int]():\n    pass\n"
+    expected = "def takes_f[f: def(Int) abi(\"C\") -> Int]():\n    pass\n"
+    assert_mojo_format(source, expected)

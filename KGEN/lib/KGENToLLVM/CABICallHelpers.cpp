@@ -25,6 +25,18 @@ std::unique_ptr<CABIInfo> CABICallHelper::createABIHandler() const {
   return M::KGEN::createCABIInfo(triple, ctx, dataLayout);
 }
 
+SmallVector<CoercionInfo> CABICallHelper::classifyArgs(CABIInfo *handler,
+                                                       ValueRange originalArgs,
+                                                       Location loc) const {
+  SmallVector<CoercionInfo> result;
+  for (Value arg : originalArgs) {
+    Type llvmType = tc->convertType(arg.getType());
+    result.push_back(
+        handler->classifyArgumentType(llvmType, loc, /*isVariadicArg=*/false));
+  }
+  return result;
+}
+
 SmallVector<CoercionInfo>
 CABICallHelper::classifyArgs(CABIInfo *handler, TypeRange types, Location loc,
                              size_t numFixedArgs) const {
@@ -290,4 +302,95 @@ Value CABICallHelper::extractReturn(const CoercionInfo &retClass,
          "coercedType — classifier bug");
   return bitcastViaMemory(callResult, origRetTy, retClass.coercedType, loc,
                           rewriter);
+}
+
+CABICallPrep CABICallHelper::prepareCall(TypeRange argTypes,
+                                         ValueRange argValues, Type origRetTy,
+                                         Location loc,
+                                         ConversionPatternRewriter &rewriter,
+                                         size_t numFixedArgs,
+                                         bool isVariadic) const {
+  auto handler = createABIHandler();
+  auto argClass = classifyArgs(handler.get(), argTypes, loc, numFixedArgs);
+  CoercionInfo retClass;
+  if (origRetTy)
+    retClass = classifyReturn(handler.get(), origRetTy, loc);
+  auto [sig, usesSRet] = buildFunctionType(argClass, retClass, argValues,
+                                           origRetTy, numFixedArgs, isVariadic);
+  auto [callArgs, sretPtr] =
+      buildCallArgs(argClass, retClass, argValues, origRetTy, loc, rewriter);
+  return {sig,     std::move(argClass), retClass, std::move(callArgs), sretPtr,
+          usesSRet};
+}
+
+void CABICallHelper::applySRetAttrIfNeeded(CallOp call, Type origRetTy,
+                                           bool usesSRet, OpBuilder &builder) {
+  if (!usesSRet)
+    return;
+  // getArgOperands() excludes the callee pointer for indirect calls, so
+  // this size is correct for both direct and indirect llvm.call ops.
+  size_t numArgAttrs = call.getArgOperands().size();
+  SmallVector<Attribute> argAttrs(numArgAttrs, builder.getDictionaryAttr({}));
+  argAttrs[0] = builder.getDictionaryAttr({builder.getNamedAttr(
+      LLVMDialect::getStructRetAttrName(), TypeAttr::get(origRetTy))});
+  call.setArgAttrsAttr(builder.getArrayAttr(argAttrs));
+}
+
+void CABICallHelper::applyByvalAttrsToCall(CallOp call,
+                                           ArrayRef<CoercionInfo> argClass,
+                                           TypeRange origArgTypes,
+                                           bool usesSRet, OpBuilder &builder,
+                                           size_t startArgIdx) const {
+  // byval is an x86-64 SysV requirement.  ARM64 AAPCS64 passes large structs
+  // via an implicit reference without byval, so no attribute is needed there.
+  if (!tc->getTarget().getTriple().isX86())
+    return;
+
+  // Fast path: nothing to do when no argument in range needs indirect passing.
+  bool hasIndirect = false;
+  for (size_t i = startArgIdx; i < argClass.size(); ++i)
+    if (argClass[i].useIndirect) {
+      hasIndirect = true;
+      break;
+    }
+  if (!hasIndirect)
+    return;
+
+  // Retrieve or create the per-argument attribute array.
+  // getArgOperands() excludes the callee for indirect calls, giving the
+  // correct length for both direct and indirect llvm.call ops.
+  size_t numArgAttrs = call.getArgOperands().size();
+  SmallVector<Attribute> attrs;
+  if (auto existing = call.getArgAttrsAttr())
+    attrs.assign(existing.begin(), existing.end());
+  else
+    attrs.assign(numArgAttrs, builder.getDictionaryAttr({}));
+
+  assert(origArgTypes.size() >= argClass.size() &&
+         "origArgTypes must cover all argClass entries");
+
+  // Compute the call-arg index where startArgIdx begins: advance past sret
+  // and past any fixed args that precede startArgIdx (respecting two-register
+  // expansion).
+  unsigned paramIdx = usesSRet ? 1 : 0;
+  for (size_t i = 0; i < startArgIdx; ++i)
+    paramIdx += argClass[i].isTwoRegister() ? 2 : 1;
+
+  for (size_t idx = startArgIdx; idx < argClass.size(); ++idx) {
+    const auto &coercion = argClass[idx];
+    if (coercion.useIndirect) {
+      // paramIdx must be in bounds: prepareArg emits exactly one call arg per
+      // classification entry, so the sizes must agree.
+      assert(paramIdx < numArgAttrs &&
+             "paramIdx out of range — classifier/coercion mismatch");
+      auto byvalAttr = builder.getNamedAttr(LLVMDialect::getByValAttrName(),
+                                            TypeAttr::get(origArgTypes[idx]));
+      auto existing = cast<DictionaryAttr>(attrs[paramIdx]);
+      SmallVector<NamedAttribute> merged(existing.begin(), existing.end());
+      merged.push_back(byvalAttr);
+      attrs[paramIdx] = builder.getDictionaryAttr(merged);
+    }
+    paramIdx += coercion.isTwoRegister() ? 2 : 1;
+  }
+  call.setArgAttrsAttr(builder.getArrayAttr(attrs));
 }

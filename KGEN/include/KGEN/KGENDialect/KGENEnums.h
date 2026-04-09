@@ -72,6 +72,7 @@ public:
   bool isCapturing() const { return get(Impl::Capturing); }
   bool isEscaping() const { return get(Impl::Escaping); }
   bool isExtern() const { return get(Impl::Extern); }
+  bool isCABI() const { return get(Impl::CABI); }
   bool isRefResult() const { return get(Impl::RefResult); }
   bool isUnified() const { return get(Impl::Unified); }
   bool isRegisterPassable() const { return get(Impl::RegisterPassable); }
@@ -85,6 +86,7 @@ public:
     return set(Impl::Escaping, escaping);
   }
   FnEffects setExtern(bool value = true) { return set(Impl::Extern, value); }
+  FnEffects setCABI(bool value = true) { return set(Impl::CABI, value); }
   FnEffects setRefResult(bool value = true) {
     return set(Impl::RefResult, value);
   }

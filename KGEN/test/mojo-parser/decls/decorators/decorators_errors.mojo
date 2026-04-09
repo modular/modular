@@ -190,7 +190,7 @@ def bad_extern_4(): ...
 
 # expected-error @+2 {{unexpected function body in extern function declaration, use `...`}}
 @extern("add_one")
-def my_extern_add_one(x: Int) -> Int:
+def my_extern_add_one(x: Int) abi("Mojo") -> Int:
     return x + 1
 
 struct HasExtern:
@@ -198,6 +198,10 @@ struct HasExtern:
   @extern("add_one_struct")
   def my_extern_struct_add_one(self, x: Int) -> Int:
     ...
+
+# expected-error @+1 {{'@extern' requires an explicit 'abi()' effect on the function}}
+@extern("no_abi_extern")
+def extern_missing_abi(): ...
 
 # ===----------------------------------------------------------------------=== #
 # @__llvm_metadata

@@ -1206,6 +1206,50 @@ def KGEN_IsStructTypeAttr : KGENAttr<"IsStructType", "is_struct_type",
 }
 
 //===----------------------------------------------------------------------===//
+// FnTypeIsCABIAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FnTypeIsCABIAttr : KGENAttr<"FnTypeIsCABI", "fn_type_is_cabi",
+    [TypedAttrInterface, ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Check if a type value refers to a function type with abi(\"C\").";
+  let description = [{
+    The `#kgen.fn_type_is_cabi` attribute returns true if the given type value
+    refers to a Mojo function pointer type annotated with the `abi("C")` effect,
+    and false otherwise (including for non-function types).
+
+    This is used to enforce that `DLHandle.get_function` is always called with
+    an explicit `abi("C")` function pointer type, ensuring dynamically-loaded
+    symbols are called with the correct C ABI.
+
+    Example:
+
+    ```mlir
+    #kgen.fn_type_is_cabi<#kgen.type<!kgen.generator<(f64) cabi -> f64>>> : i1
+    // evaluates to true
+
+    #kgen.fn_type_is_cabi<#kgen.type<!kgen.generator<(f64) -> f64>>> : i1
+    // evaluates to false
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    AttributeSelfTypeParameter<"", "IntegerType">:$type
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `>`";
+
+  let extraClassDeclaration = [{
+    static IntegerType getResultType(MLIRContext *ctx) {
+      return IntegerType::get(ctx, 1);
+    }
+
+    /// Build a FnTypeIsCABIAttr from a raw type value attribute.
+    static FnTypeIsCABIAttr get(MLIRContext *ctx, TypedAttr typeValue);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // GetBaseTypeNameAttr
 //===----------------------------------------------------------------------===//
 

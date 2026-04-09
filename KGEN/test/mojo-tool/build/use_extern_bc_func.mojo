@@ -14,7 +14,7 @@
 
 
 @extern("my_add_one")
-def my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]):
+def my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]) abi("Mojo"):
     ...
 
 

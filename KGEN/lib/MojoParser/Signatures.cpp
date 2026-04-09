@@ -1218,7 +1218,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     return spelling == "raises" || spelling == "capturing" ||
            spelling == "escaping" || spelling == "thin" ||
            spelling == "unified" || spelling == "register_passable" ||
-           spelling == "where";
+           spelling == "abi" || spelling == "where";
   };
 
   // If the client supports function effects, parse them as well.
@@ -1286,6 +1286,42 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     } else if (spelling == "register_passable") {
       handleEffect(&FnEffects::isRegisterPassable,
                    &FnEffects::setRegisterPassable);
+    } else if (spelling == "abi") {
+      p.consumeIdentifier(); // consume 'abi'
+      if (p.parseToken(Token::l_paren, "expected '(' after 'abi'"))
+        return failure();
+      if (!p.getToken().is(Token::string)) {
+        p.emitError(p.getToken().getLoc(),
+                    "expected calling convention string after 'abi('");
+        return failure();
+      }
+      StringRef conv = p.getTokenSpelling(); // includes quotes: "\"C\""
+      // Strip the surrounding quotes to get the bare convention name.
+      StringRef convName =
+          conv.size() >= 2 ? conv.drop_front().drop_back() : conv;
+      if (!convName.equals_insensitive("C") &&
+          !convName.equals_insensitive("Mojo")) {
+        p.emitError(p.getToken().getLoc(), "unsupported calling convention ")
+            << conv << ", expected \"C\" or \"Mojo\"";
+        return failure();
+      }
+      bool isCABI = convName.equals_insensitive("C");
+      p.consumeToken(); // consume the string literal
+      if (p.parseToken(Token::r_paren,
+                       isCABI ? "expected ')' after 'abi(\"C\"'"
+                              : "expected ')' after 'abi(\"Mojo\"'"))
+        return failure();
+      if (hasExplicitABI)
+        p.emitError(loc, "an abi() effect was already specified");
+      hasExplicitABI = true;
+      if (isCABI) {
+        effects.setCABI(true);
+        // abi("C") implies extern (function pointer, not closure).
+        effects.setExtern(true);
+      }
+      // abi("Mojo") is the default Mojo calling convention — recorded as
+      // explicit but leaves the CABI bit unset.
+      continue; // tokens already consumed; skip bottom p.consumeIdentifier()
     } else {
       assert(spelling == "where" && "isEffectKeywordOrWhere unknown keyword");
       break;

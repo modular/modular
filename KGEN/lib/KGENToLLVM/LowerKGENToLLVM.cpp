@@ -17,6 +17,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLVMLoweringUtils.h"
+#include "LowerKGENToLLVMRewriteCABIFns.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/Threading.h"
@@ -513,6 +514,26 @@ static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
   });
 }
 
+/// Attribute stamped onto llvm.func ops that were converted from kgen.func ops
+/// with the abi("C") effect. Used by ConvertKGENCall to identify C-ABI
+/// callees regardless of whether the callee was converted before or after the
+/// call site.
+static constexpr StringLiteral kCABIFuncAttr = "kgen.c_abi";
+
+/// Returns true if the callee identified by `sym` has the abi("C") effect.
+/// The callee may be a kgen.func (not yet converted) or an llvm.func already
+/// stamped with kCABIFuncAttr by ConvertKGENFunc, depending on conversion
+/// order.
+static bool isCABICallee(Operation *callOp, FlatSymbolRefAttr sym) {
+  auto module = callOp->getParentOfType<mlir::ModuleOp>();
+  auto *calleeOp = mlir::SymbolTable::lookupSymbolIn(module, sym);
+  if (auto kgenFunc = dyn_cast_or_null<FuncOp>(calleeOp))
+    return kgenFunc.getFuncTypeGenerator().getBody().getFnEffects().isCABI();
+  if (auto llvmFunc = dyn_cast_or_null<LLVM::LLVMFuncOp>(calleeOp))
+    return llvmFunc->hasAttr(kCABIFuncAttr);
+  return false;
+}
+
 class ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
 public:
   ConvertKGENFunc(mlir::LLVMTypeConverter &tc, SymbolTable &symtab,
@@ -577,6 +598,11 @@ public:
     // Propagate InlineLevel as a passthrough LLVM attribute.
     convertInlineLevel(funcOp, func.getInlineLevel());
 
+    // Mark abi("C") functions so ConvertKGENCall can identify them via
+    // symbol lookup regardless of conversion order.
+    if (func.getFuncTypeGenerator().getBody().getFnEffects().isCABI())
+      funcOp->setAttr(kCABIFuncAttr, b.getUnitAttr());
+
     // And move the func's body into the new function.
     if (!func.isExternal()) {
       b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
@@ -605,8 +631,10 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// Convert `kgen.call` to `llvm.call`, unpacking results if necessary.
+/// For callees marked with the `abi("C")` effect, C ABI coercion is applied
+/// via CABICallHelper (same mechanism as for abi("C") indirect calls).
 struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+  ConvertKGENCall(mlir::LLVMTypeConverter &tc) : ConvertPOPToLLVMPattern(tc) {}
 
   LogicalResult
   matchAndRewrite(CallOp op, CallOpAdaptor adaptor,
@@ -624,13 +652,41 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
       return emitError(op.getLoc(),
                        "cannot lower call to nested symbol to LLVM");
 
-    // Drop empty struct argument.
+    // Drop empty struct arguments.
     auto filteredOperands = to_vector(
         llvm::make_filter_range(adaptor.getOperands(), [](Value operand) {
           return !isEmptyType(operand.getType());
         }));
 
-    // Create the LLVM call operation.
+    // If the callee is a abi("C") function definition, apply C ABI coercion
+    // at the call site so that struct args/returns are passed correctly.
+    if (isCABICallee(op, flatSymbol)) {
+      CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
+      Location loc = op.getLoc();
+      Type origRetTy = types.empty() ? Type{} : types.front();
+      auto prep =
+          cabi.prepareCall(mlir::ValueRange(filteredOperands).getTypes(),
+                           filteredOperands, origRetTy, loc, rewriter);
+      LLVM::CallOp llvmCall = LLVM::CallOp::create(
+          rewriter, loc, prep.signature, flatSymbol, prep.callArgs);
+      CABICallHelper::applySRetAttrIfNeeded(llvmCall, origRetTy, prep.usesSRet,
+                                            rewriter);
+      cabi.applyByvalAttrsToCall(llvmCall, prep.argClass,
+                                 mlir::ValueRange(filteredOperands).getTypes(),
+                                 prep.usesSRet, rewriter);
+      applyTailKind(llvmCall, op.getTailKind());
+      if (op.getNumResults() == 0) {
+        rewriter.eraseOp(op);
+        return success();
+      }
+      Value rawResult = prep.usesSRet ? Value{} : llvmCall.getResult();
+      rewriter.replaceOp(op, cabi.extractReturn(prep.retClass, rawResult,
+                                                prep.sretPtr, origRetTy, loc,
+                                                rewriter));
+      return success();
+    }
+
+    // Create the LLVM call operation (Mojo ABI).
     LLVM::CallOp llvmCall = createLLVMCall(rewriter, op.getLoc(), types,
                                            flatSymbol, filteredOperands);
     applyTailKind(llvmCall, op.getTailKind());
@@ -1314,6 +1370,21 @@ void LowerKGENToLLVMPass::runOnOperation() {
   for (StringAttr sym : exportCFuncs)
     if (auto func = symtab.lookup<LLVM::LLVMFuncOp>(sym))
       processCExportedFunction(func, symbolUsers, symtab, targetInfo);
+
+  // Apply C ABI to abi("C") function definitions. This rewrites the function
+  // entry (C ABI args → Mojo types) and exits (Mojo return → C ABI), making
+  // the function directly callable from C. Call sites were already patched
+  // during conversion by ConvertKGENCall. Skip functions already handled by
+  // processCExportedFunction to avoid double-processing.
+  {
+    auto abiHandler =
+        createCABIInfo(typeConverter.getTarget().getTriple(), &getContext(),
+                       static_cast<const LLVMDataLayout &>(typeConverter));
+    for (auto func : theModule.getOps<LLVM::LLVMFuncOp>())
+      if (func->hasAttr(kCABIFuncAttr))
+        if (!llvm::is_contained(exportCFuncs, func.getNameAttr()))
+          processCABIFunctionDefinition(func, *abiHandler);
+  }
 
   // Convert the debug info within the IR.
   debugTypeConverter.applyRecursively(theModule);

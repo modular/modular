@@ -164,6 +164,8 @@ public:
   virtual CoercionInfo classifyReturnType(mlir::Type type,
                                           mlir::Location loc) const = 0;
 
+  const LLVMDataLayout &getDataLayout() const { return dataLayout; }
+
 protected:
   CABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout)
       : ctx(ctx), dataLayout(dataLayout) {}

@@ -104,6 +104,7 @@ class _python_symbols(Symbols):
     listmaker: int
     match_stmt: int
     metaparams: int
+    named_effect: int
     namedexpr_test: int
     not_test: int
     old_comp_for: int

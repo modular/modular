@@ -23,12 +23,12 @@
 
 
 @extern("extern_add")
-def extern_add(a: Int32, b: Int32) -> Int32:
+def extern_add(a: Int32, b: Int32) abi("Mojo") -> Int32:
     ...
 
 
 @extern("extern_sub")
-def extern_sub(a: Int32, b: Int32) -> Int32:
+def extern_sub(a: Int32, b: Int32) abi("Mojo") -> Int32:
     ...
 
 

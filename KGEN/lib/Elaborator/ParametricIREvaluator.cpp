@@ -496,6 +496,8 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
     return evaluateGetTypeNameAttr(getTypeNameAttr);
   if (auto isStructTypeAttr = dyn_cast<IsStructTypeAttr>(attr))
     return evaluateIsStructTypeAttr(isStructTypeAttr);
+  if (auto fnTypeIsCABIAttr = dyn_cast<FnTypeIsCABIAttr>(attr))
+    return evaluateFnTypeIsCABIAttr(fnTypeIsCABIAttr);
   if (auto getBaseTypeNameAttr = dyn_cast<GetBaseTypeNameAttr>(attr))
     return evaluateGetBaseTypeNameAttr(getBaseTypeNameAttr);
 

@@ -193,6 +193,7 @@ protected:
 
   FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
   FailureOr<TypedAttr> evaluateIsStructTypeAttr(IsStructTypeAttr attr);
+  FailureOr<TypedAttr> evaluateFnTypeIsCABIAttr(FnTypeIsCABIAttr attr);
   FailureOr<TypedAttr> evaluateGetBaseTypeNameAttr(GetBaseTypeNameAttr attr);
   FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
       CompileOffloadClosureAttr compileOffloadClosureAttr);

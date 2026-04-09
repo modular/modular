@@ -259,6 +259,10 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"RegisterPassable", 7, "register_passable">,
   /// The 'extern' effect switches the semantics of function typed values from a closure state to a function pointer
   I16BitEnumAttrCaseBit<"Extern", 8, "extern">,
+  /// This function uses the C ABI for argument and return value passing.
+  /// Lowering must apply platform C ABI coercion (via CABIInfo) rather than
+  /// the default Mojo calling convention, independent of the Extern bit.
+  I16BitEnumAttrCaseBit<"CABI", 9, "cabi">,
 ]> {
   let cppNamespace = "M::KGEN::impl";
   let genSpecializedAttr = 0;

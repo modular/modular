@@ -41,6 +41,14 @@ def missing_colon_2()
 def invalid_thin_effect() thin:
     pass
 
+# expected-error @+1 {{function effect 'thin' is only allowed on function types}}
+def invalid_thin_before_abi() thin abi("C"):
+    pass
+
+# expected-error @+1 {{function effect 'thin' is only allowed on function types}}
+def invalid_abi_before_thin() abi("C") thin:
+    pass
+
 # expected-error @below {{expected argument name}}
 def missing_argument_name(*: Int): pass
 

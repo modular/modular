@@ -4555,6 +4555,7 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
   return tupleCallNode.emitIR(dest, emitter);
 }
 
+//===----------------------------------------------------------------------===//
 // Struct field reflection magic functions.
 //
 // These magic functions provide type validation and cleaner syntax for struct

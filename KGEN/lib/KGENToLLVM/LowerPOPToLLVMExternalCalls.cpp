@@ -72,55 +72,6 @@ private:
     }
   }
 
-  /// Add byval attributes on call instruction for variadic indirect args.
-  /// Variadic args are not part of the function signature, so byval must
-  /// be set on the call itself.
-  void addByvalAttrsToCall(LLVM::CallOp call,
-                           ArrayRef<CoercionInfo> argClassifications,
-                           ExternalCallOp op, size_t numFixedArgs,
-                           bool usesSRet,
-                           ConversionPatternRewriter &rewriter) const {
-    bool hasVariadicIndirect = false;
-    for (size_t idx = numFixedArgs; idx < argClassifications.size(); ++idx) {
-      if (argClassifications[idx].useIndirect) {
-        hasVariadicIndirect = true;
-        break;
-      }
-    }
-    if (!hasVariadicIndirect)
-      return;
-
-    unsigned varArgStart =
-        computeVariadicCallArgStart(argClassifications, numFixedArgs, usesSRet);
-
-    unsigned numCallArgs = call.getNumOperands();
-    SmallVector<Attribute> argAttrsList;
-    if (mlir::ArrayAttr existing = call.getArgAttrsAttr())
-      argAttrsList.assign(existing.begin(), existing.end());
-    else
-      argAttrsList.assign(numCallArgs, rewriter.getDictionaryAttr({}));
-
-    unsigned varCallIdx = varArgStart;
-    for (size_t idx = numFixedArgs; idx < argClassifications.size(); ++idx) {
-      if (argClassifications[idx].useIndirect && varCallIdx < numCallArgs) {
-        Type llvmArgType =
-            getTypeConverter()->convertType(op.getOperandTypes()[idx]);
-        auto byvalAttr =
-            rewriter.getNamedAttr(LLVM::LLVMDialect::getByValAttrName(),
-                                  mlir::TypeAttr::get(llvmArgType));
-        auto existing = cast<DictionaryAttr>(argAttrsList[varCallIdx]);
-        SmallVector<NamedAttribute> merged(existing.begin(), existing.end());
-        merged.push_back(byvalAttr);
-        argAttrsList[varCallIdx] = rewriter.getDictionaryAttr(merged);
-      }
-      if (argClassifications[idx].isTwoRegister())
-        varCallIdx += 2;
-      else
-        varCallIdx += 1;
-    }
-    call.setArgAttrsAttr(rewriter.getArrayAttr(argAttrsList));
-  }
-
   /// On ARM64, bitcast variadic float args < 64 bits to integer to prevent
   /// LLVM's float→double promotion. This ensures raw bits are placed in GPRs
   /// for va_arg struct reads. On x86-64, floats go in XMM registers and
@@ -243,13 +194,11 @@ public:
     const llvm::Triple &triple = getTypeConverter()->getTarget().getTriple();
     CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
 
-    // Step 1: Create ABI handler (DefaultCABIInfo for unsupported platforms)
-    std::unique_ptr<CABIInfo> abiHandler = cabi.createABIHandler();
-
-    // Determine number of fixed arguments (for variadic functions)
+    // Determine number of fixed arguments (for variadic functions).
     size_t numFixedArgs = adaptor.getOperands().size();
-    if (auto fnType = op.getFnType()) {
-      numFixedArgs = fnType->getNumInputs();
+    bool isVariadic = op.getFnType().has_value();
+    if (isVariadic) {
+      numFixedArgs = op.getFnType()->getNumInputs();
       // Validate that the declared fixed arg count doesn't exceed actual
       // operands. A malformed op would cause out-of-bounds access in argument
       // classification.
@@ -258,29 +207,20 @@ public:
           "variadic function declares more fixed args than provided operands");
     }
 
-    // Step 2: Classify arguments and return value.
-    // Identity classifications produce pass-through (no coercion).
-    // Note: createABIInfo always returns a valid handler (DefaultCABIInfo
-    // for unsupported platforms), so abiHandler is never null.
-    SmallVector<CoercionInfo> argClassifications = cabi.classifyArgs(
-        abiHandler.get(), op.getOperandTypes(), loc, numFixedArgs);
-    CoercionInfo returnClassification;
-    if (!op.getResults().empty()) {
-      returnClassification =
-          cabi.classifyReturn(abiHandler.get(), op.getResult().getType(), loc);
-    }
-
-    // Step 3: Build function signature from ABI classifications.
-    // Identity classifications produce the same types as standard conversion.
+    // Classify arguments/return and build the coerced LLVM signature + args.
+    // op.getOperandTypes() holds POP-level types for classification; the
+    // adaptor operands hold the already-converted LLVM values for coercion.
     Type llvmReturnType;
-    if (!op.getResults().empty()) {
+    if (!op.getResults().empty())
       llvmReturnType =
           getTypeConverter()->convertType(op.getResult().getType());
-    }
-    bool isVariadic = op.getFnType().has_value();
-    auto [signature, usesSRet] = cabi.buildFunctionType(
-        argClassifications, returnClassification, adaptor.getOperands(),
-        llvmReturnType, numFixedArgs, isVariadic);
+    auto prep = cabi.prepareCall(op.getOperandTypes(), adaptor.getOperands(),
+                                 llvmReturnType, loc, rewriter, numFixedArgs,
+                                 isVariadic);
+    auto &argClassifications = prep.argClass;
+    const CoercionInfo &returnClassification = prep.retClass;
+    const bool usesSRet = prep.usesSRet;
+    const LLVM::LLVMFunctionType &signature = prep.signature;
 
     // Step 4: Get passthrough attributes
     mlir::ArrayAttr passthrough = attachTargetPassthroughAttrs(
@@ -350,11 +290,6 @@ public:
       symtab.insert(func);
     }
 
-    // Step 7: Build call arguments
-    auto [callArgs, sretPointer] = cabi.buildCallArgs(
-        argClassifications, returnClassification, adaptor.getOperands(),
-        llvmReturnType, loc, rewriter);
-
     // Darwin ARM64: bitcast variadic floats < 64 bits to integer to prevent
     // LLVM's float→double promotion. Darwin's flat va_list reads all variadic
     // args from the GP save area, so float values must be in GPRs (as
@@ -363,20 +298,25 @@ public:
     // them.
     if (op.getFnType().has_value() && triple.isAArch64() &&
         triple.isOSDarwin()) {
-      applyARM64VariadicFloatBitcast(callArgs, argClassifications, numFixedArgs,
-                                     usesSRet, loc, rewriter);
+      applyARM64VariadicFloatBitcast(prep.callArgs, argClassifications,
+                                     numFixedArgs, usesSRet, loc, rewriter);
     }
 
-    // Step 8: Create call
-    LLVM::CallOp call = createLLVMCall(rewriter, loc, func, callArgs);
+    // Step 7: Create call
+    LLVM::CallOp call = createLLVMCall(rewriter, loc, func, prep.callArgs);
 
-    // Add byval on call for variadic indirect args (x86-64 only)
-    if (op.getFnType().has_value() && triple.isX86()) {
-      addByvalAttrsToCall(call, argClassifications, op, numFixedArgs, usesSRet,
-                          rewriter);
+    // Add byval on call for variadic indirect args (x86-64 only).
+    // Fixed-arg byval is on the function declaration (addByvalAttrsToFunc);
+    // variadic args aren't in the signature so they must go on the call.
+    if (op.getFnType().has_value()) {
+      SmallVector<Type> llvmArgTypes;
+      for (Type t : op.getOperandTypes())
+        llvmArgTypes.push_back(getTypeConverter()->convertType(t));
+      cabi.applyByvalAttrsToCall(call, argClassifications, llvmArgTypes,
+                                 usesSRet, rewriter, numFixedArgs);
     }
 
-    // Step 9: Handle return value
+    // Step 8: Handle return value
     if (op.getResults().empty()) {
       // Void return
       rewriter.eraseOp(op);
@@ -384,7 +324,7 @@ public:
       // ABI coercion: reverse coercion on the return value.
       Value callResult = call.getNumResults() > 0 ? call.getResult() : Value();
       Value result =
-          cabi.extractReturn(returnClassification, callResult, sretPointer,
+          cabi.extractReturn(returnClassification, callResult, prep.sretPtr,
                              llvmReturnType, loc, rewriter);
       rewriter.replaceOp(op, result);
     } else {
