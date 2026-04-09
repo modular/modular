@@ -18,6 +18,13 @@ struct _MLIR:
         size: __mlir_type.index, elt_type: AnyType
     ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
 
+    comptime KGENParamListType[elt_type: AnyType] = __mlir_type[
+        `!kgen.param_list<`, elt_type, `>`
+    ]
+    comptime KGENTypeListType[elt_type: type_of(AnyType)] = __mlir_type[
+        `!kgen.param_list<`, elt_type, `>`
+    ]
+
 
 comptime AnyOrigin[*, mut: Bool = False] = Origin[
     _mlir_origin=__mlir_attr[
@@ -977,6 +984,31 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
         `> : `,
         +Self.type,
     ]
+
+    # Support implicit conversion from a more derived trait to a more base one
+    # FIXME: How to constraint this with "where" to avoid upcasts? Right now
+    # this produces a terrible error message:
+    #       def simple[a: TypeList[type=AnyType, ...]]():
+    #         comptime other = TypeList[type=Copyable, ...](a)
+    @implicit
+    @always_inline("builtin")
+    def __init__[
+        src_trait: type_of(AnyType)
+    ](
+        out self,
+        existing: TypeList[
+            type=src_trait,
+            *__mlir_attr[
+                `#kgen.downcast<:`,
+                type_of(Self.values),
+                ` `,
+                +Self.values,
+                `> : `,
+                Variadic.TypesOfTrait[src_trait],
+            ],
+        ],
+    ):
+        return
 
 
 @fieldwise_init

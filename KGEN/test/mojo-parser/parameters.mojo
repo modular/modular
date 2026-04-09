@@ -1824,3 +1824,13 @@ comptime ImmutOrigin = Origin[]
 comptime ImmutAnyOrigin = AnyOrigin[]
 # CHECK-LABEL: lit.alias.decl *"ImmutExternalOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:i1 0}, :origin<0> {}>>
 comptime ImmutExternalOrigin = ExternalOrigin[]
+
+
+def upcast_typelist_callee[y: TypeList[type=AnyType, ...]]():
+    pass
+
+def upcast_typelist_caller[x: TypeList[type=Movable, ...]]():
+    # TODO(MOCO-3712): Causes segfault.
+    #comptime a: TypeList[type=AnyType, ...] = x
+    upcast_typelist_callee[x]()
+
