@@ -758,6 +758,8 @@ class PixelContext:
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
     residual_threshold: float | None = field(default=None)
     """Per-request residual threshold for FBCache. None uses pipeline default."""
+    num_frames: int | None = field(default=None)
+    """Number of frames for video generation."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property

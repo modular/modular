@@ -99,6 +99,8 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    WAN = "WanPipeline"
+    WAN_I2V = "WanImageToVideoPipeline"
 
     @classmethod
     def from_class_name(cls, class_name: str) -> PipelineClassName:
@@ -239,7 +241,12 @@ class PixelGenerationTokenizer(
         if self._pipeline_class_name == PipelineClassName.ZIMAGE:
             self._num_channels_latents = transformer_config["in_channels"]
         else:
-            self._num_channels_latents = transformer_config["in_channels"] // 4
+            out_channels = transformer_config.get("out_channels")
+            self._num_channels_latents = (
+                out_channels
+                if out_channels is not None
+                else transformer_config["in_channels"] // 4
+            )
 
         # Create scheduler from its component config.
         scheduler_config = models["scheduler"].huggingface_config
@@ -902,9 +909,17 @@ class PixelGenerationTokenizer(
                 " but may produce lower quality or unexpected results."
             )
 
+        # Resolve negative_prompt: prefer video options for video pipelines.
+        video_options = request.body.provider_options.video
+        negative_prompt_resolved = (
+            video_options.negative_prompt
+            if video_options and video_options.negative_prompt
+            else None
+        ) or image_options.negative_prompt
+
         if (
             image_options.true_cfg_scale > 1.0
-            and image_options.negative_prompt is None
+            and negative_prompt_resolved is None
         ):
             logger.warning(
                 f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
@@ -928,7 +943,7 @@ class PixelGenerationTokenizer(
         else:
             do_true_cfg = (
                 image_options.true_cfg_scale > 1.0
-                and image_options.negative_prompt is not None
+                and negative_prompt_resolved is not None
             )
 
         # 1. Tokenize prompts
@@ -953,7 +968,7 @@ class PixelGenerationTokenizer(
         ) = await self._generate_tokens_ids(
             prompt,
             image_options.secondary_prompt,
-            image_options.negative_prompt,
+            negative_prompt_resolved,
             image_options.secondary_negative_prompt,
             do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
@@ -992,17 +1007,29 @@ class PixelGenerationTokenizer(
                     self._pipeline_class_name != PipelineClassName.ZIMAGE
                 ),
             )
-            height = image_options.height or preprocessed_image.height
-            width = image_options.width or preprocessed_image.width
+            height = (
+                (video_options and video_options.height)
+                or image_options.height
+                or preprocessed_image.height
+            )
+            width = (
+                (video_options and video_options.width)
+                or image_options.width
+                or preprocessed_image.width
+            )
             preprocessed_image_array = np.array(
                 preprocessed_image, dtype=np.uint8
             ).copy()
         else:
             height = (
-                image_options.height or default_sample_size * vae_scale_factor
+                (video_options and video_options.height)
+                or image_options.height
+                or default_sample_size * vae_scale_factor
             )
             width = (
-                image_options.width or default_sample_size * vae_scale_factor
+                (video_options and video_options.width)
+                or image_options.width
+                or default_sample_size * vae_scale_factor
             )
 
         # 3. Resolve image dimensions using cached static values
@@ -1010,10 +1037,19 @@ class PixelGenerationTokenizer(
         latent_width = 2 * (int(width) // (self._vae_scale_factor * 2))
         image_seq_len = (latent_height // 2) * (latent_width // 2)
 
+        video_steps = (
+            video_options.steps
+            if video_options and video_options.steps is not None
+            else None
+        )
         num_inference_steps = (
-            image_options.steps
-            if "steps" in image_options.model_fields_set
-            else self._default_num_inference_steps
+            video_steps
+            if video_steps is not None
+            else (
+                image_options.steps
+                if "steps" in image_options.model_fields_set
+                else self._default_num_inference_steps
+            )
         )
         sigma_min = (
             0.0
@@ -1092,6 +1128,7 @@ class PixelGenerationTokenizer(
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
             output_format=image_options.output_format,
             residual_threshold=image_options.residual_threshold,
+            num_frames=video_options.num_frames if video_options else None,
         )
 
         return context
