@@ -1192,7 +1192,6 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
           emitter.shared.defaultCaptureConventionInScope(
               *nearestEscapingFnOrNone);
       if (defaultConvention != CaptureConvention::kConventionUnspecified) {
-        ;
         decl = ClosureEmitter::addCaptureValue(
             emitter.shared, *nearestEscapingFnOrNone, spelling, expr->getLoc());
         if (!decl)

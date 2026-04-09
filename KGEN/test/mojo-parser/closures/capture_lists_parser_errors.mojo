@@ -18,7 +18,7 @@ def make_closure(x: Int):
 # COM: Verify Capture Rules Are Enforced
 
 def immByMut(byRefMut: String):
-    # CHECK: error: Cannot capture byRefMut by mut because the value is immutable
+    # CHECK: error: Cannot capture byRefMut by mut because it could be immutable
     def myclosure() unified {mut byRefMut}:
         pass
 
@@ -72,10 +72,3 @@ def toy(rogue: String):
     # CHECK: error: Could not infer capture convention of the captured value rogue
     def myclosure() unified {} -> String:
         return rogue
-
-# // -----
-
-def wrongConvention(thing: String):
-    # CHECK: error: Unrecognized capture convention
-    def incorrectCaptureConvention() unified {ref thing}:
-        _ = thing

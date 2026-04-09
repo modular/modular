@@ -3188,6 +3188,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
 
 bool Capture::isCopy() const { return !isRef(); }
 bool Capture::isRef() const {
-  return kind == CaptureConvention::kConventionRead ||
+  return kind == CaptureConvention::kConventionRef ||
+         kind == CaptureConvention::kConventionRead ||
          kind == CaptureConvention::kConventionMut;
 }
