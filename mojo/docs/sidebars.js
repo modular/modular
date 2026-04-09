@@ -35,6 +35,7 @@ const mojoSidebars = {
           collapsed : true,
           items : [
             "mojo/manual/structs/index",
+            "mojo/manual/structs/operator-support",
             "mojo/manual/structs/reference",
           ]
         },

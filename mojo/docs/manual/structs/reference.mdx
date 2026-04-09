@@ -1,6 +1,6 @@
 ---
 title: Self-referential structs
-sidebar_position: 2
+sidebar_position: 3
 description: Mojo structs can't directly contain themselves. Learn how to use pointers to build linked lists, trees, and other self-referential data structures.
 ---
 
@@ -115,7 +115,7 @@ the value stored at each node:
 @staticmethod
 def print_list(node_ptr: Self.NodePointer):
     if not node_ptr:
-        print()
+        print("Empty list")
         return
 
     current_value: Optional[Self.ElementType] = node_ptr[].value

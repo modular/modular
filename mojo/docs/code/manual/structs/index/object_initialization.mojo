@@ -13,14 +13,16 @@
 
 
 @fieldwise_init
-struct MyInt:
-    var value: Int
+struct MyStruct:
+    var name: String
 
-    def __neg__(self) raises -> Self:
-        return Self(-self.value)
+    def move_field(mut self, var new_name: String):
+        var name = self.name^  # Moves field; self.name is now uninitialized
+        print("Name:", name)  # Prints: "Name: Ken"
+        self.name = new_name^  # reinitialize the field
 
 
-def main() raises:
-    pos = MyInt(1)
-    neg = -pos
-    print(pos.value, neg.value)
+def main():
+    var instance = MyStruct("Ken")
+    instance.move_field("Scott")
+    print("Name:", instance.name)  # Prints: "Name: Scott"
