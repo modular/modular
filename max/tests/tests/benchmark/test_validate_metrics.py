@@ -180,8 +180,6 @@ def _make_metrics(
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
-        cpu_utilization_user=None,
-        cpu_utilization_system=None,
     )
 
 
@@ -484,8 +482,6 @@ def test_pixel_metrics_to_result_dict() -> None:
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
-        cpu_utilization_user=None,
-        cpu_utilization_system=None,
     )
     d = pm.to_result_dict()
     assert d["total_generated_outputs"] == 8

@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 if TYPE_CHECKING:
+    from max.diagnostics.cpu import CPUMetrics
+
     from .server_metrics import ParsedMetrics
 
 
@@ -360,8 +362,7 @@ class BaseBenchmarkMetrics(Metrics):
     available_gpu_memory_mib: list[float]
     gpu_utilization: list[float]
 
-    cpu_utilization_user: float | None
-    cpu_utilization_system: float | None
+    cpu_metrics: CPUMetrics | None = None
 
     server_metrics: ParsedMetrics | None = None
 
@@ -385,6 +386,8 @@ class BaseBenchmarkMetrics(Metrics):
             "available_gpu_memory_mib": self.available_gpu_memory_mib,
             "gpu_utilization": self.gpu_utilization,
         }
+        if self.cpu_metrics is not None:
+            d["cpu_metrics"] = dataclasses.asdict(self.cpu_metrics)
         for f in dataclasses.fields(self):
             val = getattr(self, f.name)
             if isinstance(val, (StandardPercentileMetrics, ThroughputMetrics)):

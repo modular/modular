@@ -61,10 +61,6 @@ from max.benchmark.benchmark_shared.config import (
     Endpoint,
     ServingBenchmarkConfig,
 )
-from max.benchmark.benchmark_shared.cpu_metrics import (
-    CpuMetricsCollector,
-    collect_pids_for_port,
-)
 from max.benchmark.benchmark_shared.datasets import (
     AgenticCodeBenchmarkDataset,
     ArxivSummarizationBenchmarkDataset,
@@ -121,6 +117,11 @@ from max.benchmark.benchmark_shared.server_metrics import (
     print_server_metrics,
 )
 from max.benchmark.benchmark_shared.steady_state import detect_steady_state
+from max.diagnostics.cpu import (
+    CPUMetrics,
+    CPUMetricsCollector,
+    collect_pids_for_port,
+)
 from max.diagnostics.gpu import GPUDiagContext
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
@@ -550,17 +551,18 @@ def print_benchmark_summary(
                 )
             )
     if collect_cpu_stats:
+        cpu = metrics.cpu_metrics
         print_section(title="CPU Statistics")
         print(
             "{:<40} {:<10.2f}".format(
                 "CPU utilization user (%):",
-                metrics.cpu_utilization_user or 0.0,
+                cpu.user_percent if cpu else 0.0,
             )
         )
         print(
             "{:<40} {:<10.2f}".format(
                 "CPU utilization system (%):",
-                metrics.cpu_utilization_system or 0.0,
+                cpu.system_percent if cpu else 0.0,
             )
         )
     if spec_decode_stats is not None:
@@ -944,7 +946,7 @@ def calculate_metrics(
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
     gpu_metrics: list[dict[str, GPUStats]] | None,
-    cpu_metrics: dict[str, Any],
+    cpu_metrics: CPUMetrics | None,
     skip_first_n_requests: int,
     skip_last_n_requests: int,
     max_concurrency: int | None,
@@ -1078,8 +1080,7 @@ def calculate_metrics(
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
-        cpu_utilization_user=cpu_metrics.get("user_percent"),
-        cpu_utilization_system=cpu_metrics.get("system_percent"),
+        cpu_metrics=cpu_metrics,
         server_metrics=server_metrics,
     )
 
@@ -1099,7 +1100,7 @@ def calculate_pixel_generation_metrics(
     outputs: Sequence[PixelGenerationRequestFuncOutput],
     dur_s: float,
     gpu_metrics: list[dict[str, GPUStats]] | None,
-    cpu_metrics: dict[str, Any],
+    cpu_metrics: CPUMetrics | None,
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None = None,
@@ -1149,8 +1150,7 @@ def calculate_pixel_generation_metrics(
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
-        cpu_utilization_user=cpu_metrics.get("user_percent"),
-        cpu_utilization_system=cpu_metrics.get("system_percent"),
+        cpu_metrics=cpu_metrics,
         server_metrics=server_metrics,
     )
 
@@ -1577,7 +1577,7 @@ def _build_pixel_generation_result(
     outputs: Sequence[BaseRequestFuncOutput],
     benchmark_duration: float,
     gpu_metrics: list[dict[str, GPUStats]] | None,
-    cpu_metrics: dict[str, Any],
+    cpu_metrics: CPUMetrics | None,
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None,
@@ -1622,7 +1622,7 @@ def _build_text_generation_result(
     benchmark_duration: float,
     tokenizer: PreTrainedTokenizerBase | None,
     gpu_metrics: list[dict[str, GPUStats]] | None,
-    cpu_metrics: dict[str, Any],
+    cpu_metrics: CPUMetrics | None,
     skip_first_n_requests: int,
     skip_last_n_requests: int,
     max_concurrency: int | None,
@@ -1694,7 +1694,7 @@ def _add_steady_state_result(
     outputs: Sequence[RequestFuncOutput],
     tokenizer: PreTrainedTokenizerBase | None,
     gpu_metrics: list[dict[str, GPUStats]] | None,
-    cpu_metrics: dict[str, Any],
+    cpu_metrics: CPUMetrics | None,
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None,
@@ -1866,7 +1866,7 @@ async def benchmark(
                 pids = collect_pids_for_port(
                     int(urlparse(api_url).port or 8000)
                 )
-                cpu_collector = CpuMetricsCollector(pids)
+                cpu_collector = CPUMetricsCollector(pids)
                 cpu_collector.start()
             except:
                 logger.warning(
@@ -2024,11 +2024,10 @@ async def benchmark(
     if collect_gpu_stats and gpu_recorder is not None:
         gpu_metrics = gpu_recorder.stats
 
+    cpu_metrics_result: CPUMetrics | None = None
     if collect_cpu_stats and cpu_collector is not None:
         cpu_collector.stop()
-        cpu_metrics = cpu_collector.dump_stats()
-    else:
-        cpu_metrics = {}
+        cpu_metrics_result = cpu_collector.dump_stats()
 
     # Collect server-side metrics from Prometheus endpoint (with delta from baseline)
     server_metrics = None
@@ -2070,7 +2069,7 @@ async def benchmark(
             outputs=outputs,
             benchmark_duration=benchmark_duration,
             gpu_metrics=gpu_metrics,
-            cpu_metrics=cpu_metrics,
+            cpu_metrics=cpu_metrics_result,
             max_concurrency=max_concurrency,
             collect_gpu_stats=collect_gpu_stats,
             server_metrics=server_metrics,
@@ -2081,7 +2080,7 @@ async def benchmark(
             benchmark_duration=benchmark_duration,
             tokenizer=tokenizer,
             gpu_metrics=gpu_metrics,
-            cpu_metrics=cpu_metrics,
+            cpu_metrics=cpu_metrics_result,
             skip_first_n_requests=skip_first_n_requests,
             skip_last_n_requests=skip_last_n_requests,
             max_concurrency=max_concurrency,

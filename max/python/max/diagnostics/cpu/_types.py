@@ -11,12 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Diagnostics API for MAX platform.
+"""Public types returned by the CPU diagnostics API."""
 
-This module provides diagnostic utilities for monitoring and analyzing
-system performance, including GPU utilization and memory usage.
-"""
+from __future__ import annotations
 
-from . import cpu, gpu
+from dataclasses import dataclass
 
-__all__ = ["cpu", "gpu"]
+
+@dataclass
+class CPUMetrics:
+    """CPU metrics collected during benchmarking.
+
+    Attributes:
+        user: Total user CPU time in seconds.
+        user_percent: User CPU utilization as a percentage.
+        system: Total system CPU time in seconds.
+        system_percent: System CPU utilization as a percentage.
+        elapsed: Elapsed wall-clock time in seconds.
+    """
+
+    user: float
+    user_percent: float
+    system: float
+    system_percent: float
+    elapsed: float

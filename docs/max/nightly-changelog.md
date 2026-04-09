@@ -63,6 +63,8 @@ This version is still a work in progress.
   `max.pipelines.lib`.
 - `max.diagnostics.gpu.BackgroundRecorder`'s sampling interval can now be
   configured.
+- Introduced `CPUMetrics` alongside the existing GPU diagnostics and open source
+  it under from `max.diagnostics`.
 - Added experimental `max.experimental.distributed` module with `DTensor`,
   `DeviceMesh`, and placement types (`Replicated`, `Sharded`, `Partial`) for
   expressing how tensors are distributed across multiple devices. Op dispatch

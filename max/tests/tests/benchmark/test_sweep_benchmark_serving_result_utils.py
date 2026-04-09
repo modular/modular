@@ -42,6 +42,7 @@ from max.benchmark.benchmark_shared.sweep_benchmark_serving_result_utils import 
     format_float,
     validate_sweep_serving_percentiles,
 )
+from max.diagnostics.cpu import CPUMetrics
 
 
 def test_supported_percentiles_frozen_set() -> None:
@@ -165,8 +166,13 @@ def _make_llm_metrics() -> BenchmarkMetrics:
         peak_gpu_memory_mib=[8000.0],
         available_gpu_memory_mib=[2000.0],
         gpu_utilization=[0.9],
-        cpu_utilization_user=10.0,
-        cpu_utilization_system=5.0,
+        cpu_metrics=CPUMetrics(
+            user=1.0,
+            user_percent=10.0,
+            system=0.5,
+            system_percent=5.0,
+            elapsed=10.0,
+        ),
     )
 
 
@@ -239,8 +245,13 @@ def _make_t2i_metrics() -> PixelGenerationBenchmarkMetrics:
         peak_gpu_memory_mib=[8000.0],
         available_gpu_memory_mib=[2000.0],
         gpu_utilization=[0.6],
-        cpu_utilization_user=10.0,
-        cpu_utilization_system=5.0,
+        cpu_metrics=CPUMetrics(
+            user=1.0,
+            user_percent=10.0,
+            system=0.5,
+            system_percent=5.0,
+            elapsed=10.0,
+        ),
     )
 
 

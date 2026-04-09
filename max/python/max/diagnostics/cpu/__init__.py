@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Diagnostics API for MAX platform.
+"""CPU diagnostics API.
 
-This module provides diagnostic utilities for monitoring and analyzing
-system performance, including GPU utilization and memory usage.
+This module allows collecting CPU utilization metrics for a set of
+processes, identified by PID.
 """
 
-from . import cpu, gpu
-
-__all__ = ["cpu", "gpu"]
+from ._collector import CPUMetricsCollector as CPUMetricsCollector
+from ._collector import collect_pids_for_port as collect_pids_for_port
+from ._types import CPUMetrics as CPUMetrics

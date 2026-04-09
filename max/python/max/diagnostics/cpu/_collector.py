@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""CPU metrics collector for process-level CPU utilization."""
+
 from __future__ import annotations
 
 import time
@@ -18,18 +20,19 @@ from typing import Any
 
 import psutil
 
+from ._types import CPUMetrics
+
 
 def collect_pids_for_port(port: int) -> list[int]:
-    """Collects the PIDs of processes and child processes listening on a given port.
+    """Collect PIDs of processes (and their children) listening on *port*.
 
     Args:
-        port (int): The port number to check.
+        port: The port number to check.
 
     Returns:
-        list[int]: A list of PIDs of processes listening on the specified port.
+        A list of PIDs of processes listening on the specified port.
     """
-
-    pids = set()
+    pids: set[int] = set()
 
     def add_child_pids(pid: int) -> None:
         pids.add(pid)
@@ -48,8 +51,14 @@ def collect_pids_for_port(port: int) -> list[int]:
     return list(pids)
 
 
-class CpuMetricsCollector:
-    def __init__(self, pids: list[int]):
+class CPUMetricsCollector:
+    """Collects aggregate CPU time across a set of PIDs.
+
+    Call :meth:`start` before the workload, :meth:`stop` after, then
+    :meth:`dump_stats` to obtain the :class:`CPUMetrics` summary.
+    """
+
+    def __init__(self, pids: list[int]) -> None:
         self.pids: list[int] = pids
         self.clock_start: float | None = None
         self.clock_end: float | None = None
@@ -74,12 +83,20 @@ class CpuMetricsCollector:
             except psutil.NoSuchProcess:
                 self.cpu_times_end[pid] = None
 
-    def dump_stats(self) -> dict[str, float]:
+    def dump_stats(self) -> CPUMetrics:
+        """Compute and return CPU metrics.
+
+        Returns:
+            CPUMetrics containing user/system CPU time and utilization
+            percentages.
+
+        Raises:
+            RuntimeError: If :meth:`start` and :meth:`stop` were not called,
+                or if elapsed time is non-positive.
+        """
         if not self.clock_start or not self.clock_end:
             raise RuntimeError("Must call start and stop before dump_stats")
 
-        # right now we just combine cpu time for all pids
-        # because there's no easy way to know which pid is doing what
         user = 0.0
         system = 0.0
         elapsed = self.clock_end - self.clock_start
@@ -96,10 +113,10 @@ class CpuMetricsCollector:
                     self.cpu_times_end[pid].system
                     - self.cpu_times_start[pid].system
                 )
-        return {
-            "user": user,
-            "user_percent": (user / elapsed) * 100,
-            "system": system,
-            "system_percent": (system / elapsed) * 100,
-            "elapsed": elapsed,
-        }
+        return CPUMetrics(
+            user=user,
+            user_percent=(user / elapsed) * 100,
+            system=system,
+            system_percent=(system / elapsed) * 100,
+            elapsed=elapsed,
+        )
