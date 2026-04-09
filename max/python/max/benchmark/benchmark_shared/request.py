@@ -25,7 +25,7 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import AsyncIterable, AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -442,6 +442,70 @@ def _compute_chunk_tpot(
     return None
 
 
+def _extract_sse_payload(line: str) -> str | None:
+    """Extract a payload from an SSE line or a bare JSON line."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith(":"):
+        return None
+
+    if stripped.startswith("data:"):
+        payload = stripped.removeprefix("data:").lstrip()
+        return payload or None
+
+    field, separator, _ = stripped.partition(":")
+    if separator and field.isalpha():
+        return None
+
+    return stripped
+
+
+def _is_complete_sse_payload(payload: str) -> bool:
+    """Return whether the payload is complete enough to parse independently."""
+    if payload == "[DONE]":
+        return True
+    try:
+        json.loads(payload)
+    except json.JSONDecodeError:
+        return False
+    return True
+
+
+async def _iter_sse_payloads(
+    content: AsyncIterable[bytes],
+) -> AsyncIterator[str]:
+    """Yield payload lines for the OpenAI-style SSE subset used by benchmarks.
+
+    This intentionally handles the stream shapes we consume in practice:
+    `data:` payload lines, SSE comment lines, and transport chunk splitting.
+    It does not attempt full SSE event assembly across multiple `data:` lines.
+    """
+    pending = ""
+    async for chunk_bytes in content:
+        if not chunk_bytes:
+            continue
+
+        pending += chunk_bytes.decode("utf-8")
+        while True:
+            newline_index = pending.find("\n")
+            if newline_index == -1:
+                break
+
+            line = pending[:newline_index].rstrip("\r")
+            pending = pending[newline_index + 1 :]
+            payload = _extract_sse_payload(line)
+            if payload is not None:
+                yield payload
+
+        payload = _extract_sse_payload(pending.rstrip("\r"))
+        if payload is not None and _is_complete_sse_payload(payload):
+            yield payload
+            pending = ""
+
+    payload = _extract_sse_payload(pending.rstrip("\r"))
+    if payload is not None:
+        yield payload
+
+
 async def _run_openai_stream_request(
     *,
     api_url: str,
@@ -468,14 +532,7 @@ async def _run_openai_stream_request(
                 url=api_url, json=payload, headers=headers
             ) as response:
                 if response.status == 200:
-                    async for chunk_bytes in response.content:
-                        chunk_bytes = chunk_bytes.strip()
-                        if not chunk_bytes:
-                            continue
-
-                        chunk = chunk_bytes.decode("utf-8").removeprefix(
-                            "data: "
-                        )
+                    async for chunk in _iter_sse_payloads(response.content):
                         latency = time.perf_counter() - st
                         if chunk == "[DONE]":
                             continue
