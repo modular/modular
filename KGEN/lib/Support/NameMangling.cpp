@@ -54,18 +54,19 @@ static constexpr auto produceEncoding() {
   return encoding;
 }
 
-/// Replace contiguous sections of invalid symbols with a single '_' while
-/// tallying all the invalid symbols. They are encoded and placed at the end of
-/// the string.
-/// The resultant string. Each invalid character is encoded as 2 characters
-/// additional characters and replaced with at most 1 underscore, meaning the
-/// resulting string will be at most 3 times the size of the input string.
-static SmallString<1024> replaceInvalidCharacter(StringRef name) {
-
+/// Scan `name` and replace each contiguous run of invalid characters with a
+/// single '_'.  When `appendEncoding` is true, all invalid characters are also
+/// tallied and appended at the end as two-character codes (using the cipher
+/// above), so that distinct inputs with different invalid characters can never
+/// collide.  When `appendEncoding` is false the replacement is purely
+/// positional: each run becomes exactly one '_' and nothing is appended.
+static SmallString<1024> replaceInvalidCharacter(StringRef name,
+                                                 bool appendEncoding) {
   SmallVector<char, 256> invalid;
-  invalid.reserve(name.size());
+  if (appendEncoding)
+    invalid.reserve(name.size());
   SmallString<1024> result;
-  result.reserve(name.size() * 3);
+  result.reserve(appendEncoding ? name.size() * 3 : name.size());
   bool carryingInvalid = false;
   for (char c : name) {
     if (isValid(c)) {
@@ -78,11 +79,12 @@ static SmallString<1024> replaceInvalidCharacter(StringRef name) {
       result.push_back(c);
       continue;
     }
-    invalid.push_back(c);
+    if (appendEncoding)
+      invalid.push_back(c);
     carryingInvalid = true;
   }
-  if (invalid.empty())
-    return name;
+  if (!appendEncoding || invalid.empty())
+    return result;
   static constexpr auto encoding = produceEncoding();
   for (char c : invalid) {
     auto [d0, d1] = encoding[c];
@@ -92,18 +94,19 @@ static SmallString<1024> replaceInvalidCharacter(StringRef name) {
   return result;
 }
 
-StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep) {
-  VerboseCompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
-                                           [name] { return name.str(); });
+/// Shared body for sanitizeSymbolToAlnum / sanitizeSymbolToUnderscores.
+static StringAttr sanitizeSymbolImpl(StringAttr name, size_t charToKeep,
+                                     bool appendEncoding) {
   SmallString<1024> result;
   if (name.size() > charToKeep) {
     std::string hash = llvm::utohexstr(llvm::xxh3_64bits(name),
                                        /*LowerCase=*/true, /*Width=*/16);
-    result = replaceInvalidCharacter(name.strref().take_front(charToKeep));
+    result = replaceInvalidCharacter(name.strref().take_front(charToKeep),
+                                     appendEncoding);
     result += "_";
     result += hash;
   } else {
-    result = replaceInvalidCharacter(name);
+    result = replaceInvalidCharacter(name, appendEncoding);
   }
 
   // Prefix with '_' if the result starts with a digit, which is not a valid
@@ -112,4 +115,22 @@ StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep) {
     result.insert(result.begin(), '_');
 
   return StringAttr::get(name.getContext(), result);
+}
+
+StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep) {
+  VerboseCompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
+                                           [name] { return name.str(); });
+  return sanitizeSymbolImpl(name, charToKeep, /*appendEncoding=*/true);
+}
+
+/// Like sanitizeSymbolToAlnum but replaces every run of invalid characters with
+/// a single '_' without appending their encoded forms.  This produces cleaner
+/// PTX names when the source string uses separator characters (e.g. dots) that
+/// are meaningful to humans but irrelevant after sanitisation.  Long-name
+/// hashing and digit-start fixup are preserved.
+StringAttr KGEN::sanitizeSymbolToUnderscores(StringAttr name,
+                                             size_t charToKeep) {
+  VerboseCompilerTimeTraceScope traceScope("sanitizeSymbolToUnderscores",
+                                           [name] { return name.str(); });
+  return sanitizeSymbolImpl(name, charToKeep, /*appendEncoding=*/false);
 }

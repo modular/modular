@@ -23,6 +23,13 @@ namespace M::KGEN {
 /// append _hash_hex(name) to the end making it at most 64 character long.
 StringAttr sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep = 32);
 
+/// Like sanitizeSymbolToAlnum but replaces every run of invalid characters with
+/// a single '_' without appending their encoded forms. This produces cleaner
+/// PTX names when the source string uses separator characters (e.g. dots) that
+/// are meaningful to humans but irrelevant after sanitisation. Long-name
+/// hashing and digit-start fixup behave identically to sanitizeSymbolToAlnum.
+StringAttr sanitizeSymbolToUnderscores(StringAttr name, size_t charToKeep = 32);
+
 } // namespace M::KGEN
 
 #endif // KGEN_NAMEMANGLING_H
