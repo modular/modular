@@ -42,7 +42,7 @@ def D : JoinedOrSeparate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
   MetaVarName<"KEY=VALUE">,
   HelpText<"Defines a named value that can be used from within the Mojo source "
            "file being executed. For example, `-Dfoo=42` defines a name `foo` "
-           "that, when queried with the `sys.param_env` module from within the "
+           "that, when queried with the `std.defines` module from within the "
            "Mojo program, would yield the compile-time value `42`.">;
 
 defm debug_level : CommandOption<["--", "-"], "debug-level",
