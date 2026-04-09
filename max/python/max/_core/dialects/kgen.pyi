@@ -548,26 +548,6 @@ class FnTypeIsCABIAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.dialects.builtin.IntegerType: ...
 
-class FuncLiteralAttr(max._core.Attribute):
-    """
-    The `#kgen.func.literal` attribute represent a instance of a function
-    literal: It is conceptually an empty struct and its type contains all the
-    static information about the function it refers to.
-
-    Example:
-
-    ```mlir
-    #kgen.func.literal : !kgen.func.literal<@foo() -> ()>
-    ```
-    """
-
-    @overload
-    def __init__(self, type: FuncLiteralType) -> None: ...
-    @overload
-    def __init__(self, type: FuncLiteralType) -> None: ...
-    @property
-    def type(self) -> FuncLiteralType: ...
-
 class FuncSymbolAttr(max._core.Attribute):
     """
     This is a value of FuncType, which refers to a func, the `type` must
