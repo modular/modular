@@ -8,12 +8,12 @@ from std.collections.string import StaticString
 
 
 struct CallbackHolder:
-    var callback: def(OpaquePointer[MutAnyOrigin], StaticString) -> None
+    var callback: def(OpaquePointer[MutAnyOrigin], StaticString) thin -> None
     var len: Int
 
     def __init__(
         out self,
-        func: def(OpaquePointer[MutAnyOrigin], StaticString) -> None,
+        func: def(OpaquePointer[MutAnyOrigin], StaticString) thin -> None,
     ):
         self.callback = func
         self.len = 1  # breakpoint

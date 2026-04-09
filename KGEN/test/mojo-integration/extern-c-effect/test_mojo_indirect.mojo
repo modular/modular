@@ -35,7 +35,7 @@ def mojo_add_ten(p: FloatPair) -> FloatPair:
     return FloatPair(p.x + 10.0, p.y + 10.0)
 
 
-def pick_mojo(use_add_one: Bool) -> def(FloatPair) -> FloatPair:
+def pick_mojo(use_add_one: Bool) -> def(FloatPair) thin -> FloatPair:
     if use_add_one:
         return mojo_add_one
     return mojo_add_ten
@@ -52,7 +52,7 @@ def c_add_ten(p: FloatPair) abi("C") -> FloatPair:
     return FloatPair(p.x + 10.0, p.y + 10.0)
 
 
-def pick_c(use_add_one: Bool) -> def(FloatPair) abi("C") -> FloatPair:
+def pick_c(use_add_one: Bool) -> def(FloatPair) thin abi("C") -> FloatPair:
     if use_add_one:
         return c_add_one
     return c_add_ten

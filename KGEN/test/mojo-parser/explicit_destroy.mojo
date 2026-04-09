@@ -110,7 +110,7 @@ struct I(Iterator):
 struct _MapIterator[
     InnerIteratorType: Iterator,
     //,
-    Function: def (InnerIteratorType.Element) -> Int,
+    Function: def (InnerIteratorType.Element) thin -> Int,
 ]():
     var _inner: Self.InnerIteratorType
 
@@ -124,7 +124,7 @@ def f(x: Int) -> Int:
 
 
 def map[
-    func: def (Int) -> Int,
+    func: def (Int) thin -> Int,
 ](ref iterable: I) -> _MapIterator[InnerIteratorType=I, Function=func]:
     return {}
 

@@ -211,7 +211,7 @@ struct TwoParams[a: Int, b: Int](TrivialRegisterPassable):
 # CHECK-LABEL: lit.fn @"signature_capture{{.*}}"<
 # CHECK-SAME: a: !Int,
 # CHECK-SAME: f: !lit.generator<<"b": !Int>() -> {{.*}}TwoParams <:!Int a, :!Int *(0,0)>{{.*}}>
-def signature_capture[a: Int, f: def[b: Int]() -> TwoParams[a, b]]():
+def signature_capture[a: Int, f: def[b: Int]() thin -> TwoParams[a, b]]():
     _ = f[2]()
 
 # CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: !lit.struct<#StringLiteral <:string *"message.value`">>>()
@@ -327,13 +327,13 @@ def function_autoparam[f: def () capturing [_] -> None, g: def () capturing [_] 
 
 # CHECK-LABEL: lit.fn @"nonprop_capture_set
 # CHECK-SAME: ()"<f: !lit.generator<<"g.__origins__`": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
-def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () -> None]():
+def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () thin -> None]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
 # CHECK-SAME: <["f.__origins__`"]*"f.__origins__`": origin.set, +, f: {{.*}}, x: param_list<!Int> pos_vararg>
-def autoparam_param_vararg[f: def () [_] -> None, *x: Int]():
+def autoparam_param_vararg[f: def () thin [_] -> None, *x: Int]():
     pass
 
 
@@ -553,7 +553,7 @@ def call_take_nonmat():
 # CHECK-LABEL: lit.fn @"takeCallable{{.*}}"<
 # CHECK-SAME: callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
 def takeCallable[
-     callable: def(Int) -> Int
+     callable: def(Int) thin -> Int
    ](a: Int) -> Int:
   # CHECK-NEXT: %0 = lit.call tail[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   # CHECK-NEXT: lit.return %0
@@ -568,7 +568,7 @@ def posOnlyArg(x: Int, /):
 # CHECK-LABEL: lit.fn @"takeAndReturnIndex
 def passFunction(a: Int) -> Int:
   # CHECK: rebind(:!lit.generator<("x": !Int, |) -> !kgen.none> {{.*}}posOnlyArg
-  comptime changeKw: def(x: Int) -> None = posOnlyArg
+  comptime changeKw: def(x: Int) thin -> None = posOnlyArg
 
   # CHECK: lit.call {{.*}}@"takeCallable{{.*}}<:!lit.generator<(!Int, |) -> !Int>
   # CHECK-SAME: rebind(:!lit.generator<("x": !Int) -> !Int> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
@@ -580,7 +580,7 @@ def callableWithParam[type: __mlir_type.`!kgen.dtype`]():
 
 # CHECK-LABEL: lit.fn @"takeCallable2
 def takeCallable2[
-      func: def[dt: __mlir_type.`!kgen.dtype`]() -> None
+      func: def[dt: __mlir_type.`!kgen.dtype`]() thin -> None
   ]():
       pass
 
@@ -596,7 +596,7 @@ struct ParamType[x: Int](TrivialRegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"dependent_function_type
-def dependent_function_type[a: Int, f: def (ParamType[a]) -> None]():
+def dependent_function_type[a: Int, f: def (ParamType[a]) thin -> None]():
     comptime func = dependent_function_type
     # CHECK: lit.call{{.*}}dependent_function_type
     func[a, f]()
@@ -607,17 +607,17 @@ def overloaded_function():
 def overloaded_function(a: Int):
     pass
 
-struct ParamFuncType[f: def() -> None]:
+struct ParamFuncType[f: def() thin -> None]:
     pass
 
-def bind_twice[f: def() -> None, g: def(Int) -> None]():
+def bind_twice[f: def() thin -> None, g: def(Int) thin -> None]():
     pass
 
-def variadic_func_param[*fs: def() -> None]():
+def variadic_func_param[*fs: def() thin -> None]():
     pass
 
 # CHECK-LABEL: lit.fn @"bind_overloaded_fn
-def bind_overloaded_fn[f: def[f: def () -> None] () -> None]():
+def bind_overloaded_fn[f: def[f: def () thin -> None] () thin -> None]():
     # CHECK-NEXT: meta<!lit.struct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
     comptime T = ParamFuncType[overloaded_function]
     # CHECK-NEXT: meta<!lit.struct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
@@ -955,7 +955,7 @@ def test_infer_with_default_arg():
     infer_with_default_arg(128)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
-def indirect_call_infer_params[callee: def[x: Int](y: Abstraction[x])->None]():
+def indirect_call_infer_params[callee: def[x: Int](y: Abstraction[x]) thin -> None]():
     # CHECK: lit.call tail[!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
     # CHECK-SAME: bind_params(:!lit.generator<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
     # CHECK-SAME: callee, :!Int {2}
@@ -964,7 +964,7 @@ def indirect_call_infer_params[callee: def[x: Int](y: Abstraction[x])->None]():
 # COM: test parameter inference through signatureType,
 # COM: from issue https://github.com/modular/mojo/issues/1362
 def mapSingle[A: AnyType, B: AnyType, R: AnyType](
-  f: def(x: A, y: B) -> R,
+  f: def(x: A, y: B) thin -> R,
   a: A, b: B
 ) -> R:
   return f(a, b)
@@ -1012,7 +1012,7 @@ def take_two[a_type: DType, c_type: DType, width: Int](
 def implicit_signature[
     type: DType,
     rank: Int, //,
-    func: def[width: Int](Abstraction[rank]) -> SIMD[type, width],
+    func: def[width: Int](Abstraction[rank]) thin -> SIMD[type, width],
 ]():
     pass
 
@@ -1221,7 +1221,7 @@ def test_default_params():
 
 
 def test_indirect_default_params[
-    callee: def[a: Int, b: Int = 7, c: String = "woof"]()->None]():
+    callee: def[a: Int, b: Int = 7, c: String = "woof"]() thin -> None]():
 
     # CHECK: lit.call tail[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof"
@@ -1513,16 +1513,16 @@ def scalar_type[dt: DType]():
     #_ = value.cast[dt]()
 
 # CHECK-LABEL: lit.fn @"funct_partial_binding{{.*}}"<x: !Empty, F:
-def funct_partial_binding[x: Empty, F: def[t: Empty, s: Empty] () -> None]():
+def funct_partial_binding[x: Empty, F: def[t: Empty, s: Empty] () thin -> None]():
     # CHECK: !lit.generator<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none>
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty ?, :!Empty ?)
 
-    comptime G: def[u: Empty, v: Empty] () -> None = F[s=_, t=_]
+    comptime G: def[u: Empty, v: Empty] () thin -> None = F[s=_, t=_]
     # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"s": !Empty>() -> !kgen.none>
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty x, :!Empty ?))>
-    comptime H: def[u: Empty] () -> None = F[x, _]
+    comptime H: def[u: Empty] () thin -> None = F[x, _]
 
 struct StructWithSpecificSelfInitTypes[size: Int]:
     def __init__(out self: StructWithSpecificSelfInitTypes[0]): pass

@@ -7,6 +7,17 @@
 # RUN: %parse-mojo-isolated -split-input-file %s -verify-diagnostics
 
 
+def identity(x: Int) -> Int:
+    return x
+
+
+# expected-warning @+1 {{omitting 'thin' in function types is deprecated; specify 'capturing', 'unified', or 'thin'}}
+comptime invalid_bare_fn_type: def(Int) -> Int = identity
+
+
+# // -----
+
+
 struct MemType:
     pass
 
@@ -18,7 +29,7 @@ def mut_ship_function(mut x: MemType):
 # We can convert from def(read MemType)->None to def(mut MemType)->None but not
 # vice versa (see TTSMFS).
 # expected-error @below {{cannot implicitly convert 'def mut_ship_function(mut x: MemType) -> None' value to 'def(MemType) -> None' in comptime initializer}}
-comptime read_ship_fn_alias: def(read MemType) -> None = mut_ship_function
+comptime read_ship_fn_alias: def(read MemType) thin -> None = mut_ship_function
 
 
 # // -----
@@ -31,7 +42,7 @@ comptime read_ship_fn_alias: def(read MemType) -> None = mut_ship_function
 def infer_variadic[
     ArgTypes: __mlir_type[`!kgen.param_list<`, AnyType, `>`],
     //,
-    func: def(x: Int, y: Int, * args: * ArgTypes) -> None,
+    func: def(x: Int, y: Int, * args: * ArgTypes) thin -> None,
 ]():
     pass
 
@@ -65,7 +76,7 @@ trait Sprongling:
 def infer_variadic[
     ArgTypes: __mlir_type[`!kgen.param_list<`, Sprongling, `>`],
     //,
-    func: def(* args: * ArgTypes) -> None,
+    func: def(* args: * ArgTypes) thin -> None,
 ]():
     pass
 
@@ -97,7 +108,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 def compile[
     ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
-    func: def(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
@@ -132,7 +143,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 def compile[
     ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
-    func: def(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
@@ -167,7 +178,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 def compile[
     ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
-    func: def(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
@@ -192,7 +203,7 @@ def device_func(a: Int, b: Bool) raises -> Int:
 def compile[
     ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
-    func: def(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) thin -> Int,
 ]():
     pass
 
@@ -289,7 +300,7 @@ def kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
 def compile[
     ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
     //,
-    func: def(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
@@ -312,7 +323,7 @@ def main():
 
 
 # expected-note @below {{function declared here}}
-def takes_abi_c(f: def(Int) abi("C") -> Int):
+def takes_abi_c(f: def(Int) thin abi("C") -> Int):
     pass
 
 
@@ -333,11 +344,11 @@ def test_plain_to_abi_c():
 
 
 # expected-note @below {{function declared here}}
-def takes_plain(f: def(Int) -> Int):
+def takes_plain(f: def(Int) thin -> Int):
     pass
 
 
-def test_abi_c_to_plain(f: def(Int) abi("C") -> Int):
+def test_abi_c_to_plain(f: def(Int) thin abi("C") -> Int):
     # expected-error @below {{cannot be converted from 'def(Int) abi("C") -> Int' to 'def(Int) -> Int'}}
     takes_plain(f)
 

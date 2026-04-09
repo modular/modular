@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full -O0 %s 2 3 | FileCheck %s
 
-comptime Testdef = def(x: Int) raises -> Tuple[Bool, Int]
+comptime Testdef = def(x: Int) thin raises -> Tuple[Bool, Int]
 
 
 @no_inline

@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-def take_func_without_arg_name[f: def(Int) -> None]():
+def take_func_without_arg_name[f: def(Int) thin -> None]():
     pass
 
 
@@ -17,7 +17,7 @@ def func_with_arg_name(a: Int):
 
 # COM: Issue https://github.com/modular/mojo/issues/1307
 # COM: Test that functions with defaults can be passed where no defaults are expected
-def take_func_without_default[f: def(a: Int) -> None]():
+def take_func_without_default[f: def(a: Int) thin -> None]():
     pass
 
 
@@ -49,22 +49,22 @@ def test_more_conversions():
     # CHECK: %test_raises = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_raises
-    var test_raises: def() raises -> Int = fn_doesnt_raise
+    var test_raises: def() thin raises -> Int = fn_doesnt_raise
 
     # CHECK: %test_result_convert = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_result_convert
-    var test_result_convert: def() raises -> Float32 = fn_doesnt_raise
+    var test_result_convert: def() thin raises -> Float32 = fn_doesnt_raise
 
     # CHECK: %test_error_convert = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_error_convert
-    var test_error_convert: def() raises Float32 -> Float32 = fn_doesnt_raise
+    var test_error_convert: def() thin raises Float32 -> Float32 = fn_doesnt_raise
 
     # CHECK: %test_ref_result_convert = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_ref_result_convert
-    var test_ref_result_convert: def(x: String) -> String = fn_returns_ref
+    var test_ref_result_convert: def(x: String) thin -> String = fn_returns_ref
 
 
 # Check that we can take /explicitly copyable/ return values as ref returns.

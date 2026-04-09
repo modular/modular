@@ -57,6 +57,6 @@ def test(x: SomeStruct[1, 2, 3]):
     var _ = SomeStruct[1].foo(ParamType[4]())
 
 
-def foo[T: def[a: Int, b: Int](ParamType[b]) -> Int](param: ParamType[1]):
+def foo[T: def[a: Int, b: Int](ParamType[b]) thin -> Int](param: ParamType[1]):
     # CHECK: lit.call tail{{.*}}bind_params(:{{.*}} T, :!Int {2}, :!Int {1})]
     T[2](param)

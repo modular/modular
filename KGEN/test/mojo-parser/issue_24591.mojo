@@ -22,5 +22,5 @@ struct Param[x: Int](RegisterPassable):
 # struct so we can match with 0.
 # CHECK: "lit.struct.decl"() {{.*}} convention = 0 :
 # CHECK-SAME: signature = !lit.type_signature<"x": !Int, "y": !lit.struct<#Optional{{.*}}!lit.generator<<"y": !Int>() -> !lit.struct<#Param <:!Int *(1,0)>>
-struct Thing[x: Int, y: Optional[def[y: Int]() -> Param[x]] = None]:
+struct Thing[x: Int, y: Optional[def[y: Int]() thin -> Param[x]] = None]:
     comptime z = 1

@@ -15,7 +15,7 @@ def param_fn[x: Int, y: Int]() -> Int:
     return x + y
 
 
-def my_wrapper[f: def() -> Int]() -> def() -> Int:
+def my_wrapper[f: def() thin -> Int]() -> def() thin -> Int:
     return f
 
 

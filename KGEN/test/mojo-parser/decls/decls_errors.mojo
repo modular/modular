@@ -589,7 +589,7 @@ struct Parametric[a: Int]: pass
 def takes_same_arg_types[x: Int](a: Parametric[x], b: Parametric[x]): pass
 
 def test_param_deduction_failure[
-    func: def[y: Int] (c: Parametric[y], d: Parametric[y]) -> None,
+    func: def[y: Int] (c: Parametric[y], d: Parametric[y]) thin -> None,
 ](u: Int, v: Int):
     # expected-error @+1 {{missing 1 required positional argument: 'b'}}
     takes_same_arg_types[_](u)
@@ -817,13 +817,13 @@ struct GoodDtor2[A: Int]:
    def explicit_dtor(deinit self, deinit other: GoodDtor2[0]): pass
 
 def test_deinit_fn_types():
-  var fp1 : def(var self: GoodDtor) -> None
+  var fp1 : def(var self: GoodDtor) thin -> None
   fp1 = GoodDtor.__del__
   fp1 = GoodDtor.explicit_dtor
   fp1 = GoodDtor.normal_var
 
   # expected-error @+1 {{'deinit' is not supported in function types, use 'var' instead}}
-  var fp2 : def(deinit self: GoodDtor) -> None
+  var fp2 : def(deinit self: GoodDtor) thin -> None
 
 @fieldwise_init
 struct CantSynthesize(ImplicitlyCopyable):

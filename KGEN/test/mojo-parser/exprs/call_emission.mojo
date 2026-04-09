@@ -36,7 +36,7 @@ def test_kw_arg_passing(x: Int, y: Int, z: Int):
 
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing_indirect
-def test_kw_arg_passing_indirect[callee: def(a: Int, b: Int=1, c: Int=2)->None](x: Int, y: Int, z: Int):
+def test_kw_arg_passing_indirect[callee: def(a: Int, b: Int=1, c: Int=2) thin -> None](x: Int, y: Int, z: Int):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT: lit.call tail[{{.*}}](%x, %[[C1]], %z)
     callee(x, c=z)
@@ -71,7 +71,7 @@ def test_kw_param_passing[x: Int, y: Int, z: Int]():
 
 # CHECK-LABEL: lit.fn @"test_kw_param_passing_indirect
 def test_kw_param_passing_indirect[x: Int, y: Int, z: Int,
-                                  callee: def[a: Int, b: Int=1, c: Int=2]()->None]():
+                                  callee: def[a: Int, b: Int=1, c: Int=2]() thin -> None]():
 
     # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int z)]()
     callee[x, c=z]()
@@ -130,7 +130,7 @@ def test_kw_only_args(x: Int):
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_indirect
-def test_kw_only_indirect[callee: def(a: Int, b: Int = 1, *, c: Int, d: Int = 2)->None](x: Int):
+def test_kw_only_indirect[callee: def(a: Int, b: Int = 1, *, c: Int, d: Int = 2) thin -> None](x: Int):
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
@@ -165,7 +165,7 @@ def test_kw_only_params[x: Int]():
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_params_indirect
-def test_kw_only_params_indirect[x: Int, callee: def[a: Int, b: Int = 1, *, c: Int, d: Int = 2]()->None]():
+def test_kw_only_params_indirect[x: Int, callee: def[a: Int, b: Int = 1, *, c: Int, d: Int = 2]() thin -> None]():
 
     # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int x, :!Int {2})]()
     callee[x, c=x]()
@@ -230,7 +230,7 @@ def test_variadic_and_kw_only_params[x: Int]():
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params_indirect
 def test_variadic_and_kw_only_params_indirect[x: Int,
-    callee: def [a: Int, b: Int, *args: Int, c: Int, d: Int = 0]()->None]():
+    callee: def [a: Int, b: Int, *args: Int, c: Int, d: Int = 0]() thin -> None]():
 
     # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int x, :param_list<!Int> [], :!Int x, :!Int {0})]()
     callee[x, x, c=x]()
@@ -312,7 +312,7 @@ def matmul_unrolled[I: Int](mut C: Matrix):
 
 @always_inline
 def test_matrix_equal[
-    func: def (mut: Matrix) -> None
+    func: def (mut: Matrix) thin -> None
 ](mut C: Matrix) raises -> Bool:
     func(C)
     return True

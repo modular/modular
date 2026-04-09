@@ -95,7 +95,7 @@ def test_deprecated_function_call():
 # ===----------------------------------------------------------------------=== #
 
 
-def takes_fn_ref(f: def () -> None):
+def takes_fn_ref(f: def () thin -> None):
     f()
 
 

@@ -89,7 +89,7 @@ def two_variadic_packs[*Ts: TrivialRegisterPassable](*a: *Ts, *b: *Ts):
     pass
 
 # expected-error @+1 {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
-def foo(x: def[a: Int] () -> None):
+def foo(x: def[a: Int] () thin -> None):
     pass
 
 # expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
@@ -164,7 +164,7 @@ def ref_invalid():
     # expected-error @+1 {{expression must be mutable in assignment}}
     valid_ref_result(a) = MemoryType()
 
-def return_ref_type_error(a: def (x: MemoryType) -> ref [x] MemoryType):
+def return_ref_type_error(a: def (x: MemoryType) thin -> ref [x] MemoryType):
     # expected-error @+1 {{cannot implicitly convert 'def(x: MemoryType) -> ref[*[0,0]] MemoryType' value to 'Int'}}
     var b: Int = a
 

@@ -18,7 +18,7 @@ struct FuncRef[def_type: __mlir_type.`!kgen.non_struct_type`, f: def_type]:
 
 
 struct FuncRefField:
-    var func_ref: FuncRef[def() -> None, FuncRefField.foo]
+    var func_ref: FuncRef[def() thin -> None, FuncRefField.foo]
 
     @staticmethod
     def foo():

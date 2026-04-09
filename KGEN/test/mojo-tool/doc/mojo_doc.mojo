@@ -59,7 +59,7 @@ comptime alias_cond = 2 if is_nvidia_gpu() else 1
 # CHECK:  "name": "alias_fn",
 # CHECK:  "path": "/mojo_doc/#alias_fn",
 # CHECK:  "value": "def(Int, Int) -> None"
-comptime alias_fn = def(Int, Int) -> None
+comptime alias_fn = def(Int, Int) thin -> None
 
 
 # CHECK:  "kind": "alias",

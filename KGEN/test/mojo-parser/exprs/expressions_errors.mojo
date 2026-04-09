@@ -179,16 +179,16 @@ def throws_int() raises Int:
 
 def test_func_type():
     # expected-error @below {{def(Int) -> Int}}
-    comptime float0: def(Int) -> Int = test_func_type
+    comptime float0: def(Int) thin -> Int = test_func_type
     # expected-error @below {{async def() -> None}}
-    comptime float1: async def() -> None = test_func_type
+    comptime float1: async def() thin -> None = test_func_type
     # expected-error @below {{def[a: Int]() -> MemType}}
-    comptime float2: def[a: Int]() -> MemType = test_func_type
+    comptime float2: def[a: Int]() thin -> MemType = test_func_type
     # expected-error @below {{def[a: Int](var Int) -> MemType}}
-    comptime float3: def[a: Int](var Int) -> MemType = test_func_type
+    comptime float3: def[a: Int](var Int) thin -> MemType = test_func_type
     # FIXME: Function type printing is really bad.
     # expected-error @below {{'def[a: Int, ?, .origin._mlir_origin``23: LITMutOrigin, .origin`24: MutOrigin](mut *Int) -> None'}}
-    comptime float4: def[a: Int](mut *Int) -> None = test_func_type
+    comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
     # expected-error @below {{def[?, .origin._mlir_origin``26: LITImmutOrigin, .origin`27: ImmutOrigin](*MemType) raises capturing -> None}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
     # expected-error @below {{'def[Ts: KGENParamList[AnyType], ?, .origin._mlir_origin``31: LITMutOrigin, .origin`32: MutOrigin](var * *Ts) capturing -> None'}}
@@ -199,28 +199,28 @@ def test_func_type():
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
-    comptime f1: def (a: Int, Int) -> Int
+    comptime f1: def (a: Int, Int) thin -> Int
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    comptime f2: def (Int, /, Int) -> Int
+    comptime f2: def (Int, /, Int) thin -> Int
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    comptime f3: def (*, Int) -> Int
+    comptime f3: def (*, Int) thin -> Int
     # expected-error @below {{unnamed argument must be positional-only}}
     comptime f4 = def (Int, b: Int) capturing -> Int
 
     # expected-error @below {{unnamed parameter cannot follow named parameter}}
-    comptime f5: def [a: Int, Int]() -> Int
+    comptime f5: def [a: Int, Int]() thin -> Int
     # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
-    comptime f6: def [Int, /, Int] -> Int
+    comptime f6: def [Int, /, Int] thin -> Int
     # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
-    comptime f7: def [*, Int] -> Int = test_func_type
+    comptime f7: def [*, Int] thin -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
     comptime f8 = def [Int, b: Int] capturing -> Int
     # expected-error @below {{'def throws_int() raises Int -> None' value to 'def() raises String -> None'}}
-    comptime f9: def () raises String = throws_int
+    comptime f9: def () thin raises String = throws_int
 
     def has_foo_kw(*, foo: Int): pass
     # expected-error @+1 {{cannot implicitly convert 'def(*, foo: Int) -> None' value to 'def(*, bar: Int) -> None'}}
-    var f10: def (*, bar: Int) -> None = has_foo_kw
+    var f10: def (*, bar: Int) thin -> None = has_foo_kw
 
 
 
@@ -783,10 +783,10 @@ def bad_named_return2(out output: Int):
 
 def unbound_function_type():
   # expected-error @below {{function type missing required origin set parameter}}
-  var f: def() [_] -> None
+  var f: def() thin [_] -> None
 
   # expected-error @below {{cannot use parametric function type at runtime 'def[?, .p`: Int](HasIntParam[p]) -> None'}}
-  var g: def(HasIntParam) -> None
+  var g: def(HasIntParam) thin -> None
 
   # expected-error @below {{'HasIntParamAlias' is not a concrete type, use '[]' to bind missing parameters}}
   # expected-note @below {{'HasIntParamAlias' is aka 'comptime[p: Int] HasIntParam[p]'}}
@@ -843,12 +843,12 @@ def take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntPar
 
 def test_signature():
   # expected-error @+1 {{cannot implicitly convert 'def __init__() -> HasIntParam[1]' value to 'def(x: HasIntParam[1]) -> None' in 'var' initializer}}
-  var x : def(x: HasIntParam[1])->None = HasIntParam[1].__init__
+  var x : def(x: HasIntParam[1]) thin -> None = HasIntParam[1].__init__
 
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}
-  var y : def(x: UndefinedStruct)->None = HasIntParam[1].__init__
+  var y : def(x: UndefinedStruct) thin -> None = HasIntParam[1].__init__
 
-  var z : def(out x: HasIntParam[1]) = HasIntParam[1].__init__
+  var z : def(out x: HasIntParam[1]) thin = HasIntParam[1].__init__
 
   var str : HasIntParam[1]
   # expected-error @+1 {{invalid call to '__init__': expected at most 0 positional arguments, got 1}}
@@ -860,7 +860,7 @@ def bad_union[ao: Origin[mut=True]](ref [ao] a: String, mut b: String) -> ref [a
     return c
 
 # https://github.com/modular/mojo/issues/3829
-def apply_in_memory[o: Origin[]](f: def(ref[o] x: SomeNonTrivRegPassable) -> None, x: SomeNonTrivRegPassable):
+def apply_in_memory[o: Origin[]](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None, x: SomeNonTrivRegPassable):
 # expected-error @below {{value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
 # expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
     f(x)
@@ -877,12 +877,12 @@ def test3830():
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'anonymous*'}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
-def test3830_1[o: Origin[]](f: def(ref[o] x: SomeNonTrivRegPassable) -> None):
+def test3830_1[o: Origin[]](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(getSomeNonTrivRegPassable())
 
-def test3830_2[o: Origin[]](f: def(ref[o] x: Int) -> None, x: Int):
+def test3830_2[o: Origin[]](f: def(ref[o] x: Int) thin -> None, x: Int):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'Int' to ref 'Int'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(x)

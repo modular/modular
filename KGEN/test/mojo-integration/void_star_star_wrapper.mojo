@@ -25,7 +25,7 @@ struct KernelFunction[
     declared_arg_types: Variadic.TypesOfTrait[AnyType],
     declared_ret_type: RegisterPassable,
     //,
-    func: def(* args: * declared_arg_types) -> declared_ret_type,
+    func: def(* args: * declared_arg_types) thin -> declared_ret_type,
 ]:
     pass
 
@@ -97,7 +97,7 @@ def invoke_kernel[
 ](
     wrapped_kernel: def(
         UnsafePointer[KernelArgPack[kernel], MutAnyOrigin],
-    ) -> kernel.declared_ret_type,
+    ) thin -> kernel.declared_ret_type,
     *args: * kernel.declared_arg_types,
 ) -> kernel.declared_ret_type:
     var pa = KernelArgPack[kernel]()

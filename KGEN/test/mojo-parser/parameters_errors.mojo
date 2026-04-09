@@ -301,7 +301,7 @@ def test_pos_only():
 
 
 def indirect_callable_pos_only[
-    callable: def[a: Int, b: Int, /, c: Int = 9] () -> None
+    callable: def[a: Int, b: Int, /, c: Int = 9] () thin -> None
 ]():
     # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
     _ = callable[0, b=1, c=2]
@@ -474,7 +474,7 @@ struct BindStructField:
     var multi_infer_ooo2: MultiInferred[p=1, uP=ParamType[1](), q=2]
 
 
-def invalid_params[f: def (ParamType) -> None]():
+def invalid_params[f: def (ParamType) thin -> None]():
     # expected-error @below {{failed to infer parameter 'a'}}
     autoparams[](ParamType[1]())
     # expected-error @below {{invalid call to 'autoparams': 'autoparams' expects 1 positional parameter, but 2 were specified}}
@@ -503,7 +503,7 @@ def call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
 
 
 # expected-note @below {{declared here}}
-def substitution_edge_case[p: Int, //, f: def[a: Int] () [_] -> ParamType[a]]():
+def substitution_edge_case[p: Int, //, f: def[a: Int] () thin [_] -> ParamType[a]]():
     # FIXME: the error should be:
     # e_xpected-error @below {{'substitution_edge_case' parameter 'f' has 'def[a: Int]() -> ParamType[a]' type, but value has type 'IntLiteral[0]'}}
     # expected-error @below {{invalid call to 'substitution_edge_case': failed to infer parameter 'p'}}

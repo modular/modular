@@ -140,7 +140,7 @@ def destructors(var arg0: MemExample):
 
 
 # CHECK-LABEL: lit.fn @"indirect_call
-def indirect_call[detail_fn: def() -> MemExample]():
+def indirect_call[detail_fn: def() thin -> MemExample]():
        # CHECK: %mem = lit.var.decl
        # CHECK-NEXT: lifetime.start %mem
        # CHECK-NEXT: lit.call{{.*}}(%mem)

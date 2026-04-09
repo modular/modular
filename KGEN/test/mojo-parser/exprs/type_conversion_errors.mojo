@@ -61,7 +61,7 @@ struct Constructible:
 
 def init_self_conversion():
     # expected-error @below {{cannot implicitly convert 'def __init__(arg: Int) -> Constructible' value to 'def() -> None'}}
-    comptime f: def () -> None = Constructible.__init__
+    comptime f: def () thin -> None = Constructible.__init__
 
 
 struct ConvertibleFromInt(ImplicitlyCopyable):
@@ -140,7 +140,7 @@ def infer_rp_trivial[T: TrivialRegisterPassable](val: T):
 def stripping_raises():
   def fn_raises() raises: pass
   # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() -> None'}}
-  var fp : def () = fn_raises
+  var fp : def () thin = fn_raises
 
   # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() raises Int -> None'}}
-  var fp2 : def () raises Int = fn_raises
+  var fp2 : def () thin raises Int = fn_raises

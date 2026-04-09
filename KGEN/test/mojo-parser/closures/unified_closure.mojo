@@ -907,7 +907,7 @@ def repro_struct_attr():
 # COM: parameterized by a function reference (exercises symbol recursion).
 
 
-struct Dispatch[F: def(Int) -> Int]:
+struct Dispatch[F: def(Int) thin -> Int]:
     var data: Int
 
     def __init__(out self, data: Int):
