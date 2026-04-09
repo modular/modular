@@ -35,7 +35,6 @@ struct DupUnconditionalAndConditional[T: Movable](
         self.data = data^
 
 
-
 # ===========================================================================
 # Duplicate trait: different conditional constraints
 # ===========================================================================
@@ -55,7 +54,6 @@ struct DupDifferentConstraints[T: Movable](
 
     def __init__(out self, var data: Self.T):
         self.data = data^
-
 
 
 # ===========================================================================

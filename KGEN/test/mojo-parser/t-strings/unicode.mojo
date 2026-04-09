@@ -10,6 +10,7 @@
 # segments are processed correctly. The decoded code point is UTF-8 encoded
 # in the format template string, exactly as in regular string literals.
 
+
 # CHECK-LABEL: lit.fn @"test_tstring_unicode()"
 def test_tstring_unicode():
     var x = 42

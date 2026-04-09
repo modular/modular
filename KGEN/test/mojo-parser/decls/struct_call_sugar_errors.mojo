@@ -78,10 +78,16 @@ def main():
 
     # verifying that we don't break structs with __getitem__ defined
     var pcgi = PCallWithGetItem()
-    _ = pcgi[1](2)  # expected-error {{'Int' does not implement the '__call__' method}}
+    _ = pcgi[1](  # expected-error {{'Int' does not implement the '__call__' method}}
+        2
+    )
 
     var pcsi = PCallWithSetItem()
-    _ = pcsi[1](2)  # expected-error {{'Int' does not implement the '__call__' method}}
+    _ = pcsi[1](  # expected-error {{'Int' does not implement the '__call__' method}}
+        2
+    )
 
     var pcga = PCallWithGetAttr()
-    _ = pcsi["test"]()  # expected-error {{'Int' does not implement the '__call__' method}}
+    _ = pcsi[
+        "test"
+    ]()  # expected-error {{'Int' does not implement the '__call__' method}}

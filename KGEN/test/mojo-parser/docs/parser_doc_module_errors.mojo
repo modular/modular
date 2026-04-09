@@ -12,6 +12,8 @@
 # A public module without a doc string should raise a diagnostic.
 # This file intentionally has no module-level doc string.
 
+
 struct ArgStruct:
     """A stub type for arguments."""
+
     pass

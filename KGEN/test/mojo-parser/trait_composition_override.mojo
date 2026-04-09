@@ -11,6 +11,7 @@
 
 # RUN: %parse-mojo-isolated %s --mojo-disable-builtins | FileCheck %s
 
+
 trait A:
     def foo(self):
         ...

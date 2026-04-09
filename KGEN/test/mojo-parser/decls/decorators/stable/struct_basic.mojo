@@ -9,6 +9,7 @@
 # Test that @stable decorator is recognized on structs and sets the
 # hasStableDecorator attribute in the IR.
 
+
 # CHECK: lit.struct.decl @StableStruct
 # CHECK-SAME: hasStableDecorator
 @stable

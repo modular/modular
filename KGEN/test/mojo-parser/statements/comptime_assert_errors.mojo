@@ -10,8 +10,10 @@
 # comptime assert errors
 ##===----------------------------------------------------------------------===##
 
+
 struct NotBool:
     pass
+
 
 def test_non_bool_type_error[x: NotBool]():
     # expected-error @below {{'NotBool' does not implement the '__bool__' method}}

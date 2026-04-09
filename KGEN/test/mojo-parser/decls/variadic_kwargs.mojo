@@ -11,12 +11,11 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+
 # CHECK-LABEL: lit.fn @"variadic_kwargs
 # CHECK-SAME: %a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, *, %c: !Int, %d: !Int,
 # CHECK-SAME: %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg)
-def variadic_kwargs(
-    a: Int, b: Int, *args: Int, c: Int, d: Int, **kwargs: Int
-):
+def variadic_kwargs(a: Int, b: Int, *args: Int, c: Int, d: Int, **kwargs: Int):
     pass
 
 

@@ -347,7 +347,9 @@ struct TypeE(TrivialRegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"test_mergewith
-def test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
+def test_mergewith(
+    cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD
+):
     # One merges to the other.
     _ = a if cond else b
     # CHECK: hlcf.if %cond

@@ -22,6 +22,7 @@ def outer() -> Int:
 
     return stateless()
 
+
 # // -----
 
 # COM: Verify that stateless closures with the same name in different functions don't collide.
@@ -31,11 +32,13 @@ def outer() -> Int:
 # CHECK: lit.fn @"two()"() -> !Int
 # CHECK-NOT: %0 = lit.call tail @{{.*}}::@"[[STATELESS1]]"()
 
+
 def one() -> Int:
     def stateless() unified {} -> Int:
         return 123
 
     return stateless()
+
 
 def two() -> Int:
     def stateless() unified {} -> Int:
@@ -43,13 +46,16 @@ def two() -> Int:
 
     return stateless()
 
+
 # // -----
 
 # COM: Verify that the entire function signature is preserved
 
+
 def outer() -> Int:
     def stateless() raises unified {} -> Int:
         return 123
+
 
 # CHECK: lit.fn @"stateless()`{{.*}}"[{{.*}}]({{.*}}) throws -> i1
 
@@ -61,8 +67,10 @@ def outer() -> Int:
 # CHECK: lit.struct.decl @"def() -> Int_PtrWrapper"
 # CHECK: lit.fn @"stateless()`{{.*}}"()
 
+
 def uses[T: def() unified -> Int](f: T) -> Int:
     return f()
+
 
 def outer() -> Int:
     def stateless() unified {} -> Int:
@@ -70,11 +78,13 @@ def outer() -> Int:
 
     return uses(stateless)
 
+
 # // -----
 
 # COM: Verify that closures with captured parameter references aren't lifted
 
 # CHECK-NOT: lit.fn @"unified_closure()`{{.*}}"()
+
 
 def iter[v: Int]():
     def unified_closure() unified {} -> Int:

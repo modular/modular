@@ -59,19 +59,22 @@ def testImplicitVarDeclScopeNoDebug() raises:
 
 # // -----
 
+
 # CHECK-DAG: lit.fn @"fn_where_clause{{.*}}, #[[LOC_WHERE_FN:loc[0-9]+]]>} attributes
 def fn_where_clause[x: Int]() where x:
     pass
+
 
 # COM: Make sure this is a FileLineColLoc and not a FusedLoc.
 # CHECK-DAG: #[[LOC_WHERE_FN]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})
 
 # // -----
 
+
 # CHECK-DAG: lit.fn @"param_where_clause{{.*}}, #[[LOC_WHERE_PARAM:loc[0-9]+]]>}
 def param_where_clause[x: Int where x]():
     pass
 
+
 # COM: Make sure this is a FileLineColLoc and not a FusedLoc.
 # CHECK-DAG: #[[LOC_WHERE_PARAM]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})
-

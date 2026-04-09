@@ -10,6 +10,7 @@
 # COM: needed because mlir diagnostics ignore source ranges.
 # RUN: not %parse-mojo-isolated -use-mlir-diagnostics=false %s 2>&1 | FileCheck %s
 
+
 def foo(x: __mlir_type.index):
     pass
 

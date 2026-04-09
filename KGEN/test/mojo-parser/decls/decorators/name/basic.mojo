@@ -8,6 +8,7 @@
 
 # Test that @__name sets the linkage name without exporting.
 
+
 # CHECK: lit.fn @"my_func()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<"custom_name" : !kgen.string, false>
 # CHECK-NOT: export
@@ -20,6 +21,7 @@ def my_func():
 
 comptime a = 42
 
+
 # CHECK: lit.fn @"parametric_name[::Int]()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<#kgen.param.expr<data_to_str
 @__name("prefix_" + String(T) + "_" + String(a))
@@ -28,6 +30,7 @@ def parametric_name[T: Int]():
 
 
 # Test that mangle=True is stored in the IR as the boolean true.
+
 
 # CHECK: lit.fn @"mangle_true()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_mangled" : !kgen.string, true>
@@ -38,6 +41,7 @@ def mangle_true():
 
 # Test that explicit mangle=False is identical to omitting the argument.
 
+
 # CHECK: lit.fn @"mangle_false()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_unmangled" : !kgen.string, false>
 @__name("my_unmangled", mangle=False)
@@ -47,6 +51,7 @@ def mangle_false():
 
 # Test that @__name combined with @export sets the linkage name and exports.
 # Order doesn't matter: @__name sets the linkage name, @export marks exported.
+
 
 # CHECK: lit.fn export @"name_then_export()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>

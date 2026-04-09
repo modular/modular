@@ -12,6 +12,7 @@
 # CHECK-DAG: #[[SOURCENAME_RP3:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]]<":{{.*}} {3}"> from <(module)"debuginfo_struct">>
 # CHECK-DAG: #[[SOURCENAME_DATA:.*]] = #debuginfo.source_name<(struct)"MyData"[#[[SOURCENAME_INT]], #[[SOURCENAME_RP3]], <"{{.*}}@TrivialRegisterPassable>">] from <(module)"debuginfo_struct">>
 
+
 # CHECK: lit.struct.decl @MyRP
 # CHECK-SAME: sourceName = #[[SOURCENAME_RP]]
 @fieldwise_init

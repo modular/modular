@@ -28,6 +28,7 @@ from test_reexport_name_collision import baz
 # anything named "qux", so this should import the module.
 from test_reexport_name_collision import qux
 
+
 # CHECK-LABEL: lit.fn @"main
 def main():
     # Parametric function: direct import works fine.

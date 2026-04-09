@@ -16,7 +16,13 @@ struct PStruct[*a: Int]:
     @staticmethod
     def predicate() -> Bool:
         comptime size = Int(
-            mlir_value=__mlir_attr[`#kgen.variadic.size<:`, type_of(Self.a), ` `, +Self.a, `> :index`]
+            mlir_value=__mlir_attr[
+                `#kgen.variadic.size<:`,
+                type_of(Self.a),
+                ` `,
+                +Self.a,
+                `> :index`,
+            ]
         )
         comptime result = size == 2
         return result
@@ -37,7 +43,6 @@ def double_where_clause(
 # CHECK-LABEL: lit.fn @"test_nested_double_where_clause
 def test_nested_double_where_clause(x: PStruct[...], y: PStruct[...]):
     comptime if type_of(x).predicate():
-
         comptime if type_of(y).predicate():
             # CHECK: lit.call {{.*}}@"double_where_clause
             double_where_clause(x, y)

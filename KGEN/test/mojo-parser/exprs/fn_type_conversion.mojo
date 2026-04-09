@@ -59,7 +59,9 @@ def test_more_conversions():
     # CHECK: %test_error_convert = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
     # CHECK-NEXT: lit.ref.store [[TMP]], %test_error_convert
-    var test_error_convert: def() thin raises Float32 -> Float32 = fn_doesnt_raise
+    var test_error_convert: def() thin raises Float32 -> Float32 = (
+        fn_doesnt_raise
+    )
 
     # CHECK: %test_ref_result_convert = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure

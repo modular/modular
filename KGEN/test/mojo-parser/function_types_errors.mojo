@@ -381,9 +381,11 @@ def redef_abi_mixed(x: Int) abi("C") -> Int:
 
 def test_abi_c_capturing():
     var x: Int = 1
+
     # expected-error @below {{a abi("C") function cannot capture variables}}
     def captures_x(y: Int) abi("C") -> Int:
         return x + y
+
     _ = captures_x(2)
 
 

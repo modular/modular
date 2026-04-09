@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 # @expected-note @below {{'Foo' also declared here}}
 struct Foo:
     pass

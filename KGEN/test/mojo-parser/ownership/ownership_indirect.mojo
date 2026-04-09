@@ -25,7 +25,7 @@ struct MyList[T: ImplicitlyCopyable]:
 
     def __getitem__(
         ref self, idx: Int
-    ) -> ref [self.data.get_unique_item_ref(idx)] Self.T:
+    ) -> ref[self.data.get_unique_item_ref(idx)] Self.T:
         return self.data.get_unique_item_ref(idx)
 
 

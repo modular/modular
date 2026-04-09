@@ -987,8 +987,10 @@ def repro_rebind_nonref_operand[
 # CHECK: kgen.conformance @"def[T: Int, #](x: Container[T]) -> None" {
 # CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "def[{{.*}}](x: Container[{{.*}}]) -> None", "{{.*}}">
 
+
 trait Coord(ImplicitlyCopyable):
     comptime Dim: Int
+
     def prettyPrint(self):
         pass
 
@@ -1023,12 +1025,16 @@ struct Container[N: Int]:
 def takes[T: Int, F: def(x: Container[T]) unified](impl: F):
     impl(Container[T]())
 
-def takes2[T: Int, U: Int, F: def(x: Container[T], y: Container[U]) unified](impl: F):
+
+def takes2[
+    T: Int, U: Int, F: def(x: Container[T], y: Container[U]) unified
+](impl: F):
     impl(Container[T](), Container[U]())
 
 
 def takes_w[T: Int, F: def(w: Container[T]) unified](impl: F):
     impl(Container[T]())
+
 
 # CHECK-LABEL: lit.fn @"defines[
 def defines[T: Coord](foo: HasParam[T]):
@@ -1041,21 +1047,26 @@ def defines[T: Coord](foo: HasParam[T]):
 
     takes[S, type_of(closure)](closure)
 
+
 # CHECK-LABEL: lit.fn @"defines_nested[
 def defines_nested[T: Coord, U: Coord](foo: HasParam[T], bar: HasParam[U]):
     comptime S = foo.P
 
     def closure(w: Container[S]) unified {var}:
         comptime Q = bar.P
+
         def closure2(x: Container[Q], y: Container[S]) unified {var}:
             pass
+
         takes2[Q, S, type_of(closure2)](closure2)
 
     takes_w[S, type_of(closure)](closure)
 
+
 # // -----
 
 # COM: Parameter Expressions are Outlined properly
+
 
 trait Coord(ImplicitlyCopyable):
     comptime Dim: Int
@@ -1085,26 +1096,36 @@ struct Container[N: Int]:
     pass
 
 
-def takes[T: Int, F: def[R:Coord](x: Container[T], r:HasParam[R]) unified](impl: F):
-    impl[Cartesian](Container[T](), HasParam[Cartesian](Cartesian(1,2)))
+def takes[
+    T: Int, F: def[R: Coord](x: Container[T], r: HasParam[R]) unified
+](impl: F):
+    impl[Cartesian](Container[T](), HasParam[Cartesian](Cartesian(1, 2)))
 
 
 # CHECK-LABEL: lit.fn @"foo
 # CHECK-NEXT: kgen.param.declare E1
 def foo[T: Coord](foo: HasParam[T]):
     comptime S = foo.P
-   # CHECK: lit.closure.init
-   # CHECK-NEXT: kgen.param.declare E2
-    def closure[R:Coord](x: Container[S], r:HasParam[R]) unified {var}:
+
+    # CHECK: lit.closure.init
+    # CHECK-NEXT: kgen.param.declare E2
+    def closure[R: Coord](x: Container[S], r: HasParam[R]) unified {var}:
         def closure2(x: Container[S]) unified {var}:
-           pass
+            pass
+
         comptime SS = r.P
-        def closure3[R3:Coord](x: Container[SS], r3:HasParam[R3]) unified {var}:
-           pass
+
+        def closure3[
+            R3: Coord
+        ](x: Container[SS], r3: HasParam[R3]) unified {var}:
+            pass
+
         takes[SS, type_of(closure3)](closure3)
+
     # CHECK-NOT: kgen.param.declare E3
-    def closure4[R4:Coord](x: Container[S], r4: HasParam[R4]) unified {var}:
+    def closure4[R4: Coord](x: Container[S], r4: HasParam[R4]) unified {var}:
         pass
+
     takes[S, type_of(closure)](closure)
     takes[S, type_of(closure4)](closure4)
 
@@ -1112,6 +1133,7 @@ def foo[T: Coord](foo: HasParam[T]):
 # // -----
 
 # COM: ParamOperatorAttr expressions are lifted.
+
 
 @fieldwise_init
 struct Container[N: Int]:
@@ -1123,31 +1145,35 @@ def takes_w[T: Int, F: def(w: Container[T]) unified](impl: F):
 
 
 # CHECK-LABEL: lit.fn @"defines_expression[
-def defines_expression[X:Int, Y:Int]():
+def defines_expression[X: Int, Y: Int]():
     # CHECK: kgen.param.declare E1: !Int
     # CHECK-NOT: kgen.param.declare E1
-    def closure(ww: Container[X+Y]) unified {var}:
+    def closure(ww: Container[X + Y]) unified {var}:
         pass
 
-    takes_w[X+Y, type_of(closure)](closure)
+    takes_w[X + Y, type_of(closure)](closure)
+
 
 # // -----
 
 # COM: When the whole expression can be hoisted, do not emit child hoists.
+
 
 @fieldwise_init
 struct Container[N: Int]:
     pass
 
 
-def takes_w[F: def[X:Int, Y:Int](w: Container[(X+Y)+(X+Y)]) unified](impl: F):
+def takes_w[
+    F: def[X: Int, Y: Int](w: Container[(X + Y) + (X + Y)]) unified
+](impl: F):
     pass
 
 
 # CHECK-LABEL: lit.fn @"no_hoist
 def no_hoist():
     # CHECK-NOT: kgen.param.declare E1
-    def closure[X:Int, Y:Int](ww: Container[(X+Y)+(X+Y)]) unified {var}:
+    def closure[X: Int, Y: Int](ww: Container[(X + Y) + (X + Y)]) unified {var}:
         pass
 
     takes_w[type_of(closure)](closure)
@@ -1155,29 +1181,34 @@ def no_hoist():
 
 # // -----
 
+
 struct Foo(ImplicitlyCopyable, Movable):
     var x: Int
     var y: Int
 
-def copyIt[X:Copyable](x:X):
+
+def copyIt[X: Copyable](x: X):
     var copy = X.__init__(copy=x)
 
+
 # CHECK: lit.struct.decl @"def() -> None_{{.*}}"
-def thing(foo:Foo):
+def thing(foo: Foo):
     # CHECK: kgen.conformance @"std::builtin::{{.*}}::Copyable"
     # CHECK-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
     def thing() unified {var}:
         _ = foo
+
 
 # // -----
 
 # COM: Overload resolution with a closure overload must not crash when the
 # COM: non-closure argument's struct is not yet body-resolved.
 
+
 @always_inline
-def dispatch[FuncType: def() unified register_passable -> None, //](
-    func: FuncType
-):
+def dispatch[
+    FuncType: def() unified register_passable -> None, //
+](func: FuncType):
     pass
 
 
@@ -1208,15 +1239,13 @@ struct Foo:
 
 comptime CollectionElement = ImplicitlyDestructible & ImplicitlyCopyable
 
+
 def foo(x: Int):
     def map[
-            T: CollectionElement,
-            U: CollectionElement,
-            func: def(x: T) unified -> U,
-        ](
-            item: T,
-            closure: func,
-        ) -> U:
+        T: CollectionElement,
+        U: CollectionElement,
+        func: def(x: T) unified -> U,
+    ](item: T, closure: func,) -> U:
         return closure(item)
 
     def double(x: Int) unified {mut} -> Int:
@@ -1228,6 +1257,7 @@ def foo(x: Int):
 # // -----
 
 # COM: Verify names match cache keys to avoid collisions.
+
 
 trait DoA:
     def doA(self):
@@ -1261,6 +1291,7 @@ def bar[T: DoB](x: T):
 
 # CHECK: LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>]
 
+
 def metadata_closure(x: Int):
     @__llvm_metadata(
         `nvvm.maxntid`=__mlir_attr.`#pop.array<256> : !pop.array<1, i32>`
@@ -1278,6 +1309,7 @@ def metadata_closure(x: Int):
 # CHECK: LLVMArgMetadataArray
 # CHECK-SAME: "nvvm.grid_constant", unit
 
+
 def arg_metadata_closure(x: Int):
     @__llvm_arg_metadata(x, `nvvm.grid_constant`)
     def _kernel(x: Int) unified register_passable {var} -> Int:
@@ -1294,11 +1326,13 @@ def arg_metadata_closure(x: Int):
 
 # CHECK: lit.struct.decl @"def(y: Int) register_passable -> Int_{{.*}}"{{.*}} register_passable attributes
 
+
 struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
     var value: Int
 
     def __init__(out self, value: Int):
         self.value = value
+
 
 def call_inner[
     F: ImplicitlyCopyable & def(Int) unified register_passable -> Int
@@ -1310,6 +1344,7 @@ def call_inner[
 
     return outer(x)
 
+
 # // -----
 
 # COM: Verify that a register_passable closure capturing a trivially
@@ -1318,11 +1353,13 @@ def call_inner[
 
 # CHECK: lit.struct.decl @"def(y: Int) register_passable -> Int_{{.*}}"{{.*}} register_passable_trivial attributes
 
+
 struct TrivialPayload(TrivialRegisterPassable):
     var value: Int
 
     def __init__(out self, value: Int):
         self.value = value
+
 
 def call_inner[
     F: TrivialRegisterPassable & def(Int) unified register_passable -> Int

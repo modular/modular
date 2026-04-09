@@ -7,7 +7,7 @@
 
 
 # expected-error @+1 {{the 'escaping' function effect is no longer supported; use 'unified' closures instead}}
-def escaping_effect_is_rejected(closure: def () escaping -> None):
+def escaping_effect_is_rejected(closure: def() escaping -> None):
     pass
 
 
@@ -27,6 +27,6 @@ struct Parametric[a: Int]:
 def test_suppressed_dyn_binding_error[
     x: Int
     # expected-error @below {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
-](pval: Parametric[x], func: def[y: Int] (p: Parametric[y]) thin -> None):
+](pval: Parametric[x], func: def[y: Int](p: Parametric[y]) thin -> None):
     def nested():
         func(pval)

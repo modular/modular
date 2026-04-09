@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 struct _Impl:
     pass
+
 
 # @expected-note @below {{'Foo' declared here}}
 comptime Foo = _Impl

@@ -19,8 +19,10 @@ def raise_error() raises:
     # CHECK-NEXT: lit.raise
     raise "thing"
 
+
 def raise_string() raises String:
     pass
+
 
 def raise_int() raises Int:
     pass
@@ -436,17 +438,21 @@ struct GenericExitCtxtMgr:
     def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
         return self.handle
 
+
 def with_infer_error() raises:
     with GenericExitCtxtMgr():
         raise_error()
+
 
 def with_infer_string() raises String:
     with GenericExitCtxtMgr():
         raise_string()
 
+
 def with_infer_int() raises Int:
     with GenericExitCtxtMgr():
         raise_int()
+
 
 # A context manager that has a Float __exit__ method.
 struct FloatErrorExitCtxtMgr:
@@ -465,10 +471,12 @@ struct FloatErrorExitCtxtMgr:
     def __exit__(self, err: Float32) -> Bool:
         return self.handle
 
+
 def with_impl_convert() raises Float32:
     with FloatErrorExitCtxtMgr():
         # This should implicitly convert to Float32, not be a type error.
         raise_int()
+
 
 def with_doesnt_actually_throw():
     with FloatErrorExitCtxtMgr():
@@ -478,9 +486,13 @@ def with_doesnt_actually_throw():
 # Issue #5176: Context manager don't work with consuming __exit__(var self)
 @fieldwise_init
 struct ConsumingExitCM(Movable):
-    def __enter__(mut self): pass
-    def __exit__(var self): pass
+    def __enter__(mut self):
+        pass
+
+    def __exit__(var self):
+        pass
+
+
 def testConsumingExitCM():
     with ConsumingExitCM() as a:
         _ = a
-

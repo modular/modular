@@ -1041,7 +1041,9 @@ def bitwidth_from_instance[T: MyTrait, Inst: T]() -> ZInt:
 
 
 # CHECK-LABEL: lit.fn @"bitwidth_from_composition_instance
-def bitwidth_from_composition_instance[T: MyTrait & MyTrait2, Inst: T]() -> ZInt:
+def bitwidth_from_composition_instance[
+    T: MyTrait & MyTrait2, Inst: T
+]() -> ZInt:
     # CHECK-NEXT: #kgen.get_witness<:!MyTrait upcast(:!MyTrait_MyTrait2 T), "associated_aliases::MyTrait", "BIT_WIDTH">
     return Inst.BIT_WIDTH
 

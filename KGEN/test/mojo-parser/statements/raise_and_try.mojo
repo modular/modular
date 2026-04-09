@@ -206,4 +206,3 @@ def fail_register_raises() raises -> Int:
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return [[FALSE]]
     return fail_register()
-

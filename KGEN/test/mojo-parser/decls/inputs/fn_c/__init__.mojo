@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 # @expected-note @below {{'Foo' also declared here}}
 def Foo():
     pass

@@ -26,5 +26,6 @@
 # RUN: not %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=true %s 2>&1 | FileCheck %s --check-prefix=ERROR
 # ERROR: error: --diagnostic-format=json is incompatible with --use-mlir-diagnostics=true
 
+
 def main():
     _ = unknown_identifier

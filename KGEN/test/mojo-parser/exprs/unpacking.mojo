@@ -40,7 +40,7 @@ def test_unbound_pack():
     comptime first_bound = StructWithDefault[5, ...]
 
     # CHECK: lit.alias.decl *"last_bound_with_kw`{{.*}}": meta<!lit.struct<#StructWithDefaultKwOnly <:!Int {8}, :!Int ?, :!Int ?, :!Int ?>, <"b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>>>
-    comptime last_bound_with_kw = StructWithDefaultKwOnly[8, d= ...]
+    comptime last_bound_with_kw = StructWithDefaultKwOnly[8, d=...]
 
     # CHECK: lit.alias.decl *"prev_bound_with_kw`{{.*}}: meta<!lit.struct<#StructWithDefaultKwOnly <:!Int {8}, :!Int ?, :!Int ?, :!Int ?>, <"b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>>>
     comptime prev_bound_with_kw = StructWithDefaultKwOnly[8, ..., d=_]
@@ -73,6 +73,7 @@ def test_unbound_pack():
 
 def take_var_pack[*Ts: AnyType](var *values: *Ts):
     pass
+
 
 # Make sure we can transfer an owned pack.
 def pass_var_pack[*Ts: AnyType](var *values: *Ts):

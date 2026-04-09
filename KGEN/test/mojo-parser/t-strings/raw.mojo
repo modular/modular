@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+
 # CHECK-LABEL: lit.fn @"test_raw_t_strings()"
 def test_raw_t_strings():
     var name = "Alice"
@@ -17,7 +18,7 @@ def test_raw_t_strings():
 
     # Basic raw t-string with tr prefix
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "Hello\\tWorld {}"
-    var s2 = tr"Hello\tWorld {name}"
+    var s2 = rt"Hello\tWorld {name}"
 
     # Raw t-string with no interpolations
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "raw\\nstring"
@@ -39,22 +40,22 @@ def test_raw_t_strings():
 
     # Uppercase prefix variants
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "Rt {}"
-    var s7 = Rt"Rt {x}"
+    var s7 = rt"Rt {x}"
 
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "rT {}"
-    var s8 = rT"rT {x}"
+    var s8 = rt"rT {x}"
 
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "RT {}"
-    var s9 = RT"RT {x}"
+    var s9 = rt"RT {x}"
 
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "tR {}"
-    var s10 = tR"tR {x}"
+    var s10 = rt"tR {x}"
 
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "Tr {}"
-    var s11 = Tr"Tr {x}"
+    var s11 = rt"Tr {x}"
 
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "TR {}"
-    var s12 = TR"TR {x}"
+    var s12 = rt"TR {x}"
 
     # Raw t-string with hex escape (stays literal)
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "A\\x42 {}"

@@ -8,6 +8,7 @@
 
 # Test edge cases and corner cases for t-strings
 
+
 # CHECK-LABEL: lit.fn @"test_edge_cases()"
 def test_edge_cases():
     # Test 1: Multiple consecutive escaped braces

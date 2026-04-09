@@ -10,7 +10,7 @@
 
 
 @fieldwise_init
-struct IterRange(Iterator, ImplicitlyCopyable):
+struct IterRange(ImplicitlyCopyable, Iterator):
     comptime Element = Int
 
     var value: Int
@@ -43,6 +43,7 @@ def test_parameter_for[a: Int]():
 def test_comptime_if[a: __mlir_type.i1]():
     comptime if a:
         var inside: Int
+
 
 def test_comptime_for[a: Int]():
     comptime for i in IterRange(a):

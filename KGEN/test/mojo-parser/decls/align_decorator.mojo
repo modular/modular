@@ -8,6 +8,7 @@
 
 # Test @align decorator for specifying minimum struct alignment.
 
+
 # CHECK-LABEL: lit.struct.decl @AlignedStruct
 # CHECK-SAME: minAlignment = 64 : index
 @align(64)

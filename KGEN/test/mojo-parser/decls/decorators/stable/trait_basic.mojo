@@ -8,6 +8,7 @@
 
 # Test that @stable decorator is recognized on traits and trait methods.
 
+
 # CHECK: lit.trait.decl @StableTrait{{.*}}hasStableDecorator
 @stable
 trait StableTrait:
@@ -28,9 +29,11 @@ trait UnstableTrait:
 trait TraitWithStableMethod:
     # CHECK: lit.fn @"stable_trait_method({{.*}}hasStableDecorator
     @stable
-    def stable_trait_method(self): ...
+    def stable_trait_method(self):
+        ...
 
     # CHECK: lit.fn @"unstable_trait_method(
     # CHECK-NOT: hasStableDecorator
     # CHECK-SAME: sourceName = "unstable_trait_method"
-    def unstable_trait_method(self): ...
+    def unstable_trait_method(self):
+        ...

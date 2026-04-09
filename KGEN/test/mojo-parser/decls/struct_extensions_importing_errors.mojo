@@ -9,10 +9,12 @@
 # @expected-note @below {{conflicts with this previous declaration}}
 from struct_package_for_conflict import PlainStruct
 
+
 # @expected-error @below {{cannot define a struct here with name 'PlainStruct'}}
 struct PlainStruct:
     pass
 
+
 __extension PlainStruct:
-   def sparklebark(self: PlainStruct):
-       pass
+    def sparklebark(self: PlainStruct):
+        pass

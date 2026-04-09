@@ -16,6 +16,7 @@
 
 from test_std_mock.subpkg import subpkg_stable_fn
 
+
 def test():
     # The function itself is @stable, so no warning for calling it.
     # Internally it uses unstable APIs from a sibling sub-package,

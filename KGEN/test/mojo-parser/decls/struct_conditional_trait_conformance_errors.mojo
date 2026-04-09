@@ -45,7 +45,6 @@ struct DiamondMissingExplicitBase[T: Movable](
         self.data = data^
 
 
-
 # ===========================================================================
 # Derived constraint must imply ancestor constraint
 # ===========================================================================
@@ -75,7 +74,6 @@ struct DerivedDoesNotImplyAncestor[T: Movable](
         self.data = data^
 
 
-
 # ===========================================================================
 # Unconditional derived with conditional ancestor
 # ===========================================================================
@@ -94,17 +92,16 @@ trait UnconditionalDerivedChild(UnconditionalDerivedBase):
 
 struct UnconditionalDerivedConditionalAncestor[T: Movable](
     # Derived is unconditional - always conforms
-    # expected-error @below {{constraint for ''UnconditionalDerivedChild'' does not imply constraint for ancestor trait ''UnconditionalDerivedBase''; strengthen the derived constraint by adding the ancestor's constraint with 'and'}}
-    UnconditionalDerivedChild,
+    Movable,
     # But ancestor is conditional - inconsistent!
     UnconditionalDerivedBase where conforms_to(T, Copyable),
-    Movable,
+    # expected-error @below {{constraint for ''UnconditionalDerivedChild'' does not imply constraint for ancestor trait ''UnconditionalDerivedBase''; strengthen the derived constraint by adding the ancestor's constraint with 'and'}}
+    UnconditionalDerivedChild,
 ):
     var data: Self.T
 
     def __init__(out self, var data: Self.T):
         self.data = data^
-
 
 
 # ===========================================================================
@@ -114,15 +111,17 @@ struct UnconditionalDerivedConditionalAncestor[T: Movable](
 # creates parser cycle risks and requires composing the user's where-clause
 # with field-level triviality witnesses.
 
+
 struct ConditionalTrivialRegPassable[T: Movable](
+    Movable,
     # expected-error @below {{conditional conformance to 'TrivialRegisterPassable' is not supported}}
     TrivialRegisterPassable where conforms_to(T, TrivialRegisterPassable),
-    Movable,
 ):
     var value: Self.T
 
     def __init__(out self, var value: Self.T):
         self.value = value^
+
 
 # ===========================================================================
 # Conditional conformance to RegisterPassable IS allowed
@@ -130,9 +129,10 @@ struct ConditionalTrivialRegPassable[T: Movable](
 # The struct stays pessimistically MemoryOnly at declaration time; the
 # parametric isMemoryOnly bit resolves per-instantiation during lowering.
 
+
 struct ConditionalRegPassable[T: Movable](
-    RegisterPassable where conforms_to(T, RegisterPassable),
     Movable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
 ):
     var value: Self.T
 
@@ -143,14 +143,18 @@ struct ConditionalRegPassable[T: Movable](
 # Origin rejection: returning an origin of a conditionally-RP argument is
 # rejected because the type might expand to RegisterPassable (in which case
 # the argument would be promoted to a register and the origin would dangle).
-# expected-error @+1 {{cannot return 'x's origin, because it might expand to a RegisterPassable type}}
-def bad_conditional_rp_origin[T: Movable](x: ConditionalRegPassable[T]) -> ref [x] ConditionalRegPassable[T]:
+# expected-error @+3 {{cannot return 'x's origin, because it might expand to a RegisterPassable type}}
+def bad_conditional_rp_origin[
+    T: Movable
+](x: ConditionalRegPassable[T]) -> ref[x] ConditionalRegPassable[T]:
     return x
 
 
 # Workaround: using `ref` convention forces indirect passing, so the argument
 # always has a stable memory address regardless of RP status. This must compile.
-def ok_conditional_rp_ref_origin[T: Movable](ref x: ConditionalRegPassable[T]) -> ref [x] ConditionalRegPassable[T]:
+def ok_conditional_rp_ref_origin[
+    T: Movable
+](ref x: ConditionalRegPassable[T]) -> ref[x] ConditionalRegPassable[T]:
     return x
 
 
@@ -170,10 +174,10 @@ trait RPRequiringTrait(RegisterPassable):
 
 
 struct RPTraitWeakerConstraint[T: Movable](
-    RegisterPassable where conforms_to(T, RegisterPassable),
+    Movable,
     # expected-error @below {{constraint for ''RPRequiringTrait'' does not imply constraint for ancestor trait ''RegisterPassable''}}
     RPRequiringTrait where conforms_to(T, Movable),
-    Movable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
 ):
     var value: Self.T
 
@@ -194,10 +198,11 @@ struct RPTraitWeakerConstraint[T: Movable](
 # implication check in verifyAndBuildConformance passes trivially.
 # This test documents that such usage is accepted (no error expected).
 
+
 struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDestructible & Movable](
-    RPRequiringTrait where conforms_to(T, RegisterPassable),
     ImplicitlyDestructible,
     Movable,
+    RPRequiringTrait where conforms_to(T, RegisterPassable),
 ):
     var value: Self.T
 
@@ -213,6 +218,7 @@ struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDestructible & Movable](
 # ===========================================================================
 # Without @explicit_destroy, there is no error message for when the
 # constraint is not satisfied, so the struct would silently auto-destroy.
+
 
 struct ConditionalImplicitlyDestructible[T: Movable](
     # expected-error @below {{conditional conformance to 'ImplicitlyDestructible' requires @explicit_destroy}}
@@ -249,7 +255,6 @@ struct UnconditionalWithConditionalMethod[x: Int](
         pass
 
 
-
 # ===========================================================================
 # Conditional conformance with non-implied method constraint
 # ===========================================================================
@@ -275,7 +280,6 @@ struct MismatchedConstraints[T: Movable](
         pass
 
 
-
 # ===========================================================================
 # Weaker conformance constraint with stronger method constraint
 # ===========================================================================
@@ -292,8 +296,8 @@ trait WeakerConformanceTrait:
 
 # expected-error @below {{does not implement all requirements for 'WeakerConformanceTrait'}}
 struct WeakerConformanceStrongerMethod[T: Movable](
-    WeakerConformanceTrait where conforms_to(T, Copyable),
     Movable,
+    WeakerConformanceTrait where conforms_to(T, Copyable),
 ):
     # This method requires BOTH Copyable AND Intable, but conformance only guarantees Copyable
     # expected-note @below {{method 'execute' has constraints that cannot be proven or disproven from conformance constraint}}
@@ -301,7 +305,6 @@ struct WeakerConformanceStrongerMethod[T: Movable](
         self,
     ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Intable):
         pass
-
 
 
 # ===========================================================================
@@ -335,7 +338,6 @@ struct AmbiguousUnconditionalAndConditional[T: Movable](
         pass
 
 
-
 # ===========================================================================
 # Multiple conditional methods both implied by stronger conformance
 # ===========================================================================
@@ -353,10 +355,10 @@ trait MultipleConditionsTrait:
 
 # expected-error @below {{does not implement all requirements for 'MultipleConditionsTrait'}}
 struct AmbiguousBothConditional[T: Movable](
+    Movable,
     MultipleConditionsTrait where conforms_to(T, Copyable) and conforms_to(
         T, Intable
     ),
-    Movable,
 ):
     # Method requiring Copyable - implied by conformance
     # expected-note @below {{candidate declared here}}
@@ -367,7 +369,6 @@ struct AmbiguousBothConditional[T: Movable](
     # expected-note @below {{candidate declared here}}
     def run(self) where conforms_to(Self.T, Intable):
         pass
-
 
 
 # ===========================================================================
@@ -391,8 +392,8 @@ trait UnprovableCandidateTrait:
 
 # expected-error @below {{does not implement all requirements for 'UnprovableCandidateTrait'}}
 struct UnprovableWithValidCandidate[T: Movable](
-    UnprovableCandidateTrait where conforms_to(T, Copyable),
     Movable,
+    UnprovableCandidateTrait where conforms_to(T, Copyable),
 ):
     # Unprovable: Intable is unrelated to Copyable - can't prove or disprove.
     # expected-note @below {{method 'handle' has constraints that cannot be proven or disproven from conformance constraint}}
@@ -403,7 +404,6 @@ struct UnprovableWithValidCandidate[T: Movable](
     # But we still error because we can't rule out the above candidate.
     def handle(self) where conforms_to(Self.T, Copyable):
         pass
-
 
 
 # ===========================================================================
@@ -434,7 +434,6 @@ struct DisprovedWithWhereNot[T: Movable](
         pass
 
 
-
 # ===========================================================================
 # Synthesized default trait method gated by conformance constraint
 # ===========================================================================
@@ -457,7 +456,6 @@ struct ConditionalDefaultMethod[T: Movable](
 ):
     def __init__(out self):
         pass
-
 
 
 def call_default_externally[T: Movable](x: ConditionalDefaultMethod[T]):
@@ -483,13 +481,12 @@ trait ZeroFieldTrait:
 
 
 struct ZeroFieldConditional[T: Movable](
-    # expected-note @below {{constraint declared here}}
-    ZeroFieldTrait where conforms_to(T, Copyable),
     Movable,
+    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, AnyType & Copyable & Movable)'}}
+    ZeroFieldTrait where conforms_to(T, Copyable),
 ):
     def __init__(out self):
         pass
-
 
 
 def call_on_zero_field[T: Movable](x: ZeroFieldConditional[T]):
@@ -517,7 +514,6 @@ struct CopySynthFailsWithOR[T: ImplicitlyDestructible & Movable](
 
     def __init__(out self, var value: Self.T):
         self.value = value^
-
 
 
 # ===========================================================================

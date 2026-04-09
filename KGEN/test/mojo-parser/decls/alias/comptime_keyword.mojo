@@ -17,6 +17,7 @@ comptime z = x + y
 comptime MyInt[T: AnyType] = T
 comptime Add[a: Int, b: Int] = a + b
 
+
 # In struct
 struct MyStruct:
     comptime SIZE = 100
@@ -25,9 +26,11 @@ struct MyStruct:
     def use_comptime(self) -> Int:
         return Self.SIZE
 
+
 # In trait
 trait MyTrait:
     comptime AssociatedType: AnyType
+
 
 # Mixing alias and comptime in same file (both should work)
 comptime old_style = 42

@@ -14,7 +14,7 @@ struct SomeCopyable(Copyable):
 
 @fieldwise_init
 struct SomeVA[*elt_types: AnyType]:
-    def __getitem_param__[idx: Int](ref self) -> ref [self] Self.elt_types[idx]:
+    def __getitem_param__[idx: Int](ref self) -> ref[self] Self.elt_types[idx]:
         pass
 
 
@@ -35,6 +35,7 @@ def f0[*elt_type: Copyable](t: SomeVA[*elt_type]):
 # CHECK-SAME: <elt_type: param_list<!mt_Int>{{.*}}(%t: !lit.ref<!lit.struct<#SomeVA <:param_list<!AnyType> upcast(:param_list<!mt_Int> elt_type)>
 def f1[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
     pass
+
 
 # CHECK-LABEL: lit.fn @"foo
 def foo():

@@ -76,6 +76,7 @@ def launch_ship(mut ship: PlainStruct):
 
 from trait_package import Flying as ImportedFlying
 
+
 struct Spaceship:
     var location: Int
 

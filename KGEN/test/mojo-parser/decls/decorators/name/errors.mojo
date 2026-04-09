@@ -6,21 +6,25 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
+
 # expected-error @+1 {{@__name must have at least 1 argument}}
 @__name
 def name_no_args():
     ...
+
 
 # expected-error @+1 {{@__name must have at most 1 name argument}}
 @__name("name1", "name2")
 def name_two_args():
     ...
 
+
 # expected-error @+1 {{function has conflicting linkage name from a previous @__name or @export decorator}}
 @__name("first_name")
 @export("different_name")
 def name_export_conflict():
     ...
+
 
 # expected-error @+1 {{function has conflicting linkage name from a previous @__name or @export decorator}}
 @export("first_name")
@@ -39,6 +43,7 @@ def c_export_name_conflict():
 # ---------------------------------------------------------------------------
 # mangle= argument errors
 # ---------------------------------------------------------------------------
+
 
 # expected-error @+1 {{'mangle' argument to @__name must be True or False}}
 @__name("foo", mangle=42)

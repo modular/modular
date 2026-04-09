@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+
 trait SubTraitT(TrivialRegisterPassable):
     def subget(self) -> Int:
         ...

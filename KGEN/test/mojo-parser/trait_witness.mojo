@@ -29,7 +29,7 @@ trait R1Child(R1):
 
 
 # CHECK-LABEL: lit.struct.decl @S1<X: !Int>
-struct S1[X: Int](TrivialRegisterPassable, R1, R1Child, R2):
+struct S1[X: Int](R1, R1Child, R2, TrivialRegisterPassable):
     comptime N: Int = Self.X
     comptime T: AnyType = Int
 

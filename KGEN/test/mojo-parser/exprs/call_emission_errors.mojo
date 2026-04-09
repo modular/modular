@@ -297,7 +297,9 @@ def forward_borrowed_pack_to_mut_pack[*Ts: AnyType](*outer: *Ts):
     mutate_pack(*outer)
 
 
-def forward_unknown_mut_pack_to_mut_pack[*Ts: AnyType](outer: VariadicPack[origin=_, element_trait=AnyType, _, *Ts]):
+def forward_unknown_mut_pack_to_mut_pack[
+    *Ts: AnyType
+](outer: VariadicPack[origin=_, element_trait=AnyType, _, *Ts]):
     # expected-error @below {{cannot unpack a variadic pack into a call that requires a different ownership}}
     mutate_pack(*outer)
 
@@ -307,7 +309,9 @@ def forward_borrowed_pack_to_owned_pack[*Ts: AnyType](*outer: *Ts):
     consume_owned_variadic_pack(*outer)
 
 
-def forward_unknown_ownership_pack[*Ts: AnyType, owned: Bool](outer: VariadicPack[origin=_, element_trait=AnyType, owned, *Ts]):
+def forward_unknown_ownership_pack[
+    *Ts: AnyType, owned: Bool
+](outer: VariadicPack[origin=_, element_trait=AnyType, owned, *Ts]):
     # expected-error @below {{cannot unpack a variadic pack into a call that requires a different ownership}}
     consume_owned_variadic_pack(*outer)
 
@@ -492,18 +496,29 @@ def test_4499_exclusivity():
     # Should be ok.
     my_func4499(Owner4499[MyStruct4499](), Owner4499[MyStruct4499]())
 
+
 # Test printing of apply expressions.
-def vararg_example(*args: Int, other: Int): pass
-def pack_example[*Ts: AnyType](*args: *Ts, other: Int): pass
-def generic_example[T: AnyType, //](a: T): pass
+def vararg_example(*args: Int, other: Int):
+    pass
+
+
+def pack_example[*Ts: AnyType](*args: *Ts, other: Int):
+    pass
+
+
+def generic_example[T: AnyType, //](a: T):
+    pass
+
 
 @fieldwise_init
 struct StructWithFlexParam[T: AnyType, //, x: T]:
     pass
 
+
 # expected-note @+1 {{function declared here}}
 def takeWith4(a: StructWithFlexParam[4]):
     pass
+
 
 def test_print_apply_expressions():
     # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
