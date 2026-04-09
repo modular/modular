@@ -772,7 +772,7 @@ ParametricIREvaluator::concretizeLinkageName(GeneratorOp gen,
       // so the current node will be resumed when elaboration completes.
       return TypedAttr();
   }
-  return concretizeLinkageNameImpl(func, gen, symbol, this);
+  return concretizeLinkageNameImpl(func, gen, symbol, *this);
 }
 
 //===----------------------------------------------------------------------===//

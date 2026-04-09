@@ -415,7 +415,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // thrashing on the current parser state.
   auto exprFn = cast<LIT::FnOp>(result.exprFnDecl.getIfOperation());
   exprFn.setLinkageNameAttr(
-      StringAttr::get(exprFnName, StringType::get(exprFn->getContext())));
+      LinkageNameAttr::get(exprFn->getContext(), exprFnName));
   mlir::IRMapping mapping;
   OwningOpRef<ModuleOp> module =
       KGEN::LIT::cloneDeclModuleForCompilation(*result.moduleDecl, mapping);

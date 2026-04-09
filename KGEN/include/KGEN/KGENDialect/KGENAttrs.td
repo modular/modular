@@ -841,6 +841,43 @@ def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
 }
 
 //===----------------------------------------------------------------------===//
+// LinkageNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_LinkageNameAttr : KGEN_ExprAttr<"LinkageName", "linkage_name",
+    [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Linkage name with an optional mangle flag.";
+  let description = [{
+    Holds a name expression (string literal or DataToStr) and a boolean `mangle`
+    flag. The flag is stored but not yet acted upon — both `mangle=true` and
+    `mangle=false` currently use the prefix verbatim as the symbol name
+    (with PTX sanitization applied on top for GPU targets).
+
+    Intended future semantics: when `mangle=true`, the final symbol name will be
+    derived from the prefix and a hash of the auto-mangled parameter values,
+    guaranteeing uniqueness across instantiations while remaining human-readable
+    (e.g. `my_kernel_a3f2c1b0`).
+  }];
+  let parameters = (ins "TypedAttr":$name, "BoolAttr":$mangle);
+  let assemblyFormat = "`<` $name `,` $mangle `>`";
+  let extraClassDeclaration = [{
+    mlir::Type getType() const {
+      return KGEN::StringType::get(getContext());
+    }
+    /// Create a LinkageNameAttr with a literal string name and an optional
+    /// mangle flag.
+    static LinkageNameAttr get(mlir::MLIRContext *ctx, llvm::StringRef name,
+                               bool mangle = false);
+  }];
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$name, "bool":$mangle), [{
+      return $_get(name.getContext(), name,
+                   mlir::BoolAttr::get(name.getContext(), mangle));
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // GetSourceNameAttr
 //===----------------------------------------------------------------------===//
 

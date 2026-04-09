@@ -122,28 +122,35 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
 
 FailureOr<TypedAttr> IREvaluatorContext::concretizeLinkageNameImpl(
     FuncOp func, GeneratorOp gen, SymbolConstantAttr symbol,
-    ParameterEvaluationContext *evalCtx) {
+    ParameterEvaluationContext &evalCtx) {
   // If the FuncOp is already elaborated, prefer its resolved linkageName.
   if (func) {
-    if (auto resolved =
-            dyn_cast_if_present<StringAttr>(func.getLinkageNameAttr()))
-      return TypedAttr(resolved);
+    if (auto lna =
+            dyn_cast_if_present<LinkageNameAttr>(func.getLinkageNameAttr())) {
+      if (auto prefix = dyn_cast<StringAttr>(lna.getName())) {
+        return TypedAttr(StringAttr::get(prefix.getValue(),
+                                         StringType::get(gen.getContext())));
+      }
+    }
   }
 
   // Fall back to evaluating the generator's linkageName expression directly.
-  Attribute genLinkageName = gen.getLinkageNameAttr();
+  LinkageNameAttr genLinkageName =
+      dyn_cast_if_present<LinkageNameAttr>(gen.getLinkageNameAttr());
   if (!genLinkageName)
     return failure();
-  if (auto strAttr = dyn_cast<StringAttr>(genLinkageName))
-    return TypedAttr(strAttr);
 
-  // Evaluate the parametric linkageName expression by substituting the
-  // generator's parameters with the symbol's concrete values.
+  // Substitute the generator's parameters with the symbol's concrete values.
+  // getReboundAttribute evaluates any residual parametric expressions —
+  // including DataToStr — via the evaluateContextSpecific hook in the
+  // evaluation context, which is always the concrete IREvaluator subclass.
   ParameterEvaluator tempEval(gen.getInputParams(), symbol.getParamValues());
-  tempEval.setEvaluationContext(evalCtx);
-  if (auto resolved = dyn_cast_if_present<StringAttr>(
-          tempEval.getReboundAttribute(genLinkageName)))
-    return TypedAttr(resolved);
+  tempEval.setEvaluationContext(&evalCtx);
+  Attribute rebound = tempEval.getReboundAttribute(genLinkageName);
+  if (auto lna = dyn_cast_if_present<LinkageNameAttr>(rebound))
+    if (auto prefix = dyn_cast<StringAttr>(lna.getName()))
+      return TypedAttr(StringAttr::get(prefix.getValue(),
+                                       StringType::get(gen.getContext())));
   return failure();
 }
 

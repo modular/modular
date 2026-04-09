@@ -69,7 +69,7 @@ def LIT_FnOp : LITOp<"fn", [
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
     // The linkage name of this function within the compiled artifact. If null,
     // the flattened full symbol reference of the function will be used.
-    OptionalAttr<AttrOfType<KGEN_StringType>>:$linkageName,
+    OptionalAttr<KGEN_LinkageNameAttr>:$linkageName,
     // The name of this function in the pre-elaborated IR stage.
     OptionalAttr<StrAttr>:$sourceName,
     // For trait->trait inheritance the trait.decl this was inherited from.

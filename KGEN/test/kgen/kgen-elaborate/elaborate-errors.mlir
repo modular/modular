@@ -469,12 +469,12 @@ kgen.generator @count_to_zero_has_next(%arg0: index) -> i1 {
 // Two generators with the same linkage name should report a clash error.
 
 // expected-remark @below {{existing function here}}
-kgen.generator @"clash::a"() attributes {linkageName = "foo" : !kgen.string} {
+kgen.generator @"clash::a"() attributes {linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>} {
   kgen.return
 }
 
 // expected-error @below {{duplicate functions named "foo"}}
-kgen.generator @"clash::b"() attributes {linkageName = "foo" : !kgen.string} {
+kgen.generator @"clash::b"() attributes {linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>} {
   kgen.return
 }
 

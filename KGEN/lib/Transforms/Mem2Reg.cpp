@@ -211,6 +211,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
                   &termVariants,
               DebugInfo::DIExprLeafReplacer &exprLeafReplacer,
               PassStats &stats) {
+  if (region.empty())
+    return success();
   // This analysis only works on single-block regions.
   if (!llvm::hasSingleElement(region)) {
     return region.getParentOp()->emitError(

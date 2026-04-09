@@ -8,7 +8,7 @@
 # RUN: kgen-opt %t.target.mlirbc | FileCheck %s
 
 # CHECK: kgen.generator export @"kgen_module.mojo.tmp.target::impl::anchor()"() -> index
-# CHECK-SAME: linkageName = "anchor" : !kgen.string
+# CHECK-SAME: linkageName = #kgen.linkage_name<"anchor" : !kgen.string, false>
 # CHECK: kgen.generator @"test_dependency::impl::use_me()"() -> index
 # CHECK: kgen.generator @"test_dependency::impl::child()"() -> index
 # CHECK-NOT: dead

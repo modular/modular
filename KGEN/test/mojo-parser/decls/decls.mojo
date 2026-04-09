@@ -1294,7 +1294,7 @@ struct SomeParamStruct[c_param: Int]:
 
 # CHECK: lit.fn @"my_extern_add_one
 # CHECK-SAME: external,
-# CHECK-SAME: linkageName = "add_one"
+# CHECK-SAME: linkageName = #kgen.linkage_name<"add_one" : !kgen.string, false>
 @extern("add_one")
 def my_extern_add_one(x: Int) -> Int:
     ...

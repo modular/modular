@@ -340,8 +340,9 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
 /// Out-of-line definition.
 static void recursiveRewrite(Operation *op, mlir::AttrTypeReplacer &replacer) {
   for (Region &region : op->getRegions())
-    for (Operation &op : llvm::make_early_inc_range(region.front()))
-      rewriteFn(&op, replacer);
+    if (!region.empty())
+      for (Operation &op : llvm::make_early_inc_range(region.front()))
+        rewriteFn(&op, replacer);
 }
 
 void LowerCallingConventionsPass::runOnOperation() {
@@ -377,6 +378,15 @@ void LowerCallingConventionsPass::runOnOperation() {
   replacer.addReplacement(lowerPackAttrToStruct);
   replacer.addReplacement(lowerVariantType);
   replacer.addReplacement(lowerVariantAttr);
+  // Do not recurse into LinkageNameAttr sub-elements: by this point the
+  // rename pass has either removed it or left it with a resolved StringAttr
+  // name.  Either way, the sub-elements (possibly parametric pval attrs
+  // from the interpreter) must not be walked by the replacer.
+  replacer.addReplacement(
+      [](LinkageNameAttr lna)
+          -> std::optional<std::pair<Attribute, WalkResult>> {
+        return std::make_pair(Attribute(lna), WalkResult::skip());
+      });
 
   rewriteFn(getOperation(), replacer);
 }

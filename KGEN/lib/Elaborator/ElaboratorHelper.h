@@ -16,22 +16,21 @@ namespace M::KGEN {
 
 /// Compute the expected final symbol name of a generator from a symbol
 /// constant attribute.  Returns both the mangled name and the generator.
-/// If `allowParametric`, an unresolved parametric name does not produce an
-/// error.  If `sanitize`, additionally sanitizes the name to alnum-only
-/// characters.
+/// If `sanitize`, additionally sanitizes the name to alnum-only characters.
 /// Used by both Elaborator and ParametricElaborator to predict the name that
 /// the rename pass will assign, so that host stubs can reference GPU kernels
 /// by their final PTX name.
 ErrorTreeOr<std::pair<mlir::StringAttr, GeneratorOp>>
 getExpectedMangledName(mlir::Location errorLoc, llvm::StringRef errorContext,
                        TypedAttr symCst, mlir::SymbolTable &symTab,
-                       bool allowParametric = false, bool sanitize = false);
+                       bool sanitize = false);
 
 /// Resolve linkage names and sanitize symbol names for all FuncOps in
 /// `theModule` in a single pass:
 ///
-///  1. If a FuncOp carries a `linkageName` attribute, rename the function to
-///     that name, then remove the attribute.
+///  1. If a FuncOp carries a `linkageName` attribute, compute the final symbol
+///     name from its prefix using `sanitizeSymbolToAlnum` (the mangle flag is
+///     not yet implemented and is ignored here), then remove the attribute.
 ///  2. On GPU targets, additionally sanitize every name to alphanumeric-only
 ///     characters for PTX compatibility.
 ///  3. Fix up all `SymbolConstantAttr` references in the module to reflect the

@@ -90,7 +90,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     DefaultValuedAttr<DictArrayAttr, "{}">:$LLVMArgMetadata,
     DefaultValuedAttr<StringArrayAttr, "ArrayRef<StringAttr>{}">:$crossDeviceCaptures,
     OptionalAttr<TypeAttr>:$coroutineType,
-    OptionalAttr<AttrOfType<KGEN_StringType>>:$linkageName
+    OptionalAttr<KGEN_LinkageNameAttr>:$linkageName
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -127,7 +127,7 @@ def KGEN_FuncOp : KGENOp<"func", [
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
                    CArg<"bool", "false">:$external,
                    CArg<"bool", "false">:$convergent,
-                   CArg<"TypedAttr", "{}">:$linkageName,
+                   CArg<"LinkageNameAttr", "{}">:$linkageName,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
                    CArg<"DictionaryAttr", "{}">:$llvmMetadata,
                    CArg<"ArrayAttr", "{}">:$llvmArgMetadata), [{
@@ -188,7 +188,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // means to get a normalized form, the calls (POC::Apply) to the generators
     // which have the `inlinedForm` must further inlined in the same way.
     OptionalAttr<TypedAttrInterface>:$inlinedForm,
-    OptionalAttr<AttrOfType<KGEN_StringType>>:$linkageName,
+    OptionalAttr<KGEN_LinkageNameAttr>:$linkageName,
     // To be able to store pre-elaborated names of the `llvm_metadata`,
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
@@ -225,7 +225,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"TypedAttr", "{}">:$inlinedForm,
-                   CArg<"TypedAttr", "{}">:$linkageNameAttr,
+                   CArg<"LinkageNameAttr", "{}">:$linkageNameAttr,
                    CArg<"ArrayAttr", "{}">:$llvmMetadataArray,
                    CArg<"ArrayAttr", "{}">:$llvmArgMetadataArray), [{
       if (!llvmMetadataArray)
@@ -836,7 +836,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_InlineLevelAttr:$inlineLevel,
-    OptionalAttr<AttrOfType<KGEN_StringType>>:$linkageName,
+    OptionalAttr<KGEN_LinkageNameAttr>:$linkageName,
     // To be able to store pre-elaborated names of the `llvm_metadata`,
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,

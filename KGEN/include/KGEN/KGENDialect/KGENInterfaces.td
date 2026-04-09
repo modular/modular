@@ -427,8 +427,8 @@ def ExportInterface : OpInterface<"ExportInterface"> {
       Return the op's linkage name as a StringAttr. If the linkage name is
       unresolved, return a null attribute.
     }], "StringAttr", "getLinkageName", (ins), [{
-      if (auto linkageName = $_op.getLinkageNameAttr())
-        return dyn_cast<StringAttr>(linkageName);
+      if (auto lna = dyn_cast_if_present<LinkageNameAttr>($_op.getLinkageNameAttr()))
+        return dyn_cast_or_null<StringAttr>(lna.getName());
       return $_op.getSymNameAttr();
     }]>,
     InterfaceMethod<[{

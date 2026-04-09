@@ -407,6 +407,11 @@ def MemSymbolTripleAttr : DialectAttribute<(attr
   ConcreteOptionalAttribute<"UnitAttr">:$isMove
 )>;
 
+def LinkageNameAttr : DialectAttribute<(attr
+  TypedAttr:$name,
+  ConcreteAttribute<"BoolAttr">:$mangle
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -455,7 +460,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ClosureSymbolAttr,
     ClosureAttr,
     ClosureMethodAttr,
-    MemSymbolTripleAttr
+    MemSymbolTripleAttr,
+    LinkageNameAttr
   ];
 }
 

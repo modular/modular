@@ -580,7 +580,7 @@ ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
 Elaborator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
                                    TypedAttr symCst, bool sanitize) {
   return KGEN::getExpectedMangledName(errorLoc, errorContext, symCst, oldSymTab,
-                                      /*allowParametric=*/false, sanitize);
+                                      sanitize);
 }
 
 ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
@@ -1885,8 +1885,7 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
 
   SymbolConstantAttr symbol = extractSymbolConstantAttr(op.getFuncAttr());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      getExpectedMangledName(op.getLoc(), "compile_offload", symbol,
-                             /*sanitize=*/false);
+      getExpectedMangledName(op.getLoc(), "compile_offload", symbol);
   if (pairOrError.isError()) {
     return pairOrError.takeError();
   }

@@ -2331,7 +2331,7 @@ kgen.generator @test_data_to_str_concat_scalar_index() {
 
 // CHECK-LABEL: kgen.func export @my_static_export()
 // CHECK-NOT: linkageName
-kgen.generator export @static_export_test() attributes {linkageName = "my_static_export" : !kgen.string} {
+kgen.generator export @static_export_test() attributes {linkageName = #kgen.linkage_name<"my_static_export" : !kgen.string, false>} {
   kgen.return
 }
 
@@ -2339,7 +2339,7 @@ kgen.generator export @static_export_test() attributes {linkageName = "my_static
 
 // COM: get_linkage_name on a generator with a static linkageName.
 
-kgen.generator @static_ln_gen() attributes {linkageName = "my_export" : !kgen.string} {
+kgen.generator @static_ln_gen() attributes {linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>} {
   kgen.return
 }
 
@@ -2355,7 +2355,7 @@ kgen.generator export @test_get_static_linkage_name() {
 // COM: A call reference is updated when the callee generator has a linkage name.
 
 // CHECK-LABEL: kgen.func @callee_linkage()
-kgen.generator @"callee::mangled"() attributes {linkageName = "callee_linkage" : !kgen.string} {
+kgen.generator @"callee::mangled"() attributes {linkageName = #kgen.linkage_name<"callee_linkage" : !kgen.string, false>} {
   kgen.return
 }
 
@@ -2373,7 +2373,7 @@ kgen.generator @caller_of_linkage() {
 
 // CHECK-LABEL: kgen.func @"has-dashes"()
 // CHECK-NOT: linkageName
-kgen.generator @"non_c_export::ok"() attributes {linkageName = "has-dashes" : !kgen.string} {
+kgen.generator @"non_c_export::ok"() attributes {linkageName = #kgen.linkage_name<"has-dashes" : !kgen.string, false>} {
   kgen.return
 }
 
@@ -2384,6 +2384,6 @@ kgen.generator @"non_c_export::ok"() attributes {linkageName = "has-dashes" : !k
 
 // CHECK-LABEL: kgen.func export C @_leading_underscore_123()
 // CHECK-NOT: linkageName
-kgen.generator export C @"c_export::underscores"() attributes {linkageName = "_leading_underscore_123" : !kgen.string} {
+kgen.generator export C @"c_export::underscores"() attributes {linkageName = #kgen.linkage_name<"_leading_underscore_123" : !kgen.string, false>} {
   kgen.return
 }

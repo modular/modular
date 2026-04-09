@@ -118,7 +118,7 @@ kgen.generator export @top() {
 // CHECK: } loc([[LOC:#.*]])
 // CHECK-NEXT: } loc([[MODULE_LOC:#.*]])
 
-kgen.generator @"mangled::original_name"() attributes {linkageName = "my_export" : !kgen.string} {
+kgen.generator @"mangled::original_name"() attributes {linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>} {
   kgen.return loc(#export_loc)
 } loc(#export_loc)
 

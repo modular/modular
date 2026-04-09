@@ -235,7 +235,7 @@ protected:
   FailureOr<TypedAttr>
   concretizeLinkageNameImpl(FuncOp func, GeneratorOp gen,
                             SymbolConstantAttr symbol,
-                            ParameterEvaluationContext *evalCtx);
+                            ParameterEvaluationContext &evalCtx);
 
 private:
   MLIRContext *mlirCtx = nullptr;
