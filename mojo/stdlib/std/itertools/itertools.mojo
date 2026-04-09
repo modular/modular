@@ -1020,6 +1020,7 @@ def repeat[
 struct _TakeIterator[InnerIteratorType: Iterator](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
+    IterableOwned,
     Iterator,
 ):
     """Iterator that yields the first `n` elements from an inner iterator.
@@ -1032,6 +1033,7 @@ struct _TakeIterator[InnerIteratorType: Iterator](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
     var _remaining: Int
@@ -1063,6 +1065,10 @@ struct _TakeIterator[InnerIteratorType: Iterator](
         return self.copy()
 
     @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
         if self._remaining <= 0:
             raise StopIteration()
@@ -1071,11 +1077,12 @@ struct _TakeIterator[InnerIteratorType: Iterator](
         return value^
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = max(0, self._remaining)
         var lower, upper = self._inner.bounds()
-        lower = min(lower, self._remaining)
+        lower = min(lower, remaining)
         if upper:
-            return (lower, min(upper.value(), self._remaining))
-        return (lower, self._remaining)
+            return (lower, min(upper.value(), remaining))
+        return (lower, remaining)
 
 
 @always_inline
@@ -1113,6 +1120,29 @@ def take[
     return _TakeIterator(iter(iterable), count=count)
 
 
+@always_inline
+def take[
+    IterableType: IterableOwned, //
+](var iterable: IterableType, count: Int) -> _TakeIterator[
+    IterableType.IteratorOwnedType
+]:
+    """Creates an iterator that yields the first `count` elements, consuming
+    the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to consume and take elements from.
+        count: The maximum number of elements to yield.
+
+    Returns:
+        An iterator that yields at most `count` elements.
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    return _TakeIterator(iter(iterable^), count=count)
+
+
 # ===-----------------------------------------------------------------------===#
 # skip
 # ===-----------------------------------------------------------------------===#
@@ -1121,6 +1151,7 @@ def take[
 struct _SkipIterator[InnerIteratorType: Iterator](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
+    IterableOwned,
     Iterator,
 ):
     """Iterator that skips the first `n` elements and yields the rest.
@@ -1133,6 +1164,7 @@ struct _SkipIterator[InnerIteratorType: Iterator](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
     var _to_skip: Int
@@ -1164,20 +1196,28 @@ struct _SkipIterator[InnerIteratorType: Iterator](
         return self.copy()
 
     @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
         while self._to_skip > 0:
-            # Discard skipped elements.
+            # Discard skipped elements. If `next` raises, `_to_skip` is not
+            # decremented, leaving the iterator in a consistent exhausted
+            # state.
+            var elem = next(self._inner)
             _ = rebind_var[
                 downcast[Self.Element, Movable & ImplicitlyDestructible]
-            ](next(self._inner))
+            ](elem^)
             self._to_skip -= 1
         return next(self._inner)
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var to_skip = max(0, self._to_skip)
         var lower, upper = self._inner.bounds()
-        lower = max(0, lower - self._to_skip)
+        lower = max(0, lower - to_skip)
         if upper:
-            return (lower, max(0, upper.value() - self._to_skip))
+            return (lower, max(0, upper.value() - to_skip))
         return (lower, None)
 
 
@@ -1223,5 +1263,36 @@ def skip[
     # substituted through associated types right.
     return _SkipIterator(
         rebind_var[IterableType.IteratorType[origin]](iter(iterable)),
+        count=count,
+    )
+
+
+@always_inline
+def skip[
+    IterableType: IterableOwned, //
+](var iterable: IterableType, count: Int) -> _SkipIterator[
+    IterableType.IteratorOwnedType
+] where conforms_to(
+    IterableType.IteratorOwnedType.Element,
+    ImplicitlyDestructible,
+):
+    """Creates an iterator that skips the first `count` elements, consuming
+    the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to consume and skip elements from.
+        count: The number of elements to skip.
+
+    Returns:
+        An iterator that skips the first `count` elements.
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return _SkipIterator(
+        rebind_var[IterableType.IteratorOwnedType](iter(iterable^)),
         count=count,
     )

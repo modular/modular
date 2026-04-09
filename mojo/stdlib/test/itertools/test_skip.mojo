@@ -121,5 +121,35 @@ def test_skip_then_take_composition() raises:
     assert_equal(results[2], 4)
 
 
+def test_skip_bounds() raises:
+    """Tests bounds() on a skip iterator."""
+    var nums = [1, 2, 3, 4, 5]
+
+    # count less than iterable length
+    var it1 = skip(nums, 2)
+    var lower1, upper1 = it1.bounds()
+    assert_equal(lower1, 3)
+    assert_equal(upper1.value(), 3)
+
+    # count greater than iterable length
+    var it2 = skip(nums, 10)
+    var lower2, upper2 = it2.bounds()
+    assert_equal(lower2, 0)
+    assert_equal(upper2.value(), 0)
+
+    # count == 0
+    var it3 = skip(nums, 0)
+    var lower3, upper3 = it3.bounds()
+    assert_equal(lower3, 5)
+    assert_equal(upper3.value(), 5)
+
+    # empty iterable
+    var empty = List[Int]()
+    var it4 = skip(empty, 5)
+    var lower4, upper4 = it4.bounds()
+    assert_equal(lower4, 0)
+    assert_equal(upper4.value(), 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
