@@ -648,7 +648,8 @@ def smoke_test(
     if disable_timeouts:
         timeout = sys.maxsize
     elif is_huge_moe(model):
-        timeout = 1800
+        # TODO(GEX-3508): Reduce timeout once model build time is optimized
+        timeout = 2700
     else:
         timeout = 900
 
