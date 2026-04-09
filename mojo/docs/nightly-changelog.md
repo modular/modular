@@ -204,16 +204,16 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
-- Added `take()` and `skip()` iterator adapters to `std.itertools`.
+- Added `take()` and `drop()` iterator adapters to `std.itertools`.
   `take(iter, n)` yields the first `n` elements, and
-  `skip(iter, n)` skips the first `n` elements. They compose
+  `drop(iter, n)` drops the first `n` elements. They compose
   naturally to select sub-ranges of any iterable:
 
   ```mojo
-  from std.itertools import take, skip
+  from std.itertools import take, drop
 
   var nums = [1, 2, 3, 4, 5]
-  for x in take(skip(nums, 1), 3):
+  for x in take(drop(nums, 1), 3):
       print(x)  # 2, 3, 4
   ```
 

@@ -19,7 +19,7 @@ This module includes functions for creating specialized iterators:
 - `drop_while()` - Drops elements while predicate is true, then yields the rest
 - `product()` - Computes the Cartesian product of two, three, or four iterables
 - `repeat()` - Repeats an element a specified number of times
-- `skip()` - Skips the first n elements and yields the rest
+- `drop()` - Drops the first n elements and yields the rest
 - `take()` - Yields the first n elements
 - `take_while()` - Yields elements while predicate is true
 
@@ -1144,17 +1144,17 @@ def take[
 
 
 # ===-----------------------------------------------------------------------===#
-# skip
+# drop
 # ===-----------------------------------------------------------------------===#
 
 
-struct _SkipIterator[InnerIteratorType: Iterator](
+struct _DropIterator[InnerIteratorType: Iterator](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
     IterableOwned,
     Iterator,
 ):
-    """Iterator that skips the first `n` elements and yields the rest.
+    """Iterator that drops the first `n` elements and yields the rest.
 
     Parameters:
         InnerIteratorType: The type of the inner iterator.
@@ -1167,17 +1167,17 @@ struct _SkipIterator[InnerIteratorType: Iterator](
     comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
-    var _to_skip: Int
+    var _to_drop: Int
 
     def __init__(out self, var inner: Self.InnerIteratorType, *, count: Int):
-        """Creates a skip iterator.
+        """Creates a drop iterator.
 
         Args:
             inner: The inner iterator to wrap.
-            count: The number of elements to skip.
+            count: The number of elements to drop.
         """
         self._inner = inner^
-        self._to_skip = count
+        self._to_drop = count
 
     def __init__(
         out self, *, copy: Self
@@ -1185,7 +1185,7 @@ struct _SkipIterator[InnerIteratorType: Iterator](
         self._inner = rebind_var[Self.InnerIteratorType](
             trait_downcast[Copyable](copy._inner).copy()
         )
-        self._to_skip = copy._to_skip
+        self._to_drop = copy._to_drop
 
     @always_inline
     def __iter__(
@@ -1201,38 +1201,38 @@ struct _SkipIterator[InnerIteratorType: Iterator](
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
-        while self._to_skip > 0:
-            # Discard skipped elements. If `next` raises, `_to_skip` is not
+        while self._to_drop > 0:
+            # Discard dropped elements. If `next` raises, `_to_drop` is not
             # decremented, leaving the iterator in a consistent exhausted
             # state.
             var elem = next(self._inner)
             _ = rebind_var[
                 downcast[Self.Element, Movable & ImplicitlyDestructible]
             ](elem^)
-            self._to_skip -= 1
+            self._to_drop -= 1
         return next(self._inner)
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var to_skip = max(0, self._to_skip)
+        var to_drop = max(0, self._to_drop)
         var lower, upper = self._inner.bounds()
-        lower = max(0, lower - to_skip)
+        lower = max(0, lower - to_drop)
         if upper:
-            return (lower, max(0, upper.value() - to_skip))
+            return (lower, max(0, upper.value() - to_drop))
         return (lower, None)
 
 
 @always_inline
-def skip[
+def drop[
     origin: ImmutOrigin,
     IterableType: Iterable,
     //,
-](ref[origin] iterable: IterableType, count: Int) -> _SkipIterator[
+](ref[origin] iterable: IterableType, count: Int) -> _DropIterator[
     IterableType.IteratorType[origin]
 ] where conforms_to(
     IterableType.IteratorType[origin].Element,
     ImplicitlyDestructible,
 ):
-    """Creates an iterator that skips the first `count` elements.
+    """Creates an iterator that drops the first `count` elements.
 
     This function returns an iterator that drops the first `count` elements
     from the input iterable, then yields all remaining elements.
@@ -1242,57 +1242,57 @@ def skip[
         IterableType: The type of the iterable.
 
     Args:
-        iterable: The iterable to skip elements from.
-        count: The number of elements to skip.
+        iterable: The iterable to drop elements from.
+        count: The number of elements to drop.
 
     Returns:
-        An iterator that skips the first `count` elements.
+        An iterator that drops the first `count` elements.
 
     Examples:
 
     ```mojo
-    from std.itertools import skip
+    from std.itertools import drop
 
     var nums = [1, 2, 3, 4, 5]
-    for num in skip(nums, 2):
+    for num in drop(nums, 2):
         print(num)  # Prints: 3, 4, 5
     ```
     """
     assert count >= 0, "The `count` argument must be non-negative"
     # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
     # substituted through associated types right.
-    return _SkipIterator(
+    return _DropIterator(
         rebind_var[IterableType.IteratorType[origin]](iter(iterable)),
         count=count,
     )
 
 
 @always_inline
-def skip[
+def drop[
     IterableType: IterableOwned, //
-](var iterable: IterableType, count: Int) -> _SkipIterator[
+](var iterable: IterableType, count: Int) -> _DropIterator[
     IterableType.IteratorOwnedType
 ] where conforms_to(
     IterableType.IteratorOwnedType.Element,
     ImplicitlyDestructible,
 ):
-    """Creates an iterator that skips the first `count` elements, consuming
+    """Creates an iterator that drops the first `count` elements, consuming
     the iterable.
 
     Parameters:
         IterableType: The type of the iterable.
 
     Args:
-        iterable: The iterable to consume and skip elements from.
-        count: The number of elements to skip.
+        iterable: The iterable to consume and drop elements from.
+        count: The number of elements to drop.
 
     Returns:
-        An iterator that skips the first `count` elements.
+        An iterator that drops the first `count` elements.
     """
     assert count >= 0, "The `count` argument must be non-negative"
     # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
     # substituted through associated types right.
-    return _SkipIterator(
+    return _DropIterator(
         rebind_var[IterableType.IteratorOwnedType](iter(iterable^)),
         count=count,
     )

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.itertools import skip
+from std.itertools import drop
 from std.testing import (
     TestSuite,
     assert_equal,
@@ -19,10 +19,10 @@ from std.testing import (
 )
 
 
-def test_skip_basic() raises:
-    """Tests basic skip behavior."""
+def test_drop_basic() raises:
+    """Tests basic drop behavior."""
     var nums = [1, 2, 3, 4, 5]
-    var it = skip(nums, 2)
+    var it = drop(nums, 2)
 
     assert_equal(next(it), 3)
     assert_equal(next(it), 4)
@@ -31,19 +31,19 @@ def test_skip_basic() raises:
         _ = next(it)
 
 
-def test_skip_more_than_available() raises:
-    """Tests skip when count exceeds iterable length."""
+def test_drop_more_than_available() raises:
+    """Tests drop when count exceeds iterable length."""
     var nums = [1, 2, 3]
-    var it = skip(nums, 10)
+    var it = drop(nums, 10)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)
 
 
-def test_skip_zero() raises:
-    """Tests skip with count=0 yields all elements."""
+def test_drop_zero() raises:
+    """Tests drop with count=0 yields all elements."""
     var nums = [1, 2, 3]
-    var it = skip(nums, 0)
+    var it = drop(nums, 0)
 
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
@@ -52,40 +52,40 @@ def test_skip_zero() raises:
         _ = next(it)
 
 
-def test_skip_empty() raises:
-    """Tests skip on an empty iterable."""
+def test_drop_empty() raises:
+    """Tests drop on an empty iterable."""
     var empty = List[Int]()
-    var it = skip(empty, 5)
+    var it = drop(empty, 5)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)
 
 
-def test_skip_all() raises:
-    """Tests skip with count equal to iterable length."""
+def test_drop_all() raises:
+    """Tests drop with count equal to iterable length."""
     var nums = [10, 20, 30]
-    var it = skip(nums, 3)
+    var it = drop(nums, 3)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)
 
 
-def test_skip_single() raises:
-    """Tests skip with count=1."""
+def test_drop_single() raises:
+    """Tests drop with count=1."""
     var nums = [42, 99]
-    var it = skip(nums, 1)
+    var it = drop(nums, 1)
 
     assert_equal(next(it), 99)
     with assert_raises(contains="StopIteration"):
         _ = next(it)
 
 
-def test_skip_in_for_loop() raises:
-    """Tests skip iterator in a for loop."""
+def test_drop_in_for_loop() raises:
+    """Tests drop iterator in a for loop."""
     var nums = [1, 2, 3, 4, 5]
     var results = List[Int]()
 
-    for num in skip(nums, 2):
+    for num in drop(nums, 2):
         results.append(num)
 
     assert_equal(len(results), 3)
@@ -94,9 +94,9 @@ def test_skip_in_for_loop() raises:
     assert_equal(results[2], 5)
 
 
-def test_skip_from_range() raises:
-    """Tests skip on a range."""
-    var it = skip(range(5), 3)
+def test_drop_from_range() raises:
+    """Tests drop on a range."""
+    var it = drop(range(5), 3)
 
     assert_equal(next(it), 3)
     assert_equal(next(it), 4)
@@ -104,15 +104,15 @@ def test_skip_from_range() raises:
         _ = next(it)
 
 
-def test_skip_then_take_composition() raises:
-    """Tests composing skip and take to select a middle slice."""
+def test_drop_then_take_composition() raises:
+    """Tests composing drop and take to select a middle slice."""
     from std.itertools import take
 
     var nums = [1, 2, 3, 4, 5, 6, 7]
     var results = List[Int]()
 
-    # skip(1).take(3) equivalent: elements at indices 1, 2, 3
-    for num in take(skip(nums, 1), 3):
+    # drop(1).take(3) equivalent: elements at indices 1, 2, 3
+    for num in take(drop(nums, 1), 3):
         results.append(num)
 
     assert_equal(len(results), 3)
@@ -121,31 +121,31 @@ def test_skip_then_take_composition() raises:
     assert_equal(results[2], 4)
 
 
-def test_skip_bounds() raises:
-    """Tests bounds() on a skip iterator."""
+def test_drop_bounds() raises:
+    """Tests bounds() on a drop iterator."""
     var nums = [1, 2, 3, 4, 5]
 
     # count less than iterable length
-    var it1 = skip(nums, 2)
+    var it1 = drop(nums, 2)
     var lower1, upper1 = it1.bounds()
     assert_equal(lower1, 3)
     assert_equal(upper1.value(), 3)
 
     # count greater than iterable length
-    var it2 = skip(nums, 10)
+    var it2 = drop(nums, 10)
     var lower2, upper2 = it2.bounds()
     assert_equal(lower2, 0)
     assert_equal(upper2.value(), 0)
 
     # count == 0
-    var it3 = skip(nums, 0)
+    var it3 = drop(nums, 0)
     var lower3, upper3 = it3.bounds()
     assert_equal(lower3, 5)
     assert_equal(upper3.value(), 5)
 
     # empty iterable
     var empty = List[Int]()
-    var it4 = skip(empty, 5)
+    var it4 = drop(empty, 5)
     var lower4, upper4 = it4.bounds()
     assert_equal(lower4, 0)
     assert_equal(upper4.value(), 0)
