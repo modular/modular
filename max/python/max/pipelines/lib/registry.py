@@ -801,7 +801,7 @@ class PipelineRegistry:
             pixel_factory_kwargs: dict[str, Any] = {
                 "pipeline_config": pipeline_config,
                 "pipeline_model": arch.pipeline_model,
-                "cache_config": pipeline_config.cache,
+                "cache_config": pipeline_config.runtime.denoising_cache,
             }
 
             pipeline_factory = cast(

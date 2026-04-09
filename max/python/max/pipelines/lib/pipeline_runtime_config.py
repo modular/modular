@@ -22,6 +22,7 @@ from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, PrivateAttr
 
 from .config.config_enums import PipelineRole
+from .interfaces.cache_mixin import DenoisingCacheConfig
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
@@ -255,6 +256,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Each entry stores the vision encoder output for one image, "
             "avoiding re-encoding across chunks and requests. Set to 0 to "
             "disable caching. Only used by VLMs."
+        ),
+    )
+
+    denoising_cache: DenoisingCacheConfig = Field(
+        default_factory=DenoisingCacheConfig,
+        description=(
+            "Cache configuration for diffusion model denoising "
+            "(FBCache, TaylorSeer, TeaCache)."
         ),
     )
 

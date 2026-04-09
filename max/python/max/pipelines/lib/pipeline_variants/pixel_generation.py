@@ -105,7 +105,8 @@ class PixelGenerationPipeline(
                 session=session,
                 devices=self._devices,
                 weight_paths=[],
-                cache_config=cache_config or DenoisingCacheConfig(),
+                cache_config=cache_config
+                or pipeline_config.runtime.denoising_cache,
             )
 
     @property
