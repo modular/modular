@@ -50,4 +50,13 @@ RuntimeRef getOrCreateRuntime(RuntimeSource source,
   return newRuntime.copy();
 }
 
+RuntimeOptions getDefaultOrExistingRuntimeOptions() {
+  std::lock_guard<std::mutex> lock(AsyncRT::getGlobalRuntimeMutex());
+  if (AsyncRT::getGlobalRuntimePointer()) {
+    return getStoredGlobalRuntimeCreationOptions();
+  }
+
+  return AsyncRT::RuntimeOptions();
+}
+
 } // namespace M::AsyncRT
