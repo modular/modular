@@ -128,7 +128,7 @@ The rest of the `execute()` signature describes the custom op's graph node to
 the graph compiler: the parameters, inputs, and outputs. The `execute()`
 function must include `target` as the first compile-time parameter and `output`
 as the first runtime argument; the graph compiler uses this order to identify
-the op's hardware target and output slots.
+the op's hardware target and output slots:
 
 - There's one [compile-time
 parameter](/mojo/manual/parameters/#parameterized-functions), `target`, which
