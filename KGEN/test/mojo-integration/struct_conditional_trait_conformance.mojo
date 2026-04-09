@@ -953,7 +953,7 @@ def test_metatype_upcast_with_scope():
 
 def apply_copyable_fn[
     T: Copyable & ImplicitlyDestructible & Movable
-](f: def(SimpleWrapper[T]) -> None, x: SimpleWrapper[T]):
+](f: def(SimpleWrapper[T]) thin -> None, x: SimpleWrapper[T]):
     f(x)
 
 

@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 # expected-note @+1 {{function declared here}}
-def bind_fat_to_thin_target[g: def (y: Int) -> Int](x: Int):
+def bind_fat_to_thin_target[g: def (y: Int) thin -> Int](x: Int):
     pass
 
 

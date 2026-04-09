@@ -9,5 +9,5 @@ def inner[T: AnyType](y: T):
     pass
 
 
-def foo() -> def(Int) -> None:
+def foo() -> def(Int) thin -> None:
     return inner[Int]

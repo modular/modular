@@ -33,7 +33,7 @@ def test_fn():
     _ = bar()
 
     # CHECK: kgen.create_closure{{.*}}@"def(::Int, /) -> None|def(x: ::Int) -> None|{{.*}}[def(x: ::Int) -> None](::Int)"
-    var f: def(Int) -> None = thunk[Int]
+    var f: def(Int) thin -> None = thunk[Int]
 
 
 # Checking for 'postParseModule' ensures it was loaded from bytecode.

@@ -16,7 +16,7 @@ def print_second_string(first: String, second: String) -> None:
 
 def main():
     var optional_func: Optional[
-        def(flags: String, args: String) -> None
+        def(flags: String, args: String) thin -> None
     ] = print_second_string
     # CHECK: Received second
     optional_func.value()("first", "second")

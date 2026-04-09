@@ -13,7 +13,7 @@
 from test_std_mock import stable_fn, unstable_fn
 
 
-def takes_fn_ref(f: def() -> None):
+def takes_fn_ref(f: def() thin -> None):
     """Helper function that takes a function reference."""
     f()
 

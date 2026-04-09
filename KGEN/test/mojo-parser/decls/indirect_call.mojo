@@ -14,9 +14,9 @@ def mrvalue_indirect_callee():
     # CHECK-NEXT: call {{.*}}return_function{{.*}}([[RESULT]])
     # CHECK-NEXT: [[CALLEE:%.*]] = lit.load.consume [[RESULT]]
     # CHECK-NEXT: lit.call_indirect tail [[CALLEE]]()
-    return_function[def() -> None]()()
+    return_function[def() thin -> None]()()
 
-def indirect_callee() raises -> def()->None:
+def indirect_callee() raises -> def() thin -> None:
     pass
 
 # CHECK-LABEL: lit.fn @"call_it

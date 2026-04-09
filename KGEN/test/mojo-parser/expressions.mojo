@@ -167,7 +167,7 @@ def direct_call_init():
 
 struct DummyFunc:
     @implicit
-    def __init__(out self, f: def(Int) raises):
+    def __init__(out self, f: def(Int) thin raises):
         pass
 
 def func_arg_conversion(f: DummyFunc): pass
@@ -208,7 +208,7 @@ struct RegPassable(ImplicitlyCopyable, RegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
 # CHECK-SAME: <"T": !TrivialRegisterPassable>(!kgen.param<:!TrivialRegisterPassable *(0,0)>, |)
-struct StructWithFuncParam[comparator: def[T: TrivialRegisterPassable] (T) -> None]:
+struct StructWithFuncParam[comparator: def[T: TrivialRegisterPassable] (T) thin -> None]:
     # CHECK-LABEL: lit.fn @"f
     # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": !TrivialRegisterPassable>(!kgen.param<:!TrivialRegisterPassable *(0,0)>
     def f(self):
@@ -603,13 +603,13 @@ def test_param_if_cond[cond: Bool]() -> Int:
 
 # CHECK-LABEL: lit.fn @"callable_mv[def(::Int, /) -> ::Int](::Int)"
 # CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
-def callable_mv[callable: def (Int) -> Int](a: Int) -> Int:
+def callable_mv[callable: def (Int) thin -> Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.fn @"callable_mv_inputs{{.*}})"<
 # CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
-def callable_mv_inputs[callable: def[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
+def callable_mv_inputs[callable: def[x: Int](Int) thin -> Int, b: Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: bind_params({{.*}}callable, :!Int b)](%a)
   return callable[b](a)
 
@@ -629,7 +629,7 @@ def returnIndex2() -> Int:
 
 # CHECK-LABEL: lit.fn @"callInParam[def[::Int](::Int, /) -> ::Int]()"
 # CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
-def callInParam[callable: def[x: Int](Int) -> Int]() -> Int:
+def callInParam[callable: def[x: Int](Int) thin -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {1}), {1})>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
@@ -999,31 +999,31 @@ struct ParamType[a: Int](TrivialRegisterPassable): pass
 # CHECK-LABEL: lit.fn @"function_types
 def function_types[
   # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!lit.struct<#ParamType <:!Int *(0,0)>{{.*}}>, |) -> !kgen.none
-  p0: def[a: Int](ParamType[a]) -> None,
+  p0: def[a: Int](ParamType[a]) thin -> None,
 
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
-  p1: def[a: Int, b: ParamType[a]]() raises -> None,
+  p1: def[a: Int, b: ParamType[a]]() thin raises -> None,
 
   # CHECK-SAME: p2: {{.*}}"Ts": param_list<!AnyType> pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *(0,1){{.*}}, :!lit.anytrait<!AnyType> !AnyType, :!Bool {:i1 0}, :param_list<!AnyType> *(0,0)>>, imm *[0,0]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
-  p2: async def[*Ts: AnyType](* *Ts) -> None,
+  p2: async def[*Ts: AnyType](* *Ts) thin -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
-  float0: def(Int) -> Int,
+  float0: def(Int) thin -> Int,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, imm {{.*}}> read_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
-  float1: def(MemoryType) -> MemoryType,
+  float1: def(MemoryType) thin -> MemoryType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
-  float2: def(var RegType) -> RegType,
+  float2: def(var RegType) thin -> RegType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none
-  float3: def(var MemoryType) -> None,
+  float3: def(var MemoryType) thin -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> mut, |) -> !kgen.none
-  float4: def(mut Int) -> None,
+  float4: def(mut Int) thin -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
-  float5: def(Int) raises -> None,
+  float5: def(Int) thin raises -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   float6: async def(Int) capturing -> None,
@@ -1034,10 +1034,10 @@ def function_types[
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>
-  float12: def(Int = 10, StaticString = "foo") -> None,
+  float12: def(Int = 10, StaticString = "foo") thin -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !Int>
-  named: def(x: MemoryType) -> Int
+  named: def(x: MemoryType) thin -> Int
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
@@ -1045,9 +1045,9 @@ def function_types[
 # CHECK-NEXT:    lit.alias.decl *"B{{.*}}": non_struct_type = <!lit.generator<("foo": !kgen.param<:non_struct_type sugar_member_alias(!Mem, "x", i8)>) -> !kgen.none>>
 struct Mem:
    comptime x = __mlir_type.i8
-   comptime B = def (foo: Self.x) -> None
+   comptime B = def (foo: Self.x) thin -> None
 
-comptime def_type_alias = def() -> None
+comptime def_type_alias = def() thin -> None
 
 @always_inline
 def func_with_decorator(): pass
