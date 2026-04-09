@@ -15,8 +15,16 @@
 
 from __future__ import annotations
 
-from max.engine import InferenceSession
+import logging
+import time
+from typing import Any
+
+from max._core.profiler import Trace, is_profiling_enabled
+from max.engine import InferenceSession, Model
+from max.graph import Graph
 from max.pipelines.lib.model_manifest import ModelManifest
+
+logger = logging.getLogger("max.pipelines")
 
 
 class CompiledComponent:
@@ -43,3 +51,22 @@ class CompiledComponent:
     ) -> None:
         self._manifest = manifest
         self._session = session
+
+    def _load_graph(self, graph: Graph, **kwargs: Any) -> Model:
+        """Compile a graph via the session, traced under ``max.profiler``.
+
+        Wraps ``session.load()`` in a profiling span named
+        ``<ClassName>.compile`` so graph compilation time is visible
+        in ``max.profiler`` traces.
+        """
+        name = type(self).__name__
+        logger.info("Compiling %s graph...", name)
+        t0 = time.perf_counter()
+        if is_profiling_enabled():
+            with Trace(f"{name}.compile"):
+                model = self._session.load(graph, **kwargs)
+        else:
+            model = self._session.load(graph, **kwargs)
+        elapsed = time.perf_counter() - t0
+        logger.info("Compiled %s graph in %.2fs", name, elapsed)
+        return model

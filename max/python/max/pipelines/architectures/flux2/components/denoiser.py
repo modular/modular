@@ -222,7 +222,7 @@ class Denoiser(CompiledComponent):
             outputs = fused(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._session.load(
+        self._model = self._load_graph(
             graph, weights_registry=fused.state_dict()
         )
 

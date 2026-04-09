@@ -32,6 +32,7 @@ import base64
 import gc
 import io
 import json
+import logging
 import os
 import random
 import shutil
@@ -1152,6 +1153,10 @@ def _print_per_iteration(
 
 
 def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s: %(message)s",
+    )
     args = parse_args(argv)
 
     # Resolve seed: generate a random one if not explicitly provided.

@@ -75,7 +75,7 @@ class TextEncoder(CompiledComponent):
             outputs = module(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._session.load(
+        self._model = self._load_graph(
             graph, weights_registry=module.state_dict()
         )
 
