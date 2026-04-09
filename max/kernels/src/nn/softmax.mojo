@@ -1671,8 +1671,8 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     score_layout_by_mma_unit: Layout,
     block_layout_by_warp: Layout,
     warp_layout: Layout,
-    WM: UInt,
-    WN: UInt,
+    WM: Int,
+    WN: Int,
     /,
     use_exp2: Bool = False,
 ](
@@ -1710,7 +1710,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     #     num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
     # ](0, 0).vectorize[1, p_frag_size // 2]()
     comptime frag_size = output_reg_tile.element_layout.size()
-    comptime assert WM * WN == UInt(
+    comptime assert WM * WN == (
         (2 * frag_size) * WARP_SIZE * num_m_mmas * num_n_mmas
     )
     # alias num_m_mmas = WM // MMA_M
@@ -1755,7 +1755,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     #    constant when writing, and iterate across it when reducing.
     # 3-4. ((WM*WN)//frag_size) x frag_size: the two trailing dimensions of
     #    output_reg_tile
-    comptime warp_tile_size = Int(WM * WN)  # ((WM*WN)//frag_size) x frag_size
+    comptime warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
     comptime row_warp_tile_size = (num_warps_n - 1) * warp_tile_size
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
     var o_smem_ptr = (
@@ -1768,7 +1768,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
 
     comptime o_smem_layout = Layout.row_major(
-        Int(WM * WN // UInt(2 * frag_size)), frag_size
+        WM * WN // (2 * frag_size), frag_size
     )
 
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete

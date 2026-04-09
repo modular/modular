@@ -691,7 +691,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         ](kv_pipeline, kv_content_smem)
         var elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.q_row_offset)
+        var row: Int = offset_position.q_row_offset
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
@@ -740,16 +740,12 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var q_nope_tensor = _smem_tt[Self.fp8_type, q_nope_elems](
                 q_nope_smem, tt_row_major[q_nope_elems]()
             )
-            q_nope_tma.async_copy(
-                q_nope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
-            )
+            q_nope_tma.async_copy(q_nope_tensor, mbar_q[], (0, row))
             # Q_rope TMA: load BF16 rope Q into q_rope_smem
             var q_rope_tensor = _smem_tt[Self.bf16_type, q_rope_elems](
                 q_rope_smem, tt_row_major[q_rope_elems]()
             )
-            q_rope_tma.async_copy(
-                q_rope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
-            )
+            q_rope_tma.async_copy(q_rope_tensor, mbar_q[], (0, row))
 
         # Load first KV tile: content + rope + scales on the same barrier.
         # All three TMA copies share one expect_bytes call, so the mbar

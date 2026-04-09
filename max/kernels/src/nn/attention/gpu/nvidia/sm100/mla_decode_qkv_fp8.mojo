@@ -511,7 +511,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         )
         var elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.q_row_offset)
+        var row: Int = offset_position.q_row_offset
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
@@ -539,7 +539,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
             ](q_smem.bitcast[Scalar[Self.kv_type]](), q_tt_layout)
-            q_tma.async_copy(q_smem_tensor, mbar_q[], (Int(UInt(0)), Int(row)))
+            q_tma.async_copy(q_smem_tensor, mbar_q[], (0, row))
 
         # Load first KV tile (FP8)
         var k0_bar: MBarType = kv_prod.producer_mbar[qk_stage=0]()
@@ -553,7 +553,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             )
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             Self.Common_MLA_Op.load_kv(
-                k_tma, stage_ptr, k0_bar, UInt(0), UInt(kv_gmem_row)
+                k_tma, stage_ptr, k0_bar, 0, Int(kv_gmem_row)
             )
         kv_prod.commit_step()
         kv_row += UInt32(Self.config.BN)
@@ -581,7 +581,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                     )
                 )
                 Self.Common_MLA_Op.load_kv(
-                    k_tma, stage_ptr, k_mbar, UInt(0), UInt(kv_gmem_row)
+                    k_tma, stage_ptr, k_mbar, 0, Int(kv_gmem_row)
                 )
 
             kv_row += UInt32(Self.config.BN)

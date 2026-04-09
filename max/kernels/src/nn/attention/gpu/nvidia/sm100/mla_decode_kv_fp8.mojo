@@ -643,7 +643,7 @@ struct MLA_SM100_Decode_KV_FP8[
         )
         var elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.q_row_offset)
+        var row: Int = offset_position.q_row_offset
         # Start KV from kv_start_row for split-K support
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         # Clamp kv_row to prevent OOB lookup_table access on the last tile.
@@ -661,7 +661,7 @@ struct MLA_SM100_Decode_KV_FP8[
                     * size_of[Self.q_type]()
                 )
             )
-            Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, UInt(0), row)
+            Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, 0, row)
 
         var k0_bar: MBarType = kv_load_prod.producer_mbar[qk_stage=0]()
 
@@ -675,7 +675,7 @@ struct MLA_SM100_Decode_KV_FP8[
             )
             var stage_ptr = kv_load_prod.stage_base_ptr[qk_stage=0]()
             Self.Common_MLA_Op.load_kv(
-                k_tma_fp8, stage_ptr, k0_bar, UInt(0), UInt(kv_gmem_row)
+                k_tma_fp8, stage_ptr, k0_bar, 0, Int(kv_gmem_row)
             )
 
         # Load blockwise scales for tile 0 (all warp 8 threads load scales
@@ -725,7 +725,7 @@ struct MLA_SM100_Decode_KV_FP8[
                     )
                 )
                 Self.Common_MLA_Op.load_kv(
-                    k_tma_fp8, stage_ptr, k_mbar, UInt(0), UInt(kv_gmem_row)
+                    k_tma_fp8, stage_ptr, k_mbar, 0, Int(kv_gmem_row)
                 )
 
             # Load blockwise scales for this tile (all warp 8 threads).
