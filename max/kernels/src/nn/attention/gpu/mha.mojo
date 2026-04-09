@@ -20,6 +20,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -734,8 +735,13 @@ def flash_attention_dispatch[
         elif q_half_float_or_fp32 and is_token_generation:
             comptime if depth <= 512:
                 comptime BM = 16
-                comptime BN = depth if has_nvidia_gpu_accelerator() else (
-                    min(depth, 256)
+                # RDNA at depth=512 needs BN=128 to satisfy the softmax
+                # constraint num_output_replications % num_warps_n == 0.
+                comptime amd_bn_cap = 128 if (
+                    has_amd_rdna_gpu_accelerator() and depth == 512
+                ) else 256
+                comptime BN = depth if has_nvidia_gpu_accelerator() else min(
+                    depth, amd_bn_cap
                 )
                 comptime BK = 32 if has_amd_gpu_accelerator() else (
                     16 if q.dtype == DType.float32 else 32
