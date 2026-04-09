@@ -3467,6 +3467,12 @@ def moe_router_group_limited(
     routed_scaling_factor: float,
 ) -> tuple[TensorValue, TensorValue]:
     """Group limited MoE router.
+    When `n_groups > 1`, selects up to `topk_group` expert groups, then
+    picks ``n_experts_per_tok`` experts within those groups (DeepSeek-V3 style).
+    When ``n_groups == 1``, there is only one group, so group selection is
+    skipped and routing uses the dedicated GPU single-group path
+    (``mo.moe.single.group.router``, implemented as ``single_group_router`` in
+    Mojo). In that case ``topk_group`` is not used by the kernel.
 
     Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566.
 
@@ -3481,8 +3487,11 @@ def moe_router_group_limited(
             n_routed_experts.
         topk_group: The maximum number of expert groups that a token will be
             routed to.
-        norm_weights: Whether to normalize the selected expert weights.
-        routed_scaling_factor: The scaling factor for the routed expert weights.
+        norm_weights: Whether to normalize the selected expert weights when
+            n_groups > 1. When n_groups == 1, normalization is currently
+            always enabled (norm_weights is treated as True) so behavior
+            matches the previous graph path that always divided weights by their
+            sum per token.
 
     Returns:
         A tuple of two tensors:
@@ -3491,13 +3500,6 @@ def moe_router_group_limited(
         - expert_weights: The weights of the routed experts for each token.
             Shape: [num_tokens, n_experts_per_tok].
     """
-    parameters: dict[str, int | str | DType | bool] = {
-        "n_routed_experts": n_routed_experts,
-        "n_experts_per_tok": n_experts_per_tok,
-        "n_groups": n_groups,
-        "topk_group": topk_group,
-        "norm_weights": norm_weights,
-    }
 
     if expert_bias.rank != 1:
         raise ValueError(
@@ -3508,8 +3510,25 @@ def moe_router_group_limited(
             f"expected expert_bias of shape [num_experts] but got {expert_bias.shape}"
         )
 
+    if n_groups == 1:
+        parameters: dict[str, int | str | DType | bool] = {
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "norm_weights": norm_weights,
+        }
+        op_name = "mo.moe.single.group.router"
+    else:
+        parameters = {
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "n_groups": n_groups,
+            "topk_group": topk_group,
+            "norm_weights": norm_weights,
+        }
+        op_name = "mo.moe.router.group.limited"
+
     results = ops.custom(
-        "mo.moe.router.group.limited",
+        op_name,
         device=expert_scores.device,
         values=[
             expert_scores,
