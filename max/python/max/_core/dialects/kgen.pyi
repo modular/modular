@@ -838,6 +838,34 @@ class LinkDependencyArrayAttr(max._core.Attribute):
         self,
     ) -> Sequence[max._core.dialects.builtin.FlatSymbolRefAttr]: ...
 
+class LinkageNameAttr(max._core.Attribute):
+    """
+    Holds a name expression (string literal or DataToStr) and a boolean `mangle`
+    flag. The flag is stored but not yet acted upon — both `mangle=true` and
+    `mangle=false` currently use the prefix verbatim as the symbol name
+    (with PTX sanitization applied on top for GPU targets).
+
+    Intended future semantics: when `mangle=true`, the final symbol name will be
+    derived from the prefix and a hash of the auto-mangled parameter values,
+    guaranteeing uniqueness across instantiations while remaining human-readable
+    (e.g. `my_kernel_a3f2c1b0`).
+    """
+
+    @overload
+    def __init__(
+        self, name: max._core.dialects.builtin.TypedAttr, mangle: bool
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.TypedAttr,
+        mangle: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def mangle(self) -> max._core.dialects.builtin.BoolAttr: ...
+
 class MLIROpAttr(max._core.Attribute):
     """
     The `#kgen.param.mlir_op` attribute represents an MLIR operation as a
@@ -2902,7 +2930,7 @@ class FuncOp(max._core.Operation):
         _llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr,
         cross_device_captures: max._core.dialects.m.StringArrayAttr,
         coroutine_type: max._core.dialects.builtin.TypeAttr,
-        linkage_name: max._core.dialects.builtin.TypedAttr,
+        linkage_name: LinkageNameAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2915,7 +2943,7 @@ class FuncOp(max._core.Operation):
         export_kind: ExportKind = ExportKind.not_exported,
         external: bool = False,
         convergent: bool = False,
-        linkage_name: max._core.dialects.builtin.TypedAttr = ...,
+        linkage_name: LinkageNameAttr = ...,
         decorators: Sequence[max._core.dialects.builtin.TypedAttr] = [],
         llvm_metadata: max._core.dialects.builtin.DictionaryAttr = ...,
         llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr = ...,
@@ -2981,11 +3009,9 @@ class FuncOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
     @property
-    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    def linkage_name(self) -> LinkageNameAttr | None: ...
     @linkage_name.setter
-    def linkage_name(
-        self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> None: ...
+    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
 
 class GeneratorOp(max._core.Operation):
     """
@@ -3023,7 +3049,7 @@ class GeneratorOp(max._core.Operation):
         export_kind: ExportKindAttr,
         external: max._core.dialects.builtin.UnitAttr,
         inlined_form: max._core.dialects.builtin.TypedAttr,
-        linkage_name: max._core.dialects.builtin.TypedAttr,
+        linkage_name: LinkageNameAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
@@ -3039,7 +3065,7 @@ class GeneratorOp(max._core.Operation):
         input_params: Sequence[ParamDeclAttr],
         inline_level: InlineLevel = InlineLevel.automatic,
         inlined_form: max._core.dialects.builtin.TypedAttr = ...,
-        linkage_name_attr: max._core.dialects.builtin.TypedAttr = ...,
+        linkage_name_attr: LinkageNameAttr = ...,
         llvm_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
         llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
     ) -> None: ...
@@ -3102,11 +3128,9 @@ class GeneratorOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.TypedAttr, /
     ) -> None: ...
     @property
-    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    def linkage_name(self) -> LinkageNameAttr | None: ...
     @linkage_name.setter
-    def linkage_name(
-        self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> None: ...
+    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
     @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
@@ -3449,7 +3473,7 @@ class ParamDeclareRegionOp(max._core.Operation):
         function_type: max._core.dialects.builtin.TypeAttr,
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
-        linkage_name: max._core.dialects.builtin.TypedAttr,
+        linkage_name: LinkageNameAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         isolated: max._core.dialects.builtin.UnitAttr,
@@ -3485,11 +3509,9 @@ class ParamDeclareRegionOp(max._core.Operation):
     @inline_level.setter
     def inline_level(self, arg: InlineLevelAttr, /) -> None: ...
     @property
-    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    def linkage_name(self) -> LinkageNameAttr | None: ...
     @linkage_name.setter
-    def linkage_name(
-        self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> None: ...
+    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
     @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
