@@ -19,6 +19,10 @@ namespace M::AsyncRT {
 MODULAR_CXX_EXPORT RuntimeRef getOrCreateRuntime(
     RuntimeSource source, const RuntimeOptions &options = RuntimeOptions());
 
+/// If the global AsyncRT runtime has already been created, return the options
+/// that it was created with. Otherwise, return the default RuntimeOptions.
+MODULAR_CXX_EXPORT AsyncRT::RuntimeOptions getDefaultOrExistingRuntimeOptions();
+
 } // namespace M::AsyncRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_RUNTIME_MANAGER_H
