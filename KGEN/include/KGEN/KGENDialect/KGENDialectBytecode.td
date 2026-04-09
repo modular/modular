@@ -258,12 +258,6 @@ def FuncSymbolAttr : DialectAttribute<(attr
   ConcreteType<"FuncType">:$type
 )>;
 
-def FuncLiteralAttr : DialectAttribute<(attr
-  ConcreteType<"FuncLiteralType">:$type
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
-
 def GeneratorAttr : DialectAttribute<(attr
   TypeArray:$inputParamTypes,
   ConcreteAttribute<"TypedAttr">:$body,
@@ -436,7 +430,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     DTypeConstantAttr,
     SymbolConstantAttr,
     FuncSymbolAttr,
-    FuncLiteralAttr,
     GeneratorAttr,
     TargetParamAttr,
     StructDefFieldAttr,

@@ -1472,15 +1472,6 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 }
 
 //===----------------------------------------------------------------------===//
-// FuncLiteralAttr
-//===----------------------------------------------------------------------===//
-
-bool FuncLiteralAttr::isConstant() const {
-  // This is a constant literal if it type refers to a constant symbol.
-  return ParameterAttr::isSimpleConstant(getType().getFuncLiteral());
-}
-
-//===----------------------------------------------------------------------===//
 // GeneratorAttr
 //===----------------------------------------------------------------------===//
 

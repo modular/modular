@@ -2215,36 +2215,6 @@ def KGEN_FuncSymbolAttr : KGEN_ExprAttr<"FuncSymbol", "func.symbol",
   }];
 }
 
-//===----------------------------------------------------------------------===//
-// FuncLiteralAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_FuncLiteralAttr : KGENAttr<"FuncLiteral", "func.literal", [
-    TypedAttrInterface,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
-  let summary = "A instance of a function literal";
-  let description = [{
-    The `#kgen.func.literal` attribute represent a instance of a function
-    literal: It is conceptually an empty struct and its type contains all the
-    static information about the function it refers to.
-
-    Example:
-
-    ```mlir
-    #kgen.func.literal : !kgen.func.literal<@foo() -> ()>
-    ```
-  }];
-
-  let parameters = (ins AttributeSelfTypeParameter<"", "FuncLiteralType">:$type);
-
-  let assemblyFormat = "";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "FuncLiteralType":$type), [{
-      return get(type.getContext(), type);
-    }]>,
-  ];
-}
 
 //===----------------------------------------------------------------------===//
 // ClosureAttr
