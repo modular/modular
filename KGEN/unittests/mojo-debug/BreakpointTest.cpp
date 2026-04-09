@@ -12,11 +12,63 @@ using namespace lldb;
 using namespace ::testing::internal;
 
 TEST(BreakpointTest, testBreakpoint) {
-  // Test the breakpoint() intrinsic.
+  // Test the breakpoint() intrinsic: stop and check a variable.
 
   StopContext ctx = buildAndLaunch("breakpoint.mojo");
   SBValue sum = ctx.frame.FindVariable("sum");
   EXPECT_EQ((int)sum.GetValueAsSigned(), 36);
+
+  // Resuming after breakpoint() should continue normally to exit.
+  ctx.process.Continue();
+  EXPECT_EQ(ctx.process.GetState(), lldb::eStateExited);
+}
+
+TEST(BreakpointTest, testAdjacentBreakpoints) {
+  // Test that three truly adjacent breakpoint() calls (no statements
+  // between them) each produce a separate stop.
+
+  StopContext ctx = buildAndLaunch("breakpoint_adjacent.mojo");
+
+  // buildAndLaunch already stopped at the first breakpoint() trap.
+  ctx.resume();
+  EXPECT_EQ(ctx.process.GetState(), lldb::eStateStopped);
+  ctx.resume();
+  EXPECT_EQ(ctx.process.GetState(), lldb::eStateStopped);
+  ctx.process.Continue();
+  EXPECT_EQ(ctx.process.GetState(), lldb::eStateExited);
+}
+
+TEST(BreakpointTest, testSeparatedBreakpoints) {
+  // Test that three breakpoint() calls with statements between them
+  // each produce a separate stop at the correct line, and that
+  // the interleaved statements execute between stops.
+
+  StopContext ctx = buildAndLaunch("breakpoint_separated.mojo");
+
+  // First stop: x was just initialised to 0.
+  auto &src = ctx.binary.getSource();
+  EXPECT_EQ(src.findLinesWithText("# stop_1")[0],
+            (int)ctx.frame.GetLineEntry().GetLine());
+  SBValue x = ctx.frame.FindVariable("x");
+  EXPECT_EQ((int)x.GetValueAsSigned(), 0);
+
+  // Second stop: x += 1 executed, so x == 1.
+  ctx.resume();
+  EXPECT_EQ(src.findLinesWithText("# stop_2")[0],
+            (int)ctx.frame.GetLineEntry().GetLine());
+  x = ctx.frame.FindVariable("x");
+  EXPECT_EQ((int)x.GetValueAsSigned(), 1);
+
+  // Third stop: x += 1 again, so x == 2.
+  ctx.resume();
+  EXPECT_EQ(src.findLinesWithText("# stop_3")[0],
+            (int)ctx.frame.GetLineEntry().GetLine());
+  x = ctx.frame.FindVariable("x");
+  EXPECT_EQ((int)x.GetValueAsSigned(), 2);
+
+  // Resume to exit.
+  ctx.process.Continue();
+  EXPECT_EQ(ctx.process.GetState(), lldb::eStateExited);
 }
 
 TEST(BreakpointTest, testBreakOnRaise) {
