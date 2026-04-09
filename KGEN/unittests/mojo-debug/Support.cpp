@@ -50,6 +50,11 @@ std::vector<int> MojoSource::findLinesWithText(StringRef text) const {
   return result;
 }
 
+int MojoSource::findFirstLineWithText(StringRef text) const {
+  auto lines = findLinesWithText(text);
+  return lines.empty() ? -1 : lines[0];
+}
+
 MojoBinary::MojoBinary(const std::shared_ptr<MojoSource> &source,
                        bool suppressBuildOutput)
     : source(source), outDir(createTempDir()),
