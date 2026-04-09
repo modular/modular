@@ -99,8 +99,6 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
-    WAN = "WanPipeline"
-    WAN_I2V = "WanImageToVideoPipeline"
 
     @classmethod
     def from_diffusers_config(
@@ -247,15 +245,6 @@ class PixelGenerationTokenizer(
         self._default_sample_size = 128
         if self._pipeline_class_name == PipelineClassName.ZIMAGE:
             self._num_channels_latents = transformer_config["in_channels"]
-        elif self._pipeline_class_name in (
-            PipelineClassName.WAN,
-            PipelineClassName.WAN_I2V,
-        ):
-            # Noise latent channels = out_channels (16), not in_channels
-            # which may be 36 for I2V (16 noise + 4 mask + 16 image)
-            self._num_channels_latents = transformer_config.get(
-                "out_channels", transformer_config["in_channels"]
-            )
         else:
             self._num_channels_latents = transformer_config["in_channels"] // 4
 
@@ -316,24 +305,6 @@ class PixelGenerationTokenizer(
             return latent_image_ids.reshape(
                 -1, latent_image_ids.shape[-1]
             ).astype(np.float32)
-
-    def _select_wan_flow_shift(self, height: int, width: int) -> float:
-        scheduler_cfg = (
-            self.diffusers_config.get("components", {})
-            .get("scheduler", {})
-            .get("config_dict", {})
-        )
-        # Use explicit flow_shift from scheduler config if set (user override).
-        cfg_shift = scheduler_cfg.get("flow_shift")
-        if cfg_shift is not None and float(cfg_shift) != 1.0:
-            return float(cfg_shift)
-        # Default: interpolate based on pixel count.
-        # 480p (480*832=399360) → 3.0, 720p (720*1280=921600) → 5.0
-        pixels = height * width
-        lo_px, hi_px = 399_360, 921_600
-        lo_shift, hi_shift = 3.0, 5.0
-        t = max(0.0, min(1.0, (pixels - lo_px) / (hi_px - lo_px)))
-        return lo_shift + t * (hi_shift - lo_shift)
 
     def _randn_tensor(
         self,
@@ -969,14 +940,6 @@ class PixelGenerationTokenizer(
                 image_options.true_cfg_scale > 1.0
                 and negative_prompt_resolved is not None
             )
-        if (
-            self._pipeline_class_name
-            in (PipelineClassName.WAN, PipelineClassName.WAN_I2V)
-            and image_options.guidance_scale > 1.0
-            and negative_prompt_resolved is not None
-        ):
-            # Wan uses standard CFG controlled by guidance_scale, not true_cfg_scale.
-            do_true_cfg = True
         import PIL.Image
 
         # 1. Tokenize prompts
@@ -1084,21 +1047,6 @@ class PixelGenerationTokenizer(
                 else self._default_num_inference_steps
             )
         )
-        boundary_timestep: float | None = None
-        step_coefficients: npt.NDArray[np.float32] | None = None
-        if self._pipeline_class_name in (
-            PipelineClassName.WAN,
-            PipelineClassName.WAN_I2V,
-        ):
-            if getattr(self._scheduler, "use_flow_sigmas", False):
-                self._scheduler.flow_shift = self._select_wan_flow_shift(
-                    height, width
-                )
-            boundary_ratio = self.diffusers_config.get("boundary_ratio")
-            if boundary_ratio is not None:
-                boundary_timestep = float(boundary_ratio) * float(
-                    getattr(self._scheduler, "num_train_timesteps", 1000)
-                )
         if self._pipeline_class_name == PipelineClassName.ZIMAGE:
             timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
                 image_seq_len, num_inference_steps, sigma_min=0.0
@@ -1107,11 +1055,6 @@ class PixelGenerationTokenizer(
             timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
                 image_seq_len, num_inference_steps
             )
-        if self._pipeline_class_name in (
-            PipelineClassName.WAN,
-            PipelineClassName.WAN_I2V,
-        ) and hasattr(self._scheduler, "build_step_coefficients"):
-            step_coefficients = self._scheduler.build_step_coefficients()
         if (
             self._pipeline_class_name == PipelineClassName.ZIMAGE
             and self._scheduler_shift != 1.0
@@ -1153,20 +1096,6 @@ class PixelGenerationTokenizer(
             request.body.seed,
         )
 
-        if video_options and video_options.num_frames:
-            vae_scale_factor_temporal = 4
-            latent_frames = (
-                video_options.num_frames - 1
-            ) // vae_scale_factor_temporal + 1
-            shape_5d = (
-                image_options.num_images,
-                self._num_channels_latents,
-                latent_frames,
-                latent_height,
-                latent_width,
-            )
-            latents = self._randn_tensor(shape_5d, request.body.seed)
-
         # 5. Build the context
         context = PixelContext(
             request_id=request.request_id,
@@ -1195,15 +1124,6 @@ class PixelGenerationTokenizer(
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
             output_format=image_options.output_format,
             residual_threshold=image_options.residual_threshold,
-            num_frames=video_options.num_frames if video_options else None,
-            frames_per_second=(
-                video_options.frames_per_second or 16 if video_options else 16
-            ),
-            guidance_scale_2=(
-                video_options.guidance_scale_2 if video_options else None
-            ),
-            step_coefficients=step_coefficients,
-            boundary_timestep=boundary_timestep,
         )
 
         return context
