@@ -860,6 +860,16 @@ RefType ASTType::VariadicListInfo::getElementRefType() const {
   return RefType::get(elementType, origin);
 }
 
+/// Given a type of ParameterList, return the element type and the values
+/// list that are bound to it.
+ASTType::ParameterListInfo ASTType::getParameterListInfo() const {
+  auto listType = sugarDynCast<ParamListType>(*this);
+  if (!listType)
+    return {{}};
+
+  return {listType.getElementType()};
+}
+
 /// Given a VariadicList, return the element type from it.
 ASTType::VariadicListInfo ASTType::getVariadicListInfo() const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicList");

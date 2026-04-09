@@ -1676,7 +1676,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
           ASTType type = implType;
           if (fullSig.getMetadata().isPosVarArg(idx + numSkipped)) {
             os << "*";
-            type = cast<ParamListType>(type).getElementType();
+            type = type.getParameterListInfo().elementType;
           }
           os << type.getAsString(/*diags=*/nullptr);
           printConstraints(os, pogs[idx].getConstraints());

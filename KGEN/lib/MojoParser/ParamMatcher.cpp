@@ -780,6 +780,10 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           auto matchFixed =
               matchTypes(actualAttr.getType(), expectedAttr.getType());
           assert(succeeded(matchFixed));
+
+          // If we found an exact match, we're done.
+          if (isEqualCanon(actualAttr, expectedAttr))
+            return success();
         }
       }
 

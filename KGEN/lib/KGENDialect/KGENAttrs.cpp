@@ -4173,6 +4173,11 @@ static std::optional<SugarKind> canElideSugarFor(TypedAttr attr) {
   if (isa<IntegerAttr>(attr))
     return SugarKind::AlwaysInlineBuiltin;
 
+  // Anything that resolves into an UnknownAttr is a struct with no state.  All
+  // the computation is happening in the type domain, as in the literal types.
+  if (isa<UnknownAttr>(attr))
+    return SugarKind::AlwaysInlineBuiltin;
+
   // Otherwise, see if the LIT type knows how to elide itself.  LIT::StructType
   // knows how to print literals for Int, IntegerLiteral, etc.
   if (auto sugarItf = dyn_cast<SugaredTypeInterface>(attr.getType()))

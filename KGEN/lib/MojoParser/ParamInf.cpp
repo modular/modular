@@ -65,9 +65,9 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature,
   // arguments with default values: the pack cannot have a default value and
   // _must_ be provided positional operands explicitly, and therefore the
   // preceding defaults won't be used anyway.
-  VariadicAttr packed = // See if resolved.
-      sugarDynCast<VariadicAttr>(
-          variadicPackType.getVariadicPackInfo().typeList);
+  auto packInfo = variadicPackType.getVariadicPackInfo();
+  // See if resolved.
+  auto packed = sugarDynCast<VariadicAttr>(packInfo.typeList);
 
   // The caller should know the concrete type list unless we bound the pack
   // directly as a parameter.  This is an unpack like situation.
@@ -1309,6 +1309,8 @@ LogicalResult ParamInf::inferForCall(
       ASTType variadicPackType =
           RefType::stripRefConvention(expectedType, expectedConvention);
       variadicPackType = evaluator.getReboundType(variadicPackType);
+      ASTType::VariadicPackInfo expectedInfo =
+          variadicPackType.getVariadicPackInfo();
 
       // Support forwarding an entire pack with "*pack".
       if (posOperandIdx != numOperands &&
@@ -1318,14 +1320,14 @@ LogicalResult ParamInf::inferForCall(
         assert(actualPackType &&
                "unpacked positional operand must have a resolvable type");
 
-        TypedAttr actualOwned = actualPackType.getVariadicPackInfo().isOwned;
-        TypedAttr expectedOwned =
-            variadicPackType.getVariadicPackInfo().isOwned;
-        if (actualOwned != expectedOwned) {
+        // FIXME: This will crash on *foo where foo isn't a VariadicPack.
+        ASTType::VariadicPackInfo actualInfo =
+            actualPackType.getVariadicPackInfo();
+        if (actualInfo.isOwned != expectedInfo.isOwned) {
           auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
           diag << "cannot unpack a variadic pack into a call that requires a "
                   "different ownership. Expected "
-               << expectedOwned << ", got " << actualOwned;
+               << expectedInfo.isOwned << ", got " << actualInfo.isOwned;
           return failure();
         }
 

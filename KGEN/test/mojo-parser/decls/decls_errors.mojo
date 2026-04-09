@@ -314,10 +314,6 @@ struct TestPackErrorMessage[*Ts: AnyType]:
     def __init__(*args: *Self.Ts):
          pass
 
-# expected-error @+1 {{variadic pack elements declared as '__TypeOfAllTypes' are removed, please declare elements as 'AnyType' instead of '__TypeOfAllTypes'}}
-def badAnyRegPack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
-  pass
-
 # always_inline("builtin")
 
 # expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}

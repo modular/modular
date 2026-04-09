@@ -482,6 +482,11 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
     return {}; // Success.
   }
 
+  llvm::errs() << "Mismatch between overload fitness and param inference\n";
+  llvm::errs() << "Expected type: " << expectedRVType << "\n";
+  llvm::errs() << "Actual type  : " << argType << "\n\n";
+  llvm::errs() << "Expected type: " << expectedRVType.mlirType << "\n";
+  llvm::errs() << "Actual type  : " << argType.mlirType << "\n\n";
   llvm_unreachable("Checked by param inference already");
 }
 
