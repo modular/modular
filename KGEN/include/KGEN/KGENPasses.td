@@ -1015,7 +1015,8 @@ def LowerLoops: Pass<"lower-loops", "KGEN::FuncOp"> {
     `hlcf.for` operations, to `hlcf.loop`.
   }];
 
-  let dependentDialects = ["HLCF::HLCFDialect"];
+  let dependentDialects = ["HLCF::HLCFDialect", "mlir::index::IndexDialect",
+                           "POP::POPDialect"];
 }
 
 //===----------------------------------------------------------------------===//
