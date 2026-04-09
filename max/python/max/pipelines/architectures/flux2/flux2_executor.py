@@ -218,10 +218,18 @@ class Flux2Executor(
         self._session = session
         self._runtime_config = runtime_config
 
-        # Derived config from the manifest.
-        # TODO(GENAI-490): Derive vae_scale_factor from manifest VAE config
-        # once ModelManifest exposes per-component configs.
-        self._vae_scale_factor = self._DEFAULT_VAE_SCALE_FACTOR
+        # Derive VAE scale factor from manifest config, falling back to 8.
+        vae_config = (
+            manifest["vae"].huggingface_config.to_dict()
+            if "vae" in manifest
+            else {}
+        )
+        block_out_channels = vae_config.get("block_out_channels", None)
+        self._vae_scale_factor = (
+            2 ** (len(block_out_channels) - 1)
+            if block_out_channels
+            else self._DEFAULT_VAE_SCALE_FACTOR
+        )
         self._default_residual_threshold = self._DEFAULT_RESIDUAL_THRESHOLD
 
         # Extract transformer config for helper methods.
