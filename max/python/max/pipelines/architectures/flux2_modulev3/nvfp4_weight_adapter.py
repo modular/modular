@@ -64,9 +64,7 @@ def _swap_fp4_nibbles(value: WeightData) -> WeightData:
     high nibble second.  This function swaps each byte so the packed
     weights match the expected convention.
     """
-    raw = np.from_dlpack(
-        value.data  # type: ignore[arg-type]
-    ).view(np.uint8)
+    raw = np.from_dlpack(value.data).view(np.uint8)
     swapped = (
         ((raw & np.uint8(0x0F)) << np.uint8(4))
         | ((raw >> np.uint8(4)) & np.uint8(0x0F))

@@ -51,6 +51,8 @@ from max.experimental.nn._compile_utils import (
     _flatten_outputs,
     _InputSlot,
     _OutputSlot,
+    _prepare_weight_for_parameter,
+    _process_provided_weights,
     _reconstruct_outputs,
     _unflatten_args,
     _wrap_graph_inputs,
@@ -154,16 +156,6 @@ def _get_pinned_device_fields(cls: type) -> frozenset[str]:
             if ann is PinnedDeviceTensor or ann == "PinnedDeviceTensor":
                 pinned.add(name)
     return frozenset(pinned)
-
-
-def _validate_loaded_parameter(
-    name: str, existing: Tensor, loaded: Tensor
-) -> None:
-    if loaded.shape != existing.shape or loaded.dtype != existing.dtype:
-        raise ValueError(
-            f"{name!r}: Loaded tensor {loaded.type} not assignable to "
-            f"parameter {existing.type}."
-        )
 
 
 class Module(Generic[_P, _R]):
@@ -606,13 +598,11 @@ class Module(Generic[_P, _R]):
         """
         loaded = set()
 
-        def lookup(name: str, existing: Tensor) -> DLPackArray:
+        def lookup(name: str, existing: Tensor) -> Tensor:
             loaded.add(name)
-            value = Tensor.from_dlpack(state[name])
-            _validate_loaded_parameter(name, existing, value)
-            return value
+            return _prepare_weight_for_parameter(name, state[name], existing)
 
-        self.load_state(lookup)
+        self.apply_to_parameters(lookup)
 
         if strict and (unloaded := state.keys() - loaded):
             raise ValueError(
@@ -988,20 +978,13 @@ class Module(Generic[_P, _R]):
 
         # Build weights registry from parameters.
         if weights is None:
-            weights = _flatten_named_buffers(self.parameters)
+            weights_registry = _flatten_named_buffers(self.parameters)
         else:
-            for name, existing in self.parameters:
-                if name not in weights:
-                    raise KeyError(
-                        f"Weight '{name}' is missing from the provided weights mapping."
-                    )
-                _validate_loaded_parameter(
-                    name,
-                    existing,
-                    Tensor.from_dlpack(weights[name]),
-                )
+            weights_registry = _process_provided_weights(
+                weights, self.parameters
+            )
 
-        session_model = session.load(graph, weights_registry=weights)
+        session_model = session.load(graph, weights_registry=weights_registry)
 
         # Allocate signal buffers once for all future invocations.
         cached_sig_bufs = signals.buffers() if signals is not None else []

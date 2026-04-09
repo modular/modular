@@ -41,7 +41,7 @@ def _convert_mxfp4_weight(
     Non-MXFP4 weights are returned unchanged.
     """
     if name.endswith("_blocks"):
-        arr = np.from_dlpack(data)  # type: ignore[arg-type]
+        arr = np.from_dlpack(data)
         if arr.ndim != 4:
             raise ValueError(
                 f"Expected 4D MXFP4 block tensor, got {arr.ndim}D"

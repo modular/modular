@@ -734,7 +734,7 @@ def _transform_decoder_weights(
         """Convert WeightData to numpy, casting bfloat16 to float32."""
         if wd.dtype == DType.bfloat16:
             wd = wd.astype(DType.float32)
-        return np.from_dlpack(wd.data)  # type: ignore
+        return np.from_dlpack(wd.data)
 
     def _to_weight_data(arr: np.ndarray, name: str, dtype: DType) -> WeightData:
         """Convert numpy array to WeightData at target dtype."""
