@@ -25,16 +25,14 @@ trait Floatable:
     For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(Floatable):
         var i: Float64
 
         def __float__(self) -> Float64:
             return self.i
-    ```
 
-    A `Foo` can now be converted to a `Float64`:
-
-    ```mojo
+    # A `Foo` can now be converted to a `Float64`
     var f = Float64(Foo(5.5))
     ```
 
@@ -64,6 +62,7 @@ trait FloatableRaising:
     ```mojo
     from std.utils import Variant
 
+    @fieldwise_init
     struct MaybeFloat(FloatableRaising):
         var value: Variant[Float64, NoneType]
 

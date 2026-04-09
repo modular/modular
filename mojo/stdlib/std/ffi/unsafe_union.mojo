@@ -138,7 +138,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     Example:
 
     ```mojo
-    from std.ffi import UnsafeUnion
+    %# from std.ffi import UnsafeUnion
 
     # Define a union that can hold Int32 or Float32
     comptime IntOrFloat = UnsafeUnion[Int32, Float32]

@@ -49,7 +49,7 @@ def bitcast[
     of four 8-bit integers:
 
     ```mojo
-    from std.memory import bitcast
+    %# from std.memory import bitcast
 
     u32 = UInt32(4631)
     u8x4 = bitcast[DType.uint8, 4](u32)
@@ -144,7 +144,7 @@ def pack_bits[
     This example packs a vector of 8 `bool` values into a single 8-bit integer.
 
     ```mojo
-    from std.memory import pack_bits
+    %# from std.memory import pack_bits
 
     bits = SIMD[DType.bool, 8](1, 1, 0, 1, 0, 0, 0, 0)
     u8 = pack_bits[DType.uint8](bits)

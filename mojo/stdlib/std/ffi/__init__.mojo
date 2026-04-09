@@ -203,7 +203,7 @@ struct OwnedDLHandle(Movable):
 
     Example usage:
     ```mojo
-    from std.ffi import OwnedDLHandle
+    %# from std.ffi import OwnedDLHandle
 
     def main() raises:
         var lib = OwnedDLHandle("libm.so")

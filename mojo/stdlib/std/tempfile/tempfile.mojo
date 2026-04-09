@@ -129,7 +129,7 @@ def gettempdir() -> Optional[String]:
     Example:
 
     ```mojo
-    from std.tempfile import gettempdir
+    %# from std.tempfile import gettempdir
 
     print(gettempdir())
     ```
@@ -164,8 +164,8 @@ def mkdtemp(
     Example:
 
     ```mojo
-    from std.tempfile import mkdtemp
-    from import os import rmdir
+    %# from std.tempfile import mkdtemp
+    %# from std.os import rmdir
 
     var temp_dir = mkdtemp()
     print(temp_dir)
@@ -208,13 +208,10 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
     Example:
 
     ```mojo
-    from std.tempfile import mkdtemp, _rmtree
-    import std.os
+    %# from std.tempfile import mkdtemp, _rmtree
 
     var dir_path = mkdtemp()
-
     # Add files and directories to dir_path
-
     _rmtree(dir_path)
     ```
     """
@@ -249,7 +246,7 @@ struct TemporaryDirectory:
 
     Creates a directory that's deleted when the context exits:
     ```mojo
-    from std.tempfile import TemporaryDirectory
+    %# from std.tempfile import TemporaryDirectory
     import std.os
 
     def main() raises:
@@ -333,7 +330,7 @@ struct NamedTemporaryFile(Movable):
 
     Creates a file that's deleted when closed (by default):
     ```mojo
-    from std.tempfile import NamedTemporaryFile
+    %# from std.tempfile import NamedTemporaryFile
 
     with NamedTemporaryFile(mode="rw") as f:
         f.write("Hello world!")

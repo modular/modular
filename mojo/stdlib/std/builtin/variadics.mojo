@@ -261,8 +261,9 @@ struct Variadic:
     Examples:
 
     ```mojo
-    from std.builtin.variadics import Variadic
-    from std.testing import *
+    %# from std.builtin.variadics import Variadic
+    %# from std.testing import assert_equal, assert_true
+    from std.sys.intrinsics import _type_is_eq
 
     trait MyError:
         comptime ErrorType: AnyType
@@ -282,7 +283,7 @@ struct Variadic:
     # The resulting variadic of types is [Int, String]
     comptime output = Variadic.map_types_to_types[input_types, mapper]
 
-    assert_equal(ParameterList[*output].size, 2)
+    assert_equal(ParameterList[output].size, 2)
     assert_true(_type_is_eq[output[0], Int]())
     assert_true(_type_is_eq[output[1], String]())
     ```
@@ -317,7 +318,7 @@ struct Variadic:
 
     Examples:
         ```mojo
-        from std.builtin.variadics import Variadic
+        %# from std.builtin.variadics import Variadic
         # Given a variadic of types [Int, String, Float64, Bool]
         comptime MyTypes = Tuple[Int, String, Float64, Bool].element_types
         # Extract middle elements: [String, Float64]
@@ -386,38 +387,38 @@ struct Variadic:
     Examples:
 
     ```mojo
-    from std.builtin.variadics import Variadic
+    %# from std.builtin.variadics import Variadic
     from std.utils import Variant
     from std.sys.intrinsics import _type_is_eq
 
     comptime FullVariant = Variant[Int, String, Float64, Bool]
 
     # Exclude a single type
-    comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
+    comptime IsNotInt[Type: Movable] = not _type_is_eq[Type, Int]()
     comptime WithoutInt = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotInt]
     comptime FilteredVariant = Variant[*WithoutInt]
     # FilteredVariant is Variant[String, Float64, Bool]
 
     # Keep only specific types
-    comptime IsNumeric[Type: AnyType] = (
+    comptime IsNumeric[Type: Movable] = (
         _type_is_eq[Type, Int]() or _type_is_eq[Type, Float64]()
     )
     comptime OnlyNumeric = Variadic.filter_types[*FullVariant.Ts, predicate=IsNumeric]
-    # OnlyNumeric is Variadic.types[T=AnyType, Int, Float64]
+    # OnlyNumeric is Variadic.types[T=Movable, Int, Float64]
 
     # Exclude multiple types using a variadic check
-    comptime ExcludeList = Variadic.types[T=AnyType, Int, Bool]
-    comptime NotInList[Type: AnyType] = not Variadic.contains[
+    comptime ExcludeList = Variadic.types[T=Movable, Int, Bool]
+    comptime NotInList[Type: Movable] = not Variadic.contains[
         type=Type, element_types=ExcludeList
     ]
     comptime Filtered = Variadic.filter_types[*FullVariant.Ts, predicate=NotInList]
-    # Filtered is Variadic.types[T=AnyType, String, Float64]
+    # Filtered is Variadic.types[T=Movable, String, Float64]
     ```
 
     Filter operations can be chained for complex transformations:
 
     ```mojo
-    comptime IsNotBool[Type: AnyType] = not _type_is_eq[Type, Bool]()
+    comptime IsNotBool[Type: Movable] = not _type_is_eq[Type, Bool]()
     comptime Step1 = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotBool]
     comptime Step2 = Variadic.filter_types[*Step1, predicate=IsNotInt]
     comptime ChainedVariant = Variant[*Step2]
@@ -472,21 +473,23 @@ struct TypeList[type: type_of(AnyType), //, *values: type](Sized):
     Examples:
 
     ```mojo
-    from std.builtin.variadics import TypeList
+    %# from std.builtin.variadics import TypeList
+    %# from std.testing import assert_equal
     from std.sys.intrinsics import _type_is_eq
 
-    # Create a type list
-    comptime tl = TypeList[type=AnyType, Int, String, Float64]()
+    def main() raises:
+        # Create a type list
+        comptime tl = TypeList[type=AnyType, Int, String, Float64]()
 
-    # Query size
-    assert_equal(tl.size, 3)
+        # Query size
+        assert_equal(tl.size, 3)
 
-    # Check membership
-    comptime assert tl.contains[Int]
-    comptime assert not tl.contains[Bool]
+        # Check membership
+        comptime assert tl.contains[Int]
+        comptime assert not tl.contains[Bool]
 
-    # Index into the list
-    comptime assert _type_is_eq[tl[0], Int]()
+        # Index into the list
+        comptime assert _type_is_eq[tl[0], Int]()
     ```
     """
 
@@ -670,13 +673,13 @@ struct ParameterList[type: AnyType, //, *values: type](
         var total = 0
 
         # Can use regular for loop because args is a ParameterList
-        for i in range(len(args)):
+        comptime for i in range(ParameterList[args].size):
             total += args[i]  # All elements are Int, so uniform access
 
         return total
 
     def main():
-        print(sum_values(1, 2, 3, 4, 5))
+        print(sum_values[1, 2, 3, 4, 5]())
     ```
 
     Parameters:

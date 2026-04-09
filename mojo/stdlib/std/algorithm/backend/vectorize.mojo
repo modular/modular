@@ -48,7 +48,7 @@ def vectorize[
     the machine:
 
     ```mojo
-    from std.algorithm.functional import vectorize
+    %# from std.algorithm.functional import vectorize
     from std.sys import simd_width_of
 
     # The amount of elements to loop through
@@ -61,7 +61,7 @@ def vectorize[
 
         def closure[width: Int](i: Int) unified {mut}:
             print("storing", width, "els at pos", i)
-            p.store[width=width](i, i)
+            p.store[width=width](i, Int32(i))
 
         vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
@@ -162,7 +162,7 @@ def vectorize[
     using SIMD registers, while handling the tail with `evl` by generating a mask:
 
     ```mojo
-    from std.algorithm.functional import vectorize
+    %# from std.algorithm.functional import vectorize
     from std.sys import simd_width_of
     from std.math import iota
     from std.sys.intrinsics import masked_store
@@ -280,7 +280,7 @@ def vectorize[
     the machine:
 
     ```mojo
-    from std.algorithm.functional import vectorize
+    %# from std.algorithm.functional import vectorize
     from std.sys import simd_width_of
 
     # The amount of elements to loop through

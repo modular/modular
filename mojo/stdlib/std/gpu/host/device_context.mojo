@@ -1481,7 +1481,7 @@ struct DeviceStream(ImplicitlyCopyable):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext, DeviceStream
+    %# from std.gpu.host import DeviceContext, DeviceStream
     var ctx = DeviceContext(0)  # Select first GPU
     var stream = DeviceStream(ctx)
 
@@ -1809,7 +1809,7 @@ struct DeviceEvent(ImplicitlyCopyable):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext
+    %# from std.gpu.host import DeviceContext
 
     var ctx = DeviceContext()
 
@@ -1938,7 +1938,7 @@ struct DeviceFunction[
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext, DeviceFunction
+    %# from std.gpu.host import DeviceContext, DeviceFunction
 
     def my_kernel(x: Int, y: Int):
         # Kernel implementation
@@ -3350,7 +3350,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     [context manager](/mojo/manual/errors#use-a-context-manager). For example:
 
     ```mojo
-    from std.gpu.host import DeviceContext
+    %# from std.gpu.host import DeviceContext
     from std.gpu import thread_idx
 
     def kernel():
@@ -3367,6 +3367,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     ```mojo
     from std.runtime.asyncrt import DeviceContextPtr
+    from compiler import register
 
     @register("custom_op")
     struct CustomOp:

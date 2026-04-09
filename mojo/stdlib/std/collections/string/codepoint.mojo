@@ -61,8 +61,8 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     Example:
 
     ```mojo
-    from std.collections.string import Codepoint
-    from std.testing import assert_true
+    %# from std.collections.string import Codepoint
+    %# from std.testing import assert_true
 
     # Create a codepoint from a character
     var c = Codepoint.ord('A')
