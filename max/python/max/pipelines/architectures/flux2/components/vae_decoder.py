@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 from max.driver import Buffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -201,6 +202,31 @@ class VaeDecoder(CompiledComponent):
         paths = config.resolved_weight_paths()
         weights = load_weights(paths)
         state_dict = self._adapt_state_dict(weights, fused.raw_state_dict())
+
+        # Validate BN stats are present and non-trivial.  Missing or
+        # all-zero stats collapse the BN denormalization to near-zero,
+        # producing washed-out images.
+        for bn_key in ("bn_mean", "bn_var"):
+            if bn_key not in state_dict:
+                raise ValueError(
+                    f"VaeDecoder: BatchNorm stat {bn_key!r} not found in "
+                    "VAE weights.  The checkpoint must contain "
+                    "'bn.running_mean' and 'bn.running_var'."
+                )
+            bn_data = state_dict[bn_key]
+            # np.from_dlpack doesn't support bfloat16, so cast to float32
+            # before validation.
+            if hasattr(bn_data, "astype"):
+                bn_arr = np.from_dlpack(bn_data.astype(DType.float32))
+            else:
+                bn_arr = np.from_dlpack(bn_data)
+            if np.all(bn_arr == 0):
+                raise ValueError(
+                    f"VaeDecoder: {bn_key!r} is all zeros — BN "
+                    "denormalization will collapse output to near-zero.  "
+                    "Check that the correct VAE weights are loaded."
+                )
+
         fused.load_state_dict(state_dict, weight_alignment=1)
 
         # Build and compile graph.

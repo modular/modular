@@ -14,12 +14,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
+from typing import Any, ClassVar
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Buffer, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.tensor import Tensor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
@@ -105,6 +108,31 @@ class Flux2ExecutorInputs(TensorStruct):
     residual_threshold: Buffer | None = None
     """Scalar float32 threshold for FBCache residual gating.
     ``None`` when first-block caching is not enabled."""
+
+    # -- Device transfer -------------------------------------------------------
+
+    _CPU_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "num_inference_steps",
+            "num_images_per_prompt",
+            "height",
+            "width",
+            "image_seq_len",
+            "h_carrier",
+            "w_carrier",
+        }
+    )
+
+    def to(self, device: Device) -> Self:
+        """Transfer GPU-bound tensors to *device*, keeping metadata on CPU."""
+        updates: dict[str, Any] = {}
+        for f in fields(self):
+            if f.name in self._CPU_FIELDS:
+                continue
+            val = getattr(self, f.name)
+            if isinstance(val, (Tensor, Buffer)):
+                updates[f.name] = val.to(device)
+        return replace(self, **updates)
 
     # -- Feature builders (return new frozen instance) ------------------------
 
@@ -245,13 +273,9 @@ class Flux2Executor(
         image_seq_len = packed_h * packed_w
 
         tokens = Buffer.from_dlpack(context.tokens.array)
-        latents = self._patchify_and_pack(Buffer.from_dlpack(context.latents))
-        latent_image_ids = Buffer.from_dlpack(context.latent_image_ids).to(
-            self._model_device
-        )
-        timesteps, dts = self._prepare_scheduler(
-            Buffer.from_dlpack(context.sigmas)
-        )
+        latents = self._patchify_and_pack(context.latents)
+        latent_image_ids = Buffer.from_dlpack(context.latent_image_ids)
+        timesteps, dts = self._prepare_scheduler(context.sigmas)
 
         guidance = Buffer.from_dlpack(
             np.full(
@@ -259,7 +283,7 @@ class Flux2Executor(
                 context.guidance_scale,
                 dtype=np.float32,
             )
-        ).to(self._model_device)
+        )
 
         h_carrier = Buffer.from_dlpack(np.empty(packed_h, dtype=np.float32))
         w_carrier = Buffer.from_dlpack(np.empty(packed_w, dtype=np.float32))
@@ -306,6 +330,11 @@ class Flux2Executor(
 
     @traced(message="execute")
     def execute(self, inputs: Flux2ExecutorInputs) -> Flux2ExecutorOutputs:
+        # Bulk device transfer -- CPU-only metadata fields are skipped by
+        # Flux2ExecutorInputs.to().  Buffers already on the target device
+        # are no-ops.
+        inputs = inputs.to(self._model_device)
+
         # 1) Encode prompts (Graph 1).
         prompt_embeds, text_ids = self._encode_prompts(
             inputs.tokens,
@@ -366,7 +395,10 @@ class Flux2Executor(
             - ``prompt_embeds`` has shape ``(B, S, L*D)``
             - ``text_ids`` has shape ``(B, S, 4)`` int64
         """
-        return self.text_encoder(tokens)
+        prompt_embeds, text_ids = self.text_encoder(tokens)
+        # text_ids are built from numpy on CPU; move to device.
+        text_ids = text_ids.to(self._model_device)
+        return prompt_embeds, text_ids
 
     # -- Graph 2: Image Encode (img2img only) ---------------------------------
 
@@ -505,7 +537,7 @@ class Flux2Executor(
         Returns:
             Final denoised latents, shape ``(B, seq, C)``.
         """
-        num_steps = int(np.array(num_inference_steps))
+        num_steps: int = np.from_dlpack(num_inference_steps).item()  # type: ignore[assignment]
         for i in range(num_steps):
             timestep_i = timesteps[i : i + 1]
             dt_i = dts[i : i + 1]
@@ -526,7 +558,7 @@ class Flux2Executor(
 
     def _patchify_and_pack(
         self,
-        latents: Buffer,
+        latents: npt.NDArray[np.float32],
     ) -> Buffer:
         """Patchify and pack raw latents for the transformer.
 
@@ -539,7 +571,7 @@ class Flux2Executor(
         Returns:
             Packed latents, shape ``(B, seq, C*4)`` in model dtype.
         """
-        arr = np.array(latents)  # (B, C, H, W) float32
+        arr = latents  # (B, C, H, W) float32
         b, c, h, w = arr.shape
         h2, w2 = h // 2, w // 2
         # Patchify: (B, C, H, W) -> (B, C, H//2, 2, W//2, 2)
@@ -587,7 +619,7 @@ class Flux2Executor(
 
     def _prepare_scheduler(
         self,
-        sigmas: Buffer,
+        sigmas: npt.NDArray[np.float32],
     ) -> tuple[Buffer, Buffer]:
         """Precompute timesteps and dt arrays from the sigma schedule.
 
@@ -599,13 +631,12 @@ class Flux2Executor(
 
         Returns:
             A tuple of ``(timesteps, dts)`` where:
-            - ``timesteps`` has shape ``(num_steps,)`` float32
-            - ``dts`` has shape ``(num_steps,)`` float32
+            - ``timesteps`` has shape ``(num_steps,)`` float32 on device
+            - ``dts`` has shape ``(num_steps,)`` float32 on device
         """
-        s = np.array(sigmas)  # (num_steps+1,) float32
-        timesteps = np.ascontiguousarray(s[:-1])
-        dts = np.ascontiguousarray(s[1:] - s[:-1])
+        timesteps = np.ascontiguousarray(sigmas[:-1])
+        dts = np.ascontiguousarray(sigmas[1:] - sigmas[:-1])
         return (
-            Buffer.from_dlpack(timesteps).to(self._model_device),
-            Buffer.from_dlpack(dts).to(self._model_device),
+            Buffer.from_dlpack(timesteps),
+            Buffer.from_dlpack(dts),
         )
