@@ -13,6 +13,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import platform
 import shutil
 import sys
 from pathlib import Path
@@ -72,6 +73,16 @@ llvm_config.with_environment(
     str(Path(sys.executable).parent),
     append_path=True,
 )
+
+if sys.platform == "darwin":
+    # Expose macOS 26+ as a lit feature so tests can be selectively skipped.
+    # The ASAN runtime in the pinned LLVM 23 pre-release hangs on macOS 26 due to
+    # FindAvailableMemoryRange incompatibility with the new address space layout
+    # (fixed in llvm/llvm-project#191039, merged 2026-04-09). Remove once the
+    # toolchain is bumped past that commit. See: SDLC-3494.
+    _mac_ver = platform.mac_ver()[0]
+    if _mac_ver and int(_mac_ver.split(".")[0]) >= 26:
+        config.available_features.add("macos-26+")
 
 #---------------------------------------
 # Mojo tools
