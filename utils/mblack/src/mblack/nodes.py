@@ -540,6 +540,11 @@ def whitespace(
         if t in OPENING_BRACKETS:
             return NO
 
+    elif p.type == syms.named_effect:
+        # No space before ( in named effects (e.g., abi("C") not abi ("C"))
+        if t == token.LPAR:
+            return NO
+
     elif p.type in {syms.convention, syms.result_type}:
         # No space between ref and [origin] (e.g., ref[x] not ref [x])
         if t == token.LSQB and prev and prev.type == token.REF:

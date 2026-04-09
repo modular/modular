@@ -569,6 +569,8 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
   // std::optional<std::string> exportABI, std::optional<bool> mangle}, to
   // separate argument parsing from the semantic actions that follow.
   TypedAttr linkageName;
+  // TODO: deprecate and remove the ABI= specification here, in favor of the
+  // abi() effect on the function declaration.
   std::optional<std::string> exportABI;
   std::optional<bool> mangle;
   for (const Operand &operand : operands) {
@@ -824,6 +826,9 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
       decl.setErroneous();
       return failure();
     }
+    // TODO: require explicit abi() effect on all @export functions.
+    // TODO: bool isCExport = tcSignature.argList.effects.isCABI();
+    // TODO: if (!tcSignature.argList.hasExplicitABI) { error }
     IREmitter emitter(sigDecl, EC_Decorator);
     applyExportLike(decorator->getLoc(), decl, /*isExport=*/true, baseName,
                     callNode, tcSignature.paramList, funcOp, emitter);
@@ -1075,6 +1080,11 @@ void FnSigDecorators::applyExtern(SMLoc decoratorLoc,
                                   decl.getParentDecl()->getIfOperation())) {
     emitError(callNode->getLoc(), "'@extern' cannot be applied to a method");
     return;
+  }
+
+  if (!tcSignature.argList.hasExplicitABI) {
+    emitError(decoratorLoc,
+              "'@extern' requires an explicit 'abi()' effect on the function");
   }
 
   funcOp.setExternal(true);
@@ -2046,6 +2056,14 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     funcOp.removeSymNameAttr();
     return success();
   }
+
+  // abi("C") functions must be bare function pointers with no captured
+  // state.  C calling convention has no closure mechanism, so a capturing
+  // abi("C") function would silently pass the wrong values in argument
+  // registers.
+  if (signature.getFnEffects().isCABI() && !captures.empty())
+    return emitError(funcOp.getLoc(),
+                     "a abi(\"C\") function cannot capture variables");
 
   return emitError(funcOp.getLoc(),
                    "capturing nested functions must be declared 'unified'");

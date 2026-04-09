@@ -202,6 +202,26 @@ IREvaluatorContext::evaluateIsStructTypeAttr(IsStructTypeAttr attr) {
   return {BoolAttr::get(ctx, true)};
 }
 
+FailureOr<TypedAttr>
+IREvaluatorContext::evaluateFnTypeIsCABIAttr(FnTypeIsCABIAttr attr) {
+  MLIRContext *ctx = attr.getContext();
+
+  // After generic parameter substitution, typeValue is a TypeParamAttr.
+  // TypeParamAttr.getMlirType() holds the concrete FuncTypeGeneratorType
+  // (including its FnEffects bits such as CABI). For non-function types,
+  // return false.
+  TypedAttr typeValue = SugarAttr::strip(attr.getTypeValue());
+  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  if (!typeParam)
+    return {BoolAttr::get(ctx, false)};
+
+  auto funcType = dyn_cast<FuncTypeGeneratorType>(typeParam.getMlirType());
+  if (!funcType)
+    return {BoolAttr::get(ctx, false)};
+
+  return {BoolAttr::get(ctx, funcType.getBody().isCABI())};
+}
+
 //===----------------------------------------------------------------------===//
 // Base Type Reflection Evaluators
 //===----------------------------------------------------------------------===//

@@ -302,3 +302,87 @@ def main():
     # expected.
     # expected-error @below {{invalid call to 'call': value passed to 'args' cannot be converted from 'ZBool' to 'ZPointer[Int]'}}
     var result1 = thing.call(mlt, ZBool(), ndb)
+
+
+# // -----
+
+
+# Tests that a plain def type and a abi("C") def type with the same signature
+# are not interchangeable: plain → abi("C") is rejected.
+
+
+# expected-note @below {{function declared here}}
+def takes_abi_c(f: def(Int) abi("C") -> Int):
+    pass
+
+
+def plain(x: Int) -> Int:
+    return x
+
+
+def test_plain_to_abi_c():
+    # expected-error @below {{cannot be converted from 'def plain(x: Int) -> Int' to 'def(Int) abi("C") -> Int'}}
+    takes_abi_c(plain)
+
+
+# // -----
+
+
+# Tests that a plain def type and a abi("C") def type with the same signature
+# are not interchangeable: abi("C") → plain is rejected.
+
+
+# expected-note @below {{function declared here}}
+def takes_plain(f: def(Int) -> Int):
+    pass
+
+
+def test_abi_c_to_plain(f: def(Int) abi("C") -> Int):
+    # expected-error @below {{cannot be converted from 'def(Int) abi("C") -> Int' to 'def(Int) -> Int'}}
+    takes_plain(f)
+
+
+# // -----
+
+
+# Tests that defining a plain function and a abi("C") function with the same
+# name and parameter types is a redefinition error: the calling-convention
+# effect is not an overload discriminator.
+
+
+# expected-note @below {{previous definition here}}
+def redef_abi_mixed(x: Int) -> Int:
+    return x
+
+
+# expected-error @below {{redefinition of function 'redef_abi_mixed' with identical signature}}
+def redef_abi_mixed(x: Int) abi("C") -> Int:
+    return x
+
+
+# // -----
+
+
+# Tests that a abi("C") nested function that captures variables is rejected.
+# C ABI has no closure mechanism, so a capturing abi("C") function would
+# silently corrupt argument registers.
+
+
+def test_abi_c_capturing():
+    var x: Int = 1
+    # expected-error @below {{a abi("C") function cannot capture variables}}
+    def captures_x(y: Int) abi("C") -> Int:
+        return x + y
+    _ = captures_x(2)
+
+
+# // -----
+
+
+# Tests that specifying 'thin' twice on a function type is an error,
+# even when combined with abi("C").
+
+
+def test_duplicate_thin_with_abi_c():
+    # expected-error @below {{function effect 'thin' was already specified}}
+    var _: def(Int) thin thin abi("C") -> Int

@@ -318,11 +318,53 @@ struct CallIndirectOpConversion
 
     Value callee = op.getCallee();
     LLVM::CallOp llvmCall;
+    // isCapturing and isCABI are mutually exclusive: a capturing closure
+    // carries an environment struct, whereas a C ABI function pointer is a
+    // bare pointer with no captured state.
     auto isClosureType = [](Type type) {
       if (auto sigType = dyn_cast<FuncTypeGeneratorType>(type))
         return sigType.getBody().isCapturing();
       return false;
     };
+    auto isCABIFnPtr = [](Type type) {
+      if (auto sigType = dyn_cast<FuncTypeGeneratorType>(type))
+        return sigType.getBody().isCABI();
+      return false;
+    };
+
+    if (isCABIFnPtr(callee.getType())) {
+      // C ABI function-pointer call: apply platform C ABI coercion.
+      CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
+      Location loc = op.getLoc();
+
+      // Original LLVM return type (null for void functions).
+      Type origRetTy = op.getNumResults() > 0 ? resultType : Type{};
+
+      auto prep =
+          cabi.prepareCall(adaptor.getArguments().getTypes(),
+                           adaptor.getArguments(), origRetTy, loc, rewriter);
+      // Insert the indirect call target.
+      prep.callArgs.insert(prep.callArgs.begin(), adaptor.getCallee());
+
+      llvmCall = createLLVMCall(rewriter, loc, prep.signature, prep.callArgs);
+      CABICallHelper::applySRetAttrIfNeeded(llvmCall, origRetTy, prep.usesSRet,
+                                            rewriter);
+      cabi.applyByvalAttrsToCall(llvmCall, prep.argClass,
+                                 adaptor.getArguments().getTypes(),
+                                 prep.usesSRet, rewriter);
+      applyTailKind(llvmCall, op.getTailKind());
+
+      // Reverse-coerce the return value and replace the op.
+      if (op.getNumResults() == 0) {
+        rewriter.eraseOp(op);
+        return success();
+      }
+      Value rawResult = prep.usesSRet ? Value{} : llvmCall.getResult();
+      Value coerced = cabi.extractReturn(prep.retClass, rawResult, prep.sretPtr,
+                                         origRetTy, loc, rewriter);
+      rewriter.replaceOp(op, coerced);
+      return success();
+    }
 
     if (isClosureType(callee.getType())) {
       // Unpack the struct representation of the closure.
@@ -359,7 +401,7 @@ struct CallIndirectOpConversion
       llvmCall =
           createLLVMCall(rewriter, op.getLoc(), wrapperFnType, llvmCallArgs);
     } else {
-      // Create the LLVM call operation.
+      // Mojo ABI indirect call (default path).
       // Note: adaptor.getOperands() is a list of callee followed by inputs.
       SmallVector<Type> wrapperFnArgTypes;
       llvm::append_range(wrapperFnArgTypes, adaptor.getArguments().getTypes());

@@ -207,6 +207,10 @@ public:
   FnEffects effects;
   /// Tracks the Mojo-only `thin` effect on function types.
   bool isThin = false;
+  /// True if an explicit `abi(...)` effect was written on this function.
+  /// Distinguishes `abi("Mojo")` (no-op on the type, but explicit) from the
+  /// absence of any abi annotation.
+  bool hasExplicitABI = false;
   ExprNode *thrownTypeExpr = nullptr;
 
   /// Trailing function level constraints specified with 'where' clauses.

@@ -756,6 +756,14 @@ TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// FnTypeIsCABIAttr
+//===----------------------------------------------------------------------===//
+
+FnTypeIsCABIAttr FnTypeIsCABIAttr::get(MLIRContext *ctx, TypedAttr typeValue) {
+  return Base::get(ctx, typeValue, getResultType(ctx));
+}
+
+//===----------------------------------------------------------------------===//
 // GetWitnessAttr
 //===----------------------------------------------------------------------===//
 
