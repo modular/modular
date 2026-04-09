@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn.norm.rms_norm import RMSNorm
 
 
@@ -54,3 +54,65 @@ class Gemma3RMSNorm(RMSNorm):
             shards.append(sharded)
 
         return shards
+
+
+def gemma3_rms_norm_fused_residual_add(
+    x: TensorValue,
+    residual: TensorValue,
+    norm1: Gemma3RMSNorm,
+    norm2: Gemma3RMSNorm,
+) -> tuple[TensorValue, TensorValue]:
+    """Compute norm2(norm1(x) + residual) and return both outputs."""
+    input_last_dim = x.shape[-1]
+
+    if input_last_dim != norm1.weight.shape[0]:
+        raise ValueError(
+            "First RMSNorm weight dimension "
+            f"({norm1.weight.shape[0]}) must match the input's last dimension "
+            f"({input_last_dim})"
+        )
+    if input_last_dim != norm2.weight.shape[0]:
+        raise ValueError(
+            "Second RMSNorm weight dimension "
+            f"({norm2.weight.shape[0]}) must match the input's last dimension "
+            f"({input_last_dim})"
+        )
+    if norm1.multiply_before_cast != norm2.multiply_before_cast:
+        raise ValueError(
+            "Fused Gemma3 RMSNorm requires both norms to share the same "
+            "multiply_before_cast setting"
+        )
+
+    gamma1: TensorValue = norm1.weight.cast(x.dtype)
+    gamma2: TensorValue = norm2.weight.cast(x.dtype)
+    if x.device:
+        gamma1 = gamma1.to(x.device)
+        gamma2 = gamma2.to(x.device)
+
+    results = ops.custom(
+        "rms_norm_fused_residual_add",
+        x.device,
+        [
+            x,
+            residual,
+            gamma1,
+            gamma2,
+            ops.constant(norm1.eps, dtype=x.dtype, device=DeviceRef.CPU()),
+            ops.constant(norm2.eps, dtype=x.dtype, device=DeviceRef.CPU()),
+            ops.constant(
+                norm1.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                norm2.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
+            ),
+        ],
+        [
+            TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
+            TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
+        ],
+        parameters={
+            "multiply_before_cast": norm1.multiply_before_cast,
+        },
+    )
+
+    return results[0].tensor, results[1].tensor
