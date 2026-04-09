@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+package(default_visibility = ["//KGEN:consumers"])
+
+modular_cc_binary(
+    name = "kgen-doc",
+    srcs = ["kgen-doc.cpp"],
+    deps = [
+        "//Init",
+        "//KGEN:MojoTooling",
+        "//KGEN:ToolCommon",
+        "//MLRT:AsyncRT/Runtime",
+        "//Support:Driver",
+    ],
+)

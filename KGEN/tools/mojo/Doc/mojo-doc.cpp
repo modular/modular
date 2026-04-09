@@ -6,34 +6,26 @@
 
 #include "mojo-doc.h"
 
-#include "Config/Version.h"
 #include "Init/Init.h"
-#include "KGEN/MojoParser/EntryPoint.h"
-#include "KGEN/MojoTooling/ParserDriver.h"
-#include "KGEN/MojoTooling/PublicASTDecl.h"
-#include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/MojoTooling/DocGen.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
-#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
 
+#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/FileUtilities.h"
-#include "mlir/Support/Timing.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
 #include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/JSON.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 #include <filesystem>
 
 using namespace M;
-using namespace M::KGEN;
 
 #define DRIVER_OPTIONS_PATH "Doc/DocOptions.inc"
 #include "Support/Driver/OptTable.inc"
@@ -102,6 +94,8 @@ static int doc(const State &subcommandState) {
       Init::createContext("mojo", Init::Options(), "doc");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
+  // Keep ctx alive for the duration of the pipeline; it holds init/runtime
+  // state that the parser depends on.
   ContextRef ctx = std::move(*ctxOr);
 
   // Resolve the input, or exit with an error.
@@ -110,31 +104,9 @@ static int doc(const State &subcommandState) {
   if (pathOrErr)
     return state.reportError(pathOrErr.getError());
 
-  // Initialize the source manager with the appropriate diagnostic handler and
-  // include paths.
-  llvm::SourceMgr sourceManager;
-  sourceManager.setDiagHandler(getDiagHandler(state.diagnosticFormat));
-  sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
-
-  DialectRegistry registry;
+  mlir::DialectRegistry registry;
   registerAllKGENDialects(registry);
-  MLIRContext context{registry};
-
-  CompilationOptions compilationOptions;
-  compilationOptions.warningsAsErrors = state.areWarningsAsErrors();
-  LIT::ParserConfig parserConfig(&context, compilationOptions);
-  parserConfig.diagnoseMissingDocStrings =
-      args.hasArg(options::OPT_diagnose_missing_doc_strings);
-  int maxNotes = 0;
-  if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
-    parserConfig.maxNotesPerDiagnostic = maxNotes;
-  parserConfig.stripFilePrefix =
-      args.getLastArgValue(options::OPT_strip_file_prefix);
-  parserConfig.docsBasePath = args.getLastArgValue(options::OPT_docs_base_path);
-
-  // We also don't allow users to configure the time profiler.
-  mlir::DefaultTimingManager timingManager;
-  mlir::TimingScope timingScope = timingManager.getRootScope();
+  mlir::MLIRContext context{registry};
 
   // Open the output file, or exit with an error.
   std::string outputError;
@@ -143,22 +115,25 @@ static int doc(const State &subcommandState) {
   if (!out)
     return state.reportError(outputError);
 
-  MojoParserContext parserContext(sourceManager, parserConfig);
-  MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(*pathOrErr);
-  if (!moduleDecl || parserContext.wasErrorEmitted())
+  DocGenConfig config;
+  config.warningsAsErrors = state.areWarningsAsErrors();
+  config.diagnoseMissingDocStrings =
+      args.hasArg(options::OPT_diagnose_missing_doc_strings);
+  int maxNotes = 0;
+  if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
+    config.maxNotesPerDiagnostic = maxNotes;
+  config.stripFilePrefix = args.getLastArgValue(options::OPT_strip_file_prefix);
+  config.docsBasePath = args.getLastArgValue(options::OPT_docs_base_path);
+  config.includePaths = args.getAllArgValues(options::OPT_I);
+  config.diagnosticFormat = state.diagnosticFormat;
+
+  // Note: the mlir::DefaultTimingManager / mlir::TimingScope that existed here
+  // before the DocGen refactor have been removed. The timing scope had no
+  // effect on parser behavior; it was internal profiling scaffolding that was
+  // never surfaced to users. kgen-doc never had timing either, so both entry
+  // points now behave consistently.
+  if (!generateMojoDocJSON(*pathOrErr, context, config, out->os()))
     return state.reportError("could not generate documentation");
-
-  std::unique_ptr<PublicDecl> publicDecl = moduleDecl.getDecl();
-  if (!publicDecl)
-    return state.reportError("could not generate documentation");
-
-  llvm::json::OStream jsonOS(out->os(), /*IndentSize=*/2);
-
-  const char *version = getModularVersionString();
-  jsonOS.value(llvm::json::Object({
-      {"decl", publicDecl->toJSON(parserContext)},
-      {"version", llvm::formatv("0.{0}", version).str()},
-  }));
 
   out->keep();
 

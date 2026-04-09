@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "lit_tests")
+
+package(default_visibility = ["//visibility:private"])
+
+lit_tests(
+    name = "kgen-doc",
+    srcs = glob(
+        ["**/*.mojo"],
+        exclude = [
+            "test_std_mock/**/*.mojo",
+            "test_package/**/*.mojo",
+        ],
+    ),
+    data = glob([
+        "test_std_mock/**/*.mojo",
+        "test_package/**/*.mojo",
+    ]),
+    mojo_deps = [
+        "//max:layout",  # required by mojo_doc.mojo (layout.int_tuple)
+        "@mojo//:std",
+    ],
+    tools = [
+        "//KGEN/tools/kgen-doc",
+    ],
+)
