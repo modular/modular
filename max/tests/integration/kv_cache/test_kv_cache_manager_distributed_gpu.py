@@ -20,9 +20,12 @@ import pytest
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef
+from max.graph import DeviceRef, Graph, TensorType
 from max.interfaces import TextGenerationContext
 from max.kv_cache import IncrementCacheLengthsProcessor, PagedKVCacheManager
+from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
+    increment_cache_lengths_from_counts,
+)
 from max.nn import Signals
 from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
@@ -219,4 +222,130 @@ def test_increment_cache_lengths() -> None:
     np.testing.assert_equal(
         new_kv_cache_inputs.inputs[1].cache_lengths.to_numpy(),
         np.array([32 + 7]),
+    )
+
+
+def test_increment_cache_lengths_from_counts_empty_shard() -> None:
+    num_devices = 2
+    devices = [DeviceRef.GPU(i) for i in range(num_devices)]
+    session = InferenceSession(
+        devices=[Accelerator(id=i) for i in range(num_devices)]
+    )
+    signals = Signals(devices)
+    batch_increments_type = TensorType(DType.int64, [2], device=devices[0])
+    data_parallel_splits_type = TensorType(
+        DType.int64, [3], device=DeviceRef.CPU()
+    )
+    replica0_cache_lengths_type = TensorType(
+        DType.uint32, [2], device=devices[0]
+    )
+    replica1_cache_lengths_type = TensorType(
+        DType.uint32, [0], device=devices[1]
+    )
+
+    with Graph(
+        "increment_cache_lengths_from_counts_empty_shard",
+        input_types=[
+            batch_increments_type,
+            data_parallel_splits_type,
+            replica0_cache_lengths_type,
+            replica1_cache_lengths_type,
+            *signals.input_types(),
+        ],
+    ) as graph:
+        batch_increments = graph.inputs[0].tensor
+        data_parallel_splits = graph.inputs[1].tensor
+        cache_lengths = [graph.inputs[2].tensor, graph.inputs[3].tensor]
+        signal_buffers = [inp.buffer for inp in graph.inputs[4:]]
+        outputs = increment_cache_lengths_from_counts(
+            batch_increments,
+            data_parallel_splits,
+            cache_lengths,
+            signal_buffers,
+        )
+        graph.output(*outputs)
+
+    model = session.load(graph)
+    result_buffers = model.execute(
+        Buffer.from_numpy(np.array([3, 4], dtype=np.int64)).to(Accelerator(0)),
+        Buffer.from_numpy(np.array([0, 2, 2], dtype=np.int64)),
+        Buffer.from_numpy(np.array([10, 25], dtype=np.uint32)).to(
+            Accelerator(0)
+        ),
+        Buffer.from_numpy(np.array([], dtype=np.uint32)).to(Accelerator(1)),
+        *signals.buffers(),
+    )
+
+    assert len(result_buffers) == 2
+    np.testing.assert_equal(
+        result_buffers[0].to_numpy(),
+        np.array([13, 29], dtype=np.uint32),
+    )
+    np.testing.assert_equal(
+        result_buffers[1].to_numpy(),
+        np.array([], dtype=np.uint32),
+    )
+
+
+def test_increment_cache_lengths_from_counts_two_nonempty_replicas() -> None:
+    num_devices = 2
+    devices = [DeviceRef.GPU(i) for i in range(num_devices)]
+    session = InferenceSession(
+        devices=[Accelerator(id=i) for i in range(num_devices)]
+    )
+    signals = Signals(devices)
+    batch_increments_type = TensorType(DType.int64, [3], device=devices[0])
+    data_parallel_splits_type = TensorType(
+        DType.int64, [3], device=DeviceRef.CPU()
+    )
+    replica0_cache_lengths_type = TensorType(
+        DType.uint32, [1], device=devices[0]
+    )
+    replica1_cache_lengths_type = TensorType(
+        DType.uint32, [2], device=devices[1]
+    )
+
+    with Graph(
+        "increment_cache_lengths_from_counts_two_nonempty_replicas",
+        input_types=[
+            batch_increments_type,
+            data_parallel_splits_type,
+            replica0_cache_lengths_type,
+            replica1_cache_lengths_type,
+            *signals.input_types(),
+        ],
+    ) as graph:
+        batch_increments = graph.inputs[0].tensor
+        data_parallel_splits = graph.inputs[1].tensor
+        cache_lengths = [graph.inputs[2].tensor, graph.inputs[3].tensor]
+        signal_buffers = [inp.buffer for inp in graph.inputs[4:]]
+        outputs = increment_cache_lengths_from_counts(
+            batch_increments,
+            data_parallel_splits,
+            cache_lengths,
+            signal_buffers,
+        )
+        graph.output(*outputs)
+
+    model = session.load(graph)
+    result_buffers = model.execute(
+        Buffer.from_numpy(np.array([3, 4, 5], dtype=np.int64)).to(
+            Accelerator(0)
+        ),
+        Buffer.from_numpy(np.array([0, 1, 3], dtype=np.int64)),
+        Buffer.from_numpy(np.array([10], dtype=np.uint32)).to(Accelerator(0)),
+        Buffer.from_numpy(np.array([25, 32], dtype=np.uint32)).to(
+            Accelerator(1)
+        ),
+        *signals.buffers(),
+    )
+
+    assert len(result_buffers) == 2
+    np.testing.assert_equal(
+        result_buffers[0].to_numpy(),
+        np.array([13], dtype=np.uint32),
+    )
+    np.testing.assert_equal(
+        result_buffers[1].to_numpy(),
+        np.array([29, 37], dtype=np.uint32),
     )
