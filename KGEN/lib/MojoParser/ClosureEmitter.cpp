@@ -2010,8 +2010,10 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   auto parentSymbolRef = SymbolRefAttr::get(
       ctx, getFlattenedSymbolName(getFullyResolvedSymbolRefUpTo<ModuleOp>(
                cast<mlir::SymbolOpInterface>(parent.getOperation()))));
+  auto closureAttr = KGEN::ClosureAttr::get(
+      ctx, ParamClosureType::get(ctx, parentSymbolRef, fnName));
   KGEN::ClosureType closureType =
-      ClosureType::get(ctx, parentSymbolRef, fnName,
+      ClosureType::get(ctx, closureAttr,
                        isRegPassable ? ClosureMemoryKind::REGISTER_PASSABLE
                                      : ClosureMemoryKind::NONESCAPING);
   SmallVector<Attribute> captureInfo;

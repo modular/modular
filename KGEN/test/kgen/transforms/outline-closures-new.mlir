@@ -992,3 +992,53 @@ kgen.generator @foo<FuncType: type, flag: i1>(%arg1: !kgen.param<FuncType>) {
 
   kgen.return
 }
+
+// -----
+
+// COM: Verify that an aliased register-passable closure captured without any
+// COM: body use still contributes its transitive captured parameters.
+// CHECK: kgen.struct.generator @"foo::_kernelWrapper3"<FuncType: type> = struct<(struct<(FuncType)>)>{
+
+kgen.struct.generator @"foo::_kernel"<CAPTURES: !kgen.param_closure<@foo "_kernel">> = !kgen.closure<@foo, "_kernel" register_passable> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.closure<@foo, "_kernel" register_passable>) -> index = #kgen.closure.symbol<@foo, "_kernel", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "_kernel"> CAPTURES>>
+  }
+}
+
+kgen.struct.generator @"foo::_kernelWrapper2"<CAPTURES: !kgen.param_closure<@foo "_kernelWrapper2">> = !kgen.closure<@foo, "_kernelWrapper2" register_passable> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.closure<@foo, "_kernelWrapper2" register_passable>) -> index = #kgen.closure.symbol<@foo, "_kernelWrapper2", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "_kernelWrapper2"> CAPTURES>>
+  }
+}
+
+kgen.struct.generator @"foo::_kernelWrapper3"<CAPTURES: !kgen.param_closure<@foo "_kernelWrapper3">> = !kgen.closure<@foo, "_kernelWrapper3" register_passable> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.closure<@foo, "_kernelWrapper3" register_passable>) -> index = #kgen.closure.symbol<@foo, "_kernelWrapper3", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "_kernelWrapper3"> CAPTURES>>
+  }
+}
+
+kgen.generator @foo<FuncType: type>(%arg1: !kgen.param<FuncType>) {
+  %0 = kgen.closure.init(%arg1)() -> index {
+    kgen.param.declare call: (!kgen.param<FuncType>) -> index = <#kgen.get_witness<FuncType, "closure_trait", "__call__">>
+    %1 = kgen.call_param[(!kgen.param<FuncType>) -> index: call](%arg1)
+    kgen.return %1 : index
+  } : (!kgen.param<FuncType>), !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+  %27 = pop.load %0 : !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+  %28 = pop.stack_allocation 1 x !kgen.closure<@foo, "_kernel" register_passable> align 1
+  pop.store %27, %28 align<1> : !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+  %29 = pop.load %28 : !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+  %2 = kgen.closure.init(%29)() -> index {
+    %3 = kgen.param.constant: index = <0>
+    %30 = pop.stack_allocation 1 x !kgen.closure<@foo, "_kernel" register_passable>
+    pop.store %29, %30 align<1> : !kgen.pointer<!kgen.closure<@foo, "_kernel" register_passable>>
+    kgen.return %3 : index
+  } : (!kgen.closure<@foo, "_kernel" register_passable>), !kgen.pointer<!kgen.closure<@foo, "_kernelWrapper2" register_passable>>
+
+  // COM: Test that no uses in body still picks up the capture.
+  %4 = kgen.closure.init(%29)() -> index {
+    %5 = kgen.param.constant: index = <1>
+    kgen.return %5 : index
+  } : (!kgen.closure<@foo, "_kernel" register_passable>), !kgen.pointer<!kgen.closure<@foo, "_kernelWrapper3" register_passable>>
+
+  kgen.return
+}

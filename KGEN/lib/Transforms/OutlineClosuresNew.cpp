@@ -773,6 +773,7 @@ ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
   // Scan the captured values for captured parameters.
   ParameterCollector collector(paramCache);
   SmallVector<ParamDeclRefAttr, 16> capturedUses;
+  SmallVector<ClosureAttr> capturedClosureUses;
 
   // Because the parameter use-def graph does not consider operands, only
   // results and regions, explicitly collect parameter usages from the captured
@@ -780,9 +781,9 @@ ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
   for (Value capture : captures.keys()) {
     bool unusedHasConstExpr = false;
     size_t unusedRequiredSignatureDepth = 0;
-    collector.collectUsesFromType(capture.getType(), capturedUses,
-                                  unusedHasConstExpr,
-                                  unusedRequiredSignatureDepth);
+    collector.collectUsesFromType(
+        capture.getType(), capturedUses, unusedHasConstExpr,
+        unusedRequiredSignatureDepth, &capturedClosureUses);
   }
 
   if (debugBuild) {
@@ -839,9 +840,18 @@ ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
   auto localParams = dyn_cast<ClosureInitOp>(regionDecl)
                          ? cast<ClosureInitOp>(regionDecl).getInputParams()
                          : ArrayRef<ParamDeclAttr>{};
-  for (ClosureAttr closureAttr : regionalUseDefGraph->second.closureCaptures) {
+  std::optional<ClosureParentKey> currentClosureKey;
+  if (auto closureInit = dyn_cast<ClosureInitOp>(regionDecl)) {
+    ClosureType closureType = getClosureType(closureInit);
+    currentClosureKey =
+        ClosureParentKey{closureType.getParentSymbol(), closureType.getName()};
+  }
+  auto inflateClosureCapture = [&](ClosureAttr closureAttr) {
     ParamClosureType pct = closureAttr.getType();
     ClosureParentKey key{pct.getParentSymbol(), pct.getName()};
+    if (currentClosureKey && key.parent == currentClosureKey->parent &&
+        key.nestedName == currentClosureKey->nestedName)
+      return;
     auto it = paramCaptureToStructAttr.find(key);
     assert(it != paramCaptureToStructAttr.end() &&
            "referenced closure must have been lifted before the enclosing "
@@ -852,7 +862,11 @@ ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
           }))
         capturedParamDecls.insert(param);
     }
-  }
+  };
+  for (ClosureAttr closureAttr : regionalUseDefGraph->second.closureCaptures)
+    inflateClosureCapture(closureAttr);
+  for (ClosureAttr closureAttr : capturedClosureUses)
+    inflateClosureCapture(closureAttr);
 
   return capturedParamDecls;
 }
