@@ -452,10 +452,10 @@ lit.fn @metadata(%a: i32, %b: i32) attributes {
 // COM: Ensure the linkage name is passed through on an exported function.
 
 // CHECK: kgen.generator export @"main::main::main"
-// CHECK-SAME: linkageName = "main" : !kgen.string
+// CHECK-SAME: linkageName = #kgen.linkage_name<"main" : !kgen.string, false>
 lit.package @main {
   lit.file_module @main {
-    lit.fn export @main() attributes {linkageName = "main" : !kgen.string} {
+    lit.fn export @main() attributes {linkageName = #kgen.linkage_name<"main" : !kgen.string, false>} {
       kgen.return
     }
   }
@@ -467,10 +467,10 @@ lit.package @main {
 // COM: renaming the symbol.
 
 // CHECK: kgen.generator export @"pkg::mod::my_fn"
-// CHECK-SAME: linkageName = "my_export" : !kgen.string
+// CHECK-SAME: linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>
 lit.package @pkg {
   lit.file_module @mod {
-    lit.fn export @my_fn() attributes {linkageName = "my_export" : !kgen.string} {
+    lit.fn export @my_fn() attributes {linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>} {
       kgen.return
     }
   }
@@ -481,10 +481,10 @@ lit.package @pkg {
 // COM: Ensure that linkageName on a non-export function passes through.
 
 // CHECK: kgen.generator @"pkg3::mod3::orig_name"
-// CHECK-SAME: linkageName = "my_link_name" : !kgen.string
+// CHECK-SAME: linkageName = #kgen.linkage_name<"my_link_name" : !kgen.string, false>
 lit.package @pkg3 {
   lit.file_module @mod3 {
-    lit.fn @orig_name() attributes {linkageName = "my_link_name" : !kgen.string} {
+    lit.fn @orig_name() attributes {linkageName = #kgen.linkage_name<"my_link_name" : !kgen.string, false>} {
       kgen.return
     }
   }

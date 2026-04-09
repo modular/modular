@@ -523,7 +523,8 @@ static constexpr const StringLiteral kMainSymbolName = "main";
 
 /// Try to set the linkage name on a FnOp. If a different linkage name is
 /// already set, emit an error and return true.
-static bool trySetLinkageName(SMLoc loc, ASTDecl &decl, TypedAttr linkageName) {
+static bool trySetLinkageName(SMLoc loc, ASTDecl &decl,
+                              LinkageNameAttr linkageName) {
   auto fnOp = llvm::dyn_cast_if_present<FnOp>(decl.getIfOperation());
   if (!fnOp)
     return false;
@@ -553,18 +554,23 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
   if (node)
     operands = node->operands;
   StringRef spelling = isExport ? "@export" : "@__name";
-  if (!isExport && operands.size() != 1) {
-    shared.emitError(loc, spelling) << " must have 1 argument";
+  if (!isExport && operands.empty()) {
+    shared.emitError(loc, spelling) << " must have at least 1 argument";
     return;
   }
-  if (isExport && operands.size() > 2) {
+  if (operands.size() > 2) {
     shared.emitError(loc, spelling) << " requires at most 2 arguments";
     return;
   }
   SMLoc nodeLoc = node ? node->getLoc() : loc;
 
+  // TODO: Consider extracting the operand-parsing loop below into a helper
+  // (e.g. parseDecoratorArgs) that returns a struct {TypedAttr rawName,
+  // std::optional<std::string> exportABI, std::optional<bool> mangle}, to
+  // separate argument parsing from the semantic actions that follow.
   TypedAttr linkageName;
   std::optional<std::string> exportABI;
+  std::optional<bool> mangle;
   for (const Operand &operand : operands) {
     auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
     if (strNode && operand.isKeyword() && operand.name == "ABI") {
@@ -574,7 +580,20 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
                          "only \"C\" ABI is supported at the moment");
         return;
       }
+    } else if (!isExport && operand.isKeyword() && operand.name == "mangle") {
+      auto *boolNode = dyn_cast<BoolLiteralNode>(operand.expr);
+      if (!boolNode) {
+        shared.emitError(operand.getLoc())
+            << "'mangle' argument to " << spelling << " must be True or False";
+        return;
+      }
+      mangle = boolNode->value;
     } else if (strNode && operand.isPositional()) {
+      if (linkageName) {
+        shared.emitError(nodeLoc, spelling)
+            << " must have at most 1 name argument";
+        return;
+      }
       linkageName = StringAttr::get(strNode->getValue(),
                                     KGEN::StringType::get(decl.getContext()));
     } else if (operand.isPositional() && !isExport) { // Not @export for now
@@ -636,11 +655,25 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
     }
   }
 
+  // Always wrap the linkage name in LinkageNameAttr so every decorator-set
+  // name carries the mangle flag explicitly. For @export mangle is always
+  // false (it is never parsed for @export). For @__name it defaults to false.
+  if (mangle.has_value() && !linkageName) {
+    shared.emitError(nodeLoc, spelling)
+        << " requires a name argument when 'mangle' is specified";
+    return;
+  }
+  LinkageNameAttr wrappedName;
+  if (linkageName)
+    wrappedName =
+        KGEN::LinkageNameAttr::get(linkageName, mangle.value_or(false));
+
   // Handle the unique case of main. We implicitly export main, so this is
   // simply checking that the user didn't try to export it as something else.
   std::optional<StringRef> simpleLinkageName = unmangledName;
-  if (auto strAttr = dyn_cast_or_null<StringAttr>(linkageName))
-    simpleLinkageName = strAttr.getValue();
+  if (wrappedName)
+    if (auto strAttr = dyn_cast<StringAttr>(wrappedName.getName()))
+      simpleLinkageName = strAttr.getValue();
 
   if (simpleLinkageName == kMainSymbolName) {
     if (unmangledName != kMainSymbolName)
@@ -654,8 +687,8 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
     return;
   }
 
-  if (linkageName) {
-    if (trySetLinkageName(loc, decl, linkageName))
+  if (wrappedName) {
+    if (trySetLinkageName(loc, decl, wrappedName))
       return;
   }
   if (!isExport)
@@ -669,7 +702,7 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
 
     // Validate the linkage name is a valid C identifer. We don't permit
     // non-literal identifiers for these functions.
-    if (linkageName && !simpleLinkageName) {
+    if (wrappedName && !simpleLinkageName) {
       shared.emitError(loc)
           << " \"C\" ABI functions must have literal identifiers";
       return;
@@ -1036,7 +1069,7 @@ void FnSigDecorators::applyExtern(SMLoc decoratorLoc,
 
   std::string libName = strNode->getValue();
   auto ctx = funcOp->getContext();
-  funcOp.setLinkageNameAttr(StringAttr::get(libName, StringType::get(ctx)));
+  funcOp.setLinkageNameAttr(LinkageNameAttr::get(ctx, libName));
 
   if (decl.getParentDecl() && llvm::isa_and_nonnull<TraitDeclOp, StructDeclOp>(
                                   decl.getParentDecl()->getIfOperation())) {
@@ -1238,10 +1271,9 @@ void FnSigDecorators::finalize() {
   }
 
   // If we've an exported function with no explicit linkage name, set it now.
-  if (funcOp.isExported() && !funcOp.getLinkageName()) {
-    trySetLinkageName(
-        decl.getLoc(), decl,
-        StringAttr::get(baseName, StringType::get(decl.getContext())));
+  if (funcOp.isExported() && !funcOp.getLinkageNameAttr()) {
+    trySetLinkageName(decl.getLoc(), decl,
+                      LinkageNameAttr::get(decl.getContext(), baseName));
   }
 
   if (!llvmArgMetadata.empty())

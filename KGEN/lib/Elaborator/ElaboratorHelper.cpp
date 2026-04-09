@@ -6,6 +6,7 @@
 
 #include "ElaboratorHelper.h"
 #include "IREvaluatorContext.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
@@ -18,7 +19,7 @@ using namespace KGEN;
 ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
 KGEN::getExpectedMangledName(Location errorLoc, StringRef errorContext,
                              TypedAttr symCst, SymbolTable &symTab,
-                             bool allowParametric, bool sanitize) {
+                             bool sanitize) {
   auto symbol = extractSymbolConstantAttr(symCst);
   if (!symbol) {
     return ErrorTree(
@@ -47,16 +48,22 @@ KGEN::getExpectedMangledName(Location errorLoc, StringRef errorContext,
     return ErrorTree(errorLoc, errMsg);
   }
 
-  // If the generator has a constant linkage name, that is the final name.
+  // Determine the final base name from an explicit linkage name or the
+  // auto-mangled parameter values.
+  // TODO: When mangle=true, hash the auto-mangled parameter values into the
+  // prefix to guarantee uniqueness across instantiations (e.g.
+  // "my_kernel_a3f2c1b0"). For now both mangle=true and mangle=false
+  // use the prefix verbatim; PTX sanitization is applied afterwards
+  // when sanitize=true.
   StringAttr baseName;
-  if (auto linkageName =
-          dyn_cast_if_present<StringAttr>(func.getLinkageNameAttr())) {
-    baseName = linkageName;
-  } else {
+  if (auto lna = func.getLinkageNameAttr()) {
+    if (auto prefix = dyn_cast<StringAttr>(lna.getName()))
+      baseName = StringAttr::get(func.getContext(), prefix.getValue());
+  }
+  if (!baseName)
     baseName =
         StringAttr::get(func.getContext(),
                         mangleParameterValues(func, symbol.getParamValues()));
-  }
   if (sanitize)
     baseName = sanitizeSymbolToAlnum(baseName);
 
@@ -87,19 +94,25 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
   DenseMap<SymbolRefAttr, StringAttr> symToRename;
   DenseMap<StringAttr, FuncOp> renamedTo;
 
-  for (auto func : theModule.getOps<FuncOp>()) {
+  for (FuncOp func : theModule.getOps<FuncOp>()) {
     StringAttr newName;
 
     if (auto linkageNameAttr = func.getLinkageNameAttr()) {
-      if (!isa<StringAttr>(linkageNameAttr)) {
+      auto prefixAttr = dyn_cast<StringAttr>(linkageNameAttr.getName());
+      if (!prefixAttr) {
         failed = true;
-        mlir::emitError(func.getLoc()) << "unable to resolve `linkageName` '"
-                                       << linkageNameAttr << "' to a string";
+        mlir::emitError(func.getLoc())
+            << "unable to resolve `linkageName` '" << linkageNameAttr.getName()
+            << "' to a string before renaming";
+        func.removeLinkageNameAttr();
         continue;
       }
-      // Convert from a !kgen.string-typed StringAttr to a built-in StringAttr.
-      newName = StringAttr::get(theModule.getContext(),
-                                cast<StringAttr>(linkageNameAttr).getValue());
+      StringRef prefix = prefixAttr.getValue();
+      // Use the linkage name verbatim. For GPU functions, the isGPU block
+      // below will apply sanitizeSymbolToAlnum, just like any other function.
+      // TODO: When mangle=true, hash the auto-mangled parameter values into
+      // the prefix to guarantee uniqueness across instantiations.
+      newName = StringAttr::get(theModule.getContext(), prefix);
       func.removeLinkageNameAttr();
     }
 

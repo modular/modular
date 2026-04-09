@@ -170,7 +170,7 @@ kgen.generator export @hanoi_entry<T: dtype>(%arg0: !pop.scalar<si8>, %arg1: !po
 // Test that a parameter referenced only in linkageName is not removed.
 
 kgen.generator @linkage_name_keeps_param<Name: string>() attributes {
-  linkageName = #kgen.param.decl.ref<"Name"> : !kgen.string
+  linkageName = #kgen.linkage_name<#kgen.param.decl.ref<"Name"> : !kgen.string, false>
 } {
   kgen.return
 }
@@ -180,8 +180,7 @@ kgen.generator export @linkage_name_keeps_param_entry<Name: string>() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @linkage_name_keeps_param<Name: string>() attributes {linkageName = #kgen.param.decl.ref<"Name"> : !kgen.string}
+// CHECK-LABEL: kgen.generator @linkage_name_keeps_param<Name: string>() attributes {linkageName = #kgen.linkage_name<#kgen.param.decl.ref<"Name"> : !kgen.string, false> : !kgen.string}
 
 // CHECK-LABEL: kgen.generator export @linkage_name_keeps_param_entry<Name: string>()
 // CHECK-NEXT: kgen.call @linkage_name_keeps_param<:string Name>() : () -> ()
-

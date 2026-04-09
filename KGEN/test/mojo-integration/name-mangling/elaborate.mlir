@@ -41,7 +41,7 @@ kgen.generator export @get_gpu_linkage_name() {
 // COM: Test that get_linkage_name with a GPU target sanitizes explicit linkage names:
 // COM: - Adds "_" prefix to digit-starting names
 // COM: - Encodes non-alnum characters
-kgen.generator @"42kernel"() attributes { linkageName = "42.sanitize.this/kernel" : !kgen.string } {
+kgen.generator @"42kernel"() attributes { linkageName = #kgen.linkage_name<"42.sanitize.this/kernel" : !kgen.string, false> } {
   kgen.return
 }
 
@@ -80,13 +80,15 @@ kgen.generator export @get_source_name() {
 // parameter with a constant string.
 kgen.generator @HELLO<x: () capturing -> index>() capturing -> !kgen.none
  attributes {
-   linkageName = #pop.string_concat<
-     #kgen.get_linkage_name<
-       current_target(),
-       #kgen.param.decl.ref<"x"> : !kgen.generator<() capturing -> index>
-     >  : !kgen.string,
-     "_hello"
-    > : !kgen.string
+   linkageName = #kgen.linkage_name<
+     #pop.string_concat<
+       #kgen.get_linkage_name<
+         current_target(),
+         #kgen.param.decl.ref<"x"> : !kgen.generator<() capturing -> index>
+       >  : !kgen.string,
+       "_hello"
+      > : !kgen.string,
+     false>
   } {
   %none = kgen.param.constant: none = <#kgen.none>
   %0 = kgen.call_param[() capturing -> index: x]()
@@ -94,7 +96,7 @@ kgen.generator @HELLO<x: () capturing -> index>() capturing -> !kgen.none
 }
 
 kgen.generator @FOO() capturing -> index
-    attributes { linkageName = "bar" : !kgen.string } {
+    attributes { linkageName = #kgen.linkage_name<"bar" : !kgen.string, false> } {
   %0 = pop.compiler.global_load "CAPTURE_0" : !kgen.pointer<index>
   %1 = pop.load %0 : !kgen.pointer<index>
   kgen.return %1 : index
@@ -102,7 +104,7 @@ kgen.generator @FOO() capturing -> index
 
 // This linkage name needs sanitization for the nvptx target
 kgen.generator @FLIP() capturing -> index
-    attributes { linkageName = "1bar" : !kgen.string } {
+    attributes { linkageName = #kgen.linkage_name<"1bar" : !kgen.string, false> } {
   %0 = pop.compiler.global_load "CAPTURE_0" : !kgen.pointer<index>
   %1 = pop.load %0 : !kgen.pointer<index>
   kgen.return %1 : index

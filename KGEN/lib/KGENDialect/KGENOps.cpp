@@ -550,6 +550,10 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
 }
 
 LogicalResult FuncOp::verify() {
+  // Skip body-based checks for functions whose body has not been filled in yet
+  // (e.g. populate_captures stubs created before offload compilation).
+  if (getBodyRegion().empty())
+    return success();
   FunctionType type = getFunctionType();
   if (type.getNumInputs() != getNumArguments()) {
     return mlir::emitError(getLoc(), "'kgen.func' op function type expected ")

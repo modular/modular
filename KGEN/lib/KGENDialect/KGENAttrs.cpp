@@ -815,6 +815,17 @@ LogicalResult CompileOffloadClosureAttr::verify(
 
 bool GetLinkageNameAttr::isConstant() const { return false; }
 
+//===----------------------------------------------------------------------===//
+// LinkageNameAttr
+//===----------------------------------------------------------------------===//
+
+bool LinkageNameAttr::isConstant() const { return false; }
+
+LinkageNameAttr LinkageNameAttr::get(MLIRContext *ctx, StringRef name,
+                                     bool mangle) {
+  return get(StringAttr::get(name, StringType::get(ctx)), mangle);
+}
+
 LogicalResult GetLinkageNameAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, TypedAttr target,
     TypedAttr func, Type type) {
