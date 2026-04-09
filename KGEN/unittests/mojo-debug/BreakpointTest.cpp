@@ -47,21 +47,21 @@ TEST(BreakpointTest, testSeparatedBreakpoints) {
 
   // First stop: x was just initialised to 0.
   auto &src = ctx.binary.getSource();
-  EXPECT_EQ(src.findLinesWithText("# stop_1")[0],
+  EXPECT_EQ(src.findFirstLineWithText("# stop_1"),
             (int)ctx.frame.GetLineEntry().GetLine());
   SBValue x = ctx.frame.FindVariable("x");
   EXPECT_EQ((int)x.GetValueAsSigned(), 0);
 
   // Second stop: x += 1 executed, so x == 1.
   ctx.resume();
-  EXPECT_EQ(src.findLinesWithText("# stop_2")[0],
+  EXPECT_EQ(src.findFirstLineWithText("# stop_2"),
             (int)ctx.frame.GetLineEntry().GetLine());
   x = ctx.frame.FindVariable("x");
   EXPECT_EQ((int)x.GetValueAsSigned(), 1);
 
   // Third stop: x += 1 again, so x == 2.
   ctx.resume();
-  EXPECT_EQ(src.findLinesWithText("# stop_3")[0],
+  EXPECT_EQ(src.findFirstLineWithText("# stop_3"),
             (int)ctx.frame.GetLineEntry().GetLine());
   x = ctx.frame.FindVariable("x");
   EXPECT_EQ((int)x.GetValueAsSigned(), 2);
@@ -78,7 +78,7 @@ TEST(BreakpointTest, testBreakOnRaise) {
   ctx.runCommand("mojo break-on-raise");
   ctx.resume();
 
-  EXPECT_EQ(ctx.binary.getSource().findLinesWithText("# raises")[0],
+  EXPECT_EQ(ctx.binary.getSource().findFirstLineWithText("# raises"),
             (int)ctx.thread.GetFrameAtIndex(0).GetLineEntry().GetLine());
 }
 
@@ -89,7 +89,7 @@ TEST(BreakpointTest, testBreakOnRaiseInlined) {
   ctx.runCommand("mojo break-on-raise");
   ctx.resume();
 
-  EXPECT_EQ(ctx.binary.getSource().findLinesWithText("# raises")[0],
+  EXPECT_EQ(ctx.binary.getSource().findFirstLineWithText("# raises"),
             (int)ctx.thread.GetFrameAtIndex(0).GetLineEntry().GetLine());
 }
 
@@ -109,13 +109,13 @@ TEST(BreakpointTest, testBreakOnRaiseSecondTarget) {
   StopContext ctx1 = buildAndLaunch("raise.mojo");
   ctx1.runCommand("mojo break-on-raise");
   ctx1.process.Continue();
-  EXPECT_EQ(ctx1.binary.getSource().findLinesWithText("# raises")[0],
+  EXPECT_EQ(ctx1.binary.getSource().findFirstLineWithText("# raises"),
             (int)ctx1.thread.GetFrameAtIndex(0).GetLineEntry().GetLine());
 
   StopContext ctx2 = buildAndLaunch("raise.mojo");
   ctx2.runCommand("mojo break-on-raise");
   ctx2.process.Continue();
-  EXPECT_EQ(ctx2.binary.getSource().findLinesWithText("# raises")[0],
+  EXPECT_EQ(ctx2.binary.getSource().findFirstLineWithText("# raises"),
             (int)ctx2.thread.GetFrameAtIndex(0).GetLineEntry().GetLine());
 }
 
@@ -148,7 +148,7 @@ TEST(BreakpointTest, testDontAutomaticallyBreakOnRaiseSecondTarget) {
   EXPECT_EQ(ctx2.process.GetState(), lldb::eStateExited);
 
   ctx1.process.Continue();
-  EXPECT_EQ(ctx1.binary.getSource().findLinesWithText("# raises")[0],
+  EXPECT_EQ(ctx1.binary.getSource().findFirstLineWithText("# raises"),
             (int)ctx1.thread.GetFrameAtIndex(0).GetLineEntry().GetLine());
 }
 
@@ -189,7 +189,7 @@ TEST(BreakpointTest, testDontBreakOnRaiseIfDisabledSecondTarget) {
   EXPECT_EQ(ctx1.process.GetState(), lldb::eStateExited);
 
   ctx2.process.Continue();
-  EXPECT_EQ(ctx2.binary.getSource().findLinesWithText("# raises")[0],
+  EXPECT_EQ(ctx2.binary.getSource().findFirstLineWithText("# raises"),
             (int)ctx2.thread.GetFrameAtIndex(0).GetLineEntry().GetLine());
 }
 
@@ -201,18 +201,18 @@ TEST(BreakpointTest, testSymbolBreakpoints) {
   ctx.resume();
 
   int expectedLine =
-      ctx.binary.getSource().findLinesWithText("# simple_fn stop")[0];
+      ctx.binary.getSource().findFirstLineWithText("# simple_fn stop");
   EXPECT_EQ(ctx.frame.GetLineEntry().GetLine(), expectedLine);
 
   ctx.resume();
 
   expectedLine =
-      ctx.binary.getSource().findLinesWithText("# parametrized_fn stop")[0];
+      ctx.binary.getSource().findFirstLineWithText("# parametrized_fn stop");
   EXPECT_EQ(ctx.frame.GetLineEntry().GetLine(), expectedLine);
 
   ctx.resume();
 
-  expectedLine =
-      ctx.binary.getSource().findLinesWithText("# parametrized_method stop")[0];
+  expectedLine = ctx.binary.getSource().findFirstLineWithText(
+      "# parametrized_method stop");
   EXPECT_EQ(ctx.frame.GetLineEntry().GetLine(), expectedLine);
 }

@@ -15,8 +15,8 @@ TEST(ControlFlowTest, testSteppingIntoInlinedNoDebugInfo) {
   StopContext ctx = buildAndLaunch("step_into_inlined_no_debug_info.mojo");
   ctx.stepInto();
 
-  int expectedLine =
-      ctx.binary.getSource().findLinesWithText("# expected after step-into")[0];
+  int expectedLine = ctx.binary.getSource().findFirstLineWithText(
+      "# expected after step-into");
   EXPECT_EQ((int)ctx.frame.GetLineEntry().GetLine(), expectedLine);
 }
 
@@ -24,7 +24,7 @@ TEST(ControlFlowTest, testStepStraightLine) {
   // Checks stepping straight line code.
   StopContext ctx = buildAndLaunch("step_straight_line.mojo");
   int functionHeaderLine =
-      ctx.binary.getSource().findLinesWithText("def main()")[0];
+      ctx.binary.getSource().findFirstLineWithText("def main()");
 
   int line = ctx.frame.GetLineEntry().GetLine();
   int prevLine = line;

@@ -30,6 +30,12 @@ public:
   /// in the source file.
   std::vector<int> findLinesWithText(StringRef text) const;
 
+  /// Return the 1-indexed line number of the first occurrence of the given
+  /// text in the source file, or -1 if not found. We use -1 because LLDB's
+  /// GetLine() returns 0 for missing debug info, and we don't want a missing
+  /// comment to accidentally match that.
+  int findFirstLineWithText(StringRef text) const;
+
 private:
   std::filesystem::path path;
   std::string pathStr;
