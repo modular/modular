@@ -8,6 +8,7 @@
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 
@@ -73,7 +74,59 @@ void HLCF::printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
 // ForOp
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+// ForOp bounds custom assembly
+//===----------------------------------------------------------------------===//
+
+ParseResult HLCF::parseForBoundsWithOptionalType(
+    OpAsmParser &parser, OpAsmParser::UnresolvedOperand &lowerBound,
+    Type &lowerBoundType, OpAsmParser::UnresolvedOperand &upperBound,
+    Type &upperBoundType, OpAsmParser::UnresolvedOperand &step,
+    Type &stepType) {
+  if (parser.parseOperand(lowerBound) || parser.parseKeyword("to") ||
+      parser.parseOperand(upperBound) || parser.parseKeyword("step") ||
+      parser.parseOperand(step))
+    return failure();
+  // Optional `: <type>` annotation — default to `index` for backward compat.
+  Type boundsType = parser.getBuilder().getIndexType();
+  if (succeeded(parser.parseOptionalColon())) {
+    if (parser.parseType(boundsType))
+      return failure();
+  }
+  stepType = boundsType;
+  lowerBoundType = boundsType;
+  upperBoundType = boundsType;
+  return success();
+}
+
+void HLCF::printForBoundsWithOptionalType(OpAsmPrinter &printer, Operation *,
+                                          Value lowerBound, Type lowerBoundType,
+                                          Value upperBound, Type /*ubType*/,
+                                          Value step, Type /*stepType*/) {
+  printer << lowerBound << " to " << upperBound << " step " << step;
+  // Omit type annotation for `index` to preserve the compact legacy format.
+  if (!lowerBoundType.isIndex())
+    printer << " : " << lowerBoundType;
+}
+
+//===----------------------------------------------------------------------===//
+// ForOp
+//===----------------------------------------------------------------------===//
+
 LogicalResult ForOp::verify() {
+  // Lower bound, upper bound, and step must all have the same type.
+  Type boundsType = getLowerBound().getType();
+  if (getUpperBound().getType() != boundsType) {
+    return emitOpError("upper bound type '")
+           << getUpperBound().getType() << "' does not match lower bound type '"
+           << boundsType << "'";
+  }
+  if (getStep().getType() != boundsType) {
+    return emitOpError("step type '")
+           << getStep().getType() << "' does not match lower bound type '"
+           << boundsType << "'";
+  }
+
   if (getIterArgs().size() != getBody().getNumArguments())
     return emitOpError("operand count do not match body region argument count");
 

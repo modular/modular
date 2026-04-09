@@ -192,6 +192,96 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
   kgen.return
 }
 
+// CHECK-LABEL: @for_index_bounds
+kgen.func @for_index_bounds(%lb: index, %ub: index, %step: index) {
+  // CHECK: hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} slt add]
+  // CHECK-NEXT: hlcf.for.yield [induction_var (%{{.*}} : index)] [retvals ()] [iterargs ()]
+  hlcf.for [%lb to %ub step %step slt add] (%arg0 = %lb : index) {
+    hlcf.for.yield [induction_var (%arg0 : index)] [retvals ()] [iterargs ()]
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @for_si8_bounds
+kgen.func @for_si8_bounds(%lb: !pop.scalar<si8>, %ub: !pop.scalar<si8>, %step: !pop.scalar<si8>) {
+  // CHECK: hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} : !pop.scalar<si8> slt add]
+  // CHECK-NEXT: hlcf.for.yield [induction_var (%{{.*}} : !pop.scalar<si8>)] [retvals ()] [iterargs ()]
+  hlcf.for [%lb to %ub step %step : !pop.scalar<si8> slt add] (%arg0 = %lb : !pop.scalar<si8>) {
+    hlcf.for.yield [induction_var (%arg0 : !pop.scalar<si8>)] [retvals ()] [iterargs ()]
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @for_si32_bounds
+kgen.func @for_si32_bounds(%lb: !pop.scalar<si32>, %ub: !pop.scalar<si32>, %step: !pop.scalar<si32>) {
+  // CHECK: hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} : !pop.scalar<si32> slt add]
+  // CHECK-NEXT: hlcf.for.yield [induction_var (%{{.*}} : !pop.scalar<si32>)] [retvals ()] [iterargs ()]
+  hlcf.for [%lb to %ub step %step : !pop.scalar<si32> slt add] (%arg0 = %lb : !pop.scalar<si32>) {
+    hlcf.for.yield [induction_var (%arg0 : !pop.scalar<si32>)] [retvals ()] [iterargs ()]
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @for_si64_bounds
+kgen.func @for_si64_bounds(%lb: !pop.scalar<si64>, %ub: !pop.scalar<si64>, %step: !pop.scalar<si64>) {
+  // CHECK: hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} : !pop.scalar<si64> sgt sub]
+  // CHECK-NEXT: hlcf.for.yield [induction_var (%{{.*}} : !pop.scalar<si64>)] [retvals ()] [iterargs ()]
+  hlcf.for [%lb to %ub step %step : !pop.scalar<si64> sgt sub] (%arg0 = %lb : !pop.scalar<si64>) {
+    hlcf.for.yield [induction_var (%arg0 : !pop.scalar<si64>)] [retvals ()] [iterargs ()]
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @for_pop_index_bounds
+kgen.func @for_pop_index_bounds(%lb: !pop.scalar<index>, %ub: !pop.scalar<index>, %step: !pop.scalar<index>) {
+  // CHECK: hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} : !pop.scalar<index> slt add]
+  // CHECK-NEXT: hlcf.for.yield [induction_var (%{{.*}} : !pop.scalar<index>)] [retvals ()] [iterargs ()]
+  hlcf.for [%lb to %ub step %step : !pop.scalar<index> slt add] (%arg0 = %lb : !pop.scalar<index>) {
+    hlcf.for.yield [induction_var (%arg0 : !pop.scalar<index>)] [retvals ()] [iterargs ()]
+  }
+  kgen.return
+}
+
+// Loop with a return value.
+// CHECK-LABEL: @for_with_retval
+kgen.func @for_with_retval(%lb: index, %ub: index, %step: index, %init: index) -> index {
+  // CHECK: %{{.*}} = hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} slt add]
+  // CHECK-SAME: (%{{.*}} = %{{.*}} : index, %{{.*}} = %{{.*}} : index) -> index
+  // CHECK: hlcf.for.yield [induction_var (%{{.*}} : index)] [retvals (%{{.*}} : index)] [iterargs ()]
+  %0 = hlcf.for [%lb to %ub step %step slt add]
+                (%arg0 = %lb : index, %arg1 = %init : index) -> index {
+    hlcf.for.yield [induction_var (%arg0 : index)] [retvals (%arg1 : index)] [iterargs ()]
+  }
+  kgen.return %0 : index
+}
+
+// Loop with an additional iter arg.
+// CHECK-LABEL: @for_with_iterarg
+kgen.func @for_with_iterarg(%lb: index, %ub: index, %step: index, %init: i32) {
+  // CHECK: hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} slt add]
+  // CHECK-SAME: (%{{.*}} = %{{.*}} : index, %{{.*}} = %{{.*}} : i32)
+  // CHECK: hlcf.for.yield [induction_var (%{{.*}} : index)] [retvals ()] [iterargs (%{{.*}} : i32)]
+  hlcf.for [%lb to %ub step %step slt add]
+           (%arg0 = %lb : index, %arg1 = %init : i32) {
+    hlcf.for.yield [induction_var (%arg0 : index)] [retvals ()] [iterargs (%arg1 : i32)]
+  }
+  kgen.return
+}
+
+// Pop scalar loop with a return value.
+// CHECK-LABEL: @for_si64_with_retval
+kgen.func @for_si64_with_retval(%lb: !pop.scalar<si64>, %ub: !pop.scalar<si64>,
+                                 %step: !pop.scalar<si64>, %init: index) -> index {
+  // CHECK: %{{.*}} = hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} : !pop.scalar<si64> sgt sub]
+  // CHECK-SAME: (%{{.*}} = %{{.*}} : !pop.scalar<si64>, %{{.*}} = %{{.*}} : index) -> index
+  // CHECK: hlcf.for.yield [induction_var (%{{.*}} : !pop.scalar<si64>)] [retvals (%{{.*}} : index)] [iterargs ()]
+  %0 = hlcf.for [%lb to %ub step %step : !pop.scalar<si64> sgt sub]
+                (%arg0 = %lb : !pop.scalar<si64>, %arg1 = %init : index) -> index {
+    hlcf.for.yield [induction_var (%arg0 : !pop.scalar<si64>)] [retvals (%arg1 : index)] [iterargs ()]
+  }
+  kgen.return %0 : index
+}
+
 // CHECK-LABEL:  kgen.func @elifWithArgs
 kgen.func @elifWithArgs(%arg0: index) -> index {
   %idx0 = index.constant 0

@@ -40,6 +40,23 @@ class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
 }
 
 //===----------------------------------------------------------------------===//
+// ForOp / ForControlVariableType constraint
+//===----------------------------------------------------------------------===//
+
+/// Match `!pop.scalar<si8|si16|si32|si64|index>` or `index` type.
+/// Used to type-constrain hlcf.for bounds, step and the induction variable in
+/// `hlcf.for.yield`.
+def ForControlVariableType : AnyTypeOf<[
+    Index,
+    ConfinedType<AnyType,
+        [CPred<"llvm::isa<::M::KGEN::POP::SIMDType>($_self) && "
+               "llvm::cast<::M::KGEN::POP::SIMDType>($_self).isScalar() && "
+               "llvm::cast<::M::KGEN::POP::SIMDType>($_self).getResolvedDType().has_value() && "
+               "llvm::cast<::M::KGEN::POP::SIMDType>($_self).getResolvedDType()->isSInt()">],
+        "!pop.scalar<signed integer> type">
+], "index or !pop.scalar<signed integer> type">;
+
+//===----------------------------------------------------------------------===//
 // ForOp
 //===----------------------------------------------------------------------===//
 
@@ -111,9 +128,9 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
   }];
 
   let arguments = (ins
-    Index:$lowerBound,
-    Index:$upperBound,
-    Index:$step,
+    ForControlVariableType:$lowerBound,
+    ForControlVariableType:$upperBound,
+    ForControlVariableType:$step,
     Variadic<AnyType>:$iterArgs,
     DefaultValuedAttr<HLCF_UnrollLevelAttr, "UnrollLevel::none()">:$unrollLevel,
     HLCF_ForLoopBoundCmpPredicateAttr:$cmpPredicateType,
@@ -124,8 +141,10 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    ` ``[` $lowerBound `to` $upperBound `step` $step $cmpPredicateType
-    $indVarComputeType `]` ``
+    ` ``[` custom<ForBoundsWithOptionalType>($lowerBound, type($lowerBound),
+                                            $upperBound, type($upperBound),
+                                            $step, type($step))
+    $cmpPredicateType $indVarComputeType `]` ``
     custom<Loop>($iterArgs, type($iterArgs), type($results), $body) attr-dict
   }];
 
@@ -560,7 +579,7 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
     void insertVariants(ValueRange newOperands);
   }];
 
-  let arguments = (ins Index:$inductionVar,
+  let arguments = (ins ForControlVariableType:$inductionVar,
                        Variadic<AnyType>:$returnValues,
                        Variadic<AnyType>:$otherIterValues);
 
