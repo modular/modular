@@ -604,7 +604,7 @@ def flash_attention_dispatch[
                 else:
                     comptime assert is_sm100
 
-                    comptime if depth == 512:
+                    comptime if depth == 512 or depth == 256:
                         mha_sm100_depth512_dispatch[
                             config=config,
                             group=group,
@@ -628,9 +628,7 @@ def flash_attention_dispatch[
                             NoPartition[get_accum_type[q.dtype]()](),
                             ctx,
                         )
-                    elif depth == 256 or not get_defined_bool[
-                        "ENABLE_FA4", True
-                    ]():
+                    elif not get_defined_bool["ENABLE_FA4", True]():
                         mha_sm100_1q_dispatch[
                             config=config,
                             group=group,

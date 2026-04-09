@@ -279,12 +279,12 @@ def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     if info == materialize[H100]() or _is_sm10x_gpu(info):
         depths.append(80)
         depths.append(256)
+
     return depths^
 
 
 def test_context_encoding(ctx: DeviceContext) raises:
-    # fp32 arbitrary depth and num_heads, baseline impl.
-    test[DType.float32, depth=127, num_heads=2](111, 121, ctx)
+    test[DType.bfloat16, depth=127, num_heads=2](111, 121, ctx)
 
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -359,6 +359,13 @@ def test_context_encoding(ctx: DeviceContext) raises:
             num_heads=24,
             group=3,
         ](1024, 100, ctx)
+
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=24,
+            group=3,
+        ](214, 300, ctx)
 
         test[
             DType.bfloat16,

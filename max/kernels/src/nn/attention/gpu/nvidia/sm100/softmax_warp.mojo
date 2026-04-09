@@ -67,6 +67,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     exp2_emulation,
     maximum,
     apply_mask,
+    peel_mask,
 )
 from nn.attention.gpu.nvidia.sm90.attention import (
     MHAPosition,
@@ -587,23 +588,15 @@ def fa4_softmax[
 
     @parameter
     @always_inline
-    def load_mask_max[
-        *, mask_strategy: MaskStrategy
+    def init_load_mask_max[
+        mask_strategy: MaskStrategy
     ](kv_row: UInt32) -> Float32:
-        pipeline_s.wait()
-        tcgen05_fence_after()
-        # Apply per-token q_scale
-        comptime if not QScaleType.is_null:
-            scale_log2e *= q_scale.value()[
-                warp_group_idx * UInt32(splitBM) + row
-            ].cast[accum_dtype]()
-
         return maximum(load_mask_max_impl[mask_strategy=mask_strategy](kv_row))
 
     @parameter
     @always_inline
     def load_mask_max[
-        *, mask_strategy: MaskStrategy
+        mask_strategy: MaskStrategy
     ](kv_row: UInt32, old_max: Float32) -> Float32:
         pipeline_s.wait()
         tcgen05_fence_after()
@@ -830,7 +823,8 @@ def fa4_softmax[
     var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](score_row)
     comptime mask_sets = MaskType.nonfull_sets[BM_mask, BN]()
     comptime mask_strategies = MaskType.mask_strategies[BM_mask, BN]()
-    comptime num_sets = len(mask_sets)
+    comptime num_sets = len(mask_strategies)
+    comptime assert len(mask_sets) == num_sets
 
     var row_max: Float32
     var mask_iters: StaticTuple[UInt32, num_sets] = {}
@@ -847,31 +841,18 @@ def fa4_softmax[
     comptime assert num_sets >= 1 and num_sets <= 3
     comptime assert num_sets == 1 or mask_sets[0] != TileMaskStatus.UNKNOWN_MASK
 
-    comptime if num_sets == 1:
-        row_max = load_mask_max[mask_strategy=mask_strategies[0]](kv_row)
-        mask_iters[0] -= 1
-    else:
-        # find out which strategy to apply
-        if mask_iters[0] > 0:
-            row_max = load_mask_max[mask_strategy=mask_strategies[0]](kv_row)
-            mask_iters[0] -= 1
-        else:
-            comptime if num_sets == 2:
-                row_max = load_mask_max[mask_strategy=mask_strategies[1]](
-                    kv_row
-                )
-                mask_iters[1] -= 1
-            else:
-                if mask_iters[1] > 1:
-                    row_max = load_mask_max[mask_strategy=mask_strategies[1]](
-                        kv_row
-                    )
-                    mask_iters[1] -= 1
-                else:
-                    row_max = load_mask_max[mask_strategy=mask_strategies[2]](
-                        kv_row
-                    )
-                    mask_iters[2] -= 1
+    pipeline_s.wait()
+    tcgen05_fence_after()
+    # Apply per-token q_scale
+    comptime if not QScaleType.is_null:
+        scale_log2e *= q_scale.value()[
+            warp_group_idx * UInt32(splitBM) + row
+        ].cast[accum_dtype]()
+
+    var row_max: Float32 = peel_mask[
+        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies),
+        init_load_mask_max,
+    ](mask_iters, kv_row)
     var sink_weight: Scalar[accum_dtype]
 
     comptime if not SinkType.is_null:
@@ -915,9 +896,9 @@ def fa4_softmax[
                 kv_row += UInt32(config.BN)
                 # calculate rowmax
                 old_max = row_max
-                var new_row_max: Float32 = load_mask_max[
-                    mask_strategy=mask_strategy
-                ](kv_row, old_max)
+                var new_row_max: Float32 = load_mask_max[mask_strategy](
+                    kv_row, old_max
+                )
 
                 diff = sub_ftz(old_max, new_row_max)
 
@@ -958,13 +939,12 @@ def fa4_softmax[
             var new_row_max: Scalar[accum_dtype]
             if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
                 new_row_max = load_mask_max[
-                    mask_strategy=MaskStrategy.COMPUTED
-                    | MaskStrategy.OUT_OF_BOUNDS
+                    MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS
                 ](kv_row, old_max)
             else:
-                new_row_max = load_mask_max[
-                    mask_strategy=MaskStrategy.OUT_OF_BOUNDS
-                ](kv_row, old_max)
+                new_row_max = load_mask_max[MaskStrategy.OUT_OF_BOUNDS](
+                    kv_row, old_max
+                )
 
             diff = sub_ftz(old_max, new_row_max)
 

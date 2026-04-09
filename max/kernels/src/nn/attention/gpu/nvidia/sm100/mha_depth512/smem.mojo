@@ -22,7 +22,7 @@ Memory layout (low to high address):
     [P: BM * BN elements of qkv_dtype]                 (SS MMA P@V buffer)
     [KV: num_kv_stages * (BN//2) * BK0 elements of qkv_dtype]
     [correction: BM elements of Float32]
-    [barriers: (8 + 2*num_kv_stages) SharedMemBarriers]
+    [barriers: (num_fixed + 2*num_kv_stages) SharedMemBarriers]
     [tmem_addr: 1 UInt32]
 
 The P buffer is unique to this kernel: P@V uses SS MMA (both operands from
@@ -96,8 +96,9 @@ struct Depth512AttentionSMem[
     )
     comptime correction_bytes: Int = Self.config.BM * size_of[DType.float32]()
 
-    # Barrier region: 8 fixed + 2 per KV pipeline stage.
-    comptime num_fixed_mbars: Int = 10
+    # Barrier region: num_fixed fixed + 2 per KV pipeline stage.
+    # split_o=True: 10 fixed, split_o=False: 8 fixed.
+    comptime num_fixed_mbars: Int = (10 if Self.config.split_o else 8)
     comptime num_kv_mbars: Int = 2 * Self.config.num_kv_stages
     comptime total_mbars: Int = Self.num_fixed_mbars + Self.num_kv_mbars
     comptime mbar_byte_offset: Int = (
@@ -134,12 +135,12 @@ struct Depth512AttentionSMem[
     @always_inline
     def __init__(out self):
         """Obtain the base pointer from the kernel's dynamic shared memory."""
-        # K slot (BN//2 × BK0) and V half-tile (BK1 × ov_depth//4) must
+        # K slot (BN//2 × BK0) and V half-tile (BK1 × v_cols_per_cta) must
         # have equal element count — each occupies one KV pipeline slot.
         comptime assert (
             Self.config.BN // 2
         ) * Self.config.BK0 == Self.config.BK1 * (
-            Self.config.ov_depth // 4
+            Self.config.v_cols_per_cta
         ), "K slot and V half-tile must have equal element count for fused KV"
 
         self.base = external_memory[
@@ -193,9 +194,9 @@ struct Depth512AttentionSMem[
     def mbar_base(self) -> MBarType:
         """Base of the barrier region.
 
-        Layout: 10 fixed barriers followed by 2*num_kv_stages KV pipeline
-        barriers. The WS4 barrier struct wraps this pointer with named
-        accessors for each barrier role.
+        Layout: num_fixed_mbars fixed barriers (10 when split_o, 8 otherwise)
+        followed by 2*num_kv_stages KV pipeline barriers. The Depth512MBars
+        struct wraps this pointer with named accessors for each barrier role.
         """
         return (self.base + Self.mbar_byte_offset).bitcast[SharedMemBarrier]()
 

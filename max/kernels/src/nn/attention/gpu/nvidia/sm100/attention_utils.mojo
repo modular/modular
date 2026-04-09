@@ -2145,6 +2145,43 @@ def apply_mask[
             srow[frag_col + 1] = result[1]
 
 
+@always_inline
+def peel_mask[
+    num_sets: Int,
+    //,
+    mask_strategies: StaticTuple[MaskStrategy, num_sets],
+    load_fn: def[mask_strategy: MaskStrategy](UInt32) capturing -> Float32,
+](mut mask_iters: StaticTuple[UInt32, num_sets], kv_row: UInt32,) -> Float32:
+    """Determine which mask strategy applies to the peeled first iteration.
+
+    Walks through mask sets to find the first with remaining iterations,
+    calls load_fn with the corresponding strategy, and decrements the counter.
+    Prevents UInt32 underflow when early sets are empty (e.g.
+    SlidingWindowCausalMask with num_sets=3 and small sequences).
+    """
+    comptime assert num_sets in (1, 2, 3)
+    comptime if num_sets == 1:
+        mask_iters[0] -= 1
+        return load_fn[mask_strategies[0]](kv_row)
+    elif num_sets == 2:
+        if mask_iters[0] > 0:
+            mask_iters[0] -= 1
+            return load_fn[mask_strategies[0]](kv_row)
+        else:
+            mask_iters[1] -= 1
+            return load_fn[mask_strategies[1]](kv_row)
+    else:
+        if mask_iters[0] > 0:
+            mask_iters[0] -= 1
+            return load_fn[mask_strategies[0]](kv_row)
+        elif mask_iters[1] > 0:
+            mask_iters[1] -= 1
+            return load_fn[mask_strategies[1]](kv_row)
+        else:
+            mask_iters[2] -= 1
+            return load_fn[mask_strategies[2]](kv_row)
+
+
 struct FA4MiscMBars[
     *,
     num_qk_stages: Int = 1,
