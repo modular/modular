@@ -2129,11 +2129,15 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
 // ClosureType
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseClosureTypes(AsmParser &p, SymbolRefAttr &symbol,
-                                     StringAttr &name,
+static ParseResult parseClosureTypes(AsmParser &p, TypedAttr &closureAttr,
                                      ClosureMemoryKind &closureMemoryKind) {
+  MLIRContext *ctx = p.getContext();
+  SymbolRefAttr symbol;
+  StringAttr name;
   if (p.parseAttribute(symbol) || p.parseComma() || p.parseAttribute(name))
     return failure();
+
+  closureAttr = ClosureAttr::get(ctx, ParamClosureType::get(ctx, symbol, name));
 
   if (succeeded(p.parseOptionalKeyword("escaping")))
     closureMemoryKind = ClosureMemoryKind::ESCAPING;
@@ -2149,9 +2153,11 @@ static ParseResult parseClosureTypes(AsmParser &p, SymbolRefAttr &symbol,
   return success();
 }
 
-static void printClosureTypes(AsmPrinter &p, SymbolRefAttr symbol,
-                              StringAttr name,
+static void printClosureTypes(AsmPrinter &p, TypedAttr closureAttr,
                               ClosureMemoryKind closureMemoryKind) {
+  ParamClosureType closureType = cast<ClosureAttr>(closureAttr).getType();
+  SymbolRefAttr symbol = closureType.getParentSymbol();
+  StringAttr name = closureType.getName();
   p << symbol;
   p << ", ";
   p << name;
@@ -2213,3 +2219,24 @@ ParamListSplatType::verify(function_ref<InFlightDiagnostic()> emitError,
 // Pull in the dialect definition.
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/KGENDialect/KGENTypes.cpp.inc"
+
+ClosureType ClosureType::get(MLIRContext *context, SymbolRefAttr parentSymbol,
+                             StringAttr name,
+                             ClosureMemoryKind closureMemoryKind) {
+  return get(context,
+             ClosureAttr::get(
+                 context, ParamClosureType::get(context, parentSymbol, name)),
+             closureMemoryKind);
+}
+
+ParamClosureType ClosureType::getParamClosureType() const {
+  return cast<ParamClosureType>(getClosureAttr().getType());
+}
+
+SymbolRefAttr ClosureType::getParentSymbol() const {
+  return getParamClosureType().getParentSymbol();
+}
+
+StringAttr ClosureType::getName() const {
+  return getParamClosureType().getName();
+}

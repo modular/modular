@@ -924,10 +924,17 @@ def KGEN_ClosureType : KGENType<"Closure", "closure"> {
      }
      ```
   }];
-  let parameters = (ins "SymbolRefAttr":$parentSymbol,
-                        "StringAttr":$name,
+  let parameters = (ins "TypedAttr":$closureAttr,
                         "ClosureMemoryKind": $closureMemoryKind);
-  let assemblyFormat = "`<` custom<ClosureTypes>($parentSymbol, $name, $closureMemoryKind) `>`";
+  let assemblyFormat = "`<` custom<ClosureTypes>($closureAttr, $closureMemoryKind) `>`";
+  let extraClassDeclaration = [{
+    static ClosureType get(MLIRContext *context, SymbolRefAttr parentSymbol,
+                           StringAttr name,
+                           ClosureMemoryKind closureMemoryKind);
+    ParamClosureType getParamClosureType() const;
+    SymbolRefAttr getParentSymbol() const;
+    StringAttr getName() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
