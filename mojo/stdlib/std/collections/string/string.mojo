@@ -856,6 +856,43 @@ struct String(
         memcpy(dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len)
         return result^
 
+    @staticmethod
+    def _add[
+        IterableType: Iterable, //, slice_is_lhs: Bool
+    ](sl: StringSlice, ref iterable: IterableType) -> String where conforms_to(
+        IterableType.IteratorType[origin_of(iterable)].Element,
+        Writable & Movable,
+    ):
+        var sl_len = sl.byte_length()
+        var iterable_len = _TotalWritableBytes(iterable).size
+
+        var result = String(capacity=sl_len + iterable_len)
+        comptime if slice_is_lhs:
+            result.write(sl)
+        for var value in iterable:
+            result.write(trait_downcast_var[Writable & Movable](value^))
+        comptime if not slice_is_lhs:
+            result.write(sl)
+        return result^
+
+    @staticmethod
+    def _add[
+        IterableType: Iterator & IterableOwned, //, slice_is_lhs: Bool
+    ](sl: StringSlice, var iterable: IterableType) -> String where conforms_to(
+        IterableType.Element, Writable & Movable
+    ):
+        var sl_len = sl.byte_length()
+        var lb, _ = iterable.bounds()
+
+        var result = String(capacity=sl_len + lb)
+        comptime if slice_is_lhs:
+            result.write(sl)
+        for var value in iterable^:
+            result.write(trait_downcast_var[Writable & Movable](value^))
+        comptime if not slice_is_lhs:
+            result.write(sl)
+        return result^
+
     def __add__(self, other: StringSlice) -> String:
         """Creates a string by appending a string slice at the end.
 
@@ -866,6 +903,43 @@ struct String(
             The new constructed string.
         """
         return Self._add(self.as_bytes(), other.as_bytes())
+
+    def __add__[
+        IterableType: Iterable
+    ](self, ref rhs: IterableType) -> String where conforms_to(
+        IterableType.IteratorType[origin_of(rhs)].Element,
+        Writable & Movable,
+    ):
+        """Returns a string with this value prefixed on writable elements.
+
+        Parameters:
+            IterableType: The iterable type.
+
+        Args:
+            rhs: The right side of the result.
+
+        Returns:
+            The result string.
+        """
+        return Self._add[True](self, rhs)
+
+    def __add__[
+        IterableType: Iterator & IterableOwned
+    ](self, var rhs: IterableType) -> String where conforms_to(
+        IterableType.Element, Writable & Movable
+    ):
+        """Returns a string with this value prefixed on writable elements.
+
+        Parameters:
+            IterableType: The iterable type.
+
+        Args:
+            rhs: The right side of the result.
+
+        Returns:
+            The result string.
+        """
+        return Self._add[True](self, rhs^)
 
     def _unsafe_append_byte(mut self, byte: Byte):
         """Appends a byte to the string assuming the capacity is sufficient.
@@ -904,6 +978,44 @@ struct String(
         """
         return Self._add(other.as_bytes(), self.as_bytes())
 
+    def __radd__[
+        IterableType: Iterable
+    ](self, ref lhs: IterableType) -> String where conforms_to(
+        IterableType.IteratorType[origin_of(lhs)].Element,
+        Writable & Movable,
+    ):
+        """Returns a string with this value appended to writable elements.
+
+        Parameters:
+            IterableType: The iterable type.
+
+        Args:
+            lhs: The left side of the result.
+
+        Returns:
+            The result string.
+        """
+        return String._add[False](self, lhs)
+
+    def __radd__[
+        IterableType: Iterator & IterableOwned
+    ](self, var lhs: IterableType) -> String where conforms_to(
+        IterableType.Element,
+        Writable & Movable,
+    ):
+        """Returns a string with this value appended to writable elements.
+
+        Parameters:
+            IterableType: The iterable type.
+
+        Args:
+            lhs: The left side of the result.
+
+        Returns:
+            The result string.
+        """
+        return String._add[False](self, lhs^)
+
     def _iadd(mut self, other: Span[mut=False, Byte, _]):
         var other_len = len(other)
         if other_len == 0:
@@ -925,6 +1037,43 @@ struct String(
             other: The string to append.
         """
         self._iadd(other.as_bytes())
+
+    def __iadd__[
+        IterableType: Iterable
+    ](mut self, ref other: IterableType) where conforms_to(
+        IterableType.IteratorType[origin_of(other)].Element,
+        Writable & Movable,
+    ):
+        """Appends writable elements to this string.
+
+        Parameters:
+            IterableType: The type of iterator.
+
+        Args:
+            other: The writable elements to append.
+        """
+        var iterable_len = _TotalWritableBytes(other).size
+        self.reserve(self.byte_length() + iterable_len)
+        for var value in other:
+            self.write(trait_downcast_var[Writable & Movable](value^))
+
+    def __iadd__[
+        IterableType: Iterator & IterableOwned
+    ](mut self, var other: IterableType) where conforms_to(
+        IterableType.Element, Writable & Movable
+    ):
+        """Appends writable elements to this string.
+
+        Parameters:
+            IterableType: The type of iterator.
+
+        Args:
+            other: The writable elements to append.
+        """
+        var lb, _ = other.bounds()
+        self.reserve(self.byte_length() + lb)
+        for var value in other^:
+            self.write(trait_downcast_var[Writable & Movable](value^))
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     def __iter__(self) -> CodepointSliceIter[origin_of(self)]:

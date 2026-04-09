@@ -774,6 +774,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return String._add(self._slice, rhs._slice)
 
+    def __add__[
+        IterableType: Iterable
+    ](self, ref rhs: IterableType) -> String where conforms_to(
+        IterableType.IteratorType[origin_of(rhs)].Element,
+        Writable & Copyable,
+    ):
+        """Returns a string with this value prefixed on writable elements.
+
+        Parameters:
+            IterableType: The iterable type.
+
+        Args:
+            rhs: The right side of the result.
+
+        Returns:
+            The result string.
+        """
+        return String._add[True](self, rhs)
+
     def __radd__(self, lhs: StringSlice) -> String:
         """Returns a string with this value appended to another string.
 
@@ -784,6 +803,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             The result string.
         """
         return lhs + self
+
+    def __radd__[
+        IterableType: Iterable
+    ](self, ref lhs: IterableType) -> String where conforms_to(
+        IterableType.IteratorType[origin_of(lhs)].Element,
+        Writable & Copyable,
+    ):
+        """Returns a string with this value appended to writable elements.
+
+        Parameters:
+            IterableType: The iterable type.
+
+        Args:
+            lhs: The left side of the result.
+
+        Returns:
+            The result string.
+        """
+        return String._add[False](self, lhs)
 
     def __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.

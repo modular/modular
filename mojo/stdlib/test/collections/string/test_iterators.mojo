@@ -156,5 +156,22 @@ def test_string_slice_codepoint_slices_reversed() raises:
     assert_equal(concat, "")
 
 
+def test_string_add_iterable() raises:
+    var elems = [1, 2, 3]
+    assert_equal("0" + iter(elems), "0123")
+    assert_equal(iter(elems) + "4", "1234")
+    var s = "0"
+    s += iter(elems)
+    assert_equal(s, "0123")
+
+
+def test_string_add_iterable_owned() raises:
+    assert_equal("0" + iter([1, 2, 3]), "0123")
+    assert_equal(iter([1, 2, 3]) + "4", "1234")
+    var s = "0"
+    s += iter([1, 2, 3])
+    assert_equal(s, "0123")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
