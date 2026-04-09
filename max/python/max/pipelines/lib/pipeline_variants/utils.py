@@ -102,6 +102,7 @@ def update_context_and_prepare_responses(
     batch_log_probabilities: list[list[LogProbabilities | None]] | None = None,
     enable_log_probs: bool = False,
     overwrite_future: bool = False,
+    fsm_already_advanced_steps: int = 0,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Updates context objects and prepares response objects after generation.
 
@@ -115,6 +116,9 @@ def update_context_and_prepare_responses(
             None), each entry is a list per batch for that step.
         enable_log_probs: Whether to include log probability data in outputs.
         overwrite_future: Whether to overwrite future tokens in the context.
+        fsm_already_advanced_steps: Number of steps for which the FSM was
+            already advanced during multi-step execution. For these steps,
+            only the token buffer is updated (FSM is skipped).
 
     Returns:
         A dictionary mapping request IDs to their respective generation outputs.
@@ -144,9 +148,14 @@ def update_context_and_prepare_responses(
                         new_token=next_token, log_probabilities=log_probs
                     )
             else:
-                context.update(
+                # Update token buffer for all steps
+                context.advance_token_buffer(
                     new_token=next_token, log_probabilities=log_probs
                 )
+                # Only advance FSM for steps that weren't already advanced
+                # during multi-step execution
+                if step >= fsm_already_advanced_steps:
+                    context.advance_fsm(next_token)
 
             if context.is_done:
                 break

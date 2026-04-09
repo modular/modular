@@ -320,6 +320,8 @@ class TextGenerationPipeline(
 
         if context.matcher:
             # Jump ahead in generation if possible.
+            # This is called at the START of execute(), so jump-ahead tokens
+            # will be included in the model input preparation.
             jump_forward_tokens = context.matcher.compute_ff_tokens()
             for token in jump_forward_tokens:
                 context.jump_ahead(token)
@@ -404,10 +406,9 @@ class TextGenerationPipeline(
                 context, num_steps, self._pipeline_model.max_seq_len
             )
 
-        # If structured output is enabled for a specific request, we only need to run for a single step.
-        # This is the only check to ensure that we do not apply an outdated bitmask to new inputs, during the next step.
-        if bitmask is not None:
-            num_steps = 1
+        # Note: Multi-step execution with structured output is supported.
+        # The bitmask is updated after each step in the
+        # TextGenerationPipeline.execute loop.
 
         # Retrieve the KV Cache Inputs.
         kv_cache_inputs = self._kv_manager.runtime_inputs(
@@ -440,6 +441,57 @@ class TextGenerationPipeline(
             return batch
 
         return self._pipeline_model._lora_manager.sort_lora_batch(batch)
+
+    def _update_bitmask_for_next_step(
+        self,
+        flat_batch: list[TextGenerationContextType],
+        bitmask: npt.NDArray[np.int32],
+        new_tokens: Buffer,
+        sampling_processor: FusedSamplingProcessor,
+    ) -> None:
+        """Update FSM state and bitmask for the next step in multi-step execution.
+
+        After each token is sampled during multi-step execution with guided
+        decoding, this method advances the FSM state for each context's matcher
+        and recomputes the bitmask to reflect valid next tokens.
+
+        Args:
+            flat_batch: The batch of generation contexts.
+            bitmask: The packed bitmask array to update in-place.
+            new_tokens: The newly sampled tokens from this step.
+            sampling_processor: The sampling processor with the GPU bitmask.
+        """
+        # Copy tokens to CPU for FSM update
+        new_tokens_np = new_tokens.to_numpy()
+
+        for batch_idx, context in enumerate(flat_batch):
+            if context.is_done or context.matcher is None:
+                continue
+
+            # Advance FSM with the sampled token (token buffer updated later)
+            # new_tokens has shape (batch_size,) - 1D array
+            token = int(new_tokens_np[batch_idx])
+            if not context.advance_fsm(token):
+                raise RuntimeError(
+                    f"FSM rejected token {token} during multi-step update. "
+                    f"This indicates a mismatch between the bitmask and FSM state."
+                )
+
+            # Handle jump-ahead (forced) tokens from the grammar.
+            # NOTE: We intentionally do NOT call compute_ff_tokens() or jump_ahead()
+            # here during multi-step execution. When the FSM forces tokens, the model's
+            # context and FSM state would become desynchronized since the model input
+            # doesn't include the forced tokens. Instead, we let update_context_and_prepare_responses
+            # handle jump-ahead tokens after the multi-step loop completes, which ensures
+            # proper synchronization before the next execute() call.
+
+            # Fill the updated bitmask for this context
+            llguidance.numpy.fill_next_token_bitmask(
+                context.matcher, bitmask, index=batch_idx
+            )
+
+        # Transfer updated bitmask to GPU
+        sampling_processor.update_bitmask(bitmask)
 
     def _record_batch_info(self, contexts: Any, num_steps: int) -> None:
         """Record per-step batch statistics for diagnostics.
@@ -595,6 +647,13 @@ class TextGenerationPipeline(
             if i == num_steps - 1:
                 break
 
+            # Update FSM state and bitmask for next step (multi-step guided decoding)
+            if bitmask is not None:
+                with Tracer(f"update_bitmask_step_{i}"):
+                    self._update_bitmask_for_next_step(
+                        flat_batch, bitmask, new_tokens, sampling_processor
+                    )
+
             curr_step_inputs.kv_cache_inputs = (
                 self._increment_cache_lengths_processor.execute(
                     curr_step_inputs.kv_cache_inputs,
@@ -634,12 +693,17 @@ class TextGenerationPipeline(
             generated_tokens_np = generated_tokens_host.to_numpy()
 
         # Update the context object.
+        # During multi-step execution with guided decoding, the FSM was already
+        # advanced for steps 0..num_steps-2 in _update_bitmask_for_next_step.
+        # Only the last step needs FSM advancement here.
+        fsm_already_advanced = (num_steps - 1) if bitmask is not None else 0
         res = update_context_and_prepare_responses(
             generated_tokens_np,
             flat_batch,
             num_steps,
             batch_log_probabilities=batch_log_probabilities,
             enable_log_probs=inputs.enable_log_probs,
+            fsm_already_advanced_steps=fsm_already_advanced,
         )
 
         # Update the cache lengths in our kv_cache manager.

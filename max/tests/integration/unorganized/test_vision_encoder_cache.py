@@ -144,6 +144,17 @@ class FakeContext:
     ) -> list[npt.NDArray[np.int32]]:
         return []
 
+    def advance_token_buffer(
+        self,
+        new_token: int,
+        log_probabilities: LogProbabilities | None = None,
+        mark_previous_as_processed: bool = True,
+    ) -> None:
+        pass
+
+    def advance_fsm(self, token: int) -> bool:
+        return False
+
     def update(
         self,
         new_token: int,

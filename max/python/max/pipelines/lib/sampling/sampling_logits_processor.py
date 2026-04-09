@@ -108,24 +108,38 @@ class FusedSamplingProcessor:
         self.bitmask = bitmask
         self.vocab_size = vocab_size
 
-        # If a structured decoding bitmask was provided, unpack packed-int masks once.
-        self.tensor_bitmask: Buffer | None
+        # If a structured decoding bitmask was provided, unpack packed-int masks
+        # and store in pinned memory for efficient per-step updates.
+        self.tensor_bitmask: Buffer | None = None
+        self._pinned_bitmask: Buffer | None = None
+
         if (
             self.bitmask is not None
             and self.vocab_size is not None
             and self.bitmask.shape[1] != self.vocab_size
         ):
-            # TODO: migrate bitmask to pinned memory
+            # Unpack packed-int masks to boolean format
             bits = 2 ** np.arange(32, dtype=np.int32)
-            self.bitmask = (self.bitmask[..., np.newaxis] & bits) != 0
-            self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
-                np.bool_
-            )
-            self.tensor_bitmask = Buffer.from_numpy(self.bitmask).to(
-                self.device
-            )
-        else:
-            self.tensor_bitmask = None
+            unpacked = (self.bitmask[..., np.newaxis] & bits) != 0
+            unpacked = unpacked.reshape(self.batch_size, -1).astype(np.bool_)
+
+            # Allocate pinned buffer for efficient H2D transfers during multi-step
+            if device.is_host:
+                self._pinned_bitmask = Buffer(
+                    shape=unpacked.shape,
+                    dtype=DType.bool,
+                    device=device,
+                )
+            else:
+                self._pinned_bitmask = DevicePinnedBuffer(
+                    shape=unpacked.shape,
+                    dtype=DType.bool,
+                    device=device,
+                )
+
+            # Copy initial values to pinned buffer and transfer to GPU
+            self._pinned_bitmask.to_numpy()[:] = unpacked
+            self.tensor_bitmask = self._pinned_bitmask.to(self.device)
 
         batch_size = len(context_batch)
 
@@ -205,6 +219,42 @@ class FusedSamplingProcessor:
         self.new_tokens = new_tokens
 
         self.step_counter += 1
+
+    def update_bitmask(self, packed_bitmask: npt.NDArray[np.int32]) -> None:
+        """Update the GPU bitmask with new FSM state for multi-step execution.
+
+        This method unpacks the packed-int bitmask from llguidance, copies it
+        to the pinned host buffer, and transfers it to the GPU. This enables
+        multi-step execution with guided decoding by keeping the bitmask
+        synchronized with the FSM state after each token is sampled.
+
+        Args:
+            packed_bitmask: Packed int32 bitmask from
+                llguidance.numpy.allocate_token_bitmask. Shape is
+                [batch_size, ceil(vocab_size/32)].
+        """
+        if (
+            self.tensor_bitmask is None
+            or self._pinned_bitmask is None
+            or self.vocab_size is None
+        ):
+            return
+
+        # Unpack packed-int format to boolean
+        bits = 2 ** np.arange(32, dtype=np.int32)
+        unpacked = (packed_bitmask[..., np.newaxis] & bits) != 0
+        unpacked = unpacked.reshape(self.batch_size, -1).astype(np.bool_)
+
+        # Copy to pinned buffer
+        self._pinned_bitmask.to_numpy()[:] = unpacked
+
+        # Transfer to GPU (async when using pinned memory)
+        self.tensor_bitmask.inplace_copy_from(self._pinned_bitmask)
+
+        # Synchronize to ensure the copy completes before the next sampling step.
+        # Without this, the sampler may read stale bitmask data.
+        # TODO: Utilize CUDA streams to remove device synchronization in bitmask generation (SERVOPT-1258).
+        self.device.synchronize()
 
 
 @traced
