@@ -78,6 +78,9 @@ TEST_F(APITest, CopyTensorToSameDevice) {
   EXPECT_THAT(copiedTensor, ::testing::NotNull())
       << "Copy to device should return a valid tensor";
 
+  M_synchronizeDevice(cpuDevice, status);
+  EXPECT_SUCCESS(status, "Failed to synchronize after copy");
+
   EXPECT_EQ(M_getTensorNumElements(copiedTensor), 10u);
   EXPECT_EQ(M_getTensorType(copiedTensor), M_FLOAT32);
   const float *copiedData = (const float *)M_getTensorData(copiedTensor);

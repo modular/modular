@@ -282,7 +282,9 @@ def test_host_to_self() -> None:
 def test_host_host_copy() -> None:
     # We should be able to freely copy tensors between host and host.
     host_tensor = Buffer.from_numpy(np.array([1, 2, 3], dtype=np.int32))
-    tensor = host_tensor.copy(CPU())
+    cpu = CPU()
+    tensor = host_tensor.copy(cpu)
+    cpu.synchronize()
 
     assert tensor.shape == host_tensor.shape
     assert tensor.dtype == host_tensor.dtype
@@ -291,7 +293,8 @@ def test_host_host_copy() -> None:
     assert tensor[1].item() == 2
     assert tensor[2].item() == 3
 
-    tensor2 = host_tensor.copy(CPU())
+    tensor2 = host_tensor.copy(cpu)
+    cpu.synchronize()
     assert tensor2[0].item() == 0
     assert tensor2[1].item() == 2
     assert tensor2[2].item() == 3
@@ -709,6 +712,7 @@ def test_aligned() -> None:
 
 def test_unaligned_tensor_copy() -> None:
     """Tests tensor copying and viewing with unaligned memory."""
+    cpu = CPU()
     expected = np.array([1005, 2510, 1325], np.int32)
 
     # Construct a uint8 tensor so that when converted to int32, it becomes the
@@ -722,6 +726,7 @@ def test_unaligned_tensor_copy() -> None:
 
     # Copy operation now works correctly (fixed by GEX-2576).
     tensor8_copy = tensor8[1:].copy()
+    cpu.synchronize()
     # Should correctly preserve element values after copy
     assert tensor8_copy[0].item() == tensor8[1].item()
 
@@ -734,6 +739,7 @@ def test_unaligned_tensor_copy() -> None:
     assert tensor32[0].item() == 1005
 
     tensor32_copy = tensor32.copy()
+    cpu.synchronize()
     assert tensor32_copy._aligned()
     # This now passes because the source view has correct data
     np.testing.assert_array_equal(tensor32_copy.to_numpy(), expected)
