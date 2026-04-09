@@ -207,6 +207,14 @@ public:
   /// if the current type isn't a reference.
   ASTType getReferenceElementType() const;
 
+  struct ParameterListInfo {
+    Type elementType;
+  };
+  /// Given a type of TypeList/ParameterList, return the element type and the
+  /// values list that are bound to it. If it isn't a ParameterList/TypeList,
+  /// return null.
+  ParameterListInfo getParameterListInfo() const;
+
   /// Given a VariadicList, return parameters bound to it.
   struct VariadicListInfo {
     Type elementType;

@@ -743,9 +743,14 @@ static PValue emitDefault(const ParsedArgument &arg, ASTType type,
 /// passing-kind parameters if `append` is set (this is used for unbound
 /// arguments), or added to the beginning of the parameter list as `Inferred`
 /// passing-kind parameters (this is used for unbound parameters).
+///
+/// On failure, this returns null.
 static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
                                      TypeCheckedParamList &paramList,
                                      bool append, SMLoc loc) {
+  if (!type) // Propagate an error.
+    return {};
+
   auto &shared = paramList.shared;
   SmallVector<ParamDeclAttr> paramDeclAttrs;
   SmallVector<StringAttr> names;
@@ -792,6 +797,8 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
   ParameterEvaluator evaluator = shared.getParameterEvaluator();
+
+  bool hadFailure = false;
 
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name,
@@ -842,10 +849,18 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
               << paramUse.getName() << "; please file a compiler bug";
           boundParamType = TypeCheckErrorType::get(shared.getContext());
         } else if (*passingKind != PassingKind::Inferred) {
-          shared.emitError(loc, "inferred parameter of type ")
-              << boundParamType << " cannot depend on non-inferred parameter "
-              << paramUse.getName();
+          // It is common to hit this with variadic packs.
+          auto diag = shared.emitError(loc);
+          if (auto paramList = dyn_cast<ParamListType>(boundParamType)) {
+            diag << "element type parameter " << paramList.getElementType()
+                 << " must be an 'inferred' parameter";
+          } else {
+            diag << "inferred parameter of type " << boundParamType
+                 << " cannot depend on non-inferred parameter "
+                 << paramUse.getName();
+          }
           boundParamType = TypeCheckErrorType::get(shared.getContext());
+          hadFailure = true;
         }
       }
     }
@@ -875,6 +890,8 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
       return type;
     declareAndAddParam(origins.getType(), "__origins__",
                        /*paramConstraints=*/{});
+    if (hadFailure)
+      return {};
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
@@ -887,13 +904,15 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
       for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))
         declareAndAddParam(type, pogs[idx].getName(),
                            /*paramConstraints=*/pogs[idx].getConstraints());
+      if (hadFailure)
+        return {};
       return BindParamsAttr::get(paramType.getParam(), paramValues,
                                  &shared.getEvaluationContext());
     }
   }
 
   // Check for a struct type or a struct metatype.
-  auto getBoundStructMetaType = [&](StructMetaType metatype) {
+  auto getBoundStructMetaType = [&](StructMetaType metatype) -> StructMetaType {
     // The unbound parameters will be on the struct type's signature.
     TypeSignatureType sig = metatype.getSignature();
     PogListAttr paramList = sig.getParamListAttrs();
@@ -901,11 +920,16 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
       declareAndAddParam(type, pogs[idx].getName(),
                          /*paramConstraints=*/pogs[idx].getConstraints());
-    return metatype.bindUnbound(paramValues);
+    if (!hadFailure)
+      return metatype.bindUnbound(paramValues);
+    return {};
   };
 
-  if (auto metatype = dyn_cast_or_null<StructMetaType>(type.extractMetaType()))
-    return getBoundStructMetaType(metatype).getType();
+  if (auto metatype =
+          dyn_cast_or_null<StructMetaType>(type.extractMetaType())) {
+    auto mt = getBoundStructMetaType(metatype);
+    return mt ? mt.getType() : ASTType();
+  }
   if (auto metatype = dyn_cast_or_null<StructMetaType>(type))
     return getBoundStructMetaType(metatype);
 
@@ -925,7 +949,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   bool hasErrors = false;
 
   IndexRefRemapper remapper({});
-  for (const ParsedArgument &arg : parsedParams.params) {
+  for (ParsedArgument &arg : parsedParams.params) {
     // Check for things supported in arguments that are not supported in
     // parameters.
     ASTType type;
@@ -949,6 +973,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     }
     if (!type) {
       type = emitter.shared.getTypeCheckErrorType();
+      arg.variadicKind = VariadicKind::None;
       hasErrors = true;
     }
 
@@ -1441,19 +1466,11 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
     return {};
 
   // Make sure the param value is a variadic list of types.
-  auto paramParamListType = dyn_cast<ParamListType>(param.getRValueType());
-  if (!paramParamListType) {
+  auto elementType = param.getRValueType().getParameterListInfo().elementType;
+  if (!elementType) {
     emitter.emitError(arg.typeExpr->getLoc(),
                       "pack argument type list must reference a variadic list")
         << arg.typeExpr->getRange();
-    return {};
-  }
-  Type elementType = paramParamListType.getElementType();
-  if (sugarIsa<NonStructTypeType, TypeType>(elementType)) {
-    emitter.emitError(arg.loc)
-        << "variadic pack elements declared as '__TypeOfAllTypes' are removed,"
-        << " please declare elements as 'AnyType' instead of "
-           "'__TypeOfAllTypes'";
     return {};
   }
 
