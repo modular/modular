@@ -24,7 +24,6 @@ import math
 import os
 import random
 import re
-import resource
 import statistics
 import subprocess
 import sys
@@ -46,12 +45,7 @@ import yaml
 from cyclopts import App, Parameter
 from cyclopts.config import Env
 from tqdm.asyncio import tqdm
-from transformers import (
-    AutoTokenizer,
-    PreTrainedTokenizer,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-)
+from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
@@ -124,6 +118,11 @@ from max.benchmark.benchmark_shared.server_metrics import (
     print_server_metrics,
 )
 from max.benchmark.benchmark_shared.steady_state import detect_steady_state
+from max.benchmark.benchmark_shared.utils import (
+    get_tokenizer,
+    print_section,
+    set_ulimit,
+)
 from max.diagnostics.cpu import (
     CPUMetrics,
     CPUMetricsCollector,
@@ -150,18 +149,6 @@ def compute_output_len(
             output.generated_text,
             add_special_tokens=False,
         ).input_ids
-    )
-
-
-def get_tokenizer(
-    pretrained_model_name_or_path: str,
-    model_max_length: int | None,
-    trust_remote_code: bool,
-) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
-    return AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path,
-        model_max_length=model_max_length,
-        trust_remote_code=trust_remote_code,
     )
 
 
@@ -210,18 +197,6 @@ def _prepend_run_prefix_to_formatted_prompt(
             "run_prefix: unsupported prompt shape for first message"
         )
     return [new_msg, *prompt[1:]]
-
-
-# from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
-def set_ulimit(target_soft_limit: int = 65535) -> None:
-    resource_type = resource.RLIMIT_NOFILE
-    current_soft, current_hard = resource.getrlimit(resource_type)
-
-    if current_soft < target_soft_limit:
-        try:
-            resource.setrlimit(resource_type, (target_soft_limit, current_hard))
-        except ValueError as e:
-            print(f"Fail to set RLIMIT_NOFILE: {e}")
 
 
 def get_default_trace_path() -> str:
@@ -384,11 +359,6 @@ def build_single_turn_request_input(
             image_options=request.image_options,
         )
     raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
-
-
-def print_section(title: str, char: str = "-") -> None:
-    """Helper function to print a section with formatted header."""
-    print("{s:{c}^{n}}".format(s=title, n=50, c=char))
 
 
 def _is_vllm_backend(backend: Backend) -> bool:
@@ -2514,7 +2484,7 @@ def main_with_parsed_args(
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
-            args.model_max_length,
+            model_max_length=args.model_max_length,
             trust_remote_code=args.trust_remote_code,
         )
 
