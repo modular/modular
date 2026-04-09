@@ -155,7 +155,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--draft-data-parallel-degree 8 "
             "--draft-quantization-encoding bfloat16 "
             "--speculative-method eagle "
-            "--num-speculative-tokens 1 "
+            "--num-speculative-tokens 2 "
             "--kv-cache-format float8_e4m3fn "
             "--device-memory-utilization 0.75 "
             "--max-batch-input-tokens 4096 "

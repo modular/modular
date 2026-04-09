@@ -219,19 +219,28 @@ class Eagle3KimiK25(Module):
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
+        split_prefix: str = "eagle3_draft",
     ) -> tuple[TensorValue, ...]:
         """Forward pass of the Eagle3 draft model.
 
         Args:
             tokens: Input token IDs.
-            fused_target_hs: Concatenated hidden states from 3 target layers,
-                shape ``[seq, hidden_size * 3]``.
+            fused_target_hs: Hidden states — either concatenated from 3
+                target layers (shape ``[seq, hidden_size * 3]``) or from a
+                previous draft step (shape ``[seq, hidden_size]``). The
+                ``fc`` projection is applied only when the last dimension
+                is ``hidden_size * 3``.
+            split_prefix: Prefix for symbolic dim names. Must be unique per
+                graph invocation to avoid dim conflicts between prefill
+                (step 0) and decode (step 1+).
         """
         devices = self.config.devices
 
-        # Fuse 3 target hidden states: [seq, 21504] -> [seq, 7168]
         fused_hs = ops.distributed_broadcast(fused_target_hs, signal_buffers)
-        fused_hs = forward_sharded_layers(self.fc_shards, fused_hs)
+        # Step 0 receives fused target states with width 3H; later draft steps
+        # feed back draft hidden states that are already width H.
+        if fused_target_hs.shape[-1] != self.config.hidden_size:
+            fused_hs = forward_sharded_layers(self.fc_shards, fused_hs)
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
 
@@ -250,7 +259,7 @@ class Eagle3KimiK25(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="eagle3_draft",
+                prefix=split_prefix,
             )
             fused_hs, _ = split_batch_replicated(
                 devices,
@@ -258,20 +267,20 @@ class Eagle3KimiK25(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="eagle3_draft",
+                prefix=split_prefix,
             )
 
             h_embed = [
                 ops.rebind(
                     h_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [f"{split_prefix}_seq_dev_{i}", self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]
             fused_hs = [
                 ops.rebind(
                     fused_hs[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [f"{split_prefix}_seq_dev_{i}", self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]
@@ -279,7 +288,7 @@ class Eagle3KimiK25(Module):
             h_embed = [
                 ops.rebind(
                     h_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [f"{split_prefix}_seq_dev_{i}", self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]
