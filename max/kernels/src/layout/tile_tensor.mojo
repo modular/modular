@@ -2278,6 +2278,20 @@ struct NullableTileTensor[
                 )
         abort("attempt to dynamically index out of bounds")
 
+    def num_elements(self) -> Int:
+        """Returns the total number of elements in the tensor.
+
+        Computes the product of all shape dimensions.
+
+        Returns:
+            The total element count.
+        """
+        var result = 1
+
+        comptime for i in range(Self.rank):
+            result *= self.layout.shape[i]().value()
+        return result
+
     @always_inline("nodebug")
     def to_layout_tensor(
         self,

@@ -14,6 +14,7 @@
 
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -253,7 +254,7 @@ def _block_scaled_matmul_with_epilogue[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: TileTensor[mut=True, c_type, ...],
+    c: NullableTileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_dtype, ...],
@@ -273,7 +274,7 @@ def _block_scaled_matmul_with_epilogue[
         return
 
     comptime if not elementwise_lambda_fn:
-        if not c.ptr._is_not_null():
+        if not c.ptr:
             raise "c must be allocated!"
 
         comptime K_phys = a.static_shape[1]
@@ -283,7 +284,7 @@ def _block_scaled_matmul_with_epilogue[
             config=config,
             pdl_level=pdl_level,
         ](
-            c,
+            c.value(),
             a,
             b,
             a_scales,
@@ -300,31 +301,35 @@ def _block_scaled_matmul_with_epilogue[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
-        # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
-        # using row-major offset since TileTensor.load's Coord constraint
-        # can't be proved when c's layout type is fully inferred.
-        @parameter
-        @__copy_capture(c, n)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = rebind[SIMD[c_type, simd_width]](
-                c.load[width=simd_width](Coord(c_coord))
-            )
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
-
         # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
         # apply the epilogue.
-        if c.ptr._is_not_null():
+        if c.ptr:
             comptime K_phys = a.static_shape[1]
+            var c_tt = c.value()
+
+            # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
+            # using row-major offset since TileTensor.load's Coord constraint
+            # can't be proved when c's layout type is fully inferred.
+            @parameter
+            @__copy_capture(c_tt, n)
+            def epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                var c_coord = Index(idx[0], idx[1])
+                var c_val = rebind[SIMD[c_type, simd_width]](
+                    c_tt.load[width=simd_width](Coord(c_coord))
+                )
+                epilogue[c_type, simd_width, alignment=alignment](
+                    c_coord, c_val
+                )
+
             blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
                 K=K_phys,
                 config=config,
                 pdl_level=pdl_level,
             ](
-                c,
+                c_tt,
                 a,
                 b,
                 a_scales,
@@ -426,7 +431,7 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
         return
 
     comptime if not elementwise_lambda_fn:
-        if not c.ptr._is_not_null():
+        if not c.ptr:
             raise "c must be allocated!"
 
         matmul(
@@ -459,7 +464,7 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
 
         # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
         # apply the epilogue.
-        if c.ptr._is_not_null():
+        if c.ptr:
             var m = c.dim[0]()
             var n = c.dim[1]()
 
