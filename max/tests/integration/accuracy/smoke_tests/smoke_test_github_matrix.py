@@ -72,6 +72,7 @@ HF_MODELS: dict[str, set[str]] = {
     "microsoft/phi-4": MULTI,
     "mistralai/mistral-nemo-instruct-2407": MULTI | {"vllm"},
     "mistralai/mistral-small-3.1-24b-instruct-2503": MULTI | {"vllm"},
+    "modularai/llama-3.1-405b-instruct-autofp8": NON_XL | {"max"},
     "nvidia/deepseek-v3.1-nvfp4": NON_XL | {"8xMI355"},
     "nvidia/kimi-k2.5-nvfp4": NON_XL | {"8xMI355"},
     "opengvlab/internvl3-8b-instruct": MULTI | {"sglang"},
