@@ -59,11 +59,11 @@ const redirects = [
   },
   {
     from: '/max/graph',
-    to: '/max/develop/get-started-with-max-graph-in-python/',
+    to: '/max/develop/modules/',
   },
   {
     from: '/max/graph/get-started',
-    to: '/max/develop/get-started-with-max-graph-in-python/',
+    to: '/max/develop/modules/',
   },
   {
     from: '/max/create-project',
@@ -119,11 +119,19 @@ const redirects = [
   },
   {
     from: '/max/tutorials/get-started-with-max-graph-in-python',
-    to: '/max/develop/get-started-with-max-graph-in-python',
+    to: '/max/develop/modules',
+  },
+  {
+    from: '/max/develop/get-started-with-max-graph-in-python',
+    to: '/max/develop/modules',
   },
   {
     from: '/max/tutorials/build-an-mlp-block',
-    to: '/max/develop/build-an-mlp-block',
+    to: '/max/develop/modules',
+  },
+  {
+    from: '/max/develop/build-an-mlp-block',
+    to: '/max/develop/modules',
   },
   {
     from: '/max/tutorials/build-custom-ops',

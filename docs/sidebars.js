@@ -88,16 +88,7 @@ const maxSidebars = {
           type: "category",
           collapsed: true,
           items: [
-            {
-              type: "doc",
-              id: "max/develop/get-started-with-max-graph-in-python",
-              className: "tutorial-link",
-            },
-            {
-              type: "doc",
-              id: "max/develop/build-an-mlp-block",
-              className: "tutorial-link",
-            },
+            "max/develop/modules",
             "max/develop/eager-execution",
           ],
         },

@@ -8,20 +8,11 @@ READMEs for usage instructions.
 
 We moved the Mojo examples to [/mojo/examples](../../mojo/examples/)
 
-## [Basic MAX graph](max-graph/)
+## [Modules](modules/)
 
-The [MAX Python API](https://docs.modular.com/max/api/python/) provides a
-PyTorch-like interface for building neural network components that compile to
-highly optimized graphs. This is a simple example of how to build a graph in
-Python, before moving on to more complex custom ops using Mojo.
-
-## [Custom MAX graph module](custom-graph-module/)
-
-This example shows how to create a reusable, modular component for a MAX graph,
-using the `nn.Module` class. It include custom layers, blocks, and
-architectural patterns that showcase the flexibility of MAX's Python API for
-deep learning development, from simple MLP blocks to more complex neural
-network architectures.
+This example shows how to build model graphs using MAX's `nn.Module` class. It
+demonstrates composing built-in modules, writing custom modules with explicit
+weights, loading checkpoint data, and constructing a graph from the result.
 
 ## [Custom GPU and CPU graph ops in Mojo](custom_ops/)
 

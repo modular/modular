@@ -3,19 +3,20 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "require
 package(default_visibility = ["//visibility:private"])
 
 modular_py_binary(
-    name = "addition",
-    srcs = ["addition.py"],
+    name = "modules",
+    srcs = ["modules.py"],
     imports = ["."],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
 
 modular_run_binary_test(
-    name = "addition_test",
-    binary = "addition",
+    name = "modules_test",
+    binary = "modules",
 )
