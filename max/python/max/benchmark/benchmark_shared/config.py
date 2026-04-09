@@ -597,6 +597,17 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Workload Configuration"},
     )
 
+    force_unique_runs: bool = Field(
+        default=False,
+        description=(
+            "Prepend a single run-level UUID prefix to every prompt in this run. "
+            "All requests in the same run share the same prefix, preserving "
+            "within-run system-prompt prefix caching while preventing KV-cache "
+            "reuse across benchmark runs."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
+    )
+
     # Output control (serving-specific extensions)
     output_lengths: str | None = Field(
         default=None,

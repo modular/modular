@@ -744,6 +744,63 @@ def test_chat_session_driver_forwards_sampling_params() -> None:
     assert captured_inputs[0].top_k == 50
 
 
+def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
+    """First user message gets the run prefix when run_prefix is set."""
+
+    captured: list[RequestFuncInput] = []
+
+    class CapturingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            captured.append(request_func_input)
+            return RequestFuncOutput(
+                success=True,
+                latency=0.1,
+                ttft=0.05,
+                prompt_len=request_func_input.prompt_len,
+                generated_text="Hello",
+            )
+
+    async def run_test() -> None:
+        chat_session = ChatSession(
+            id=0,
+            messages=[
+                ChatMessage(source="user", content="Hi", num_tokens=5),
+                ChatMessage(source="assistant", content="Hello", num_tokens=5),
+                ChatMessage(source="user", content="Again", num_tokens=5),
+                ChatMessage(source="assistant", content="Hi", num_tokens=5),
+            ],
+        )
+        request_counter = RequestCounter(max_requests=10, total_sent_requests=0)
+
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=CapturingDriver(),
+            request_counter=request_counter,
+            chat_session=chat_session,
+            max_chat_len=4096,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+            run_prefix="RUN-UUID: ",
+            run_prefix_len=4,
+        )
+
+    asyncio.run(run_test())
+
+    assert len(captured) == 2
+    assert isinstance(captured[0].prompt, list)
+    first_user_text = captured[0].prompt[0]["content"][0]["text"]
+    assert first_user_text.endswith("Hi")
+    assert first_user_text != "Hi"
+    assert isinstance(captured[1].prompt, list)
+    second_user_text = captured[1].prompt[2]["content"][0]["text"]
+    assert second_user_text == "Again"
+
+
 def _make_4turn_session(
     prefix_turns: int = 0,
     delay_ms: float = 1000.0,

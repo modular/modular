@@ -34,6 +34,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, TypeGuard
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import numpy as np
 import yaml
@@ -156,6 +157,53 @@ def get_tokenizer(
         model_max_length=model_max_length,
         trust_remote_code=trust_remote_code,
     )
+
+
+def _prepend_run_prefix_to_formatted_prompt(
+    prompt: str | list[dict[str, Any]],
+    run_prefix: str,
+) -> str | list[dict[str, Any]]:
+    """Return a new prompt with `run_prefix` prepended to the first message."""
+    if isinstance(prompt, str):
+        return run_prefix + prompt
+
+    # Chat format: prepend to the text content of the first message.
+    # content may be a plain string or a list of typed content blocks.
+    if not prompt:
+        raise ValueError("run_prefix: empty prompt list")
+    msg = prompt[0]
+    content = msg.get("content")
+    if isinstance(content, str):
+        new_msg: dict[str, Any] = {**msg, "content": run_prefix + content}
+    elif isinstance(content, list):
+        text_block_idx = next(
+            (
+                idx
+                for idx, block in enumerate(content)
+                if isinstance(block, dict) and block.get("type") == "text"
+            ),
+            None,
+        )
+        if text_block_idx is None:
+            raise ValueError(
+                "run_prefix: no text block found in content list; cannot"
+                " prepend run prefix"
+            )
+        new_block = {
+            **content[text_block_idx],
+            "text": run_prefix + str(content[text_block_idx].get("text", "")),
+        }
+        new_content: list[Any] = [
+            *content[:text_block_idx],
+            new_block,
+            *content[text_block_idx + 1 :],
+        ]
+        new_msg = {**msg, "content": new_content}
+    else:
+        raise ValueError(
+            "run_prefix: unsupported prompt shape for first message"
+        )
+    return [new_msg, *prompt[1:]]
 
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
@@ -286,6 +334,8 @@ def build_single_turn_request_input(
     top_p: float | None,
     top_k: int | None,
     max_output_len: int | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> BaseRequestFuncInput:
     request_model_id = model_id if lora_id is None else lora_id
     if benchmark_task == "text-generation":
@@ -293,16 +343,21 @@ def build_single_turn_request_input(
             filter(None, (request.output_len, max_output_len)),
             default=None,
         )
+        prompt = request.prompt_formatted
+        prompt_len = request.prompt_len
+        if run_prefix:
+            prompt = _prepend_run_prefix_to_formatted_prompt(prompt, run_prefix)
+            prompt_len = prompt_len + run_prefix_len
         return RequestFuncInput(
             model=request_model_id,
             session_id=None,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
-            prompt=request.prompt_formatted,
+            prompt=prompt,
             images=request.encoded_images,
             api_url=api_url,
-            prompt_len=request.prompt_len,
+            prompt_len=prompt_len,
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
         )
@@ -311,10 +366,13 @@ def build_single_turn_request_input(
             raise TypeError(
                 "pixel-generation benchmark requires PixelGenerationSampledRequest."
             )
+        prompt = request.prompt_formatted
+        if run_prefix and isinstance(prompt, str):
+            prompt = run_prefix + prompt
         return PixelGenerationRequestFuncInput(
             model=request_model_id,
             session_id=None,
-            prompt=request.prompt_formatted,
+            prompt=prompt,
             input_image_paths=request.input_image_paths,
             api_url=api_url,
             image_options=request.image_options,
@@ -1169,6 +1227,8 @@ async def chat_session_driver(
     ignore_first_turn_stats: bool = False,
     benchmark_should_end_time: int | None = None,
     randomize_session_start: bool = False,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
@@ -1231,6 +1291,8 @@ async def chat_session_driver(
 
     while content_idx + 1 < len(messages):
         chat_len += messages[content_idx].num_tokens
+        if content_idx == 0 and run_prefix:
+            chat_len += run_prefix_len
         output_len = messages[content_idx + 1].num_tokens
         if chat_len + output_len > max_chat_len:
             logger.warning(
@@ -1243,6 +1305,8 @@ async def chat_session_driver(
             break
 
         user_prompt = messages[content_idx].content
+        if content_idx == 0 and run_prefix:
+            user_prompt = run_prefix + user_prompt
         message_history.append(
             {
                 "role": "user",
@@ -1322,6 +1386,8 @@ async def run_single_turn_benchmark(
     top_p: float | None,
     top_k: int | None,
     lora_manager: LoRABenchmarkManager | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> list[BaseRequestFuncOutput]:
     """Run single-turn benchmark scenario."""
     if timing_data is None:
@@ -1367,6 +1433,8 @@ async def run_single_turn_benchmark(
             top_p=top_p,
             top_k=top_k,
             max_output_len=max_output_len,
+            run_prefix=run_prefix,
+            run_prefix_len=run_prefix_len,
         )
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))
@@ -1396,6 +1464,8 @@ async def run_multiturn_benchmark(
     top_p: float | None,
     top_k: int | None,
     randomize_session_start: bool = False,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> list[RequestFuncOutput]:
     """Run multi-turn chat benchmark scenario."""
 
@@ -1432,6 +1502,8 @@ async def run_multiturn_benchmark(
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
                 randomize_session_start=randomize_session_start,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
             )
         async with semaphore:
             return await chat_session_driver(
@@ -1448,6 +1520,8 @@ async def run_multiturn_benchmark(
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
                 randomize_session_start=randomize_session_start,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
             )
 
     tasks: list[asyncio.Task[list[RequestFuncOutput]]] = []
@@ -1523,6 +1597,8 @@ async def run_single_test_prompt(
     top_p: float | None,
     top_k: int | None,
     max_output_len: int | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> None:
     logger.info("Starting initial single prompt test run...")
     if isinstance(samples, ChatSamples):
@@ -1558,6 +1634,8 @@ async def run_single_test_prompt(
         top_p=top_p,
         top_k=top_k,
         max_output_len=test_max_output_len,
+        run_prefix=run_prefix,
+        run_prefix_len=run_prefix_len,
     )
     test_output = await request_driver.request(test_input)
     if not test_output.success:
@@ -1788,6 +1866,7 @@ async def benchmark(
     lora_manager: LoRABenchmarkManager | None,
     trace_path: str | None = None,
     trace_session: str | None = None,
+    force_unique_runs: bool = False,
 ) -> tuple[
     dict[str, object], BenchmarkMetrics | PixelGenerationBenchmarkMetrics
 ]:
@@ -1805,6 +1884,29 @@ async def benchmark(
         await lora_manager.benchmark_loading(
             api_url=base_url,
         )
+
+    # Generate a single run-level unique prefix so all requests in this run
+    # share the same constant prefix. This prevents cross-run KV-cache
+    # pollution while preserving within-run system-prompt prefix caching
+    # (requests with the same system prompt still share a common token prefix).
+    run_prefix: str | None = None
+    run_prefix_len: int = 0
+    if force_unique_runs:
+        if benchmark_task == "image-to-image":
+            raise ValueError(
+                "--force-unique-runs is not supported for image-to-image:"
+                " the primary input is the image, not text, and systems may"
+                " cache vision embeddings independently, so we can't guarantee"
+                " uniqueness across benchmark runs."
+            )
+        run_prefix = f"{uuid4()}: "
+        if benchmark_task not in PIXEL_GENERATION_TASKS:
+            # prompt_len is not tracked for pixel generation tasks, so
+            # run_prefix_len is not needed there.
+            assert tokenizer is not None
+            run_prefix_len = len(
+                tokenizer(run_prefix, add_special_tokens=False).input_ids
+            )
 
     request_driver_class: type[RequestDriver] = get_request_driver_class(
         api_url, task=benchmark_task
@@ -1826,6 +1928,8 @@ async def benchmark(
             top_p=top_p,
             top_k=top_k,
             max_output_len=max_output_len,
+            run_prefix=run_prefix,
+            run_prefix_len=run_prefix_len,
         )
 
     if burstiness == 1.0:
@@ -1940,6 +2044,8 @@ async def benchmark(
                     top_p=top_p,
                     top_k=top_k,
                     lora_manager=lora_manager,
+                    run_prefix=run_prefix,
+                    run_prefix_len=run_prefix_len,
                 )
             else:
                 # multi-turn chat scenario
@@ -1961,6 +2067,8 @@ async def benchmark(
                     top_p=top_p,
                     top_k=top_k,
                     randomize_session_start=randomize_session_start,
+                    run_prefix=run_prefix,
+                    run_prefix_len=run_prefix_len,
                 )
 
             # Close pbar if it was created
@@ -2626,6 +2734,7 @@ def main_with_parsed_args(
             lora_manager=lora_manager,
             trace_path=trace_path,
             trace_session=args.trace_session,
+            force_unique_runs=args.force_unique_runs,
         )
     )
 
