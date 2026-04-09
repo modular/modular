@@ -269,10 +269,10 @@ def mha_cross_gpu_naive[
         Int(q.static_shape[rank - 1]),
     )
 
-    comptime num_heads = Int(config.num_heads)
-    comptime depth = Int(config.depth)
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
     comptime kv_num_heads = cache_t.kv_params.num_heads
-    comptime group = config.num_heads // kv_num_heads
+    comptime group = config.num_heads // Int(kv_num_heads)
     var kv_max_seq_len = Int(k.max_prompt_length())
     var batch_size = Int(q_input_row_offsets.dim[0]()) - 1
     var max_cache_size = Int(k.max_context_length())
@@ -320,7 +320,7 @@ def mha_cross_gpu_naive[
         max_cache_size,
         num_heads,
         depth,
-        Int(group),
+        group,
         mask_functor,
         grid_dim=(
             ceildiv(num_keys, 32),
@@ -367,7 +367,7 @@ def mha_cross_gpu_naive[
         max_cache_size,
         num_heads,
         depth,
-        Int(group),
+        group,
         grid_dim=(
             ceildiv(depth, 32),
             ceildiv(q_max_seq_len, 16),

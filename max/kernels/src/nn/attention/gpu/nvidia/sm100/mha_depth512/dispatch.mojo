@@ -83,10 +83,10 @@ def mha_sm100_depth512_dispatch[
     comptime assert not decoding, "depth512 pair-CTA does not support decoding"
 
     comptime d512_config = Depth512SM100Config[KVType.dtype](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
-        qk_depth=Int(config.depth),
-        ov_depth=Int(config.depth),
+        qk_depth=config.depth,
+        ov_depth=config.depth,
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
     )

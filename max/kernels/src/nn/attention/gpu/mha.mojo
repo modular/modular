@@ -537,9 +537,9 @@ def flash_attention_dispatch[
     ] = None,
     decode_dispatch_metadata: OptionalReg[MHADecodeDispatchMetadata] = None,
 ) raises:
-    comptime num_heads = Int(config.num_heads)
-    comptime depth = Int(config.depth)
-    comptime group = Int(config.num_heads) // kv_num_heads
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
+    comptime group = config.num_heads // kv_num_heads
 
     # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
     comptime is_shared_kv = ctx.default_device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
@@ -701,10 +701,10 @@ def flash_attention_dispatch[
 
                 var grid_dim = LaunchDim(
                     ceildiv(max_prompt_len, BM),
-                    Int(config.num_heads),
+                    config.num_heads,
                     batch_size,
                 ) if has_nvidia_gpu_accelerator() else LaunchDim(
-                    Int(config.num_heads),
+                    config.num_heads,
                     ceildiv(max_prompt_len, BM),
                     batch_size,
                 )
@@ -1521,7 +1521,7 @@ def get_waves_per_eu(depth: Int) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-@__llvm_metadata(`rocdl.waves_per_eu`=get_waves_per_eu(Int(config.depth)))
+@__llvm_metadata(`rocdl.waves_per_eu`=get_waves_per_eu(config.depth))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
@@ -1566,8 +1566,6 @@ def mha[
     ],
     mask: mask_t,
 ):
-    comptime depth = config.depth
-    comptime num_heads = config.num_heads
     var batch_idx = block_idx.z
 
     # mha inputs
@@ -1604,7 +1602,7 @@ def mha[
         else:
             num_keys = seq_len + Int(start_pos)
 
-        q_batch_offset = start_of_seq * Int(config.depth * config.num_heads)
+        q_batch_offset = start_of_seq * config.depth * config.num_heads
 
     # KVCache inputs, prompt lengths are all padded to the max in batch.
     elif _use_valid_length and not _padded_ndbuffer:
@@ -1620,7 +1618,7 @@ def mha[
 
         num_keys = seq_len + k.cache_length(batch_idx)
         q_batch_offset = (
-            Int(config.depth) * Int(config.num_heads) * max_seq_len * batch_idx
+            config.depth * config.num_heads * max_seq_len * batch_idx
         )
     # Dense tensor inputs, homogeneous and padded batching.
     else:
@@ -1634,7 +1632,7 @@ def mha[
         if seq_len < q_block_idx() * Int(config.block_m()):
             return
         q_batch_offset = (
-            Int(config.depth) * Int(config.num_heads) * max_seq_len * batch_idx
+            config.depth * config.num_heads * max_seq_len * batch_idx
         )
 
         # When cache length (num_keys) is greater, we assume it has
@@ -1795,8 +1793,8 @@ def mha_single_batch[
     comptime BM = Int(config.block_m())
     comptime BN = Int(config.block_n())
     comptime BK = Int(config.block_k())
-    comptime num_heads = Int(config.num_heads)
-    comptime depth = Int(config.depth)
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
 
     comptime assert num_warps_m * num_warps_n == (
         num_threads // WARP_SIZE
@@ -1904,8 +1902,8 @@ def mha_single_batch[
     comptime MMA_M = mma_shape[0]
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
-    comptime WM = Int(config.WM)
-    comptime WN = Int(config.WN)
+    comptime WM = config.WM
+    comptime WN = config.WN
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // MMA_N
 
@@ -1991,7 +1989,7 @@ def mha_single_batch[
     # Account for group query.
     comptime kv_num_heads = num_heads // group
 
-    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_pipeline_stages = config.num_pipeline_stages
 
     comptime q_num_vecs = BM * BK // simd_size
 
@@ -2152,7 +2150,7 @@ def mha_single_batch[
             swizzle_a=True,
             prefetch_init=False,
             static_num_iters=ufloordiv(depth, BK),
-            k_group_size=config.k_group_size,
+            k_group_size=UInt(config.k_group_size),
         ](
             p_reg_tile,
             q_smem_iter,
@@ -2330,7 +2328,7 @@ def mha_single_batch[
                 swizzle_a=True,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=config.k_group_size,
+                k_group_size=UInt(config.k_group_size),
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -2362,7 +2360,7 @@ def mha_single_batch[
                 swizzle_a=False,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=config.k_group_size,
+                k_group_size=UInt(config.k_group_size),
             ](
                 output_reg_tile,
                 p_reg_iter,
@@ -2512,8 +2510,8 @@ def mha_single_batch_pipelined[
     comptime BM = Int(config.block_m())
     comptime BN = Int(config.block_n())
     comptime BK = Int(config.block_k())
-    comptime num_heads = Int(config.num_heads)
-    comptime depth = Int(config.depth)
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
 
     comptime assert num_warps_m * num_warps_n == (
         num_threads // WARP_SIZE
@@ -2608,8 +2606,8 @@ def mha_single_batch_pipelined[
     comptime MMA_M = mma_shape[0]
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
-    comptime WM = Int(config.WM)
-    comptime WN = Int(config.WN)
+    comptime WM = config.WM
+    comptime WN = config.WN
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // MMA_N
 
@@ -2701,7 +2699,7 @@ def mha_single_batch_pipelined[
     # Account for group query.
     comptime kv_num_heads = num_heads // group
 
-    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_pipeline_stages = config.num_pipeline_stages
     var is_first_iter = True
 
     # Iterate over KV, equivalent to the following with if hoisted out.
@@ -2807,7 +2805,7 @@ def mha_single_batch_pipelined[
                 next_op_b_iter_masked=type_of(v_gmem_iter).masked,
                 next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
-                k_group_size=config.k_group_size,
+                k_group_size=UInt(config.k_group_size),
             ](
                 p_reg_tile,
                 q_gmem_iter,
@@ -2838,7 +2836,7 @@ def mha_single_batch_pipelined[
                 next_op_b_iter_masked=type_of(v_gmem_iter).masked,
                 next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
-                k_group_size=config.k_group_size,
+                k_group_size=UInt(config.k_group_size),
             ](
                 p_reg_tile,
                 # Pass shared memory iterator to hint not loading from global memory.
@@ -3001,7 +2999,7 @@ def mha_single_batch_pipelined[
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
-                k_group_size=config.k_group_size,
+                k_group_size=UInt(config.k_group_size),
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -3030,7 +3028,7 @@ def mha_single_batch_pipelined[
                 swizzle_a=True,
                 static_num_iters=ufloordiv(BN, BK),
                 prefetch_init=False,
-                k_group_size=config.k_group_size,
+                k_group_size=UInt(config.k_group_size),
             ](
                 output_reg_tile,
                 p_reg_iter,

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
-from std.math.uutils import ufloordiv
+from std.math.uutils import ufloordiv, ualign_up
 from std.collections import OptionalReg
 from std.sys import (
     CompilationTarget,
@@ -126,33 +126,34 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
 
 struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     # Q, K, V, output should have the same type.
-    var num_heads: UInt
-    var depth: UInt
-    var padded_depth: UInt
-    var num_queries_per_block: UInt
-    var num_keys_per_block: UInt
-    var BK: UInt  # tile size in depth dimension
-    var WM: UInt
-    var WN: UInt
-    var num_pipeline_stages: UInt
-    var k_group_size: UInt
+    var num_heads: Int
+    var depth: Int
+    var padded_depth: Int
+    var num_queries_per_block: Int
+    var num_keys_per_block: Int
+    var BK: Int  # tile size in depth dimension
+    var WM: Int
+    var WN: Int
+    var num_pipeline_stages: Int
+    var k_group_size: Int
+
     var algorithm: FlashAttentionAlgorithm
     var swizzle_mode: TensorMapSwizzle
 
     def block_m(self) -> UInt:
-        return self.num_queries_per_block
+        return UInt(self.num_queries_per_block)
 
     def block_n(self) -> UInt:
-        return self.num_keys_per_block
+        return UInt(self.num_keys_per_block)
 
     def block_k(self) -> UInt:
-        return self.BK
+        return UInt(self.BK)
 
     def warp_m(self) -> UInt:
-        return self.WM
+        return UInt(self.WM)
 
     def warp_n(self) -> UInt:
-        return self.WN
+        return UInt(self.WN)
 
     def num_warps_m(self) -> UInt:
         return self.block_m() // self.warp_m()
@@ -180,25 +181,25 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         return ufloordiv(self.swizzle_mode.bytes(), size_of[self.dtype]())
 
     def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> Int:
-        q_size = self.block_m() * self.padded_depth
+        q_size = self.block_m() * UInt(self.padded_depth)
         num_q = 2 if fa3 and persistent else 1
         return num_q * Int(q_size)
 
     def kv_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
             return (
-                Int(self.num_pipeline_stages)
+                self.num_pipeline_stages
                 * Int(self.block_n())
-                * Int(self.padded_depth)
+                * self.padded_depth
             )
         else:
-            return Int(self.block_n()) * Int(self.padded_depth)
+            return Int(self.block_n()) * self.padded_depth
 
     def k_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
             return self.kv_smem_size(True)
         else:
-            return Int(self.block_n()) * Int(self.padded_depth)
+            return Int(self.block_n()) * self.padded_depth
 
     def v_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
@@ -245,7 +246,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         num_smem_bytes = size_of[self.dtype]() * num_smem_elements
         if sm_90_fa3:
             comptime i64_size = size_of[DType.int64]()
-            num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
+            num_smem_bytes += (2 * self.num_pipeline_stages) * i64_size + (
                 4 * i64_size + 2 * size_of[DType.uint32]() if persistent else 0
             )
         return num_smem_bytes
@@ -264,14 +265,14 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
-        self.num_heads = UInt(num_heads)
-        self.depth = UInt(depth)
+        self.num_heads = num_heads
+        self.depth = depth
         var swizzle_granularity = (
             swizzle_mode.bytes() // size_of[DType.bfloat16]()
         )
-        self.padded_depth = align_up(UInt(depth), UInt(swizzle_granularity))
-        self.num_pipeline_stages = UInt(num_pipeline_stages)
-        self.k_group_size = UInt(k_group_size)
+        self.padded_depth = ualign_up(depth, swizzle_granularity)
+        self.num_pipeline_stages = num_pipeline_stages
+        self.k_group_size = k_group_size
         self.algorithm = algorithm.init(Self.dtype)
         self.swizzle_mode = swizzle_mode
         # Not all of these have to be `OptionalReg`, only
@@ -283,12 +284,10 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM
-            self.num_queries_per_block = UInt(
-                num_queries_per_block.or_else(128)
-            )
+            self.num_queries_per_block = num_queries_per_block.or_else(128)
             reg_per = 224 if self.num_queries_per_block > 64 else 256
             if num_keys_per_block:
-                self.num_keys_per_block = UInt(num_keys_per_block.value())
+                self.num_keys_per_block = num_keys_per_block.value()
             # FIXME: for depth == 64, larger num_keys_per_block values currently
             #        trigger correctness issues; this hardcoded value is a
             #        temporary workaround and should be revisited.
@@ -315,7 +314,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 var smem_upper_bound = (
                     smem_total // 2
                     - (
-                        Int(self.num_queries_per_block)
+                        self.num_queries_per_block
                         * depth
                         * (1 + Int(persistent))
                     )
@@ -327,47 +326,34 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                     min(reg_upper_bound, smem_upper_bound) // 16
                 )
                 # FIXME: add support for non-power-of-twos?
-                self.num_keys_per_block = UInt(
-                    max(prev_power_of_two(min_upper_bound), 64)
+                self.num_keys_per_block = max(
+                    prev_power_of_two(min_upper_bound), 64
                 )
-            self.BK = UInt(BK.or_else(64))
-            self.WN = UInt(WN.or_else(min(Int(self.num_keys_per_block), 256)))
+            self.BK = BK.or_else(64)
+            self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
             # BN
-            self.num_keys_per_block = UInt(
-                num_keys_per_block.or_else(
-                    (
-                        32 if depth == 512 else 64
-                    ) if has_amd_gpu_accelerator() else depth
-                )
+            self.num_keys_per_block = num_keys_per_block.or_else(
+                (
+                    32 if depth == 512 else 64
+                ) if has_amd_gpu_accelerator() else depth
             )
             # BM
-            self.num_queries_per_block = UInt(
-                num_queries_per_block.or_else(
-                    32 if Self.dtype
-                    == DType.float32 else (
-                        128 if has_amd_gpu_accelerator() else 64
-                    )
-                )
+            self.num_queries_per_block = num_queries_per_block.or_else(
+                32 if Self.dtype
+                == DType.float32 else (128 if has_amd_gpu_accelerator() else 64)
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
             var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
-            self.BK = UInt(
-                BK.or_else(
-                    16 * bk_arch_factor * bk_type_factor
-                ) if has_nvidia_gpu_accelerator() else 32
+            self.BK = BK.or_else(
+                16 * bk_arch_factor * bk_type_factor
+            ) if has_nvidia_gpu_accelerator() else 32
+            self.WN = WN.or_else(
+                32 if Self.dtype == DType.float32 else self.num_keys_per_block
             )
-            self.WN = UInt(
-                WN.or_else(
-                    32 if Self.dtype
-                    == DType.float32 else Int(self.num_keys_per_block)
-                )
-            )
-        self.WM = UInt(
-            WM.or_else(
-                32 if Self.dtype
-                == DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
-            )
+        self.WM = WM.or_else(
+            32 if Self.dtype
+            == DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
         )
 
     def write_to(self, mut writer: Some[Writer]):

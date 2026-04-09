@@ -103,7 +103,7 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
                     Self.kv_head_idx()
                     * UInt(Self.group) if Self.token_gen else Self.q_head_idx()
                 )
-                + Self.config.num_heads
+                + UInt(Self.config.num_heads)
                 * Self.q_tile_idx()
                 * Self.config.block_m()
             )

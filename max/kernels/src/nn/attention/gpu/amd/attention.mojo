@@ -280,9 +280,9 @@ struct Attention[
     group: Int,
     token_gen: Bool,
     sink: Bool,
-    q_depth: Int = Int(config.depth),
-    cache_depth: Int = Int(config.depth),
-    output_depth: Int = Int(config.depth),
+    q_depth: Int = config.depth,
+    cache_depth: Int = config.depth,
+    output_depth: Int = config.depth,
 ]:
     comptime BM: Int = Int(Self.config.block_m())
     comptime BN: Int = Int(Self.config.block_n())
@@ -290,10 +290,10 @@ struct Attention[
     comptime WM: Int = Int(Self.config.warp_m())
     comptime WN: Int = Int(Self.config.warp_n())
     comptime num_threads: Int = Int(Self.config.num_threads())
-    comptime num_heads: Int = Int(Self.config.num_heads)
+    comptime num_heads: Int = Self.config.num_heads
     comptime num_warps_n: Int = Self.BN // Self.WN
     comptime num_warps_m: Int = Self.BM // Self.WM
-    comptime depth: Int = Int(Self.config.depth)
+    comptime depth: Int = Self.config.depth
 
     comptime accum_type = get_accum_type[Self.q_type]()
     comptime mma_shape = Self.attention_config_t.get_mma_shape()

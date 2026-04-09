@@ -212,9 +212,9 @@ struct AttentionRDNA[
     group: Int,
     token_gen: Bool,
     sink: Bool,
-    q_depth: Int = Int(config.depth),
-    cache_depth: Int = Int(config.depth),
-    output_depth: Int = Int(config.depth),
+    q_depth: Int = config.depth,
+    cache_depth: Int = config.depth,
+    output_depth: Int = config.depth,
 ]:
     """RDNA-specific Attention implementation for Wave32 WMMA.
 
@@ -229,10 +229,10 @@ struct AttentionRDNA[
     comptime WM = Self.config.warp_m()
     comptime WN = Self.config.warp_n()
     comptime num_threads = Self.config.num_threads()
-    comptime num_heads = Self.config.num_heads
+    comptime num_heads = UInt(Self.config.num_heads)
     comptime num_warps_n = Self.BN // Self.WN
     comptime num_warps_m = Self.BM // Self.WM
-    comptime depth = Self.config.depth
+    comptime depth = UInt(Self.config.depth)
     comptime accum_type = get_accum_type[Self.q_type]()
 
     # RDNA always uses 16x16x16 WMMA

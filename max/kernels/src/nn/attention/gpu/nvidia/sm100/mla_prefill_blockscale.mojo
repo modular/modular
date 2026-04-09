@@ -1342,7 +1342,7 @@ def mla_sm100_prefill_blockscale[
     comptime fa4_config = MLAConfig[
         q_type, rope_gmem_dtype=KRopeType.dtype, rope_mma_dtype=q_type
     ](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
         depth=q_depth,
         page_size=KVType.page_size,

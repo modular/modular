@@ -237,9 +237,7 @@ def flare_mla_decoding[
         # For per_token_scale_rope_aware: Q's last dim is 640 (interleaved FP8+BF16)
         # but the logical depth is 576. Override config to use 576.
         comptime if per_token_scale_rope_aware:
-            comptime rope_aware_config = MHAConfig[dtype](
-                Int(config.num_heads), 576
-            )
+            comptime rope_aware_config = MHAConfig[dtype](config.num_heads, 576)
             flare_mla_decoding_dispatch[
                 kv_num_heads=kv_num_heads,
                 config=rope_aware_config,
@@ -394,9 +392,9 @@ def flare_mla_decoding_dispatch[
         _unsafe_null = ()
     },
 ) raises:
-    comptime num_heads = Int(config.num_heads)
-    comptime depth = Int(config.depth)
-    comptime group = Int(config.num_heads) // kv_num_heads
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
+    comptime group = config.num_heads // kv_num_heads
     comptime assert num_heads == type_of(q).static_shape[q.rank - 2]
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
@@ -1994,7 +1992,7 @@ def flare_mla_prefill[
         )
         mla_sm100_prefill_per_token_scale[
             config=mha_config,
-            group=Int(mha_config.num_heads) // kv_num_heads,
+            group=mha_config.num_heads // kv_num_heads,
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=True,
@@ -2050,9 +2048,9 @@ def flare_mla_prefill_dispatch[
         ]
     ] = None,
 ) raises:
-    comptime num_heads = Int(config.num_heads)
-    comptime depth = Int(config.depth)
-    comptime group = Int(config.num_heads) // kv_num_heads
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
+    comptime group = config.num_heads // kv_num_heads
     comptime rank = output.rank
 
     comptime assert q_depth == type_of(q).static_shape[rank - 1]
@@ -2134,10 +2132,10 @@ def flare_mla_prefill_dispatch[
         ]
         var grid_dim = LaunchDim(
             ceildiv(max_prompt_len, BM),
-            Int(config.num_heads),
+            config.num_heads,
             batch_size,
         ) if has_nvidia_gpu_accelerator() else LaunchDim(
-            Int(config.num_heads),
+            config.num_heads,
             ceildiv(max_prompt_len, BM),
             batch_size,
         )
@@ -2202,7 +2200,7 @@ def mla_prefill[
     mask: mask_t,
 ):
     var valid_length = valid_length_tt.to_layout_tensor()
-    comptime depth = Int(config.depth)
+    comptime depth = config.depth
     var batch_idx = block_idx.z
 
     # mha inputs
@@ -2240,8 +2238,8 @@ def mla_prefill[
         var cache_offsets_nd = cache_offsets.value()
         cache_start_pos = cache_offsets_nd[batch_idx][0]
 
-    q_batch_offset = start_of_seq * q_depth * Int(config.num_heads)
-    o_batch_offset = start_of_seq * depth * Int(config.num_heads)
+    q_batch_offset = start_of_seq * q_depth * config.num_heads
+    o_batch_offset = start_of_seq * depth * config.num_heads
 
     comptime if is_nvidia_gpu():
         mla_prefill_single_batch[
@@ -2334,8 +2332,8 @@ def mla_prefill_single_batch[
     comptime BM = Int(config.block_m())
     comptime BN = Int(config.block_n())
     comptime BK = Int(config.block_k())
-    comptime num_heads = Int(config.num_heads)
-    comptime depth = Int(config.depth)
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
 
     comptime rope_depth = q_depth - depth
 
@@ -2449,8 +2447,8 @@ def mla_prefill_single_batch[
     comptime MMA_M = mma_shape[0]
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
-    comptime WM = Int(config.WM)
-    comptime WN = Int(config.WN)
+    comptime WM = config.WM
+    comptime WN = config.WN
     comptime WN_O = depth
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // MMA_N
@@ -2520,7 +2518,7 @@ def mla_prefill_single_batch[
     var mask_warp_row = warp_y * UInt32(WM)
     var mask_warp_col = warp_x * UInt32(WN)
 
-    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_pipeline_stages = config.num_pipeline_stages
 
     comptime q_num_vecs = BM * BK // simd_size
 
@@ -2737,7 +2735,7 @@ def mla_prefill_single_batch[
             swizzle_a=True,
             prefetch_init=False,
             static_num_iters=q_depth // BK,
-            k_group_size=config.k_group_size,
+            k_group_size=UInt(config.k_group_size),
         ](
             p_reg_tile,
             q_smem_iter,
@@ -2924,7 +2922,7 @@ def mla_prefill_single_batch[
                 swizzle_a=True,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=config.k_group_size,
+                k_group_size=UInt(config.k_group_size),
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -2956,7 +2954,7 @@ def mla_prefill_single_batch[
                 swizzle_a=False,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=config.k_group_size,
+                k_group_size=UInt(config.k_group_size),
             ](
                 output_reg_tile,
                 p_reg_iter,

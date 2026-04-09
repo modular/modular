@@ -83,7 +83,7 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
             q_depth
             * (
                 UInt(block_idx.x)
-                + Self.config.num_heads
+                + UInt(Self.config.num_heads)
                 * Self.q_tile_idx()
                 * Self.config.block_m()
             ) if not Self.token_gen else q_depth
