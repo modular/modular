@@ -66,9 +66,3 @@ class VideoProviderOptions(BaseModel):
         ),
         gt=0,
     )
-
-    guidance_scale_2: float | None = Field(
-        None,
-        description="Secondary guidance scale for boundary timestep switching.",
-        gt=0.0,
-    )

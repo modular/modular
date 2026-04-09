@@ -25,7 +25,9 @@ from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 from max.graph.weights import load_weights
-from max.interfaces import PixelGenerationContext, TokenBuffer
+from max.interfaces import TokenBuffer
+
+from .context import WanContext
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.component_model import ComponentModel
@@ -123,6 +125,7 @@ class WanPipeline(DiffusionPipeline):
         """Load sub-models with LoRA injection for transformer."""
         import inspect
 
+        self._weight_paths = weight_paths
         diffusers_config = self.pipeline_config.model.diffusers_config or {}
         components_config = diffusers_config.get("components", {})
         relative_paths = self._resolve_relative_component_paths()
@@ -568,29 +571,25 @@ class WanPipeline(DiffusionPipeline):
         )
         return previous_sample, converted, corrected_sample
 
-    def prepare_inputs(self, context: PixelGenerationContext) -> WanModelInputs:
+    def prepare_inputs(self, context: WanContext) -> WanModelInputs:
         num_frames = 81
-        if hasattr(context, "num_frames") and context.num_frames is not None:
+        if context.num_frames is not None:
             num_frames = int(context.num_frames)
 
         model_inputs = WanModelInputs(
             tokens=context.tokens,
-            negative_tokens=getattr(context, "negative_tokens", None),
-            timesteps=np.asarray(
-                getattr(context, "timesteps", []), dtype=np.float32
-            ),
-            latents=np.asarray(
-                getattr(context, "latents", []), dtype=np.float32
-            ),
-            width=getattr(context, "width", 832),
-            height=getattr(context, "height", 480),
+            negative_tokens=context.negative_tokens,
+            timesteps=np.asarray(context.timesteps, dtype=np.float32),
+            latents=np.asarray(context.latents, dtype=np.float32),
+            width=context.width,
+            height=context.height,
             num_frames=num_frames,
-            num_inference_steps=getattr(context, "num_inference_steps", 50),
-            guidance_scale=getattr(context, "guidance_scale", 5.0),
-            num_images_per_prompt=getattr(context, "num_images_per_prompt", 1),
-            step_coefficients=getattr(context, "step_coefficients", None),
-            boundary_timestep=getattr(context, "boundary_timestep", None),
-            input_image=getattr(context, "input_image", None),
+            num_inference_steps=context.num_inference_steps,
+            guidance_scale=context.guidance_scale,
+            num_images_per_prompt=context.num_images_per_prompt,
+            step_coefficients=context.step_coefficients,
+            boundary_timestep=context.boundary_timestep,
+            input_image=context.input_image,
         )
 
         if model_inputs.latents.ndim == 5:
@@ -600,10 +599,7 @@ class WanPipeline(DiffusionPipeline):
                 latent_frames=latent_frames,
             )
 
-        if (
-            hasattr(context, "guidance_scale_2")
-            and context.guidance_scale_2 is not None
-        ):
+        if context.guidance_scale_2 is not None:
             model_inputs.guidance_scale_2 = context.guidance_scale_2
 
         return model_inputs

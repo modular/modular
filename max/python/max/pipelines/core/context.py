@@ -695,7 +695,6 @@ class PixelContext:
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
         input_image: Optional HWC uint8 numpy array for image-to-image generation.
-        residual_threshold: Residual threshold for step-cache early stopping.
         model_name: Name of the model being used.
     """
 
@@ -765,16 +764,6 @@ class PixelContext:
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
     residual_threshold: float | None = field(default=None)
     """Per-request residual threshold for FBCache. None uses pipeline default."""
-    num_frames: int | None = field(default=None)
-    """Number of frames for video generation."""
-    frames_per_second: int = field(default=16)
-    """Frame rate for video output."""
-    guidance_scale_2: float | None = field(default=None)
-    """Secondary guidance scale for low-noise expert (MoE models)."""
-    step_coefficients: npt.NDArray[np.float32] | None = field(default=None)
-    """Pre-computed scheduler step coefficients."""
-    boundary_timestep: float | None = field(default=None)
-    """Timestep threshold for switching between high/low noise experts."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property

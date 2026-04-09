@@ -12,13 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from .arch import wan_arch, wan_i2v_arch
+from .context import WanContext
 from .model import WanTransformerModel
 from .pipeline_wan import WanPipeline
 from .pipeline_wan_i2v import WanI2VPipeline
+from .tokenizer import WanTokenizer
 
 __all__ = [
+    "WanContext",
     "WanI2VPipeline",
     "WanPipeline",
+    "WanTokenizer",
     "WanTransformerModel",
     "wan_arch",
     "wan_i2v_arch",

@@ -17,17 +17,15 @@ from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import (
-    PixelGenerationTokenizer,
-    SupportedArchitecture,
-)
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from typing_extensions import Self
 
+from .context import WanContext
 from .pipeline_wan import WanPipeline
 from .pipeline_wan_i2v import WanI2VPipeline
+from .tokenizer import WanTokenizer
 
 
 @dataclass(kw_only=True)
@@ -64,9 +62,9 @@ wan_arch = SupportedArchitecture(
         "yetter-ai/Wan2.2-TI2V-5B-Turbo-Diffusers",
     ],
     pipeline_model=WanPipeline,  # type: ignore[arg-type]
-    context_type=PixelContext,
+    context_type=WanContext,
     default_weights_format=WeightsFormat.safetensors,
-    tokenizer=PixelGenerationTokenizer,
+    tokenizer=WanTokenizer,
     config=WanArchConfig,
 )
 
@@ -80,8 +78,8 @@ wan_i2v_arch = SupportedArchitecture(
         "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",
     ],
     pipeline_model=WanI2VPipeline,
-    context_type=PixelContext,
+    context_type=WanContext,
     default_weights_format=WeightsFormat.safetensors,
-    tokenizer=PixelGenerationTokenizer,
+    tokenizer=WanTokenizer,
     config=WanArchConfig,
 )

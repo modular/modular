@@ -99,8 +99,6 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
-    WAN = "WanPipeline"
-    WAN_I2V = "WanImageToVideoPipeline"
 
     @classmethod
     def from_diffusers_config(
@@ -247,15 +245,6 @@ class PixelGenerationTokenizer(
         self._default_sample_size = 128
         if self._pipeline_class_name == PipelineClassName.ZIMAGE:
             self._num_channels_latents = transformer_config["in_channels"]
-        elif self._pipeline_class_name in (
-            PipelineClassName.WAN,
-            PipelineClassName.WAN_I2V,
-        ):
-            # Noise latent channels = out_channels (16), not in_channels
-            # which may be 36 for I2V (16 noise + 4 mask + 16 image)
-            self._num_channels_latents = transformer_config.get(
-                "out_channels", transformer_config["in_channels"]
-            )
         else:
             self._num_channels_latents = transformer_config["in_channels"] // 4
 
@@ -316,24 +305,6 @@ class PixelGenerationTokenizer(
             return latent_image_ids.reshape(
                 -1, latent_image_ids.shape[-1]
             ).astype(np.float32)
-
-    def _select_wan_flow_shift(self, height: int, width: int) -> float:
-        scheduler_cfg = (
-            self.diffusers_config.get("components", {})
-            .get("scheduler", {})
-            .get("config_dict", {})
-        )
-        # Use explicit flow_shift from scheduler config if set (user override).
-        cfg_shift = scheduler_cfg.get("flow_shift")
-        if cfg_shift is not None and float(cfg_shift) != 1.0:
-            return float(cfg_shift)
-        # Default: interpolate based on pixel count.
-        # 480p (480*832=399360) → 3.0, 720p (720*1280=921600) → 5.0
-        pixels = height * width
-        lo_px, hi_px = 399_360, 921_600
-        lo_shift, hi_shift = 3.0, 5.0
-        t = max(0.0, min(1.0, (pixels - lo_px) / (hi_px - lo_px)))
-        return lo_shift + t * (hi_shift - lo_shift)
 
     def _randn_tensor(
         self,
@@ -933,17 +904,9 @@ class PixelGenerationTokenizer(
                 " but may produce lower quality or unexpected results."
             )
 
-        # Resolve negative_prompt: prefer video options for video pipelines.
-        video_options = request.body.provider_options.video
-        negative_prompt_resolved = (
-            video_options.negative_prompt
-            if video_options and video_options.negative_prompt
-            else None
-        ) or image_options.negative_prompt
-
         if (
             image_options.true_cfg_scale > 1.0
-            and negative_prompt_resolved is None
+            and image_options.negative_prompt is None
         ):
             logger.warning(
                 f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
@@ -967,17 +930,8 @@ class PixelGenerationTokenizer(
         else:
             do_true_cfg = (
                 image_options.true_cfg_scale > 1.0
-                and negative_prompt_resolved is not None
+                and image_options.negative_prompt is not None
             )
-        if (
-            self._pipeline_class_name
-            in (PipelineClassName.WAN, PipelineClassName.WAN_I2V)
-            and image_options.guidance_scale > 1.0
-            and negative_prompt_resolved is not None
-        ):
-            # Wan uses standard CFG controlled by guidance_scale, not true_cfg_scale.
-            do_true_cfg = True
-        import PIL.Image
 
         # 1. Tokenize prompts
         # Convert input_image to list format for _generate_tokens_ids
@@ -1001,7 +955,7 @@ class PixelGenerationTokenizer(
         ) = await self._generate_tokens_ids(
             prompt,
             image_options.secondary_prompt,
-            negative_prompt_resolved,
+            image_options.negative_prompt,
             image_options.secondary_negative_prompt,
             do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
@@ -1040,29 +994,17 @@ class PixelGenerationTokenizer(
                     self._pipeline_class_name != PipelineClassName.ZIMAGE
                 ),
             )
-            height = (
-                (video_options and video_options.height)
-                or image_options.height
-                or preprocessed_image.height
-            )
-            width = (
-                (video_options and video_options.width)
-                or image_options.width
-                or preprocessed_image.width
-            )
+            height = image_options.height or preprocessed_image.height
+            width = image_options.width or preprocessed_image.width
             preprocessed_image_array = np.array(
                 preprocessed_image, dtype=np.uint8
             ).copy()
         else:
             height = (
-                (video_options and video_options.height)
-                or image_options.height
-                or default_sample_size * vae_scale_factor
+                image_options.height or default_sample_size * vae_scale_factor
             )
             width = (
-                (video_options and video_options.width)
-                or image_options.width
-                or default_sample_size * vae_scale_factor
+                image_options.width or default_sample_size * vae_scale_factor
             )
 
         # 3. Resolve image dimensions using cached static values
@@ -1070,48 +1012,19 @@ class PixelGenerationTokenizer(
         latent_width = 2 * (int(width) // (self._vae_scale_factor * 2))
         image_seq_len = (latent_height // 2) * (latent_width // 2)
 
-        video_steps = (
-            video_options.steps
-            if video_options and video_options.steps is not None
+        num_inference_steps = (
+            image_options.steps
+            if "steps" in image_options.model_fields_set
+            else self._default_num_inference_steps
+        )
+        sigma_min = (
+            0.0
+            if self._pipeline_class_name == PipelineClassName.ZIMAGE
             else None
         )
-        num_inference_steps = (
-            video_steps
-            if video_steps is not None
-            else (
-                image_options.steps
-                if "steps" in image_options.model_fields_set
-                else self._default_num_inference_steps
-            )
+        timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
+            image_seq_len, num_inference_steps, sigma_min=sigma_min
         )
-        boundary_timestep: float | None = None
-        step_coefficients: npt.NDArray[np.float32] | None = None
-        if self._pipeline_class_name in (
-            PipelineClassName.WAN,
-            PipelineClassName.WAN_I2V,
-        ):
-            if getattr(self._scheduler, "use_flow_sigmas", False):
-                self._scheduler.flow_shift = self._select_wan_flow_shift(
-                    height, width
-                )
-            boundary_ratio = self.diffusers_config.get("boundary_ratio")
-            if boundary_ratio is not None:
-                boundary_timestep = float(boundary_ratio) * float(
-                    getattr(self._scheduler, "num_train_timesteps", 1000)
-                )
-        if self._pipeline_class_name == PipelineClassName.ZIMAGE:
-            timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
-                image_seq_len, num_inference_steps, sigma_min=0.0
-            )
-        else:
-            timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
-                image_seq_len, num_inference_steps
-            )
-        if self._pipeline_class_name in (
-            PipelineClassName.WAN,
-            PipelineClassName.WAN_I2V,
-        ) and hasattr(self._scheduler, "build_step_coefficients"):
-            step_coefficients = self._scheduler.build_step_coefficients()
         if (
             self._pipeline_class_name == PipelineClassName.ZIMAGE
             and self._scheduler_shift != 1.0
@@ -1153,20 +1066,6 @@ class PixelGenerationTokenizer(
             request.body.seed,
         )
 
-        if video_options and video_options.num_frames:
-            vae_scale_factor_temporal = 4
-            latent_frames = (
-                video_options.num_frames - 1
-            ) // vae_scale_factor_temporal + 1
-            shape_5d = (
-                image_options.num_images,
-                self._num_channels_latents,
-                latent_frames,
-                latent_height,
-                latent_width,
-            )
-            latents = self._randn_tensor(shape_5d, request.body.seed)
-
         # 5. Build the context
         context = PixelContext(
             request_id=request.request_id,
@@ -1195,15 +1094,6 @@ class PixelGenerationTokenizer(
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
             output_format=image_options.output_format,
             residual_threshold=image_options.residual_threshold,
-            num_frames=video_options.num_frames if video_options else None,
-            frames_per_second=(
-                video_options.frames_per_second or 16 if video_options else 16
-            ),
-            guidance_scale_2=(
-                video_options.guidance_scale_2 if video_options else None
-            ),
-            step_coefficients=step_coefficients,
-            boundary_timestep=boundary_timestep,
         )
 
         return context
