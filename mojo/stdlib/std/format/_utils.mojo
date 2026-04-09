@@ -574,16 +574,15 @@ def _hex_digits_to_hex_chars(
     %# from std.memory import memset_zero
     %# from std.testing import assert_equal
     %# from std.utils import StringSlice
-    %# from std.io.write import _hex_digits_to_hex_chars
-    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    comptime S = StringSlice[origin_of(items)]
+    %# from std.format._utils import _hex_digits_to_hex_chars
+    var items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     ptr = items.unsafe_ptr()
     ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-    assert_equal("0001f525", S(ptr=ptr, length=8))
+    assert_equal("0001f525", StringSlice(ptr=ptr, length=8))
     ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-    assert_equal("4f60", S(ptr=ptr, length=4))
+    assert_equal("4f60", StringSlice(ptr=ptr, length=4))
     ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-    assert_equal("d6", S(ptr=ptr, length=2))
+    assert_equal("d6", StringSlice(ptr=ptr, length=2))
     ```
     """
     comptime size = size_of[decimal.dtype]()
@@ -601,18 +600,18 @@ def _write_hex[
     Examples:
 
     ```mojo
-    %# from memory import memset_zero
-    %# from testing import assert_equal
-    %# from utils import StringSlice
-    %# from io.write import _write_hex
+    %# from std.memory import memset_zero
+    %# from std.testing import assert_equal
+    %# from std.utils import StringSlice
+    %# from std.format._utils import _write_hex
     var s = String()
-    _write_hex[amnt_hex_bytes=8](s, ord("🔥"))
+    _write_hex[amnt_hex_bytes=8](s, UInt32(ord("🔥")))
     assert_equal("\\U0001f525", s)
     s = ""
-    _write_hex[amnt_hex_bytes=4](s, ord("你"))
+    _write_hex[amnt_hex_bytes=4](s, UInt32(ord("你")))
     assert_equal("\\u4f60", s)
     s = ""
-    _write_hex[amnt_hex_bytes=2](s, ord("Ö"))
+    _write_hex[amnt_hex_bytes=2](s, UInt32(ord("Ö")))
     assert_equal("\\xd6", s)
     ```
     """

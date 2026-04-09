@@ -385,7 +385,7 @@ struct TestSuite(Movable):
     Example:
 
     ```mojo
-    from std.testing import assert_equal, TestSuite
+    %# from std.testing import assert_equal, TestSuite
 
     def test_something() raises:
         assert_equal(1 + 1, 2)
@@ -400,7 +400,7 @@ struct TestSuite(Movable):
     Alternatively, you can manually register tests by calling the `test` method.
 
     ```mojo
-    from std.testing import assert_equal, TestSuite
+    %# from std.testing import assert_equal, TestSuite
 
     def some_test() raises:
         assert_equal(1 + 1, 2)

@@ -903,7 +903,7 @@ def size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
 
     Example:
     ```mojo
-    from std.sys.info import size_of
+    %# from std.sys.info import size_of
     def main() raises:
         print(
             size_of[UInt8]() == 1,

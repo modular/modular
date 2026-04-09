@@ -66,7 +66,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     Example:
 
     ```mojo
-    from std.reflection import source_location, SourceLocation
+    %# from std.reflection import source_location, SourceLocation
 
     def main():
         # Get current location
@@ -197,7 +197,7 @@ def source_location() -> SourceLocation:
     Example:
 
     ```mojo
-    from std.reflection import source_location
+    %# from std.reflection import source_location
 
     def log_message(msg: String):
         var loc = source_location()
@@ -255,7 +255,7 @@ def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     Example:
 
     ```mojo
-    from std.reflection import call_location
+    %# from std.reflection import call_location
 
     @always_inline  # Required for call_location() to work
     def assert_positive(value: Int) raises:

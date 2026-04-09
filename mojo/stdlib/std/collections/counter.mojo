@@ -67,7 +67,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Example:
 
     ```mojo
-    from std.collections import Counter
+    %# from std.collections import Counter
 
     var counter = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
     print(counter["a"]) # prints 3

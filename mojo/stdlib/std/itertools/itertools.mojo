@@ -716,7 +716,7 @@ def take_while[
     Examples:
 
     ```mojo
-    from std.itertools import take_while
+    %# from std.itertools import take_while
 
     # Take while less than 5
     def less_than_5(x: Int) -> Bool:
@@ -881,7 +881,7 @@ def drop_while[
     Examples:
 
     ```mojo
-    from std.itertools import drop_while
+    %# from std.itertools import drop_while
 
     # Drop while less than 5
     def less_than_5(x: Int) -> Bool:

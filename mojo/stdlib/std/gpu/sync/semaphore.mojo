@@ -20,9 +20,10 @@ to implement efficient thread synchronization.
 Example:
 
     ```mojo
-    from std.gpu import Semaphore
+    %# from std.gpu import Semaphore
+    %# thread_id = 0
 
-    var lock = UnsafePointer[Int32](...)
+    var lock = UnsafePointer[Int32, MutAnyOrigin]()
     var sem = Semaphore(lock, thread_id)
 
     # Wait for a specific state

@@ -3193,7 +3193,7 @@ def comb(n: Int, k: Int) -> Int:
     Examples:
 
     ```mojo
-    from std.math import comb
+    %# from std.math import comb
     print(comb(5, 2))  # 10
     print(comb(10, 0)) # 1
     print(comb(3, 5))  # 0
@@ -3238,7 +3238,7 @@ def perm(n: Int, k: Int = -1) -> Int:
     Examples:
 
     ```mojo
-    from std.math import perm
+    %# from std.math import perm
     print(perm(5, 2))  # 20
     print(perm(5))     # 120  (same as factorial(5))
     print(perm(5, 0))  # 1
@@ -3507,7 +3507,7 @@ trait Ceilable:
 
     For example:
     ```mojo
-    from std.math import Ceilable, ceil
+    %# from std.math import Ceilable, ceil
 
     @fieldwise_init
     struct Complex(Ceilable, ImplicitlyCopyable):
@@ -3544,7 +3544,7 @@ trait Floorable:
 
     For example:
     ```mojo
-    from std.math import Floorable, floor
+    %# from std.math import Floorable, floor
 
     @fieldwise_init
     struct Complex(Floorable, ImplicitlyCopyable):
@@ -3582,7 +3582,7 @@ trait CeilDivable:
 
     For example:
     ```mojo
-    from std.math import CeilDivable
+    %# from std.math import CeilDivable
 
     @fieldwise_init
     struct Foo(CeilDivable, ImplicitlyCopyable):
@@ -3615,7 +3615,7 @@ trait CeilDivableRaising:
 
     For example:
     ```mojo
-    from std.math import CeilDivableRaising
+    %# from std.math import CeilDivableRaising
 
     @fieldwise_init
     struct Foo(CeilDivableRaising, ImplicitlyCopyable):
@@ -3656,7 +3656,7 @@ trait Truncable:
 
     For example:
     ```mojo
-    from std.math import Truncable, trunc
+    %# from std.math import Truncable, trunc
 
     @fieldwise_init
     struct Complex(Truncable, ImplicitlyCopyable):

@@ -36,7 +36,7 @@ def map[
     For example:
 
     ```mojo
-    from std.algorithm import map
+    %# from std.algorithm import map
 
     def main() raises:
         # Create list with initial values to act on

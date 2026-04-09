@@ -45,7 +45,7 @@ Returns:
 
 Examples:
     ```mojo
-    from std.utils.type_functions import ConditionalType
+    %# from std.utils.type_functions import ConditionalType
     from std.sys import size_of
 
     struct Wrapper[T: AnyType]:

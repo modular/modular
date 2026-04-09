@@ -42,7 +42,7 @@ def seed():
     Example:
 
     ```mojo
-    from std.random import seed
+    %# from std.random import seed
 
     seed()
     ```
@@ -59,7 +59,7 @@ def seed(a: Int):
     Example:
 
     ```mojo
-    from std.random import seed
+    %# from std.random import seed
 
     seed(123456)
     ```
@@ -79,7 +79,7 @@ def random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
 
     Example:
     ```mojo
-    from std.random import random_float64, seed
+    %# from std.random import random_float64, seed
 
     seed()
     var rnd = random_float64(10.0, 20.0)
@@ -102,7 +102,7 @@ def random_si64(min: Int64, max: Int64) -> Int64:
     Example:
 
     ```mojo
-    from std.random import random_si64, seed
+    %# from std.random import random_si64, seed
 
     seed()
     var rnd = random_si64(-100, 100)
@@ -125,7 +125,7 @@ def random_ui64(min: UInt64, max: UInt64) -> UInt64:
     Example:
 
     ```mojo
-    from std.random import random_ui64, seed
+    %# from std.random import random_ui64, seed
 
     seed()
     var rnd = random_ui64(0, 100)
@@ -160,7 +160,7 @@ def randint[
     Example:
 
     ```mojo
-    from std.random import randint, seed
+    %# from std.random import randint, seed
     from std.memory import alloc
     seed()
     var size: Int = 10
@@ -212,7 +212,7 @@ def rand[
     Example:
 
     ```mojo
-    from std.random import rand, seed
+    %# from std.random import rand, seed
     from std.memory import alloc
 
     seed()
@@ -277,7 +277,7 @@ def randn_float64(
     Example:
 
     ```mojo
-    from std.random import randn_float64, seed
+    %# from std.random import randn_float64, seed
     seed()
     var rnd = randn_float64(0.0, 1.0)
     print(rnd)  # Random Float64 from Normal(0.0, 1.0)
@@ -311,7 +311,7 @@ def randn[
     Example:
 
     ```mojo
-    from std.random import randn, seed
+    %# from std.random import randn, seed
     from std.memory import alloc
 
     seed()
@@ -343,8 +343,7 @@ def shuffle[T: Copyable, //](mut list: List[T]):
     Example:
 
     ```mojo
-    from std.random import shuffle
-    from std.collections.list import List
+    %# from std.random import shuffle
     var list: List[Int] = [0, 1, 2, 3, 4, 5]
     shuffle(list)
     print(list)  # The list elements are now in random order

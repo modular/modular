@@ -548,7 +548,7 @@ struct assert_raises:
     errors are raised. For instance:
 
     ```mojo
-    from std.testing import assert_raises
+    %# from std.testing import assert_raises
 
     # Good! Caught the raised error, test passes
     with assert_raises():

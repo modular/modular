@@ -105,7 +105,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     Examples:
 
     ```mojo
-    from std.memory import ArcPointer
+    %# from std.memory import ArcPointer
     var p = ArcPointer(4)
     var p2 = p
     p2[]=3

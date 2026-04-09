@@ -45,7 +45,7 @@ def inlined_assembly[
     Example:
 
     ```mojo
-    from std.sys import inlined_assembly
+    %# from std.sys import inlined_assembly
 
     # Convert bfloat16 to float32 on NVIDIA GPU using PTX assembly.
     # "$0" is the output (float32), "$1" is the input (int16 bitcast of bf16).
@@ -54,7 +54,7 @@ def inlined_assembly[
         Float32,
         constraints="=f,h",
         has_side_effect=False,
-    ](my_bf16_as_int16)
+    ](Int16(0x3F80))
 
     # Execute a no-op sleep instruction on AMD GPU (no return value).
     inlined_assembly[

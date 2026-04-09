@@ -53,7 +53,7 @@ def cwd() raises -> Path:
     Example:
 
     ```mojo
-    from std.pathlib import cwd
+    %# from std.pathlib import cwd
 
     var string_path = cwd()
     print(string_path)

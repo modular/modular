@@ -46,7 +46,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     O(1) average-case amortized add, remove, and membership check.
 
     ```mojo
-    from std.collections import Set
+    %# from std.collections import Set
 
     var set = { 1, 2, 3 }
     print(len(set))  # 3

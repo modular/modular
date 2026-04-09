@@ -146,7 +146,7 @@ def get_defined_int[name: StaticString, default: Int]() -> Int:
 
     Example:
     ```mojo
-    from std.sys.defines import get_defined_int
+    %# from std.sys.defines import get_defined_int
 
     def main() raises:
         comptime number = get_defined_int[
