@@ -138,7 +138,7 @@ __extension Attention:
             )
 
             var k_tile = self.gmem_manager.get_kv_tile(
-                self.k.block_paged_ptr[Int(Self.BN)](
+                self.k.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
@@ -148,7 +148,7 @@ __extension Attention:
             )
 
             var v_tile = self.gmem_manager.get_kv_tile(
-                self.v.block_paged_ptr[Int(Self.BN)](
+                self.v.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
@@ -168,10 +168,10 @@ __extension Attention:
             var v_buffer = VBufferTransposeLoads[
                 kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_pv(),
-                BN=Int(Self.BN),
-                BK=Int(Self.BK),
-                depth=Int(Self.depth),
-                num_threads=Int(Self.num_threads),
+                BN=Self.BN,
+                BK=Self.BK,
+                depth=Self.depth,
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
@@ -185,11 +185,11 @@ __extension Attention:
                     kv_tile_layout=kv_layout,
                     tensor_core_mma=Self.get_tensor_core_mma_qk(),
                     swizzle=Swizzle(3, 0, 4),
-                    BN=Int(Self.BN),
-                    WN=Int(Self.WN),
-                    BK=Int(Self.BK),
-                    depth=Int(Self.depth),
-                    num_threads=Int(Self.num_threads),
+                    BN=Self.BN,
+                    WN=Self.WN,
+                    BK=Self.BK,
+                    depth=Self.depth,
+                    num_threads=Self.num_threads,
                 ](
                     k_tile,
                     self.smem_manager.get_k_ptr[k_tile.dtype](),
@@ -201,11 +201,11 @@ __extension Attention:
                     kv_tile_layout=kv_layout,
                     tensor_core_mma=Self.get_tensor_core_mma_qk(),
                     swizzle=Swizzle(3, 0, 4),
-                    BN=Int(Self.BN),
-                    WN=Int(Self.WN),
-                    BK=Int(Self.BK),
-                    depth=Int(Self.depth),
-                    num_threads=Int(Self.num_threads),
+                    BN=Self.BN,
+                    WN=Self.WN,
+                    BK=Self.BK,
+                    depth=Self.depth,
+                    num_threads=Self.num_threads,
                     num_stages=Self.num_stages,
                 ](
                     k_tile,
@@ -229,9 +229,7 @@ __extension Attention:
 
         for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
             var end = min(i + UInt32(Self.BN), UInt32(self.num_keys))
-            loop_over_kvcache[Int(Self.BN)](
-                i, end, end != UInt32(self.num_keys)
-            )
+            loop_over_kvcache[Self.BN](i, end, end != UInt32(self.num_keys))
 
         self.out_reg_buffer.apply_softmax_denominator(
             self.softmax.rowsum_tensor
@@ -265,7 +263,7 @@ __extension Attention:
             var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
             var k_tile = self.gmem_manager.get_kv_tile(
-                self.k.block_paged_ptr[Int(Self.BN)](
+                self.k.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     UInt32(kv_tile_start_row),
                     UInt32(self.kv_head_idx()),
@@ -275,7 +273,7 @@ __extension Attention:
             )
 
             var v_tile = self.gmem_manager.get_kv_tile(
-                self.v.block_paged_ptr[Int(Self.BN)](
+                self.v.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     UInt32(kv_tile_start_row),
                     UInt32(self.kv_head_idx()),
@@ -293,11 +291,11 @@ __extension Attention:
                 kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=swizzle,
-                BN=Int(Self.BN),
-                WN=Int(Self.WN),
-                BK=Int(Self.BK),
-                depth=Int(Self.depth),
-                num_threads=Int(Self.num_threads),
+                BN=Self.BN,
+                WN=Self.WN,
+                BK=Self.BK,
+                depth=Self.depth,
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
                 token_gen=Self.token_gen,
             ](
@@ -308,11 +306,11 @@ __extension Attention:
                 kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_pv(),
                 swizzle=None,
-                BN=Int(Self.BN),
-                WN=Int(Self.WN),
-                BK=Int(Self.BK),
+                BN=Self.BN,
+                WN=Self.WN,
+                BK=Self.BK,
                 depth=Self.output_depth,
-                num_threads=Int(Self.num_threads),
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
                 token_gen=Self.token_gen,
             ](
@@ -351,13 +349,13 @@ __extension Attention:
             # ensure that smem for v is not required anymore
             barrier()
 
-        start, end = get_start_and_end_for_partitions[Int(Self.BN)](
+        start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
 
-        for i in range(start, end, Int(Self.BN)):
-            var end_ = min(i + Int(Self.BN), end)
-            loop_over_kvcache[Int(Self.BN)](i, end_, end_ != end)
+        for i in range(start, end, Self.BN):
+            var end_ = min(i + Self.BN, end)
+            loop_over_kvcache[Self.BN](i, end_, end_ != end)
 
         # Apply softmax denominator.
         self.out_reg_buffer.apply_softmax_denominator(

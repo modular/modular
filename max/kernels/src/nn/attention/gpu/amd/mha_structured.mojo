@@ -92,7 +92,7 @@ __extension Attention:
         comptime prescale_q = get_defined_bool[
             "PRESCALE_Q", True
         ]() and Self.depth <= 128
-        comptime num_qk_strips = Int(Self.depth) // Int(Self.BK)
+        comptime num_qk_strips = Self.depth // Self.BK
 
         # --- Buffer init ---
 
@@ -104,12 +104,12 @@ __extension Attention:
             k_group_size=Self.k_group_size,
             swizzle=Swizzle(3, 0, 4) if Self.mma_shape[0]
             == 32 else Optional[Swizzle](None),
-            BN=Int(Self.BN),
-            WN=Int(Self.WN),
-            BK=Int(Self.BK),
-            num_threads=Int(Self.num_threads),
-            depth=Int(Self.depth),
-            kv_num_heads=Int(Self.num_heads) // Self.group,
+            BN=Self.BN,
+            WN=Self.WN,
+            BK=Self.BK,
+            num_threads=Self.num_threads,
+            depth=Self.depth,
+            kv_num_heads=Self.num_heads // Self.group,
             transpose=True,
             full_kv=Self.attention_config_t.full_kv,
         ](
@@ -125,12 +125,12 @@ __extension Attention:
             mma_shape=Self.mma_shape,
             k_group_size=Self.k_group_size,
             swizzle=None,
-            BN=Int(Self.BN),
-            WN=Int(Self.WN),
-            BK=Int(Self.BK),
-            num_threads=Int(Self.num_threads),
-            depth=Int(Self.depth),
-            kv_num_heads=Int(Self.num_heads) // Self.group,
+            BN=Self.BN,
+            WN=Self.WN,
+            BK=Self.BK,
+            num_threads=Self.num_threads,
+            depth=Self.depth,
+            kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
             full_kv=Self.attention_config_t.full_kv,
         ](
@@ -172,8 +172,8 @@ __extension Attention:
         def mma_qk_strip[stage: Int, strip: Int]():
             comptime for k_mma in range(Self.num_k_mmas2):
                 QKMmaOp.mma[swap_a_b=Self.swap_a_b](
-                    self.q_buffer.mma_tile[strip, Int(k_mma)](),
-                    k_buffer.get_mma_tile[Int(k_mma), strip](),
+                    self.q_buffer.mma_tile[strip, k_mma](),
+                    k_buffer.get_mma_tile[k_mma, strip](),
                     self.p_reg_buffer.stage_tile[stage](),
                 )
 
@@ -192,14 +192,14 @@ __extension Attention:
         def mma_qk[stage: Int]():
             self.zero_p_buffer[stage]()
             comptime for i in range(num_qk_strips):
-                mma_qk_strip[stage, Int(i)]()
+                mma_qk_strip[stage, i]()
 
         @always_inline
         @parameter
         def mma_pv_incremental[stage: Int](slot: UInt):
             comptime for i in range(Self.BN // Self.BK):
-                v_buffer.load_from_shared[Int(i)](slot)
-                mma_pv_strip[stage, Int(i)]()
+                v_buffer.load_from_shared[i](slot)
+                mma_pv_strip[stage, i]()
 
         # =============================================================
         # Softmax micro-ops
@@ -222,7 +222,7 @@ __extension Attention:
         def softmax_qk_sum[stage: Int]():
             var score_tile = self.p_reg_buffer.stage_tile[stage]()
             var warp_scratch = self.warp_scratch_tensor.tile[
-                2 * Int(Self.num_warps_n), Int(Self.WM)
+                2 * Self.num_warps_n, Self.WM
             ](0, 0)
             self.softmax.calculate_qk_sum(score_tile, warp_scratch)
 
@@ -249,7 +249,7 @@ __extension Attention:
         def softmax_qk_max[stage: Int]():
             var score_tile = self.p_reg_buffer.stage_tile[stage]()
             var warp_scratch = self.warp_scratch_tensor.tile[
-                2 * Int(Self.num_warps_n), Int(Self.WM)
+                2 * Self.num_warps_n, Self.WM
             ](0, 0)
             self.softmax.calculate_qk_max(score_tile, warp_scratch)
 
@@ -257,7 +257,7 @@ __extension Attention:
         @parameter
         def softmax_correction() -> Bool:
             var needs_rescale = False
-            comptime num_colwise_tiles = Int(Self.num_m_mmas)
+            comptime num_colwise_tiles = Self.num_m_mmas
             comptime frag_num_rows = (Self.fragment_layout.shape[0].value())
             comptime for col_tile in range(num_colwise_tiles):
                 comptime for row in range(frag_num_rows):
@@ -303,7 +303,7 @@ __extension Attention:
             k_buffer.load_from_shared(UInt(stage))
 
             var warp_scratch = self.warp_scratch_tensor.tile[
-                2 * Int(Self.num_warps_n), Int(Self.WM)
+                2 * Self.num_warps_n, Self.WM
             ](0, 0)
             var prev_tile = self.p_reg_buffer.stage_tile[prev]()
 
@@ -332,7 +332,7 @@ __extension Attention:
 
             # Extra strips for depth=256 (strips 4..7).
             comptime for i in range(4, num_qk_strips):
-                mma_qk_strip[stage, Int(i)]()
+                mma_qk_strip[stage, i]()
 
             # For depth=64, finish_softmax(prev) after all QK strips.
             comptime if num_qk_strips <= 2:
@@ -360,7 +360,7 @@ __extension Attention:
 
             mma_pv_strip[prev, 1]()
 
-            comptime num_colwise_tiles = Int(Self.num_m_mmas)
+            comptime num_colwise_tiles = Self.num_m_mmas
             comptime frag_num_rows = (Self.fragment_layout.shape[0].value())
             comptime for col_tile in range(num_colwise_tiles):
                 comptime for row in range(frag_num_rows):
@@ -397,11 +397,9 @@ __extension Attention:
         # =============================================================
 
         var score_row = UInt32(self.mask_block_row + UInt32(self.start_pos))
-        var start_col = self.mask.start_column[Int(Self.BM), Int(Self.BN), 1](
-            score_row
-        )
+        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](score_row)
         var num_tiles = Int(
-            self.mask.last_masked_set_end[Int(Self.BM), Int(Self.BN), 1](
+            self.mask.last_masked_set_end[Self.BM, Self.BN, 1](
                 score_row, UInt32(self.num_keys)
             )
         )

@@ -284,18 +284,18 @@ struct Attention[
     cache_depth: Int = Int(config.depth),
     output_depth: Int = Int(config.depth),
 ]:
-    comptime BM = Self.config.block_m()
-    comptime BN = Self.config.block_n()
-    comptime BK = Self.config.block_k()
-    comptime WM = Self.config.warp_m()
-    comptime WN = Self.config.warp_n()
-    comptime num_threads = Self.config.num_threads()
-    comptime num_heads = Self.config.num_heads
-    comptime num_warps_n = Self.BN // Self.WN
-    comptime num_warps_m = Self.BM // Self.WM
-    comptime depth = Self.config.depth
-    comptime accum_type = get_accum_type[Self.q_type]()
+    comptime BM: Int = Int(Self.config.block_m())
+    comptime BN: Int = Int(Self.config.block_n())
+    comptime BK: Int = Int(Self.config.block_k())
+    comptime WM: Int = Int(Self.config.warp_m())
+    comptime WN: Int = Int(Self.config.warp_n())
+    comptime num_threads: Int = Int(Self.config.num_threads())
+    comptime num_heads: Int = Int(Self.config.num_heads)
+    comptime num_warps_n: Int = Self.BN // Self.WN
+    comptime num_warps_m: Int = Self.BM // Self.WM
+    comptime depth: Int = Int(Self.config.depth)
 
+    comptime accum_type = get_accum_type[Self.q_type]()
     comptime mma_shape = Self.attention_config_t.get_mma_shape()
 
     comptime fragment_layout = get_fragment_layout[Self.mma_shape]()
@@ -304,22 +304,24 @@ struct Attention[
         Self.mma_shape
     ]()
 
-    comptime num_m_mmas = ceildiv(Self.WM, UInt(Self.mma_shape[0]))
-    comptime num_n_mmas = ceildiv(Self.WN, UInt(Self.mma_shape[1]))
-    comptime num_n_mmas_output = ceildiv(
-        Self.output_depth // Int(Self.num_warps_n), Self.mma_shape[1]
+    comptime num_m_mmas: Int = ceildiv(Self.WM, Self.mma_shape[0])
+    comptime num_n_mmas: Int = ceildiv(Self.WN, Self.mma_shape[1])
+
+    comptime num_n_mmas_output: Int = ceildiv(
+        Self.output_depth // Self.num_warps_n, Self.mma_shape[1]
     )
 
     comptime swap_a_b = True
     comptime use_exp2 = True
     # we want to load 16B of data for each fragment so k_group_size is set such that
     # k_group_size * num_matrix_fragments * size_of[Self.q_type]() = 16B
-    comptime k_group_size = 16 // (
+    comptime k_group_size: Int = 16 // (
         num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
         * size_of[Self.q_type]()
     )
-    comptime num_k_mmas2 = ceildiv(
-        Self.BK, UInt(Self.mma_shape[2] * Self.k_group_size)
+
+    comptime num_k_mmas2: Int = ceildiv(
+        Self.BK, Self.mma_shape[2] * Self.k_group_size
     )
 
     comptime warp_layout = get_warp_layout[Self.mma_shape]()
@@ -328,7 +330,7 @@ struct Attention[
 
     comptime OutputRegisterBufferType = OutputRegisterBuffer[
         Self.accum_type,
-        Int(Self.num_m_mmas),
+        Self.num_m_mmas,
         Self.num_n_mmas_output,
         Self.output_frag_size,
     ]
@@ -336,13 +338,13 @@ struct Attention[
     comptime PRegisterBufferType = PRegisterBuffer[
         Self.accum_type,
         Self.q_type,
-        Int(Self.BM),
-        Int(Self.BN),
-        Int(Self.BK),
-        Int(Self.WM),
-        Int(Self.WN),
-        Int(Self.num_m_mmas),
-        Int(Self.num_n_mmas),
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.WM,
+        Self.WN,
+        Self.num_m_mmas,
+        Self.num_n_mmas,
         Self.output_frag_size,
         Self.BN != Self.WN,
         Self.mma_shape,
@@ -372,10 +374,10 @@ struct Attention[
         Self.attention_config_t.depth_padded,
         Self.attention_config_t.double_buffer,
         Self.q_type,
-        Int(Self.BM),
-        Int(Self.BN),
-        Int(Self.BK),
-        Int(Self.depth),
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.depth,
         Self.token_gen,
     ]
 
@@ -383,10 +385,10 @@ struct Attention[
         dtype=Self.q_type,
         mma_shape=Self.mma_shape,
         k_group_size=Self.k_group_size,
-        WM=Int(Self.WM),
-        WN=Int(Self.WN),
-        BN=Int(Self.BN),
-        BK=Int(Self.BK),
+        WM=Self.WM,
+        WN=Self.WN,
+        BN=Self.BN,
+        BK=Self.BK,
         depth=Self.q_depth,
         thread_layout=Self.warp_layout,
     ]
@@ -420,15 +422,15 @@ struct Attention[
 
     var softmax: Softmax[
         Self.accum_type,
-        Layout.row_major(Int(Self.num_m_mmas), Int(Self.num_n_mmas)),
-        Layout.row_major(Int(Self.num_warps_m), Int(Self.num_warps_n)),
+        Layout.row_major(Self.num_m_mmas, Self.num_n_mmas),
+        Layout.row_major(Self.num_warps_m, Self.num_warps_n),
         Self.warp_layout,
         Self.fragment_layout,
         Self.use_exp2,
     ]
 
     comptime _warp_scratch_layout = tt_row_major[
-        2 * Int(Self.num_warps_n), Int(Self.BM)
+        2 * Self.num_warps_n, Self.BM
     ]()
     var warp_scratch_tensor: TileTensor[
         Self.accum_type,
@@ -520,11 +522,11 @@ struct Attention[
         //,
         prefetch_function: OptionalReg[def() capturing -> None] = None,
         beg_iter: Int = 0,
-        num_iters: Int = Int(Self.depth // Self.BK),
+        num_iters: Int = Self.depth // Self.BK,
         prefetched_b_tile: Bool = False,
     ](mut self, mut k_buffer: k_buffer_type):
         comptime num_k_mmas = ceildiv(
-            Int(Self.BK), Self.mma_shape[2] * Self.k_group_size
+            Self.BK, Self.mma_shape[2] * Self.k_group_size
         )
 
         @parameter
@@ -553,7 +555,7 @@ struct Attention[
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):
         comptime num_k_mmas = ceildiv(
-            Int(Self.BK), Self.mma_shape[2] * Self.k_group_size
+            Self.BK, Self.mma_shape[2] * Self.k_group_size
         )
 
         @parameter
@@ -569,7 +571,7 @@ struct Attention[
             num_k_mmas=num_k_mmas,
             mma_fn=do_mma,
             prefetch_function=prefetch_function,
-            num_iters=Int(Self.BN // Self.BK),
+            num_iters=Self.BN // Self.BK,
             prefetched_b_tile=prefetched_b_tile,
         ](v_buffer)
 
@@ -656,7 +658,7 @@ struct Attention[
                     self.num_keys - 1,
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](Int(1), Int(Self.BN)),
+                Index[dtype=DType.uint32](1, Self.BN),
             )
         else:
             # Prefill or decoding without mask checking: check full tile
@@ -665,7 +667,7 @@ struct Attention[
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype=DType.uint32](Int(Self.BM), Int(Self.BN)),
+                Index[dtype=DType.uint32](Self.BM, Self.BN),
             )
 
     @always_inline
@@ -708,8 +710,8 @@ struct Attention[
                 accum_type=Self.accum_type,
                 token_gen=Self.token_gen,
                 mma_shape=Self.mma_shape,
-                num_m_mmas=Int(Self.num_m_mmas),
-                num_n_mmas=Int(Self.num_n_mmas),
+                num_m_mmas=Self.num_m_mmas,
+                num_n_mmas=Self.num_n_mmas,
                 mask_t=Self.mask_t,
                 group=Self.group,
                 fragment_layout=Self.fragment_layout_nested,
@@ -802,11 +804,11 @@ struct Attention[
         self.v = v
         self.mask = mask
 
-        self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
-        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
-        var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        self.mask_warp_row = UInt32(warp_row * Int(Self.WM))
-        self.mask_warp_col = UInt32(warp_col * Int(Self.WN))
+        self.mask_block_row = UInt32(Int(self.q_tile_idx()) * Self.BM)
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
+        self.mask_warp_row = UInt32(warp_row * Self.WM)
+        self.mask_warp_col = UInt32(warp_col * Self.WN)
 
         self.batch_idx = batch_idx
 
@@ -853,9 +855,9 @@ struct Attention[
 
     @always_inline
     def online_softmax[stage: Int = 0](mut self):
-        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         var warp_scratch = self.warp_scratch_tensor.tile[
-            2 * Int(Self.num_warps_n), Int(Self.WM)
+            2 * Self.num_warps_n, Self.WM
         ](0, warp_row)
 
         self.softmax.full(
@@ -866,13 +868,13 @@ struct Attention[
 
     @always_inline
     def store_output(self):
-        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
-        var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         var output_tile = self.gmem_manager.get_output_tile[Self.output_type](
             self.output_ptr
         )
         var output_warp_tile = output_tile.tile[
-            Int(Self.WM), Self.output_depth // Int(Self.num_warps_n)
+            Self.WM, Self.output_depth // Self.num_warps_n
         ](warp_row, warp_col)
 
         var writer = RegTileWriter[

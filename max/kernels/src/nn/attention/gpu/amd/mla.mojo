@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import simd_width_of
+from std.math.uutils import ufloordiv
 
 from std.gpu import barrier, block_idx
 from layout import (
@@ -126,7 +127,7 @@ __extension Attention:
             )
 
             var k_tile = self.gmem_manager.get_kv_tile(
-                self.k.block_paged_ptr[Int(Self.BN)](
+                self.k.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
@@ -136,7 +137,7 @@ __extension Attention:
             )
 
             var v_tile = self.gmem_manager.get_kv_tile(
-                self.v.block_paged_ptr[Int(Self.BN)](
+                self.v.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
@@ -153,11 +154,11 @@ __extension Attention:
                 kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN=Int(Self.BN),
-                WN=Int(Self.WN),
-                BK=Int(Self.BK),
-                depth=Int(Self.depth),
-                num_threads=Int(Self.num_threads),
+                BN=Self.BN,
+                WN=Self.WN,
+                BK=Self.BK,
+                depth=Self.depth,
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
             ](
                 k_tile,
@@ -167,15 +168,15 @@ __extension Attention:
             var v_buffer = VBufferTransposeLoads[
                 kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_pv(),
-                BN=Int(Self.BN),
-                BK=Int(Self.BK),
-                depth=Int(Self.depth),
-                num_threads=Int(Self.num_threads),
+                BN=Self.BN,
+                BK=Self.BK,
+                depth=Self.depth,
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
-            comptime cache_group = self.num_heads // UInt(cache_num_heads)
-            comptime rope_depth = q_depth - Int(Self.depth)
+            comptime cache_group = Self.num_heads // cache_num_heads
+            comptime rope_depth = q_depth - Self.depth
 
             # Build k_rope TileTensor with RuntimeInt valid_rows.
             comptime _k_rope_stride0 = Int(cache_num_heads * cache_depth)
@@ -183,7 +184,7 @@ __extension Attention:
                 Variadic.types[
                     T=CoordLike,
                     RuntimeInt[DType.int64],
-                    ComptimeInt[Int(Self.depth)],
+                    ComptimeInt[Self.depth],
                 ],
                 Variadic.types[
                     T=CoordLike,
@@ -195,16 +196,16 @@ __extension Attention:
             var k_rope_tile = TileTensor[
                 k_rope_t.dtype, KRopeTileLayout, ImmutAnyOrigin
             ](
-                ptr=k_rope.block_paged_ptr[Int(Self.BN)](
+                ptr=k_rope.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row + UInt32(self.cache_start_pos),
-                    UInt32(Int(Self.kv_head_idx() // cache_group)),
+                    UInt32(ufloordiv(Int(Self.kv_head_idx()), cache_group)),
                     UInt32(cache_depth - rope_depth),
                 ),
                 layout=KRopeTileLayout(
                     Coord(
                         RuntimeInt[DType.int64](Int64(kv_tile_num_rows)),
-                        Idx[Int(Self.depth)](),
+                        Idx[Self.depth](),
                     ),
                     Coord(Idx[_k_rope_stride0](), Idx[1]()),
                 ),
@@ -214,11 +215,11 @@ __extension Attention:
                 kv_tile_layout=KRopeTileLayout,
                 tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN=Int(Self.BN),
-                WN=Int(Self.WN),
-                BK=Int(Self.BK),
-                depth=Int(Self.depth),
-                num_threads=Int(Self.num_threads),
+                BN=Self.BN,
+                WN=Self.WN,
+                BK=Self.BK,
+                depth=Self.depth,
+                num_threads=Self.num_threads,
                 num_stages=2,
             ](
                 k_rope_tile,
@@ -246,7 +247,7 @@ __extension Attention:
 
             self.mma_qk[
                 beg_iter=0,
-                num_iters=Int(Self.depth // Self.BK),
+                num_iters=Self.depth // Self.BK,
             ](k_buffer)
 
             @parameter
@@ -256,8 +257,8 @@ __extension Attention:
 
             self.mma_qk[
                 prefetch_function=prefetch_function2,
-                beg_iter=Int(Self.depth // Self.BK),
-                num_iters=rope_depth // Int(Self.BK),
+                beg_iter=Self.depth // Self.BK,
+                num_iters=rope_depth // Self.BK,
                 # prefetched_b_tile=True,
             ](k_rope_buffer)
 
@@ -277,9 +278,7 @@ __extension Attention:
 
         for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
             var end = min(i + UInt32(Self.BN), UInt32(self.num_keys))
-            loop_over_kvcache[Int(Self.BN)](
-                i, end, end != UInt32(self.num_keys)
-            )
+            loop_over_kvcache[Self.BN](i, end, end != UInt32(self.num_keys))
 
         self.out_reg_buffer.apply_softmax_denominator(
             self.softmax.rowsum_tensor
