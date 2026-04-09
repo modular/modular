@@ -59,6 +59,8 @@ class in the [`max.torch`](/max/api/python/experimental.torch) package.
 
 ### How it works
 
+The integration process has three steps:
+
 1. Write your kernel implementation in Mojo.
 2. Register your custom operation using `CustomOpLibrary` from `max.torch`.
 3. Replace specific operations in your existing PyTorch model with your Mojo
