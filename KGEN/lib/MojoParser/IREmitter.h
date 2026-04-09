@@ -161,7 +161,7 @@ public:
   ValueDest(VarDeclOp dest, ExprContext context);
   ValueDest(ASTType requiredType, ExprContext context)
       : representation(requiredType), context(context) {
-    if (!requiredType)
+    if (!requiredType || isa<TypeCheckErrorType>(requiredType))
       representation = NullRepresentation();
   }
   ValueDest(LValueInitializerType type, ExprContext context)
