@@ -150,10 +150,10 @@ def test_add() raises:
     assert_equal("123abc", s3)
 
     var s4 = "x"
-    var s5 = s4.join(Span([1, 2, 3]))
+    var s5 = s4.join(iter([1, 2, 3]))
     assert_equal("1x2x3", s5)
 
-    var s6 = s4.join(Span([s1, s2]))
+    var s6 = s4.join(iter([s1, s2]))
     assert_equal("123xabc", s6)
 
     var s7 = String()
@@ -174,34 +174,6 @@ def test_add_string_slice() raises:
     s1 += s2
     s1 += s3
     assert_equal("123abcabc", s1)
-
-
-def test_string_join() raises:
-    var sep = ","
-    var s0 = "abc"
-    var s1 = sep.join(Span([s0, s0, s0, s0]))
-    assert_equal("abc,abc,abc,abc", s1)
-
-    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
-
-    # TODO(MSTDL-2078): Continue supporting heterogenous String.join
-    #   arguments, somehow?
-    # assert_equal(sep.join(1, "abc", 3), "1,abc,3")
-
-    var s2 = ",".join(Span([UInt8(1), 2, 3]))
-    assert_equal(s2, "1,2,3")
-
-    var s3 = ",".join(Span([UInt8(1), 2, 3, 4, 5, 6, 7, 8, 9]))
-    assert_equal(s3, "1,2,3,4,5,6,7,8,9")
-
-    var s4 = ",".join(List[UInt8]())
-    assert_equal(s4, "")
-
-    var s5 = ",".join(Span([UInt8(1)]))
-    assert_equal(s5, "1")
-
-    var s6 = ",".join(Span[String](["1", "2", "3"]))
-    assert_equal(s6, "1,2,3")
 
 
 def test_ord() raises:

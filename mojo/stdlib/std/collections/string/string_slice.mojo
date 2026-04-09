@@ -2037,45 +2037,106 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             result += fillchar
         return result
 
-    def join[
-        T: Copyable & Writable,
-        //,
-    ](self, elems: Span[T, ...]) -> String:
+    def join[*Ts: Writable](self, *values: *Ts) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
-            T: The type of the elements, must implement the `Copyable`,
-                and `Writable` traits.
+            Ts: The type of the elements. Must implement the
+                `Writable` trait.
 
         Args:
-            elems: The input values.
+            values: The input values.
 
         Returns:
             The joined string.
-
-        Notes:
-            - Defaults to writing directly to the string if the bytes
-            fit in an inline `String`, otherwise will process it by chunks.
         """
-        if len(elems) == 0:
-            return String()
+        var total_bytes = _TotalWritableBytes()
+        values._write_to(total_bytes, start="", end="", sep=self)
+        var result = String(capacity=total_bytes.size)
 
-        var sep = StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
-        var total_bytes = _TotalWritableBytes(elems, sep=sep).size
-        var result = String(capacity=total_bytes)
-
-        if result._is_inline():
-            # Write directly to the stack address
-            result.write(elems[0])
-            for i in range(1, len(elems)):
-                result.write(self, elems[i])
+        if result._is_inline():  # Write directly to the stack address
+            result.write(values[0])
+            comptime for i in range(1, values.__len__()):
+                result.write(self, values[i])
             return result^
 
         var buffer = _WriteBufferStack(result)
+        buffer.write(values[0])
+        comptime for i in range(1, values.__len__()):
+            buffer.write(self, values[i])
+        buffer.flush()
+        return result^
 
-        buffer.write(elems[0])
-        for i in range(1, len(elems)):
-            buffer.write(self, elems[i])
+    def join[
+        IterableType: Iterable,
+    ](self, ref iterable: IterableType) -> String where conforms_to(
+        IterableType.IteratorType[origin_of(iterable)].Element,
+        Writable & Movable,
+    ):
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            IterableType: The type of the elements, must implement the
+                `Writable & Movable` traits.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+
+        var total_bytes = _TotalWritableBytes(iterable, sep=self).size
+        if total_bytes == 0:
+            return String()
+        var result = String(capacity=total_bytes)
+
+        if result._is_inline():  # Write directly to the stack address
+            var is_first = True
+            for var value in iterable:
+                if not is_first:
+                    result.write(self)
+                result.write(trait_downcast_var[Writable & Movable](value^))
+                is_first = False
+            return result^
+
+        var buffer = _WriteBufferStack(result)
+        var is_first = True
+        for var value in iterable:
+            if not is_first:
+                buffer.write(self)
+            buffer.write(trait_downcast_var[Writable & Movable](value^))
+            is_first = False
+        buffer.flush()
+        return result^
+
+    def join[
+        IterableType: Iterator & IterableOwned
+    ](self, var iterable: IterableType) -> String where conforms_to(
+        IterableType.Element, Writable & Movable
+    ):
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            IterableType: The type of the elements, must implement the
+                `Writable & Movable` traits.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+
+        var lb, _ = iterable.bounds()
+        var result = String(capacity=self.byte_length() * max(lb - 1, 0) + lb)
+        var buffer = _WriteBufferStack(result)
+        var is_first = True
+        for var value in iterable^:
+            if not is_first:
+                buffer.write(self)
+            buffer.write(trait_downcast_var[Writable & Movable](value^))
+            is_first = False
         buffer.flush()
         return result^
 

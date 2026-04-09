@@ -771,26 +771,62 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         _FormatUtils.format_to_comptime[StaticString(Self())](buffer, *args)
         return buffer^
 
-    def join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:
+    @always_inline
+    def join[*Ts: Writable](self, *values: *Ts) -> String:
         """Joins string elements using the current string as a delimiter.
-        Defaults to writing to the stack if total bytes of `elems` is less than
-        `buffer_size`, otherwise will allocate once to the heap and write
-        directly into that. The `buffer_size` defaults to 4096 bytes to match
-        the default page size on arm64 and x86-64.
 
         Parameters:
-            T: The type of the elements. Must implement the `Copyable`,
-                and `Writable` traits.
+            Ts: The type of the elements. Must implement the
+                `Writable` trait.
 
         Args:
-            elems: The input values.
+            values: The input values.
 
         Returns:
             The joined string.
         """
-        # Materialize self
-        var result = self
-        return result.join(elems)
+        return StringSlice(self).join(*values)
+
+    @always_inline
+    def join[
+        IterableType: Iterable,
+    ](self, ref iterable: IterableType) -> String where conforms_to(
+        IterableType.IteratorType[origin_of(iterable)].Element,
+        Writable & Movable,
+    ):
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            IterableType: The type of the elements. Must implement the
+                `Writable & Movable` traits.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return StringSlice(self).join(iterable)
+
+    @always_inline
+    def join[
+        IterableType: Iterator & IterableOwned
+    ](self, var iterable: IterableType) -> String where conforms_to(
+        IterableType.Element, Writable & Movable
+    ):
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            IterableType: The type of the elements. Must implement the
+                `Writable & Movable` traits.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return StringSlice(self).join(iterable^)
 
     @always_inline
     def split(self, sep: StringSlice) -> List[StaticString]:

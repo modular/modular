@@ -156,5 +156,20 @@ def test_string_slice_codepoint_slices_reversed() raises:
     assert_equal(concat, "")
 
 
+def test_string_join_iterable() raises:
+    var elems = [1, 2, 3]
+    assert_equal("".join(iter(elems)), "123")
+    assert_equal(",".join(iter(elems)), "1,2,3")
+    assert_equal("".join("123".codepoints()), "123")
+    assert_equal(",".join("123".codepoints()), "1,2,3")
+    assert_equal("".join("123".codepoint_slices()), "123")
+    assert_equal(",".join("123".codepoint_slices()), "1,2,3")
+
+
+def test_string_join_iterable_owned() raises:
+    assert_equal("".join(iter([1, 2, 3])), "123")
+    assert_equal(",".join(iter([1, 2, 3])), "1,2,3")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

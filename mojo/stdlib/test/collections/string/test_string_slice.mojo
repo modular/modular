@@ -1021,30 +1021,28 @@ def test_replace() raises:
 def test_join() raises:
     # TODO(MOCO-2908): This explicit origin should not be necessary; the
     #   compiler ought to infer some default "bottom" origin.
-    assert_equal(StaticString("").join(Span[String, ImmutAnyOrigin]()), "")
-    assert_equal(StaticString("").join(Span(["a", "b", "c"])), "abc")
-    assert_equal(StaticString(" ").join(Span(["a", "b", "c"])), "a b c")
-    assert_equal(StaticString(" ").join(Span(["a", "b", "c", ""])), "a b c ")
-    assert_equal(StaticString(" ").join(Span(["a", "b", "c", " "])), "a b c  ")
+    assert_equal(StaticString("").join(iter(List[String]())), "")
+    assert_equal(StaticString("").join(iter(["a", "b", "c"])), "abc")
+    assert_equal(StaticString(" ").join(iter(["a", "b", "c"])), "a b c")
+    assert_equal(StaticString(" ").join(iter(["a", "b", "c", ""])), "a b c ")
+    assert_equal(StaticString(" ").join(iter(["a", "b", "c", " "])), "a b c  ")
 
     var sep = StaticString(",")
     var s = "abc"
-    assert_equal(sep.join(Span([s, s, s, s])), "abc,abc,abc,abc")
-    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
-    # TODO(MSTDL-2078): Continue supporting heterogenous StringSlice.join
-    #   arguments, somehow?
-    # assert_equal(sep.join(Span([1, "abc", 3])), "1,abc,3")
+    assert_equal(sep.join(iter([s, s, s, s])), "abc,abc,abc,abc")
+    assert_equal(sep.join(iter([1, 2, 3])), "1,2,3")
+    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
 
-    var s2 = StaticString(",").join(Span([Byte(1), 2, 3]))
+    var s2 = StaticString(",").join(iter([1, 2, 3]))
     assert_equal(s2, "1,2,3")
 
-    var s3 = StaticString(",").join(Span([Byte(1), 2, 3, 4, 5, 6, 7, 8, 9]))
+    var s3 = StaticString(",").join(iter([1, 2, 3, 4, 5, 6, 7, 8, 9]))
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
-    var s4 = StaticString(",").join(List[Byte]())
+    var s4 = StaticString(",").join(iter(List[Byte]()))
     assert_equal(s4, "")
 
-    var s5 = StaticString(",").join(Span([Byte(1)]))
+    var s5 = StaticString(",").join(iter([1]))
     assert_equal(s5, "1")
 
 

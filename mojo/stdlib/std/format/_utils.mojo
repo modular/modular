@@ -528,22 +528,22 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     def __init__[
-        T: Copyable & Writable,
-        //,
-        origin: ImmutOrigin,
+        IterableType: Iterable, origin: ImmutOrigin = StaticConstantOrigin
     ](
         out self,
-        values: Span[T, ...],
+        ref iterable: IterableType,
         sep: StringSlice[origin] = StringSlice[origin](),
+    ) where conforms_to(
+        IterableType.IteratorType[origin_of(iterable)].Element,
+        Writable & Movable,
     ):
         self.size = 0
-        var length = len(values)
-        if length == 0:
-            return
-        self.write(values[0])
-        if length > 1:
-            for i in range(1, length):
-                self.write(sep, values[i])
+        var is_first = True
+        for var value in iterable:
+            if not is_first:
+                self.write(sep)
+            self.write(trait_downcast_var[Writable & Movable](value^))
+            is_first = False
 
     def write_string(mut self, string: StringSlice):
         self.size += string.byte_length()

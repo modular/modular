@@ -400,7 +400,7 @@ struct String(
         Examples:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         # Valid UTF-8 sequence
         var fire_emoji_bytes = [Byte(0xF0), 0x9F, 0x94, 0xA5]
@@ -1017,32 +1017,62 @@ struct String(
         """
         StringSlice(self).write_repr_to(writer)
 
-    def join[T: Copyable & Writable](self, elems: Span[T, ...]) -> String:
+    @always_inline
+    def join[*Ts: Writable](self, *values: *Ts) -> String:
         """Joins string elements using the current string as a delimiter.
-        Defaults to writing to the stack if total bytes of `elems` is less than
-        `buffer_size`, otherwise will allocate once to the heap and write
-        directly into that. The `buffer_size` defaults to 4096 bytes to match
-        the default page size on arm64 and x86-64.
 
         Parameters:
-            T: The type of the elements. Must implement the `Copyable`,
-                and `Writable` traits.
+            Ts: The type of the elements. Must implement the
+                `Writable` trait.
 
         Args:
-            elems: The input values.
+            values: The input values.
 
         Returns:
             The joined string.
-
-        Notes:
-            - Defaults to writing directly to the string if the bytes
-            fit in an inline `String`, otherwise will process it by chunks.
-            - The `buffer_size` defaults to 4096 bytes to match the default
-            page size on arm64 and x86-64, but you can increase this if you're
-            joining a very large `List` of elements to write into the stack
-            instead of the heap.
         """
-        return StringSlice(self).join(elems)
+        return StringSlice(self).join(*values)
+
+    @always_inline
+    def join[
+        IterableType: Iterable,
+    ](self, ref iterable: IterableType) -> String where conforms_to(
+        IterableType.IteratorType[origin_of(iterable)].Element,
+        Writable & Movable,
+    ):
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            IterableType: The type of the elements. Must implement the
+                `Writable & Movable` traits.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return StringSlice(self).join(iterable)
+
+    @always_inline
+    def join[
+        IterableType: Iterator & IterableOwned
+    ](self, var iterable: IterableType) -> String where conforms_to(
+        IterableType.Element, Writable & Movable
+    ):
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            IterableType: The type of the elements. Must implement the
+                `Writable & Movable` traits.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return StringSlice(self).join(iterable^)
 
     def codepoints(self) -> CodepointsIter[origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
@@ -1254,7 +1284,7 @@ struct String(
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -1265,7 +1295,7 @@ struct String(
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -1276,7 +1306,7 @@ struct String(
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)
