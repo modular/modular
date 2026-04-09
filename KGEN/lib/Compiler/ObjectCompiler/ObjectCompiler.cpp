@@ -672,9 +672,10 @@ static void attachInstrumentationAttributes(llvm::Module &module,
     // not be on PATH at runtime.
     //
     // Search order:
-    //   1. PATH (standard install)
-    //   2. LLVM_SYMBOLIZER_PATH env var (set by bazel lit test infrastructure
-    //      when llvm-symbolizer is a data dep but its directory isn't in PATH)
+    //   1. PATH — when run from the bazel lit infrastructure, llvm-symbolizer
+    //      is added to PATH as a tool dependency.
+    //   2. LLVM_SYMBOLIZER_PATH env var — secondary fallback for environments
+    //      where lit is not used (e.g. manual mojo-build invocations).
     std::string optStr;
     llvm::ErrorOr<std::string> symbolizer =
         llvm::sys::findProgramByName("llvm-symbolizer");

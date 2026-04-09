@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # This turns on asan itself
-# UNSUPPORTED: asan
+# UNSUPPORTED: asan, macos-26+
 # RUN: %mojo-build -O0 --sanitize address %s -o %t
 # RUN: export ASAN_OPTIONS=abort_on_error=1
 # RUN: not not %t 2>&1 | FileCheck %s

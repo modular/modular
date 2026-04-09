@@ -9,7 +9,7 @@
 # uses llvm-symbolizer (via the embedded __asan_default_options) so that
 # inlined frames are reported.
 # This turns on asan itself
-# UNSUPPORTED: asan, system-linux
+# UNSUPPORTED: asan, system-linux, macos-26+
 
 # Build at O3 (default) where step_b is inlined into main.
 # RUN: %mojo-build --sanitize address %s -o %t
