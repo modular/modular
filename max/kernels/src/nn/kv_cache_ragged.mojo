@@ -3050,7 +3050,7 @@ def _flare_mla_decode_kv_cache_ragged[
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[
             rank=q.rank,
-            config=MHAConfig[q_dtype](UInt(_q_num_heads), UInt(_q_head_dim)),
+            config=MHAConfig[q_dtype](_q_num_heads, _q_head_dim),
             ragged=True,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
         ](

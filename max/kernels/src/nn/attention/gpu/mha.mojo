@@ -150,8 +150,8 @@ def flash_attention[
     q_layout: Layout,
     //,
     config: MHAConfig[dtype] = {
-        UInt(Int(q_layout.shape[2])),
-        UInt(Int(q_layout.shape[3])),
+        Int(q_layout.shape[2]),
+        Int(q_layout.shape[3]),
     },
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
@@ -307,8 +307,8 @@ def flash_attention[
     q_layout: Layout,
     //,
     config: MHAConfig[dtype] = {
-        UInt(Int(q_layout.shape[q_layout.rank() - 2])),
-        UInt(Int(q_layout.shape[q_layout.rank() - 1])),
+        Int(q_layout.shape[q_layout.rank() - 2]),
+        Int(q_layout.shape[q_layout.rank() - 1]),
     },
     ragged: Bool = False,
     sink: Bool = False,
@@ -491,8 +491,8 @@ def flash_attention_dispatch[
     //,
     kv_num_heads: Int,
     config: MHAConfig[dtype] = {
-        UInt(Int(q_layout.shape[q_layout.rank() - 2])),
-        UInt(Int(q_layout.shape[q_layout.rank() - 1])),
+        Int(q_layout.shape[q_layout.rank() - 2]),
+        Int(q_layout.shape[q_layout.rank() - 1]),
     },
     ragged: Bool = False,
     sink: Bool = False,
@@ -681,7 +681,7 @@ def flash_attention_dispatch[
 
             else:
                 comptime BM = Int(config.block_m())
-                comptime smem_use = Int(config.shared_mem_bytes[is_shared_kv]())
+                comptime smem_use = config.shared_mem_bytes[is_shared_kv]()
                 comptime kernel = mha[
                     config.dtype,
                     k_t,
@@ -1238,8 +1238,8 @@ def flash_attention[
     q_layout: Layout,
     //,
     config: MHAConfig[dtype] = {
-        UInt(Int(q_layout.shape[2])),
-        UInt(Int(q_layout.shape[3])),
+        Int(q_layout.shape[2]),
+        Int(q_layout.shape[3]),
     },
     decoding_warp_split_k: Bool = False,
     _use_valid_length: Bool = False,
@@ -1345,8 +1345,8 @@ def flash_attention[
     output_tt_layout: TensorLayout,
     //,
     config: MHAConfig[dtype] = {
-        UInt(q_tt_layout.static_shape[2]),
-        UInt(q_tt_layout.static_shape[3]),
+        q_tt_layout.static_shape[2],
+        q_tt_layout.static_shape[3],
     },
     decoding_warp_split_k: Bool = False,
     _use_valid_length: Bool = False,
@@ -1413,8 +1413,8 @@ def flash_attention_ragged[
     q_layout: Layout,
     //,
     config: MHAConfig[type] = {
-        UInt(Int(q_layout.shape[q_layout.rank() - 2])),  # num_heads
-        UInt(Int(q_layout.shape[q_layout.rank() - 1])),  # head_dim
+        Int(q_layout.shape[q_layout.rank() - 2]),  # num_heads
+        Int(q_layout.shape[q_layout.rank() - 1]),  # head_dim
     },
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
@@ -3285,15 +3285,15 @@ def mha_decoding[
             )
     elif _is_amd_rdna():
         comptime config = MHAConfig[q_type](
-            UInt(num_heads),
-            UInt(depth),
-            num_queries_per_block=UInt(BM),
-            num_keys_per_block=UInt(BN),
-            BK=UInt(BK),
-            WM=UInt(WM),
-            WN=UInt(WN),
-            num_pipeline_stages=UInt(num_pipeline_stages),
-            k_group_size=UInt(group),
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
         )
         var sink_weights_lt: OptionalReg[
             LayoutTensor[
@@ -3336,15 +3336,15 @@ def mha_decoding[
         )
     elif is_amd_gpu():
         comptime config = MHAConfig[q_type](
-            UInt(num_heads),
-            UInt(depth),
-            num_queries_per_block=UInt(BM),
-            num_keys_per_block=UInt(BN),
-            BK=UInt(BK),
-            WM=UInt(WM),
-            WN=UInt(WN),
-            num_pipeline_stages=UInt(num_pipeline_stages),
-            k_group_size=UInt(group),
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
         )
         var sink_weights_lt: OptionalReg[
             LayoutTensor[

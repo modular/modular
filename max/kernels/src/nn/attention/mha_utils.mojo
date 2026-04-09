@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv
 from std.collections import OptionalReg
 from std.sys import (
     CompilationTarget,
@@ -123,7 +124,6 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
             writer.write("invalid algorithm")
 
 
-@fieldwise_init
 struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
@@ -176,45 +176,47 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             + self.num_producer_threads[producer_consumer_kernel]()
         )
 
-    def swizzle_granularity(self) -> UInt:
-        return UInt(self.swizzle_mode.bytes()) // UInt(size_of[self.dtype]())
+    def swizzle_granularity(self) -> Int:
+        return ufloordiv(self.swizzle_mode.bytes(), size_of[self.dtype]())
 
-    def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
+    def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> Int:
         q_size = self.block_m() * self.padded_depth
         num_q = 2 if fa3 and persistent else 1
-        return UInt(num_q * Int(q_size))
+        return num_q * Int(q_size)
 
-    def kv_smem_size(self, fa3: Bool = False) -> UInt:
+    def kv_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
-            return self.num_pipeline_stages * self.block_n() * self.padded_depth
+            return (
+                Int(self.num_pipeline_stages)
+                * Int(self.block_n())
+                * Int(self.padded_depth)
+            )
         else:
-            return self.block_n() * self.padded_depth
+            return Int(self.block_n()) * Int(self.padded_depth)
 
-    def k_smem_size(self, fa3: Bool = False) -> UInt:
-        if fa3:
-            return self.kv_smem_size(True)
-        else:
-            return self.block_n() * self.padded_depth
-
-    def v_smem_size(self, fa3: Bool = False) -> UInt:
+    def k_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
             return self.kv_smem_size(True)
         else:
-            BN = self.block_n()
+            return Int(self.block_n()) * Int(self.padded_depth)
+
+    def v_smem_size(self, fa3: Bool = False) -> Int:
+        if fa3:
+            return self.kv_smem_size(True)
+        else:
+            BN = Int(self.block_n())
             return BN * BN
 
-    def p_smem_size(self) -> UInt:
-        return self.block_m() * self.block_n()
+    def p_smem_size(self) -> Int:
+        return Int(self.block_m()) * Int(self.block_n())
 
-    def warp_scratch_smem_size(self) -> UInt:
+    def warp_scratch_smem_size(self) -> Int:
         n_warps_n = self.num_warps_n()
-        return UInt(
-            2 * Int(n_warps_n) * Int(self.block_m()) if n_warps_n > 1 else 0
-        )
+        return 2 * Int(n_warps_n) * Int(self.block_m()) if n_warps_n > 1 else 0
 
     def shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
-    ](self) -> UInt:
+    ](self) -> Int:
         if not has_nvidia_gpu_accelerator():
             return 0
 
@@ -240,34 +242,36 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = size_of[self.dtype]() * Int(num_smem_elements)
+        num_smem_bytes = size_of[self.dtype]() * num_smem_elements
         if sm_90_fa3:
             comptime i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
                 4 * i64_size + 2 * size_of[DType.uint32]() if persistent else 0
             )
-        return UInt(num_smem_bytes)
+        return num_smem_bytes
 
     def __init__(
         out self,
-        num_heads: UInt,
-        depth: UInt,
-        num_queries_per_block: Optional[UInt] = None,
-        num_keys_per_block: Optional[UInt] = None,
-        BK: Optional[UInt] = None,
-        WM: Optional[UInt] = None,
-        WN: Optional[UInt] = None,
-        num_pipeline_stages: UInt = 4,
-        k_group_size: UInt = 1,
+        num_heads: Int,
+        depth: Int,
+        num_queries_per_block: Optional[Int] = None,
+        num_keys_per_block: Optional[Int] = None,
+        BK: Optional[Int] = None,
+        WM: Optional[Int] = None,
+        WN: Optional[Int] = None,
+        num_pipeline_stages: Int = 4,
+        k_group_size: Int = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
-        self.num_heads = num_heads
-        self.depth = depth
-        swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
-        self.padded_depth = align_up(depth, UInt(swizzle_granularity))
-        self.num_pipeline_stages = num_pipeline_stages
-        self.k_group_size = k_group_size
+        self.num_heads = UInt(num_heads)
+        self.depth = UInt(depth)
+        var swizzle_granularity = (
+            swizzle_mode.bytes() // size_of[DType.bfloat16]()
+        )
+        self.padded_depth = align_up(UInt(depth), UInt(swizzle_granularity))
+        self.num_pipeline_stages = UInt(num_pipeline_stages)
+        self.k_group_size = UInt(k_group_size)
         self.algorithm = algorithm.init(Self.dtype)
         self.swizzle_mode = swizzle_mode
         # Not all of these have to be `OptionalReg`, only
@@ -279,10 +283,12 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM
-            self.num_queries_per_block = num_queries_per_block.or_else(128)
+            self.num_queries_per_block = UInt(
+                num_queries_per_block.or_else(128)
+            )
             reg_per = 224 if self.num_queries_per_block > 64 else 256
             if num_keys_per_block:
-                self.num_keys_per_block = num_keys_per_block.value()
+                self.num_keys_per_block = UInt(num_keys_per_block.value())
             # FIXME: for depth == 64, larger num_keys_per_block values currently
             #        trigger correctness issues; this hardcoded value is a
             #        temporary workaround and should be revisited.
@@ -295,8 +301,8 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 # reg_per >= 16*BN//32 + 16*depth//32 + 16*BN//64 + 4
                 # (reg_per - depth//2 - 4) >= 3*BN//4
                 # BN <= (4*reg_per - 2*depth - 16)//3
-                reg_upper_bound = (4 * reg_per - 2 * Int(depth) - 16) // 3
-                comptime persistent = (
+                reg_upper_bound = (4 * reg_per - 2 * depth - 16) // 3
+                comptime persistent: Bool = (
                     get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
                 smem_total = 227000
@@ -306,36 +312,38 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 #        >= 2*depth*pipeline_stages*BN
                 # BN <= (smem_total//2 - BM*depth*(1+persistent) - 8*pipeline_stages
                 #        - 20*persistent) // (depth*pipeline_stages)
-                smem_upper_bound = (
+                var smem_upper_bound = (
                     smem_total // 2
-                    - Int(
-                        self.num_queries_per_block
+                    - (
+                        Int(self.num_queries_per_block)
                         * depth
-                        * UInt(1 + Int(persistent))
+                        * (1 + Int(persistent))
                     )
-                    - 8 * Int(num_pipeline_stages)
+                    - 8 * num_pipeline_stages
                     - 20 * Int(persistent)
-                ) // Int(depth * num_pipeline_stages)
+                ) // (depth * num_pipeline_stages)
                 # divide and multiply by 16 to get a multiple of MMA_K
-                min_upper_bound = 16 * (
+                var min_upper_bound = 16 * (
                     min(reg_upper_bound, smem_upper_bound) // 16
                 )
                 # FIXME: add support for non-power-of-twos?
                 self.num_keys_per_block = UInt(
                     max(prev_power_of_two(min_upper_bound), 64)
                 )
-            self.BK = BK.or_else(64)
-            self.WN = WN.or_else(min(self.num_keys_per_block, 256))
+            self.BK = UInt(BK.or_else(64))
+            self.WN = UInt(WN.or_else(min(Int(self.num_keys_per_block), 256)))
         else:
             # BN
-            self.num_keys_per_block = num_keys_per_block.or_else(
-                (
-                    UInt(32 if depth == 512 else 64)
-                ) if has_amd_gpu_accelerator() else depth
+            self.num_keys_per_block = UInt(
+                num_keys_per_block.or_else(
+                    (
+                        32 if depth == 512 else 64
+                    ) if has_amd_gpu_accelerator() else depth
+                )
             )
             # BM
-            self.num_queries_per_block = num_queries_per_block.or_else(
-                UInt(
+            self.num_queries_per_block = UInt(
+                num_queries_per_block.or_else(
                     32 if Self.dtype
                     == DType.float32 else (
                         128 if has_amd_gpu_accelerator() else 64
@@ -344,14 +352,19 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
             var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
-            self.BK = BK.or_else(
-                UInt(16 * bk_arch_factor * bk_type_factor)
-            ) if has_nvidia_gpu_accelerator() else 32
-            self.WN = WN.or_else(
-                32 if Self.dtype == DType.float32 else self.num_keys_per_block
+            self.BK = UInt(
+                BK.or_else(
+                    16 * bk_arch_factor * bk_type_factor
+                ) if has_nvidia_gpu_accelerator() else 32
             )
-        self.WM = WM.or_else(
-            UInt(
+            self.WN = UInt(
+                WN.or_else(
+                    32 if Self.dtype
+                    == DType.float32 else Int(self.num_keys_per_block)
+                )
+            )
+        self.WM = UInt(
+            WM.or_else(
                 32 if Self.dtype
                 == DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
             )

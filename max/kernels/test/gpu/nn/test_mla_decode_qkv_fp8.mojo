@@ -308,7 +308,7 @@ def test[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
+        comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             mla_decode_sm100_dispatch[
                 q_type,
@@ -601,7 +601,7 @@ def bench[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
+        comptime config = MHAConfig[q_type](num_heads, depth)
         mla_decode_sm100_dispatch[
             q_type,
             type_of(k_operand),

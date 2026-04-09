@@ -166,7 +166,7 @@ def test[
     )
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
-            config=MHAConfig[qkv_type](UInt(num_heads), UInt(depth)),
+            config=MHAConfig[qkv_type](num_heads, depth),
             decoding_warp_split_k=decoding_warp_split_k,
         ](
             output_device.as_any_origin(),

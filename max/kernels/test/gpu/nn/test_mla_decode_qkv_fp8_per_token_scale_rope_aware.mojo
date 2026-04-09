@@ -551,7 +551,7 @@ def run_test[
     var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[fp8_type](UInt(num_heads), UInt(LOGICAL_DEPTH)),
+        config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
         ragged=True,
         per_token_scale_rope_aware=True,
     ](
@@ -1223,7 +1223,7 @@ def run_test_with_scales[
     var scalar_args_buf_lt2 = mla_args2.gpu_layout_tensor()
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[fp8_type](UInt(num_heads), UInt(LOGICAL_DEPTH)),
+        config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
         ragged=True,
         per_token_scale_rope_aware=True,
     ](

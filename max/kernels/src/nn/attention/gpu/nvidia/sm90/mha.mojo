@@ -136,11 +136,11 @@ def mha_sm90_dispatch[
     var q = rebind[UnsafePointer[Scalar[KVType.dtype], MutAnyOrigin]](q_arg)
     comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     comptime new_config = MHAConfig[config.dtype](
-        config.num_heads,
-        config.depth,
-        num_queries_per_block=Optional[UInt](64),
-        num_keys_per_block=Optional[UInt](config.num_keys_per_block),
-        BK=Optional[UInt](config.BK),
+        Int(config.num_heads),
+        Int(config.depth),
+        num_queries_per_block=64,
+        num_keys_per_block=Int(config.num_keys_per_block),
+        BK=Int(config.BK),
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
@@ -839,7 +839,7 @@ def _mha_sm90_enqueue[
         pack,
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
         block_dim=(Int(num_threads), 1, 1),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),

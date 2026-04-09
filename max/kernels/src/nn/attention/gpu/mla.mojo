@@ -237,7 +237,9 @@ def flare_mla_decoding[
         # For per_token_scale_rope_aware: Q's last dim is 640 (interleaved FP8+BF16)
         # but the logical depth is 576. Override config to use 576.
         comptime if per_token_scale_rope_aware:
-            comptime rope_aware_config = MHAConfig[dtype](config.num_heads, 576)
+            comptime rope_aware_config = MHAConfig[dtype](
+                Int(config.num_heads), 576
+            )
             flare_mla_decoding_dispatch[
                 kv_num_heads=kv_num_heads,
                 config=rope_aware_config,
@@ -735,15 +737,15 @@ def mla_decoding[
         )
     elif is_amd_gpu():
         comptime config = MHAConfig[q_type](
-            UInt(num_heads),
-            UInt(depth),
-            num_queries_per_block=UInt(BM),
-            num_keys_per_block=UInt(BN),
-            BK=UInt(BK),
-            WM=UInt(WM),
-            WN=UInt(WN),
-            num_pipeline_stages=UInt(num_pipeline_stages),
-            k_group_size=UInt(group),
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
         )
 
         comptime attention_config = MLAAttentionConfig[True, config]()
@@ -1510,10 +1512,10 @@ def flare_mla_prefill[
         comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
 
         comptime mha_config = MHAConfig[dtype](
-            UInt(type_of(q).static_shape[rank - 2]),  # num_heads
-            UInt(Int(k.layout.shape[rank - 1])),  # depth
-            num_keys_per_block=UInt(num_keys_per_block),
-            WN=UInt(num_keys_per_block),
+            type_of(q).static_shape[rank - 2],  # num_heads
+            Int(k.layout.shape[rank - 1]),  # depth
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
 
@@ -1663,10 +1665,10 @@ def flare_mla_prefill[
         # BN = 64 for nvidia, 128 in the only supported BN for amd
         comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
         comptime mha_config = MHAConfig[dtype](
-            UInt(type_of(q).static_shape[rank - 2]),
-            UInt(type_of(k).static_shape[rank - 1]),
-            num_keys_per_block=UInt(num_keys_per_block),
-            WN=UInt(num_keys_per_block),
+            type_of(q).static_shape[rank - 2],
+            type_of(k).static_shape[rank - 1],
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
         flare_mla_prefill_dispatch[
@@ -1819,10 +1821,10 @@ def flare_mla_prefill[
         # BN = 64 for nvidia, 128 in the only supported BN for amd
         comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
         comptime mha_config = MHAConfig[dtype](
-            UInt(type_of(q).static_shape[rank - 2]),
-            UInt(type_of(k).static_shape[rank - 1]),
-            num_keys_per_block=UInt(num_keys_per_block),
-            WN=UInt(num_keys_per_block),
+            type_of(q).static_shape[rank - 2],
+            type_of(k).static_shape[rank - 1],
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
         flare_mla_prefill_dispatch[
@@ -1984,10 +1986,10 @@ def flare_mla_prefill[
         # BN = 64 for nvidia, 128 in the only supported BN for amd
         comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
         comptime mha_config = MHAConfig[dtype](
-            UInt(type_of(q_nope).static_shape[rank - 2]),
-            UInt(type_of(k).static_shape[rank - 1]),
-            num_keys_per_block=UInt(num_keys_per_block),
-            WN=UInt(num_keys_per_block),
+            type_of(q_nope).static_shape[rank - 2],
+            type_of(k).static_shape[rank - 1],
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
         mla_sm100_prefill_per_token_scale[

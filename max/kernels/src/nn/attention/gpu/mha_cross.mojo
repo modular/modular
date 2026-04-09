@@ -265,8 +265,8 @@ def mha_cross_gpu_naive[
     ), "Only support single and half precision."
 
     comptime config = MHAConfig[dtype](
-        UInt(Int(q.static_shape[rank - 2])),
-        UInt(Int(q.static_shape[rank - 1])),
+        Int(q.static_shape[rank - 2]),
+        Int(q.static_shape[rank - 1]),
     )
 
     comptime num_heads = Int(config.num_heads)

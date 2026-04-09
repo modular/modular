@@ -454,7 +454,7 @@ def run_test_blockwise_fp8[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+        config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
     ](
         out_tt,
@@ -936,7 +936,7 @@ def run_bench_blockwise_fp8[
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+            config=MHAConfig[q_type](num_heads, DEPTH),
             ragged=True,
         ](
             out_tt,

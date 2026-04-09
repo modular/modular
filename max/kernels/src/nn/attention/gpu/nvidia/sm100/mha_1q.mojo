@@ -1317,12 +1317,12 @@ def mha_sm100_dispatch[
 ) raises:
     comptime assert _is_decoding[MaxPromptLenType](), "mha_1q is decode-only"
     comptime new_config = MHAConfig[config.dtype](
-        config.num_heads,
-        config.depth,
-        num_queries_per_block=Optional[UInt](64),
-        num_keys_per_block=Optional[UInt](config.num_keys_per_block),
-        BK=Optional[UInt](config.BK),
-        num_pipeline_stages=UInt(2 if Int(config.padded_depth) >= 512 else 4),
+        Int(config.num_heads),
+        Int(config.depth),
+        num_queries_per_block=64,
+        num_keys_per_block=Int(config.num_keys_per_block),
+        BK=Int(config.BK),
+        num_pipeline_stages=2 if Int(config.padded_depth) >= 512 else 4,
     )
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
@@ -1823,9 +1823,9 @@ def _mha_sm100_enqueue[
     # we add smem use for SharedMemBarrier synchronization
     # 2*8 for mma mbars
     comptime extra_B200_smem = (2 * num_s + 3) * 8 + p_smem_bytes
-    comptime smem_use = config.shared_mem_bytes[True, sm_90=True]() + UInt(
-        extra_B200_smem
-    )
+    comptime smem_use = config.shared_mem_bytes[
+        True, sm_90=True
+    ]() + extra_B200_smem
     comptime num_threads = config.num_threads[True]()
     logger.info("------ Dispatching to SM100 FMHA-1Q ------")
     logger.info(
@@ -1854,7 +1854,7 @@ def _mha_sm100_enqueue[
         pack,
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
         block_dim=(Int(num_threads), 1, 1),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
