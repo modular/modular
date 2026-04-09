@@ -2740,7 +2740,7 @@ def compute_mla_dispatch_args_scalar(
 ) -> TensorValue:
     """Computes scalar dispatch arguments for the MLA decode kernel.
 
-    Produces a CPU tensor of shape ``[4]`` containing pre-computed integer
+    Produces a CPU tensor of shape ``[3]`` containing pre-computed integer
     arguments used by the capturable MLA decode kernel variant to enable CUDA
     graph capture.
 
@@ -2754,7 +2754,7 @@ def compute_mla_dispatch_args_scalar(
         device: The :class:`~max.graph.DeviceRef` on which to run the op.
 
     Returns:
-        A CPU :class:`~max.graph.TensorValue` of shape ``[4]`` and dtype
+        A CPU :class:`~max.graph.TensorValue` of shape ``[3]`` and dtype
         ``int64`` containing the dispatch scalar arguments.
     """
     results = ops.custom(

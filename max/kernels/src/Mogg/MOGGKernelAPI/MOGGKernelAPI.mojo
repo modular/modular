@@ -7803,6 +7803,14 @@ struct Struct_mla_compute_dispatch_args_scalar:
         )
         var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
 
+        if batch_size < 0:
+            raise Error("batch_size must be non-negative.")
+        if batch_size == 0:
+            output[0] = Int64(0)
+            output[1] = Int64(q_max_seq_len)
+            output[2] = Int64(1)
+            return
+
         comptime sm_count = ctx.default_device_info.sm_count
         comptime _half_sms = sm_count // 2
         var scalars = compute_mla_dispatch_scalars[
