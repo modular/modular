@@ -198,7 +198,7 @@ def launch_ship(mut ship: Spaceship):
 # // -----
 
 # Define a capturing lambda type (like elementwise_epilogue_type)
-comptime capturing_lambda_type = def (Int) capturing -> Int
+comptime capturing_lambda_type = def(Int) capturing -> Int
 
 
 struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type]:
@@ -312,6 +312,7 @@ def test_param_access[dtype: Int]():
 # This test revealed a bug where struct signature resolution wasn't
 # signature-resolving the target struct.
 
+
 # The order here matters, extension must be first.
 __extension MyThing:
     # In the extension's scope, `Self` didn't have generic parameters.
@@ -333,7 +334,6 @@ def bork(m: MyThing[5]):
     # This had a mismatch, because m.foo()'s return type was MyThing but
     # zork expected the proper MyThing[5].
     zork(m.foo())
-
 
 
 # TODO(MOCO-522): Add tests for aliases in extensions

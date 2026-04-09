@@ -122,6 +122,7 @@ def testExplicitWithDel():
 # Trait with custom @explicit_destroy error message
 # ===----------------------------------------------------------------------=== #
 
+
 # Trait without @explicit_destroy and without ImplicitlyDestructible
 trait PlainTrait:
     def do_something(self):
@@ -146,6 +147,7 @@ trait ExplicitDestroyWithMessage:
 def take_plain_trait[T: PlainTrait](var value: T):
     pass
 
+
 # Test: Trait with @explicit_destroy but no custom message
 # expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
@@ -154,9 +156,11 @@ def take_generic_linear_no_message[T: ExplicitDestroyNoMessage](var value: T):
 
 
 # Test: Trait with @explicit_destroy("...") custom message
-# expected-error @below {{Use `destroy()` method.}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-def take_generic_linear_with_message[T: ExplicitDestroyWithMessage](var value: T):
+def take_generic_linear_with_message[
+    T: ExplicitDestroyWithMessage
+    # expected-error @below {{Use `destroy()` method.}}
+    # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+](var value: T):
     pass
 
 
@@ -195,6 +199,7 @@ def take_no_msg_first[T: ExplicitDestroyNoMessage & LinearBar](var value: T):
 # ===----------------------------------------------------------------------=== #
 # @explicit_destroy("") on linear traits (valid but poor form)
 # ===----------------------------------------------------------------------=== #
+
 
 # Test: Empty string message is valid on a linear trait (trait without
 # ImplicitlyDestructible). The empty message will be used as the error.

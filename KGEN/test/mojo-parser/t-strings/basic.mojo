@@ -6,10 +6,12 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+
 # Helper function for testing t-strings as function arguments
 # CHECK-LABEL: lit.fn @"dummy_function(::String,::String)"
 def dummy_function(arg1: String, arg2: String):
     pass
+
 
 # CHECK-LABEL: lit.fn @"test_t_strings()"
 def test_t_strings():

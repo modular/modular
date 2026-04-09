@@ -30,6 +30,7 @@ def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
     var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
     return res
 
+
 @always_inline("nodebug")
 def to_string[
     string: StaticString, *extra: StaticString
@@ -51,7 +52,7 @@ def test2[pred: StaticString](x: Int, y: Int) -> Bool:
             `#index<cmp_predicate `, +to_string[pred](), `>`
         ]
 
-    var z = __mlir_op.`index.cmp`[pred = get_pred[pred]()](x, y)
+    var z = __mlir_op.`index.cmp`[pred=get_pred[pred]()](x, y)
 
     return z
 
@@ -79,16 +80,16 @@ def test3[
 ):
     # CHECK: kgen.deferred "kgen.struct.extract"(%x : !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 0 : index} : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>
     var e0 = __mlir_op.`kgen.struct.extract`[
-        _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
-        index = __mlir_attr.`0:index`,
+        _type=__mlir_type[`!pop.scalar<`, dtype.value, `>`],
+        index=__mlir_attr.`0:index`,
     ](x)
 
     # CHECK: kgen.deferred "kgen.struct.replace"(%1, %x : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 0 : index} : !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>
-    _ = __mlir_op.`kgen.struct.replace`[index = __mlir_attr.`0:index`](e0, x)
+    _ = __mlir_op.`kgen.struct.replace`[index=__mlir_attr.`0:index`](e0, x)
 
     # CHECK: kgen.deferred "kgen.struct.replace"(%3, %x : !pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>) {index = 1 : index} : !kgen.struct<(!kgen.param_list_splat<!pop.scalar<#lit.struct.extract<:!DType dtype, "value">>, #lit.struct.extract<:!Int n, "_mlir_value"> : index>)>
     _ = __mlir_op.`kgen.struct.replace`[
-        _type = __mlir_type[
+        _type=__mlir_type[
             `!kgen.struct<(`,
             __mlir_type[
                 `!kgen.param_list_splat<`,
@@ -99,5 +100,5 @@ def test3[
             ],
             `)>`,
         ],
-        index = __mlir_attr.`1:index`,
+        index=__mlir_attr.`1:index`,
     ](e0, x)

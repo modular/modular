@@ -32,7 +32,7 @@ trait Foo:
     # CHECK-SAME: defaultedTraitFn
     def foo[
         x: Int,
-        y: def[p: Int, f: def[pp: Int] (x: Int) -> Int] (x: Int, y: Int) -> Int,
+        y: def[p: Int, f: def[pp: Int](x: Int) -> Int](x: Int, y: Int) -> Int,
     ](self) -> Int:
         return Int()
 
@@ -40,7 +40,7 @@ trait Foo:
     # CHECK-NOT: defaultedTraitFn
     def foo[
         x: Int,
-        y: def[p: Int, f: def[pp: Int] (x: Int) -> Int, z: Int] (
+        y: def[p: Int, f: def[pp: Int](x: Int) -> Int, z: Int](
             x: Int, y: Int
         ) -> Int,
     ](self) -> Int:

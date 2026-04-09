@@ -30,9 +30,7 @@ struct X_T_U(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @C
 #  CHECK-SAME: <X: [[X_TYPE:!.*]], Y: [[Y_TYPE:!.*]]>
-struct C[X: ImplicitlyCopyable, Y: ImplicitlyCopyable](
-    ImplicitlyCopyable
-):
+struct C[X: ImplicitlyCopyable, Y: ImplicitlyCopyable](ImplicitlyCopyable):
     var x: Self.X
     var y: Self.Y
 

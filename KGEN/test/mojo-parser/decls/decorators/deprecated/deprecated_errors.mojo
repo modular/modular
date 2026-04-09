@@ -20,7 +20,6 @@ struct DeprecatedStruct:
     pass
 
 
-
 @deprecated("deprecated function")
 # expected-note @below {{'deprecated_fn' declared here}}
 def deprecated_fn():
@@ -95,7 +94,7 @@ def test_deprecated_function_call():
 # ===----------------------------------------------------------------------=== #
 
 
-def takes_fn_ref(f: def () thin -> None):
+def takes_fn_ref(f: def() thin -> None):
     f()
 
 
@@ -156,6 +155,7 @@ def test_deprecated_method_call():
 # ===----------------------------------------------------------------------=== #
 # Test: Deprecated method reference (not call)
 # ===----------------------------------------------------------------------=== #
+
 
 def test_deprecated_method_reference():
     # Taking a reference to a deprecated method emits the deprecation warning.

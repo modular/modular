@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file %s
 
+
 # @expected-note @below {{extension already assumes these parameter declarations}}
 struct Spaceship[T: AnyType]:
     pass
@@ -147,7 +148,6 @@ __extension BaseStruct:
 
 def test_collisions(s: BaseStruct):
     var result = s.colliding
-
 
 
 # TODO(MOCO-522): Add a test for a function and an extension having same name.

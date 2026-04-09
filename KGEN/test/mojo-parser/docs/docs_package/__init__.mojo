@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This is a test package."""
 
+
 def documented_method_defined_in_init():
-  """This is an imported method."""
-  return
+    """This is an imported method."""
+    return

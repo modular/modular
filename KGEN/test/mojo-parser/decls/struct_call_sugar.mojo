@@ -14,6 +14,7 @@ struct PCall:
     def __call__[x: Int](ref self, y: Int) -> Int:
         return x + y
 
+
 # CHECK: lit.fn @"main()"
 def main():
     var pc = PCall()

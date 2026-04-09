@@ -207,6 +207,7 @@ def fn_args_return():
     """
     return
 
+
 def fn_raises():
     """This is a function summary.
 
@@ -290,6 +291,7 @@ def fn_raises_with_return_type(x: Int) raises -> Int:
     """
     return 0
 
+
 def def_implicit_return_type(x: Int) raises:
     """This is a `def` function with no explicit return type.
 
@@ -350,7 +352,9 @@ Parameters:
 # Test that autoparams (compiler-generated parameters with mangled names like
 # `a`1`) are correctly ignored in docstring validation. When doing partial
 # binding, the compiler generates autoparams for the unbound parameters.
-struct _AutoParamTest[a: __mlir_type.`!kgen.dtype`, b: __mlir_type.`!kgen.dtype`]:
+struct _AutoParamTest[
+    a: __mlir_type.`!kgen.dtype`, b: __mlir_type.`!kgen.dtype`
+]:
     pass
 
 

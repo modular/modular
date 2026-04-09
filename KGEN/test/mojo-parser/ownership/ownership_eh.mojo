@@ -280,7 +280,9 @@ def testErrorReturn() raises:
     # CHECK: try
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__del__
-        var x = ctx.read() # expected-warning {{assignment to 'x' was never used}}
+        var x = (
+            ctx.read()
+        )  # expected-warning {{assignment to 'x' was never used}}
         input = "hello"
     # CHECK: except
     use(input)
@@ -290,6 +292,7 @@ def testErrorReturn() raises:
 struct Field(ImplicitlyCopyable):
     def __init__(out self, *, copy: Self):
         pass
+
     def __del__(deinit self):
         pass
 
@@ -436,9 +439,11 @@ struct InitFieldsDestroyedInThrowingConstructor:
         if cond:
             raise Error()
 
+
 # CHECK-LABEL: lit.fn @"doesnt_actually_raise{{.*}}%__error__: !lit.ref<:non_struct_type #alias_Never
 def doesnt_actually_raise() raises Never:
     pass
+
 
 # CHECK-LABEL: lit.fn @"test_doesnt_actually_raise{{.*}}() -> !Int
 # CHECK-NEXT: %__never_error__ = lit.var.decl
@@ -452,4 +457,3 @@ def doesnt_actually_raise() raises Never:
 def test_doesnt_actually_raise() -> Int:
     doesnt_actually_raise()
     return 42
-

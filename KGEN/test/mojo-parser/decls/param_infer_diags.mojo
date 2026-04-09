@@ -9,7 +9,7 @@
 
 # We should be able to infer something with a concrete origin even if it
 # requires an upcast.
-def takeA[origin: Origin, T: AnyType](ref [origin]a: String, b: T):
+def takeA[origin: Origin, T: AnyType](ref[origin] a: String, b: T):
     pass
 
 
@@ -29,12 +29,13 @@ struct TwoIntParamStruct[a: Int, b: Int]:
 def take_two_int_dep[x: Int](a: TwoIntParamStruct[x, x + 1]):
     pass
 
+
 # expected-note @+1 {{function declared here}}
-def take_tied_values[first1: Int, first2: Int, second: Int](
-    a: TwoIntParamStruct[first1, second],
-    b: TwoIntParamStruct[first2, second],
-):
+def take_tied_values[
+    first1: Int, first2: Int, second: Int
+](a: TwoIntParamStruct[first1, second], b: TwoIntParamStruct[first2, second],):
     pass
+
 
 def infer_two_param_dep_struct[y: Int]():
     take_two_int_dep(TwoIntParamStruct[1, 2]())

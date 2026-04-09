@@ -10,7 +10,9 @@
 from std.builtin.variadics import *
 
 comptime ToFloatMapper[From: Movable] = FloatDyn
-comptime AnyToFloat[Ts: Variadic.TypesOfTrait[Movable]] = Variadic.map_types_to_types[
+comptime AnyToFloat[
+    Ts: Variadic.TypesOfTrait[Movable]
+] = Variadic.map_types_to_types[
     From=Movable, To=type_of(FloatDyn), element_types=Ts, Mapper=ToFloatMapper
 ]
 
@@ -35,7 +37,9 @@ struct DepT[T: AnyType](Movable):
 
 
 comptime ToDepT[From: Variadic.TypesOfTrait[Movable], i: Int] = DepT[From[i]]
-comptime AnyToDepT[Ts: Variadic.TypesOfTrait[Movable]] = MapVariadicAndIdxToType[
+comptime AnyToDepT[
+    Ts: Variadic.TypesOfTrait[Movable]
+] = MapVariadicAndIdxToType[
     From=Movable, To=Movable, ParamListType=Ts, Mapper=ToDepT
 ]
 

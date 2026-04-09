@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct BoxedInt(RegisterPassable, Copyable):
+struct BoxedInt(Copyable, RegisterPassable):
     var value: Int
 
     @implicit
@@ -15,7 +15,7 @@ struct BoxedInt(RegisterPassable, Copyable):
         self.value = value
 
     def boxedAdd(self, rhs: Int) -> Int:
-        return self.value+rhs
+        return self.value + rhs
 
 
 struct Param[T: TrivialRegisterPassable]:
@@ -24,12 +24,12 @@ struct Param[T: TrivialRegisterPassable]:
 
 # CHECK-LABEL: lit.fn @"capturing_in_struct
 # CHECK-SAME: capturing -> !kgen.none
-def capturing_in_struct[x: Param[def () capturing -> Int]]():
+def capturing_in_struct[x: Param[def() capturing -> Int]]():
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @CapturingMember
-struct CapturingMember[f: def () capturing -> None]:
+struct CapturingMember[f: def() capturing -> None]:
     # CHECK-LABEL: lit.fn @"member
     # CHECK-SAME: capturing -> !kgen.none attributes
     def member(self):
@@ -43,7 +43,7 @@ struct CapturingMember[f: def () capturing -> None]:
 
 
 def makeClosure[p: Int](x: Int) -> Int:
-    var z = x+x
+    var z = x + x
 
     # CHECK: [[COPY_VAL:%.*]] = lit.ref.load %z : <!Int, mut *"z`">
     # CHECK:  = kgen.param.constant: !Int = <p>

@@ -15,6 +15,7 @@
 # Wildcard import should bring in the re-exported functions, not the modules.
 from test_reexport_name_collision import *
 
+
 # CHECK-LABEL: lit.fn @"main
 def main():
     # Parametric function via wildcard import.

@@ -34,7 +34,8 @@ struct UnstableStruct:
 
 
 struct AnotherUnstableStruct:
-    """A second unstable struct, exposed via a comptime alias in UnstableStruct."""
+    """A second unstable struct, exposed via a comptime alias in UnstableStruct.
+    """
 
     def __init__(out self):
         pass
@@ -69,7 +70,8 @@ trait UnstableTrait:
 
 
 trait UnstableTraitWithMembers:
-    """An unstable trait with a default-impl method and an associated comptime."""
+    """An unstable trait with a default-impl method and an associated comptime.
+    """
 
     comptime ASSOC_TYPE = Int
 
@@ -259,4 +261,5 @@ trait UnstableTraitWithStableMember:
 
     # expected-warning@+1 {{@stable member cannot be declared in an unstable trait}}
     @stable
-    def stable_method_in_unstable_trait(self): ...
+    def stable_method_in_unstable_trait(self):
+        ...

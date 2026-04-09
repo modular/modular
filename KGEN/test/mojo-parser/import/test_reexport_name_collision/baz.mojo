@@ -8,6 +8,7 @@
 # Used to test that re-exporting this struct from __init__.mojo
 # resolves to the struct, not the module.
 
+
 struct baz:
     var x: Int
 

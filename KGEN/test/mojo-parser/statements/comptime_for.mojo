@@ -9,8 +9,9 @@
 # comptime for
 # ===----------------------------------------------------------------------=== #
 
+
 @fieldwise_init
-struct IterRange(Iterator, ImplicitlyCopyable):
+struct IterRange(ImplicitlyCopyable, Iterator):
     comptime Element = Int
 
     var value: Int
@@ -27,8 +28,10 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 struct MyType:
     pass
 
+
 def use(value: MyType):
     pass
+
 
 # CHECK-LABEL: lit.fn @"comptime_for_basic
 # CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>
@@ -46,6 +49,7 @@ def comptime_for_basic[a: Int](var value: MyType):
 # ===----------------------------------------------------------------------=== #
 # @parameter for (legacy syntax - same IR as comptime for)
 # ===----------------------------------------------------------------------=== #
+
 
 # CHECK-LABEL: lit.fn @"parameter_for
 # CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>

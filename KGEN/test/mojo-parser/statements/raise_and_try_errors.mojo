@@ -39,20 +39,22 @@ def cannotRaise(err: Error):
 def raise_bad_type() raises:
     raise 42  # expected-error {{cannot implicitly convert 'IntLiteral[42]' value to 'Error'}}
 
+
 def raises_arg(x: String) raises Pointer[String, origin_of(x)]:
     pass
+
 
 # MOCO-3000
 def origin_scope_example():
     try:
-        var key = 42 # expected-note {{origin declared here}}
+        var key = 42  # expected-note {{origin declared here}}
         # expected-error @+1 {{inferred error type 'Pointer[Int, origin_of(key)]' captures origin 'key' from within try body; it is not in scope in except body}}
         raise Pointer(to=key)
     except e:
         _ = e[]  # isn't valid.
 
     try:
-        var str = String() # expected-note {{origin declared here}}
+        var str = String()  # expected-note {{origin declared here}}
         # expected-error @+1 {{inferred error type 'Pointer[String, origin_of(str)]' captures origin 'str' from within try body; it is not in scope in except body}}
         raises_arg(str)
     except e2:
@@ -64,4 +66,3 @@ def origin_scope_example():
         raises_arg(String())
     except e3:
         _ = e3[]  # isn't valid.
-

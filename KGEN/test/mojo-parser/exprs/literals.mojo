@@ -170,7 +170,9 @@ def test_list_comprehension():
 # ===----------------------------------------------------------------------=== #
 
 
-struct MyDict[K: Copyable&ImplicitlyDestructible, V: Copyable&ImplicitlyDestructible]:
+struct MyDict[
+    K: Copyable & ImplicitlyDestructible, V: Copyable & ImplicitlyDestructible
+]:
     def __init__(
         out self,
         var keys: List[Self.K],
@@ -321,7 +323,9 @@ struct AnyCollection:
     def __init__(out self, var *values: Int, __set_literal__: ()):
         pass
 
-    def __init__(out self, keys: IntList, values: IntList, __dict_literal__: ()):
+    def __init__(
+        out self, keys: IntList, values: IntList, __dict_literal__: ()
+    ):
         pass
 
 

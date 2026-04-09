@@ -8,6 +8,7 @@
 
 # Test that @stable decorator is recognized on functions and methods.
 
+
 # CHECK: lit.fn @"stable_function()"
 # CHECK-SAME: hasStableDecorator
 @stable

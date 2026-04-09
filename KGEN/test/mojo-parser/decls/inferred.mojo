@@ -195,4 +195,3 @@ struct MyOriginTaking[
         ref[Self.origin] list: String, out self: MyOriginTaking[origin_of(list)]
     ):
         pass
-

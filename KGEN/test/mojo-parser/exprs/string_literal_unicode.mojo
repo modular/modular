@@ -10,6 +10,7 @@
 # bytes in the compiled IR. The IR printer emits non-printable and non-ASCII
 # bytes as uppercase \XX hex escapes, so we can check each encoding width.
 
+
 # CHECK-LABEL: lit.fn @"test_unicode_escapes
 def test_unicode_escapes():
     # U+0068 'h' — single-byte UTF-8 (ASCII printable, emitted as-is)

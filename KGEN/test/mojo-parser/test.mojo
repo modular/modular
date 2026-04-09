@@ -21,7 +21,6 @@
 # CHECK-SAME: @std::@builtin::@stubs::@Movable>
 
 
-
 # CHECK: lit.struct.decl @BoxedInt(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable)
 @fieldwise_init
 struct BoxedInt(ImplicitlyCopyable):

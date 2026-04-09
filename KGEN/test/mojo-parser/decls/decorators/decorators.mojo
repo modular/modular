@@ -12,6 +12,7 @@ from std.builtin.stubs import _get_kgen_string
 # Function decorators
 # ===----------------------------------------------------------------------=== #
 
+
 struct NoDebugInlineTest:
     # Two decorators stacked up
     @always_inline("nodebug")
@@ -21,9 +22,13 @@ struct NoDebugInlineTest:
 
 
 # Test some graph compiler decorators.
-def elementwise(): return
+def elementwise():
+    return
 
-def register(a: StringLiteral): return
+
+def register(a: StringLiteral):
+    return
+
 
 # CHECK-LABEL: lit.fn @"decorated_fn()"
 # CHECK-NEXT: decorators <:!lit.generator<() -> !kgen.none> @{{.*}}::@"elementwise()">
@@ -31,20 +36,24 @@ def register(a: StringLiteral): return
 def decorated_fn():
     pass
 
+
 # CHECK-LABEL: lit.struct.decl @DecoratedStruct
 # CHECK: decorators <:none apply({{.*}}register{{.*}}<:string "hello">
 @register("hello")
 struct DecoratedStruct:
     pass
 
+
 # ===----------------------------------------------------------------------=== #
 # @always_inline
 # ===----------------------------------------------------------------------=== #
+
 
 # CHECK: lit.fn @"test_always_inline()"() -> index always_inline
 @always_inline
 def test_always_inline() -> __mlir_type.index:
     return Int(1)._mlir_value
+
 
 # CHECK-LABEL: lit.fn @"test_always_inline_no_debug
 # CHECK-SAME: always_inline_no_debug
@@ -58,6 +67,7 @@ def test_always_inline_no_debug():
 def math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
     return __mlir_op.`index.add`(a, b)
 
+
 # CHECK-LABEL: lit.fn @"use_math
 def use_math(a: __mlir_type.index) -> __mlir_type.index:
     # CHECK: %index3 = kgen.param.constant = <3>
@@ -66,8 +76,8 @@ def use_math(a: __mlir_type.index) -> __mlir_type.index:
     return math(
         a,
         math(
-            __mlir_op.`index.constant`[value = __mlir_attr.`1:index`](),
-            __mlir_op.`index.constant`[value = __mlir_attr.`2:index`](),
+            __mlir_op.`index.constant`[value=__mlir_attr.`1:index`](),
+            __mlir_op.`index.constant`[value=__mlir_attr.`2:index`](),
         ),
     )
 
@@ -77,6 +87,7 @@ struct AlwaysInlineByRef:
     @always_inline("nodebug")
     def do_by_ref(mut self):
         pass
+
 
 def test_inline_by_ref(mut a: AlwaysInlineByRef):
     a.do_by_ref()
@@ -93,10 +104,12 @@ struct AIBuiltinPair(TrivialRegisterPassable):
         self.a = x
         self.b = y
 
+
 # CHECK-LABEL: lit.fn @"test_ai_builtin_pair
 def test_ai_builtin_pair():
     # CHECK-NEXT: lit.alias.decl *"example{{.*}}!AIBuiltinPair {a: !Int = {1}, b: !Int = {2}}
     comptime example = AIBuiltinPair(1, 2)
+
 
 # ===----------------------------------------------------------------------=== #
 # @staticmethod
@@ -115,29 +128,38 @@ struct StaticMethodTest:
 # @no_inline
 # ===----------------------------------------------------------------------=== #
 
+
 # CHECK-LABEL: lit.fn @"test_no_inline
 # CHECK-SAME: no_inline
 @no_inline
 def test_no_inline():
     pass
 
+
 # ===----------------------------------------------------------------------=== #
 # @implicit
 # ===----------------------------------------------------------------------=== #
+
 
 struct DeprecatedImplicitConversion:
     @implicit(deprecated=True)
     def __init__(out self, value: Int):
         pass
 
+
 struct NotDeprecatedImplicitConversion:
     @implicit(deprecated=False)
     def __init__(out self, value: Int):
         pass
 
-def foo(y: DeprecatedImplicitConversion): pass
 
-def foo(z: Int): pass
+def foo(y: DeprecatedImplicitConversion):
+    pass
+
+
+def foo(z: Int):
+    pass
+
 
 def deprecated_implicit_conversion():
     # There should be no warnings here.
@@ -147,9 +169,11 @@ def deprecated_implicit_conversion():
     # There should be no warning here because the `Int` overload is selected.
     foo(Int(1))
 
+
 # ===----------------------------------------------------------------------=== #
 # @__llvm_metadata
 # ===----------------------------------------------------------------------=== #
+
 
 # CHECK-LABEL: lit.fn @"kernel{{.*}}"<x:
 # CHECK-SAME: LLVMMetadataArray = ["nvvm.maxntid", {{.*}}#pop.array<x> : !pop.array<
@@ -159,15 +183,18 @@ def deprecated_implicit_conversion():
 def kernel[x: Int]():
     pass
 
+
 # CHECK-LABEL: lit.fn @"kernel_1{{.*}}"<x:
 # CHECK-SAME: LLVMMetadataArray = [#kgen.unknown : !lit.struct<#StringLiteral <:string "nvvm.maxntid">>, {{.*}}#pop.array<x> : !pop.array<
 comptime mname = "nvvm.maxntid"
+
 
 @__llvm_metadata(
     mname=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
 )
 def kernel_1[x: Int]():
     pass
+
 
 # CHECK-LABEL: lit.fn @"kernel_2{{.*}}"<x:
 # CHECK-SAME: LLVMMetadataArray = [#kgen.unknown : !lit.struct<#StringLiteral <:string "nvvm.maxntid">>, {{.*}}#pop.array<x> : !pop.array<
@@ -176,6 +203,7 @@ def kernel_1[x: Int]():
 )
 def kernel_2[x: Int]():
     pass
+
 
 # TODO: Figure out how to get the value of the alias.
 # CHECK-LABEL: lit.fn @"kernel_3{{.*}}"<x:
@@ -191,13 +219,16 @@ def alias_parametric_fn() -> StaticString:
 
 comptime mname1 = _get_kgen_string[alias_parametric_fn()]()
 
+
 @__llvm_metadata(mname1=128)
 def kernel_3[x: Int]():
     pass
 
+
 # ===----------------------------------------------------------------------=== #
 # @__llvm_arg_metadata
 # ===----------------------------------------------------------------------=== #
+
 
 # CHECK-LABEL: lit.fn @"llvm_arg_meta
 # CHECK-SAME{LITERAL}: LLVMArgMetadataArray = [[], ["nvvm.grid_constant", unit, "myMeta", unit], [], [#kgen.unknown : !lit.struct<#StringLiteral <:string "nvvm.maxntid">>, #pop.array<x> : !pop.array<1, !Int>], []]
@@ -214,8 +245,10 @@ def llvm_arg_meta[x: Int](a: Int, b: Int, c: Int, d: Int, e: Int):
 # Struct decorators
 # ===----------------------------------------------------------------------=== #
 
+
 def register_internal(x: StaticString):
     pass
+
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder1
 # CHECK-SAME: register_passable_trivial
@@ -228,6 +261,7 @@ def register_internal(x: StaticString):
 struct DecoratorOrder1(TrivialRegisterPassable):
     var a: Int
 
+
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder2
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder2">
@@ -239,6 +273,7 @@ struct DecoratorOrder1(TrivialRegisterPassable):
 struct DecoratorOrder2(TrivialRegisterPassable):
     var a: Int
 
+
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder3
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder3">
@@ -249,6 +284,7 @@ struct DecoratorOrder2(TrivialRegisterPassable):
 @register_internal("custom.op")
 struct DecoratorOrder3(TrivialRegisterPassable):
     var a: Int
+
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder4
 # CHECK-SAME: register_passable_trivial
@@ -265,6 +301,7 @@ struct DecoratorOrder4(TrivialRegisterPassable):
 ##===----------------------------------------------------------------------===##
 # Struct @fieldwise_init decorator
 ##===----------------------------------------------------------------------===##
+
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 struct StructExample(ImplicitlyCopyable, RegisterPassable):
@@ -330,7 +367,7 @@ struct ValueMemHasCopy(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable)
 @fieldwise_init
-struct ValueMemHasMove(Movable, ImplicitlyCopyable):
+struct ValueMemHasMove(ImplicitlyCopyable, Movable):
     var a: Int
     var b: StructExample
 
@@ -353,8 +390,9 @@ struct ValueMemHasMove(Movable, ImplicitlyCopyable):
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %none : !kgen.none
 
+
 @fieldwise_init
-struct ValueRegTrivial(TrivialRegisterPassable, Copyable):
+struct ValueRegTrivial(Copyable, TrivialRegisterPassable):
     var a: __mlir_type.index
 
 

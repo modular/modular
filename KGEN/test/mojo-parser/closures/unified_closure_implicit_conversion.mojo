@@ -5,15 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-def id_simd[
-    w: Int
-](v: SIMD[DType.uint32, w]) -> SIMD[DType.uint32, w]:
+
+def id_simd[w: Int](v: SIMD[DType.uint32, w]) -> SIMD[DType.uint32, w]:
     return v
 
 
-def int32_simd[
-    w: Int
-](v: SIMD[DType.int32, w]) -> SIMD[DType.int32, w]:
+def int32_simd[w: Int](v: SIMD[DType.int32, w]) -> SIMD[DType.int32, w]:
     return v
 
 
@@ -78,9 +75,7 @@ def test_wrapper_to_wrapper_struct():
     take_closure_arg[type_of(wrapped_1)](wrapped_2)
 
 
-def symbol_renamed[
-    n: Int
-](x: SIMD[DType.uint32, n]) -> SIMD[DType.uint32, n]:
+def symbol_renamed[n: Int](x: SIMD[DType.uint32, n]) -> SIMD[DType.uint32, n]:
     return x
 
 

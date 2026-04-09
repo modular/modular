@@ -69,6 +69,7 @@ trait WithAsyncMethod:
 struct RP(TrivialRegisterPassable):
     pass
 
+
 trait FooC:
     # expected-note @+1 {{conflicting implementation from trait 'FooC' here}}
     def foo(self) -> RP:
@@ -88,4 +89,5 @@ trait FooB(FooC):
 
 
 # expected-error @+1 {{trait method requirement 'foo' has conflicting default implementations in 'FooB' and 'FooC' you must implement it manually}}
-struct FooActual(FooB): pass
+struct FooActual(FooB):
+    pass

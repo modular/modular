@@ -6,8 +6,14 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-def use(a: Int): pass
-def use(a: StaticString): pass
+
+def use(a: Int):
+    pass
+
+
+def use(a: StaticString):
+    pass
+
 
 def test():
     # True dead code - check for warnings

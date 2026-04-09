@@ -8,6 +8,7 @@
 
 # Test that direct access of trait members produces a parser error.
 
+
 trait Foo:
     comptime x: Bool
 

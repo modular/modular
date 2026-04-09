@@ -21,4 +21,3 @@ struct Foo(TrivialRegisterPassable):
 def main() raises:
     # CHECK: lit.alias.decl *"{{.*}}": !Foo = <apply(:!lit.generator<(*, "b": !Int) -> !Foo> @decl_name_collision::@Foo::@"__init__(b:::Int)", {42})>
     comptime _foo = Foo(b=42)
-

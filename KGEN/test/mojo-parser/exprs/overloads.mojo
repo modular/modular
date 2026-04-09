@@ -9,6 +9,7 @@
 
 # CHECK: [[SCALARF64:.*]] = #kgen.type<!lit.struct<#MLIRType <:non_struct_type scalar<f64>>>, scalar<f64>> : !TrivialRegisterPassable
 
+
 struct MyInt(TrivialRegisterPassable):
     var value: Int
 
@@ -16,6 +17,7 @@ struct MyInt(TrivialRegisterPassable):
     @implicit
     def __init__(out self, v: Int):
         self.value = v
+
 
 def overloaded_arg(a: Int, b: MyInt):
     pass
@@ -36,7 +38,9 @@ def test_kw_args_overload(x: Int, y: Int):
 
 
 # COM: test parametric overload in the presence of keyword operands.
-def take_kw_param_infer[A: TrivialRegisterPassable, B: TrivialRegisterPassable](a: A, b: B):
+def take_kw_param_infer[
+    A: TrivialRegisterPassable, B: TrivialRegisterPassable
+](a: A, b: B):
     pass
 
 
@@ -45,7 +49,9 @@ def take_kw_param_infer[B: TrivialRegisterPassable](a: MyInt, b: B):
 
 
 # CHECK-LABEL: lit.fn @"test_kw_args_param_infer
-def test_kw_args_param_infer(x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt):
+def test_kw_args_param_infer(
+    x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt
+):
     # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer(x, b=f)
 

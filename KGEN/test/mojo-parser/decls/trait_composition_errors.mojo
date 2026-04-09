@@ -6,40 +6,49 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
+
 trait Trait1:
     def f1(self):
         ...
+
 
 trait Trait2:
     def f2(self):
         ...
 
+
 trait Trait3:
     def f3(self):
         ...
+
 
 comptime Traits12 = Trait1 & Trait2
 comptime Traits23 = Trait2 & Trait3
 comptime Traits123 = Trait1 & Trait2 & Trait3
 
+
 @fieldwise_init
-struct Struct4():
+struct Struct4:
     def f4(self):
         pass
+
 
 # expected-note @below {{function declared here}}
 def use1[T: Trait1](x: T):
     pass
+
 
 # Use aliased trait composition.
 # expected-note @below {{function declared here}}
 def use12Alias[T: Traits12](x: T):
     pass
 
+
 # Use direct trait composition.
 # expected-note @below {{function declared here}}
 def use12Direct[T: Trait1 & Trait2](x: T):
     pass
+
 
 # CHECK: lit.fn @"main_use()"
 def main_use():

@@ -26,7 +26,8 @@ def test_stable_fn_reference():
 
 
 def test_unstable_fn_reference():
-    """Referencing an unstable function (not calling it) should trigger a warning."""
+    """Referencing an unstable function (not calling it) should trigger a warning.
+    """
     # CHECK: warning: use of unstable API 'unstable_fn'
     var f = unstable_fn
     takes_fn_ref(f)

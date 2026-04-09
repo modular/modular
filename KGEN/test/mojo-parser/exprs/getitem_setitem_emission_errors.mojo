@@ -26,12 +26,17 @@ def test_getitem(var a: WeirdArray, f: float, x: Int):
 
 
 struct Settable:
-    def __setitem__(self, x: Int, y: Int): pass
+    def __setitem__(self, x: Int, y: Int):
+        pass
+
 
 struct NotSettable:
-    def __getitem__(self) -> Int: pass
+    def __getitem__(self) -> Int:
+        pass
+
     # expected-error @+1 {{__setitem__ must take at least one argument for the value to set}}
-    def __setitem__(self): pass
+    def __setitem__(self):
+        pass
 
 
 def test_setitem_kwargs(c: Settable, ns: NotSettable, x: Int):
@@ -66,6 +71,7 @@ struct VariadicIndexList:
 
     def __setitem__(mut self, *indices: Int, val: Int):
         pass
+
 
 # CHECK-LABEL: lit.fn @"testVariadicIndexList
 # MOCO-696: Support variadic length keys in __setitem__

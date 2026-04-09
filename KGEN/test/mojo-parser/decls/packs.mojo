@@ -107,7 +107,7 @@ def test_owned_trait():
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, {{.*}}, :param_list<!SomeTrait> Ts>>, imm *"rest`2"> mut|pack_vararg)
-def takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
+def takeInoutSomeTraitPack[*Ts: SomeTrait](mut *rest: *Ts):
     pass
 
 
@@ -153,7 +153,7 @@ def test_inout():
 
 struct not_nested_struct[*Ts: AnyType]:
     @implicit
-    def __init__(out self, mut*args: * Self.Ts):
+    def __init__(out self, mut *args: * Self.Ts):
         pass
 
 
@@ -245,7 +245,11 @@ def create_pack_direct(x: MyMemoryStruct, y: String):
     # Create Tuple
     var ptr_tuple = Tuple(UnsafePointer(to=x), UnsafePointer(to=y))
     comptime PackType = VariadicPack[
-        origin=origin_of(x, y), element_trait=AnyType, False, MyMemoryStruct, String
+        origin=origin_of(x, y),
+        element_trait=AnyType,
+        False,
+        MyMemoryStruct,
+        String,
     ]
     # CHECK: %[[PACK:.*]] = lit.ref.pack.from_pointer_pack
     # CHECK: lit.call {{.*}}@VariadicPack::@"__init__(!lit.ref.pack{{.*}}(%[[PACK]])
@@ -262,7 +266,11 @@ def create_pack_indirect(x: MyMemoryStruct, y: String):
     # Create Tuple
     var ptr_tuple = Tuple(UnsafePointer(to=x), UnsafePointer(to=y))
     comptime PackType = VariadicPack[
-        origin=origin_of(x, y), element_trait=AnyType, False, MyMemoryStruct, String
+        origin=origin_of(x, y),
+        element_trait=AnyType,
+        False,
+        MyMemoryStruct,
+        String,
     ]
     # CHECK: %[[PACK:.*]] = lit.ref.pack.from_pointer_pack
     # CHECK: %[[VAR_RAW_PACK:.*]] = lit.var.decl "raw_pack" var
@@ -280,15 +288,18 @@ def create_pack_indirect(x: MyMemoryStruct, y: String):
 # Forwarding
 # ===----------------------------------------------------------------------=== #
 
+
 # CHECK-LABEL: forward_pack
 def forward_pack[*Ts: AnyType](*args: *Ts):
     # CHECK: lit.call {{.*}}@"pack{{.*}}"
     pack(*args)
 
+
 # CHECK-LABEL: variadic_pack_intable_sink_borrowed
 # CHECK-SAME: read_mem|pack_vararg
 def variadic_pack_intable_sink_borrowed[*Ts: Intable](*elts: *Ts):
     pass
+
 
 # CHECK-LABEL: forward_variadic_pack_borrowed_intable
 # CHECK-SAME: [imm *[[IMP_ORIGIN_0:.*]]]
@@ -299,10 +310,12 @@ def forward_variadic_pack_borrowed_intable[*Ts: Intable](*pack: *Ts):
     # CHECK-SAME: :origin<0> *"pack.origin
     variadic_pack_intable_sink_borrowed(*pack)
 
+
 # CHECK-LABEL: variadic_pack_intable_sink_mutable
 # CHECK-SAME: mut|pack_vararg
 def variadic_pack_intable_sink_mutable[*Ts: Intable](mut *elts: *Ts):
     pass
+
 
 # CHECK-LABEL: forward_variadic_pack_mut_intable
 # CHECK-SAME: [imm *[[IMP_ORIGIN_0:.*]]]

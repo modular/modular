@@ -15,6 +15,7 @@ struct Foo:
     def __init__(out self):
         pass
 
+
 # expected-note @+1 {{function declared here}}
 def take_instance_param[a: Foo]():
     pass
@@ -40,7 +41,7 @@ def test_type_instead_of_instance() -> Foo:
 # COM: ensure we do not crash in the example below, but emit an error.
 struct MadeFromPack[*Ts: AnyType]:
     @implicit
-    def __init__(out self, *args: *Self.Ts):
+    def __init__(out self, *args: * Self.Ts):
         pass
 
 
@@ -48,7 +49,7 @@ struct WrapsMadeFromPack[*Ts: AnyType]:
     var data: MadeFromPack[*Self.Ts]
 
     @implicit
-    def __init__(out self, *args: *Self.Ts):
+    def __init__(out self, *args: * Self.Ts):
         # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, Ts]' value to 'MadeFromPack[Ts]'}}
         self.data = args
 
@@ -61,7 +62,7 @@ struct Constructible:
 
 def init_self_conversion():
     # expected-error @below {{cannot implicitly convert 'def __init__(arg: Int) -> Constructible' value to 'def() -> None'}}
-    comptime f: def () thin -> None = Constructible.__init__
+    comptime f: def() thin -> None = Constructible.__init__
 
 
 struct ConvertibleFromInt(ImplicitlyCopyable):
@@ -137,10 +138,13 @@ def test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
 def infer_rp_trivial[T: TrivialRegisterPassable](val: T):
     pass
 
-def stripping_raises():
-  def fn_raises() raises: pass
-  # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() -> None'}}
-  var fp : def () thin = fn_raises
 
-  # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() raises Int -> None'}}
-  var fp2 : def () thin raises Int = fn_raises
+def stripping_raises():
+    def fn_raises() raises:
+        pass
+
+    # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() -> None'}}
+    var fp: def() thin = fn_raises
+
+    # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() raises Int -> None'}}
+    var fp2: def() thin raises Int = fn_raises

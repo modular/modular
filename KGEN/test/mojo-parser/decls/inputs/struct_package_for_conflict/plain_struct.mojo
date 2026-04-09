@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 # @expected-note @below {{also referencing struct 'PlainStruct' declared here}}
 struct PlainStruct:
     pass

@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
+
 # Test: @explicit_destroy cannot be used on a trait that conforms to
 # ImplicitlyDestructible - this is an error at parse time.
 # expected-error @+2 {{@explicit_destroy cannot be used on a trait that conforms to ImplicitlyDestructible}}
