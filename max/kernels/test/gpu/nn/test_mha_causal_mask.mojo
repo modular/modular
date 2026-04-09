@@ -32,7 +32,6 @@ from nn.attention.mha_mask import (
     MHAMask,
     SlidingWindowCausalMask,
 )
-from nn.attention.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from std.testing import assert_almost_equal, assert_equal
 
 
@@ -143,21 +142,11 @@ def test[
         ),
     )
 
-    comptime config = MHAConfig[qkv_type](
-        UInt(num_heads),
-        UInt(depth),
-        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
-        num_pipeline_stages=UInt(4) if (
-            ctx.default_device_info == H100
-            or _is_sm10x_gpu(ctx.default_device_info)
-        ) else 2,
-    )
-
     @parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[config=config](
+        flash_attention(
             output_device,
             q_device,
             k_device,
@@ -197,13 +186,6 @@ def test[
         ),
     )
 
-    comptime config_baseline = MHAConfig[qkv_type](
-        UInt(num_heads),
-        UInt(depth),
-        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
-        num_pipeline_stages=2,
-        algorithm=FlashAttentionAlgorithm(2),
-    )
     mha_gpu_naive(
         q_device,
         k_device,
@@ -265,7 +247,7 @@ def test[
 
     for repeat in range(16):
         # test reproducibility
-        flash_attention[config=config](
+        flash_attention(
             output_device_ref,
             q_device,
             k_device,
