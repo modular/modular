@@ -135,21 +135,28 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
 
   std::string linker = *lldPath;
 
-  return std::unique_ptr<ObjectCompiler>(
-      new ObjectCompiler(std::move(*transformCache), std::move(options), isJIT,
-                         context, linker, std::move(pmOptions)));
+  // Load the plugin if compiling to a plugin backend.
+  std::unique_ptr<Plugin> plugin = nullptr;
+  if (isPluginBackend(options)) {
+    plugin = std::make_unique<Plugin>();
+  }
+
+  return std::unique_ptr<ObjectCompiler>(new ObjectCompiler(
+      std::move(*transformCache), std::move(options), isJIT, context, linker,
+      std::move(plugin), std::move(pmOptions)));
 }
 
 ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
                                CompilationOptions options, bool isJIT,
                                MLIRContext &context, const std::string &linker,
+                               std::unique_ptr<Plugin> plugin,
                                PassManagerConfigOptions pmOptions)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
       options(std::move(options)), isJIT(isJIT),
       pmOptions(std::move(pmOptions)), context(context),
-      runtime(*loadContext(&context)->get<AsyncRT::Runtime>()), linker(linker) {
-}
+      runtime(*loadContext(&context)->get<AsyncRT::Runtime>()), linker(linker),
+      plugin(std::move(plugin)) {}
 
 //===----------------------------------------------------------------------===//
 // Time Trace Instrumentation
@@ -977,7 +984,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   llvmOptions.globalCtorFnName = ExecutionEngine::getGlobalCtorFnName();
   llvmOptions.globalDtorFnName = ExecutionEngine::getGlobalDtorFnName();
 
-  buildLowerToLLVMPipeline(mgr, llvmOptions);
+  buildLowerToLLVMPipeline(mgr, llvmOptions, plugin.get());
 
   if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llvm-dialect",
                              module, ".mlir")))
@@ -1846,7 +1853,8 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
     llvm::Module &inputModule, Location loc,
     RCRef<Cache::TransformCache> transformCache, size_t moduleIdx,
     AsyncRT::Runtime &runtime, CompilationOptions options, bool isJIT,
-    bool shouldDeserialize, EmitAs emissionKind, std::string &linker) {
+    bool shouldDeserialize, EmitAs emissionKind, std::string &linker,
+    const std::unique_ptr<Plugin> &plugin) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "compileLLVMModuleToObject(");
   *keyBuf << ")";
@@ -1863,15 +1871,15 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
   auto runTransformation = [loc, moduleIdx, isJIT, options, &runtime,
                             emissionKind, keyBuf = keyBuf.copy(), &inputModule,
-                            nonBitcodeKeySize, shouldDeserialize,
-                            &linker](WriteableBufferRef buf,
+                            nonBitcodeKeySize, shouldDeserialize, &linker,
+                            &plugin](WriteableBufferRef buf,
                                      AsyncRT::AnyAsyncValueRef chain) mutable {
     auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
 
     chain.andThenAsync([loc, &runtime, emissionKind, output = output.copy(),
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
                         isJIT, moduleIdx, &inputModule, nonBitcodeKeySize,
-                        shouldDeserialize, &linker]() mutable {
+                        shouldDeserialize, &linker, &plugin]() mutable {
       CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
 
       LLVMModuleAndContext deserializedModule;
@@ -2069,8 +2077,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
           std::string moduleName = (name + Twine(moduleIdx)).str();
 
           if (isPluginBackend(options)) {
-            Plugin plugin;
-            auto createSharedObjectFn = plugin.getCreateSharedObjectFn();
+            auto createSharedObjectFn = plugin->getCreateSharedObjectFn();
             if (createSharedObjectFn.isError()) {
               return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                   createSharedObjectFn.takeError(), loc));
@@ -2120,7 +2127,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     std::optional<size_t> moduleIdx, AsyncRT::Runtime &runtime,
     CompilationOptions options, bool isJIT,
     DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds,
-    std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs) {
+    std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs,
+    const std::unique_ptr<Plugin> &plugin) {
   auto resultBufs =
       AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
   auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(runtime);
@@ -2130,8 +2138,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
                                    produceModule = std::move(produceModule),
                                    loc, isJIT, options, &runtime,
                                    transformCache = transformCache.copy(),
-                                   &kernelEmissionKinds, &linker,
-                                   &bitcodeLibs]() mutable {
+                                   &kernelEmissionKinds, &linker, &bitcodeLibs,
+                                   &plugin]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
 
     // Materialize the module.
@@ -2175,7 +2183,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       emissionKinds.push_back(kind);
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, runtime, options, isJIT,
-          shouldDeserialize, kind, linker));
+          shouldDeserialize, kind, linker, plugin));
     }
 
     if (shouldRunExtraAsm) {
@@ -2186,7 +2194,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       // codegen result.
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, runtime, options, isJIT,
-          shouldDeserialize, EmitAs::ASM, linker));
+          shouldDeserialize, EmitAs::ASM, linker, plugin));
     }
 
     auto kernelBufs =
@@ -2272,7 +2280,7 @@ ObjectCompiler::emitGPUKernels(
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
         auto result = lowerLLVMModuleToObject(
             std::move(produceModule), moduleLoc, transformCache, idx, runtime,
-            options, isJIT, kernelEmissionKinds, linker, bitcodeLibs);
+            options, isJIT, kernelEmissionKinds, linker, bitcodeLibs, plugin);
         cachedResults.push_back(std::move(result.first));
         cachedResults.push_back(std::move(result.second));
       };

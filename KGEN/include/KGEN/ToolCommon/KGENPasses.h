@@ -8,6 +8,7 @@
 #define KGEN_TOOLCOMMON_KGENPASSES_H
 
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/Support/PluginUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/ADT/DenseStringMap.h"
 #include "Support/LLVMForwardDecls.h"
@@ -209,6 +210,22 @@ std::unique_ptr<mlir::Pass> createAutomaticInline(
 std::unique_ptr<mlir::Pass> createReorderParamOps(bool disableVerifier);
 
 //===----------------------------------------------------------------------===//
+// LowerGlobalPOPToLLVM
+//===----------------------------------------------------------------------===//
+
+/// Create an instance of the LowerGlobalPOPToLLVM pass that takes
+/// a plugin.
+std::unique_ptr<mlir::Pass> createLowerGlobalPOPToLLVM(const Plugin *plugin);
+
+//===----------------------------------------------------------------------===//
+// LowerPOPToLLVM
+//===----------------------------------------------------------------------===//
+
+/// Create an instance of the LowerPOPToLLVM pass that takes
+/// a plugin.
+std::unique_ptr<mlir::Pass> createLowerPOPToLLVM(const Plugin *plugin);
+
+//===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline
 //===----------------------------------------------------------------------===//
 /// Options for the KGEN to LLVM pipeline.
@@ -272,7 +289,7 @@ struct LowerToLLVMOptions
 /// Register the lower to LLVM pipeline.
 void registerLowerToLLVMPipeline();
 
-///
+/// Utils for emission options.
 ErrorOrSuccess parseEmissionOptions(EmissionOptions emissionOptions);
 ErrorOrSuccess resetEmissionOptions(EmissionOptions emissionOptions);
 

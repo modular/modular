@@ -12,6 +12,7 @@
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/Support/PluginUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/PassManagerConfigOptions.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -111,6 +112,7 @@ private:
   ObjectCompiler(
       RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
       bool isJIT, MLIRContext &context, const std::string &linker,
+      std::unique_ptr<Plugin> plugin,
       PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
@@ -175,6 +177,8 @@ private:
   /// Current bitcode libraries with usage tracking.
   /// Each pair contains: (used_flag, library_attribute).
   SmallVector<std::pair<bool, Attribute>> bitcodeLibs;
+
+  std::unique_ptr<Plugin> plugin;
 };
 
 /// Setup the machine properties from the provided target.

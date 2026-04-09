@@ -3367,10 +3367,17 @@ struct LowerPOPToLLVMPass
     : public KGEN::impl::LowerPOPToLLVMBase<LowerPOPToLLVMPass> {
   using LowerPOPToLLVMBase::LowerPOPToLLVMBase;
 
+  LowerPOPToLLVMPass() : plugin(nullptr) {}
+
+  LowerPOPToLLVMPass(const Plugin *plugin) : plugin(plugin) {}
+
   void runOnOperation() override;
 
   /// Verify that the operation is a function and has no nested CFGs.
   FailureOr<mlir::FunctionOpInterface> validateOperation();
+
+private:
+  const Plugin *plugin;
 };
 } // namespace
 
@@ -3466,9 +3473,17 @@ void LowerPOPToLLVMPass::runOnOperation() {
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
+  std::unique_ptr<Plugin> passPlugin = nullptr;
   if (isPluginBackend(targetInfo.getTriple())) {
-    Plugin plugin;
-    auto populatePatternsFn = plugin.getPopulateLowerPOPToLLVMPatternsFn();
+    if (!plugin) {
+      // Create a new Plugin if plugin is not set. This happens
+      // when running lower-to-llvm as standalone pass with kgen tools where
+      // there is not a ObjectCompiler on top to share the plugin.
+      passPlugin = std::make_unique<Plugin>();
+      plugin = passPlugin.get();
+    }
+
+    auto populatePatternsFn = plugin->getPopulateLowerPOPToLLVMPatternsFn();
     // Don't fail if plugin is not loaded or doesn't provide the pattern
     // population function, just keep continuing with the default patterns. We
     // can make this more strict when we have better support with the plugin
@@ -3867,7 +3882,14 @@ struct LowerGlobalPOPToLLVMPass
     : public KGEN::impl::LowerGlobalPOPToLLVMBase<LowerGlobalPOPToLLVMPass> {
   using LowerGlobalPOPToLLVMBase::LowerGlobalPOPToLLVMBase;
 
+  LowerGlobalPOPToLLVMPass() : plugin(nullptr) {}
+
+  LowerGlobalPOPToLLVMPass(const Plugin *plugin) : plugin(plugin) {}
+
   void runOnOperation() override;
+
+private:
+  const Plugin *plugin = nullptr;
 };
 
 } // namespace
@@ -3889,6 +3911,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
                     "could not find an enclosing target specification");
     return signalPassFailure();
   }
+
   POPToLLVMTypeConverter typeConverter(targetInfo);
   InterpreterMemoryConverter imc(symtab, typeConverter);
 
@@ -3932,10 +3955,18 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
 
+  std::unique_ptr<Plugin> passPlugin = nullptr;
   if (isPluginBackend(targetInfo.getTriple())) {
-    Plugin plugin;
+    if (!plugin) {
+      // Create a new Plugin if plugin is not set. This happens
+      // when running lower-to-llvm as a standalone pass with kgen tools where
+      // there is not a ObjectCompiler on top to share the plugin.
+      passPlugin = std::make_unique<Plugin>();
+      plugin = passPlugin.get();
+    }
+
     auto populatePatternsFn =
-        plugin.getPopulateLowerGlobalPOPToLLVMPatternsFn();
+        plugin->getPopulateLowerGlobalPOPToLLVMPatternsFn();
     if (!populatePatternsFn.isError()) {
       // Don't fail if plugin is not loaded or doesn't provide the pattern
       // population function, just keep continuing with the default patterns.
@@ -3945,7 +3976,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
                                        targetInfo))) {
         mlir::emitError(
             theModule->getLoc(),
-            "failed to populate plugin patterns for LowerGlobalPOPToLLVM");
+            "failed to load populate plugin patterns for LowerGlobalPOPToLLVM");
         return signalPassFailure();
       }
     }
@@ -3954,4 +3985,13 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
+}
+
+std::unique_ptr<mlir::Pass>
+KGEN::createLowerGlobalPOPToLLVM(const Plugin *plugin) {
+  return std::make_unique<LowerGlobalPOPToLLVMPass>(plugin);
+}
+
+std::unique_ptr<mlir::Pass> KGEN::createLowerPOPToLLVM(const Plugin *plugin) {
+  return std::make_unique<LowerPOPToLLVMPass>(plugin);
 }

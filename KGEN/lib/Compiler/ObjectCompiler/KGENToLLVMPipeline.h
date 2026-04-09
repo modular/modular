@@ -7,6 +7,7 @@
 #ifndef KGEN_COMPILER_OBJECTCOMPILER_KGENTOLLVMPIPELINE_H
 #define KGEN_COMPILER_OBJECTCOMPILER_KGENTOLLVMPIPELINE_H
 
+#include "KGEN/Support/PluginUtils.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/LLVMForwardDecls.h"
 
@@ -22,6 +23,10 @@ namespace KGEN {
 /// of LLVM lowerings, and the canonicalizer again.
 void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                               const LowerToLLVMOptions &options);
+
+void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
+                              const LowerToLLVMOptions &options,
+                              const Plugin *plugin);
 
 } // namespace KGEN
 } // namespace M

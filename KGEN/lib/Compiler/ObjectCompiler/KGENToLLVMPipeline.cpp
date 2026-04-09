@@ -18,6 +18,12 @@ using namespace M;
 
 void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                     const LowerToLLVMOptions &options) {
+  buildLowerToLLVMPipeline(pm, options, nullptr);
+}
+
+void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
+                                    const LowerToLLVMOptions &options,
+                                    const Plugin *plugin) {
   using mlir::LLVM::LLVMFuncOp;
 
   // Run all LLVM lowering passes.
@@ -25,9 +31,9 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
       options.globalCtorFnName, options.globalDtorFnName}));
   pm.addNestedPass<LLVMFuncOp>(createKGENVerifierPass());
   pm.addPass(createLowerRuntimeClosures());
-  pm.addPass(createLowerGlobalPOPToLLVM());
+  pm.addPass(createLowerGlobalPOPToLLVM(plugin));
   pm.addNestedPass<LLVMFuncOp>(createLegalizePOPOperations());
-  pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
+  pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM(plugin));
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
   pm.addNestedPass<LLVMFuncOp>(mlir::createReconcileUnrealizedCastsPass());
   pm.addNestedPass<LLVMFuncOp>(createLowerSuspensionPoints());
@@ -47,5 +53,7 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
 
 void KGEN::registerLowerToLLVMPipeline() {
   mlir::PassPipelineRegistration<LowerToLLVMOptions>(
-      "lower-to-llvm", "Lower KGEN IR to LLVM IR.", buildLowerToLLVMPipeline);
+      "lower-to-llvm", "Lower KGEN IR to LLVM IR.",
+      static_cast<void (*)(mlir::OpPassManager &, const LowerToLLVMOptions &)>(
+          buildLowerToLLVMPipeline));
 }
