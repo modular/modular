@@ -586,7 +586,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto genAttr = dyn_cast<FuncLiteralAttr>(param)) {
+  if (auto genAttr = dyn_cast<UnknownAttr>(param);
+      genAttr && isa<FuncLiteralType>(genAttr.getType())) {
     os << "fn_literal";
     return;
   }
