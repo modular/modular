@@ -353,7 +353,7 @@ def _load_pipeline(
     # Diffusers pads tokens to 512 but the pipeline trims embeddings to
     # embed_seq_len (226 for Wan) before cross-attention.
     max_length = getattr(args, "max_length", None) or 512
-    tokenizer = PixelGenerationTokenizer(
+    tokenizer = arch.tokenizer(
         model_path=args.model,
         pipeline_config=config,
         subfolder="tokenizer",
