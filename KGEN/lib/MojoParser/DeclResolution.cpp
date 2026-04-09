@@ -1484,6 +1484,7 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
     switch (capture.getCaptureConvention()) {
     case CaptureConvention::kConventionCopy:
     case CaptureConvention::kConventionTrivialCopy:
+    case CaptureConvention::kConventionRef:
     case CaptureConvention::kConventionRead:
     case CaptureConvention::kConventionMut:
       continue;

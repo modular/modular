@@ -1160,10 +1160,13 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
         return CaptureConvention::kConventionMove;
       else
         return CaptureConvention::kConventionCopy;
-    } else if (p.consumeIfSoftIdentifier("mut"))
+    } else if (p.consumeIfSoftIdentifier("mut")) {
       return CaptureConvention::kConventionMut;
-    else if (p.consumeIfSoftIdentifier("read"))
+    } else if (p.consumeIfSoftIdentifier("read")) {
       return CaptureConvention::kConventionRead;
+    } else if (p.consumeIf(Token::kw_ref)) {
+      return CaptureConvention::kConventionRef;
+    }
 
     return CaptureConvention::kConventionUnspecified;
   };

@@ -98,6 +98,26 @@ def casts(mut byRefMut: String):
 
 # // -----
 
+# COM: Verify ref capture preserves original mutability
+
+def use(ref a: String, ref b: String, ref c: String):
+    pass
+
+
+# COM: Capture-all-by-ref preserves each value's original mutability
+# CHECK-LABEL: lit.fn @"captureAllByRef
+def captureAllByRef(A: String, mut B: String, ref C: String):
+    # CHECK-NOT: lit.ref.immut
+    # CHECK: lit.closure.init{{.*}}%A[ref: imm
+    # CHECK-SAME: %B[ref: mut
+    # CHECK-SAME: %C[ref: mut=
+    def refAll() unified {ref}:
+        use(A, B, C)
+        pass
+
+
+# // -----
+
 # COM: Ensure "capture all by" emits the correct IR.
 
 def takeIt[T: def () unified -> String, //](state: T):

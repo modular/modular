@@ -64,8 +64,9 @@ enum class CaptureConvention : uint8_t {
   kConventionMut = 1,
   kConventionCopy = 2,
   kConventionRead = 3,
-  kConventionTrivialCopy = 4,
-  kConventionUnspecified = 5
+  kConventionRef = 4,
+  kConventionTrivialCopy = 5,
+  kConventionUnspecified = 6
 };
 
 struct ParsedConstraint {

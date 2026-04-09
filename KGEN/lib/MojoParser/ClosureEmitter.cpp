@@ -2033,7 +2033,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     switch (captureConvention) {
     case CaptureConvention::kConventionUnspecified:
     case CaptureConvention::kConventionMut:
-    case CaptureConvention::kConventionRead: {
+    case CaptureConvention::kConventionRead:
+    case CaptureConvention::kConventionRef: {
       // Mutability casts should have been emitted during parse time.
       if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
         origins.push_back(refType.getOrigin());
@@ -2344,6 +2345,39 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   DebugInfo::DIBuilder::ScopeGuard diGuard;
   if (shared.diBuilder)
     diGuard = shared.diBuilder->pushScopeGuard(parentFn.getLocScope());
+
+  auto captureByRef = [&](CValue value,
+                          std::optional<bool> mutability) -> CValue {
+    // Ensure we are not capturing an immutable reference by mutable
+    // reference.
+    if (auto refType = dyn_cast<RefType>(value.getType().mlirType)) {
+      // If the mutability is not specified or the reference type match the
+      // specified mutability, return the original value.
+      OriginType originType = refType.getOriginType();
+      if (!mutability.has_value() || originType.isMutableKnown(*mutability))
+        return value;
+
+      if (originType.isMutableKnown(false)) {
+        // mutable capture of an immutable reference, error.
+        shared.emitError(location, "Cannot capture ")
+            << name << " by mut because it could be immutable";
+        return {};
+      }
+
+      if (originType.isMutableKnown(true)) {
+        // convert a mut ref to immut ref
+        auto refImmutOp = LIT::RefImmutOp::create(
+            *emitter.builder, parentFn.getLoc(), valueInParent.getMlirValue());
+        return MBValue(refImmutOp->getResult(0));
+      }
+    }
+
+    // TODO: shouldn't we emit an error here? or at least we should emit a
+    // MLValue here before capturing? There are code depending on this at the
+    // moment that we should revisit.
+    return value;
+  };
+
   switch (parsedConvention) {
   case CaptureConvention::kConventionMove: {
     Type type = valueInParent.getType().mlirType;
@@ -2407,34 +2441,18 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     }
     break;
   }
-  case CaptureConvention::kConventionMut: {
+  case CaptureConvention::kConventionMut:
+  case CaptureConvention::kConventionRead:
+  case CaptureConvention::kConventionRef: {
     convention = parsedConvention;
-    captureValue = valueInParent;
-    // Ensure we are not capturing an immutable reference by mutable
-    // reference.
-    if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
-      OriginType originType = refType.getOriginType();
-      if (originType.isMutableKnown(false)) {
-        shared.emitError(location, "Cannot capture ")
-            << name << " by mut because the value is immutable";
-        return nullptr;
-      }
-    }
-    break;
-  }
-  case CaptureConvention::kConventionRead: {
-    convention = parsedConvention;
-    captureValue = valueInParent;
-    if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
-      OriginType originType = refType.getOriginType();
-      if (originType.isMutableKnown(true)) {
-        auto refImmutOp = LIT::RefImmutOp::create(
-            *emitter.builder, parentFn.getLoc(), valueInParent.getMlirValue());
-        captureValue = MBValue(refImmutOp->getResult(0));
-      } else {
-        captureValue = valueInParent;
-      }
-    }
+    auto mutability = [convention]() -> std::optional<bool> {
+      if (convention == CaptureConvention::kConventionRef)
+        return std::nullopt;
+      return convention == CaptureConvention::kConventionMut;
+    }();
+    captureValue = captureByRef(valueInParent, mutability);
+    if (!captureValue)
+      return nullptr;
     break;
   }
   default:
