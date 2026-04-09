@@ -607,10 +607,32 @@ def parse_spec_decode_metrics(raw_text: str) -> SpecDecodeMetrics | None:
     )
 
 
+@dataclass
+class SpecDecodeStats:
+    """Speculative decoding statistics for a benchmark window.
+
+    Attributes:
+        num_drafts: Number of draft sequences generated.
+        draft_tokens: Total number of draft tokens generated.
+        accepted_tokens: Total number of draft tokens accepted.
+        acceptance_rate: Percentage of draft tokens accepted.
+        acceptance_length: Average number of tokens accepted per draft
+            (including the verified token).
+        per_position_acceptance_rates: Acceptance rate at each draft position.
+    """
+
+    num_drafts: int
+    draft_tokens: int
+    accepted_tokens: int
+    acceptance_rate: float
+    acceptance_length: float
+    per_position_acceptance_rates: list[float]
+
+
 def calculate_spec_decode_stats(
     metrics_before: SpecDecodeMetrics,
     metrics_after: SpecDecodeMetrics,
-) -> dict[str, Any] | None:
+) -> SpecDecodeStats | None:
     """Compute benchmark-window speculative decoding stats from metric deltas.
 
     Args:
@@ -618,8 +640,8 @@ def calculate_spec_decode_stats(
         metrics_after: Snapshot taken after the benchmark window.
 
     Returns:
-        A dict of computed stats (acceptance rate, length, per-position rates),
-        or ``None`` when there were no draft tokens in the window.
+        A ``SpecDecodeStats`` object with computed stats, or ``None`` when
+        there were no draft tokens in the window.
     """
     delta_drafts = metrics_after.num_drafts - metrics_before.num_drafts
     delta_draft_tokens = (
@@ -647,11 +669,11 @@ def calculate_spec_decode_stats(
     acceptance_length = (
         1 + delta_accepted / delta_drafts if delta_drafts > 0 else 0.0
     )
-    return {
-        "num_drafts": delta_drafts,
-        "draft_tokens": delta_draft_tokens,
-        "accepted_tokens": delta_accepted,
-        "acceptance_rate": acceptance_rate,
-        "acceptance_length": acceptance_length,
-        "per_position_acceptance_rates": per_pos_rates,
-    }
+    return SpecDecodeStats(
+        num_drafts=delta_drafts,
+        draft_tokens=delta_draft_tokens,
+        accepted_tokens=delta_accepted,
+        acceptance_rate=acceptance_rate,
+        acceptance_length=acceptance_length,
+        per_position_acceptance_rates=per_pos_rates,
+    )

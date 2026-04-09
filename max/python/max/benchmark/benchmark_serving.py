@@ -96,6 +96,7 @@ from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PixelGenerationBenchmarkMetrics,
     SpecDecodeMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
     ThroughputMetrics,
     calculate_spec_decode_stats,
@@ -391,22 +392,22 @@ def _is_vllm_backend(backend: Backend) -> bool:
 
 def _add_spec_decode_result(
     result: dict[str, Any],
-    spec_decode_stats: dict[str, Any] | None,
+    spec_decode_stats: SpecDecodeStats | None,
 ) -> None:
     """Add speculative decoding stats to the JSON result."""
     if spec_decode_stats is None:
         return
-    result["spec_decode_acceptance_rate"] = spec_decode_stats["acceptance_rate"]
-    result["spec_decode_acceptance_length"] = spec_decode_stats[
-        "acceptance_length"
-    ]
-    result["spec_decode_num_drafts"] = int(spec_decode_stats["num_drafts"])
-    result["spec_decode_draft_tokens"] = int(spec_decode_stats["draft_tokens"])
-    result["spec_decode_accepted_tokens"] = int(
-        spec_decode_stats["accepted_tokens"]
+    result["spec_decode_acceptance_rate"] = spec_decode_stats.acceptance_rate
+    result["spec_decode_acceptance_length"] = (
+        spec_decode_stats.acceptance_length
     )
-    result["spec_decode_per_position_acceptance_rates"] = spec_decode_stats.get(
-        "per_position_acceptance_rates", []
+    result["spec_decode_num_drafts"] = int(spec_decode_stats.num_drafts)
+    result["spec_decode_draft_tokens"] = int(spec_decode_stats.draft_tokens)
+    result["spec_decode_accepted_tokens"] = int(
+        spec_decode_stats.accepted_tokens
+    )
+    result["spec_decode_per_position_acceptance_rates"] = (
+        spec_decode_stats.per_position_acceptance_rates
     )
 
 
@@ -502,7 +503,7 @@ def print_benchmark_summary(
     achieved_request_rate: float,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
-    spec_decode_stats: dict[str, Any] | None = None,
+    spec_decode_stats: SpecDecodeStats | None = None,
     lora_manager: LoRABenchmarkManager | None = None,
 ) -> None:
     """Print benchmark summary for text-generation and pixel-generation."""
@@ -627,32 +628,28 @@ def print_benchmark_summary(
         print_section(title="Speculative Decoding")
         print(
             "{:<40} {:<10.2f}".format(
-                "Acceptance rate (%):", spec_decode_stats["acceptance_rate"]
+                "Acceptance rate (%):", spec_decode_stats.acceptance_rate
             )
         )
         print(
             "{:<40} {:<10.2f}".format(
-                "Acceptance length:", spec_decode_stats["acceptance_length"]
+                "Acceptance length:", spec_decode_stats.acceptance_length
+            )
+        )
+        print(
+            "{:<40} {:<10}".format("Drafts:", int(spec_decode_stats.num_drafts))
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Draft tokens:", int(spec_decode_stats.draft_tokens)
             )
         )
         print(
             "{:<40} {:<10}".format(
-                "Drafts:", int(spec_decode_stats["num_drafts"])
+                "Accepted tokens:", int(spec_decode_stats.accepted_tokens)
             )
         )
-        print(
-            "{:<40} {:<10}".format(
-                "Draft tokens:", int(spec_decode_stats["draft_tokens"])
-            )
-        )
-        print(
-            "{:<40} {:<10}".format(
-                "Accepted tokens:", int(spec_decode_stats["accepted_tokens"])
-            )
-        )
-        per_pos_rates = spec_decode_stats.get(
-            "per_position_acceptance_rates", []
-        )
+        per_pos_rates = spec_decode_stats.per_position_acceptance_rates
         if per_pos_rates:
             print("Per-position acceptance (%):")
             for pos, rate in enumerate(per_pos_rates):
@@ -1706,7 +1703,7 @@ def _build_text_generation_result(
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None,
-    spec_decode_stats: dict[str, Any] | None,
+    spec_decode_stats: SpecDecodeStats | None,
 ) -> tuple[dict[str, object], BenchmarkMetrics]:
     """Compute metrics and build the result dict for text-generation tasks."""
     if not _is_text_generation_outputs(outputs):
