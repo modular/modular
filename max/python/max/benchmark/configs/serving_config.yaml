@@ -40,6 +40,7 @@ benchmark_config:
 
   # Request configuration (serving-specific)
   max_concurrency: null  # Maximum concurrent requests (optimized for serving benchmarks)
+  max_concurrent_conversations: null  # Max conversation workers for KV-cache stress mode; must be >= max_concurrency
   lora: null  # Optional LoRA name
 
   # Workload configuration (serving-specific)

@@ -433,6 +433,7 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     total_input: int
     total_output: int
     nonempty_response_chunks: int
+    max_concurrent_conversations: int | None = None
 
     input_throughput: ThroughputMetrics
     output_throughput: ThroughputMetrics
@@ -499,6 +500,7 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
         d = super().to_result_dict()
         d["total_input_tokens"] = self.total_input
         d["total_output_tokens"] = self.total_output
+        d["max_concurrent_conversations"] = self.max_concurrent_conversations
         return d
 
     def confidence_warnings(self) -> list[str]:

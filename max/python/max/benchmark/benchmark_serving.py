@@ -36,6 +36,11 @@ from typing import TYPE_CHECKING, Annotated, Any, TypeGuard
 from urllib.parse import urlparse
 from uuid import uuid4
 
+try:
+    from asyncio import TaskGroup  # type: ignore[attr-defined]  # added in 3.11
+except ImportError:
+    from taskgroup import TaskGroup  # Python < 3.11 backport
+
 import numpy as np
 import yaml
 from cyclopts import App, Parameter
@@ -554,6 +559,16 @@ def print_benchmark_summary(
         )
     )
     print("{:<40} {:<10}".format("Max Concurrency:", metrics.max_concurrency))
+    if (
+        isinstance(metrics, BenchmarkMetrics)
+        and metrics.max_concurrent_conversations is not None
+    ):
+        print(
+            "{:<40} {:<10}".format(
+                "Max Concurrent Conversations:",
+                metrics.max_concurrent_conversations,
+            )
+        )
 
     if isinstance(metrics, BenchmarkMetrics):
         print_section(title="Client Experience Metrics")
@@ -1005,6 +1020,7 @@ def calculate_metrics(
     skip_first_n_requests: int,
     skip_last_n_requests: int,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None = None,
 ) -> tuple[BenchmarkMetrics, list[int]]:
@@ -1109,6 +1125,7 @@ def calculate_metrics(
         total_output=sum(actual_output_lens),
         nonempty_response_chunks=nonempty_response_chunks,
         max_concurrency=max_concurrency or len(outputs),
+        max_concurrent_conversations=max_concurrent_conversations,
         request_throughput=completed / dur_s,
         # Use specialized metric classes that handle percentile calculations automatically
         input_throughput=ThroughputMetrics(
@@ -1368,6 +1385,7 @@ async def chat_session_driver(
 
 
 async def run_single_turn_benchmark(
+    *,
     input_requests: Sequence[SampledRequest],
     benchmark_task: BenchmarkTask,
     request_rate: float,
@@ -1444,6 +1462,7 @@ async def run_single_turn_benchmark(
 
 
 async def run_multiturn_benchmark(
+    *,
     chat_sessions: Sequence[ChatSession],
     max_requests: int,
     semaphore: asyncio.Semaphore | None,
@@ -1543,6 +1562,142 @@ async def run_multiturn_benchmark(
         )
 
     return [output for sublist in session_outputs for output in sublist]
+
+
+class _ConcurrentTurnsRequestDriver(RequestDriver):
+    """Wraps a RequestDriver to cap the number of concurrent in-flight turns.
+
+    Acquires a semaphore slot before issuing each turn request and releases it
+    as soon as the response returns. Inter-turn delays (e.g. delay_until_next_message)
+    fall outside the slot's hold window, so idle user-think-time does not consume
+    concurrency capacity.
+
+    With many concurrent conversations, a turn request may wait in the semaphore
+    backlog long enough for the deadline to expire. Cancel it when stale.
+    """
+
+    def __init__(
+        self,
+        request_driver: RequestDriver,
+        semaphore: asyncio.Semaphore,
+        benchmark_should_end_time: int | None = None,
+    ) -> None:
+        super().__init__(tokenizer=request_driver.tokenizer)
+        self._request_driver = request_driver
+        self._semaphore = semaphore
+        self._benchmark_should_end_time = benchmark_should_end_time
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> BaseRequestFuncOutput:
+        async with self._semaphore:
+            if (
+                self._benchmark_should_end_time is not None
+                and time.perf_counter_ns() >= self._benchmark_should_end_time
+            ):
+                return request_func_input.get_output_type()(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
+            return await self._request_driver.request(request_func_input)
+
+
+async def run_kv_cache_stress_benchmark(
+    *,
+    chat_sessions: Sequence[ChatSession],
+    max_requests: int,
+    max_concurrent_conversations: int,
+    semaphore: asyncio.Semaphore | None,
+    benchmark_should_end_time: int | None,
+    request_driver: RequestDriver,
+    model_id: str,
+    api_url: str,
+    tokenizer: PreTrainedTokenizerBase,
+    skip_first_n_requests: int,
+    ignore_first_turn_stats: bool,
+    lora_manager: LoRABenchmarkManager | None,
+    warmup_delay_ms: float,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
+) -> list[RequestFuncOutput]:
+    """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
+
+    Two independent concurrency controls:
+
+    - `max_concurrent_conversations`: at most this many chat sessions are
+      driven at once. Workers pick up the next session from the queue when one
+      finishes, growing the server's KV-cache footprint.
+    - `semaphore` (`max_concurrency` in the CLI): caps the number of turn
+      requests in-flight globally across all concurrent sessions. Workers that
+      cannot acquire a turn slot block without sending a request; the session's
+      `session_id` and client-side conversation state are preserved in the
+      backlog until a slot becomes available.
+
+    NOTE: TTFT reflects pure server-side cost (KV re-computation or reloading)
+          since the timer starts only after the semaphore is acquired. Backlog
+          wait reduces each session's firing cadence beyond what
+          `delay_between_chat_turns` specifies — sessions are less frequent
+          than configured.
+    """
+    request_counter = RequestCounter(
+        max_requests=max_requests,
+        total_sent_requests=0,
+    )
+
+    inflight_limited_driver: RequestDriver = (
+        _ConcurrentTurnsRequestDriver(
+            request_driver, semaphore, benchmark_should_end_time
+        )
+        if semaphore is not None
+        else request_driver
+    )
+
+    # Queue holds (original_index, session) pairs so LoRA assignment is stable.
+    session_queue: asyncio.Queue[tuple[int, ChatSession]] = asyncio.Queue()
+    for idx, session in enumerate(chat_sessions):
+        await session_queue.put((idx, session))
+
+    num_workers = min(max_concurrent_conversations, len(chat_sessions))
+    worker_outputs: list[list[RequestFuncOutput]] = [
+        [] for _ in range(num_workers)
+    ]
+
+    async def _conversation_worker(worker_idx: int) -> None:
+        # Stagger workers to avoid thundering-herd at startup.
+        if warmup_delay_ms > 0:
+            await asyncio.sleep(worker_idx * warmup_delay_ms / 1000)
+
+        while True:
+            try:
+                idx, chat_session = session_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+
+            lora_id = (
+                lora_manager.get_lora_for_request(idx) if lora_manager else None
+            )
+            session_outputs = await chat_session_driver(
+                model_id=model_id if lora_id is None else lora_id,
+                api_url=api_url,
+                request_driver=inflight_limited_driver,
+                request_counter=request_counter,
+                chat_session=chat_session,
+                max_chat_len=tokenizer.model_max_length,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                skip_session_count=skip_first_n_requests,
+                ignore_first_turn_stats=ignore_first_turn_stats,
+                benchmark_should_end_time=benchmark_should_end_time,
+            )
+
+            worker_outputs[worker_idx].extend(session_outputs)
+
+    async with TaskGroup() as tg:
+        for i in range(num_workers):
+            tg.create_task(_conversation_worker(i))
+
+    return [output for worker in worker_outputs for output in worker]
 
 
 def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
@@ -1701,6 +1856,7 @@ def _build_text_generation_result(
     skip_first_n_requests: int,
     skip_last_n_requests: int,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None,
     spec_decode_stats: SpecDecodeStats | None,
@@ -1720,6 +1876,7 @@ def _build_text_generation_result(
         skip_first_n_requests=skip_first_n_requests,
         skip_last_n_requests=skip_last_n_requests,
         max_concurrency=max_concurrency,
+        max_concurrent_conversations=max_concurrent_conversations,
         collect_gpu_stats=collect_gpu_stats,
         server_metrics=server_metrics,
     )
@@ -1756,6 +1913,7 @@ def _build_text_generation_result(
         gpu_metrics=gpu_metrics,
         cpu_metrics=cpu_metrics,
         max_concurrency=max_concurrency,
+        max_concurrent_conversations=max_concurrent_conversations,
         collect_gpu_stats=collect_gpu_stats,
         server_metrics=server_metrics,
     )
@@ -1771,6 +1929,7 @@ def _add_steady_state_result(
     gpu_metrics: list[dict[str, GPUStats]] | None,
     cpu_metrics: CPUMetrics | None,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None,
 ) -> None:
@@ -1812,6 +1971,7 @@ def _add_steady_state_result(
                 skip_first_n_requests=0,
                 skip_last_n_requests=0,
                 max_concurrency=max_concurrency,
+                max_concurrent_conversations=max_concurrent_conversations,
                 collect_gpu_stats=collect_gpu_stats,
                 server_metrics=server_metrics,
             )
@@ -1842,6 +2002,7 @@ async def benchmark(
     request_rate: float,
     burstiness: float,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     disable_tqdm: bool,
     do_test_prompt: bool,
     collect_gpu_stats: bool,
@@ -2024,6 +2185,12 @@ async def benchmark(
         try:
             outputs: Sequence[BaseRequestFuncOutput]
             if isinstance(samples, RequestSamples):
+                if max_concurrent_conversations is not None:
+                    raise ValueError(
+                        "--max-concurrent-conversations is only valid for "
+                        "multi-turn workloads. Set --num-chat-sessions to "
+                        "enable multi-turn mode."
+                    )
                 # single-turn chat scenario
                 outputs = await run_single_turn_benchmark(
                     input_requests=samples.requests,
@@ -2043,6 +2210,41 @@ async def benchmark(
                     lora_manager=lora_manager,
                     run_prefix=run_prefix,
                     run_prefix_len=run_prefix_len,
+                )
+            elif max_concurrent_conversations is not None:
+                # KV-cache stress benchmark: two independent concurrency knobs.
+                # max_concurrent_conversations caps active session workers;
+                # max_concurrency (semaphore) caps in-flight turns globally.
+                if (
+                    max_concurrency is not None
+                    and max_concurrency > max_concurrent_conversations
+                ):
+                    raise ValueError(
+                        f"--max-concurrency ({max_concurrency}) must be <= "
+                        f"--max-concurrent-conversations "
+                        f"({max_concurrent_conversations}): to stress the "
+                        "server's KV-cache, more sessions must be open than "
+                        "turns in-flight."
+                    )
+                assert tokenizer is not None
+                assert isinstance(max_concurrent_conversations, int)
+                outputs = await run_kv_cache_stress_benchmark(
+                    chat_sessions=samples.chat_sessions,
+                    max_requests=max_requests,
+                    max_concurrent_conversations=max_concurrent_conversations,
+                    semaphore=semaphore,
+                    benchmark_should_end_time=benchmark_should_end_time,
+                    request_driver=request_driver,
+                    model_id=model_id,
+                    api_url=api_url,
+                    tokenizer=tokenizer,
+                    skip_first_n_requests=skip_first_n_requests,
+                    ignore_first_turn_stats=ignore_first_turn_stats,
+                    lora_manager=lora_manager,
+                    warmup_delay_ms=warmup_delay_ms,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
                 )
             else:
                 # multi-turn chat scenario
@@ -2189,6 +2391,7 @@ async def benchmark(
             skip_first_n_requests=skip_first_n_requests,
             skip_last_n_requests=skip_last_n_requests,
             max_concurrency=max_concurrency,
+            max_concurrent_conversations=max_concurrent_conversations,
             collect_gpu_stats=collect_gpu_stats,
             server_metrics=server_metrics,
             spec_decode_stats=spec_decode_stats,
@@ -2710,6 +2913,7 @@ def main_with_parsed_args(
             request_rate=request_rate,
             burstiness=args.burstiness,
             max_concurrency=max_concurrency,
+            max_concurrent_conversations=args.max_concurrent_conversations,
             disable_tqdm=args.disable_tqdm,
             do_test_prompt=not args.skip_test_prompt,
             collect_gpu_stats=args.collect_gpu_stats,
@@ -2762,6 +2966,7 @@ def main_with_parsed_args(
             ),
             "burstiness": args.burstiness,
             "max_concurrency": args.max_concurrency,
+            "max_concurrent_conversations": args.max_concurrent_conversations,
             **_parse_metadata(args.metadata),
             **benchmark_result,
         }

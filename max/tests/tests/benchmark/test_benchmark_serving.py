@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from unittest.mock import patch
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
 from max.benchmark.benchmark_serving import (
     _add_spec_decode_result,
+    _ConcurrentTurnsRequestDriver,
     chat_session_driver,
     elide_data_uris_in_string,
     get_request,
@@ -1054,3 +1056,27 @@ def test_add_spec_decode_result_uses_vllm_json_keys() -> None:
         "spec_decode_accepted_tokens": 9,
         "spec_decode_per_position_acceptance_rates": [1.0, 0.6, 0.2],
     }
+
+
+def test_concurrent_turns_driver_expired_deadline_cancels_without_calling_base() -> (
+    None
+):
+    """A turn that acquires the semaphore after the deadline is cancelled, not forwarded."""
+    semaphore = asyncio.Semaphore(10)
+    mock_driver = AsyncMock()
+    mock_driver.tokenizer = None
+    driver = _ConcurrentTurnsRequestDriver(
+        mock_driver,
+        semaphore,
+        benchmark_should_end_time=time.perf_counter_ns() - 1,
+    )
+
+    output_cls = MagicMock()
+    output_cls.return_value = MagicMock()
+    inp = MagicMock()
+    inp.get_output_type.return_value = output_cls
+
+    asyncio.run(driver.request(inp))
+
+    assert output_cls.call_args.kwargs["cancelled"] is True
+    mock_driver.request.assert_not_called()

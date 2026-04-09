@@ -571,6 +571,23 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Request Configuration"},
     )
 
+    max_concurrent_conversations: int | None = Field(
+        default=None,
+        description=(
+            "Maximum conversation workers active at once for KV-cache stress "
+            "benchmarking. When set, runs run_kv_cache_stress_benchmark "
+            "instead of run_multiturn_benchmark: each worker drives one chat "
+            "session to completion before picking up the next, keeping all "
+            "session KV caches resident simultaneously. "
+            "--max-concurrency caps in-flight turn requests and must be <= "
+            "--max-concurrent-conversations to stress the server's KV-cache: "
+            "more open sessions than active turns grows the footprint and "
+            "increases the likelihood of offloading or dropping pre-computed "
+            "historical KV data."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
     # Workload configuration (serving-specific)
     max_benchmark_duration_s: int | None = Field(
         default=None,

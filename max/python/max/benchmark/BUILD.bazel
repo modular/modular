@@ -29,6 +29,7 @@ modular_py_library(
         requirement("tqdm"),
         requirement("tiktoken"),
         requirement("transformers"),
+        requirement("taskgroup"),
     ],
 )
 
@@ -51,6 +52,7 @@ modular_py_binary(
         requirement("tiktoken"),
         requirement("transformers"),
         requirement("pyyaml"),
+        requirement("taskgroup"),
     ],
 )
 
