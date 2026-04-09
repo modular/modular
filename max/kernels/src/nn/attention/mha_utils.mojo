@@ -393,14 +393,14 @@ def _kernel_mask[
 
 @always_inline
 def _copy_frag_to_smem_nvidia[
-    BM: UInt,
-    BN: UInt,
-    BK: UInt,
-    WM: UInt,
-    WN: UInt,
-    MMA_M: UInt,
-    MMA_N: UInt,
-    frag_simd_width: UInt,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    frag_simd_width: Int,
     *,
     type0: DType,
     layout0: Layout,
@@ -433,22 +433,20 @@ def _copy_frag_to_smem_nvidia[
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
         p_smem_iter.dtype,
-        Layout.row_major(Int(BM), Int(BN)),
+        Layout.row_major(BM, BN),
         ImmutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ](p_smem_iter.ptr.as_immutable())
-    var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
-        Int(warp_y), Int(warp_x)
-    )
-    var p_reg_vecs = p_reg_tile.vectorize[1, Int(frag_simd_width)]()
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
-    comptime swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, Int(BK)]()
+    comptime swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, BK]()
 
     comptime for n_mma in range(num_n_mmas):
         comptime for m_mma in range(num_m_mmas):
-            var p_smem_mma_tile = p_smem_warp_tile.tile[Int(MMA_M), Int(MMA_N)](
-                Int(m_mma), Int(n_mma)
-            ).vectorize[1, Int(frag_simd_width)]()
+            var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
+                m_mma, n_mma
+            ).vectorize[1, frag_simd_width]()
             var p_smem_frag = p_smem_mma_tile.distribute[
                 Layout.row_major(8, 4)
             ](lane_id())
@@ -485,21 +483,21 @@ def _copy_frag_to_smem_nvidia[
                     )
                 )[]
                 comptime align = align_of[
-                    SIMD[p_smem_iter.dtype, Int(frag_simd_width)]
+                    SIMD[p_smem_iter.dtype, frag_simd_width]
                 ]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
 
 
 @always_inline
 def _copy_frag_to_smem_amd[
-    BM: UInt,
-    BN: UInt,
-    BK: UInt,
-    WM: UInt,
-    WN: UInt,
-    MMA_M: UInt,
-    MMA_N: UInt,
-    frag_simd_width: UInt,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    frag_simd_width: Int,
     *,
     type0: DType,
     layout0: Layout,
@@ -529,21 +527,19 @@ def _copy_frag_to_smem_amd[
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
         p_smem_iter.dtype,
-        Layout.row_major(Int(BM), Int(BN)),
+        Layout.row_major(BM, BN),
         ImmutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ](p_smem_iter.ptr.as_immutable())
 
-    var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
-        Int(warp_y), Int(warp_x)
-    )
-    var p_reg_vecs = p_reg_tile.vectorize[1, Int(frag_simd_width)]()
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
     comptime for n_mma in range(num_n_mmas):
         comptime for m_mma in range(num_m_mmas):
-            var p_smem_mma_tile = p_smem_warp_tile.tile[Int(MMA_M), Int(MMA_N)](
-                Int(m_mma), Int(n_mma)
-            ).vectorize[Int(frag_simd_width), 1]()
+            var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
+                m_mma, n_mma
+            ).vectorize[frag_simd_width, 1]()
             var p_smem_frag = p_smem_mma_tile.distribute[
                 Layout.row_major(4, 16)
             ](lane_id())
@@ -558,9 +554,9 @@ def _copy_frag_to_smem_amd[
                     offset_BMxBN // OffsetType(BN)
                 ) * OffsetType(BK) + offset_BMxBN % OffsetType(BK)
 
-                var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, 0][
-                    Int(i)
-                ].cast[p_smem_tile.dtype]()
+                var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, 0][i].cast[
+                    p_smem_tile.dtype
+                ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     p_smem_iter.linear_uint_type(
@@ -572,14 +568,14 @@ def _copy_frag_to_smem_amd[
 
 @always_inline
 def _copy_frag_to_smem[
-    BM: UInt,
-    BN: UInt,
-    BK: UInt,
-    WM: UInt,
-    WN: UInt,
-    MMA_M: UInt,
-    MMA_N: UInt,
-    frag_simd_width: UInt,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    frag_simd_width: Int,
     *,
     type0: DType,
     layout0: Layout,

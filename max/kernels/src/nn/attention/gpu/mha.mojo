@@ -2335,14 +2335,14 @@ def mha_single_batch[
         comptime if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                UInt(MMA_M),
-                UInt(MMA_N),
-                UInt(p_frag_simdwidth),
+                Int(BM),
+                Int(BN),
+                Int(BK),
+                Int(WM),
+                Int(WN),
+                MMA_M,
+                MMA_N,
+                p_frag_simdwidth,
             ](p_smem_iter, p_reg_tile, warp_x, warp_y)
 
             async_copy_wait_all()
@@ -3019,14 +3019,14 @@ def mha_single_batch_pipelined[
         comptime if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                UInt(MMA_M),
-                UInt(MMA_N),
-                UInt(p_frag_simdwidth),
+                Int(BM),
+                Int(BN),
+                Int(BK),
+                Int(WM),
+                Int(WN),
+                MMA_M,
+                MMA_N,
+                p_frag_simdwidth,
             ](p_smem_iter, p_reg_tile, warp_x, warp_y)
             barrier()
 
@@ -4011,14 +4011,14 @@ def mha_decoding_single_batch[
             # iterating across tiles, but use extra registers to perform MMAs
             # with warp-local data.
             _copy_frag_to_smem[
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                UInt(MMA_M),
-                UInt(MMA_N),
-                UInt(p_frag_simdwidth),
+                Int(BM),
+                Int(BN),
+                Int(BK),
+                Int(WM),
+                Int(WN),
+                MMA_M,
+                MMA_N,
+                p_frag_simdwidth,
             ](p_smem_iter, p_reg_tile, UInt32(warp_x), UInt32(warp_y))
 
         async_copy_wait_all()
@@ -4580,7 +4580,14 @@ def mha_decoding_single_batch_pipelined[
         # Copy score fragments to shared memory with swizzling to resolve bank
         # conflicts for ldmatrix in the 2nd matmul.
         _copy_frag_to_smem[
-            BM, BN, BK, WM, WN, UInt(MMA_M), UInt(MMA_N), UInt(p_frag_simdwidth)
+            Int(BM),
+            Int(BN),
+            Int(BK),
+            Int(WM),
+            Int(WN),
+            MMA_M,
+            MMA_N,
+            p_frag_simdwidth,
         ](p_smem_iter, p_reg_tile, UInt32(warp_x), UInt32(warp_y))
         barrier()
 
