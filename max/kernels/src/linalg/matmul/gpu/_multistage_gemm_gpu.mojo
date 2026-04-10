@@ -435,7 +435,7 @@ def multistage_mma[
         a_type, a_warp_tile.stride[0]()
     ]() if swizzle_a else Optional[Swizzle]()
 
-    comptime for i in range(k_group_size):
+    comptime for i in range(Int(k_group_size)):
         comptime if a_iter.address_space == AddressSpace.LOCAL:
             # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
             # Need to cast address space because it's not known at parse time to be LOCAL.
@@ -446,7 +446,7 @@ def multistage_mma[
                 a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
             )
 
-        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, UInt(warp_x))
+        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, Int(warp_x))
 
     comptime if static_num_iters >= 0:
         comptime assert (
@@ -523,13 +523,13 @@ def multistage_mma[
                             b_wtile_dim0, b_wtile_dim1
                         ](b_wtile_coord0, b_wtile_coord1)
 
-                    comptime kidx = k_mma_next % UInt32(num_k_mmas)
+                    comptime kidx = Int(k_mma_next % UInt32(num_k_mmas))
 
                     comptime if a_iter.address_space == AddressSpace.SHARED:
                         mma_op.load_a[swizzle_a_pattern](
                             a_warp_tile,
                             a_reg_tiles[next].vectorize[1, a_frag_size](),
-                            UInt(kidx),
+                            kidx,
                         )
                     else:
                         # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
@@ -539,8 +539,8 @@ def multistage_mma[
                     mma_op.load_b(
                         b_warp_tile,
                         b_reg_tiles[next],
-                        UInt(kidx),
-                        UInt(warp_x),
+                        kidx,
+                        Int(warp_x),
                     )
 
                 comptime for k_mma1 in range(k_group_size):
@@ -675,13 +675,13 @@ def multistage_mma[
                 mma_op.load_a[swizzle_a_pattern](
                     a_warp_tile,
                     a_reg_tiles[next].vectorize[1, a_frag_size](),
-                    UInt(kidx),
+                    kidx,
                 )
                 mma_op.load_b(
                     b_warp_tile,
                     b_reg_tiles[next],
-                    UInt(kidx),
-                    UInt(warp_x),
+                    kidx,
+                    Int(warp_x),
                 )
 
             comptime for k_mma1 in range(k_group_size):

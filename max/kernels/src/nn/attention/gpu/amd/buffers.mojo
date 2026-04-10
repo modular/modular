@@ -369,7 +369,7 @@ struct KVBufferImpl[
             Self.tensor_core_mma.mma_op.load_b[swizzle=Self.swizzle](
                 warp_tile,
                 self.get_mma_tile().vectorize[1, Self.simd_width](),
-                UInt(k_mma),
+                k_mma,
             )
 
 
@@ -1075,7 +1075,7 @@ struct PRegisterBuffer[
         tensor_core_mma.mma_op.load_a[swizzle=None](
             warp_tile,
             mma_reg_tile.vectorize[1, simd_width_of[Self.dtype]()](),
-            UInt(k_idx),
+            k_idx,
         )
         return mma_reg_tile
 

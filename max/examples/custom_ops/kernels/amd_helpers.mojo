@@ -413,7 +413,7 @@ struct MMATileBuffers[
                 self.mma_reg_tile[k_tile_idx]
                 .tile[Self.num_mmas, Self.mma_type.simd_width](k_tile_idx, 0)
                 .vectorize[1, Self.mma_type.simd_width](),
-                UInt(k_tile_idx),
+                k_tile_idx,
             )
         else:
             Self.mma_type.tensor_core_mma.mma_op.load_b[
@@ -423,7 +423,7 @@ struct MMATileBuffers[
                 self.mma_reg_tile[k_tile_idx]
                 .tile[Self.num_mmas, Self.mma_type.simd_width](k_tile_idx, 0)
                 .vectorize[1, Self.mma_type.simd_width](),
-                UInt(k_tile_idx),
+                k_tile_idx,
             )
 
 

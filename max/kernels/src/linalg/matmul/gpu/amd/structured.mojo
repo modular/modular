@@ -409,7 +409,7 @@ struct AmdTileOperator[
                 self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
                     group_idx, 0
                 ).vectorize[1, Self.simd_width](),
-                UInt(group_idx),
+                group_idx,
             )
 
             Self.tensor_core.load_b[swizzle=Self.swizzle](
@@ -417,7 +417,7 @@ struct AmdTileOperator[
                 self._b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
                     group_idx, 0
                 ).vectorize[1, Self.simd_width](),
-                UInt(group_idx),
+                group_idx,
             )
 
     @always_inline

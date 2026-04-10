@@ -158,12 +158,12 @@ struct MmaOpAMD[
         Self.tensor_core_mma.mma_op.load_a[swizzle=Self.swizzle](
             a_smem_tiles,
             self.a_reg_tile(k_tile_idx).vectorize(),
-            UInt(k_tile_idx),
+            k_tile_idx,
         )
         Self.tensor_core_mma.mma_op.load_b[swizzle=Self.swizzle](
             b_smem_tiles,
             self.b_reg_tile(k_tile_idx).vectorize(),
-            UInt(k_tile_idx),
+            k_tile_idx,
         )
 
     @always_inline
