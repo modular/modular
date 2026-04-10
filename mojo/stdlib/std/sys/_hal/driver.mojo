@@ -70,12 +70,10 @@ struct Driver(Movable):
             OutParam[DriverHandle](to=handle),
         )
         if status != STATUS_SUCCESS:
-            var err = plugin.get_status_message(status)
             raise HALError(
-                err.status,
+                status,
                 message=String(
-                    t"Failed to initialise driver plugin from {plugin.so_path}:"
-                    t" {err.message}"
+                    t"Failed to initialise driver plugin from {plugin.so_path}"
                 ),
             )
 
@@ -87,7 +85,7 @@ struct Driver(Movable):
         )
         if status != STATUS_SUCCESS:
             _ = plugin.destroy.f(driver_handle)
-            var err = plugin.get_status_message(status)
+            var err = plugin.get_status_message(driver_handle, status)
             raise HALError(
                 err.status,
                 message=String(t"Failed to get device count: {err.message}"),

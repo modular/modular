@@ -140,6 +140,7 @@ struct Plugin(Movable):
     var status_message: HALFunction[
         "M_driver_status_message",
         def(
+            driver: DriverHandle,
             status: Int64,
             message_buffer: MutPointer[Int8, MutAnyOrigin],
             message_buffer_size: Int64,
@@ -259,7 +260,7 @@ struct Plugin(Movable):
         def(
             queue: QueueHandle,
             dst: UnsafePointer[UInt8, MutAnyOrigin],
-            src: UnsafePointer[UInt8, MutAnyOrigin],
+            src: MemoryHandle,
             size: UInt64,
         ) thin -> PluginResultCode,
     ]
@@ -267,7 +268,7 @@ struct Plugin(Movable):
         "M_driver_queue_set_memory",
         def(
             queue: QueueHandle,
-            dst: UnsafePointer[UInt8, MutAnyOrigin],
+            dst: MemoryHandle,
             size: UInt64,
             value: UInt64,
             value_size: UInt64,
@@ -393,10 +394,13 @@ struct Plugin(Movable):
                 message=String(t"Failed to load plugin '{so_path}': {e}"),
             )
 
-    def get_status_message(self, status: Int64) raises HALError -> HALError:
+    def get_status_message(
+        self, driver: DriverHandle, status: Int64
+    ) raises HALError -> HALError:
         """Retrieve the human-readable message associated with a status code."""
         var buf = List[Int8](length=1024, fill=0)
         var ret = self.status_message.f(
+            driver,
             status,
             MutPointer(
                 to=UnsafePointer[Int8, MutAnyOrigin](buf.unsafe_ptr())[]
