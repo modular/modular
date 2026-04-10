@@ -442,7 +442,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     // Now assemble the kgen.variadic parameter value and match it against the
     // expected one.
     auto varType = ParamListType::get(variadicElType);
-    auto variadicAttr = VariadicAttr::get(elements, varType);
+    auto variadicAttr = ParamListAttr::get(elements, varType);
     PROP(matchParams(variadicAttr, variadic));
   }
 
@@ -747,7 +747,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           LIT::isVariadicOfTypeExpr(actualAttr)) {
         auto targetMT = getTargetMetaTypeForTypeValue(expectedAttr.getType());
         ArrayRef<TypedAttr> toCheck(actualAttr);
-        if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
+        if (auto va = sugarDynCast<ParamListAttr>(actualAttr))
           toCheck = va.getValues();
 
         fixableByUpCast = llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
@@ -771,9 +771,9 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
                                           targetMT);
               });
 
-          if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
+          if (auto va = sugarDynCast<ParamListAttr>(actualAttr))
             actualAttr =
-                VariadicAttr::get(casted, ParamListType::get(targetMT));
+                ParamListAttr::get(casted, ParamListType::get(targetMT));
           else
             actualAttr = casted.front();
 
@@ -908,8 +908,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     return success();
   }
 
-  if (auto actualVar = dyn_cast<VariadicAttr>(actualAttr)) {
-    if (auto expectedVar = dyn_cast<VariadicAttr>(expectedAttr)) {
+  if (auto actualVar = dyn_cast<ParamListAttr>(actualAttr)) {
+    if (auto expectedVar = dyn_cast<ParamListAttr>(expectedAttr)) {
       if (actualVar.getValues().size() != expectedVar.getValues().size())
         return error(MatchFailure::Unclassified{});
       for (auto [act, exp] :

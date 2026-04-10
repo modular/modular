@@ -737,9 +737,9 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateDataToStr(ParamOperatorAttr op,
   if (failed(result))
     return failure();
 
-  // Extra string parts, which will be a VariadicAttr of type
+  // Extra string parts, which will be a ParamListAttr of type
   // !kgen.param_list<>
-  VariadicAttr extrasAttr = dyn_cast<VariadicAttr>(op.getOperand(1));
+  ParamListAttr extrasAttr = dyn_cast<ParamListAttr>(op.getOperand(1));
   if (!extrasAttr) {
     emitError(
         {*errorLoc, "'data_to_str' did not narrow to a variadic constant"});

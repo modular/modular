@@ -97,21 +97,21 @@ def KGEN_ParamDeclArrayAttr : ArrayOfAttr<KGENDialect, "ParamDeclArray",
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicAttr
+// ParamListAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
+def KGEN_ParamListAttr : KGEN_ExprAttr<"ParamList", "param_list", [
     TypedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
-  let summary = "A parameterized variadic attribute.";
+  let summary = "A value of !kgen.param_list types made from elements.";
   let description = [{
-    The `#kgen.variadic` attribute contains a homogeneous list of elements of an
-    variadic type. It is used to represent constant variadic sequence values.
+    The `#kgen.param_list` attribute contains a homogeneous list of elements of
+    !kgen.param_list type.
 
     Example:
 
     ```mlir
-    #kgen.variadic<1, 2> : !kgen.param_list<index>
+    #kgen.param_list<1, 2> : !kgen.param_list<index>
     ```
   }];
 
@@ -132,12 +132,12 @@ def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
   let genVerifyDecl = 1;
 }
 
-def KGEN_VariadicReduceAttr : KGEN_ExprAttr<"VariadicReduce", "variadic.reduce",
+def KGEN_VariadicReduceAttr : KGEN_ExprAttr<"VariadicReduce", "param_list.reduce",
   [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                ["evaluateWithContext"]>]> {
   let summary = "Map a variadic of (type) values to a new variadic of (type) values";
   let description = [{
-    The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
+    The `#kgen.param_list.reduce` attribute is used to reduce a variadic of
     (type) value to a (type) value by repeatedly applying the provided reducer
     on each element of the variadic.
   }];
@@ -145,25 +145,25 @@ def KGEN_VariadicReduceAttr : KGEN_ExprAttr<"VariadicReduce", "variadic.reduce",
   let parameters = (ins
     AttributeSelfTypeParameter<"">:$type,
     "TypedAttr":$base,
-    "TypedAttr":$variadic,
+    "TypedAttr":$paramList,
     "TypedAttr":$generator
   );
 
-  let assemblyFormat = "`<` $base `,` $variadic `,` $generator `>`";
+  let assemblyFormat = "`<` $base `,` $paramList `,` $generator `>`";
   let genVerifyDecl = 1;
 }
 
-def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "variadic.zip"> {
+def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "param_list.zip"> {
   let summary = "Zip a variadic of variadics.";
   let description = [{
-    The `#kgen.variadic.zip` attribute is used to zip a variadic of
-    variadic (type) value.
+    The `#kgen.param_list.zip` attribute is used to zip a param_list of
+    param_list value.
 
     Example:
     ```mlir
-    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
+    #kgen.param_list.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
     // ->
-    #kgen.variadic<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
+    #kgen.param_list<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
     ```
 
     At the moment, when the provided variadics are of different lengths, we zip
@@ -173,41 +173,41 @@ def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "variadic.zip"> {
 
   let parameters = (ins
     AttributeSelfTypeParameter<"", "ParamListType">:$type,
-    "TypedAttr":$variadics
+    "TypedAttr":$paramLists
   );
 
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an variadic.zip.
     AttrBuilderWithInferredContext<(ins
-       "ParamListType":$type, "TypedAttr":$inputTypeValue), "", "TypedAttr">,
+       "ParamListType":$type, "TypedAttr":$paramLists), "", "TypedAttr">,
 
     // Verbose form with MLIRContext, needed for ODS constructors.
-    AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$inputTypeValue), [{
-      return get(type, inputTypeValue);
+    AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$paramLists), [{
+      return get(type, paramLists);
     }], "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $variadics `>`";
+  let assemblyFormat = "`<` $paramLists `>`";
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 }
 
-def KGEN_VariadicTabulateAttr : KGEN_ExprAttr<"VariadicTabulate", "variadic.tabulate",
+def KGEN_VariadicTabulateAttr : KGEN_ExprAttr<"VariadicTabulate", "param_list.tabulate",
   [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                ["evaluateWithContext"]>]> {
   let summary = "Create a variadic by applying a function to each index 0..count-1";
   let description = [{
-    The `#kgen.variadic.tabulate` attribute produces a variadic of (type) values
+    The `#kgen.param_list.tabulate` attribute produces a variadic of (type) values
     by invoking the provided generator function N times with indices 0, 1, ...,
     N-1, where N is the integer count. The generator is a function from index to
     (element type); each result is collected into the result variadic.
 
     Example:
     ```mlir
-    #kgen.variadic.tabulate<:!kgen.param_list<f32> 3, fn(i: index) -> f32> : !kgen.param_list<f32>
+    #kgen.param_list.tabulate<:!kgen.param_list<f32> 3, fn(i: index) -> f32> : !kgen.param_list<f32>
     // ->
-    #kgen.variadic<0, 1, 2> : !kgen.param_list<f32>
+    #kgen.param_list<0, 1, 2> : !kgen.param_list<f32>
     ```
   }];
 
@@ -230,25 +230,25 @@ def KGEN_VariadicTabulateAttr : KGEN_ExprAttr<"VariadicTabulate", "variadic.tabu
   let skipDefaultBuilders = 1;
 }
 
-def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size",
+def KGEN_ParamListSizeAttr : KGEN_ExprAttr<"ParamListSize", "param_list.size",
     [ContextuallyEvaluatedAttrInterface]> {
-  let summary = "return the size of a variadic";
+  let summary = "return the size of a !kgen.param_list";
 
-  let parameters = (ins "TypedAttr":$variadic);
+  let parameters = (ins "TypedAttr":$paramList);
 
   let builders = [
     // Override the default builder used by the generated parser because this
-    // may not return an variadic.size.
+    // may not return an #kgen.param_list.size.
     AttrBuilderWithInferredContext<(ins
-       "TypedAttr":$variadic), "", "TypedAttr">,
+       "TypedAttr":$paramList), "", "TypedAttr">,
 
     // Verbose form with MLIRContext, needed for ODS constructors.
-    AttrBuilder<(ins "IndexType":$type, "TypedAttr":$variadic), [{
-      return get(variadic);
+    AttrBuilder<(ins "IndexType":$type, "TypedAttr":$paramList), [{
+      return get(paramList);
     }], "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` custom<ColonTypeParamValue>($variadic) `>`";
+  let assemblyFormat = "`<` custom<ColonTypeParamValue>($paramList) `>`";
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 
@@ -257,66 +257,66 @@ def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size",
   }];
 }
 
-def KGEN_VariadicGetAttr : KGEN_ExprAttr<"VariadicGet", "variadic.get",
+def KGEN_VariadicGetAttr : KGEN_ExprAttr<"VariadicGet", "param_list.get",
     [ContextuallyEvaluatedAttrInterface]> {
-  let summary = "return the element at index of a variadic";
+  let summary = "return the element at index of a param_list";
 
   let parameters = (ins
     AttributeSelfTypeParameter<"", "Type">:$type,
-    "TypedAttr":$variadic,
+    "TypedAttr":$paramList,
     "TypedAttr":$index
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-       "TypedAttr":$variadic, "TypedAttr":$index), "",
+       "TypedAttr":$paramList, "TypedAttr":$index), "",
        "TypedAttr">,
-    AttrBuilder<(ins "Type":$type, "TypedAttr":$variadic, "TypedAttr":$index),
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$paramList, "TypedAttr":$index),
       [{
-      return get(variadic, index);
+      return get(paramList, index);
     }], "TypedAttr">,
   ];
 
   let assemblyFormat = [{
-     `<` custom<ColonTypeParamValue>($variadic) `,`
+     `<` custom<ColonTypeParamValue>($paramList) `,`
          custom<ParamValue>($index, "IndexType::get($_ctxt)") `>`
   }];
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 }
 
-def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "variadic.concat"> {
+def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "param_list.concat"> {
   let summary = "Concatenate a variadic of variadics.";
   let description = [{
-    The `#kgen.variadic.concat` attribute is used to concatenate a variadic of
+    The `#kgen.param_list.concat` attribute is used to concatenate a variadic of
     variadic (type) value.
 
     Example:
     ```mlir
-    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !param_list<!AnyType>
+    #kgen.param_list.concat<[[Int, Int], [Float, Float]]> : !param_list<!AnyType>
     // ->
-    #kgen.variadic<[Int, Int, Float, Float]> : !param_list<!AnyType>
+    #kgen.param_list<[Int, Int, Float, Float]> : !param_list<!AnyType>
     ```
   }];
 
   let parameters = (ins
     AttributeSelfTypeParameter<"", "ParamListType">:$type,
-    "TypedAttr":$variadics
+    "TypedAttr":$paramLists
   );
 
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an variadic.concat.
     AttrBuilderWithInferredContext<(ins
-       "ParamListType":$type, "TypedAttr":$variadics), "", "TypedAttr">,
+       "ParamListType":$type, "TypedAttr":$paramLists), "", "TypedAttr">,
 
     // Verbose form with MLIRContext, needed for ODS constructors.
-    AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$variadics), [{
-      return get(type, variadics);
+    AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$paramLists), [{
+      return get(type, paramLists);
     }], "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $variadics `>`";
+  let assemblyFormat = "`<` $paramLists `>`";
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 }

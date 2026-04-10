@@ -1763,7 +1763,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     ASTType fromEltTp = sugarCast<ParamListType>(rvType).getElementType();
     ASTType toEltTp = dstVATp.getElementType();
     TypedAttr srcVal = valueExpr.ir.getIfPValue().get();
-    if (auto vVal = sugarDynCast<VariadicAttr>(srcVal)) {
+    if (auto vVal = sugarDynCast<ParamListAttr>(srcVal)) {
       SmallVector<TypedAttr> converted;
       for (auto elt : vVal.getValues()) {
         if (!LIT::isTypeExpr(elt))
@@ -1782,7 +1782,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
           converted.push_back(TypeParamAttr::get(ASTType(elt), fromEltTp));
         }
       }
-      return emitCResult(VariadicAttr::get(converted, dstVATp), expr, dest);
+      return emitCResult(ParamListAttr::get(converted, dstVATp), expr, dest);
     } else {
       // Must match the check in canImplicitlyConvertToType.
       FailureOr<bool> canUpCast =

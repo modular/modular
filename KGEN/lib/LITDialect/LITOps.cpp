@@ -2188,7 +2188,7 @@ static void printRefPackCreateType(OpAsmPrinter &p, Operation *op,
 
 LogicalResult RefPackCreateOp::verify() {
   RefPackType packType = getType();
-  VariadicAttr elementTypesAttr = packType.getVariadicIfResolved();
+  ParamListAttr elementTypesAttr = packType.getVariadicIfResolved();
   if (!elementTypesAttr)
     return emitOpError() << "cannot create pack with parametric element types";
   ArrayRef<TypedAttr> elementTypes = elementTypesAttr.getValues();

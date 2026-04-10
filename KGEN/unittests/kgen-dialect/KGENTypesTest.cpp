@@ -198,12 +198,12 @@ TEST_F(StructTypeTest, UniquingConsistency) {
   // Create via ArrayRef<Type>
   KGENStructType fromTypes = KGENStructType::get(&ctx, {i32Type, i64Type});
 
-  // Create via VariadicAttr with TypeParamAttrs
+  // Create via ParamListAttr with TypeParamAttrs
   auto metatype = TypeType::get(&ctx);
   auto variadicType = ParamListType::get(metatype);
   SmallVector<TypedAttr> elements = {TypeParamAttr::get(i32Type, metatype),
                                      TypeParamAttr::get(i64Type, metatype)};
-  VariadicAttr variadic = VariadicAttr::get(elements, variadicType);
+  ParamListAttr variadic = ParamListAttr::get(elements, variadicType);
   KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
 
   // These should be the exact same type (pointer equality due to uniquing).
@@ -225,11 +225,11 @@ TEST_F(StructTypeTest, UniquingWithParamTypes) {
   KGENStructType fromTypes2 = KGENStructType::get(&ctx, {paramType});
   EXPECT_EQ(fromTypes, fromTypes2);
 
-  // Create via VariadicAttr using TypeParamAttr::get - should get same type.
+  // Create via ParamListAttr using TypeParamAttr::get - should get same type.
   auto variadicType = ParamListType::get(metatype);
   SmallVector<TypedAttr> elements = {
       cast<TypedAttr>(TypeParamAttr::get(paramType, metatype))};
-  VariadicAttr variadic = VariadicAttr::get(elements, variadicType);
+  ParamListAttr variadic = ParamListAttr::get(elements, variadicType);
   KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
 
   EXPECT_EQ(fromTypes, fromVariadic);
@@ -249,7 +249,7 @@ TEST_F(StructTypeTest, UniquingWithCanonicalizingTypeParamAttr) {
   // Create struct via ArrayRef<Type>.
   KGENStructType fromTypes = KGENStructType::get(&ctx, {paramType});
 
-  // Create struct via VariadicAttr using TypeParamAttr::get() directly.
+  // Create struct via ParamListAttr using TypeParamAttr::get() directly.
   // TypeParamAttr::get(paramType, metatype) may return a ParamOperatorAttr
   // instead of a TypeParamAttr due to canonicalization.
   auto variadicType = ParamListType::get(metatype);
@@ -258,7 +258,7 @@ TEST_F(StructTypeTest, UniquingWithCanonicalizingTypeParamAttr) {
   // Note: typeParamResult might be a ParamOperatorAttr, not a TypeParamAttr!
   // Since canonicalization is deterministic, both paths produce the same attr.
   SmallVector<TypedAttr> elements = {typeParamResult};
-  VariadicAttr variadic = VariadicAttr::get(elements, variadicType);
+  ParamListAttr variadic = ParamListAttr::get(elements, variadicType);
   KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
 
   // Since canonicalization is deterministic, these should be the same type.

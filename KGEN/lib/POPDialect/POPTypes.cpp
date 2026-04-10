@@ -175,7 +175,7 @@ Type UnionType::parse(AsmParser &p) {
 
 void UnionType::print(AsmPrinter &p) const {
   p << '<';
-  auto attr = dyn_cast<VariadicAttr>(getVariadic());
+  auto attr = dyn_cast<ParamListAttr>(getVariadic());
 
   // Unresolved (parametric) variadic - print with brackets.
   if (!attr) {
@@ -199,7 +199,7 @@ UnionType UnionType::get(MLIRContext *ctx, ArrayRef<Type> types) {
   SmallVector<TypedAttr> elements;
   for (Type type : types)
     elements.push_back(TypeParamAttr::get(type, metatype));
-  return get(ctx, VariadicAttr::get(elements, variadicType));
+  return get(ctx, ParamListAttr::get(elements, variadicType));
 }
 
 UnionType UnionType::get(ArrayRef<Type> types) {
@@ -208,17 +208,17 @@ UnionType UnionType::get(ArrayRef<Type> types) {
   return get(types.front().getContext(), types);
 }
 
-bool UnionType::isResolved() const { return isa<VariadicAttr>(getVariadic()); }
+bool UnionType::isResolved() const { return isa<ParamListAttr>(getVariadic()); }
 
 Type UnionType::getType(unsigned index) const {
-  auto attr = dyn_cast<VariadicAttr>(getVariadic());
+  auto attr = dyn_cast<ParamListAttr>(getVariadic());
   if (!attr)
     return {};
   return ParamType::get(attr.getValues()[index]);
 }
 
 size_t UnionType::getNumTypes() const {
-  auto attr = dyn_cast<VariadicAttr>(getVariadic());
+  auto attr = dyn_cast<ParamListAttr>(getVariadic());
   if (!attr)
     return 0;
   return attr.getValues().size();
@@ -229,7 +229,7 @@ static Type unwrapTypeAttr(TypedAttr attr) { return ParamType::get(attr); }
 llvm::iterator_range<
     llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator, Type (*)(TypedAttr)>>
 UnionType::getTypes() const {
-  auto attr = dyn_cast<VariadicAttr>(getVariadic());
+  auto attr = dyn_cast<ParamListAttr>(getVariadic());
   if (!attr) {
     // Return empty range for non-resolved variadics.
     return llvm::map_range(ArrayRef<TypedAttr>{}, unwrapTypeAttr);

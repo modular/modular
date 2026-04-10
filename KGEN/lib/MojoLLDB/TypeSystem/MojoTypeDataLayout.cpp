@@ -99,7 +99,7 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculateForPack(MojoASTTypeRef typeRef,
                                                   PackType packType) {
-  auto attr = sugarCast<VariadicAttr>(packType.getVariadic());
+  auto attr = sugarCast<ParamListAttr>(packType.getVariadic());
   if (!attr)
     return {};
   return calculateForStructLike(
@@ -123,7 +123,7 @@ MojoTypeDataLayoutContext::Impl::calculateForVariant(MojoASTTypeRef typeRef,
                                                      VariantType variantType) {
   // FIXME(35592): We are disabling printing of non-concrete variants for the
   // time being, because they can't be introspected.
-  if (!isa<VariadicAttr>(variantType.getVariadic()))
+  if (!isa<ParamListAttr>(variantType.getVariadic()))
     return {};
 
   std::optional<uint64_t> overallAlign = variantType.getTypeAlign(targetInfo);

@@ -1058,11 +1058,11 @@ struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: param_list<!Int> pos_vararg
 def variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.variadic.get<:param_list<!Int> a, 2>>
+    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.param_list.get<:param_list<!Int> a, 2>>
     comptime v0 = a[2]
 
     # CHECK: %v1 = lit.var.decl "v1"
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <#kgen.variadic.get<:param_list<!Int> a, 3>>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <#kgen.param_list.get<:param_list<!Int> a, 3>>
     # CHECK: lit.ref.store [[TMP]], %v1
     var v1 = a[3]
     # CHECK: {{.*}}__getitem__{{.*}}(%b, %{{.*}})
@@ -1071,8 +1071,8 @@ def variadic_subscript[idx: Int, *a: Int](*b: Int):
 
 # CHECK-LABEL: lit.fn @"variadic_memory_subscript
 # CHECK-SAME: !lit.ref<{{.*}}TwoParamsStruct
-# CHECK-SAME:   #kgen.variadic.get<:param_list<!Int> a, 0>
-# CHECK-SAME:   #kgen.variadic.get<:param_list<!Int> a, 1>
+# CHECK-SAME:   #kgen.param_list.get<:param_list<!Int> a, 0>
+# CHECK-SAME:   #kgen.param_list.get<:param_list<!Int> a, 1>
 def variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}(%b,
     # CHECK: %v0 = lit.var.decl
@@ -1158,7 +1158,7 @@ def dependent_callee[dtype: DType](storage: UnsafePointer[SIMD[dtype, 1], AnyOri
                    pad_value: SIMD[storage.type.dtype, 1]):
    pass
 
-# This requires handling of VariadicAttr in parameter inference.
+# This requires handling of ParamListAttr in parameter inference.
 def variadic_attr_caller(*inputs: Tuple[Int]):
    variadic_attr_callee[Int](*inputs)
 def variadic_attr_callee[key_type: ImplicitlyCopyable](*inputs: Tuple[key_type]):

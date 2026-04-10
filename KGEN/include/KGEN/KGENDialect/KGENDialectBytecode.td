@@ -145,7 +145,7 @@ def ParameterExprArrayAttr : DialectAttribute<(attr
   TypedAttrArray:$value
 )>;
 
-def VariadicAttr : DialectAttribute<(attr
+def ParamListAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"ParamListType">:$type
 )> {
@@ -155,13 +155,13 @@ def VariadicAttr : DialectAttribute<(attr
 def VariadicReduceAttr : DialectAttribute<(attr
     Type:$type,
     TypedAttr:$base,
-    TypedAttr:$variadic,
+    TypedAttr:$paramList,
     TypedAttr:$generator
 )>;
 
 def VariadicZipAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type,
-  TypedAttr:$variadics
+  TypedAttr:$paramLists
 )>;
 
 def VariadicTabulateAttr : DialectAttribute<(attr
@@ -170,20 +170,20 @@ def VariadicTabulateAttr : DialectAttribute<(attr
   TypedAttr:$generator
 )>;
 
-def VariadicSizeAttr : DialectAttribute<(attr
+def ParamListSizeAttr : DialectAttribute<(attr
   ConcreteType<"IndexType">:$type,
-  TypedAttr:$variadic
+  TypedAttr:$paramList
 )>;
 
 def VariadicGetAttr : DialectAttribute<(attr
   Type:$type,
-  TypedAttr:$variadic,
+  TypedAttr:$paramList,
   TypedAttr:$index
 )>;
 
 def VariadicConcatAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type,
-  TypedAttr:$variadics
+  TypedAttr:$paramLists
 )>;
 
 def UnknownAttr : DialectAttribute<(attr
@@ -411,11 +411,11 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParameterExprArrayAttr,
     ParamDeclAttr,
     ParamDeclArrayAttr,
-    VariadicAttr,
+    ParamListAttr,
     VariadicReduceAttr,
     VariadicZipAttr,
     VariadicTabulateAttr,
-    VariadicSizeAttr,
+    ParamListSizeAttr,
     VariadicGetAttr,
     VariadicConcatAttr,
     UnknownAttr,

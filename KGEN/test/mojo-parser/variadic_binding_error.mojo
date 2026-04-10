@@ -55,5 +55,5 @@ def main():
     # expected-error @below {{'ParamSubst' parameter 'shape' has 'KGENParamList[Int]' type, but value has type 'KGENParamList[__mlir_type.index]'}}
     var _: ParamSubst[
         Int,
-        __mlir_attr.`#kgen.variadic<1, 2> : !kgen.param_list<index>`,
+        __mlir_attr.`#kgen.param_list<1, 2> : !kgen.param_list<index>`,
     ]

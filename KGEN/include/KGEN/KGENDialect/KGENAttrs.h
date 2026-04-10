@@ -35,7 +35,7 @@ class KGENDType;
 class ParameterEvaluator;
 class TargetType;
 class ParamListType;
-class VariadicAttr;
+class ParamListAttr;
 } // namespace KGEN
 } // namespace M
 

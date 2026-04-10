@@ -644,8 +644,8 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
       linkageName = ParamOperatorAttr::get(
           POC::DataToStr,
           {linkageNamePVal,
-           VariadicAttr::get({},
-                             ParamListType::get(linkageNamePVal.getType()))});
+           ParamListAttr::get({},
+                              ParamListType::get(linkageNamePVal.getType()))});
       if (!linkageName) {
         shared.emitError(nodeLoc) << "failure to create linkage name";
         return;

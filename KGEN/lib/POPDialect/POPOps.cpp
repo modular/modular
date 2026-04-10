@@ -781,7 +781,7 @@ LogicalResult VariantBitcastOp::verify() {
 
   // Only verify the result type if the variant type is concrete.
   auto variant = cast<VariantType>(ptrType.getElementType());
-  if (!isa<VariadicAttr>(variant.getVariadic()))
+  if (!isa<ParamListAttr>(variant.getVariadic()))
     return success();
   auto indexAttr = dyn_cast<IntegerAttr>(getIndex());
   if (!indexAttr)
@@ -814,7 +814,7 @@ LogicalResult VariantDiscrGEPOp::verify() {
 
   // Only verify the result type if the variant type is concrete.
   auto variant = cast<VariantType>(ptrType.getElementType());
-  if (!isa<VariadicAttr>(variant.getVariadic()))
+  if (!isa<ParamListAttr>(variant.getVariadic()))
     return success();
 
   auto discrType = cast<SIMDType>(getDiscr().getType().getElementType());

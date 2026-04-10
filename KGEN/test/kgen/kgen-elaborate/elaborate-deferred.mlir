@@ -39,7 +39,7 @@ kgen.generator @test_elaborate_deferred_op(%arg0: index, %arg1: index, %arg2: !k
 }
 
 kgen.generator @select_pred_concat<*"pred`2x": struct<(pointer<none>, index)>>() -> !kgen.deferred {
-  %0 = kgen.param.constant: !kgen.deferred = <#kgen<attr_ctor_deferred("#index<cmp_predicate ", #kgen<to_string_deferred(#kgen.param.expr<data_to_str, #kgen.param.decl.ref<"pred`2x"> : !kgen.struct<(pointer<none>, index)>, #kgen.variadic<> : !kgen.param_list<struct<(pointer<none>, index)>>> : !kgen.string) elide_type unit>, ">")>>
+  %0 = kgen.param.constant: !kgen.deferred = <#kgen<attr_ctor_deferred("#index<cmp_predicate ", #kgen<to_string_deferred(#kgen.param.expr<data_to_str, #kgen.param.decl.ref<"pred`2x"> : !kgen.struct<(pointer<none>, index)>, #kgen.param_list<> : !kgen.param_list<struct<(pointer<none>, index)>>> : !kgen.string) elide_type unit>, ">")>>
   kgen.return %0 : !kgen.deferred
 }
 

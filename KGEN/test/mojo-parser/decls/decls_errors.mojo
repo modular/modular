@@ -377,7 +377,7 @@ comptime IntVariadic = __mlir_type[`!kgen.param_list<`, Int, `>`]
 comptime IntSumReducerdef[Prev: Int, *From: Int, Idx: __mlir_type.index]: Int = Prev + From[Idx]
 
 comptime IntSumReducer[Variadic: IntVariadic] = __mlir_attr[
-  `#kgen.variadic.reduce<`,
+  `#kgen.param_list.reduce<`,
   Int(0),  # base
   `,`,
   Variadic,

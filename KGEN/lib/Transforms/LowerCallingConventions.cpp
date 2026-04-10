@@ -60,7 +60,7 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
 
 /// Lower a concrete pack to a struct.
 static StructType lowerPackTypeToStruct(PackType pack) {
-  VariadicAttr variadicAttr = pack.getVariadicIfResolved();
+  ParamListAttr variadicAttr = pack.getVariadicIfResolved();
   if (!variadicAttr)
     return nullptr;
 

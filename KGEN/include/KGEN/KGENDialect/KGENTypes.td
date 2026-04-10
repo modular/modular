@@ -600,7 +600,7 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     memory layout of the data it describes.
 
     The element types are stored as a `TypedAttr` which can be either:
-    - A concrete `VariadicAttr` with resolved types
+    - A concrete `ParamListAttr` with resolved types
     - A parametric expression (e.g., a variadic parameter reference) before elaboration
 
     Example:
@@ -673,7 +673,7 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
                  /*minAlignment=*/TypedAttr{});
     }]>,
     // Builders with ArrayRef<Type> - implementations in KGENTypes.cpp.
-    // These convert types to VariadicAttr and route through the main builder.
+    // These convert types to ParamListAttr and route through the main builder.
     TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types,
                                         CArg<"bool", "false">:$isMemoryOnly), [{}]>
   ];
@@ -684,7 +684,7 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 
     /// If the struct type is concrete (not parametric), returns the attribute
     /// representing the variadic sequence. Otherwise, returns a null attribute.
-    VariadicAttr getVariadicIfResolved() const;
+    ParamListAttr getVariadicIfResolved() const;
 
     /// Returns whether this struct type is resolved (element types are concrete).
     bool isResolved() const;
@@ -839,7 +839,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
     /// If the pack type is concrete, returns the attribute representing the
     /// variadic sequence that the pack type is based upon. Otherwise, returns
     /// a null attribute.
-    VariadicAttr getVariadicIfResolved() const;
+    ParamListAttr getVariadicIfResolved() const;
   }];
 }
 

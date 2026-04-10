@@ -101,7 +101,7 @@ def POP_UnionType : POPType<"Union", "union", [
     2. **Elaboration**: During KGEN elaboration/monomorphization, the variadic
        is substituted with concrete types, producing a resolved union.
     3. **Lowering**: Only resolved unions (where `getVariadic()` returns a
-       `VariadicAttr`) can be lowered to LLVM IR or have debug info generated.
+       `ParamListAttr`) can be lowered to LLVM IR or have debug info generated.
 
     Use `isResolved()` to check if a union is resolved.
 

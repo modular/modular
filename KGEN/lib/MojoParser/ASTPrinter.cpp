@@ -975,8 +975,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto variadicCst = dyn_cast<VariadicAttr>(param)) {
-    // VariadicAttr appears in a pack list, so it doesn't need extra []'s
+  if (auto variadicCst = dyn_cast<ParamListAttr>(param)) {
+    // ParamListAttr appears in a pack list, so it doesn't need extra []'s
     // around it.
     llvm::interleaveComma(variadicCst.getValues(), os, [&](TypedAttr value) {
       printParam(os, value, diagShared);
@@ -984,51 +984,51 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto vaReduce = dyn_cast<VariadicReduceAttr>(param)) {
-    os << "#" << vaReduce.name << "(";
-    printParam(os, vaReduce.getVariadic(), diagShared);
+  if (auto reduce = dyn_cast<VariadicReduceAttr>(param)) {
+    os << "#" << reduce.name << "(";
+    printParam(os, reduce.getParamList(), diagShared);
     os << ", base=";
-    printParam(os, vaReduce.getBase(), diagShared);
+    printParam(os, reduce.getBase(), diagShared);
     os << ", reducer=";
-    printGeneratorAttr(cast<GeneratorAttr>(vaReduce.getGenerator()));
+    printGeneratorAttr(cast<GeneratorAttr>(reduce.getGenerator()));
     os << ")";
     return;
   }
 
-  if (auto vaConcat = dyn_cast<VariadicConcatAttr>(param)) {
-    os << "#" << vaConcat.name << "(";
-    printParam(os, vaConcat.getVariadics(), diagShared);
+  if (auto concat = dyn_cast<VariadicConcatAttr>(param)) {
+    os << "#" << concat.name << "(";
+    printParam(os, concat.getParamLists(), diagShared);
     os << ")";
     return;
   }
 
-  if (auto vaZip = dyn_cast<VariadicZipAttr>(param)) {
-    os << "#" << vaZip.name << "(";
-    printParam(os, vaZip.getVariadics(), diagShared);
+  if (auto zip = dyn_cast<VariadicZipAttr>(param)) {
+    os << "#" << zip.name << "(";
+    printParam(os, zip.getParamLists(), diagShared);
     os << ")";
     return;
   }
 
-  if (auto vaTab = dyn_cast<VariadicTabulateAttr>(param)) {
-    os << "#" << vaTab.name << "(";
-    printParam(os, vaTab.getCount(), diagShared);
+  if (auto tabulate = dyn_cast<VariadicTabulateAttr>(param)) {
+    os << "#" << tabulate.name << "(";
+    printParam(os, tabulate.getCount(), diagShared);
     os << ", ";
-    printGeneratorAttr(cast<GeneratorAttr>(vaTab.getGenerator()));
+    printGeneratorAttr(cast<GeneratorAttr>(tabulate.getGenerator()));
     os << ")";
     return;
   }
 
-  if (auto vaSize = dyn_cast<VariadicSizeAttr>(param)) {
+  if (auto size = dyn_cast<ParamListSizeAttr>(param)) {
     os << "len(";
-    printParam(os, vaSize.getVariadic(), diagShared);
+    printParam(os, size.getParamList(), diagShared);
     os << ")";
     return;
   }
 
-  if (auto vaGet = dyn_cast<VariadicGetAttr>(param)) {
-    printParam(os, vaGet.getVariadic(), diagShared);
+  if (auto get = dyn_cast<VariadicGetAttr>(param)) {
+    printParam(os, get.getParamList(), diagShared);
     os << "[";
-    printParam(os, vaGet.getIndex(), diagShared);
+    printParam(os, get.getIndex(), diagShared);
     os << "]";
     return;
   }
