@@ -955,6 +955,13 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
     return failure();
   ASTDecl *initDecl = *initOrFailure;
 
+  auto shouldImportWildcardDecl = [](ASTDecl *decl) {
+    auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
+    if (!structOp || !structOp.isSynthetic() || !structOp.getDefinesClosure())
+      return true;
+    return false;
+  };
+
   // Wildcard imports don't import decls with a leading '_'.
   LogicalResult result = success();
   for (const auto &[name, decls] : module.getDeclsInScope()) {
@@ -964,7 +971,12 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
     if (!isFullImport && isInternalName(name))
       continue;
 
-    ArrayRef<ASTDecl *> importDecls = decls;
+    SmallVector<ASTDecl *> filteredDecls;
+    llvm::copy_if(decls, std::back_inserter(filteredDecls),
+                  shouldImportWildcardDecl);
+    if (filteredDecls.empty())
+      continue;
+    ArrayRef<ASTDecl *> importDecls = filteredDecls;
 
     // If this name only has whole-module imports (from directory scanning) or
     // resolved module/package decls, check __init__'s scope for re-exported
@@ -983,6 +995,9 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
         })) {
       reExported = lookupNonModuleDecls(*initDecl, name, loc,
                                         /*resolveTarget=*/true);
+      llvm::erase_if(reExported, [&](ASTDecl *decl) {
+        return !shouldImportWildcardDecl(decl);
+      });
       if (!reExported.empty())
         importDecls = ArrayRef(reExported);
     }
