@@ -5,7 +5,7 @@
 
 // COM: Test that get_linkage_name with a GPU target sanitizes names:
 // COM: - Adds "_" prefix to digit-starting names
-// COM: - Encodes non-alnum characters
+// COM: - Replaces invalid characters with underscores
 
 kgen.generator @"42kernel"() {
   kgen.return
@@ -40,8 +40,9 @@ kgen.generator export @get_gpu_linkage_name() {
 
 // COM: Test that get_linkage_name with a GPU target sanitizes explicit linkage names:
 // COM: - Adds "_" prefix to digit-starting names
-// COM: - Encodes non-alnum characters
-kgen.generator @"42kernel"() attributes { linkageName = #kgen.linkage_name<"42.sanitize.this/kernel" : !kgen.string, false> } {
+// COM: - Replaces invalid characters with underscores
+// COM: - Appends a hash suffix derived from the function's sym_name and type
+kgen.generator @"42kernel"() attributes { linkageName = #kgen.linkage_name<"42.sanitize.this/kernel" : !kgen.string, true> } {
   kgen.return
 }
 
@@ -53,7 +54,7 @@ kgen.generator export @get_gpu_linkage_name() {
                                          index_bit_width = 64,
                                          tune_cpu = "sm_80",
                                          data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64">>
-  // CHECK: constant: string = <"_42_sanitize_this_kerneluAuAvA">
+  // CHECK: constant: string = <"_42_sanitize_this_kernel_{{[0-9a-f]+}}">
   %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"42kernel"> : !kgen.generator<() -> ()>>>
   kgen.return
 }
@@ -127,6 +128,10 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
       >
 
   // Check that inside the offloaded module, the PTX kernel is given the right name.
+  // @HELLO has mangle=false, so no hash suffix is appended. The inner
+  // get_linkage_name call on "x" also produces no hash (mangle=false on @FOO),
+  // so the outer name is just the concatenation of the sanitized inner name and
+  // "_hello".
   // CHECK: ModuleID =
   // CHECK-SAME: define dso_local ptx_kernel void @bar_hello(
   %1 = kgen.compile_offload<
@@ -140,12 +145,18 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
             @HELLO<:() capturing -> index *"foo()">
           > : !kgen.generator<() capturing -> !kgen.none>>
         >
-  // Check that the linkage names are also present in the populate_captures function
-  // CHECK: kgen.call @bar_hello_populate_captures(%arg0)
+  // Check that the populate_captures stub is present and called.
+  // The stub is named after the pre-rename sym (not the @__name linkage name)
+  // so each closure instantiation gets a unique stub even when multiple
+  // instantiations share the same @__name value.
+  // CHECK: kgen.call @{{.*}}_populate_captures{{.*}}(%arg0)
   // CHECK-SAME: : (!kgen.pointer<none>) capturing -> !kgen.none
   %2 = kgen.call_param[(!kgen.pointer<none>) capturing -> !kgen.none: x](%arg0)
 
   // Check that inside the offloaded module, the PTX kernel is given the right name.
+  // @FLIP has mangle=false with a digit-leading name ("1bar"), which the
+  // get_linkage_name sanitizer normalises to "_1bar". @HELLO (mangle=false)
+  // concatenates that with "_hello" → "_1bar_hello", no hash suffix.
   // CHECK: ModuleID =
   // CHECK-SAME: define dso_local ptx_kernel void @_1bar_hello(
   %3 = kgen.compile_offload<
@@ -159,7 +170,7 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
             @HELLO<:() capturing -> index *"flip()">
           > : !kgen.generator<() capturing -> !kgen.none>>
         >
-  // CHECK: kgen.call @_1bar_hello_populate_captures(%arg0)
+  // CHECK: kgen.call @{{.*}}_populate_captures{{.*}}(%arg0)
   // CHECK-SAME: : (!kgen.pointer<none>) capturing -> !kgen.none
   %4 = kgen.call_param[(!kgen.pointer<none>) capturing -> !kgen.none: y](%arg0)
   kgen.return

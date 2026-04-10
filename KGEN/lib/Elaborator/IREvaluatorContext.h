@@ -202,9 +202,9 @@ protected:
   /// Evaluate the mangled name of a function, including evaluating any explicit
   /// linkage name. This may return an empty StringAttr, signalling that the
   /// function is not yet ready.
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-  evaluateMangledName(TypedAttr symCst, bool sanitize, Location errorLoc,
-                      StringRef errorContext);
+  ErrorTreeOr<StringAttr> evaluateMangledName(TypedAttr symCst, bool sanitize,
+                                              Location errorLoc,
+                                              StringRef errorContext);
 
   std::string stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
                                        bool qualifiedBuiltins);
@@ -243,13 +243,6 @@ private:
 
   virtual ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) = 0;
 
-  /// Compute the expected mangled name of a generator from a parameter.
-  /// Returns both the mangled name and the generator referenced by the
-  /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.
-  virtual ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-  getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                         TypedAttr symCst, bool sanitize = false) = 0;
-
   virtual GeneratorOp getGenerator(SymbolRefAttr symbol) = 0;
 
   virtual void addDeferredFunction(OwningOpRef<FuncOp> func) = 0;
@@ -260,9 +253,17 @@ private:
 
   virtual ImplNodeBase *getParentNode() = 0;
 
-  /// Resolve a parametric linkageName expression to a concrete string.
-  /// Only called for non-StringAttr linkage names; constant linkage names are
-  /// handled directly in evaluateGetLinkageNameAttr.
+  /// Resolve the linkageName of @p gen to a concrete string for the given
+  /// symbol instantiation.
+  ///
+  /// Precondition: @p gen must have a linkageName attribute. Call this only
+  /// when gen.getLinkageNameAttr() is non-null.
+  ///
+  /// Returns:
+  ///   - failure()          — linkage name could not be resolved
+  ///   - success(null)      — not ready yet; a blocker has been registered
+  ///                          and the caller should retry
+  ///   - success(TypedAttr) — the resolved linkage name expression
   virtual FailureOr<TypedAttr>
   concretizeLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) = 0;
 };

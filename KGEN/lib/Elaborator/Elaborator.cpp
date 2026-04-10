@@ -576,13 +576,6 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
       genref.getType());
 }
 
-ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-Elaborator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                                   TypedAttr symCst, bool sanitize) {
-  return KGEN::getExpectedMangledName(errorLoc, errorContext, symCst, oldSymTab,
-                                      sanitize);
-}
-
 ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
                                                            ImplNode *parent,
                                                            Location loc) {
@@ -1883,16 +1876,18 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   StringRef emissionLinkOptionsStr =
       cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
 
+  // compile_offload ops are compiler-generated; these invariants must hold.
   SymbolConstantAttr symbol = extractSymbolConstantAttr(op.getFuncAttr());
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      getExpectedMangledName(op.getLoc(), "compile_offload", symbol);
-  if (pairOrError.isError()) {
-    return pairOrError.takeError();
-  }
-
-  StringAttr name;
-  GeneratorOp func;
-  std::tie(name, func) = pairOrError.takeValue();
+  assert(symbol && "compile_offload func must resolve to a SymbolConstantAttr");
+  assert(symbol.getType().isFullyBound() &&
+         "compile_offload func must be fully bound");
+  auto func = oldSymTab.lookup<GeneratorOp>(
+      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
+  assert(func && "compile_offload must reference a valid GeneratorOp");
+  // Use mangleParameterValues for the bundling name so it matches the name
+  // evaluateCompileOffloadClosureAttr uses for the _populate_captures stub.
+  StringAttr name = StringAttr::get(
+      op.getContext(), mangleParameterValues(func, symbol.getParamValues()));
 
   // Handle the emission options.
   // Parse the emission options from a comma separated list of values.
@@ -2697,22 +2692,8 @@ LogicalResult Elaborator::run(
       llvm::DenseMap<std::string, DenseMap<uint64_t, OffloadCompilationResult>>>
       compiledOffload = compiledOffloadOr.takeValue();
 
-  for (auto &[target, result] : compiledOffload) {
-    for (auto &[_, group] : result) {
-      for (auto &[_, kernel] : group) {
-        auto populate = cast<FuncOp>(kernel.func.get());
-        auto symbol = SymbolConstantAttr::get(populate);
-
-        FuncOp func = *getConcreteFunction(nullptr, populate.getLoc(), symbol);
-        if (func) {
-          // Now filling in the actual body of the populate closure which is
-          // generated while compiling all the offload functions.
-          func.getBodyRegion().takeBody(
-              cast<FuncOp>(*kernel.func).getBodyRegion());
-        }
-      }
-    }
-  }
+  // The fill step runs after renameFunctions below, anchored to pre-rename syms
+  // so that @__name renaming does not break the host-stub lookup.
 
   // Cleanup pass - we want to remove generators and interfaces by replacing
   // them with their concrete implementations. Only handle the primary
@@ -2773,6 +2754,45 @@ LogicalResult Elaborator::run(
   theModule.getBodyRegion().push_back(newBlock);
 
   renameFunctions(theModule, target.isGPU(), failed);
+
+  // Fill populate_captures stubs with the body generated during GPU offload
+  // compilation.
+  //
+  // @__name kernels are renamed by renameFunctions above, so this fill step
+  // runs after renaming. Both sides of the name lookup are deliberately
+  // anchored to the pre-rename auto-mangled sym to survive that rename:
+  //
+  //   - The host stub was created in evaluateCompileOffloadClosureAttr using
+  //     the pre-rename sym (mangleParameterValues of the generator).
+  //   - writeCaptureArgs (in KGENCompiler) names the GPU-side populate function
+  //     using kernelPreRenameSyms, which captures the same pre-rename sym
+  //     before the GPU rename loop runs.
+  //
+  // So populate.getSymName() here is the pre-rename sym, and lookupSymbolIn
+  // finds the host stub by that same name.
+  for (auto &[fillTarget, fillResult] : compiledOffload) {
+    for (auto &[_, fillGroup] : fillResult) {
+      for (auto &[_, kernel] : fillGroup) {
+        auto populate = cast<FuncOp>(kernel.func.get());
+        StringRef populateName = populate.getSymName();
+        StringAttr lookupName =
+            StringAttr::get(theModule.getContext(), populateName);
+        // A host stub only exists for kernels that had a
+        // compile_offload_closure declared on the host side. Kernels compiled
+        // only for their info (e.g. via compile_offload without a matching
+        // closure) have no stub; skip.
+        Operation *stubOp =
+            mlir::SymbolTable::lookupSymbolIn(theModule, lookupName);
+        if (!stubOp)
+          continue;
+        auto stubFunc = cast<FuncOp>(stubOp);
+        // Fill in the actual body of the populate closure which is
+        // generated while compiling all the offload functions.
+        stubFunc.getBodyRegion().takeBody(
+            cast<FuncOp>(*kernel.func).getBodyRegion());
+      }
+    }
+  }
 
   theModule.walk([&](Operation *op) {
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
