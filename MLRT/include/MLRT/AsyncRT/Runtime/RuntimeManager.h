@@ -16,12 +16,12 @@ namespace M::AsyncRT {
 /// on first use with \p source and \p options. If a global runtime already
 /// exists, triggers a fatal error if \p options do not match those used at
 /// creation, and returns a copy of the existing reference.
+/// \p allowUsingExistingOptions may be set to true to disable the check that
+/// the runtime options match and discard the provided options, but the caller
+/// should ensure that it is safe to do so.
 MODULAR_CXX_EXPORT RuntimeRef getOrCreateRuntime(
-    RuntimeSource source, const RuntimeOptions &options = RuntimeOptions());
-
-/// If the global AsyncRT runtime has already been created, return the options
-/// that it was created with. Otherwise, return the default RuntimeOptions.
-MODULAR_CXX_EXPORT AsyncRT::RuntimeOptions getDefaultOrExistingRuntimeOptions();
+    RuntimeSource source, const RuntimeOptions &options = RuntimeOptions(),
+    bool allowUsingExistingOptions = false);
 
 } // namespace M::AsyncRT
 
