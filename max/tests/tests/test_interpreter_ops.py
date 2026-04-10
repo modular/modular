@@ -4453,6 +4453,390 @@ class TestScatterNdAddOp:
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
 
+class TestScatterNdMaxOp:
+    """Tests for scatter_nd_max op via the MO interpreter (CPU-only).
+
+    Uses ``F.scatter_nd_max`` which routes through ``ops.scatter_nd_max`` ->
+    ``rmo.MoScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
+    Duplicate index vectors keep the maximum.
+    """
+
+    @staticmethod
+    def _scatter_nd_max_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then keep max at N-D index positions."""
+        out = x_np.copy()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] = np.maximum(out[idx_vec], updates_np[batch_idx])
+        return out
+
+    def test_1d_full_index(self) -> None:
+        """Test scatter_nd_max on a 1D tensor with full indexing."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
+        updates_np = np.array([10.0, 0.5], dtype=np.float32)
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd_max on a 2D tensor with 1-D partial indexing."""
+        x_np = np.zeros((3, 3), dtype=np.float32)
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd_max on a 2D tensor with full 2-D indexing."""
+        x_np = np.zeros((3, 3), dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate index vectors must keep the maximum, not overwrite."""
+        x_np = np.zeros((4,), dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 5.0], dtype=np.float32)
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 20.0
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.int32]
+    )
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_nd_max with various numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.zeros((4,), dtype=np_dtype)
+        updates_np = np.array([5, 10, 15], dtype=np_dtype)
+        indices_np = np.array([[0], [2], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterNdMinOp:
+    """Tests for scatter_nd_min op via the MO interpreter (CPU-only).
+
+    Uses ``F.scatter_nd_min`` which routes through ``ops.scatter_nd_min`` ->
+    ``rmo.MoScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
+    Duplicate index vectors keep the minimum.
+    """
+
+    @staticmethod
+    def _scatter_nd_min_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then keep min at N-D index positions."""
+        out = x_np.copy()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] = np.minimum(out[idx_vec], updates_np[batch_idx])
+        return out
+
+    def test_1d_full_index(self) -> None:
+        """Test scatter_nd_min on a 1D tensor with full indexing."""
+        x_np = np.array([10.0, 20.0, 30.0, 40.0, 50.0], dtype=np.float32)
+        updates_np = np.array([5.0, 100.0], dtype=np.float32)
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd_min on a 2D tensor with 1-D partial indexing."""
+        x_np = np.full((3, 3), 100.0, dtype=np.float32)
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd_min on a 2D tensor with full 2-D indexing."""
+        x_np = np.full((3, 3), 100.0, dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate index vectors must keep the minimum."""
+        x_np = np.full((4,), 100.0, dtype=np.float32)
+        updates_np = np.array([30.0, 10.0, 5.0], dtype=np.float32)
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 10.0
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.int32]
+    )
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_nd_min with various numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.full((4,), 100, dtype=np_dtype)
+        updates_np = np.array([5, 10, 15], dtype=np_dtype)
+        indices_np = np.array([[0], [2], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterNdMulOp:
+    """Tests for scatter_nd_mul op via the MO interpreter (CPU-only).
+
+    Uses ``F.scatter_nd_mul`` which routes through ``ops.scatter_nd_mul`` ->
+    ``rmo.MoScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
+    Duplicate index vectors multiply.
+    """
+
+    @staticmethod
+    def _scatter_nd_mul_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then multiply at N-D index positions."""
+        out = x_np.copy()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] *= updates_np[batch_idx]
+        return out
+
+    def test_1d_full_index(self) -> None:
+        """Test scatter_nd_mul on a 1D tensor with full indexing."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
+        updates_np = np.array([10.0, 2.0], dtype=np.float32)
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd_mul on a 2D tensor with 1-D partial indexing."""
+        x_np = np.ones((3, 3), dtype=np.float32) * 2
+        updates_np = np.array(
+            [[3.0, 3.0, 3.0], [4.0, 4.0, 4.0]], dtype=np.float32
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd_mul on a 2D tensor with full 2-D indexing."""
+        x_np = np.ones((3, 3), dtype=np.float32) * 5
+        updates_np = np.array([2.0, 3.0, 4.0], dtype=np.float32)
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate index vectors must chain multiplications."""
+        x_np = np.ones((4,), dtype=np.float32)
+        updates_np = np.array([3.0, 5.0, 2.0], dtype=np.float32)
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 15.0
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.int32]
+    )
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_nd_mul with various numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.ones((4,), dtype=np_dtype) * 2
+        updates_np = np.array([5, 10, 15], dtype=np_dtype)
+        indices_np = np.array([[0], [2], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
 class TestConv2dOp:
     """Tests for the mo.conv (2D forward convolution) interpreter handler."""
 

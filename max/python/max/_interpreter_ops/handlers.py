@@ -1926,6 +1926,100 @@ def _handle_scatter_nd_add(
     return [output]
 
 
+def _scatter_nd_reduction_common(
+    op: mo.ScatterNdMaxOp | mo.ScatterNdMinOp | mo.ScatterNdMulOp,
+    inputs: Sequence[Buffer | None],
+    mojo_fn_name: str,
+) -> Sequence[Buffer]:
+    """Shared logic for scatter_nd_max/min/mul handlers.
+
+    Copies input to output, then applies the named Mojo scatter-nd kernel.
+
+    Args:
+        op: The scatter_nd reduction operation.
+        inputs: Input buffers - input, updates, indices, outputParamDecls.
+        mojo_fn_name: Name of the Mojo dispatcher function on
+            ``gather_scatter_ops`` (e.g. ``"ScatterNdMax"``).
+
+    Returns:
+        List containing the scatter_nd result buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # updates
+    assert isinstance(inputs[2], Buffer)  # indices
+
+    input_buffer = inputs[0]
+    updates_buffer = inputs[1]
+    indices_buffer = inputs[2]
+
+    in_shape = list(input_buffer.shape)
+    idx_shape = list(indices_buffer.shape)
+    index_depth = idx_shape[-1]
+
+    batch_size = 1
+    indices_outer_size = prod(idx_shape[:-1]) if len(idx_shape) > 1 else 1
+    suffix_size = (
+        prod(in_shape[index_depth:]) if index_depth < len(in_shape) else 1
+    )
+    input_data_stride = prod(in_shape) if in_shape else 1
+    input_inner_shape = in_shape
+
+    output = Buffer(
+        shape=in_shape, dtype=input_buffer.dtype, device=target_device
+    )
+    total_elements = prod(in_shape) if in_shape else 1
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.data_movement_ops.Memcpy(
+        output, input_buffer, 0, 0, total_elements, ctx_ptr
+    )
+
+    if indices_outer_size > 0:
+        mojo_fn = getattr(ops.gather_scatter_ops, mojo_fn_name)
+        mojo_fn(
+            output,
+            updates_buffer,
+            indices_buffer,
+            (
+                batch_size,
+                indices_outer_size,
+                index_depth,
+                suffix_size,
+                input_data_stride,
+                input_inner_shape,
+            ),
+            ctx_ptr,
+        )
+
+    return [output]
+
+
+@register_op_handler(mo.ScatterNdMaxOp)
+def _handle_scatter_nd_max(
+    op: mo.ScatterNdMaxOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter_nd.max via the shared scatter-nd reduction helper."""
+    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMax")
+
+
+@register_op_handler(mo.ScatterNdMinOp)
+def _handle_scatter_nd_min(
+    op: mo.ScatterNdMinOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter_nd.min via the shared scatter-nd reduction helper."""
+    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMin")
+
+
+@register_op_handler(mo.ScatterNdMulOp)
+def _handle_scatter_nd_mul(
+    op: mo.ScatterNdMulOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter_nd.mul via the shared scatter-nd reduction helper."""
+    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMul")
+
+
 # Split operations
 
 
