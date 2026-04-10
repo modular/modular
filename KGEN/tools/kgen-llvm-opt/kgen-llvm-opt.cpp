@@ -4,6 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 //
+// DEPRECATED: kgen-llvm-opt is deprecated.
+// Use kgen-opt instead; it automatically selects the LLVM IR path for .ll and
+// .bc files, and the MLIR path for .mlir files.
+//
 // The kgen-llvm-opt tool is similar to LLVM's opt tool. It supports two modes:
 //
 //  1. Full KGEN optimization pipeline: specify -O0/-O1/-O2/-O3 to run the
@@ -292,6 +296,9 @@ int main(int argc, char **argv) {
 
   cl::ParseCommandLineOptions(
       argc, argv, "llvm .bc -> .bc modular optimizer and analysis printer\n");
+
+  errs() << "DEPRECATION WARNING: kgen-llvm-opt is deprecated and will be "
+            "removed in the future. Use kgen-opt instead;\n";
 
   bool useCustomizedBitcodeWriter =
       (clOptions.outputBCVersion != BCVersionNo::DEFAULT);
