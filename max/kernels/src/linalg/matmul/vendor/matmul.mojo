@@ -19,9 +19,6 @@ from std.gpu.host.info import B200
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -73,27 +70,22 @@ def matmul[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
-        comptime c_lt_layout = Layout.row_major(
-            c.static_shape[0], c.static_shape[1]
-        )
-        var c_lt = LayoutTensor[c_type, c_lt_layout, MutAnyOrigin](
+        var c_tt = TileTensor(
             rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c.ptr),
-            RuntimeLayout[c_lt_layout].row_major(
-                IndexList[2](Int(c.dim[0]()), Int(c.dim[1]()))
-            ),
+            row_major(Coord(Idx(Int(c.dim[0]())), Idx(Int(c.dim[1]())))),
         )
 
         @parameter
-        @__copy_capture(c_lt)
+        @__copy_capture(c_tt)
         def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
-            var c_val = c_lt.load[
+            var c_val = c_tt.load_linear[
                 width=simd_width,
                 # Load takes alignment in bytes, lambda takes number of elements
-                load_alignment=alignment * size_of[c_type](),
-            ](c_coord[0], c_coord[1])
+                alignment=alignment * size_of[c_type](),
+            ](idx)
             epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
 
         # If c is already allocated, we can just use the vendor matmul and

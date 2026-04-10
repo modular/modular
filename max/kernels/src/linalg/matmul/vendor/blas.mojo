@@ -461,65 +461,6 @@ def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
-    *,
-    use_tf32: Bool = False,
-    scales_type: DType,
-](
-    ctx: DeviceContext,
-    c_tensor: LayoutTensor[mut=True, c_type, c_layout, _],
-    a_tensor: LayoutTensor[mut=False, a_type, a_layout, _],
-    b_tensor: LayoutTensor[mut=False, b_type, b_layout, _],
-    *,
-    a_scales: TileTensor[scales_type, ...],
-    b_scales: TileTensor[scales_type, ...],
-    c_row_major: Bool = False,
-    transpose_a: Bool = False,
-    transpose_b: Bool = False,
-    alpha: Float32 = 1.0,
-    beta: Float32 = 0.0,
-    batch_size: Int = 1,
-) raises:
-    """Overload accepting LayoutTensor matrices and TileTensor scale factors.
-
-    Converts matrices to TileTensor, then delegates to the all-TileTensor
-    overload which handles scale factor conversion.
-    """
-    var c_tt = TileTensor(
-        rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c_tensor.ptr),
-        row_major(Coord(Idx(c_tensor.dim(0)), Idx(c_tensor.dim(1)))),
-    )
-    var a_tt = TileTensor(
-        rebind[UnsafePointer[Scalar[a_type], ImmutAnyOrigin]](a_tensor.ptr),
-        row_major(Coord(Idx(a_tensor.dim(0)), Idx(a_tensor.dim(1)))),
-    )
-    var b_tt = TileTensor(
-        rebind[UnsafePointer[Scalar[b_type], ImmutAnyOrigin]](b_tensor.ptr),
-        row_major(Coord(Idx(b_tensor.dim(0)), Idx(b_tensor.dim(1)))),
-    )
-
-    matmul[use_tf32=use_tf32, scales_type=scales_type](
-        ctx,
-        c_tt,
-        a_tt,
-        b_tt,
-        a_scales=a_scales,
-        b_scales=b_scales,
-        c_row_major=c_row_major,
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        alpha=alpha,
-        beta=beta,
-        batch_size=batch_size,
-    )
-
-
-def matmul[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
     *,
     use_tf32: Bool = False,
     scales_type: DType,
