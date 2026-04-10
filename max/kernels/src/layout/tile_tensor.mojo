@@ -822,10 +822,9 @@ struct TileTensor[
     def write_to(self, mut w: Some[Writer]):
         """Format and write the tensor's contents to a writer.
 
-        This method formats the tensor's contents and writes them to the
-        provided writer. For 2D tensors, it formats the output in a 2D grid. For
-        tensors of other ranks, it prints all values in column-major coordinate
-        order.
+        Uses bracket-delimited, comma-separated format. For 2D tensors,
+        the output shows nested row structure. For other ranks, values are
+        printed as a flat bracketed list in column-major coordinate order.
 
         Args:
             w: The writer instance to write the formatted output to.
@@ -836,40 +835,19 @@ struct TileTensor[
         from layout import TileTensor
         from layout.tile_layout import row_major
 
-        def main() raises:
-            var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
-            var tensor = TileTensor(storage, row_major[2, 3]()).fill(1.0)
-            print(tensor)  # Internally calls `write_to` with a StringWriter
+        def main():
+            var storage = InlineArray[Float32, 4](uninitialized=True)
+            var vec = TileTensor(storage, row_major[4]()).fill(1.0)
+            print(vec)   # [1.0, 1.0, 1.0, 1.0]
+
+            var storage2 = InlineArray[Float32, 6](uninitialized=True)
+            var mat = TileTensor(storage2, row_major[2, 3]()).fill(1.0)
+            print(mat)   # [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
         ```
-
-        Output for a 2x3 tensor:
-
-        ```
-        [[1.0, 1.0, 1.0],
-            [1.0, 1.0, 1.0]]
-        ```
-
-        Notes:
-
-        - For 2D tensors, the output is formatted as a 2D grid with rows and
-            columns.
-        - For tensors of other ranks, values are printed in column-major
-            coordinate order.
-        - Empty tensors (size 0) produce no output.
-        - This method is used by the `__str__` method to convert the tensor to a
-            string.
-        - The formatting is designed for human readability rather than parsing.
-        - For large tensors, the output may be truncated to avoid excessive
-            output.
         """
 
         if self.layout.product() == 0:
             return
-
-        # The 2D print works only for layout shape (M, N).
-        # Check both original and coalesced layouts so that (M, 1) and
-        # ((M), (N)) can all be printed in 2D. Shapes like ((2, 2), 2) will be
-        # printed elementwise.
 
         comptime if Self.flat_rank == 2:
             comptime assert Self.flat_rank == 2
@@ -877,6 +855,8 @@ struct TileTensor[
             comptime if Self.static_shape[0] > -1 and Self.static_shape[1] > -1:
                 _pretty_print_2d_tensor(self, w)
                 return
+
+        _pretty_print_elementwise(self, w)
 
     @always_inline("nodebug")
     def tile[
@@ -2424,6 +2404,22 @@ def stack_allocation[
 
 
 @always_inline
+def _pretty_print_elementwise[W: Writer](tensor: TileTensor, mut writer: W):
+    var n = tensor.layout.product()
+    writer.write("[")
+    for i in range(n):
+        var offset = tensor.layout[linear_idx_type=tensor.linear_idx_type](
+            RuntimeInt[tensor.linear_idx_type](
+                Scalar[tensor.linear_idx_type](i)
+            )
+        )
+        writer.write(tensor.ptr.load[width=tensor.element_size](offset))
+        if i < n - 1:
+            writer.write(", ")
+    writer.write("]")
+
+
+@always_inline
 def _pretty_print_2d_tensor[
     W: Writer
 ](tensor: TileTensor, mut writer: W) where tensor.flat_rank == 2:
@@ -2431,11 +2427,17 @@ def _pretty_print_2d_tensor[
     comptime assert tensor.flat_rank == 2
     var m_dim = tensor.layout.shape[0]()
     var n_dim = tensor.layout.shape[1]()
+    writer.write("[")
     for m in range(m_dim.value()):
+        writer.write("[")
         for n in range(n_dim.value()):
-            writer.write(tensor[m, n], " ")
+            writer.write(tensor[m, n])
+            if n < n_dim.value() - 1:
+                writer.write(", ")
+        writer.write("]")
         if m < m_dim.value() - 1:
-            writer.write("\n")
+            writer.write(", ")
+    writer.write("]")
 
 
 @always_inline("nodebug")
