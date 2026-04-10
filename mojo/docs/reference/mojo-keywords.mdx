@@ -20,9 +20,9 @@ the context-sensitive tokens that control how values are passed and bound
 
 ## Identifiers
 
-Every time you declare a variable, define a function, or create a struct, you
-give it a name. That name is an *identifier*. Identifiers are how you refer
-to things in your code: `count` in `var count = 0`, `Point` in
+Every time you declare a variable, define a function, or create a struct,
+you give it a name. That name is an *identifier*. Identifiers are how you
+refer to things in your code: `count` in `var count = 0`, `Point` in
 `struct Point`, `greet` in `def greet()`.
 
 This section covers what makes a valid identifier.
@@ -45,7 +45,8 @@ MyStruct
 basic_value
 ```
 
-Identifiers are case-sensitive. `MyStruct` and `mystruct` are different names.
+Identifiers are case-sensitive. `MyStruct` and `mystruct` are different
+names.
 
 ### Escaped identifiers
 
@@ -161,34 +162,64 @@ won't break, but in Mojo signatures they have fixed meaning.
 Argument conventions appear before argument names in function signatures.
 They control ownership and mutability:
 
+<!-- markdownlint-disable MD013 -->
+
 | Convention | Role                 | Meaning                                            |
 |------------|----------------------|----------------------------------------------------|
 | `mut`      | Argument             | Mutable reference to an existing value             |
-| `out`      | Argument             | Uninitialized output, used in initializers         |
+| `out`      | Argument             | Returns a value without a return arrow             |
 | `deinit`   | Argument             | Destructive transfer at end of a value's lifecycle |
 | `var`      | Argument or variable | Independent mutable owned copy of the value        |
 | `ref`      | Argument or variable | Reference that doesn't own the value               |
+
+<!-- markdownlint-enable MD013 -->
 
 `var` and `ref` also appear in variable declarations, where `var` creates a
 scoped mutable variable and `ref` creates a scoped reference binding:
 
 ```mojo
-struct Counter:
+struct CountingTool:
     var value: Int
 
-    def __init__(out self):       # out: self doesn't exist yet
+    def __init__(out self):       # out: self is the return value
         self.value = 0
 
     def increment(mut self):      # mut: modifies self in place
         self.value += 1
 
 var count = 0          # var creates a scoped mutable variable
-ref alias = some_list  # ref binds a reference, no copy
+ref alias = some_list  # ref binds a reference, no copying
 ```
 
-`raises` and `where` also have fixed meaning in signatures. `raises` declares
-that a function can raise errors. `where` introduces a constraint clause on
-parameters:
+A `self` argument without a convention is immutable. Modifying it requires
+`mut`:
+
+```mojo
+struct CountingTool:
+    var value: Int
+
+    def increment(mut self):
+        self.value += 1      # OK: mut self allows modification
+
+    def get(self) -> Int:
+        self.value += 1      # Error: self is immutable
+        return self.value
+```
+
+`out` declares the return value by name. It can't be combined with `->`:
+
+```mojo
+def make_point(out result: Point):        # OK
+    result = Point(0, 0)
+
+def make_point(out result: Point) -> Point:  # Error: function cannot have
+    result = Point(0, 0)                     # both an 'out' argument and
+                                             # an explicit result type
+```
+
+`raises` and `where` also have fixed meaning in signatures. `raises`
+declares that a function can raise errors. `where` introduces a constraint
+clause on parameters:
 
 ```mojo
 def validate(value: Int) raises:

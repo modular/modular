@@ -117,6 +117,13 @@ A *set display* uses braces with values but no colons:
 var primes = {2, 3, 5, 7}
 ```
 
+Don't mix set and dict syntax. `{1, 2}` is a set. `{1: 2}` is a dict.
+
+```mojo
+{"a": 1, 2}   # Error: cannot mix 'key: value' pairs and set elements
+{1, "b": 2}   # Error: cannot mix 'key: value' pairs and set elements
+```
+
 Brace syntax also serves as an *initializer list* that creates
 an instance of an inferred type. Without type context, the
 compiler can't distinguish a set from an initializer list, so
@@ -164,16 +171,29 @@ var p = Point(1.0, 2.0)
 ### Positional and keyword arguments
 
 Arguments before any keyword argument are positional. Keyword
-arguments use `name=value` syntax. Positional arguments can't
-follow keyword arguments:
+arguments use `name=value` syntax.
 
 ```mojo
 def greet(name: String, loud: Bool = False):
-    pass
+    print(t"Hello, {name if not loud else name.upper()}!")
 
-greet("Alice")
-greet("Alice", loud=True)
-greet(name="Bob")
+greet("Alice")  # Hello, Alice!
+greet("Alice", loud=True)  # Hello, ALICE!
+greet(name="Bob") # Hello, Bob!
+```
+
+Positional arguments can't follow keyword arguments:
+
+```mojo
+    # greet(loud=True, "Alice")
+    # Error: positional argument follows keyword argument
+```
+
+Keyword arguments can't be repeated:
+
+```mojo
+greet(name="Alice", name="Bob")
+# Error: duplicate keyword argument 'name'
 ```
 
 ## Subscripts and slices
@@ -234,11 +254,10 @@ This groups as
 
 ## Walrus operator
 
-Regular assignment (`=`) is a statement. It can't appear
-inside a larger expression. The walrus operator `:=` is
-the expression form of assignment: it binds a value to a
-name and evaluates to that same value, so the result can
-be used immediately:
+Regular assignment (`=`) is a statement. It can't appear inside a larger
+expression. The walrus operator (also known as the assignment expression)
+`:=` is the expression form of assignment: it binds a value to a name and
+evaluates to that same value, so the result can be used immediately:
 
 ```mojo
 if (n := len(items)) > 10:
@@ -248,10 +267,19 @@ while (name := input("Prompt: ")) != "quit":
     print(name)
 ```
 
-The walrus operator implicitly declares the variable in
-`def` functions. It has the lowest precedence of any
-expression operator, so parentheses are typically needed
-when used inside larger expressions.
+The walrus operator implicitly declares the variable in `def` methods and
+functions. It has the lowest precedence of any expression operator, so
+parentheses are typically needed when used inside larger expressions.
+
+```mojo
+# Walrus requires a function scope
+n := len(items)      # Error: expressions must be inside a function
+
+# Walrus is not valid inside subscripts
+def main():
+    items = [1, 2, 3]
+    items[n := 2]    # Error: walrus is not allowed in subscripts
+```
 
 ## Compile-time expressions
 
@@ -264,6 +292,9 @@ def heavy_calculation() -> Int:
     for i in range(1_000_000):
         sum += i
     return sum
+
+# var x = comptime heavy_calculation()
+# Error: requires parentheses
 
 var x = comptime(heavy_calculation())  # O(1) at runtime
 print(x)  # 499999500000

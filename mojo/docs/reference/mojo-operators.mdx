@@ -207,6 +207,34 @@ prefix operators like `-x`, `+x`, and `~x`.
 | `+x`     | `__pos__()`    |
 | `~x`     | `__invert__()` |
 
+Mojo offers one postfix unary operator.
+
+| Operator | Method                       |
+|----------|------------------------------|
+| `x^`     | Compiler implementation only |
+
+Use the `^` sigil for ownership transfer. `consume(a^)` transfers
+ownership of `a` to the `consume` function.
+
+- If the `consume` argument uses the `var` convention, the transfer moves
+  the value.
+- If not, the value is copied and the original is left intact.
+
+After transfer, the `a` variable is uninitialized. You can't re-use the
+name until it's assigned a new value.
+
+```mojo
+consume(a^) # transfers ownership of `a`'s value, leaving `a` uninitialized
+```
+
+**Disambiguation:** `^` means XOR when followed by a value, and transfer
+when used directly after a variable name.
+
+```mojo
+a ^ b   # XOR
+a^      # transfer
+```
+
 ### Comparison operators
 
 Implement the methods directly on your struct to use
