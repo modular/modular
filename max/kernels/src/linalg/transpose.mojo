@@ -17,11 +17,7 @@ from std.sys.info import simd_width_of, size_of
 from std.sys.intrinsics import strided_load, strided_store
 
 from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
-from layout import (
-    LayoutTensor,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor
 from std.memory import memcpy
 from std.runtime.asyncrt import parallelism_level
 
@@ -360,17 +356,6 @@ def transpose_inplace[
         _transpose_inplace_16x16[rows, cols, dtype](buf)
     else:
         _transpose_inplace_naive[rows, cols, dtype](buf)
-
-
-def transpose_inplace[
-    rows: Int,
-    cols: Int,
-    dtype: DType,
-](buf: LayoutTensor[mut=True, dtype, ...]):
-    # Bridge to TileTensor implementation.
-    transpose_inplace[rows, cols, dtype](
-        TileTensor(buf.ptr, row_major[rows, cols]())
-    )
 
 
 def _permute_data[
