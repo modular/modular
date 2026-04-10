@@ -359,15 +359,15 @@ def execute_matmul_kv_cache_ragged[
 
     # Execute reference.
     var ref_output_tile = TileTensor(
-        ref_output_device.unsafe_ptr(),
+        ref_output_device,
         row_major(Coord(Idx(ref_output_shape[0]), Idx(ref_output_shape[1]))),
     )
     var hidden_state_padded_tile = TileTensor(
-        hidden_state_padded_device.unsafe_ptr(),
+        hidden_state_padded_device,
         row_major(Coord(Idx(padded_batch_dim), Idx(hidden_size))),
     )
     var weight_tile = TileTensor(
-        weight_device.unsafe_ptr(),
+        weight_device,
         row_major(Coord(Idx(weight_shape[0]), Idx(weight_shape[1]))),
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
@@ -580,15 +580,15 @@ def execute_matmul_k_cache_ragged[
 
     # Execute reference.
     var ref_output_tile = TileTensor(
-        ref_output_device.unsafe_ptr(),
+        ref_output_device,
         row_major(Coord(Idx(ref_output_shape[0]), Idx(ref_output_shape[1]))),
     )
     var hidden_state_padded_tile = TileTensor(
-        hidden_state_padded_device.unsafe_ptr(),
+        hidden_state_padded_device,
         row_major(Coord(Idx(padded_batch_dim), Idx(hidden_size))),
     )
     var weight_tile = TileTensor(
-        weight_device.unsafe_ptr(),
+        weight_device,
         row_major(Coord(Idx(weight_shape[0]), Idx(weight_shape[1]))),
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
@@ -866,15 +866,15 @@ def generic_execute_fused_qkv_cache_ragged[
 
     # Execute reference
     var ref_output_tile = TileTensor(
-        ref_output_device.unsafe_ptr(),
+        ref_output_device,
         row_major(Coord(Idx(ref_output_shape[0]), Idx(ref_output_shape[1]))),
     )
     var hidden_state_padded_tile = TileTensor(
-        hidden_state_padded_device.unsafe_ptr(),
+        hidden_state_padded_device,
         row_major(Coord(Idx(padded_batch_dim), Idx(hidden_size))),
     )
     var weight_tile = TileTensor(
-        weight_device.unsafe_ptr(),
+        weight_device,
         row_major(Coord(Idx(weight_shape[0]), Idx(weight_shape[1]))),
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](

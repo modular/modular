@@ -713,9 +713,9 @@ def test_quantized[
     )
     var c_tt_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var c_dev_tt = TileTensor(c_device.unsafe_ptr(), c_tt_shape)
-    var a_dev_tt = TileTensor(a_device.unsafe_ptr(), a_tt_shape)
-    var b_dev_tt = TileTensor(b_device.unsafe_ptr(), b_tt_shape)
+    var c_dev_tt = TileTensor(c_device, c_tt_shape)
+    var a_dev_tt = TileTensor(a_device, a_tt_shape)
+    var b_dev_tt = TileTensor(b_device, b_tt_shape)
 
     var c_dev_lt = c_dev_tt.to_layout_tensor()
     var a_dev_lt = a_dev_tt.to_layout_tensor()
@@ -799,8 +799,8 @@ def test_quantized[
     var b_ref_tt_shape = row_major(
         Coord(Idx[NType.static_value](), Idx[KType.static_value]())
     )
-    var c_ref_tt = TileTensor(c_device_ref.unsafe_ptr(), c_ref_tt_shape)
-    var b_ref_tt = TileTensor(b_device_ref.unsafe_ptr(), b_ref_tt_shape)
+    var c_ref_tt = TileTensor(c_device_ref, c_ref_tt_shape)
+    var b_ref_tt = TileTensor(b_device_ref, b_ref_tt_shape)
     multistage_gemm[transpose_b=True, config=config_ref](
         c_ref_tt,
         a_dev_tt,

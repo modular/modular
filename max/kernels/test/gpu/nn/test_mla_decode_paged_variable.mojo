@@ -300,17 +300,17 @@ def run_test_paged_variable[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -422,11 +422,11 @@ def run_test_paged_variable[
 
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -437,7 +437,7 @@ def run_test_paged_variable[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
         )
 
@@ -751,17 +751,17 @@ def run_test_paged_variable_multiq[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -868,13 +868,13 @@ def run_test_paged_variable_multiq[
 
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major(
                 (Idx(1), Idx(q_max_seq_len), Idx[num_heads](), Idx[DEPTH]())
             ),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -885,7 +885,7 @@ def run_test_paged_variable_multiq[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major(
                 (Idx(1), Idx(q_max_seq_len), Idx[num_heads](), Idx[DEPTH]())
             ),
@@ -1242,17 +1242,17 @@ def run_test_paged_variable_ragged_q[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -1364,11 +1364,11 @@ def run_test_paged_variable_ragged_q[
 
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major((Idx(1), Idx(b_seq_len), Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -1379,7 +1379,7 @@ def run_test_paged_variable_ragged_q[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major((Idx(1), Idx(b_seq_len), Idx[num_heads](), Idx[DEPTH]())),
         )
 
@@ -1676,17 +1676,17 @@ def run_bench_paged_variable[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -2000,17 +2000,17 @@ def run_test_paged_variable_native_fp8[
 
     # Q is FP8, output is BF16
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -2118,11 +2118,11 @@ def run_test_paged_variable_native_fp8[
 
         # Build 4D TileTensors (all BF16 for reference)
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -2133,7 +2133,7 @@ def run_test_paged_variable_native_fp8[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
         )
 
@@ -2419,17 +2419,17 @@ def run_bench_paged_variable_native_fp8[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 

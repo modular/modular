@@ -145,19 +145,19 @@ def _test_grouped_1d1d_block_fp4_impl[
 
     # Construct TileTensors directly from pointers and layouts
     var a_tt = TileTensor(
-        a_buf.unsafe_ptr(),
+        a_buf,
         row_major(Coord(Idx(Int(total_tokens)), Idx[packed_K]())),
     )
     var b_tt = TileTensor(
-        b_buf.unsafe_ptr(),
+        b_buf,
         row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
     )
     var c_tt = TileTensor(
-        c_buf.unsafe_ptr(),
+        c_buf,
         row_major(Coord(Idx(Int(total_tokens)), Idx[N]())),
     )
     var a_offsets_tt = TileTensor(
-        a_off_buf.unsafe_ptr(),
+        a_off_buf,
         row_major(
             Idx(
                 Int(num_active_experts + 1),
@@ -165,7 +165,7 @@ def _test_grouped_1d1d_block_fp4_impl[
         ),
     )
     var a_scale_offsets_tt = TileTensor(
-        a_soff_buf.unsafe_ptr(),
+        a_soff_buf,
         row_major(
             Idx(
                 Int(num_active_experts),
@@ -173,7 +173,7 @@ def _test_grouped_1d1d_block_fp4_impl[
         ),
     )
     var expert_ids_tt = TileTensor(
-        eid_buf.unsafe_ptr(),
+        eid_buf,
         row_major(
             Idx(
                 Int(num_active_experts),
@@ -181,7 +181,7 @@ def _test_grouped_1d1d_block_fp4_impl[
         ),
     )
     var expert_scales_tt = TileTensor(
-        es_buf.unsafe_ptr(),
+        es_buf,
         row_major(
             Idx[num_experts](),
         ),
@@ -189,7 +189,7 @@ def _test_grouped_1d1d_block_fp4_impl[
 
     # Scale factor TileTensors (5D and 6D)
     var a_scales_tt = TileTensor(
-        a_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
+        a_sf_buf,
         row_major(
             Coord(
                 RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
@@ -201,7 +201,7 @@ def _test_grouped_1d1d_block_fp4_impl[
         ),
     ).as_any_origin()
     var b_scales_tt = TileTensor(
-        b_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
+        b_sf_buf,
         row_major(
             Coord(
                 Idx[num_experts](),

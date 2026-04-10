@@ -151,25 +151,25 @@ def test[
 
     # Construct device buffers.
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
+        v_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
@@ -211,7 +211,7 @@ def test[
 
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var output_ref_device = TileTensor(
-        output_ref_device_ptr.unsafe_ptr(),
+        output_ref_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
@@ -554,25 +554,25 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     ctx.enqueue_copy(sinks_dev, sinks_ptr)
 
     var q_device = TileTensor(
-        q_dev.unsafe_ptr(),
+        q_dev,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var k_device = TileTensor(
-        k_dev.unsafe_ptr(),
+        k_dev,
         row_major(
             (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
         ),
     )
     var v_device = TileTensor(
-        v_dev.unsafe_ptr(),
+        v_dev,
         row_major(
             (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
         ),
     )
     var out_device = TileTensor(
-        out_dev.unsafe_ptr(),
+        out_dev,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),

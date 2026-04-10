@@ -100,7 +100,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     from std.memory import UnsafePointer
 
     var c_tt = TileTensor(
-        c_device_n.unsafe_ptr(),
+        c_device_n,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(

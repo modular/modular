@@ -80,7 +80,7 @@ def test_split_k_reduce_rank3[
         row_major(Coord(Idx(Int(num_partitions)), Idx(Int(M)), Idx(Int(N)))),
     )
     var epilogue_buffer = TileTensor(
-        epilogue_data_device.unsafe_ptr(),
+        epilogue_data_device,
         row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
     )
 

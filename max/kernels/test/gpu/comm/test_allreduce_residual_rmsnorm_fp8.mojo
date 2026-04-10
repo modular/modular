@@ -195,7 +195,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     ]
     var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
-        in_tiles[i] = TileTensor(in_dev[i].unsafe_ptr(), in_layout).as_immut()
+        in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -244,11 +244,11 @@ def test_fused_allreduce_rmsnorm_fp8[
         return ref_sum_ptr.load[width=width, alignment=width](linear_idx)
 
     var ref_fp8_tile = TileTensor(
-        ref_fp8_dev.unsafe_ptr(),
+        ref_fp8_dev,
         row_major(Coord(Idx[rows](), Idx[cols]())),
     )
     var ref_scales_tile = TileTensor(
-        ref_scales_dev.unsafe_ptr(),
+        ref_scales_dev,
         row_major(Coord(Idx[rows](), Idx[1]())),
     )
 
@@ -282,11 +282,11 @@ def test_fused_allreduce_rmsnorm_fp8[
     var fused_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
 
     var fused_fp8_tile = TileTensor(
-        fused_fp8_dev.unsafe_ptr(),
+        fused_fp8_dev,
         row_major(Coord(Idx[rows](), Idx[cols]())),
     )
     var fused_scales_tile = TileTensor(
-        fused_scales_dev.unsafe_ptr(),
+        fused_scales_dev,
         row_major(Coord(Idx[rows](), Idx[1]())),
     )
 
@@ -399,7 +399,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     ]
     var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
-        in_tiles[i] = TileTensor(in_dev[i].unsafe_ptr(), in_layout).as_immut()
+        in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -458,11 +458,11 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
 
     comptime shape = IndexList[2](rows, cols)
     var ref_fp8_tile = TileTensor(
-        ref_fp8_dev.unsafe_ptr(),
+        ref_fp8_dev,
         row_major(Coord(Idx[rows](), Idx[cols]())),
     )
     var ref_scales_tile = TileTensor(
-        ref_scales_dev.unsafe_ptr(),
+        ref_scales_dev,
         row_major(Coord(Idx[rows](), Idx[1]())),
     )
 
@@ -497,19 +497,19 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     var fused_residual_output_dev = ctx.enqueue_create_buffer[in_dtype](length)
 
     var fused_fp8_tile = TileTensor(
-        fused_fp8_dev.unsafe_ptr(),
+        fused_fp8_dev,
         row_major(Coord(Idx[rows](), Idx[cols]())),
     )
     var fused_scales_tile = TileTensor(
-        fused_scales_dev.unsafe_ptr(),
+        fused_scales_dev,
         row_major(Coord(Idx[rows](), Idx[1]())),
     )
     var residual_tile = TileTensor(
-        residual_dev.unsafe_ptr(),
+        residual_dev,
         row_major(Coord(Idx[rows](), Idx[cols]())),
     )
     var fused_residual_output_tile = TileTensor(
-        fused_residual_output_dev.unsafe_ptr(),
+        fused_residual_output_dev,
         row_major(Coord(Idx[rows](), Idx[cols]())),
     )
 

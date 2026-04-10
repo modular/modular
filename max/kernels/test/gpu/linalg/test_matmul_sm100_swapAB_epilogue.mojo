@@ -108,10 +108,10 @@ def test_matmul_sm100_epilogue[
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 

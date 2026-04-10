@@ -177,9 +177,9 @@ def bench_broadcast[
     list_of_ctx[root].enqueue_copy(cb_in.device_buffer(), host_buffer)
 
     # Create TileTensor wrappers for outputs
-    comptime OutputTileType = type_of(
-        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(length)))
-    )
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+    ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     comptime if use_multimem:
@@ -282,7 +282,7 @@ def bench_broadcast[
 
     # Create input tile for verification (no cache offset)
     var in_tile_verify = TileTensor(
-        cb_in.unsafe_ptr(), row_major(Idx(length))
+        cb_in.device_buffer(), row_major(Idx(length))
     ).as_immut()
 
     # Run one broadcast for verification

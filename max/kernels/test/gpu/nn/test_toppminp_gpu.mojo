@@ -243,10 +243,10 @@ def test_case_sampling[
     var temperature = rebind[Scalar[dtype]](test_case.temperature)
     var p_threshold = rebind[Scalar[dtype]](test_case.p_threshold)
 
-    var m: Bench
+    var _m: Bench
 
     comptime if DEBUG_BENCH:
-        m = Bench()
+        _m = Bench()
 
     # Create input tensors
     var in_logits_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
@@ -303,15 +303,15 @@ def test_case_sampling[
     sort_buf_descending(probs_cpu_test, vocab_size)
 
     var device_in_tensor = TileTensor(
-        device_in_buf.unsafe_ptr(),
+        device_in_buf,
         row_major(Idx(batch_size), Idx(vocab_size)),
     )
     var device_token_ids_tensor = TileTensor(
-        device_token_ids_buf.unsafe_ptr(),
+        device_token_ids_buf,
         row_major(Idx(batch_size), Idx(1)),
     )
     var device_p_thresholds_tensor = TileTensor(
-        device_p_thresholds_buf.unsafe_ptr(),
+        device_p_thresholds_buf,
         row_major(
             Idx(batch_size),
         ),
@@ -341,7 +341,7 @@ def test_case_sampling[
             ctx.synchronize()
 
         time_kernel[run_func](
-            m,
+            _m,
             ctx,
             "top-p-sampling" if is_top_p else "min-p-sampling",
         )
@@ -393,7 +393,7 @@ def test_case_sampling[
         print("Sampled token indices:", token_ids)
 
     comptime if DEBUG_BENCH:
-        m.dump_report()
+        _m.dump_report()
     # free all pointers
     in_logits_ptr.free()
     token_ids_ptr.free()

@@ -953,10 +953,10 @@ def test_blackwell_kernel_7[
     var c_device = ctx.enqueue_create_buffer[c_type](M * N)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
 
-    var a_tt = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b_tt = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c_tt = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var c_ref_tt = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
+    var a_tt = TileTensor(a_device, row_major(a_shape))
+    var b_tt = TileTensor(b_device, row_major(b_shape))
+    var c_tt = TileTensor(c_device, row_major(c_shape))
+    var c_ref_tt = TileTensor(c_device_ref, row_major(c_shape))
 
     # Perf varies with initial values. Simple values have lower noise for
     # the current benchmark comparing to random initial values.
@@ -985,9 +985,9 @@ def test_blackwell_kernel_7[
         b_swizzle=b_swizzle,
         cta_group=2,
     ](
-        c_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_tt.to_layout_tensor().as_any_origin(),
+        a_tt.to_layout_tensor().as_any_origin(),
+        b_tt.to_layout_tensor().as_any_origin(),
         ctx,
     )
 
@@ -1007,9 +1007,9 @@ def test_blackwell_kernel_7[
                 b_swizzle=b_swizzle,
                 cta_group=2,
             ](
-                c_tt.to_layout_tensor(),
-                a_tt.to_layout_tensor(),
-                b_tt.to_layout_tensor(),
+                c_tt.to_layout_tensor().as_any_origin(),
+                a_tt.to_layout_tensor().as_any_origin(),
+                b_tt.to_layout_tensor().as_any_origin(),
                 ctx,
             )
 

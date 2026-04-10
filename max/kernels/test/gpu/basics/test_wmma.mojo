@@ -298,7 +298,7 @@ def run_mma_fp32_tf32(
     # parameters that matmul_kernel_naive expects (enqueue_function_experimental
     # requires exact type matches).
     var c_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(
@@ -466,7 +466,7 @@ def run_mma_fp32_bf16(
 
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(
@@ -632,7 +632,7 @@ def run_mma_fp32_bf16_2(
 
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(
@@ -798,7 +798,7 @@ def run_mma_fp32_fp16(
 
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(
@@ -964,7 +964,7 @@ def run_mma_fp16_fp16(
 
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(

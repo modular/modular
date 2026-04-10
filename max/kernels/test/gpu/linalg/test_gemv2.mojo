@@ -101,11 +101,11 @@ def test[
     comptime static_b_dim0 = N if transpose_b else K
     comptime static_b_dim1 = K if transpose_b else N
     var a_tensor = TileTensor(
-        a_dev.unsafe_ptr(),
+        a_dev,
         row_major(Coord(Idx(m), Idx[K.value()]())),
     )
     var b_tensor = TileTensor(
-        b_dev.unsafe_ptr(),
+        b_dev,
         row_major(
             Coord(
                 Idx[static_b_dim0.value()](),
@@ -114,7 +114,7 @@ def test[
         ),
     )
     var c_tensor = TileTensor(
-        c_dev.unsafe_ptr(),
+        c_dev,
         row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 

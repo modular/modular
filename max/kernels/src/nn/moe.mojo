@@ -741,7 +741,7 @@ def moe_create_indices[
     ):
         var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](1)
         lock_buffer.enqueue_fill(0)
-        var lock = TileTensor(lock_buffer.unsafe_ptr(), row_major[1]())
+        var lock = TileTensor(lock_buffer, row_major[1]())
 
         var topk_2D = TileTensor(
             topk_ids.ptr,

@@ -268,7 +268,7 @@ def run_mha[
         ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
         var mask4d = TileTensor(
-            mask_device_ptr.unsafe_ptr(),
+            mask_device_ptr,
             row_major(
                 (
                     Idx(batch_size),
@@ -281,7 +281,7 @@ def run_mha[
 
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         var output_ref_device = TileTensor(
-            output_ref_device_ptr.unsafe_ptr(),
+            output_ref_device_ptr,
             row_major(
                 (
                     Idx(batch_size),

@@ -3074,7 +3074,7 @@ def group_norm_gpu[
                     stats_size
                 )
                 var stats = TileTensor(
-                    stats_buf.unsafe_ptr(),
+                    stats_buf,
                     row_major(Idx(stats_size)),
                 )
 

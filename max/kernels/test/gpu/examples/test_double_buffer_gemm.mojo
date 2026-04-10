@@ -406,7 +406,7 @@ def test(ctx: DeviceContext) raises:
     # parameters that matmul_kernel_naive expects (enqueue_function_experimental
     # requires exact type matches).
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(

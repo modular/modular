@@ -242,7 +242,7 @@ def mla_indexer_ragged_float8_paged[
     scores_buf.enqueue_fill(-Float32.MAX)
 
     var scores_tile = TileTensor(
-        scores_buf.unsafe_ptr(),
+        scores_buf,
         row_major(Idx(total_seq_len), Idx(max_num_keys)),
     )
 
@@ -328,7 +328,7 @@ def mla_indexer_ragged_float8_paged[
         total_seq_len * effective_k
     )
     var topk_vals_tile = TileTensor(
-        topk_vals_buf.unsafe_ptr(),
+        topk_vals_buf,
         row_major(Idx(total_seq_len), Idx(effective_k)),
     )
 

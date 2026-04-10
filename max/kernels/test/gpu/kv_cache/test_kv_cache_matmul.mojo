@@ -210,7 +210,7 @@ def execute_fused_qkv_matmul[
         row_major(Idx(ref_output_shape[0]), Idx[fused_hidden_size]()),
     )
     var weight_device_ndbuffer = TileTensor(
-        weight_device.unsafe_ptr(),
+        weight_device,
         row_major(Idx[fused_hidden_size](), Idx[hidden_size]()),
     )
 

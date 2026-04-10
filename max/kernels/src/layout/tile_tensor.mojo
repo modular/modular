@@ -376,6 +376,27 @@ struct TileTensor[
         self.ptr = other.ptr
         self.layout = other.layout
 
+    @always_inline("builtin")
+    @implicit
+    def __init__(
+        other: TileTensor[mut=Self.mut, ...],
+        out self: TileTensor[
+            other.dtype,
+            other.LayoutType,
+            AnyOrigin[mut=Self.mut],
+            address_space=other.address_space,
+            linear_idx_type=other.linear_idx_type,
+            element_size=other.element_size,
+        ],
+    ):
+        """Implicitly cast a TileTensor to have an `AnyOrigin`.
+
+        Args:
+            other: The TileTensor to cast from.
+        """
+        self.ptr = other.ptr.unsafe_origin_cast[AnyOrigin[mut=Self.mut]]()
+        self.layout = other.layout
+
     @always_inline("nodebug")
     def __getitem__(
         self, coord: Coord

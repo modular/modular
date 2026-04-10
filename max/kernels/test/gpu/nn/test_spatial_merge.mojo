@@ -64,15 +64,15 @@ def test_spatial_merge(ctx: DeviceContext) raises:
 
     # Create TileTensors for GPU operations
     var input_tensor = TileTensor(
-        input_device.unsafe_ptr(),
+        input_device,
         row_major(Idx(total_input_patches), Idx(hidden_size)),
     )
     var output_tensor = TileTensor(
-        output_device.unsafe_ptr(),
+        output_device,
         row_major(Idx(total_output_patches), Idx(C_out)),
     )
     var grid_thw_tensor = TileTensor(
-        grid_thw_device.unsafe_ptr(),
+        grid_thw_device,
         row_major[batch_size, 3](),
     )
 

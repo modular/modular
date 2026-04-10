@@ -802,7 +802,7 @@ struct ConvDirectNHWC[
             uninitialized=True
         )
         var input_base_offsets = TileTensor(
-            input_base_stack.unsafe_ptr(), row_major[micro_kernel_height]()
+            input_base_stack, row_major[micro_kernel_height]()
         )
 
         comptime for i in range(micro_kernel_height):

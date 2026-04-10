@@ -48,15 +48,15 @@ def test_matmul[
     ctx.enqueue_copy(b_device, b_host_ptr)
 
     var a_tt = TileTensor(
-        a_device.unsafe_ptr(),
+        a_device,
         row_major(Coord(Idx(M), Idx(K))),
     )
     var b_tt = TileTensor(
-        b_device.unsafe_ptr(),
+        b_device,
         row_major(Coord(Idx(N), Idx(K))),
     )
     var c_tt = TileTensor(
-        c_device.unsafe_ptr(),
+        c_device,
         row_major(Coord(Idx(M), Idx(N))),
     )
 
@@ -73,7 +73,7 @@ def test_matmul[
 
     # Create immutable TileTensors for the naive kernel reference.
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_immut_tt = TileTensor(

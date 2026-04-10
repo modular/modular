@@ -155,9 +155,7 @@ def allreduce_test[
     )
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
-        out_tensors[i] = TileTensor(
-            out_dev[i].unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tensors[i] = TileTensor(out_dev[i], row_major(Idx(length)))
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -170,9 +168,7 @@ def allreduce_test[
         )
     )
     for i in range(ngpus):
-        out_tensors_capture[i] = TileTensor(
-            out_dev[i].unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tensors_capture[i] = TileTensor(out_dev[i], row_major(Idx(length)))
 
     # Custom epilogue that negates values to distinguish from default
     @always_inline
@@ -233,7 +229,7 @@ def allreduce_test[
                     list_of_ctx[i].enqueue_create_buffer[dtype](length)
                 )
                 out_tensors_vendor[i] = TileTensor(
-                    out_dev_vendor[i].unsafe_ptr(), row_major(Idx(length))
+                    out_dev_vendor[i], row_major(Idx(length))
                 )
 
             # Test RCCL.
@@ -352,9 +348,7 @@ def allreduce_naive_test() raises -> None:
     )
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
-        out_tensors[i] = TileTensor(
-            out_dev[i].unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tensors[i] = TileTensor(out_dev[i], row_major(Idx(length)))
 
     # Prepare an output lambda that writes into the correct device's out buffer.
     var out_tensors_capture = StaticTuple[OutTensorType, ngpus](
@@ -363,9 +357,7 @@ def allreduce_naive_test() raises -> None:
         )
     )
     for i in range(ngpus):
-        out_tensors_capture[i] = TileTensor(
-            out_dev[i].unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tensors_capture[i] = TileTensor(out_dev[i], row_major(Idx(length)))
 
     @always_inline
     @parameter

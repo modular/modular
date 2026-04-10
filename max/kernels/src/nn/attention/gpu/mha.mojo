@@ -4832,7 +4832,7 @@ def mha_gpu_naive[
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var p_buffer = TileTensor(
-        p_device.unsafe_ptr(),
+        p_device,
         row_major(
             (
                 Idx(batch_size * num_heads),

@@ -55,7 +55,7 @@ def test_slice[
 
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
-        memory1.unsafe_ptr(),
+        memory1,
         row_major(Coord(dims)),
     )
 
@@ -68,7 +68,7 @@ def test_slice[
         uninitialized=True
     )
     var start_tensor = TileTensor(
-        start_tensor_mem.unsafe_ptr(),
+        start_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -76,7 +76,7 @@ def test_slice[
         uninitialized=True
     )
     var end_tensor = TileTensor(
-        end_tensor_mem.unsafe_ptr(),
+        end_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -84,7 +84,7 @@ def test_slice[
         uninitialized=True
     )
     var step_tensor = TileTensor(
-        step_tensor_mem.unsafe_ptr(),
+        step_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -111,7 +111,7 @@ def test_slice[
 
         var sliced_shape = coord_to_index_list(sliced.layout.shape_coord())
         var output_buffer = TileTensor(
-            output_mem.unsafe_ptr(),
+            output_mem,
             row_major(Coord(sliced_shape)),
         )
 

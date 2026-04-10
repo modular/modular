@@ -67,7 +67,7 @@ def _verify_results[
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    ar_out_dev: List[DeviceBuffer[in_dtype]],
+    mut ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Scalar[in_dtype],
@@ -111,9 +111,9 @@ def _verify_results[
             row_major(Coord(Index(num_rows, num_cols))),
         )
         out_tensors[_i] = TileTensor(
-            ar_out_dev[_i].unsafe_ptr(),
+            ar_out_dev[_i],
             row_major(Coord(Index(num_rows, num_cols))),
-        )
+        ).as_any_origin()
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -150,7 +150,7 @@ def _verify_results[
     ](
         IndexList[2](num_rows, num_cols),
         TileTensor(
-            v_fused_fp8_dev.unsafe_ptr(),
+            v_fused_fp8_dev,
             row_major(Coord(Index(num_rows, num_cols))),
         ),
         gamma_tensor,
@@ -159,7 +159,7 @@ def _verify_results[
         DeviceContextPtr(ctx0),
         scale_ub,
         TileTensor(
-            v_fused_scales_dev.unsafe_ptr(),
+            v_fused_scales_dev,
             row_major(Coord(Index(num_rows, 1))),
         ),
     )
@@ -177,7 +177,7 @@ def _verify_results[
         allreduce_rmsnorm_fp8(
             in_tensors,
             TileTensor(
-                v_ff_fp8_dev.unsafe_ptr(),
+                v_ff_fp8_dev,
                 row_major(Coord(Index(num_rows, num_cols))),
             ),
             gamma_tensor,
@@ -185,7 +185,7 @@ def _verify_results[
             weight_offset,
             scale_ub,
             TileTensor(
-                v_ff_scales_dev.unsafe_ptr(),
+                v_ff_scales_dev,
                 row_major(Coord(Index(num_rows, 1))),
             ),
             rank_sigs,
@@ -299,7 +299,7 @@ def _verify_add_results[
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    ar_out_dev: List[DeviceBuffer[in_dtype]],
+    mut ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Scalar[in_dtype],
@@ -345,7 +345,7 @@ def _verify_add_results[
             row_major(Coord(Index(num_rows, num_cols))),
         )
         out_tensors[_i] = TileTensor(
-            ar_out_dev[_i].unsafe_ptr(),
+            ar_out_dev[_i],
             row_major(Coord(Index(num_rows, num_cols))),
         )
     for i in range(ngpus):
@@ -410,7 +410,7 @@ def _verify_add_results[
     ](
         IndexList[2](num_rows, num_cols),
         TileTensor(
-            v_ep_fp8_dev.unsafe_ptr(),
+            v_ep_fp8_dev,
             row_major(Coord(Index(num_rows, num_cols))),
         ),
         gamma_tensor,
@@ -419,7 +419,7 @@ def _verify_add_results[
         DeviceContextPtr(ctx0),
         scale_ub,
         TileTensor(
-            v_ep_scales_dev.unsafe_ptr(),
+            v_ep_scales_dev,
             row_major(Coord(Index(num_rows, 1))),
         ),
     )
@@ -436,15 +436,15 @@ def _verify_add_results[
         allreduce_residual_rmsnorm_fp8(
             in_tensors,
             TileTensor(
-                residual_dev.unsafe_ptr(),
+                residual_dev,
                 row_major(Coord(Index(num_rows, num_cols))),
             ),
             TileTensor(
-                v_ff_fp8_dev.unsafe_ptr(),
+                v_ff_fp8_dev,
                 row_major(Coord(Index(num_rows, num_cols))),
             ),
             TileTensor(
-                v_res_out_dev.unsafe_ptr(),
+                v_res_out_dev,
                 row_major(Coord(Index(num_rows, num_cols))),
             ),
             gamma_tensor,
@@ -452,7 +452,7 @@ def _verify_add_results[
             weight_offset,
             scale_ub,
             TileTensor(
-                v_ff_scales_dev.unsafe_ptr(),
+                v_ff_scales_dev,
                 row_major(Coord(Index(num_rows, 1))),
             ),
             rank_sigs,
@@ -620,7 +620,7 @@ def bench_allreduce_rmsnorm_fp8[
             row_major(Coord(Index(num_rows, num_cols))),
         )
         ar_out_tensors[i] = TileTensor(
-            ar_out_dev[i].unsafe_ptr(),
+            ar_out_dev[i],
             row_major(Coord(Index(num_rows, num_cols))),
         )
     for i in range(ngpus):

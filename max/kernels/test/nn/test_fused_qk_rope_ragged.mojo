@@ -140,7 +140,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     assert len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
 
     # Create query tensor as a TileTensor view of the query buffer.
-    var q = TileTensor(q_buffer.unsafe_ptr(), q_layout)
+    var q = TileTensor(q_buffer, q_layout)
 
     # Create input_row_offsets tensor using TileTensor.
     var input_row_offsets_stack = InlineArray[
@@ -150,7 +150,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
         input_row_offsets_stack[i] = UInt32(i * seq_len)
     input_row_offsets_stack[batch_size] = batch_size * seq_len
     var input_row_offsets = TileTensor(
-        input_row_offsets_stack.unsafe_ptr(), input_row_offsets_layout
+        input_row_offsets_stack, input_row_offsets_layout
     )
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
@@ -176,9 +176,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     assert len(expected_q_out_buffer) == len(
         q_buffer
     ), "invalid expected q out init"
-    var expected_q_out = TileTensor(
-        expected_q_out_buffer.unsafe_ptr(), q_layout
-    )
+    var expected_q_out = TileTensor(expected_q_out_buffer, q_layout)
     expected_k_out_buffer = k_out_golden[dtype]()
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
@@ -186,7 +184,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
 
     # Create output buffer and TileTensor.
     q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
-    var q_out = TileTensor(q_out_buffer.unsafe_ptr(), q_layout)
+    var q_out = TileTensor(q_out_buffer, q_layout)
 
     fused_qk_rope_ragged[
         kv_collection.CacheType, interleaved=True, target=StaticString("cpu")

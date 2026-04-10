@@ -208,10 +208,8 @@ def test_dynamic[
             stride *= shape[i]
         return in_ptr.load[width=width, alignment=width](linear_idx)
 
-    var out_tile = TileTensor(out_device.unsafe_ptr(), row_major(Coord(shape)))
-    var scale_tile = TileTensor(
-        scales_device.unsafe_ptr(), row_major(Coord(scale_shape))
-    )
+    var out_tile = TileTensor(out_device, row_major(Coord(shape)))
+    var scale_tile = TileTensor(scales_device, row_major(Coord(scale_shape)))
 
     rms_norm_fused_fp8[
         in_dtype,

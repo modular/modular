@@ -1782,7 +1782,7 @@ def blockwise_scaled_fp8_with_epilogue[
             var c_n = Int(c.dim[1]())
             var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_m * c_n)
             var c_tmp = TileTensor(
-                tmp_device_buffer.unsafe_ptr(),
+                tmp_device_buffer,
                 row_major(Coord(Idx(c_m), Idx(c_n))),
             )
 

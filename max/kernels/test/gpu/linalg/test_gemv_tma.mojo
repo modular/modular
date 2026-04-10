@@ -350,9 +350,9 @@ def test_gemv_tma[
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_tt = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b_tt = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c_tt = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
+    var a_tt = TileTensor(a_device, row_major(a_shape)).as_any_origin()
+    var b_tt = TileTensor(b_device, row_major(b_shape)).as_any_origin()
+    var c_tt = TileTensor(c_device, row_major(c_shape)).as_any_origin()
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -415,8 +415,8 @@ def test_gemv_tma[
     else:
         # Compare with vendor BLAS for correctness.
         var b_2d_shape = Coord(Idx(K), Idx[1]())
-        var b_2d = TileTensor(b_device.unsafe_ptr(), row_major(b_2d_shape))
-        var c_ref_tt = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
+        var b_2d = TileTensor(b_device, row_major(b_2d_shape))
+        var c_ref_tt = TileTensor(c_device_ref, row_major(c_shape))
         vendor_blas.matmul(
             ctx,
             c_ref_tt,

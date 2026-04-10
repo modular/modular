@@ -236,23 +236,23 @@ def bench_grouped_matmul[
     )
 
     var a_dev = TileTensor(
-        a_dev_buffer.unsafe_ptr(),
+        a_dev_buffer,
         row_major(Coord(_ri(total_num_tokens), Idx[packed_K]())),
     ).as_any_origin()
     var b_dev = TileTensor(
-        b_dev_buffer.unsafe_ptr(),
+        b_dev_buffer,
         row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
     ).as_any_origin()
     var c_dev = TileTensor(
-        c_dev_buffer.unsafe_ptr(),
+        c_dev_buffer,
         row_major(Coord(_ri(total_num_tokens), Idx[N]())),
     ).as_any_origin()
     var a_offsets_dev = TileTensor(
-        a_offsets_dev_buffer.unsafe_ptr(),
+        a_offsets_dev_buffer,
         row_major(Coord(_ri(num_active_experts + 1))),
     ).as_any_origin()
     var expert_ids_dev = TileTensor(
-        expert_ids_dev_buffer.unsafe_ptr(),
+        expert_ids_dev_buffer,
         row_major(Coord(_ri(num_active_experts))),
     ).as_any_origin()
 
@@ -288,7 +288,7 @@ def bench_grouped_matmul[
             DType.uint32
         ](num_active_experts)
         var a_scale_offsets_dev = TileTensor(
-            a_scale_offsets_dev_buffer.unsafe_ptr(),
+            a_scale_offsets_dev_buffer,
             row_major(Coord(_ri(num_active_experts))),
         ).as_any_origin()
         ctx.enqueue_copy(a_scale_offsets_dev_buffer, a_scale_offsets_ptr)
@@ -337,7 +337,7 @@ def bench_grouped_matmul[
         comptime k_groups = ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
         comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
         var a_scales_tt = TileTensor(
-            a_scales_dev_buffer.unsafe_ptr().bitcast[Scalar[NVFP4_SF_DTYPE]](),
+            a_scales_dev_buffer,
             row_major(
                 Coord(
                     RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
@@ -349,7 +349,7 @@ def bench_grouped_matmul[
             ),
         ).as_any_origin()
         var b_scales_tt = TileTensor(
-            b_scales_dev_buffer.unsafe_ptr().bitcast[Scalar[NVFP4_SF_DTYPE]](),
+            b_scales_dev_buffer,
             row_major(
                 Coord(
                     Idx[num_experts](),
@@ -372,9 +372,7 @@ def bench_grouped_matmul[
             )
         ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
         var expert_scales_tt = TileTensor(
-            expert_scales_dev_buffer.unsafe_ptr().bitcast[
-                Scalar[DType.float32]
-            ](),
+            expert_scales_dev_buffer,
             row_major(
                 Coord(
                     RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
@@ -476,11 +474,11 @@ def bench_grouped_matmul[
         )
 
         var a_scales_dev = TileTensor(
-            a_scales_dev_buffer.unsafe_ptr(),
+            a_scales_dev_buffer,
             row_major(Coord(Idx[K // BLOCK_SCALE_K](), _ri(total_num_tokens))),
         ).as_any_origin()
         var b_scales_dev = TileTensor(
-            b_scales_dev_buffer.unsafe_ptr(),
+            b_scales_dev_buffer,
             row_major(
                 Coord(
                     Idx[num_experts](),

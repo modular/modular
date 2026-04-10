@@ -50,11 +50,11 @@ def test_argsort[
 
     # Create device LayoutTensors
     var device_indices_tensor = TileTensor(
-        device_indices.unsafe_ptr(),
+        device_indices,
         row_major(Idx(N)),
     )
     var device_input_tensor = TileTensor(
-        device_input.unsafe_ptr(),
+        device_input,
         row_major(Idx(N)),
     )
 

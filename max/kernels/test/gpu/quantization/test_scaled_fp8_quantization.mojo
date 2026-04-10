@@ -48,8 +48,8 @@ def test_static_scaled_fp8_quant[
     ctx.enqueue_copy(in_device, in_host_ptr)
     ctx.enqueue_copy(out_device, out_host_ptr)
 
-    var in_tt = TileTensor(in_device.unsafe_ptr(), shape)
-    var out_tt = TileTensor(out_device.unsafe_ptr(), shape)
+    var in_tt = TileTensor(in_device, shape)
+    var out_tt = TileTensor(out_device, shape)
 
     quantize_static_scaled_fp8[out_dtype, in_dtype](out_tt, in_tt, scale, ctx)
 

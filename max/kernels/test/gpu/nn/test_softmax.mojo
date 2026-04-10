@@ -87,7 +87,7 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
 
     _softmax_gpu[type, 1, rank, input_fn_device](
         shape,
-        TileTensor(out_device_ptr.unsafe_ptr(), row_major(Coord(shape))),
+        TileTensor(out_device_ptr, row_major(Coord(shape))),
         rank - 1,
         ctx,
     )
@@ -191,14 +191,14 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
 
     _softmax_gpu[ref_type, 1, rank, input_fn_ref](
         shape,
-        TileTensor(out_device_ref_ptr.unsafe_ptr(), row_major(Coord(shape))),
+        TileTensor(out_device_ref_ptr, row_major(Coord(shape))),
         rank - 1,
         ctx,
     )
 
     _softmax_gpu[test_type, 1, rank, input_fn_test](
         shape,
-        TileTensor(out_device_test_ptr.unsafe_ptr(), row_major(Coord(shape))),
+        TileTensor(out_device_test_ptr, row_major(Coord(shape))),
         rank - 1,
         ctx,
     )
@@ -357,7 +357,7 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
 
         _softmax_gpu[type, 1, rank, input_fn_device, logsoftmax=True](
             shape,
-            TileTensor(out_device_ptr.unsafe_ptr(), row_major(Coord(shape))),
+            TileTensor(out_device_ptr, row_major(Coord(shape))),
             rank - 1,
             ctx,
         )
@@ -438,8 +438,8 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     var out_device = ctx.enqueue_create_buffer[type](length)
 
     var rt_layout = row_major(Coord(Idx(batch_size), Idx(vocab_size)))
-    var in_tt = TileTensor(in_device.unsafe_ptr(), rt_layout)
-    var out_tt = TileTensor(out_device.unsafe_ptr(), rt_layout)
+    var in_tt = TileTensor(in_device, rt_layout)
+    var out_tt = TileTensor(out_device, rt_layout)
 
     # Temperature: scalar or per-row array.
     var temp_host_ptr = alloc[Scalar[type]](batch_size)
@@ -450,9 +450,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
         for i in range(batch_size):
             temp_host_ptr[i] = temp_host_ptr[i] * 1.5 + 0.5
         ctx.enqueue_copy(temp_device, temp_host_ptr)
-        var temp_tt = TileTensor(
-            temp_device.unsafe_ptr(), row_major(Idx(batch_size))
-        )
+        var temp_tt = TileTensor(temp_device, row_major(Idx(batch_size)))
         softmax_with_temperature(
             ctx,
             in_tt,

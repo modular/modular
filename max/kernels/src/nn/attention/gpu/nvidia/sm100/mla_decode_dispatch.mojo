@@ -815,7 +815,7 @@ def _mla_decode_sm100_dispatch_impl[
             )
         )
         var o_accum_split = TileTensor(
-            o_accum_split_data.unsafe_ptr(),
+            o_accum_split_data,
             row_major(
                 Coord(
                     Idx(num_partitions),
@@ -831,7 +831,7 @@ def _mla_decode_sm100_dispatch_impl[
             Int(num_partitions * batch_size * q_max_seq_len * num_heads)
         )
         var lse_accum_split = TileTensor(
-            lse_accum_data.unsafe_ptr(),
+            lse_accum_data,
             row_major(
                 Coord(
                     Idx(num_partitions),

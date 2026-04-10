@@ -139,7 +139,7 @@ def test_attention[
 
     # Construct device buffers.
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major(
             (
                 Idx(batch_size),
@@ -150,7 +150,7 @@ def test_attention[
         ),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr,
         row_major(
             (
                 Idx(batch_size),
@@ -161,7 +161,7 @@ def test_attention[
         ),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
+        v_device_ptr,
         row_major(
             (
                 Idx(batch_size),
@@ -172,7 +172,7 @@ def test_attention[
         ),
     )
     var mask4d = TileTensor(
-        mask_device_ptr.unsafe_ptr(),
+        mask_device_ptr,
         row_major(
             (
                 Idx(batch_size),
@@ -183,7 +183,7 @@ def test_attention[
         ),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (
                 Idx(batch_size),
@@ -213,7 +213,7 @@ def test_attention[
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
     var output_device_ref = TileTensor(
-        output_ref_device_ptr.unsafe_ptr(),
+        output_ref_device_ptr,
         row_major(
             (
                 Idx(batch_size),

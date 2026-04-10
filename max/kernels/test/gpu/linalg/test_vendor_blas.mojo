@@ -47,17 +47,17 @@ def test_vendor_blas[
     ctx.enqueue_copy(b_device, b_host)
 
     var a = TileTensor(
-        a_device.unsafe_ptr(),
+        a_device,
         row_major(Coord(Idx(M), Idx(K))),
     )
     var b = TileTensor(
-        b_device.unsafe_ptr(),
+        b_device,
         row_major(Coord(Idx(N), Idx(K))) if transpose_b else row_major(
             Coord(Idx(K), Idx(N))
         ),
     )
     var c = TileTensor(
-        c_device.unsafe_ptr(),
+        c_device,
         row_major(Coord(Idx(M), Idx(N))),
     )
 
@@ -73,7 +73,7 @@ def test_vendor_blas[
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(

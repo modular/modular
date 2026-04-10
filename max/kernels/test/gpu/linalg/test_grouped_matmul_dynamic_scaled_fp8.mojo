@@ -152,31 +152,31 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     )
 
     var a_device = TileTensor(
-        a_device_buffer.unsafe_ptr(),
+        a_device_buffer,
         row_major(Coord(Idx(total_tokens), Idx[K]())),
     )
     var b_device = TileTensor(
-        b_device_buffer.unsafe_ptr(),
+        b_device_buffer,
         row_major(Coord(Idx[num_experts](), Idx[N](), Idx[K]())),
     )
     var c_device = TileTensor(
-        c_device_buffer.unsafe_ptr(),
+        c_device_buffer,
         row_major(Coord(Idx(total_tokens), Idx[N]())),
     )
     var a_offsets_device = TileTensor(
-        a_offsets_device_buffer.unsafe_ptr(),
+        a_offsets_device_buffer,
         row_major(Coord(Idx(num_offsets))),
     )
     var expert_ids_device = TileTensor(
-        expert_ids_device_buffer.unsafe_ptr(),
+        expert_ids_device_buffer,
         row_major(Coord(Idx(num_expert_ids))),
     )
     var a_scales_device = TileTensor(
-        a_scales_device_buffer.unsafe_ptr(),
+        a_scales_device_buffer,
         row_major(Coord(Idx[K // BLOCK_SCALE_K](), Idx(total_tokens))),
     )
     var b_scales_device = TileTensor(
-        b_scales_device_buffer.unsafe_ptr(),
+        b_scales_device_buffer,
         row_major(
             Coord(
                 Idx[num_experts](),
