@@ -48,9 +48,8 @@ class DummyKVCache(PagedKVCacheManager):
         """No-op."""
         pass
 
-    def alloc(self, *args: Any, **kwargs: Any) -> int:
+    def alloc(self, *args: Any, **kwargs: Any) -> None:
         """No-op."""
-        return 0
 
     def step(self, *args: Any, **kwargs: Any) -> None:
         """No-op."""
