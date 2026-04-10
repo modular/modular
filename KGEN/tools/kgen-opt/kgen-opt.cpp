@@ -4,194 +4,109 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// The kgen-opt driver implementation.
+// kgen-opt driver.
+//
+// Dispatches to the MLIR or LLVM IR processing path based on the input file
+// extension:
+//   .mlir, .mojopkg, stdin ('-')         → MLIR IR passes
+//   .ll, .bc                             → LLVM IR passes
+//   no extension / unrecognised extension → WARNING + MLIR path
 //
 //===----------------------------------------------------------------------===//
 
-#include "Init/Init.h"
-#include "KGEN/MOGGPreElab/Passes.h"
-#include "KGEN/Support/CompilerProfiling.h"
-#include "KGEN/Support/ForceLinkMLIRC.h"
-#include "KGEN/Support/MojoPackage.h"
-#include "KGEN/ToolCommon/CLOptions.h"
-#include "KGEN/ToolCommon/Debug.h"
-#include "KGEN/ToolCommon/InitAllDialects.h"
-#include "KGEN/ToolCommon/KGENPasses.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
-#include "Support/Context.h"
-#include "Support/DebugInfoDialect/Transforms/Passes.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/Pass/PassRegistry.h"
-#include "mlir/Tools/mlir-opt/MlirOptMain.h"
+#include "KGEN/tools/kgen-opt/LLVMDriver.h"
+#include "KGEN/tools/kgen-opt/MLIRDriver.h"
+
+#include "mlir/IR/DialectRegistry.h"
+#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/Path.h"
 
 using namespace M;
 
 //===----------------------------------------------------------------------===//
-// TestAlwaysFailPass
+// IR kind detection
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// This is a pass that always fails for the purpose of debugging reproducers.
-struct TestAlwaysFailPass
-    : public mlir::PassWrapper<TestAlwaysFailPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestAlwaysFailPass)
+enum class IRKind { MLIR, LLVM };
 
-  StringRef getArgument() const override { return "test-always-fail"; }
+/// Determine the IR kind from the input filename extension.
+///
+///   .mlir, .mojopkg, stdin ('-'), empty  → MLIR (no warning)
+///   .ll, .bc                             → LLVM
+///   no extension / unknown extension     → WARNING + MLIR
+IRKind detectIRKind(llvm::StringRef filename) {
+  if (filename == "-" || filename.empty())
+    return IRKind::MLIR;
 
-  void runOnOperation() override { return signalPassFailure(); }
-};
+  llvm::StringRef ext = llvm::sys::path::extension(filename);
 
-LogicalResult runMlirOptMain(int argc, char **argv,
-                             llvm::StringRef inputFilename,
-                             llvm::StringRef outputFilename,
-                             DialectRegistry &registry,
-                             bool ignoreIncompatiblePackageErrs) {
-  llvm::InitLLVM y(argc, argv);
-  mlir::MlirOptMainConfig config =
-      mlir::MlirOptMainConfig::createFromCLOptions();
+  if (ext == ".ll" || ext == ".bc")
+    return IRKind::LLVM;
 
-  // When reading from stdin and the input is a tty, it is often a user
-  // mistake and the process "appears to be stuck". Print a message to let the
-  // user know about it!
-  if (inputFilename == "-" &&
-      llvm::sys::Process::FileDescriptorIsDisplayed(fileno(stdin)))
-    llvm::errs() << "(processing input from stdin now, hit ctrl-c/ctrl-d to "
-                    "interrupt)\n";
+  if (ext == ".mlir" || ext == ".mojopkg")
+    return IRKind::MLIR;
 
-  // Set up the input file.
-  std::string errorMessage;
-  auto file = mlir::openInputFile(inputFilename, &errorMessage);
-  if (!file) {
-    llvm::errs() << errorMessage << "\n";
-    return failure();
+  if (ext.empty()) {
+    llvm::errs() << "WARNING: No file extension for '" << filename
+                 << "'; defaulting to MLIR path.\n";
+  } else {
+    llvm::errs() << "WARNING: Unrecognised file extension '" << ext << "' for '"
+                 << filename << "'; defaulting to MLIR path.\n";
   }
 
-  // If this is a Mojo package file, verify the header and skip past it to get
-  // to the MLIR within.
-  llvm::MemoryBufferRef mlirBuffer = *file;
-  std::unique_ptr<llvm::MemoryBuffer> decompressedPkgData;
-  if (KGEN::isMojoPackage(*file)) {
-    auto mlirBufOrErr =
-        M::KGEN::getMLIRBufferFromPackage(*file, ignoreIncompatiblePackageErrs);
-    if (mlirBufOrErr.isError()) {
-      llvm::errs() << mlirBufOrErr.takeError().get() << "\n";
-      return failure();
-    }
-    mlirBuffer = mlirBufOrErr->buffer;
-    decompressedPkgData = std::move(mlirBufOrErr->ownedData);
-  }
-
-  auto mlirBuff =
-      llvm::MemoryBuffer::getMemBuffer(mlirBuffer,
-                                       /*RequiresNullTerminator=*/true);
-
-  auto output = mlir::openOutputFile(outputFilename, &errorMessage);
-  if (!output) {
-    llvm::errs() << errorMessage << "\n";
-    return failure();
-  }
-
-  if (failed(MlirOptMain(output->os(), std::move(mlirBuff), registry, config)))
-    return failure();
-
-  // Keep the output file if the invocation of MlirOptMain was successful.
-  output->keep();
-  return success();
+  return IRKind::MLIR;
 }
+
 } // namespace
 
+//===----------------------------------------------------------------------===//
+// main
+//===----------------------------------------------------------------------===//
+
 int main(int argc, char **argv) {
-  // Force linking of MLIR C symbols to JIT Mojo code relying on the mlir
-  // bindings.
-  KGEN::forceLinkMLIRC();
+  // Must be registered before any cl::opt construction.
+  static llvm::codegen::RegisterCodeGenFlags cfg;
 
-  // HACK: Read in the option early.
-  bool asyncrtSingleThread = false;
-  if (argc >= 2 && StringRef(argv[1]) == "--asyncrt-single-thread")
-    asyncrtSingleThread = true;
+  // Initialize LLVM (signal handlers, pretty stack traces, …).
+  llvm::InitLLVM y(argc, argv);
 
-  DialectRegistry registry;
+  // -----------------------------------------------------------------------
+  // Register ALL command-line options before the single parse call.
+  // (registerAndParseCLIOptions cannot be used: it registers conflicting
+  // positional and -o options and calls cl::ParseCommandLineOptions itself.)
+  // -----------------------------------------------------------------------
+  mlir::DialectRegistry registry;
+  KGEN::Tool::registerMLIRDialectsAndPasses(registry);
 
-  // Register all KGEN dialects.
-  registerAllKGENDialects(registry);
+  // Shared: input and output filenames.
+  static llvm::cl::opt<std::string> inputFilenameOpt(
+      llvm::cl::Positional, llvm::cl::desc("<input file>"),
+      llvm::cl::init("-"));
+  static llvm::cl::opt<std::string> outputFilenameOpt(
+      "o", llvm::cl::desc("Output filename"), llvm::cl::value_desc("filename"),
+      llvm::cl::init("-"));
 
-  // Initialize all targets.
-  llvm::InitializeAllTargets();
-  llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllAsmParsers();
-  llvm::InitializeAllAsmPrinters();
-
-  // Initialize the host target.
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmParser();
-  llvm::InitializeNativeTargetAsmPrinter();
-
-  // Initialize LLVM exporters.
-  registerKGENToLLVMTranslation(registry);
-
-  // Register test passes.
-  mlir::PassRegistration<TestAlwaysFailPass>{};
-
-  // Create our context.
-  AsyncRT::RuntimeOptions asyncrtOpts;
-  asyncrtOpts.withLeakCheckedAllocator();
-  if (asyncrtSingleThread)
-    asyncrtOpts.withSingleThreaded();
-  ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "kgen-opt", Init::Options().withRuntimeOptions(asyncrtOpts));
-  if (ctxOr.isError()) {
-    llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
+  if (!KGEN::Tool::registerMLIRPathCLOptions(registry, argc, argv))
     return 1;
-  }
-  if (asyncrtSingleThread) {
-    // Defend against upstream errors.
-    [[maybe_unused]] auto &runtime = *(*ctxOr)->get<AsyncRT::Runtime>();
-    assert(runtime.getWorkQueue()->getParallelismLevel() == 1);
-  }
-  registerContext(registry, *ctxOr);
+  KGEN::Tool::registerLLVMPathCLOptions();
 
-  // Register passes.
-  KGEN::registerDefaultKGENPasses("kgen-opt");
-  DebugInfo::registerTransformsPasses();
+  // -----------------------------------------------------------------------
+  // Single option parse.
+  // -----------------------------------------------------------------------
+  llvm::cl::ParseCommandLineOptions(argc, argv, "kgen optimizer driver\n");
 
-  // Register cl options.
-  static llvm::cl::opt<bool> dummyOpt{"asyncrt-single-thread"};
+  // -----------------------------------------------------------------------
+  // Definitive IR kind detection and dispatch.
+  // -----------------------------------------------------------------------
+  const IRKind kind = detectIRKind(inputFilenameOpt.getValue());
 
-  static llvm::cl::opt<bool> timeTrace{
-      "time-trace",
-      llvm::cl::desc("Turn on time profiler. Generates JSON file "
-                     "called kgen.trace.json in the derived directory.")};
+  if (kind == IRKind::LLVM)
+    return KGEN::Tool::runLLVMPath(inputFilenameOpt.getValue(),
+                                   outputFilenameOpt.getValue());
 
-  static llvm::cl::opt<int> timeTraceGranularity{
-      "time-trace-granularity",
-      llvm::cl::desc("Minimum time granularity (in microseconds) "
-                     "traced by time profiler."),
-      llvm::cl::init(0)};
-
-  static llvm::cl::opt<bool> ignoreIncompatiblePackageErrs{
-      "ignore-incompatible-package-errors",
-      llvm::cl::desc(
-          "Ignore errors encountered when loading incompatible Mojo packages."),
-      llvm::cl::init(false)};
-
-  KGEN::registerKGENCommandLineOptions();
-  KGEN::initializeDebugOptions();
-  KGEN::KGENPassCLOptions::registerOptions();
-
-  // Register and parse command line options.
-  std::string inputFilename, outputFilename;
-  std::tie(inputFilename, outputFilename) =
-      registerAndParseCLIOptions(argc, argv, "kgen optimizer driver", registry);
-  if (KGEN::debugFlag)
-    llvm::errs() << "WARNING: `kgen-debug-only` may work incorrectly with "
-                    "multithreading enabled\n";
-
-  KGEN::TraceProfiler tracer(timeTrace, timeTraceGranularity);
-
-  return failed(runMlirOptMain(argc, argv, inputFilename, outputFilename,
-                               registry, ignoreIncompatiblePackageErrs));
+  return failed(KGEN::Tool::runMLIRPath(
+      inputFilenameOpt.getValue(), outputFilenameOpt.getValue(), registry));
 }
