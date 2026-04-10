@@ -1573,7 +1573,7 @@ struct UnsafePointer[
         # On GPU, llvm.masked.scatter causes CUDA_ERROR_ILLEGAL_ADDRESS for
         # non-global address spaces (e.g. shared memory). Use scalar stores
         # as a fallback for these cases.
-        comptime if is_gpu() and address_space != AddressSpace.GENERIC and address_space != AddressSpace.GLOBAL:
+        comptime if is_gpu() and Self.address_space != AddressSpace.GENERIC and Self.address_space != AddressSpace.GLOBAL:
             comptime for i in range(width):
                 if mask[i]:
                     (self + Int(offset[i])).store(val[i])
