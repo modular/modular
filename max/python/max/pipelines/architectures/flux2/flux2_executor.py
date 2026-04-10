@@ -216,6 +216,9 @@ class Flux2Executor(
     decoder: VaeDecoder
     """Graph 4: BN-denormalize + unpatchify + VAE decode -> uint8."""
 
+    default_num_inference_steps: int = 28
+    """Default number of denoising steps when the user does not specify one."""
+
     # Default residual threshold when FBCache is enabled but the request
     # does not specify one.  Matches Flux2Pipeline.default_residual_threshold
     # (overrides the DiffusionPipeline base default of 0.05).

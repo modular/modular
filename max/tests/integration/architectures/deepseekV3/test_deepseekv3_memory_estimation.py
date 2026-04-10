@@ -18,7 +18,12 @@ from unittest.mock import MagicMock, NonCallableMock
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.pipelines.architectures.deepseekV3 import deepseekV3_arch
-from max.pipelines.lib import PipelineConfig, PipelineRole, SupportedEncoding
+from max.pipelines.lib import (
+    PipelineConfig,
+    PipelineModel,
+    PipelineRole,
+    SupportedEncoding,
+)
 
 MAX_SEND_TOKENS_PER_RANK = 128
 NUM_RANKS = 8
@@ -74,6 +79,7 @@ def mock_huggingface_config() -> MagicMock:
 
 def test_deepseekv3_memory_estimation() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
     pipeline_config = mock_pipeline_config("decode_only")
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
@@ -98,6 +104,7 @@ def test_deepseekv3_memory_estimation() -> None:
 
 def test_deepseekv3_memory_estimation_exact() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
 
@@ -125,6 +132,7 @@ def test_deepseekv3_memory_estimation_exact() -> None:
 
 def test_deepseekv3_memory_estimation_adds_graph_capture_headroom() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
 
@@ -191,6 +199,7 @@ def test_deepseekv3_estimate_weights_size_no_expert_parallelism() -> None:
     would cause a ZeroDivisionError (n_nodes = 1 // 8 = 0).
     """
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
 
     # EP=1 (no expert parallelism), 8 GPUs, DP=1
     pipeline_config = mock_weights_pipeline_config(
@@ -204,6 +213,7 @@ def test_deepseekv3_estimate_weights_size_no_expert_parallelism() -> None:
 
 def test_deepseekv3_estimate_weights_size_dp_ep_exact() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
 
     # EP=8, 8 GPUs, DP=8
     pipeline_config = mock_weights_pipeline_config(
@@ -218,6 +228,7 @@ def test_deepseekv3_estimate_weights_size_dp_ep_exact() -> None:
 
 def test_deepseekv3_estimate_weights_size_tp_ep_exact() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
 
     # EP=8, 8 GPUs, TP attention (DP=1)
     pipeline_config = mock_weights_pipeline_config(
@@ -239,6 +250,7 @@ def test_deepseekv3_estimate_weights_size_routing_experts_scaling() -> None:
     - EP=n_gpus*n_nodes: routing_experts_memory = routing_experts_size / n_nodes
     """
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
     routing_experts_size = compute_routing_experts_size()
     n_gpus = 8
 

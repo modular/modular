@@ -29,6 +29,7 @@ from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
+from max.pipelines.lib.interfaces import PipelineModel
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
@@ -1285,6 +1286,11 @@ class PipelineConfig(ConfigFileModel):
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,
             # since they don't use KV cache.
+            return
+
+        if not issubclass(arch.pipeline_model, PipelineModel):
+            # Non-PipelineModel architectures (e.g. PipelineExecutor) skip
+            # memory estimation — they don't expose these classmethods.
             return
 
         devices = load_devices(model_config.device_specs)
