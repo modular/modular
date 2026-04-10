@@ -1589,6 +1589,9 @@ async def run_kv_cache_stress_benchmark(
     temperature: float | None,
     top_p: float | None,
     top_k: int | None,
+    randomize_session_start: bool = False,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> list[RequestFuncOutput]:
     """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
 
@@ -1659,6 +1662,9 @@ async def run_kv_cache_stress_benchmark(
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
+                randomize_session_start=randomize_session_start,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
             )
 
             worker_outputs[worker_idx].extend(session_outputs)
@@ -2215,6 +2221,9 @@ async def benchmark(
                     temperature=temperature,
                     top_p=top_p,
                     top_k=top_k,
+                    randomize_session_start=randomize_session_start,
+                    run_prefix=run_prefix,
+                    run_prefix_len=run_prefix_len,
                 )
             else:
                 # multi-turn chat scenario
