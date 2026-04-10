@@ -85,6 +85,10 @@ class ModelAlias(TypedDict):
 # configurations while keeping results separate in dashboards.
 # max_serve_args are only applied to MAX frameworks, not vllm/sglang.
 MODEL_ALIASES: dict[str, ModelAlias] = {
+    "google/gemma-4-26b-a4b-it__no_dgc": {
+        "hf_model_path": "google/gemma-4-26B-A4B-it",
+        "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
+    },
     "meta-llama/llama-3.1-8b-instruct__modulev3": {
         "hf_model_path": "meta-llama/llama-3.1-8b-instruct",
         "max_serve_args": "--prefer-module-v3",
