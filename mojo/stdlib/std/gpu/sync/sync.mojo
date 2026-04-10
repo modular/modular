@@ -80,7 +80,6 @@ def named_barrier[
     ), "named barrier is only supported by NVIDIA GPUs"
     _ = __mlir_op.`nvvm.barrier`[
         _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
-        _type=__mlir_type.i32,
     ](to_i32(id), to_i32(num_threads))
 
 
