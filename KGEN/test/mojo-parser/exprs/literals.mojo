@@ -85,7 +85,7 @@ def inspect(list: List[_]):
 def test_list_literal():
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []>)
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %a)
@@ -95,14 +95,14 @@ def test_list_literal():
     # CHECK-DAG: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-DAG: [[TMP3:%.*]] = kgen.param.constant: !Int = <{3}>
     # CHECK-DAG: {{%.*}} = pop.array.create [{{.*}}]
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []>)
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[TUP_TMP]])
     var b: IntList = [1, 2, 3]
 
     # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: !lit.ref<array<0, !lit.ref<!Int, imm {}>>, imm {}> = <#interp.pointer<0>>
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []>)
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[TUP_TMP]])
@@ -241,7 +241,7 @@ def param_infer_equal[T: AnyType](a: T, b: T):
 def test_set_literal():
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []>)
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK: lit.call {{.*}}@Set::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %a)
@@ -252,7 +252,7 @@ def test_set_literal():
 
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []>)
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut
     # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %b)

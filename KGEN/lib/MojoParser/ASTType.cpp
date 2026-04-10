@@ -863,11 +863,29 @@ RefType ASTType::VariadicListInfo::getElementRefType() const {
 /// Given a type of ParameterList, return the element type and the values
 /// list that are bound to it.
 ASTType::ParameterListInfo ASTType::getParameterListInfo() const {
-  auto listType = sugarDynCast<ParamListType>(*this);
-  if (!listType)
-    return {{}};
+#if !ENABLE_TYPELIST
+  // Return a null value list for the old representation.
+  auto paramList = sugarDynCast<ParamListType>(*this);
+  if (paramList)
+    return {paramList.getElementType(), {}};
+#endif
 
-  return {listType.getElementType()};
+  auto structType = sugarDynCast<LIT::StructType>(*this);
+  if (!structType)
+    return {{}, {}};
+
+  if (structType.getSymbol().getLeafReference().strref() != "ParameterList" &&
+      structType.getSymbol().getLeafReference().strref() != "TypeList")
+    return {{}, {}};
+
+  auto bindings = getParamBindings();
+  assert(bindings.size() == 2 &&
+         (sugarIsa<TraitType>(bindings[0].getType()) ||
+          sugarIsa<AnyTraitType>(bindings[0].getType())) && // elementType
+         sugarIsa<ParamListType>(bindings[1].getType()) &&  // values
+         "Not a VariadicList struct?");
+
+  return {ASTType(bindings[0]), bindings[1]};
 }
 
 /// Given a VariadicList, return the element type from it.

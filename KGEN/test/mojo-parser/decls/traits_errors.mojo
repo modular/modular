@@ -58,7 +58,7 @@ struct TraitStruct(MyMovable, SimpleTrait):
 
 # expected-note @+1 {{function declared here}}
 def test_many_things_of_specified_trait[
-    element_type: type_of(AnyType), *element_types: element_type
+    element_type: type_of(AnyType), //, *element_types: element_type
 ]():
     pass
 
@@ -77,13 +77,13 @@ struct ParamDoesNotConform[x: Int](SimpleTrait):
 
 def call_many_things_of_specified_trait(a: TraitStruct):
     # This is ok!
-    test_many_things_of_specified_trait[AnyType, TraitStruct, Int]()
+    test_many_things_of_specified_trait[element_type=AnyType, TraitStruct, Int]()
 
     # expected-error @+1 {{'test_many_things_of_specified_trait' parameter 'element_types' has 'Movable' type, but value has type 'AnyStruct[TraitStruct]'}}
-    test_many_things_of_specified_trait[Movable, TraitStruct, TraitStruct]()
+    test_many_things_of_specified_trait[element_type=Movable, TraitStruct, TraitStruct]()
 
     test_many_things_of_specified_trait[
-        SimpleTrait,
+        element_type=SimpleTrait,
         TraitStruct,
         # This will succeed, the error will be raised when resolving `DoesNotConform`.
         DoesNotConform,

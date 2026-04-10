@@ -675,7 +675,7 @@ def _get_kgen_string[
         `#kgen.param.expr<data_to_str,`,
         string,
         `,`,
-        extra,
+        extra.values,
         `> : !kgen.string`,
     ]
 
@@ -684,7 +684,7 @@ def _get_kgen_string[
 def get_static_string[
     string: StaticString, *extra: StaticString
 ]() -> StaticString:
-    return StaticString(_get_kgen_string[string, extra]())
+    return StaticString(_get_kgen_string[string, *extra]())
 
 
 trait Stringable:
@@ -930,7 +930,9 @@ trait ImplicitlyDestructible:
 # ===----------------------------------------------------------------------=== #
 
 
-struct ParameterList[type: AnyType, //, *values: type](TrivialRegisterPassable):
+struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
+    TrivialRegisterPassable
+):
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,

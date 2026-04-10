@@ -54,16 +54,16 @@ def test_unbound_pack():
     # CHECK: lit.alias.decl *"unpack_ellipsis{{.*}}: meta<!lit.struct<#DefaultPosOnly <:!Int ?, :!Int ?, :!Int ?>, <"a": !Int = {{.*}}1{{.*}}, |, "b": !Int = {{.*}}2{{.*}}, *, "c": !Int = {{.*}}3{{.*}}>>>
     comptime unpack_ellipsis = DefaultPosOnly[...]
 
-    # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": meta<!lit.struct<#StructWithVariadic <:!Int ?, :param_list<!Int> ?>
+    # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": meta<!lit.struct<#StructWithVariadic <:param_list<!Int> ?, :!Int ?, :!lit.struct<#ParameterList
     comptime unbound_variadic = StructWithVariadic[...]
 
-    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a": param_list<!Int> pos_vararg>!kgen.func.literal<{{.*}}() -> !kgen.none>
+    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a.values`": param_list<!Int>, {{.*}}pos_vararg>!kgen.func.literal<{{.*}}() -> !kgen.none>
     comptime unpack_variadic = variadic_params[...]
 
-    # CHECK: lit.call {{.*}}variadic_params{{.*}}<:param_list<!Int> []>()
+    # CHECK: lit.call {{.*}}variadic_params{{.*}}<:param_list<!Int> []
     unpack_variadic()
 
-    # C_HECK: call {{.*}}variadic_params{{.*}}<:param_list<!Int> []>
+    # C_HECK: call {{.*}}variadic_params{{.*}}<:param_list<!Int> []
     # The following code is arguably wrong, it leads to
     # '...' is not allowed in concrete parameter bindings
     #

@@ -601,16 +601,21 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // nonmaterializable target type: even when implicit conversions are disabled.
   // We can accept this argument if that converted type is compatible with
   // our expected type.
-  if (auto nonmaterializableTarget =
-          argType.getNonmaterializableTarget(getShared())) {
-    ParamMatcher::FailableScope failableScope(matcher);
-    // Infer the parameters of this overload candidate against the computed
-    // result type of the initializer.
-    if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType)))
-      return success();
+#if 0 
+  // WHY?  Remove this.
+#endif
+  if (1 || syntax != CallSyntax::kParamBindings) {
+    if (auto nonmaterializableTarget =
+            argType.getNonmaterializableTarget(getShared())) {
+      ParamMatcher::FailableScope failableScope(matcher);
+      // Infer the parameters of this overload candidate against the computed
+      // result type of the initializer.
+      if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType)))
+        return success();
 
-    // Roll back any error and inferred bindings.
-    failableScope.revert();
+      // Roll back any error and inferred bindings.
+      failableScope.revert();
+    }
   }
 
   // If implicit conversions are enabled and the target type is known, then
@@ -969,13 +974,15 @@ LogicalResult ParamInf::inferFromParamList() {
 
       // Unpacked variadics (`Tuple[*elts]` where elts is a variadic list) can
       // be passed directly as a whole variadic parameter.
-      auto expectedVA = sugarCast<ParamListType>(expectedType);
+      auto [varArgsEltType, expectedValueList] =
+          ASTType(expectedType).getParameterListInfo();
       if (auto unpacked = dyn_cast_or_null<UnpackedAttr>(
               givenBindings[posIdx].ir.getIfPValue().get())) {
         // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
         // varargs.
         FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
-            {unpacked.getValue(), givenBindings[posIdx].expr}, expectedVA, idx);
+            {unpacked.getValue(), givenBindings[posIdx].expr}, expectedType,
+            idx);
         // Exit if an error was already emitted.
         if (failed(paramVal) || failed(applyBinding(idx, *paramVal)))
           return failure();
@@ -985,7 +992,6 @@ LogicalResult ParamInf::inferFromParamList() {
 
       // Otherwise, we infer the variadic to be the elements of the variadic
       // list being passed in.
-      Type varArgsEltType = expectedVA.getElementType();
       SmallVector<TypedAttr> elements;
       bool isDeferred = false;
       while (posIdx != numParams) {
@@ -1025,9 +1031,27 @@ LogicalResult ParamInf::inferFromParamList() {
       }
 
       if (!isDeferred) {
-        expectedVA = cast<ParamListType>(evaluator.getReboundType(expectedVA));
-        auto paramVA = ParamListAttr::get(elements, expectedVA);
-        if (failed(applyBinding(idx, paramVA)))
+#if !ENABLE_TYPELIST
+        if (auto oldVA = sugarDynCast<ParamListType>(
+                evaluator.getReboundType(expectedType))) {
+          auto paramVA = ParamListAttr::get(elements, oldVA);
+          if (failed(applyBinding(idx, paramVA)))
+            return failure();
+          continue;
+        }
+#endif
+        // Infer the values list to the elements.
+        auto vaType = evaluator.getReboundType(expectedValueList.getType());
+        auto paramVA =
+            ParamListAttr::get(elements, cast<ParamListType>(vaType));
+        ParamMatcher matcher(getGivenBindings().callExpr, *this,
+                             /*implConversions*/ false);
+        if (failed(matcher.matchParams(paramVA, expectedValueList)))
+          return failure();
+        // The ParameterList now has a concrete type.
+        auto listValue =
+            UnknownAttr::get(evaluator.getReboundType(expectedType));
+        if (failed(applyBinding(idx, listValue)))
           return failure();
       }
       continue;
@@ -1799,8 +1823,9 @@ LogicalResult ParamInf::inferFromDefaults() {
       if (pog.isPosVarArg())
         return true;
 
-      // What we really want to bind here is the CTAD pos_var_arg parameter
-      // which is prepended as an inferred parameter.
+      // Parameters from an enclosing struct are smashed onto the beginning of
+      // method parameter lists, and their types are switched to Inferred. As
+      // part of that, we lose track of whether it was pos_var_arg.
       // E.g.,
       //
       // struct S[*values: Int]:
@@ -1815,18 +1840,60 @@ LogicalResult ParamInf::inferFromDefaults() {
       // prepending contextual parameters such that we don't need the check
       // here? But on the other hand, what does it mean to have a
       // inferred-pos-var-arg parameter?
+
+#if !ENABLE_TYPELIST
       if (isa<ParamListType>(declaredParamTypes[idx]) &&
           pog.getPassingKind() == PassingKind::Inferred)
+        return !isInferForStruct;
+#endif
+      if (pog.getPassingKind() == PassingKind::Inferred &&
+          ASTType(declaredParamTypes[idx]).getParameterListInfo().valueList)
         return !isInferForStruct;
 
       return false;
     }();
 
     if (isInferableVA) {
-      auto type = evaluator.getReboundType(declaredParamTypes[idx]);
-      auto empty = ParamListAttr::get({}, sugarCast<ParamListType>(type));
-      if (failed(setInferredValue(idx, empty)))
+#if !ENABLE_TYPELIST
+      if (auto oldVA = sugarDynCast<ParamListType>(
+              evaluator.getReboundType(declaredParamTypes[idx]))) {
+        auto empty = ParamListAttr::get({}, oldVA);
+        if (failed(setInferredValue(idx, empty)))
+          return failure();
+        continue;
+      }
+#endif
+
+      // Infer the param_list to an empty list, and the ParameterList itself to
+      // UnknownAttr.
+      auto [varArgsEltType, expectedValueList] =
+          ASTType(evaluator.getReboundType(declaredParamTypes[idx]))
+              .getParameterListInfo();
+
+      // If there are no values, default to an empty list.
+      if (isa<ParamIndexRefAttr>(expectedValueList)) {
+        auto paramVA = ParamListAttr::get(
+            {}, cast<ParamListType>(expectedValueList.getType()));
+        ParamMatcher matcher(getGivenBindings().callExpr, *this,
+                             /*implConversions*/ false);
+        if (failed(matcher.matchParams(paramVA, expectedValueList))) {
+          auto &diag = getMojoDiag({});
+          diag << "could not infer default variadic parameter "
+               << declaredParamPogs.getPogs()[idx].getName();
+          return failure();
+        }
+      }
+
+      // The list itself doesn't have a value, so default it to {} now that it
+      // has a concrete type.
+      auto listValue =
+          UnknownAttr::get(evaluator.getReboundType(declaredParamTypes[idx]));
+      if (failed(setInitialInferredValue(idx, listValue))) {
+        auto &diag = getMojoDiag({});
+        diag << "failed to install default variadic parameter "
+             << declaredParamPogs.getPogs()[idx].getName();
         return failure();
+      }
     }
   }
 

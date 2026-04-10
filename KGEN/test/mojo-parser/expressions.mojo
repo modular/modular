@@ -997,48 +997,48 @@ struct RegType(RegisterPassable): pass
 struct ParamType[a: Int](TrivialRegisterPassable): pass
 
 # CHECK-LABEL: lit.fn @"function_types
-def function_types[
-  # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!lit.struct<#ParamType <:!Int *(0,0)>{{.*}}>, |) -> !kgen.none
-  p0: def[a: Int](ParamType[a]) thin -> None,
+def function_types():
+  # CHECK: lit.alias.decl *"p0{{.*}}<<"a": !Int>(!lit.struct<#ParamType <:!Int *(0,0)>{{.*}}>, |) -> !kgen.none
+  comptime p0 = def[a: Int](ParamType[a]) thin -> None
 
-  # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
-  p1: def[a: Int, b: ParamType[a]]() thin raises -> None,
+  # CHECK: lit.alias.decl *"p1{{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
+  comptime p1 = def[a: Int, b: ParamType[a]]() thin raises -> None
 
-  # CHECK-SAME: p2: {{.*}}"Ts": param_list<!AnyType> pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, :origin<0> *(0,1){{.*}}, :!lit.anytrait<!AnyType> !AnyType, :!Bool {:i1 0}, :param_list<!AnyType> *(0,0)>>, imm *[0,0]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
-  p2: async def[*Ts: AnyType](* *Ts) thin -> None,
-](
-  # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
-  float0: def(Int) thin -> Int,
+  # CHECK: lit.alias.decl *"p2{{.*}}"Ts": param_list<!AnyType> pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
+  # CHECK-SAME: read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
+  comptime p2 = async def[*Ts: AnyType](* *Ts) thin -> None
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, imm {{.*}}> read_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
-  float1: def(MemoryType) thin -> MemoryType,
+  # CHECK: lit.var.decl "float0"{{.*}}(!Int, |) -> !Int
+  var float0: def(Int) thin -> Int
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
-  float2: def(var RegType) thin -> RegType,
+  # CHECK: lit.var.decl "float1"{{.*}}(!lit.ref<!MemoryType, imm {{.*}}> read_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
+  var float1: def(MemoryType) thin -> MemoryType
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none
-  float3: def(var MemoryType) thin -> None,
+  # CHECK: lit.var.decl "float2"{{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
+  var float2: def(var RegType) thin -> RegType
+ 
+  # CHECK: lit.var.decl "float3"{{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none
+  var float3: def(var MemoryType) thin -> None
+ 
+  # CHECK: lit.var.decl "float4"{{.*}}(!lit.ref<!Int, mut *[0,0]> mut, |) -> !kgen.none
+  var float4: def(mut Int) thin -> None
+ 
+  # CHECK: lit.var.decl "float5"{{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
+  var float5: def(Int) thin raises -> None
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> mut, |) -> !kgen.none
-  float4: def(mut Int) thin -> None,
-
-  # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
-  float5: def(Int) thin raises -> None,
-
-  # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
-  float6: async def(Int) capturing -> None,
-
+  # CHECK: lit.var.decl "float6"{{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
+  var float6: async def(Int) capturing thin -> None
+ 
   # FIXME: Allow origin parameters on dynamic values.
-  # HECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
-  # float7: def(*Int) raises -> None,
-
-  # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
+  # HECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
+  # var float7: def(*Int) thin raises -> None
+ 
+  # CHECK: lit.var.decl "float12"{{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>
-  float12: def(Int = 10, StaticString = "foo") thin -> None,
-
-  # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !Int>
-  named: def(x: MemoryType) thin -> Int
-): pass
+  var float12: def(Int = 10, StaticString = "foo") thin -> None
+ 
+  # CHECK: lit.var.decl "named"{{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !Int>
+  var named: def(x: MemoryType) thin -> Int
 
 # CHECK-LABEL: lit.struct.decl @Mem
 # CHECK:         lit.alias.decl *"x{{.*}}": non_struct_type = <i8>
@@ -1056,13 +1056,14 @@ def func_with_decorator(): pass
 struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
     pass
 
-# CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: param_list<!Int> pos_vararg
+# CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<{{.*}}param_list<!Int>, +, idx: !Int,
+# CHECK-SAME: a: !lit.struct<#ParameterList <:!AnyType !Int, :param_list<!Int> *"a.values`">> pos_vararg
 def variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.param_list.get<:param_list<!Int> a, 2>>
+    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.param_list.get<:param_list<!Int> *"a.values`", 2>>
     comptime v0 = a[2]
 
     # CHECK: %v1 = lit.var.decl "v1"
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <#kgen.param_list.get<:param_list<!Int> a, 3>>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <#kgen.param_list.get<:param_list<!Int> *"a.values`", 3>>
     # CHECK: lit.ref.store [[TMP]], %v1
     var v1 = a[3]
     # CHECK: {{.*}}__getitem__{{.*}}(%b, %{{.*}})
@@ -1071,8 +1072,8 @@ def variadic_subscript[idx: Int, *a: Int](*b: Int):
 
 # CHECK-LABEL: lit.fn @"variadic_memory_subscript
 # CHECK-SAME: !lit.ref<{{.*}}TwoParamsStruct
-# CHECK-SAME:   #kgen.param_list.get<:param_list<!Int> a, 0>
-# CHECK-SAME:   #kgen.param_list.get<:param_list<!Int> a, 1>
+# CHECK-SAME:   #kgen.param_list.get<:param_list<!Int> *"a.values`", 0>
+# CHECK-SAME:   #kgen.param_list.get<:param_list<!Int> *"a.values`", 1>
 def variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}(%b,
     # CHECK: %v0 = lit.var.decl

@@ -39,7 +39,7 @@ def to_string[
         `#kgen.param.expr<data_to_str,`,
         string,
         `,`,
-        extra,
+        extra.values,
         `> : !kgen.string`,
     ]
 
@@ -52,8 +52,7 @@ def test2[pred: StaticString](x: Int, y: Int) -> Bool:
             `#index<cmp_predicate `, +to_string[pred](), `>`
         ]
 
-    var z = __mlir_op.`index.cmp`[pred=get_pred[pred]()](x, y)
-
+    var z = __mlir_op.`index.cmp`[pred = get_pred[pred]()](x, y)
     return z
 
 

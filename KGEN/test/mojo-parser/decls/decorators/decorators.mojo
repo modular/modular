@@ -441,7 +441,8 @@ struct Foo(ImplicitlyCopyable):
 # CHECK: lit.fn @"__init__{{.*}}(%a: !Int, %self: !Int, ?, %self_0[self]: !lit.ref<!Foo, mut {{.*}}> byref_result)
 
 
-# CHECK-LABEL: lit.struct.decl @ParamVarArg<I: param_list<!Int> pos_vararg>
+# CHECK-LABEL: lit.struct.decl @ParamVarArg
+# CHECK-SAME: <["[[VALUES:.*]]]*{{.*}}: param_list<!Int>, +, I: !lit.struct<#ParameterList{{.*}} pos_vararg>
 @fieldwise_init
 struct ParamVarArg[*I: Int](TrivialRegisterPassable):
     pass
