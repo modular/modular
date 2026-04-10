@@ -237,7 +237,6 @@ int M::KGEN::Tool::runLLVMPath(StringRef inputFile, StringRef outputFile) {
     initializeInstCombine(pr);
     initializeTarget(pr);
     initializeExpandIRInstsLegacyPassPass(pr);
-    initializeExpandMemCmpLegacyPassPass(pr);
     initializeScalarizeMaskedMemIntrinLegacyPassPass(pr);
     initializeSelectOptimizePass(pr);
     initializeInlineAsmPreparePass(pr);

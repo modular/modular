@@ -37,6 +37,9 @@ using namespace M::KGEN::Mojo;
 static std::atomic<bool> g_plugin_initialized{false};
 static std::atomic<M::Context *> existingContext;
 
+// One-time initialisation flag for the global AsyncRT context.
+static std::once_flag g_context_init_flag;
+
 void M::KGEN::setLLDBPluginContext(ContextRef ctx) {
   auto oldCtx = ContextRef::take(existingContext.exchange(ctx.release()));
   // Let oldCtx get disposed to decrement the reference count on the previous
@@ -44,21 +47,39 @@ void M::KGEN::setLLDBPluginContext(ContextRef ctx) {
 }
 
 static ErrorOr<ContextRef> getOrCreateGlobalContext() {
+  // Fast path: already initialised.
   if (auto ctx = ContextRef::copy(existingContext.load()))
     return ctx;
+
   // Crash reporting should only really be used when we "own" the program, and
   // that's not necessarily the case for LLDB... but we have no real better
   // place to put this, since the only better place ('main' function of the
   // LLDB driver) is upstream and hard to patch in our build.
-  static ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo-lldb-plugin",
-      Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
-                                             .withCPUAffinity(false)
-                                             .withMainWillNotDonate()));
-  if (ctxOr.isError())
-    return Error(ctxOr.getError());
-  M::KGEN::setLLDBPluginContext(ctxOr->copy());
-  return ctxOr->copy();
+  //
+  // Ownership note: existingContext is the *sole* holder of the ContextRef.
+  // We deliberately avoid keeping a separate static copy so that releasing
+  // existingContext (ref-count → 0) immediately triggers Runtime::~Runtime()
+  // → workQueue->shutdown(), which synchronously joins all AsyncRT worker
+  // threads.  See the AddDestroyCallback in PluginInitialize for why this
+  // ordering matters.
+  std::call_once(g_context_init_flag, []() {
+    auto ctxOr = Init::createContext(
+        "mojo-lldb-plugin",
+        Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
+                                               .withCPUAffinity(false)
+                                               .withMainWillNotDonate()));
+    if (ctxOr.isError()) {
+      llvm::errs() << "Failed to create mojo-lldb-plugin context: "
+                   << ctxOr.getError() << "\n";
+    } else {
+      // Move ownership directly into existingContext — no extra copy retained.
+      M::KGEN::setLLDBPluginContext(ctxOr.takeValue());
+    }
+  });
+
+  if (auto ctx = ContextRef::copy(existingContext.load()))
+    return ctx;
+  return Error("failed to create mojo-lldb-plugin context (see stderr)");
 }
 
 static ContextRef getGlobalContext() {
@@ -101,6 +122,10 @@ MODULAR_EXPORT void LLDBPluginTerminate() {
   MojoLanguage::Terminate();
   MojoREPL::Terminate();
   MojoTypeSystem::Terminate();
+  // Release the AsyncRT context as a safety fallback for callers that do not
+  // go through PluginInitialize / AddDestroyCallback (e.g. LLDBPluginInitialize
+  // called directly).  If the destroy callback already ran this is a no-op.
+  M::KGEN::setLLDBPluginContext(ContextRef{});
 }
 
 static void enableJITDebugging(lldb::SBDebugger &debugger) {
@@ -150,6 +175,19 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
     std::atexit(LLDBPluginTerminate);
     registered = true;
   }
+
+  // When this debugger is destroyed (SBDebugger::Destroy), release the AsyncRT
+  // context before SBDebugger::Terminate() is called.  existingContext is the
+  // sole ContextRef holder, so releasing it drops the ref-count to zero, which
+  // triggers Runtime::~Runtime() -> workQueue->shutdown().  shutdown() blocks
+  // until all AsyncRT worker threads have joined.  Without this sequencing the
+  // live worker threads race with LLDB's internal thread pool teardown inside
+  // Debugger::Terminate() and corrupt the heap.
+  debugger.AddDestroyCallback(
+      [](lldb::user_id_t, void *) {
+        M::KGEN::setLLDBPluginContext(ContextRef{});
+      },
+      /*baton=*/nullptr);
 
   registerMojoCommands(debugger, getGlobalContext());
   registerLLVMDebugCommands(debugger);

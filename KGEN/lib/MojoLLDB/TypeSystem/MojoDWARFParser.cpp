@@ -218,7 +218,9 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
       // The name of the module is the base name of the file. We might need to
       // eventually define a unique parser for each compile unit in case of name
       // collision.
-      name = std::filesystem::path(attrs.name.AsCString()).stem().string();
+      name = std::filesystem::path(attrs.name.AsCString(/*value_if_empty=*/""))
+                 .stem()
+                 .string();
     }
 
     decl = typeSystem.getOrCreateDeclChainForDie(die, name);
@@ -335,7 +337,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
         "[MojoDWARFParser::ParseTypeFromDWARF] Will parse type. Die = {0:x}, "
         "tag = {1}, name = '{2}', linkage name = '{3}', byte size = {4}.",
         die.GetOffset(), DW_TAG_value_to_name(die.Tag()), die.GetName(),
-        attrs.linkageName.AsCString(), attrs.byteSize);
+        attrs.linkageName.AsCString(/*value_if_empty=*/""), attrs.byteSize);
   }
 
   if (typeIsNewPtr)
@@ -453,7 +455,8 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
       dwarf->GetObjectFile()->GetModule()->ReportError(
           "The array type '{0}' at offset {1:x} with element type '{2}' "
           "couldn't be parsed.",
-          attrs.name.AsCString(), die.GetOffset(), elementTypeDie.GetName());
+          attrs.name.AsCString(/*value_if_empty=*/""), die.GetOffset(),
+          elementTypeDie.GetName());
     }
 
     break;
@@ -480,14 +483,16 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
             "The parsed MLIR structure type '{0}' has not byte size. The "
             "MLIR type won't be used and regular MLIR-agnostic DWARF parsing "
             "will be performed. Error: {1}",
-            attrs.name.AsCString(), llvm::toString(mlirByteSize.takeError()));
+            attrs.name.AsCString(/*value_if_empty=*/nullptr),
+            llvm::toString(mlirByteSize.takeError()));
       } else if (attrs.byteSize && *attrs.byteSize != *mlirByteSize) {
         mojoType = {};
         dwarf->GetObjectFile()->GetModule()->ReportError(
             "The parsed MLIR structure type '{0}' has a different size ({1}) "
             "than the one in the debug info ({2}). The MLIR type won't be used "
             "and regular MLIR-agnostic DWARF parsing will be performed.",
-            attrs.name.AsCString(), *mlirByteSize, *attrs.byteSize);
+            attrs.name.AsCString(/*value_if_empty=*/nullptr), *mlirByteSize,
+            *attrs.byteSize);
       } else {
         type = dwarf->MakeType(
             die.GetID(), attrs.name, attrs.byteSize, nullptr, LLDB_INVALID_UID,
