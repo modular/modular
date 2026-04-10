@@ -30,6 +30,7 @@ Placement transitions::
     all_gather          :  Sharded(k)   → Replicated
     reduce_scatter      :  Partial      → Sharded(dim)
     distributed_scatter :  pre-split chunks on root → Sharded (root-to-many)
+    distributed_broadcast: single tensor on root → Replicated (root-to-all)
 Multi-device multi-axis mesh strategy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The allreduce kernel indexes signal buffers by **absolute GPU device
@@ -63,7 +64,7 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
 )
-from max.graph import TensorValue, ops
+from max.graph import DeviceRef, TensorValue, ops
 
 from ._context_provider import functional
 
@@ -615,8 +616,6 @@ def _shard(
             shard_tvs = [sv for sv in shard_tvs for _ in range(n)]
 
     # Transfer each shard to its target device.
-    from max.graph import DeviceRef
-
     shard_tvs = [
         ops.transfer_to(sv, DeviceRef.from_device(mesh.devices[i]))
         for i, sv in enumerate(shard_tvs)
@@ -646,8 +645,6 @@ def _distributed_scatter(
     Returns:
         A distributed tensor with one shard per mesh device.
     """
-    from max.graph import DeviceRef
-
     mesh = mapping.mesh
     tvs = [TensorValue(c) for c in chunks]
 
@@ -668,6 +665,49 @@ def _distributed_scatter(
     return make_distributed(results, mapping)
 
 
+def _distributed_broadcast(
+    t: tensor.Tensor,
+    mapping: DeviceMapping,
+) -> tensor.Tensor:
+    """Broadcast a tensor from root to all mesh devices.
+
+    Thin wrapper around ``ops.distributed_broadcast`` that handles signal
+    buffer management and wraps the result as a distributed Tensor.
+
+    The root device is inferred from the input tensor's device. On a
+    simulated mesh (single GPU or CPU), falls back to ``transfer_to``.
+
+    Args:
+        t: Input tensor on the root device.
+        mapping: The target device mapping (should use Replicated placement).
+
+    Returns:
+        A distributed tensor with one copy per mesh device.
+    """
+    mesh = mapping.mesh
+    tv = TensorValue(t)
+
+    if _has_multi_device_buffers(mesh):
+        bufs = _full_mesh_bufs(mesh)
+        # If the input is not on a mesh device (e.g. CPU tensor from
+        # numpy), transfer it to the first GPU as the root.
+        mesh_devs = [DeviceRef.from_device(d) for d in mesh.devices]
+        if tv.device not in mesh_devs:
+            raise ValueError(
+                f"broadcast input tensor device {tv.device} is not in "
+                f"the mesh devices: {mesh_devs}"
+            )
+        results = ops.distributed_broadcast(tv, bufs)
+        return make_distributed(results, mapping)
+
+    # Simulated: transfer input to each target device.
+    results = [
+        ops.transfer_to(tv, DeviceRef.from_device(mesh.devices[i]))
+        for i in range(len(mesh.devices))
+    ]
+    return make_distributed(results, mapping)
+
+
 # ─── Public API (wrapped for context, no Partial resolution) ──────────────
 
 all_reduce_sum = functional(_all_reduce_sum, linear=None)
@@ -676,6 +716,7 @@ reduce_scatter = functional(_reduce_scatter, linear=None)
 resolve_partials = functional(_resolve_partials, linear=None)
 shard = functional(_shard, linear=None)
 distributed_scatter = functional(_distributed_scatter, linear=None)
+distributed_broadcast = functional(_distributed_broadcast, linear=None)
 
 
 # ─── Materialization helpers (re-exported from _utils) ────────────────

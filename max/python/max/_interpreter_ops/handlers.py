@@ -3244,3 +3244,49 @@ def _handle_distributed_scatter(
     # Trailing None for the output chain.
     output_buffers.append(None)
     return output_buffers
+
+
+@register_op_handler(mo.DistributedBroadcastOp)
+def _handle_distributed_broadcast(
+    op: mo.DistributedBroadcastOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.distributed.broadcast by replicating input to all devices.
+
+    Operands (flat): 1 input tensor, N signal buffers, 1 input chain.
+    Results: N output tensors (one per device, all copies of the input),
+    1 output chain.
+
+    The interpreter executes sequentially on the host, so signal buffers
+    and chains are unused.
+
+    Args:
+        op: The broadcast operation.
+        inputs: Flat operand buffers from the interpreter dispatcher.
+
+    Returns:
+        N output buffers followed by None for the chain.
+    """
+    # op.root identifies the source device, but in the flat operand layout
+    # inputs[0] is always the root tensor; the interpreter simply copies it
+    # to every output device regardless of root index.
+    input_buf = inputs[0]
+    assert isinstance(input_buf, Buffer), "broadcast input is not a Buffer"
+
+    num_signal_bufs = len(op.signal_buffers)
+    results = list(op.results)
+    num_outputs = len(results) - 1  # exclude trailing chain
+    assert num_outputs == num_signal_bufs, (
+        f"broadcast expects one output per signal buffer, "
+        f"got {num_outputs} outputs and {num_signal_bufs} signal buffers"
+    )
+
+    output_buffers: list[Buffer | None] = []
+    for result in results[:-1]:
+        result_type: mo.TensorType = result.type  # type: ignore[assignment]
+        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
+        output_buffers.append(input_buf.to(device))
+
+    # Trailing None for the output chain.
+    output_buffers.append(None)
+    return output_buffers

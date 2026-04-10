@@ -26,7 +26,12 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
+from max.experimental.distributed_functional.collectives import (
+    distributed_broadcast as df_broadcast,
+)
+from max.experimental.distributed_functional.collectives import to_numpy
 from max.experimental.realization_context import set_seed
+from max.experimental.sharding import DeviceMesh, PlacementMapping, Replicated
 from max.experimental.tensor import Tensor, realization_context
 
 # DTypes to test for elementwise operations
@@ -6224,3 +6229,30 @@ class TestDistributedScatterSimulated:
         assert len(result.local_shards) == 2
         np.testing.assert_allclose(to_numpy(result.local_shards[0]), data[:2])
         np.testing.assert_allclose(to_numpy(result.local_shards[1]), data[2:])
+
+
+class TestDistributedBroadcastSimulated:
+    """Test distributed_broadcast on a simulated CPU mesh."""
+
+    def test_broadcast_simulated_fallback(self) -> None:
+        """Simulated mesh: distributed_broadcast falls back to transfer_to."""
+        cpu = CPU()
+        mesh = DeviceMesh(
+            devices=(cpu, cpu), mesh_shape=(2,), axis_names=("dp",)
+        )
+
+        data = np.arange(8, dtype=np.float32).reshape(4, 2)
+        t = Tensor.from_dlpack(data)
+
+        mapping = PlacementMapping(mesh, (Replicated(),))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = df_broadcast(t, mapping)
+
+        assert result.placements == (Replicated(),)
+        assert len(result.local_shards) == 2
+        np.testing.assert_allclose(to_numpy(result.local_shards[0]), data)
+        np.testing.assert_allclose(to_numpy(result.local_shards[1]), data)

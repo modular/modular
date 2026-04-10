@@ -137,6 +137,11 @@ This version is still a work in progress.
   without falling back to compilation.
 - Added `distributed_scatter` collective to `distributed_functional` for
   hardware-accelerated root-to-device tensor distribution.
+- Added `distributed.broadcast` op handler to the eager interpreter,
+  enabling multi-GPU eager execution of broadcast collectives
+  without falling back to compilation.
+- Added `distributed_broadcast` collective to `distributed_functional` for
+  hardware-accelerated root-to-all tensor replication.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.
