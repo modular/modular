@@ -313,6 +313,9 @@ struct OwnedDLHandle(Movable):
 
         Example:
         ```mojo
+        from std.ffi import OwnedDLHandle
+
+        var lib = OwnedDLHandle("libm.so")
         var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
         ```
 
