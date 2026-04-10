@@ -423,7 +423,7 @@ struct NonNullUnsafePointer[
         """
         return {
             _mlir_value = __mlir_op.`pop.offset`(
-                self.address, index(offset)._mlir_value
+                self.address, index(offset)._int_mlir_index()
             )
         }
 

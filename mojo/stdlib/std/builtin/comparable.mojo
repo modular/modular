@@ -78,8 +78,10 @@ trait Equatable(ImplicitlyDestructible):
                 ParentConformsTo="Equatable",
             ]()
             if trait_downcast[Equatable](
-                __struct_field_ref(i, self)
-            ) != trait_downcast[Equatable](__struct_field_ref(i, other)):
+                __struct_field_ref(i._int_mlir_index(), self)
+            ) != trait_downcast[Equatable](
+                __struct_field_ref(i._int_mlir_index(), other)
+            ):
                 return False
         return True
 

@@ -121,5 +121,5 @@ def get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
     var result = InlineArray[UInt64, CONTAINER_SIZE](uninitialized=True)
     for i in range(4, CONTAINER_SIZE):
-        result[i] = 10 ** UInt64(CONTAINER_SIZE - i - 1)
+        result[i] = UInt64(10) ** UInt64(CONTAINER_SIZE - i - 1)
     return result^

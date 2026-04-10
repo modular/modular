@@ -254,7 +254,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     # Fields
     comptime type = __mlir_type[
-        `!pop.array<`, Self.size._mlir_value, `, `, Self.ElementType, `>`
+        `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.ElementType, `>`
     ]
     """The underlying MLIR array type."""
 
@@ -375,7 +375,9 @@ struct InlineArray[ElementType: Copyable, size: Int](
             )
 
     @always_inline
-    def __init__[batch_size: Int = 64](out self, *, fill: Self.ElementType):
+    def __init__[
+        batch_size: SIMDSize = 64
+    ](out self, *, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -716,7 +718,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         )
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._array).address,
-            i._mlir_value,
+            i._int_mlir_index(),
         )
         return UnsafePointer[_, origin_of(self)](ptr)[]
 

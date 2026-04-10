@@ -44,12 +44,12 @@ def _stencil_impl_cpu[
         IndexList[rank, ...]
     ) unified -> SIMD[dtype, simd_width],
     compute_init_fn: def[simd_width: Int]() unified -> SIMD[dtype, simd_width],
-    compute_fn: def[simd_width: Int](
+    compute_fn: def[simd_width: SIMDSize](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) unified -> SIMD[dtype, simd_width],
-    compute_finalize_fn: def[simd_width: Int](
+    compute_finalize_fn: def[simd_width: SIMDSize](
         IndexList[rank, ...], SIMD[dtype, simd_width]
     ) unified -> None,
 ](

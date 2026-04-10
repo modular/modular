@@ -269,7 +269,7 @@ def compile_info[
 
     var offload = __mlir_op.`kgen.compile_offload`[
         target_type=target,
-        emission_kind=_get_emission_kind_id[emission_kind]()._mlir_value,
+        emission_kind=_get_emission_kind_id[emission_kind]()._int_mlir_index(),
         emission_option=_get_kgen_string[compile_options](),
         emission_link_option=_get_kgen_string[link_options](),
         func=func,

@@ -135,7 +135,7 @@ def tc_reduce[
 
 @always_inline
 def _tc_reduce_vector[
-    in_type: DType, simd_width: Int, //, out_type: DType
+    in_type: DType, simd_width: SIMDSize, //, out_type: DType
 ](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
     """Internal vector reduction implementation using tensor cores.
 

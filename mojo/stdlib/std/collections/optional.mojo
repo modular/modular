@@ -835,7 +835,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
             value: The value.
         """
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=Int(0)._mlir_value
+            _type=Self._mlir_type, index=SIMDSize(0)._mlir_value
         ](value)
 
     # TODO(MSTDL-715):
@@ -861,7 +861,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
             value: The None value.
         """
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=Int(1)._mlir_value
+            _type=Self._mlir_type, index=SIMDSize(1)._mlir_value
         ](__mlir_attr.false)
 
     # ===-------------------------------------------------------------------===#
@@ -918,7 +918,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Returns:
             True if the optional has a value and False otherwise.
         """
-        return __mlir_op.`kgen.variant.is`[index=Int(0)._mlir_value](
+        return __mlir_op.`kgen.variant.is`[index=Int(0)._int_mlir_index()](
             self._value
         )
 
@@ -933,7 +933,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Returns:
             The contained value.
         """
-        return __mlir_op.`kgen.variant.get`[index=Int(0)._mlir_value](
+        return __mlir_op.`kgen.variant.get`[index=Int(0)._int_mlir_index()](
             self._value
         )
 

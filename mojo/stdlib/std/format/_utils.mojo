@@ -400,9 +400,9 @@ struct _WriteBufferHeap(Writable, Writer):
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
         self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES._mlir_value,
+            count=HEAP_BUFFER_BYTES._int_mlir_index(),
             _type=type_of(self._data)._mlir_type,
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
         ]()
         self._pos = 0
 

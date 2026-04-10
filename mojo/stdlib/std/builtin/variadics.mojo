@@ -165,7 +165,7 @@ struct Variadic:
         Mapper: _TabulateIntToValueGeneratorType[ToT],
     ]: Variadic.ValuesOfType[ToT] = __mlir_attr[
         `#kgen.param_list.tabulate<`,
-        count._mlir_value,
+        count._int_mlir_index(),
         `,`,
         _IndexToIntTabulateWrap[Mapper, ...],
         `> : `,
@@ -187,7 +187,7 @@ struct Variadic:
         Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
     ]: Variadic.TypesOfTrait[Trait] = __mlir_attr[
         `#kgen.param_list.tabulate<`,
-        count._mlir_value,
+        count._int_mlir_index(),
         `,`,
         _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
         `> : `,
@@ -443,7 +443,7 @@ struct Variadic:
         `>`,
     ]
     """This specifies a generator to generate a generator type for the reducer of
-    values. The result generator type is [From, idx: Int] -> To,
+    values. The result generator type is [From, idx: SIMDSize] -> To,
     """
 
     comptime _ValueToValueMapper[
@@ -453,7 +453,7 @@ struct Variadic:
         Mapper: Variadic._ValueIdxToValueGeneratorType[FromType, ToType],
         Prev: Variadic.ValuesOfType[ToType],
         From: Variadic.ValuesOfType[FromType],
-        idx: Int,
+        idx: SIMDSize,
     ] = Variadic.concat_values[
         Prev,
         Variadic.values[Mapper[From[idx], idx]],
@@ -757,7 +757,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         ` `,
         +Self.values,
         `, `,
-        idx._mlir_value,
+        idx._int_mlir_index(),
         `> : `,
         +Self.type,
     ]
@@ -946,7 +946,7 @@ struct VariadicList[
         var elt_ptr = UnsafePointer[_, ExternalOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
                 array_up.address,
-                Int(0)._mlir_value,
+                Int(0)._int_mlir_index(),
             )
         ).bitcast[Self._EltPointerType]()
         var size_tmp = size  # FIXME: Weird MLIR syntax error?
@@ -1252,7 +1252,9 @@ struct VariadicPack[
                 ).mut_cast[True]().destroy_pointee()
 
     def consume_elements[
-        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
+        elt_handler: def[idx: Int](
+            var elt: Self.element_types[idx._int_mlir_index()]
+        ) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -1305,7 +1307,7 @@ struct VariadicPack[
     @always_inline
     def __getitem_param__[
         index: Int
-    ](self) -> ref[Self.origin] Self.element_types[index]:
+    ](self) -> ref[Self.origin] Self.element_types[index._int_mlir_index()]:
         """Return a reference to an element of the pack.
 
         Parameters:
@@ -1316,7 +1318,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index=index.__mlir_index__()
+            index=index._int_mlir_index()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 
@@ -1513,13 +1515,13 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
     `, "From": `,
     _MLIR.KGENTypeListType[From],
     `, "Idx":`,
-    Int,
+    SIMDSize,
     `>`,
     +Prev,
     `>`,
 ]
 """This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> Prev,
+The generated generator type is [Prev: AnyType, Ts: Variadic.TypesOfTrait[AnyType], idx: SIMDSize] -> Prev,
 """
 
 comptime _IndexToIntWrap[
@@ -1529,7 +1531,7 @@ comptime _IndexToIntWrap[
     PrevV: ReduceT,
     VA: Variadic.TypesOfTrait[From],
     idx: __mlir_type.index,
-] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+] = ToWrap[PrevV, VA, SIMDSize(mlir_value=idx)]
 """Wrapper for type -> value."""
 
 comptime _ReduceVariadicAndIdxToVariadic[
@@ -1572,13 +1574,13 @@ comptime _ReduceValueIdxGeneratorTypeGenerator[
     `, "From": `,
     _MLIR.KGENParamListType[From],
     `, "Idx":`,
-    Int,
+    SIMDSize,
     `>`,
     +Prev,
     `>`,
 ]
 """This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: Variadic.ValuesOfType[AnyType], idx: Int] -> Prev,
+The generated generator type is [Prev: AnyType, Ts: Variadic.ValuesOfType[AnyType], idx: SIMDSize] -> Prev,
 """
 
 
@@ -1589,7 +1591,7 @@ comptime _IndexToIntValueWrap[
     PrevV: ReduceT,
     VA: Variadic.ValuesOfType[From],
     idx: __mlir_type.index,
-] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+] = ToWrap[PrevV, VA, SIMDSize(mlir_value=idx)]
 
 
 comptime _ReduceValueAndIdxToVariadic[
@@ -1703,13 +1705,13 @@ comptime _VariadicIdxToTypeGeneratorTypeGenerator[
     `!lit.generator<<"From": `,
     _MLIR.KGENTypeListType[From],
     `, "Idx":`,
-    Int,
+    SIMDSize,
     `>`,
     To,
     `>`,
 ]
 """This specifies a generator to generate a generator type for the mapper.
-The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
+The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: SIMDSize] -> AnyType,
 which maps the input variadic + index of the current element to another type.
 """
 
@@ -1720,7 +1722,7 @@ comptime _WrapVariadicIdxToTypeMapperToReducer[
     Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[F, T],
     Prev: Variadic.TypesOfTrait[T],
     From: Variadic.TypesOfTrait[F],
-    Idx: Int,
+    Idx: SIMDSize,
 ] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
 
 
@@ -1752,13 +1754,13 @@ comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
     `!lit.generator<<"From": `,
     _MLIR.KGENParamListType[From],
     `, "Idx":`,
-    Int,
+    SIMDSize,
     `>`,
     To,
     `>`,
 ]
 """This specifies a generator to generate a generator type for the mapper.
-The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
+The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: SIMDSize] -> AnyType,
 which maps the input variadic + index of the current element to another type.
 """
 
@@ -1768,14 +1770,14 @@ comptime _WrapVariadicValuesIdxToTypeMapperToReducer[
     Mapper: _VariadicValuesIdxToTypeGeneratorTypeGenerator[F, T],
     Prev: Variadic.TypesOfTrait[T],
     From: Variadic.ValuesOfType[F],
-    Idx: Int,
+    Idx: SIMDSize,
 ] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
 
 comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],
-    idx: Int,
-] = element_types[TypeList[*element_types].size - 1 - idx]
+    idx: SIMDSize,
+] = element_types[(TypeList[*element_types].size - 1 - idx)._int_mlir_index()]
 """A generator that reverses a variadic sequence of types.
 
 Parameters:
@@ -1790,7 +1792,7 @@ comptime _ContainsReducer[
     Type: Trait,
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]
 
 comptime _ContainsValueReducer[
@@ -1798,7 +1800,7 @@ comptime _ContainsValueReducer[
     value: T,
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.ValuesOfType[T],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[From[idx] == value or Prev[0]]
 
 comptime _MapTypeToTypeReducer[
@@ -1807,7 +1809,7 @@ comptime _MapTypeToTypeReducer[
     Mapper: _TypeToTypeGenerator[FromTrait, ToTrait],
     Prev: Variadic.TypesOfTrait[ToTrait],
     From: Variadic.TypesOfTrait[FromTrait],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.concat_types[Prev, Variadic.types[T=ToTrait, Mapper[From[idx]]]]
 
 comptime _SliceReducer[
@@ -1816,7 +1818,7 @@ comptime _SliceReducer[
     end: Int,
     Prev: Variadic.TypesOfTrait[Trait],
     From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
+    idx: SIMDSize,
 ] = (
     Variadic.concat_types[Prev, Variadic.types[T=Trait, From[idx]]] if idx
     >= start
@@ -1852,7 +1854,7 @@ comptime _FilterReducer[
     Predicate: _TypePredicateGenerator[Trait],
     Prev: Variadic.TypesOfTrait[Trait],
     From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
+    idx: SIMDSize,
 ] = (
     Variadic.concat_types[
         Prev, Variadic.types[T=Trait, From[idx]]

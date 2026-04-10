@@ -569,7 +569,9 @@ struct UnsafePointer[
         Returns:
             An offset pointer.
         """
-        return __mlir_op.`pop.offset`(self.address, index(offset)._mlir_value)
+        return __mlir_op.`pop.offset`(
+            self.address, index(offset)._int_mlir_index()
+        )
 
     @always_inline
     def __sub__[I: Indexer, //](self, offset: I) -> Self:
@@ -1072,7 +1074,7 @@ struct UnsafePointer[
             # intentionally don't unroll, otherwise the compiler vectorizes
             for i in range(width):
                 v[i] = __mlir_op.`pop.load`[
-                    alignment=alignment._mlir_value,
+                    alignment=alignment._int_mlir_index(),
                     isVolatile=volatile._mlir_value,
                     isInvariant=invariant._mlir_value,
                     isNonTemporal=non_temporal._mlir_value,
@@ -1099,7 +1101,7 @@ struct UnsafePointer[
         var address = self.bitcast[SIMD[dtype, width]]().address
 
         var result = __mlir_op.`pop.load`[
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
             isVolatile=volatile._mlir_value,
             isInvariant=invariant._mlir_value,
             isNonTemporal=non_temporal._mlir_value,
@@ -1203,7 +1205,7 @@ struct UnsafePointer[
         I: Indexer,
         dtype: DType,
         //,
-        width: Int = 1,
+        width: SIMDSize = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1276,7 +1278,7 @@ struct UnsafePointer[
     def store[
         dtype: DType,
         //,
-        width: Int = 1,
+        width: SIMDSize = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1322,7 +1324,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     def _store[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1347,7 +1349,7 @@ struct UnsafePointer[
             ](val.cast[DType.uint8]())
         else:
             __mlir_op.`pop.store`[
-                alignment=alignment._mlir_value,
+                alignment=alignment._int_mlir_index(),
                 isVolatile=volatile._mlir_value,
                 isNonTemporal=non_temporal._mlir_value,
             ](val, self.bitcast[SIMD[dtype, width]]().address)
@@ -1383,7 +1385,7 @@ struct UnsafePointer[
         dtype: DType,
         T: Intable,
         //,
-        width: Int = 1,
+        width: SIMDSize = 1,
     ](
         self: UnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
@@ -1409,7 +1411,7 @@ struct UnsafePointer[
         dtype: DType,
         //,
         *,
-        width: Int = 1,
+        width: SIMDSize = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: UnsafePointer[Scalar[dtype], ...],
@@ -1466,7 +1468,7 @@ struct UnsafePointer[
         dtype: DType,
         //,
         *,
-        width: Int = 1,
+        width: SIMDSize = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: UnsafePointer[mut=True, Scalar[dtype], ...],

@@ -259,7 +259,7 @@ def memcpy[
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dest.bitcast[Byte](), src.bitcast[Byte](), n
+            dest.bitcast[Byte](), src.bitcast[Byte](), n._int_mlir_index()
         )
     else:
         _memcpy_impl(dest.bitcast[Byte](), src.bitcast[Byte](), n)
@@ -411,7 +411,7 @@ def _malloc[
         return ptr.bitcast[type]()
     else:
         return __mlir_op.`pop.aligned_alloc`[_type=type_of(res)._mlir_type](
-            alignment._mlir_value, size._mlir_value
+            alignment._int_mlir_index(), size._int_mlir_index()
         )
 
 

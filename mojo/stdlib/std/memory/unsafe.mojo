@@ -32,10 +32,10 @@ from std.builtin.dtype import _uint_type_of_width
 @always_inline("nodebug")
 def bitcast[
     src_dtype: DType,
-    src_width: Int,
+    src_width: SIMDSize,
     //,
     dtype: DType,
-    width: Int = src_width,
+    width: SIMDSize = src_width,
 ](val: SIMD[src_dtype, src_width]) -> SIMD[dtype, width]:
     """Bitcasts a SIMD value to another SIMD value.
 
@@ -132,10 +132,10 @@ def _llvm_bitwidth(dtype: DType) -> Int:
 
 @always_inline("nodebug")
 def pack_bits[
-    src_width: Int,
+    src_width: SIMDSize,
     //,
     dtype: DType = _uint_type_of_width[src_width](),
-    width: Int = 1,
+    width: SIMDSize = 1,
 ](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.
 

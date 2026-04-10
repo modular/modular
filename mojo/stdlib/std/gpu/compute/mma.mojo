@@ -162,11 +162,11 @@ def _dtype_to_nvvm_wgmma_type[
 def _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.shape<m =`,
-        +m._mlir_value,
+        +m._int_mlir_index(),
         `, n =`,
-        +n._mlir_value,
+        +n._int_mlir_index(),
         `, k =`,
-        +k._mlir_value,
+        +k._int_mlir_index(),
         `>`,
     ]
 
@@ -741,7 +741,7 @@ def wgmma_async[
                 `!kgen.param_list_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
-                width._mlir_value,
+                width._int_mlir_index(),
                 `>`,
             ],
             `)>`,
@@ -757,7 +757,7 @@ def wgmma_async[
     n: Int,
     k: Int,
     c_dtype: DType,
-    width: Int,
+    width: SIMDSize,
     /,
     *,
     a_type: DType,
@@ -885,8 +885,8 @@ def wgmma_async[
     k: Int,
     a_dtype: DType,
     c_dtype: DType,
-    frag_a_width: Int,
-    frag_c_width: Int,
+    frag_a_width: SIMDSize,
+    frag_c_width: SIMDSize,
     /,
     *,
     a_type: DType,

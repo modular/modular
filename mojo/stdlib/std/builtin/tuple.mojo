@@ -101,7 +101,9 @@ struct Tuple[*element_types: Movable](
 
         # Move each element into the tuple storage.
         @parameter
-        def init_elt[idx: Int](var elt: Self.element_types[idx]):
+        def init_elt[
+            idx: Int
+        ](var elt: Self.element_types[idx._int_mlir_index()]):
             UnsafePointer(to=self[idx]).init_pointee_move(elt^)
 
         args^.consume_elements[init_elt]()
@@ -112,7 +114,7 @@ struct Tuple[*element_types: Movable](
         # Run the destructor on each member, the destructor of !kgen.pack is
         # trivial and won't do anything.
         comptime for i in range(Self.__len__()):
-            comptime TUnknown = Self.element_types[i]
+            comptime TUnknown = Self.element_types[i._int_mlir_index()]
             _constrained_conforms_to[
                 conforms_to(TUnknown, ImplicitlyDestructible),
                 Parent=Self,
@@ -186,7 +188,7 @@ struct Tuple[*element_types: Movable](
     @always_inline("nodebug")
     def __getitem_param__[
         idx: Int
-    ](ref self) -> ref[self] Self.element_types[idx]:
+    ](ref self) -> ref[self] Self.element_types[idx._int_mlir_index()]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -201,7 +203,7 @@ struct Tuple[*element_types: Movable](
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index=idx.__mlir_index__()
+            index=idx._int_mlir_index()
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
@@ -228,7 +230,9 @@ struct Tuple[*element_types: Movable](
         """
 
         comptime for i in range(type_of(self).__len__()):
-            comptime if _type_is_eq[Self.element_types[i], T]():
+            comptime if _type_is_eq[
+                Self.element_types[i._int_mlir_index()], T
+            ]():
                 if rebind[T](self[i]) == value:
                     return True
 
@@ -250,7 +254,9 @@ struct Tuple[*element_types: Movable](
         )
 
         comptime for i in range(type_of(self).__len__()):
-            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
+            UnsafePointer(to=self[i]).init_pointee_move(
+                elt_types[i._int_mlir_index()]()
+            )
 
     @always_inline
     def __eq__(

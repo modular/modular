@@ -49,7 +49,7 @@ def _stencil_impl_gpu[
         dtype, simd_width
     ],
     ComputeFnType: ImplicitlyCopyable
-    & def[simd_width: Int](
+    & def[simd_width: SIMDSize](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],

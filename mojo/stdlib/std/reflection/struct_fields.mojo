@@ -433,7 +433,7 @@ def _struct_field_offset_by_index[
             `#kgen.struct_field_offset_by_index<`,
             T,
             `, `,
-            idx,
+            idx._int_mlir_index(),
             `, `,
             target,
             `> : index`,

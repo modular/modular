@@ -882,7 +882,7 @@ def external_memory[
                 address_space=address_space,
             ]._mlir_type,
             name=_get_kgen_string[name](),
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()

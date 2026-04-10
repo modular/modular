@@ -29,7 +29,7 @@ Parameters:
 comptime _AllWritableReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], Writable) and Prev[0]]
 
 comptime AllMovable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
@@ -46,7 +46,7 @@ Parameters:
 comptime _AllMovableReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], Movable) and Prev[0]]
 
 comptime AllCopyable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
@@ -63,7 +63,7 @@ Parameters:
 comptime _AllCopyableReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], Copyable) and Prev[0]]
 
 comptime AllImplicitlyCopyable[
@@ -84,7 +84,7 @@ Parameters:
 comptime _AllImplicitlyCopyableReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], ImplicitlyCopyable) and Prev[0]]
 
 comptime AllDefaultable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
@@ -101,7 +101,7 @@ Parameters:
 comptime _AllDefaultableReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], Defaultable) and Prev[0]]
 
 comptime AllEquatable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
@@ -118,7 +118,7 @@ Parameters:
 comptime _AllEquatableReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], Equatable) and Prev[0]]
 
 comptime AllHashable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
@@ -135,7 +135,7 @@ Parameters:
 comptime _AllHashableReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], Hashable) and Prev[0]]
 
 comptime AllImplicitlyDestructible[
@@ -156,7 +156,7 @@ Parameters:
 comptime _AllImplicitlyDestructibleReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], ImplicitlyDestructible) and Prev[0]]
 
 comptime AllRegisterPassable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
@@ -173,5 +173,5 @@ Parameters:
 comptime _AllRegisterPassableReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.values[conforms_to(From[idx], RegisterPassable) and Prev[0]]
