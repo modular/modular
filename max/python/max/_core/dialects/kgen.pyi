@@ -1131,6 +1131,49 @@ class ParamIndexRefAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class ParamListAttr(max._core.Attribute):
+    """
+    The `#kgen.param_list` attribute contains a homogeneous list of elements of
+    !kgen.param_list type.
+
+    Example:
+
+    ```mlir
+    #kgen.param_list<1, 2> : !kgen.param_list<index>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        values: Sequence[max._core.dialects.builtin.TypedAttr],
+        type: ParamListType,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        values: Sequence[max._core.dialects.builtin.TypedAttr],
+        type: ParamListType,
+    ) -> None: ...
+    @property
+    def values(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+    @property
+    def type(self) -> ParamListType: ...
+
+class ParamListSizeAttr(max._core.Attribute):
+    @overload
+    def __init__(
+        self, param_list: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.dialects.builtin.IndexType,
+        param_list: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def param_list(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class ParamOperatorAttr(max._core.Attribute):
     @overload
     def __init__(
@@ -1819,45 +1862,16 @@ class UpcastAttr(max._core.Attribute):
     @property
     def input_type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class VariadicAttr(max._core.Attribute):
-    """
-    The `#kgen.variadic` attribute contains a homogeneous list of elements of an
-    variadic type. It is used to represent constant variadic sequence values.
-
-    Example:
-
-    ```mlir
-    #kgen.variadic<1, 2> : !kgen.param_list<index>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: ParamListType,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: ParamListType,
-    ) -> None: ...
-    @property
-    def values(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
-    @property
-    def type(self) -> ParamListType: ...
-
 class VariadicConcatAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.concat` attribute is used to concatenate a variadic of
+    The `#kgen.param_list.concat` attribute is used to concatenate a variadic of
     variadic (type) value.
 
     Example:
     ```mlir
-    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !param_list<!AnyType>
+    #kgen.param_list.concat<[[Int, Int], [Float, Float]]> : !param_list<!AnyType>
     // ->
-    #kgen.variadic<[Int, Int, Float, Float]> : !param_list<!AnyType>
+    #kgen.param_list<[Int, Int, Float, Float]> : !param_list<!AnyType>
     ```
     """
 
@@ -1865,43 +1879,43 @@ class VariadicConcatAttr(max._core.Attribute):
     def __init__(
         self,
         type: ParamListType,
-        variadics: max._core.dialects.builtin.TypedAttr,
+        param_lists: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: ParamListType,
-        variadics: max._core.dialects.builtin.TypedAttr,
+        param_lists: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> ParamListType: ...
     @property
-    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def param_lists(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariadicGetAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        param_list: max._core.dialects.builtin.TypedAttr,
         index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: max._core.Type,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        param_list: max._core.dialects.builtin.TypedAttr,
         index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> max._core.Type | None: ...
     @property
-    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def param_list(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def index(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariadicReduceAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
+    The `#kgen.param_list.reduce` attribute is used to reduce a variadic of
     (type) value to a (type) value by repeatedly applying the provided reducer
     on each element of the variadic.
     """
@@ -1910,7 +1924,7 @@ class VariadicReduceAttr(max._core.Attribute):
         self,
         type: max._core.Type,
         base: max._core.dialects.builtin.TypedAttr,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        param_list: max._core.dialects.builtin.TypedAttr,
         generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
@@ -1918,36 +1932,22 @@ class VariadicReduceAttr(max._core.Attribute):
     @property
     def base(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def param_list(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class VariadicSizeAttr(max._core.Attribute):
-    @overload
-    def __init__(
-        self, variadic: max._core.dialects.builtin.TypedAttr
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        type: max._core.dialects.builtin.IndexType,
-        variadic: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
-
 class VariadicTabulateAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.tabulate` attribute produces a variadic of (type) values
+    The `#kgen.param_list.tabulate` attribute produces a variadic of (type) values
     by invoking the provided generator function N times with indices 0, 1, ...,
     N-1, where N is the integer count. The generator is a function from index to
     (element type); each result is collected into the result variadic.
 
     Example:
     ```mlir
-    #kgen.variadic.tabulate<:!kgen.param_list<f32> 3, fn(i: index) -> f32> : !kgen.param_list<f32>
+    #kgen.param_list.tabulate<:!kgen.param_list<f32> 3, fn(i: index) -> f32> : !kgen.param_list<f32>
     // ->
-    #kgen.variadic<0, 1, 2> : !kgen.param_list<f32>
+    #kgen.param_list<0, 1, 2> : !kgen.param_list<f32>
     ```
     """
 
@@ -1974,14 +1974,14 @@ class VariadicTabulateAttr(max._core.Attribute):
 
 class VariadicZipAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.zip` attribute is used to zip a variadic of
-    variadic (type) value.
+    The `#kgen.param_list.zip` attribute is used to zip a param_list of
+    param_list value.
 
     Example:
     ```mlir
-    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
+    #kgen.param_list.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
     // ->
-    #kgen.variadic<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
+    #kgen.param_list<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
     ```
 
     At the moment, when the provided variadics are of different lengths, we zip
@@ -1993,18 +1993,18 @@ class VariadicZipAttr(max._core.Attribute):
     def __init__(
         self,
         type: ParamListType,
-        input_type_value: max._core.dialects.builtin.TypedAttr,
+        param_lists: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: ParamListType,
-        input_type_value: max._core.dialects.builtin.TypedAttr,
+        param_lists: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> ParamListType: ...
     @property
-    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def param_lists(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariantAttr(max._core.Attribute):
     """
@@ -4836,7 +4836,7 @@ class StructType(max._core.Type):
     memory layout of the data it describes.
 
     The element types are stored as a `TypedAttr` which can be either:
-    - A concrete `VariadicAttr` with resolved types
+    - A concrete `ParamListAttr` with resolved types
     - A parametric expression (e.g., a variadic parameter reference) before elaboration
 
     Example:

@@ -57,7 +57,7 @@ struct Variadic:
     # ===-----------------------------------------------------------------------===#
 
     comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
-        `#kgen.variadic<>: `, _MLIR.KGENTypeListType[T], `>`
+        `#kgen.param_list<>: `, _MLIR.KGENTypeListType[T], `>`
     ]
     """Empty comptime variadic of type values.
 
@@ -66,7 +66,7 @@ struct Variadic:
     """
 
     comptime empty_of_type[T: AnyType] = __mlir_attr[
-        `#kgen.variadic<>: `, _MLIR.KGENParamListType[T], `>`
+        `#kgen.param_list<>: `, _MLIR.KGENParamListType[T], `>`
     ]
     """Empty comptime variadic of values.
 
@@ -99,7 +99,7 @@ struct Variadic:
     comptime concat_types[
         T: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[T]
     ] = __mlir_attr[
-        `#kgen.variadic.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
+        `#kgen.param_list.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
     ]
     """Represents the concatenation of multiple variadic sequences of types.
 
@@ -111,7 +111,7 @@ struct Variadic:
     comptime concat_values[
         T: AnyType, //, *Ts: Variadic.ValuesOfType[T]
     ] = __mlir_attr[
-        `#kgen.variadic.concat<`, Ts, `> :`, Variadic.ValuesOfType[T]
+        `#kgen.param_list.concat<`, Ts, `> :`, Variadic.ValuesOfType[T]
     ]
     """Represents the concatenation of multiple variadic sequences of values.
 
@@ -164,7 +164,7 @@ struct Variadic:
         count: Int,
         Mapper: _TabulateIntToValueGeneratorType[ToT],
     ]: Variadic.ValuesOfType[ToT] = __mlir_attr[
-        `#kgen.variadic.tabulate<`,
+        `#kgen.param_list.tabulate<`,
         count._mlir_value,
         `,`,
         _IndexToIntTabulateWrap[Mapper, ...],
@@ -186,7 +186,7 @@ struct Variadic:
         count: Int,
         Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
     ]: Variadic.TypesOfTrait[Trait] = __mlir_attr[
-        `#kgen.variadic.tabulate<`,
+        `#kgen.param_list.tabulate<`,
         count._mlir_value,
         `,`,
         _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
@@ -341,7 +341,7 @@ struct Variadic:
     comptime zip_types[
         Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
     ] = __mlir_attr[
-        `#kgen.variadic.zip<`,
+        `#kgen.param_list.zip<`,
         types,
         `> : `,
         _MLIR.KGENParamListType[Variadic.TypesOfTrait[Trait]],
@@ -357,7 +357,7 @@ struct Variadic:
     comptime zip_values[
         type: AnyType, //, *values: Variadic.ValuesOfType[type]
     ] = __mlir_attr[
-        `#kgen.variadic.zip<`,
+        `#kgen.param_list.zip<`,
         values,
         `> : `,
         _MLIR.KGENParamListType[Variadic.ValuesOfType[type]],
@@ -501,7 +501,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
 
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
+            `#kgen.param_list.size<:`,
             type_of(Self.values),
             ` `,
             +Self.values,
@@ -695,7 +695,7 @@ struct ParameterList[type: AnyType, //, *values: type](
 
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
+            `#kgen.param_list.size<:`,
             type_of(Self.values),
             ` `,
             +Self.values,
@@ -753,7 +753,7 @@ struct ParameterList[type: AnyType, //, *values: type](
         return self.get_span()[idx]
 
     comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
-        `#kgen.variadic.get<:`,
+        `#kgen.param_list.get<:`,
         type_of(Self.values),
         ` `,
         +Self.values,
@@ -1542,7 +1542,7 @@ comptime _ReduceVariadicAndIdxToVariadic[
         Variadic.TypesOfTrait[To], From
     ],
 ] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
+    `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
@@ -1602,7 +1602,7 @@ comptime _ReduceValueAndIdxToVariadic[
         Variadic.TypesOfTrait[To], From
     ],
 ] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
+    `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
@@ -1634,7 +1634,7 @@ comptime _ReduceValueAndIdxToValue[
         Variadic.ValuesOfType[To], From
     ],
 ] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
+    `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
@@ -1666,7 +1666,7 @@ comptime _ReduceVariadicAndIdxToValue[
         Variadic.ValuesOfType[To], From
     ],
 ] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
+    `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
