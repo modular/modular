@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <memory>
+#include <string>
 
 namespace M {
 class Error;
@@ -122,7 +123,7 @@ struct RuntimeOptions {
     auto env = llvm::sys::Process::GetEnv("MODULAR_ENABLE_AFFINITY");
     return env.has_value() && M::isTrueLike(*env);
   }();
-  std::string_view poolName = "🔥 Thread";
+  std::string poolName = "🔥 Thread";
   bool leakCheckedAllocator = false;
   bool tcmallocAllocator = true;
   bool profilingAllocator = false;
@@ -304,7 +305,7 @@ struct RuntimeOptions {
 
 /// Indicates how the Runtime was created, for diagnostics and tracing.
 enum class RuntimeSource {
-  /// Created by M::Context (Init::createContext).
+  /// Created by M::Context.
   MaxContext,
   /// Created by Mojo stdlib / CompilerRT.
   MojoStdlib,

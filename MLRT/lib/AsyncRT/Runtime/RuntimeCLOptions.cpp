@@ -16,7 +16,7 @@ bool RuntimeOptions::operator==(const RuntimeOptions &other) const {
          runtimeProfilingTypeMask == other.runtimeProfilingTypeMask &&
          mainWillDonate == other.mainWillDonate &&
          threadBusyWaitTime == other.threadBusyWaitTime &&
-         withAffinity == other.withAffinity && poolName == other.poolName &&
+         withAffinity == other.withAffinity &&
          leakCheckedAllocator == other.leakCheckedAllocator &&
          tcmallocAllocator == other.tcmallocAllocator &&
          profilingAllocator == other.profilingAllocator &&
@@ -69,5 +69,7 @@ RuntimeOptions RuntimeOptions::copy() const {
   }
   runtimeOptions.profileFilename = getProfileFilename();
   runtimeOptions.profilerDebuginfo = profilerDebuginfo;
+  runtimeOptions.poolName = poolName;
+  runtimeOptions.mainWillDonate = mainWillDonate;
   return runtimeOptions;
 }

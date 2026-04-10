@@ -6,16 +6,16 @@
 
 #include "Init/Init.h"
 #include "Init/DevelopmentSignalHandler.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "Support/Configuration.h"
-#include "Support/Context.h"
+#include "Support/ContextGlobal.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/Telemetry/Telemetry.h"
 
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"
 
-#include <cassert>
+#include <mutex>
 
 using namespace M;
 
@@ -27,16 +27,13 @@ static constexpr bool isProductionBuild() {
 #endif
 }
 
-ErrorOr<ContextRef> Init::createContext(StringRef programName,
-                                        const Init::Options &options,
-                                        StringRef subCommand) {
-  // Checks that there is no existing M::Context in the current process, and
-  // asserts and returns an error if there is.
-  if (getCurrentMaxContextOrNull()) {
-    assert(false && "A global context should not already exist.");
-    return Error(Twine("A global context should not already exist."));
-  }
+namespace {
 
+/// Internal function for creating an M::Context, not thread-safe, and not
+/// intended for use outside of this file.
+ErrorOr<ContextRef> createContextImpl(StringRef programName,
+                                      const Init::Options &options,
+                                      StringRef subCommand) {
   // Create the top-level context.
   ContextRef ctx = ContextRef::create();
 
@@ -57,17 +54,19 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   // Enable crash logging, if appropriate.
   if (!isProductionBuild() && !crashReportingEnabled)
     Init::registerDevelopmentSignalHandler(programName);
-  else if (!options.forceDisableCrashReporting && crashReportingEnabled)
+  else if (!options.forceDisableCrashReportingEnabled() &&
+           crashReportingEnabled)
     initCrashpadForProgram(programName, &settings);
 
-  // Move everything into the context. Construct here may used the settings.
+  // TelemetryContext created and added to the Context here as Cofig is
+  // required.
   ctx->emplace<Telemetry::TelemetryContext>(settings, programName, subCommand);
 
   // Create a new runtime (if needed).
-  if (options.runtimeOptions) {
+  if (options.getRuntimeOptions()) {
     std::string profileFilename =
         llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
-    AsyncRT::RuntimeOptions opts = *options.runtimeOptions;
+    AsyncRT::RuntimeOptions opts = *options.getRuntimeOptions();
     if (!profileFilename.empty())
       opts.profileFilename = profileFilename;
     AsyncRT::RuntimeRef ref =
@@ -82,11 +81,64 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   // global context.
   ctx->emplace<Init::Options>(options);
 
-  // Set as the global current context so any thread can use
-  // getCurrentMaxContext(). We store only a raw pointer; the global does not
-  // hold a ref. Cleared in ~Context() when the last ContextRef is destroyed.
-  setCurrentMaxContext(ctx.getPointer());
-
   // Return the useable context.
   return std::move(ctx);
+}
+
+} // namespace
+
+ErrorOr<ContextRef> Init::createContext(StringRef programName,
+                                        const Init::Options &options,
+                                        StringRef subCommand) {
+  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
+  if (getCurrentMaxContextPointerOrNull()) {
+    llvm::report_fatal_error(
+        "Init::createContext() attempted to create a new M::Context when one"
+        "already exists, considering using Init::getContext() instead.");
+  }
+
+  // Create context.
+  auto ctxOr = createContextImpl(programName, options, subCommand);
+  if (ctxOr.isError())
+    return ctxOr.takeError();
+
+  // Set as the global current context.
+  setCurrentMaxContextPointer(ctxOr->getPointer());
+  return ctxOr;
+}
+
+ErrorOr<ContextRef> Init::getOrCreateContext(StringRef programName,
+                                             const Init::Options &options,
+                                             StringRef subCommand) {
+  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
+  if (Context *existing = getCurrentMaxContextPointerOrNull()) {
+    if (*existing->get<Init::Options>() != options)
+      llvm::report_fatal_error(
+          "Init::getOrCreateContext() requested an M::Context with different"
+          "Init::Options to those used to create the existing M::Context, check"
+          "the options that are being requested.");
+    return ContextRef::copy(existing);
+  }
+
+  // Create context.
+  auto ctxOr = createContextImpl(programName, options, subCommand);
+  if (ctxOr.isError())
+    return ctxOr.takeError();
+
+  // Set as the global current context.
+  setCurrentMaxContextPointer(ctxOr->getPointer());
+  return ctxOr;
+}
+
+ContextRef Init::getContext() {
+  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
+  Context *existing = getCurrentMaxContextPointerOrNull();
+  if (!existing) {
+    llvm::report_fatal_error(
+        "Init::getContext() requested the M::Context but no context has been"
+        "created yet, Init::createContext() must be called to create the"
+        "M::Context before calling Init::getContext().");
+  }
+
+  return ContextRef::copy(existing);
 }

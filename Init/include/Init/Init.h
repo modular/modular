@@ -11,6 +11,8 @@
 #include "Support/Context.h"
 #include "Support/ErrorOr.h"
 
+#include <optional>
+
 namespace M {
 namespace Init {
 
@@ -29,24 +31,51 @@ public:
     return *this;
   }
 
+  /// Returns true if crash-reporting and runtime options match \p other.
+  bool operator==(const Options &other) const {
+    if (forceDisableCrashReporting != other.forceDisableCrashReporting)
+      return false;
+    return runtimeOptions == other.runtimeOptions;
+  }
+
+  bool operator!=(const Options &other) const { return !(*this == other); }
+
+  bool forceDisableCrashReportingEnabled() const {
+    return forceDisableCrashReporting;
+  }
+
+  std::optional<AsyncRT::RuntimeOptions> getRuntimeOptions() const {
+    return runtimeOptions;
+  }
+
 private:
   bool forceDisableCrashReporting = false;
   std::optional<AsyncRT::RuntimeOptions> runtimeOptions;
 
-  friend ErrorOr<ContextRef> createContext(StringRef, const Options &,
-                                           StringRef);
+  friend ErrorOr<ContextRef> getOrCreateContext(StringRef, const Options &,
+                                                StringRef);
 };
 
-/// Create a new context, load all local configurations and entitlements,
-/// save them in the context and return. This is expected to be the normal
-/// path for context creation.
-///
-/// The context will come loaded with a TelemetryContext, Config and other
-/// basic common functionality. The function will also initialize crash
-/// reporting with the given programName.
-ErrorOr<ContextRef> createContext(StringRef programName,
-                                  const Options &options = {},
-                                  StringRef subCommand = "");
+// Creates the process-wide \c M::Context, reports a fatal error if a global
+// context already exists. Intended for when there is a single point where the
+// context is created.
+MODULAR_CXX_EXPORT ErrorOr<ContextRef>
+createContext(StringRef programName, const Options &options = {},
+              StringRef subCommand = "");
+
+/// Returns a reference to the existing process-wide \c M::Context, or creates
+/// it if it doesn't already exist. Throws a fatal error if the \p options
+/// requested do not match those used by the existing context. This function
+/// should only be used when there is multiple possible paths to creating a
+/// context and the order cannopt be guaranteed. Using createContext() and
+/// getContext() is preferred when possible.
+MODULAR_CXX_EXPORT ErrorOr<ContextRef>
+getOrCreateContext(StringRef programName, const Options &options = {},
+                   StringRef subCommand = "");
+
+/// Returns a reference to the existing process-wide \c M::Context, reports a
+/// fatal error if no context has been created yet.
+MODULAR_CXX_EXPORT ContextRef getContext();
 
 } // namespace Init
 } // namespace M
