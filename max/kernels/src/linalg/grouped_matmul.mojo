@@ -57,7 +57,7 @@ from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
 from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
-from .utils_gpu import MatmulConfig
+from .utils_gpu import MatmulConfig, _bk_base
 from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
 from .matmul.gpu import (
@@ -1005,7 +1005,19 @@ def grouped_matmul[
     comptime is_sm100_kernel_applicable = _is_sm10x_gpu(
         ctx.default_device_info
     ) and is_expert_shape_static
-    comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
+
+    # `grouped_matmul_amd` is only valid when `K` is aligned to `BK` and
+    # at least `2 * BK`. If there's only a single K tile,
+    # the 2-stage software pipeline will reprocess it causing incorrect outputs.
+    comptime amd_bk = _bk_base[a_type, amd_kernel=True]()
+    comptime static_K = b.static_shape[2]
+    comptime is_amd_kernel_applicable = (
+        has_amd_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
+        and is_expert_shape_static
+        and static_K >= 2 * amd_bk
+        and static_K % amd_bk == 0
+    )
 
     @always_inline
     @parameter

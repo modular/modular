@@ -42,6 +42,7 @@ _EXTRA_CONSTRAINTS = {
     "test_grouped_matmul.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
         "//:b200_gpu": ["//:b200_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_grouped_matmul_small_k.mojo": ["//:b200_gpu"],
