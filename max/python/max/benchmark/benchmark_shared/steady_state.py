@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .request import RequestFuncOutput
+from .request import RequestFuncOutput, TTSRequestFuncOutput
 
 DEFAULT_WINDOW_SIZE = 50
 DEFAULT_TTFT_THRESHOLD = 0.5
@@ -129,7 +129,7 @@ def _find_last_stable_run(
 
 
 def detect_steady_state(
-    outputs: Sequence[RequestFuncOutput],
+    outputs: Sequence[RequestFuncOutput | TTSRequestFuncOutput],
     window_size: int = DEFAULT_WINDOW_SIZE,
     ttft_threshold: float = DEFAULT_TTFT_THRESHOLD,
     tpot_threshold: float = DEFAULT_TPOT_THRESHOLD,
@@ -149,13 +149,14 @@ def detect_steady_state(
         sustained_count: Consecutive points below threshold required
             to confirm stabilization.
     """
-    indexed: list[tuple[int, RequestFuncOutput]] = [
+    indexed: list[tuple[int, RequestFuncOutput | TTSRequestFuncOutput]] = [
         (i, out)
         for i, out in enumerate(outputs)
         if (
             out.success
             and not out.cancelled
             and out.request_submit_time is not None
+            and out.ttft is not None
             and out.ttft > 0
             and out.tpot
         )
@@ -184,7 +185,7 @@ def detect_steady_state(
 
     indexed.sort(key=lambda x: x[1].request_submit_time or 0.0)
 
-    ttfts = [out.ttft for _, out in indexed]
+    ttfts = [out.ttft for _, out in indexed if out.ttft is not None]
     tpots = [float(np.mean(out.tpot)) for _, out in indexed]
 
     ttft_mads = _rolling_mad_over_median(ttfts, window_size)
