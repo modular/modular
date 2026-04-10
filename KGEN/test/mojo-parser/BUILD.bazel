@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:private"])
 _DATA = [
     "**/inputs/**/*.mojo",
     "**/debuginfo_module.mojo",
-    "**/docs_package/**/*.mojo",
     "**/imported_cached_module.mojo",
     "**/imported_module.mojo",
     "**/test_package.foo",

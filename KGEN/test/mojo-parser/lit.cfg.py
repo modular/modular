@@ -30,7 +30,6 @@ config.excludes = [
     "test_package.foo",
     "test_package_user",
     "debuginfo_module.mojo",
-    "docs_package",
     "imported_module.mojo",
     "imported_cached_module.mojo",
 ]
@@ -43,6 +42,7 @@ translate_with_prebuilt_packages = (
 config.substitutions.append(
     ("%parse-mojo-isolated", translate_with_prebuilt_packages)
 )
+
 
 config.environment["MODULAR_HOME"] = os.path.join(
     "KGEN", "test", "mojo-parser"
