@@ -29,7 +29,7 @@ def devour2(f: Fudge[_, chocolate=_, cream=6]):
     print("Devoured", String(f))
 
 
-def main() raises:
+def main():
     eat(Fudge[5, 5, 7]())
     eat(Fudge[5, 8, 9]())
     # eat(Fudge[12, 5, 7]())  # invalid call to 'eat': failed to infer implicit

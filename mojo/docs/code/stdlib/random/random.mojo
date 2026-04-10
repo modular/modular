@@ -80,7 +80,7 @@ def test_rand_count_dtype_scale() raises:
     ptr.free()
 
 
-def test_randn_float64() raises:
+def test_randn_float64():
     from std.random import randn_float64, seed
 
     seed()
@@ -88,7 +88,7 @@ def test_randn_float64() raises:
         _ = randn_float64(0.0, 1.0)
 
 
-def test_dtype_randn() raises:
+def test_dtype_randn():
     from std.random import randn, seed
     from std.memory import alloc
 

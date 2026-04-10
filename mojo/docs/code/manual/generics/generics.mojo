@@ -48,11 +48,11 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
         print("]")
 
 
-def add_to_stack[S: Stacklike](mut stack: S, var item: S.EltType) raises:
+def add_to_stack[S: Stacklike](mut stack: S, var item: S.EltType):
     stack.push(item^)
 
 
-def main() raises:
+def main():
     # list example
     var list: List[Int]
     list = [1, 2, 3, 4]

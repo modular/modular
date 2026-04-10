@@ -17,6 +17,6 @@ def repeat[MsgType: Writable, //, count: Int](msg: MsgType):
         print(String(msg))
 
 
-def main() raises:
+def main():
     # MsgType is always inferred, so first positional keyword `2` is passed to `count`
     repeat[2](42)

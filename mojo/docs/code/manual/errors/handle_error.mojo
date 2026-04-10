@@ -20,7 +20,7 @@ def process_record(id: Int) raises -> String:
     return String("record_", id)
 
 
-def main() raises:
+def main():
     try:
         for id in [5, 0, 1001, -3, 42]:
             var result: String

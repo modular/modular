@@ -158,7 +158,7 @@ def vector_addition_gpu(
     lhs: InputTensor[...],
     rhs: InputTensor[...],
     ctx: DeviceContextPtr,
-) raises:
+):
     pass
 
 
@@ -167,7 +167,7 @@ def vector_addition_cpu(
     lhs: InputTensor[...],
     rhs: InputTensor[...],
     ctx: DeviceContextPtr,
-) raises:
+):
     pass
 
 

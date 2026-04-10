@@ -37,6 +37,6 @@ struct HeapArray(Writable):
         self.data.free()
 
 
-def main() raises:
+def main():
     var a = HeapArray(10, 1, 3, 9)
     print(a)

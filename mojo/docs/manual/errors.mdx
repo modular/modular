@@ -658,7 +658,7 @@ bare `raises` function. If you catch the typed error locally, you still get full
 field access:
 
 ```mojo
-def error_caller() raises:
+def error_caller():
     try:
         _ = validate_typed(-5)
     except e:
@@ -1100,7 +1100,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
-    def __exit__(mut self, e: Error) raises -> Bool:
+    def __exit__(mut self, e: Error) -> Bool:
         if String(e) == "just a warning":
             print("Suppressing error:", e)
             self.__exit__()

@@ -26,6 +26,6 @@ def on_instance():
     _ = x
 
 
-def main() raises:
+def main():
     on_type()
     on_instance()

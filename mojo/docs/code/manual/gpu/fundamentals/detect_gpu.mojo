@@ -14,7 +14,7 @@
 from std.sys import has_accelerator
 
 
-def main() raises:
+def main():
     comptime if has_accelerator():
         print("GPU detected")
         # Enable GPU processing

@@ -272,7 +272,7 @@ variables are accessible to read/write, but any new variables do not live
 beyond the scope of the `if` block:
 
 ```mojo
-def lexical_scopes() raises:
+def lexical_scopes():
     var num = 1
     var dig = 1
     if num == 1:
@@ -308,7 +308,7 @@ means, when you change the value of an implicitly-declared variable inside the
 For example, here's the same code but *without* the `var` declarations:
 
 ```mojo
-def function_scopes() raises:
+def function_scopes():
     num = 1
     if num == 1:
         print(num)   # Reads the function-scope "num"

@@ -77,11 +77,11 @@ semantics for boolean operators. If the first argument to an `or` operator
 evaluates to `True`, the second argument is not evaluated.
 
 ```mojo
-def true_func() raises -> Bool:
+def true_func() -> Bool:
     print("Executing true_func")
     return True
 
-def false_func() raises -> Bool:
+def false_func() -> Bool:
     print("Executing false_func")
     return False
 

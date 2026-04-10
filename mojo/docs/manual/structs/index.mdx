@@ -132,7 +132,7 @@ instead of repeating the entire type.
 Here's the standard way to call a function:
 
 ```mojo title="Calling a function"
-def process_pair(pair: MyPair) raises:
+def process_pair(pair: MyPair):
     ...
 
 process_pair(MyPair(2, 4))
@@ -151,7 +151,7 @@ Initializer lists support all Mojo argument styles, including keyword
 arguments. For example:
 
 ```mojo title="Initializer lists with a keyword argument"
-def utility_function(argument: CustomType) raises:
+def utility_function(argument: CustomType):
     ...
 
 utility_function(CustomType(0.5, fish="swordfish"))

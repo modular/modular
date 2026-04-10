@@ -21,5 +21,5 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     return total
 
 
-def main() raises:
+def main():
     print(count_many_things(5, 11.7, 12))

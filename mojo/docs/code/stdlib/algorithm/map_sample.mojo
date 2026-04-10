@@ -14,7 +14,7 @@
 from std.algorithm import map
 
 
-def main() raises:
+def main():
     # Create list with initial values to act on
     var list: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0]
 

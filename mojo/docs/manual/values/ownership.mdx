@@ -131,10 +131,10 @@ immutable reference to the argument value.
 For example:
 
 ```mojo
-def print_list(list: List[Int]) raises:
+def print_list(list: List[Int]):
     print(list.__str__())
 
-def main() raises:
+def main():
     var values = [1, 2, 3, 4]
     print_list(values)
 ```
@@ -181,13 +181,13 @@ function.
 For example, this `mutate()` function updates the original `list` value:
 
 ```mojo
-def print_list(list: List[Int]) raises:
+def print_list(list: List[Int]):
     print(list.__str__())
 
-def mutate(mut l: List[Int]) raises:
+def mutate(mut l: List[Int]):
     l.append(5)
 
-def main() raises:
+def main():
     var values = [1, 2, 3, 4]
 
     mutate(values)
@@ -201,15 +201,15 @@ def main() raises:
 That behaves like an optimized replacement for this:
 
 ```mojo
-def print_list(list: List[Int]) raises:
+def print_list(list: List[Int]):
     print(list.__str__())
 
-def mutate_copy(l: List[Int]) raises -> List[Int]:
+def mutate_copy(l: List[Int]) -> List[Int]:
     # def creates an implicit copy of the list because it's mutated
     l.append(5)
     return l
 
-def main() raises:
+def main():
     var values = [1, 2, 3, 4]
 
     values = mutate_copy(values)
@@ -307,10 +307,10 @@ three ways:
   transferred directly to the callee. For example:
 
   ```mojo
-  def take(var s: String) raises:
+  def take(var s: String):
       pass
 
-  def main() raises:
+  def main():
       take("A brand-new String!")
   ```
 
@@ -375,11 +375,11 @@ it's not destroyed when the function exits. On the other hand,
 destroyed at the end of the function.
 
 ```mojo
-def add_to_list(var name: String, mut list: List[String]) raises:
+def add_to_list(var name: String, mut list: List[String]):
     list.append(name^)
     # name is uninitialized, nothing to destroy
 
-def consume_string(var s: String) raises:
+def consume_string(var s: String):
     print(s)
     # s is destroyed here
 ```

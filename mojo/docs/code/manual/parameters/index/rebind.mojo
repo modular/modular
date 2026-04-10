@@ -21,5 +21,5 @@ def generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 
 
-def main() raises:
+def main():
     generic_simd(SIMD[DType.float32, 8](1))

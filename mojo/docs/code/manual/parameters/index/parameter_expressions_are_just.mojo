@@ -27,7 +27,7 @@ def concat[
     return result
 
 
-def main() raises:
+def main():
     var a = SIMD[DType.float32, 2](1, 2)
     var x = concat(a, a)
 

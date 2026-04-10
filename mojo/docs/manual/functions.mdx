@@ -343,7 +343,7 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
 
     return total
 
-def main() raises:
+def main():
     print(count_many_things(5, 11.7, 12))
 ```
 
@@ -363,7 +363,7 @@ arguments. To define a function that takes a variadic keyword argument, use the
 variadic keyword argument syntax <code>**<var>kw_argument_name</var></code>:
 
 ```mojo
-def print_nicely(**kwargs: Int) raises:
+def print_nicely(**kwargs: Int):
     for item in kwargs.items():
         print(item.key, "=", item.value)
 

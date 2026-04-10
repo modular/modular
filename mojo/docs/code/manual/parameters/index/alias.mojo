@@ -34,6 +34,6 @@ def is_happy(s: Sentiment):
         print("No. ☹️")
 
 
-def main() raises:
+def main():
     var mood = Sentiment.POSITIVE
     is_happy(mood)

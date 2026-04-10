@@ -31,7 +31,7 @@ def validate_username(username: String) raises ValidationError -> String:
     return username
 
 
-def main() raises:
+def main():
     # Valid username
     try:
         print(validate_username("alice"))

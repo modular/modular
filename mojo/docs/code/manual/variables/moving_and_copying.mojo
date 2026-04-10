@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main() raises:
+def main():
     # start-owning-variable
     owning_variable = "Owned value"
     # end-owning-variable

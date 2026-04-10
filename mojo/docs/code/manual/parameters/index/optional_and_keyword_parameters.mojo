@@ -23,5 +23,5 @@ def use_defaults():
     speak[msg="baaa"]()  # prints 'baaa 3'
 
 
-def main() raises:
+def main():
     use_defaults()
