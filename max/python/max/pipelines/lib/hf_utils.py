@@ -144,6 +144,15 @@ def validate_hf_repo_access(repo_id: str, revision: str) -> None:
             _create_repo_not_found_error_message(repo_id, revision, str(e))
         ) from e
     except Exception as e:
+        # For transient server errors, re-raise directly so _detect_hf_flakes
+        # can identify them as flakes. Wrapping in ValueError would cause pydantic
+        # to swallow the exception chain inside a ValidationError.
+        if (
+            isinstance(e, hf_hub_errors.HfHubHTTPError)
+            and e.response is not None
+            and e.response.status_code == 503
+        ):
+            raise
         # Fallback for other HuggingFace or network errors
         raise ValueError(
             _create_repo_access_fallback_error_message(repo_id, str(e))
