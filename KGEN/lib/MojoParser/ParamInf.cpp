@@ -601,21 +601,16 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // nonmaterializable target type: even when implicit conversions are disabled.
   // We can accept this argument if that converted type is compatible with
   // our expected type.
-#if 0 
-  // WHY?  Remove this.
-#endif
-  if (1 || syntax != CallSyntax::kParamBindings) {
-    if (auto nonmaterializableTarget =
-            argType.getNonmaterializableTarget(getShared())) {
-      ParamMatcher::FailableScope failableScope(matcher);
-      // Infer the parameters of this overload candidate against the computed
-      // result type of the initializer.
-      if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType)))
-        return success();
+  if (auto nonmaterializableTarget =
+          argType.getNonmaterializableTarget(getShared())) {
+    ParamMatcher::FailableScope failableScope(matcher);
+    // Infer the parameters of this overload candidate against the computed
+    // result type of the initializer.
+    if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType)))
+      return success();
 
-      // Roll back any error and inferred bindings.
-      failableScope.revert();
-    }
+    // Roll back any error and inferred bindings.
+    failableScope.revert();
   }
 
   // If implicit conversions are enabled and the target type is known, then

@@ -658,16 +658,6 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
       return DowncastAttr::get(type, upcast.getInputTypeValue());
   }
 
-  // downcast(upcast(x)) = x  (when they are exactly the same type)
-  if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue)) {
-    if (upcast.getInputTypeValue().getType() == type) {
-      llvm::errs() << "HERE\n";
-      return upcast.getInputTypeValue();
-    }
-
-    return getCastAttr<CastAttr>(type, upcast.getInputTypeValue());
-  }
-
   return CastAttr::Base::get(type.getContext(), type, inputTypeValue);
 }
 
