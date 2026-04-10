@@ -604,7 +604,7 @@ struct Optional[T: Movable](
                 location=call_location(),
             )
 
-        return self.unsafe_value()
+        return self._value.unsafe_get[Self.T]()
 
     @always_inline
     def unsafe_value(ref self) -> ref[self._value] Self.T:
