@@ -142,7 +142,7 @@ def mha_sm90_dispatch[
         num_keys_per_block=config.num_keys_per_block,
         BK=config.BK,
     ) if decoding else config
-    comptime BM = new_config.block_m()
+    comptime BM = UInt(new_config.block_m())
     comptime BK = UInt(new_config.padded_depth)
     comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
         BM
@@ -180,7 +180,7 @@ def mha_sm90_dispatch[
         QTMATile[
             KVType.dtype,
             swizzle_mode,
-            BM=Int(new_config.block_m()),
+            BM=new_config.block_m(),
             depth=new_config.depth,
             group=group,
             decoding=_is_decoding[MaxPromptLenType](),
@@ -197,13 +197,13 @@ def mha_sm90_dispatch[
     )
     k_tma_op = k.create_tma_tile[
         swizzle_mode,
-        BN=Int(new_config.block_n()),
+        BN=new_config.block_n(),
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         swizzle_mode,
-        BN=Int(new_config.block_n()),
+        BN=new_config.block_n(),
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
@@ -372,7 +372,7 @@ def _mha_sm90_sink_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -380,13 +380,13 @@ def _mha_sm90_sink_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -505,7 +505,7 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -513,13 +513,13 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -633,7 +633,7 @@ def _mha_sm90_valid_length_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -641,13 +641,13 @@ def _mha_sm90_valid_length_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -755,7 +755,7 @@ def _mha_sm90_enqueue[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -763,13 +763,13 @@ def _mha_sm90_enqueue[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -838,7 +838,7 @@ def _mha_sm90_enqueue[
         num_keys_arg,
         pack,
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-        block_dim=(Int(num_threads), 1, 1),
+        block_dim=(num_threads, 1, 1),
         shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
@@ -872,7 +872,7 @@ def _mha_sm90[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -880,13 +880,13 @@ def _mha_sm90[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -922,7 +922,7 @@ def _mha_sm90[
     comptime ragged = not ValidLengthType.is_null
 
     comptime num_warps_m = config.num_warps_m()
-    comptime num_consumer_threads = config.num_consumer_threads()
+    comptime num_consumer_threads = UInt(config.num_consumer_threads())
     comptime BM = config.block_m()
     comptime BN = config.block_n()
     comptime num_heads = UInt(config.num_heads)
@@ -943,7 +943,7 @@ def _mha_sm90[
     partition = pack.partition
 
     comptime assert num_warps_m == (
-        num_consumer_threads // UInt(WARP_SIZE)
+        Int(num_consumer_threads) // WARP_SIZE
     ), "Number of warps doesn't match warp tile sizes."
 
     var warp_id: UInt32 = warp.broadcast(
@@ -956,20 +956,20 @@ def _mha_sm90[
 
     comptime q_smem_layout_consumer = tile_layout_k_major[
         DType.bfloat16,
-        Int(BM),
+        BM,
         config.padded_depth,
         swizzle_mode=swizzle_mode,
     ]()
     comptime k_smem_layout = tile_layout_k_major[
         DType.bfloat16,
-        Int(BN),
+        BN,
         config.padded_depth,
         swizzle_mode=swizzle_mode,
     ]()
     comptime v_smem_layout = tile_layout_mn_major[
         DType.bfloat16,
         config.padded_depth,
-        Int(BN),
+        BN,
         swizzle_mode=swizzle_mode,
     ]()
     # for wgmma_0, we multiply BM x depth @ depth x BN -> BM x BN
@@ -998,7 +998,7 @@ def _mha_sm90[
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
     comptime MMA_M = 16  # per warp
-    comptime MMA_N0 = BN
+    comptime MMA_N0 = UInt(BN)
     comptime MMA_N1 = UInt(config.padded_depth)
     comptime MMA_K = 16
     comptime WM = UInt(config.WM)
@@ -1200,8 +1200,8 @@ def _mha_sm90[
                 consumed_mbar_q[i].init(Int32(num_consumer_threads))
 
     comptime PositionType = MHAPosition[
-        Int(BM),
-        Int(BN),
+        BM,
+        BN,
         config.depth,
         config.padded_depth,
         Int(num_heads),
@@ -1223,7 +1223,7 @@ def _mha_sm90[
             alignment=128,
         ],
     ):
-        comptime sz = Int(BN) * config.padded_depth
+        comptime sz = BN * config.padded_depth
         k_smem = {kv_smem + UInt32(sz) * idx}
 
     @parameter
@@ -1240,15 +1240,15 @@ def _mha_sm90[
             alignment=128,
         ],
     ):
-        comptime sz = Int(BN) * config.padded_depth
+        comptime sz = BN * config.padded_depth
         v_smem = {kv_smem + UInt32(sz) * idx}
 
     @parameter
     @always_inline
     def get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
-            Int(BM),
-            Int(BN),
+            BM,
+            BN,
             config.depth,
             config.padded_depth,
             Int(num_heads),
@@ -1543,7 +1543,7 @@ def _mha_sm90[
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
             comptime swizzle = make_swizzle[
-                num_rows=MMA_M // 2, row_size=Int(BN), access_size=8
+                num_rows=MMA_M // 2, row_size=BN, access_size=8
             ]()
             # Reuse a_smem for c tile in smem
             comptime q_tile_size: UInt32 = UInt32(q_smem_size // 2)
@@ -1551,7 +1551,7 @@ def _mha_sm90[
             # ensure all threads have finished reading `q_smem`
             named_barrier[Int32(num_consumer_threads)]()
             accum_smem_tile = output_reg_to_smem[
-                Int(BM),
+                BM,
                 config.depth,
                 config.padded_depth,
                 swizzle,

@@ -1324,7 +1324,7 @@ def mha_sm100_dispatch[
         BK=config.BK,
         num_pipeline_stages=2 if config.padded_depth >= 512 else 4,
     )
-    comptime BM = new_config.block_m()
+    comptime BM = UInt(new_config.block_m())
     comptime BK = UInt(new_config.padded_depth)
     comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
         BM
@@ -1334,7 +1334,7 @@ def mha_sm100_dispatch[
     ), "B200 requires BK%64 as it uses 128B swizzles, but BK==" + String(BK)
     comptime BN = new_config.block_n()
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
-    comptime num_threads = new_config.num_threads[True]()
+    comptime num_threads = UInt(new_config.num_threads[True]())
     comptime assert num_threads % 128 == 0, "num_threads = " + String(
         num_threads
     )
@@ -1360,7 +1360,7 @@ def mha_sm100_dispatch[
         QTMATile[
             KVType.dtype,
             swizzle_mode,
-            BM=Int(new_config.block_m()),
+            BM=new_config.block_m(),
             depth=new_config.depth,
             group=group,
             decoding=_is_decoding[MaxPromptLenType](),
@@ -1377,13 +1377,13 @@ def mha_sm100_dispatch[
     )
     k_tma_op = k.create_tma_tile[
         swizzle_mode,
-        BN=Int(new_config.block_n()),
+        BN=new_config.block_n(),
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         swizzle_mode,
-        BN=Int(new_config.block_n()),
+        BN=new_config.block_n(),
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
@@ -1488,7 +1488,7 @@ def _mha_sm100_kv_input_row_offset_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -1496,13 +1496,13 @@ def _mha_sm100_kv_input_row_offset_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -1612,7 +1612,7 @@ def _mha_sm100_valid_length_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -1620,13 +1620,13 @@ def _mha_sm100_valid_length_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -1734,7 +1734,7 @@ def _mha_sm100_enqueue[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -1742,13 +1742,13 @@ def _mha_sm100_enqueue[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -1802,8 +1802,8 @@ def _mha_sm100_enqueue[
     var block_x: UInt32 = partition.num_partitions()
 
     comptime max_tmem_cols = 512
-    comptime BN = config.block_n()
-    comptime BM_enq = config.block_m()
+    comptime BN = UInt(config.block_n())
+    comptime BM_enq = UInt(config.block_m())
     # When P must go to SMEM (depth too large for P+O in one TMEM bank),
     # S and O go in separate TMEM banks, giving full 512 cols for S.
     comptime use_p_smem = config.padded_depth + Int(BN) // 2 > max_tmem_cols
@@ -1824,7 +1824,7 @@ def _mha_sm100_enqueue[
     comptime smem_use = config.shared_mem_bytes[
         True, sm_90=True
     ]() + extra_B200_smem
-    comptime num_threads = config.num_threads[True]()
+    comptime num_threads = UInt(config.num_threads[True]())
     logger.info("------ Dispatching to SM100 FMHA-1Q ------")
     logger.info(
         "QKV Type: ",
@@ -1886,7 +1886,7 @@ def _mha_sm100[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
+        BM=config.block_m(),
         depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
@@ -1894,13 +1894,13 @@ def _mha_sm100[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
+        BN=config.block_n(),
         BK=config.padded_depth,
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -1935,12 +1935,12 @@ def _mha_sm100[
 
     comptime simd_size: Int = simd_width_of[kv_type]()
 
-    comptime num_softmax_threads: Int = Int(config.num_consumer_threads())
+    comptime num_softmax_threads: Int = config.num_consumer_threads()
     comptime num_softmax_warps = num_softmax_threads // 32
 
     comptime cta_group = 1
-    comptime BM: Int = Int(config.block_m())
-    comptime BN: Int = Int(config.block_n())
+    comptime BM: Int = config.block_m()
+    comptime BN: Int = config.block_n()
     comptime BK: Int = config.padded_depth
     comptime depth: Int = config.depth
     comptime padded_depth: Int = config.padded_depth

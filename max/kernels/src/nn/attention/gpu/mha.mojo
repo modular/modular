@@ -681,7 +681,7 @@ def flash_attention_dispatch[
                         )
 
             else:
-                comptime BM = Int(config.block_m())
+                comptime BM = config.block_m()
                 comptime smem_use = config.shared_mem_bytes[is_shared_kv]()
                 comptime kernel = mha[
                     config.dtype,
@@ -724,7 +724,7 @@ def flash_attention_dispatch[
                     sink_weights,
                     mask_functor,
                     grid_dim=grid_dim,
-                    block_dim=(Int(config.num_threads()), 1, 1),
+                    block_dim=(config.num_threads(), 1, 1),
                     shared_mem_bytes=smem_use,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(smem_use)
@@ -1591,7 +1591,7 @@ def mha[
         end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
 
-        if seq_len < q_block_idx() * Int(config.block_m()):
+        if seq_len < q_block_idx() * config.block_m():
             return
 
         comptime if not _is_cache_length_accurate:
@@ -1615,7 +1615,7 @@ def mha[
         # treat valid_lengths as valid lengths
         seq_len = Int(valid_length[batch_idx])
 
-        if seq_len < q_block_idx() * Int(config.block_m()):
+        if seq_len < q_block_idx() * config.block_m():
             return
 
         comptime if not _is_cache_length_accurate:
@@ -1635,7 +1635,7 @@ def mha[
             seq_len = seq_len_arg
             num_keys = num_keys_arg
 
-        if seq_len < q_block_idx() * Int(config.block_m()):
+        if seq_len < q_block_idx() * config.block_m():
             return
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
@@ -1793,12 +1793,12 @@ def mha_single_batch[
 
     comptime simd_size = simd_width_of[q_type]()
 
-    comptime num_warps_m = Int(config.num_warps_m())
-    comptime num_warps_n = Int(config.num_warps_n())
-    comptime num_threads = Int(config.num_threads())
-    comptime BM = Int(config.block_m())
-    comptime BN = Int(config.block_n())
-    comptime BK = Int(config.block_k())
+    comptime num_warps_m = config.num_warps_m()
+    comptime num_warps_n = config.num_warps_n()
+    comptime num_threads = config.num_threads()
+    comptime BM = config.block_m()
+    comptime BN = config.block_n()
+    comptime BK = config.block_k()
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
@@ -2510,12 +2510,12 @@ def mha_single_batch_pipelined[
 
     comptime simd_size = simd_width_of[q_type]()
 
-    comptime num_warps_m = Int(config.num_warps_m())
-    comptime num_warps_n = Int(config.num_warps_n())
-    comptime num_threads = Int(config.num_threads())
-    comptime BM = Int(config.block_m())
-    comptime BN = Int(config.block_n())
-    comptime BK = Int(config.block_k())
+    comptime num_warps_m = config.num_warps_m()
+    comptime num_warps_n = config.num_warps_n()
+    comptime num_threads = config.num_threads()
+    comptime BM = config.block_m()
+    comptime BN = config.block_n()
+    comptime BK = config.block_k()
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 

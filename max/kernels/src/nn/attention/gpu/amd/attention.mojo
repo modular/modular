@@ -254,12 +254,12 @@ struct Attention[
     cache_depth: Int = config.depth,
     output_depth: Int = config.depth,
 ]:
-    comptime BM: Int = Int(Self.config.block_m())
-    comptime BN: Int = Int(Self.config.block_n())
-    comptime BK: Int = Int(Self.config.block_k())
-    comptime WM: Int = Int(Self.config.warp_m())
-    comptime WN: Int = Int(Self.config.warp_n())
-    comptime num_threads: Int = Int(Self.config.num_threads())
+    comptime BM: Int = Self.config.block_m()
+    comptime BN: Int = Self.config.block_n()
+    comptime BK: Int = Self.config.block_k()
+    comptime WM: Int = Self.config.warp_m()
+    comptime WN: Int = Self.config.warp_n()
+    comptime num_threads: Int = Self.config.num_threads()
     comptime num_heads: Int = Self.config.num_heads
     comptime num_warps_n: Int = Self.BN // Self.WN
     comptime num_warps_m: Int = Self.BM // Self.WM

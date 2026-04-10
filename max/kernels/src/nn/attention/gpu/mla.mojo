@@ -2066,9 +2066,9 @@ def flare_mla_prefill_dispatch[
 
     comptime q_half_float = dtype in (DType.float16, DType.bfloat16)
 
-    comptime BM = Int(config.block_m())
-    comptime BN = Int(config.block_n())
-    comptime BK = Int(config.block_k())
+    comptime BM = config.block_m()
+    comptime BN = config.block_n()
+    comptime BK = config.block_k()
 
     comptime q_smem = BM * q_depth
     comptime k_smem = BN * q_depth
@@ -2152,7 +2152,7 @@ def flare_mla_prefill_dispatch[
             cache_offsets,
             mask_functor,
             grid_dim=grid_dim,
-            block_dim=(Int(config.num_threads()), 1, 1),
+            block_dim=(config.num_threads(), 1, 1),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(smem_use)
@@ -2223,7 +2223,7 @@ def mla_prefill[
     # def head_idx() -> Int:
     #     return block_idx.y if is_nvidia_gpu() else block_idx.x
 
-    if seq_len < q_block_idx() * Int(config.block_m()):
+    if seq_len < q_block_idx() * config.block_m():
         return
 
     comptime if _ndbuffer_mha_operand:
@@ -2326,12 +2326,12 @@ def mla_prefill_single_batch[
 
     comptime simd_size = simd_width_of[q_type]()
 
-    comptime num_warps_m = Int(config.num_warps_m())
-    comptime num_warps_n = Int(config.num_warps_n())
-    comptime num_threads = Int(config.num_threads())
-    comptime BM = Int(config.block_m())
-    comptime BN = Int(config.block_n())
-    comptime BK = Int(config.block_k())
+    comptime num_warps_m = config.num_warps_m()
+    comptime num_warps_n = config.num_warps_n()
+    comptime num_threads = config.num_threads()
+    comptime BM = config.block_m()
+    comptime BN = config.block_n()
+    comptime BK = config.block_k()
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 

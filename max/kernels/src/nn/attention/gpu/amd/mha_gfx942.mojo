@@ -103,7 +103,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
                 )
                 + UInt(Self.config.num_heads)
                 * Self.q_tile_idx()
-                * Self.config.block_m()
+                * UInt(Self.config.block_m())
             )
         )
 

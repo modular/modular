@@ -223,12 +223,12 @@ struct AttentionRDNA[
     with 16-element A/B fragments and 8-element C/D fragments.
     """
 
-    comptime BM = Self.config.block_m()
-    comptime BN = Self.config.block_n()
-    comptime BK = Self.config.block_k()
-    comptime WM = Self.config.warp_m()
-    comptime WN = Self.config.warp_n()
-    comptime num_threads = Self.config.num_threads()
+    comptime BM = UInt(Self.config.block_m())
+    comptime BN = UInt(Self.config.block_n())
+    comptime BK = UInt(Self.config.block_k())
+    comptime WM = UInt(Self.config.warp_m())
+    comptime WN = UInt(Self.config.warp_n())
+    comptime num_threads = UInt(Self.config.num_threads())
     comptime num_heads = UInt(Self.config.num_heads)
     comptime num_warps_n = Self.BN // Self.WN
     comptime num_warps_m = Self.BM // Self.WM

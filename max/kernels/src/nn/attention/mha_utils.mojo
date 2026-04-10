@@ -140,38 +140,36 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     var algorithm: FlashAttentionAlgorithm
     var swizzle_mode: TensorMapSwizzle
 
-    def block_m(self) -> UInt:
-        return UInt(self.num_queries_per_block)
+    def block_m(self) -> Int:
+        return self.num_queries_per_block
 
-    def block_n(self) -> UInt:
-        return UInt(self.num_keys_per_block)
+    def block_n(self) -> Int:
+        return self.num_keys_per_block
 
-    def block_k(self) -> UInt:
-        return UInt(self.BK)
+    def block_k(self) -> Int:
+        return self.BK
 
-    def warp_m(self) -> UInt:
-        return UInt(self.WM)
+    def warp_m(self) -> Int:
+        return self.WM
 
-    def warp_n(self) -> UInt:
-        return UInt(self.WN)
+    def warp_n(self) -> Int:
+        return self.WN
 
-    def num_warps_m(self) -> UInt:
-        return self.block_m() // self.warp_m()
+    def num_warps_m(self) -> Int:
+        return ufloordiv(self.block_m(), self.warp_m())
 
-    def num_warps_n(self) -> UInt:
-        return self.block_n() // self.warp_n()
+    def num_warps_n(self) -> Int:
+        return ufloordiv(self.block_n(), self.warp_n())
 
-    def num_consumer_threads(self) -> UInt:
-        return self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE)
+    def num_consumer_threads(self) -> Int:
+        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
 
     def num_producer_threads[
         producer_consumer_kernel: Bool = False
-    ](self) -> UInt:
-        return UInt(128) if (
-            producer_consumer_kernel and self.algorithm == 3
-        ) else UInt(0)
+    ](self) -> Int:
+        return 128 if (producer_consumer_kernel and self.algorithm == 3) else 0
 
-    def num_threads[producer_consumer_kernel: Bool = False](self) -> UInt:
+    def num_threads[producer_consumer_kernel: Bool = False](self) -> Int:
         return (
             self.num_consumer_threads()
             + self.num_producer_threads[producer_consumer_kernel]()
@@ -181,39 +179,35 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         return ufloordiv(self.swizzle_mode.bytes(), size_of[self.dtype]())
 
     def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> Int:
-        q_size = self.block_m() * UInt(self.padded_depth)
+        q_size = self.block_m() * self.padded_depth
         num_q = 2 if fa3 and persistent else 1
-        return num_q * Int(q_size)
+        return num_q * q_size
 
     def kv_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
-            return (
-                self.num_pipeline_stages
-                * Int(self.block_n())
-                * self.padded_depth
-            )
+            return self.num_pipeline_stages * self.block_n() * self.padded_depth
         else:
-            return Int(self.block_n()) * self.padded_depth
+            return self.block_n() * self.padded_depth
 
     def k_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
             return self.kv_smem_size(True)
         else:
-            return Int(self.block_n()) * self.padded_depth
+            return self.block_n() * self.padded_depth
 
     def v_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
             return self.kv_smem_size(True)
         else:
-            BN = Int(self.block_n())
+            BN = self.block_n()
             return BN * BN
 
     def p_smem_size(self) -> Int:
-        return Int(self.block_m()) * Int(self.block_n())
+        return self.block_m() * self.block_n()
 
     def warp_scratch_smem_size(self) -> Int:
-        n_warps_n = self.num_warps_n()
-        return 2 * Int(n_warps_n) * Int(self.block_m()) if n_warps_n > 1 else 0
+        var n_warps_n = self.num_warps_n()
+        return 2 * n_warps_n * self.block_m() if n_warps_n > 1 else 0
 
     def shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False

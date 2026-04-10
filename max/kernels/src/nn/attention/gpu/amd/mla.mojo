@@ -75,10 +75,10 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
                 UInt(block_idx.x)
                 + UInt(Self.config.num_heads)
                 * Self.q_tile_idx()
-                * Self.config.block_m()
+                * UInt(Self.config.block_m())
             ) if not Self.token_gen else q_depth
             * Self.q_tile_idx()
-            * Self.config.block_m()
+            * UInt(Self.config.block_m())
         )
 
     @staticmethod
