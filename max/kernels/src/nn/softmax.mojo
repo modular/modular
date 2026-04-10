@@ -48,6 +48,7 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RowMajorLayout,
     RuntimeInt,
     TensorLayout,
@@ -687,6 +688,7 @@ def softmax_kernel[
     rank: Int,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    SinkWeightsLayoutType: TensorLayout,
     accum_type: DType = get_accum_type[dtype](),
     *,
     sink: Bool = False,
@@ -694,9 +696,7 @@ def softmax_kernel[
 ](
     shape: IndexList[rank],
     output: TileTensor[dtype, OutputLayoutType, output_origin],
-    sink_weights: LayoutTensor[
-        sink_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-    ],
+    sink_weights: TileTensor[sink_type, SinkWeightsLayoutType, ImmutAnyOrigin],
 ):
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert (
@@ -738,9 +738,9 @@ def softmax_kernel[
             var sink_val = Scalar[accum_type].MIN
 
             comptime if sink:
-                sink_val = sink_weights[umod(row_idx, sink_weights.dim[0]())][
-                    0
-                ].cast[accum_type]()
+                sink_val = sink_weights.load_linear[width=1](
+                    IndexList[1](umod(row_idx, Int(sink_weights.dim[0]())))
+                ).cast[accum_type]()
 
             # Step 1: compute max in row
             var row_coords = _get_nd_indices_from_flat_index(
@@ -806,6 +806,11 @@ def softmax_kernel[
                 output.store_linear(row_coords, normalized)
 
 
+# TileTensor layout type for 1D row-major tensors with dynamic size,
+# used for sink_weights parameters.
+comptime _SinkWeightsTTLayout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
+
+
 def _softmax_gpu[
     dtype: DType,
     simd_width: Int,
@@ -823,7 +828,7 @@ def _softmax_gpu[
     axis: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[sink_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        TileTensor[sink_type, _SinkWeightsTTLayout, ImmutAnyOrigin]
     ] = None,
 ) raises:
     if axis != rank - 1:
@@ -849,6 +854,7 @@ def _softmax_gpu[
         rank,
         output.LayoutType,
         output.origin,
+        _SinkWeightsTTLayout,
         sink=sink,
         logsoftmax=logsoftmax,
     ]

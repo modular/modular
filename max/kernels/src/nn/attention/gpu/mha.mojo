@@ -4891,7 +4891,7 @@ def mha_gpu_naive[
         p_buffer,
         2,
         ctx,
-        sink_weights=sink_weights,
+        sink_weights=_optional_lt_to_tt(sink_weights),
     )
     comptime kernel_1 = _bmm1_bs[
         output_type,
