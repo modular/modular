@@ -6915,6 +6915,223 @@ class TestResizeLinearOp:
         )
 
 
+class TestResizeNearestOp:
+    """Tests for nearest-neighbor resize interpreter op (mo.resize.nearest).
+
+    Routes through F.resize_nearest -> ops.resize_nearest ->
+    rmo.MoResizeNearestOp -> mo.ResizeNearestOp -> _handle_resize_nearest ->
+    resize_ops.ResizeNearest.  CPU-only (MO_HostOnly).
+
+    The reference is a pure-numpy nearest-neighbor lookup applied to every
+    dimension.  Four coordinate transformation modes and four rounding modes
+    are supported -- see ``_resize_nearest_ref``.
+    """
+
+    @staticmethod
+    def _coord(
+        x_out: int,
+        in_size: int,
+        out_size: int,
+        mode: int,
+    ) -> float:
+        """Map output coordinate to input coordinate.
+
+        Args:
+            x_out: Output pixel index.
+            in_size: Input dimension size.
+            out_size: Output dimension size.
+            mode: 0=half_pixel, 1=align_corners, 2=asymmetric, 3=half_pixel_1D.
+
+        Returns:
+            Corresponding input coordinate (may be fractional).
+        """
+        scale = out_size / in_size
+        if mode == 1:  # align_corners
+            return (
+                float(x_out) * (in_size - 1) / (out_size - 1)
+                if out_size > 1
+                else 0.0
+            )
+        if mode == 2:  # asymmetric
+            return float(x_out) / scale
+        if mode == 3:  # half_pixel_1D
+            if out_size == 1:
+                return 0.0
+            return (float(x_out) + 0.5) / scale - 0.5
+        # half_pixel (0)
+        return (float(x_out) + 0.5) / scale - 0.5
+
+    @staticmethod
+    def _round(val: float, round_mode: int) -> int:
+        """Round a coordinate using the specified rounding mode.
+
+        Args:
+            val: Fractional input coordinate.
+            round_mode: 0=HalfDown, 1=HalfUp, 2=Floor, 3=Ceil.
+
+        Returns:
+            Rounded integer coordinate.
+        """
+        if round_mode == 0:  # HalfDown: ceil(x - 0.5)
+            return int(np.ceil(val - 0.5))
+        if round_mode == 1:  # HalfUp: floor(x + 0.5)
+            return int(np.floor(val + 0.5))
+        if round_mode == 2:  # Floor
+            return int(np.floor(val))
+        # Ceil (3)
+        return int(np.ceil(val))
+
+    @staticmethod
+    def _resize_nearest_ref(
+        x_np: np.ndarray,
+        out_shape: list[int],
+        coordinate_transform_mode: int = 0,
+        round_mode: int = 0,
+    ) -> np.ndarray:
+        """Numpy reference for nearest-neighbor resize across all dimensions.
+
+        Args:
+            x_np: Input array.
+            out_shape: Full output shape (same rank as ``x_np``).
+            coordinate_transform_mode: 0=half_pixel (default),
+                1=align_corners, 2=asymmetric, 3=half_pixel_1D.
+            round_mode: 0=HalfDown (default), 1=HalfUp, 2=Floor, 3=Ceil.
+
+        Returns:
+            Output array with ``out_shape`` and ``x_np.dtype``.
+        """
+        rank = x_np.ndim
+        out = np.empty(out_shape, dtype=x_np.dtype)
+
+        for out_idx in np.ndindex(*out_shape):
+            in_idx = []
+            for d in range(rank):
+                mapped = TestResizeNearestOp._coord(
+                    out_idx[d],
+                    x_np.shape[d],
+                    out_shape[d],
+                    coordinate_transform_mode,
+                )
+                rounded = TestResizeNearestOp._round(mapped, round_mode)
+                clamped = min(rounded, x_np.shape[d] - 1)
+                in_idx.append(clamped)
+            out[out_idx] = x_np[tuple(in_idx)]
+
+        return out
+
+    def test_2d_upsample(self) -> None:
+        """Upsample 4x4 spatial to 8x8 with half_pixel (coord_mode=0)."""
+        rng = np.random.default_rng(100)
+        x_np = rng.standard_normal((1, 1, 4, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 8, 8]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=0)
+
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=0
+        )
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_2d_downscale(self) -> None:
+        """Downscale 8x8 spatial to 4x4 with half_pixel (coord_mode=0)."""
+        rng = np.random.default_rng(101)
+        x_np = rng.standard_normal((1, 3, 8, 8)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 3, 4, 4]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=0)
+
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=0
+        )
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_floor_round_mode(self) -> None:
+        """Upsample with round_mode=2 (Floor), asymmetric coord mode.
+
+        Uses asymmetric (mode=2) bc half_pixel + floor can produce negative
+        input coordinates at the boundary, which the kernel doesn't clamp.
+        """
+        rng = np.random.default_rng(102)
+        x_np = rng.standard_normal((1, 1, 3, 3)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 6, 6]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(
+                x, out_shape, coordinate_transform_mode=2, round_mode=2
+            )
+
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=2, round_mode=2
+        )
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_align_corners(self) -> None:
+        """Resize with align_corners coordinate mode (coord_mode=1)."""
+        rng = np.random.default_rng(103)
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 7, 7]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=1)
+
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=1
+        )
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_dtypes(self, dtype: DType) -> None:
+        """Resize works for float32 and float16 inputs."""
+        rng = np.random.default_rng(104)
+        np_dtype = dtype.to_numpy()
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np_dtype)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 6, 6]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(x, out_shape)
+
+        ref = self._resize_nearest_ref(x_np, out_shape)
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_3d_input(self) -> None:
+        """Resize a rank-3 (NCW) input using nearest-neighbor."""
+        rng = np.random.default_rng(105)
+        x_np = rng.standard_normal((1, 4, 8)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 4, 16]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(x, out_shape)
+
+        ref = self._resize_nearest_ref(x_np, out_shape)
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+
 class TestDistributedScatterSimulated:
     """Test distributed_scatter on a simulated CPU mesh."""
 

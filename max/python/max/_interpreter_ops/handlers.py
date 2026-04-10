@@ -3283,6 +3283,59 @@ def _handle_resize_linear(
     return [output]
 
 
+@register_op_handler(mo.ResizeNearestOp)
+def _handle_resize_nearest(
+    op: mo.ResizeNearestOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.resize.nearest via Mojo nearest-neighbor resize (CPU-only).
+
+    Operands (MO_HostOnly):
+      inputs[0]: input data tensor (host)
+      inputs[1]: size -- 1-D int64 tensor whose values give the full output
+                 shape (one value per input rank dimension).
+
+    Attributes on ``op``:
+      ``coordinate_transform_mode`` -- int 0-3 (half_pixel / align_corners /
+          asymmetric / half_pixel_1D).
+      ``round_mode`` -- int 0-3 (HalfDown / HalfUp / Floor / Ceil).
+
+    Args:
+        op: The resize-nearest operation.
+        inputs: Two buffers -- input data and size.
+
+    Returns:
+        List containing a single output buffer with shape given by ``size``
+        and the same dtype as ``input``.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # size (int64 output-shape vector)
+
+    input_buffer = inputs[0]
+    size_buffer = inputs[1]
+
+    coord_mode = int(op.coordinate_transform_mode.value)
+    round_mode = int(op.round_mode)
+
+    in_shape = list(input_buffer.shape)
+    rank = len(in_shape)
+    out_shape = size_buffer.to_numpy().astype(int).flatten().tolist()
+
+    assert len(out_shape) == rank, (
+        f"resize_nearest: size rank {len(out_shape)} != input rank {rank}"
+    )
+
+    output = Buffer(shape=out_shape, dtype=input_buffer.dtype, device=CPU())
+    ops.resize_ops.ResizeNearest(
+        output,
+        input_buffer,
+        (coord_mode, round_mode, rank, in_shape, out_shape),
+        target_device._device_context_ptr(),
+    )
+    return [output]
+
+
 # Distributed operations
 
 

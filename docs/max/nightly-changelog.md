@@ -141,6 +141,11 @@ This version is still a work in progress.
   `InterpolationMode.BILINEAR` by delegating to `resize_linear`.
 - Added `resize_linear` op handler to the experimental eager interpreter
   (CPU) via `max.experimental.functional.resize_linear`.
+- Added `max.graph.ops.resize_nearest` for nearest-neighbor interpolation
+  resizing with configurable `coordinate_transform_mode` and `round_mode`;
+  `max.graph.ops.resize` now supports `InterpolationMode.NEAREST`.
+- Added `resize_nearest` op handler to the experimental eager interpreter
+  (CPU) via `max.experimental.functional.resize_nearest`.
 - Added `distributed.allreduce.sum` op handler to the experimental eager
   interpreter, enabling multi-GPU eager execution of allreduce collectives
 - Added `distributed.allgather` op handler to the experimental eager
