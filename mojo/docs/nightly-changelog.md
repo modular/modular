@@ -132,6 +132,10 @@ This version is still a work in progress.
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
   - `Variant`: `Copyable`, `ImplicitlyCopyable`
 
+- `OwnedDLHandle.get_symbol()` now returns `Optional[UnsafePointer[...]]`
+  instead of aborting when a symbol is not found. This allows callers to handle
+  missing symbols gracefully.
+
 - GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
   `Int`.
 

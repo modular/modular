@@ -1552,21 +1552,29 @@ struct CPython(Defaultable, Movable):
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
-                upcast_from=self.lib.get_symbol[PyObject]("_Py_NoneStruct")
+                upcast_from=self.lib.get_symbol[PyObject](
+                    "_Py_NoneStruct"
+                ).value()
             )
         # Integer Objects
         # PyTypeObject PyLong_Type
-        self._PyLong_Type = self.lib.get_symbol[PyTypeObject]("PyLong_Type")
+        self._PyLong_Type = self.lib.get_symbol[PyTypeObject](
+            "PyLong_Type"
+        ).value()
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
         # Boolean Objects
         # PyTypeObject PyBool_Type
-        self._PyBool_Type = self.lib.get_symbol[PyTypeObject]("PyBool_Type")
+        self._PyBool_Type = self.lib.get_symbol[PyTypeObject](
+            "PyBool_Type"
+        ).value()
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
         # PyTypeObject PyFloat_Type
-        self._PyFloat_Type = self.lib.get_symbol[PyTypeObject]("PyFloat_Type")
+        self._PyFloat_Type = self.lib.get_symbol[PyTypeObject](
+            "PyFloat_Type"
+        ).value()
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
         # Unicode Objects and Codecs
@@ -1586,7 +1594,9 @@ struct CPython(Defaultable, Movable):
         self._PyList_SetItem = PyList_SetItem.load(self.lib.borrow())
         # Dictionary Objects
         # PyTypeObject PyDict_Type
-        self._PyDict_Type = self.lib.get_symbol[PyTypeObject]("PyDict_Type")
+        self._PyDict_Type = self.lib.get_symbol[PyTypeObject](
+            "PyDict_Type"
+        ).value()
         self._PyDict_New = PyDict_New.load(self.lib.borrow())
         self._PyDict_SetItem = PyDict_SetItem.load(self.lib.borrow())
         self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(
@@ -1716,13 +1726,18 @@ struct CPython(Defaultable, Movable):
 
         # Get pointer to the immortal `global_name` PyObject struct
         # instance.
-        var ptr = self.lib.get_symbol[PyObjectPtr](global_name)
+        var maybe_ptr = self.lib.get_symbol[PyObjectPtr](global_name)
+
+        if not maybe_ptr:
+            abort(t"error: symbol `{global_name}` not found in CPython library")
+
+        var ptr = maybe_ptr.value()
 
         if not ptr._is_not_null():
             abort(
-                "error: unable to get pointer to CPython `"
+                "error: pointer to CPython `"
                 + String(global_name)
-                + "` global"
+                + "` global is null"
             )
 
         return ptr[]

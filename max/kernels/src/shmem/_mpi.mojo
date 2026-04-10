@@ -203,4 +203,6 @@ def get_mpi_comm_world() raises -> MPIComm:
     var comm_world_ptr = handle.get_symbol[OpaquePointer[MutExternalOrigin]](
         cstr_name="ompi_mpi_comm_world".as_c_string_slice().unsafe_ptr()
     )
-    return comm_world_ptr
+    if not comm_world_ptr:
+        raise Error("symbol ompi_mpi_comm_world not found in MPI library")
+    return comm_world_ptr.value()

@@ -364,12 +364,13 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle._get_function[result_type](cstr_name=cstr_name)
 
-    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
+    ](self, name: StringSlice) -> Optional[
+        UnsafePointer[result_type, MutAnyOrigin]
+    ]:
         """Returns a pointer to the symbol with the given name in the dynamic
-        library.
+        library, or `None` if the symbol is not found.
 
         Parameters:
             result_type: The type of the symbol to return.
@@ -378,18 +379,17 @@ struct OwnedDLHandle(Movable):
             name: The name of the symbol to get the handle for.
 
         Returns:
-            A pointer to the symbol.
+            An optional pointer to the symbol, or `None` if not found.
         """
         return self._handle.get_symbol[result_type](name)
 
-    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
-        result_type, MutAnyOrigin
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
+        UnsafePointer[result_type, MutAnyOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
-        library.
+        library, or `None` if the symbol is not found.
 
         Parameters:
             result_type: The type of the symbol to return.
@@ -398,7 +398,7 @@ struct OwnedDLHandle(Movable):
             cstr_name: The name of the symbol to get the handle for.
 
         Returns:
-            A pointer to the symbol.
+            An optional pointer to the symbol, or `None` if not found.
         """
         return self._handle.get_symbol[result_type](cstr_name=cstr_name)
 
@@ -624,14 +624,23 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
         var opaque_function_ptr = self.get_symbol[NoneType](cstr_name=cstr_name)
 
-        return UnsafePointer(to=opaque_function_ptr).bitcast[result_type]()[]
+        if not opaque_function_ptr:
+            abort(
+                t"symbol not found: "
+                t"{StringSlice(unsafe_from_utf8_ptr=cstr_name)}"
+            )
 
-    # TODO: These should return nullable-pointers
+        return UnsafePointer(to=opaque_function_ptr.value()).bitcast[
+            result_type
+        ]()[]
+
     def get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
+    ](self, name: StringSlice) -> Optional[
+        UnsafePointer[result_type, MutAnyOrigin]
+    ]:
         """Returns a pointer to the symbol with the given name in the dynamic
-        library.
+        library, or `None` if the symbol is not found.
 
         Parameters:
             result_type: The type of the symbol to return.
@@ -640,21 +649,20 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             name: The name of the symbol to get the handle for.
 
         Returns:
-            A pointer to the symbol.
+            An optional pointer to the symbol, or `None` if not found.
         """
         name_copy = String(name)
         return self.get_symbol[result_type](
             cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
         )
 
-    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
-        result_type, MutAnyOrigin
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
+        UnsafePointer[result_type, MutAnyOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
-        library.
+        library, or `None` if the symbol is not found.
 
         Parameters:
             result_type: The type of the symbol to return.
@@ -663,7 +671,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             cstr_name: The name of the symbol to get the handle for.
 
         Returns:
-            A pointer to the symbol.
+            An optional pointer to the symbol, or `None` if not found.
         """
         debug_assert(
             Bool(self.handle),
@@ -671,51 +679,37 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             StringSlice(unsafe_from_utf8_ptr=cstr_name),
         )
 
-        # To check for `dlsym()` results that are _validly_ NULL, we do the
-        # dance described in https://man7.org/linux/man-pages/man3/dlsym.3.html:
+        # Follow the dance described in
+        # https://man7.org/linux/man-pages/man3/dlsym.3.html to distinguish
+        # a symbol that was not found from a symbol whose value is NULL:
         #
-        # > In unusual cases (see NOTES) the value of the symbol could
-        # > actually be NULL.  Therefore, a NULL return from dlsym() need not
-        # > indicate an error.  The correct way to distinguish an error from
-        # > a symbol whose value is NULL is to call dlerror(3) to clear any
-        # > old error conditions, then call dlsym(), and then call dlerror(3)
-        # > again, saving its return value into a variable, and check whether
-        # > this saved value is not NULL.
+        # 1. Clear any old error with dlerror()
+        # 2. Call dlsym()
+        # 3. Call dlerror() again — if it returns non-NULL, an error occurred
+
+        # Clear any pre-existing error.
+        _ = dlerror()
 
         var res = dlsym[result_type](self.handle, cstr_name)
 
         if not res:
-            # Clear any potential unrelated error that pre-dates the `dlsym`
-            # call above.
-            _ = dlerror()
-
-            # Redo the `dlsym` call
-            res = dlsym[result_type](self.handle, cstr_name)
-
-            if not res:
-                var name = StringSlice(unsafe_from_utf8_ptr=cstr_name)
-                abort(
-                    t"dlsym unexpectedly returned non-NULL result when loading"
-                    t" symbol: {name}"
-                )
-            debug_assert(
-                not res,
-                (
-                    "dlsym unexpectedly returned non-NULL result when loading"
-                    " symbol: "
-                ),
-                StringSlice(unsafe_from_utf8_ptr=cstr_name),
-            )
-
-            # Check if an error occurred during the 2nd `dlsym` call.
+            # Result is NULL — check if it's an error or a valid NULL symbol.
             var err = dlerror()
             if err:
-                abort(
-                    t"dlsym failed:"
-                    t" {StringSlice(unsafe_from_utf8_ptr=err.value())}"
-                )
+                # Symbol lookup failed.
+                return None
 
-        return res.value()
+            # Symbol is validly NULL (unusual but possible per dlsym docs).
+            # Abort rather than returning a null pointer wrapped in Some,
+            # which would be misleading. Callers who need to handle NULL
+            # symbols should specify a nullable pointer as the result_type.
+            abort(
+                t"symbol resolved to NULL: "
+                t"{StringSlice(unsafe_from_utf8_ptr=cstr_name)}"
+            )
+
+        var ptr: UnsafePointer[result_type, MutAnyOrigin] = res.value()
+        return ptr
 
     @always_inline
     def call[
