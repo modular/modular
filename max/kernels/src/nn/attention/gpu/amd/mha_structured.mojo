@@ -117,7 +117,7 @@ __extension Attention:
         ](
             self.k,
             UInt(self.batch_idx),
-            self.kv_head_idx(),
+            UInt(self.kv_head_idx()),
             self.smem_manager.get_k_ptr[type_of(self.k).dtype](),
             UInt(self.num_keys),
             warp_id,
@@ -137,7 +137,7 @@ __extension Attention:
         ](
             self.v,
             UInt(self.batch_idx),
-            self.kv_head_idx(),
+            UInt(self.kv_head_idx()),
             self.smem_manager.get_v_ptr[type_of(self.v).dtype](),
             UInt(self.num_keys),
             warp_id,

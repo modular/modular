@@ -664,7 +664,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
 @always_inline
 def eval_composed[
     composed_layout: ComposedLayout
-](idx: UInt, offset: UInt = 0) -> UInt:
+](idx: Int, offset: Int = 0) -> Int:
     """Evaluate a composed layout with swizzle.
 
     Applies the base layout, adds an optional offset, and then applies
@@ -680,7 +680,7 @@ def eval_composed[
     Returns:
         The transformed index after applying both layouts.
     """
-    var a_idx = idx
+    var a_idx = UInt(idx)
     var b_idx = 0
 
     comptime shape_a = flatten(composed_layout.layout_a.shape)
@@ -692,7 +692,7 @@ def eval_composed[
         a_idx, coord_i = divmod(a_idx, UInt(s))
         b_idx += Int(coord_i * UInt(st))
 
-    b_idx += Int(offset)
+    b_idx += offset
 
     comptime layout_b = composed_layout.layout_b
-    return UInt(layout_b(b_idx))
+    return layout_b(b_idx)

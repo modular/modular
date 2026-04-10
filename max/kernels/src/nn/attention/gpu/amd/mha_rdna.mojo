@@ -22,7 +22,7 @@ Key features:
 """
 
 from std.collections import OptionalReg
-from std.math.uutils import umod
+from std.math.uutils import umod, ufloordiv
 
 from std.gpu import barrier, block_idx, lane_id
 from nn.attention.mha_utils import MHAConfig, get_start_and_end_for_partitions
@@ -68,24 +68,24 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    def q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         comptime if Self.token_gen:
             var group_idx = umod(lane_id(), Self.group)
-            return UInt(block_idx.y) * UInt(Self.group) + UInt(group_idx)
+            return block_idx.y * Self.group + group_idx
         else:
-            return UInt(block_idx.x)
+            return block_idx.x
 
     @staticmethod
     @always_inline
-    def q_tile_idx() -> UInt:
-        return UInt(block_idx.y) if not Self.token_gen else 0
+    def q_tile_idx() -> Int:
+        return block_idx.y if not Self.token_gen else 0
 
     @staticmethod
     @always_inline
-    def kv_head_idx() -> UInt:
-        return UInt(
-            block_idx.y
-        ) if Self.token_gen else Self.q_head_idx() // UInt(Self.group)
+    def kv_head_idx() -> Int:
+        return block_idx.y if Self.token_gen else ufloordiv(
+            Self.q_head_idx(), Self.group
+        )
 
     @staticmethod
     @always_inline
@@ -97,15 +97,15 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
     @always_inline
     def get_q_offset[q_depth: UInt]() -> UInt32:
         return UInt32(
-            q_depth
+            Int(q_depth)
             * (
                 (
                     Self.kv_head_idx()
-                    * UInt(Self.group) if Self.token_gen else Self.q_head_idx()
+                    * Self.group if Self.token_gen else Self.q_head_idx()
                 )
-                + UInt(Self.config.num_heads)
+                + Self.config.num_heads
                 * Self.q_tile_idx()
-                * UInt(Self.config.block_m())
+                * Self.config.block_m()
             )
         )
 

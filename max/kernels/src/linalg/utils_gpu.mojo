@@ -193,27 +193,25 @@ struct MatmulConfig[
         new_config.copy_field(self)
         return new_config
 
-    def num_warps_m(self) -> UInt:
-        return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
+    def num_warps_m(self) -> Int:
+        return self.block_tile_shape[0] // self.warp_tile_shape[0]
 
-    def num_warps_n(self) -> UInt:
-        return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
+    def num_warps_n(self) -> Int:
+        return self.block_tile_shape[1] // self.warp_tile_shape[1]
 
-    def num_threads(self) -> UInt:
+    def num_threads(self) -> Int:
         return (
             self.num_warps_m()
             * self.num_warps_n()
-            * self.num_warp_k_partitions
-            * UInt(WARP_SIZE)
+            * Int(self.num_warp_k_partitions)
+            * WARP_SIZE
         )
 
     def shared_mem_usage(self) -> Int:
-        return Int(
-            _shared_memory_usage[Self.a_type, Self.b_type, Self.c_type](
-                self.block_tile_shape,
-                Int(self.num_pipeline_stages),
-                Int(self.num_warp_k_partitions),
-            )
+        return _shared_memory_usage[Self.a_type, Self.b_type, Self.c_type](
+            self.block_tile_shape,
+            Int(self.num_pipeline_stages),
+            Int(self.num_warp_k_partitions),
         )
 
     def grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
@@ -224,10 +222,10 @@ struct MatmulConfig[
         )
 
     def block_dim(self) -> IndexList[3]:
-        return Index(Int(self.num_threads()), 1, 1)
+        return Index(self.num_threads(), 1, 1)
 
-    def work_space_size(self, M: UInt, N: UInt) -> UInt:
-        return M * N * (self.num_k_partitions - 1)
+    def work_space_size(self, M: Int, N: Int) -> Int:
+        return M * N * (Int(self.num_k_partitions) - 1)
 
     def pdl_level(self) -> PDLLevel:
         return self._pdl_level
@@ -309,7 +307,7 @@ def _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
 @always_inline
 def _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
-](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> UInt:
+](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> Int:
     # fmt: off
     var a_usage = slice_k * block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[a_type]()
     var b_usage = slice_k * block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[b_type]()
@@ -318,7 +316,7 @@ def _shared_memory_usage[
     var c_usage = block_mnk[0] * block_mnk[1] * \
                   size_of[c_type]() if c_type.is_half_float() else 0
     # fmt: on
-    return UInt(max(max(a_usage + b_usage, c_usage), slice_k_reduction))
+    return max(max(a_usage + b_usage, c_usage), slice_k_reduction)
 
 
 @fieldwise_init
@@ -436,9 +434,12 @@ def select_config[
         var num_waves_base = ceildiv(num_blocks, A100.sm_count)
 
         # Skip if it requires more shared memory than the GPU supports.
-        if _shared_memory_usage[a_type, b_type, c_type](
-            Index(bm, bn, bk), num_stages
-        ) > UInt(gpu_info.shared_memory_per_multiprocessor):
+        if (
+            _shared_memory_usage[a_type, b_type, c_type](
+                Index(bm, bn, bk), num_stages
+            )
+            > gpu_info.shared_memory_per_multiprocessor
+        ):
             continue
 
         var allowed_num_k_partitions = (

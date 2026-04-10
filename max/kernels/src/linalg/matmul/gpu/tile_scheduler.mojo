@@ -288,10 +288,9 @@ struct TileScheduler[
         )
 
     @always_inline
-    def num_output_tiles(self) -> UInt:
-        return UInt(
-            ceildiv(self.prob_shape[0], Self.wave_shape[0])
-            * ceildiv(self.prob_shape[1], Self.wave_shape[1])
+    def num_output_tiles(self) -> Int:
+        return ceildiv(self.prob_shape[0], Self.wave_shape[0]) * ceildiv(
+            self.prob_shape[1], Self.wave_shape[1]
         )
 
     @always_inline

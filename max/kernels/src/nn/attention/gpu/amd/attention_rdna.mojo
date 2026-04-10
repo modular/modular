@@ -371,17 +371,17 @@ struct AttentionRDNA[
 
     @staticmethod
     @always_inline
-    def q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         return Self.attention_config_t.q_head_idx()
 
     @staticmethod
     @always_inline
-    def q_tile_idx() -> UInt:
+    def q_tile_idx() -> Int:
         return Self.attention_config_t.q_tile_idx()
 
     @staticmethod
     @always_inline
-    def kv_head_idx() -> UInt:
+    def kv_head_idx() -> Int:
         return Self.attention_config_t.kv_head_idx()
 
     @always_inline
@@ -628,7 +628,7 @@ struct AttentionRDNA[
         self.v = v
         self.mask = mask
 
-        self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
+        self.mask_block_row = UInt32(self.q_tile_idx() * Int(Self.BM))
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
         self.mask_warp_row = UInt32(warp_row * Int(Self.WM))
@@ -647,7 +647,7 @@ struct AttentionRDNA[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_weight = (
-                sink_weights.value()[Int(self.q_head_idx())][0].cast[
+                sink_weights.value()[self.q_head_idx()][0].cast[
                     Self.accum_type
                 ]()
                 * log2e

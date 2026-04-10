@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _cdna_4_or_newer
-from std.math.uutils import umod
+from std.math.uutils import umod, ufloordiv
 
 from std.gpu import barrier, block_idx, lane_id
 from layout.swizzle import Swizzle
@@ -51,26 +51,26 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    def q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         comptime if Self.token_gen:
             comptime mma_shape = Self.get_mma_shape()
             var group_idx = umod(lane_id(), mma_shape[0])
-            return UInt(block_idx.y) * UInt(Self.group) + UInt(group_idx)
+            return block_idx.y * Self.group + group_idx
         else:
-            return UInt(block_idx.x)
+            return block_idx.x
 
     @staticmethod
     @always_inline
-    def q_tile_idx() -> UInt:
-        return UInt(block_idx.y) if not Self.token_gen else 0
+    def q_tile_idx() -> Int:
+        return block_idx.y if not Self.token_gen else 0
 
     @staticmethod
     @always_inline
-    def kv_head_idx() -> UInt:
+    def kv_head_idx() -> Int:
         # decode and prefill have different launch configs
-        return UInt(
-            block_idx.y
-        ) if Self.token_gen else Self.q_head_idx() // UInt(Self.group)
+        return block_idx.y if Self.token_gen else ufloordiv(
+            Self.q_head_idx(), Self.group
+        )
 
     @staticmethod
     @always_inline
@@ -95,15 +95,15 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     @always_inline
     def get_q_offset[q_depth: UInt]() -> UInt32:
         return UInt32(
-            q_depth
+            Int(q_depth)
             * (
                 (
                     Self.kv_head_idx()
-                    * UInt(Self.group) if Self.token_gen else Self.q_head_idx()
+                    * Self.group if Self.token_gen else Self.q_head_idx()
                 )
-                + UInt(Self.config.num_heads)
+                + Self.config.num_heads
                 * Self.q_tile_idx()
-                * UInt(Self.config.block_m())
+                * Self.config.block_m()
             )
         )
 

@@ -40,21 +40,21 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
 
     @staticmethod
     @always_inline
-    def q_head_idx() -> UInt:
-        return UInt(block_idx.y) if Self.token_gen else MHAAttentionConfig[
+    def q_head_idx() -> Int:
+        return block_idx.y if Self.token_gen else MHAAttentionConfig[
             Self.token_gen, Self.config, 1
         ].q_head_idx()
 
     @staticmethod
     @always_inline
-    def q_tile_idx() -> UInt:
+    def q_tile_idx() -> Int:
         return Self.q_head_idx() if Self.token_gen else MHAAttentionConfig[
             Self.token_gen, Self.config, 1
         ].q_tile_idx()
 
     @staticmethod
     @always_inline
-    def kv_head_idx() -> UInt:
+    def kv_head_idx() -> Int:
         return 0 if Self.token_gen else MHAAttentionConfig[
             Self.token_gen, Self.config, 1
         ].kv_head_idx()
@@ -70,15 +70,15 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
     @always_inline
     def get_q_offset[q_depth: UInt]() -> UInt32:
         return UInt32(
-            q_depth
+            Int(q_depth)
             * (
-                UInt(block_idx.x)
-                + UInt(Self.config.num_heads)
+                block_idx.x
+                + Self.config.num_heads
                 * Self.q_tile_idx()
-                * UInt(Self.config.block_m())
-            ) if not Self.token_gen else q_depth
+                * Self.config.block_m()
+            ) if not Self.token_gen else Int(q_depth)
             * Self.q_tile_idx()
-            * UInt(Self.config.block_m())
+            * Self.config.block_m()
         )
 
     @staticmethod
@@ -186,7 +186,7 @@ __extension Attention:
                 k_rope.block_paged_ptr[Int(Self.BN)](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row + UInt32(self.cache_start_pos),
-                    UInt32(ufloordiv(Int(Self.kv_head_idx()), cache_group)),
+                    UInt32(ufloordiv(Self.kv_head_idx(), cache_group)),
                     UInt32(cache_depth - rope_depth),
                 ),
                 k_rope_runtime_layout,
