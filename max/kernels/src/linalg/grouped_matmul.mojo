@@ -210,7 +210,7 @@ def grouped_matmul_kernel_sm100[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    b_layout: Layout,
+    static_K: Int,
     a_tile_rank: Int,
     a_tile_shape: IndexList[a_tile_rank],
     a_desc_shape: IndexList[a_tile_rank],
@@ -247,7 +247,7 @@ def grouped_matmul_kernel_sm100[
 
     M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
     comptime N = c.static_shape[1]
-    comptime K = b_layout.shape[1].value()
+    comptime K = static_K
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -581,19 +581,12 @@ def grouped_matmul_sm100[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tensor = a.to_layout_tensor()
-    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
-        ctx, a_tensor
-    )
-    b_tensor = LayoutTensor[
-        b_type,
-        Layout.row_major(num_experts * N, K),
-        address_space=AddressSpace.GENERIC,
-    ](b.ptr)
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
+    b_2d = TileTensor(b.ptr, row_major[num_experts * N, K]())
     b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
-    ](ctx, b_tensor)
+    ](ctx, b_2d)
     comptime block_dim = 128
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
@@ -603,7 +596,7 @@ def grouped_matmul_sm100[
         a_type,
         b_type,
         c_type,
-        type_of(b_tensor).layout,
+        K,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
@@ -709,12 +702,8 @@ def grouped_matmul_amd_kernel_launcher[
 
     # Perform the epilogue function separately if expert_id is -1
     else:
-        # Keep LayoutTensor for fill (no TileTensor equivalent yet)
-        comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-        var c_lt = LayoutTensor[
-            c_type, c_layout, address_space=c_ptr.address_space
-        ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
-        _ = c_lt.fill(0.0)
+        var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
+        _ = c_tile.fill(0.0)
 
         comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
