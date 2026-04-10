@@ -15,11 +15,13 @@
 namespace M::AsyncRT {
 
 RuntimeRef getOrCreateRuntime(RuntimeSource source,
-                              const RuntimeOptions &options) {
+                              const RuntimeOptions &options,
+                              bool allowUsingExistingOptions) {
   std::lock_guard<std::mutex> lock(getGlobalRuntimeMutex());
   Runtime *existingRuntime = getGlobalRuntimePointer();
   if (existingRuntime) {
-    if (getStoredGlobalRuntimeCreationOptions() != options)
+    if (getStoredGlobalRuntimeCreationOptions() != options &&
+        !allowUsingExistingOptions)
       llvm::report_fatal_error(
           "AsyncRT::getOrCreateRuntime called requesting different options to "
           "those used to create the existing Runtime.");
@@ -48,15 +50,6 @@ RuntimeRef getOrCreateRuntime(RuntimeSource source,
   getStoredGlobalRuntimeCreationOptions() = options;
   setGlobalRuntimePointer(newRuntime.getPointer());
   return newRuntime.copy();
-}
-
-RuntimeOptions getDefaultOrExistingRuntimeOptions() {
-  std::lock_guard<std::mutex> lock(AsyncRT::getGlobalRuntimeMutex());
-  if (AsyncRT::getGlobalRuntimePointer()) {
-    return getStoredGlobalRuntimeCreationOptions();
-  }
-
-  return AsyncRT::RuntimeOptions();
 }
 
 } // namespace M::AsyncRT
