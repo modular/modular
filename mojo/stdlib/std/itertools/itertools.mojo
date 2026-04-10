@@ -486,18 +486,116 @@ def product[
     }
 
 
-# Note: No `IterableOwned` overloads for `product()` because it requires
-# `Copyable` inner iterators to reset, and no stdlib owned iterator is
-# `Copyable`. The struct conformances still allow owned iteration of the
-# adaptor itself.
+@always_inline
+def product(
+    var iterable_a: Some[IterableOwned],
+    var iterable_b: Some[IterableOwned],
+) -> _Product2[
+    type_of(iterable_a).IteratorOwnedType,
+    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
+] where conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable):
+    """Returns an iterator that yields tuples of the elements of the outer
+    product of the iterables, consuming both iterables.
+
+    Args:
+        iterable_a: The first iterable to consume.
+        iterable_b: The second iterable to consume.
+
+    Returns:
+        A product iterator that yields outer product tuples of elements from both
+        iterables.
+    """
+    return {
+        iter(iterable_a^),
+        rebind_var[
+            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
+        ](iter(iterable_b^)),
+    }
+
+
+@always_inline
+def product(
+    var iterable_a: Some[IterableOwned],
+    var iterable_b: Some[IterableOwned],
+    var iterable_c: Some[IterableOwned],
+) -> _Product3[
+    type_of(iterable_a).IteratorOwnedType,
+    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
+    downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator],
+] where conforms_to(
+    type_of(iterable_b).IteratorOwnedType, Copyable
+) and conforms_to(
+    type_of(iterable_c).IteratorOwnedType, Copyable
+):
+    """Returns an iterator that yields tuples of the elements of the outer
+    product of three iterables, consuming all three iterables.
+
+    Args:
+        iterable_a: The first iterable to consume.
+        iterable_b: The second iterable to consume.
+        iterable_c: The third iterable to consume.
+
+    Returns:
+        A product iterator that yields outer product tuples of elements from all
+        three iterables.
+    """
+    return {
+        iter(iterable_a^),
+        rebind_var[
+            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
+        ](iter(iterable_b^)),
+        rebind_var[
+            downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator]
+        ](iter(iterable_c^)),
+    }
+
+
+@always_inline
+def product(
+    var iterable_a: Some[IterableOwned],
+    var iterable_b: Some[IterableOwned],
+    var iterable_c: Some[IterableOwned],
+    var iterable_d: Some[IterableOwned],
+) -> _Product4[
+    type_of(iterable_a).IteratorOwnedType,
+    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
+    downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator],
+    downcast[type_of(iterable_d).IteratorOwnedType, Copyable & Iterator],
+] where (
+    conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable)
+    and conforms_to(type_of(iterable_c).IteratorOwnedType, Copyable)
+    and conforms_to(type_of(iterable_d).IteratorOwnedType, Copyable)
+):
+    """Returns an iterator that yields tuples of the elements of the outer
+    product of four iterables, consuming all four iterables.
+
+    Args:
+        iterable_a: The first iterable to consume.
+        iterable_b: The second iterable to consume.
+        iterable_c: The third iterable to consume.
+        iterable_d: The fourth iterable to consume.
+
+    Returns:
+        A product iterator that yields outer product tuples of elements from all
+        four iterables.
+    """
+    return {
+        iter(iterable_a^),
+        rebind_var[
+            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
+        ](iter(iterable_b^)),
+        rebind_var[
+            downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator]
+        ](iter(iterable_c^)),
+        rebind_var[
+            downcast[type_of(iterable_d).IteratorOwnedType, Copyable & Iterator]
+        ](iter(iterable_d^)),
+    }
 
 
 # ===-----------------------------------------------------------------------===#
 # cycle
 # ===-----------------------------------------------------------------------===#
-
-# Note: No `IterableOwned` overload for `cycle()` for the same reason as
-# `product()` — it requires `Copyable` inner iterators to reset.
 
 
 @fieldwise_init
@@ -601,6 +699,28 @@ def cycle[
         rebind_var[downcast[type_of(iter(iterable)), Copyable & Iterator]](
             iter(iterable)
         )
+    )
+
+
+@always_inline
+def cycle(
+    var iterable: Some[IterableOwned],
+) -> _CycleIterator[
+    downcast[type_of(iterable).IteratorOwnedType, Copyable & Iterator]
+] where conforms_to(type_of(iterable).IteratorOwnedType, Copyable):
+    """Creates an iterator that cycles through an iterable indefinitely,
+    consuming the iterable.
+
+    Args:
+        iterable: The iterable to consume and cycle through.
+
+    Returns:
+        An iterator that yields elements from the iterable forever.
+    """
+    return _CycleIterator(
+        rebind_var[
+            downcast[type_of(iterable).IteratorOwnedType, Copyable & Iterator]
+        ](iter(iterable^))
     )
 
 

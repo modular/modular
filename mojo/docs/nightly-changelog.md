@@ -192,7 +192,8 @@ This version is still a work in progress.
     `drop_while`, `product`, `cycle`, `count`, `repeat`) now conform to
     `IterableOwned`.
   - Added owned overloads of `enumerate()`, `zip()`, `map()`, `peekable()`,
-    `take_while()`, and `drop_while()` that consume the input iterable.
+    `take_while()`, `drop_while()`, `product()`, and `cycle()` that consume the
+    input iterable.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same

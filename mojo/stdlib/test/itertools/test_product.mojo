@@ -322,5 +322,139 @@ def test_product4_copies() raises:
     assert_equal(copy_d, 7)
 
 
+@fieldwise_init
+struct _CopyableOwnedIter[size: Int](Copyable, IterableOwned, Iterator):
+    """A `Copyable` owned iterator backed by an `InlineArray` for testing."""
+
+    comptime Element = Int
+    comptime IteratorOwnedType: Iterator = Self
+    var _data: InlineArray[Int, Self.size]
+    var _index: Int
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Int:
+        if self._index >= Self.size:
+            raise StopIteration()
+        var val = self._data[self._index]
+        self._index += 1
+        return val
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = Self.size - self._index
+        return (remaining, remaining)
+
+
+@fieldwise_init
+struct _CopyableOwned[size: Int](IterableOwned):
+    """An `IterableOwned` whose owned iterator is `Copyable` for testing."""
+
+    comptime IteratorOwnedType: Iterator = _CopyableOwnedIter[Self.size]
+    var _data: InlineArray[Int, Self.size]
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return _CopyableOwnedIter(self._data, 0)
+
+
+def _owned2(a: Int, b: Int) -> _CopyableOwned[2]:
+    var data: InlineArray[Int, 2] = [a, b]
+    return _CopyableOwned(data)
+
+
+def _owned3(a: Int, b: Int, c: Int) -> _CopyableOwned[3]:
+    var data: InlineArray[Int, 3] = [a, b, c]
+    return _CopyableOwned(data)
+
+
+def test_product2_owned() raises:
+    var it = product(_owned3(1, 2, 3), _owned2(10, 20))
+
+    var elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 10)
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 20)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 10)
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 20)
+
+    elem = next(it)
+    assert_equal(elem[0], 3)
+    assert_equal(elem[1], 10)
+    elem = next(it)
+    assert_equal(elem[0], 3)
+    assert_equal(elem[1], 20)
+
+    with assert_raises():
+        _ = it.__next__()
+
+
+def test_product3_owned() raises:
+    var it = product(_owned2(1, 2), _owned2(10, 20), _owned2(100, 200))
+
+    var elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 10)
+    assert_equal(elem[2], 100)
+
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 10)
+    assert_equal(elem[2], 200)
+
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 20)
+    assert_equal(elem[2], 100)
+
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 20)
+    assert_equal(elem[2], 200)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 10)
+    assert_equal(elem[2], 100)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 10)
+    assert_equal(elem[2], 200)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 20)
+    assert_equal(elem[2], 100)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 20)
+    assert_equal(elem[2], 200)
+
+    with assert_raises():
+        _ = it.__next__()
+
+
+def test_product4_owned() raises:
+    var count = 0
+    for a, b, c, d in product(
+        _owned2(1, 2), _owned2(3, 4), _owned2(5, 6), _owned2(7, 8)
+    ):
+        assert_true(a in (1, 2))
+        assert_true(b in (3, 4))
+        assert_true(c in (5, 6))
+        assert_true(d in (7, 8))
+        count += 1
+
+    assert_equal(count, 16)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
