@@ -892,12 +892,9 @@ def MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
     Returns:
         A LayoutList containing layouts for each tile size.
     """
+    var layout_list = LayoutList(capacity=tile_sizes.size)
 
-    comptime num_tiles = ParameterList[*tile_sizes].size
-
-    var layout_list = LayoutList(capacity=num_tiles)
-
-    comptime for i in range(num_tiles):
+    comptime for i in range(tile_sizes.size):
         comptime arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 

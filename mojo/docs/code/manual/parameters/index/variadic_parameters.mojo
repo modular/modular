@@ -13,9 +13,8 @@
 
 
 def sum_params[*values: Int]() -> Int:
-    comptime list = ParameterList[*values]()
     var sum = 0
-    for v in list:
+    for v in values:
         sum += v
     return sum
 

@@ -97,7 +97,7 @@ def test_math() raises:
                 SIMD[dtype, width]
             ) thin -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
-            comptime ls = ParameterList[*kernel_fns].size
+            comptime ls = kernel_fns.size
 
             comptime for idx in range(ls):
                 comptime kernel_fn = kernel_fns[idx]

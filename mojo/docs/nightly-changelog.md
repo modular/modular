@@ -47,6 +47,23 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Variadic parameters value lists are now passed instead of `ParameterList`
+  instead of `!kgen.param_list`. This makes it much more ergonomic to work with
+  these types, e.g. simple logic just works:
+
+  ```mojo
+  def callee[*values: Int]():
+      var v = 0
+      for i in range(len(values)):
+          v += values[i]
+      for elt in values:
+          v += elt
+  ```
+
+  Similarly, the `ParameterList` struct has other methods for transforming the
+  value list, which are directly accessible on `values`. One caveat so far is
+  that parameter variadics of types are still using the old representation.
+
 - All Mojo functions now has a unique "function literal type". In practice, it
   means that:
 

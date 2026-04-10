@@ -524,11 +524,10 @@ struct IntTuple(
               less than `MinimumValue`, assertion fails with an error message.
             - Structure validation performed when assertions are enabled.
         """
-        comptime size = ParameterList[*elements].size
-        self._store = IntArray(size + 1)
-        self._store[0] = size
-        for i in range(size):
-            var value = ParameterList[*elements]()[i]
+        self._store = IntArray(elements.size + 1)
+        self._store[0] = elements.size
+        for i in range(elements.size):
+            var value = elements[i]
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",

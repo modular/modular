@@ -1406,15 +1406,13 @@ struct TileTensor[
     ](self) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types=_Slice[slices, Self.LayoutType._shape_types],
+            shape_types=_Slice[slices.values, Self.LayoutType._shape_types],
             stride_types=Self.LayoutType._stride_types,
         ],
         Self.origin,
         address_space=Self.address_space,
         element_size=Self.element_size,
-    ] where (
-        ParameterList[*slices].size == Self.flat_rank and Self.all_dims_known
-    ):
+    ] where (slices.size == Self.flat_rank and Self.all_dims_known):
         """Extract a slice from the tensor using slice objects.
 
         This method creates a view into a subset of the tensor defined by the
@@ -1470,7 +1468,7 @@ struct TileTensor[
         # Compute offset based on slice start indices and strides
         var offset = 0
 
-        comptime for i in range(ParameterList[*slices].size):
+        comptime for i in range(slices.size):
             comptime slice_i = slices[i]
             comptime slice_start = slice_i.start.or_else(0)
             var stride_i = self.layout.stride[i]().value()
@@ -1479,7 +1477,9 @@ struct TileTensor[
         # Build new shape tuple with runtime types
         # Even though slice bounds are compile-time known, we use RuntimeInt
         # because we can't change ComptimeInt[4] to ComptimeInt[2] in the type system
-        comptime NewShapeTypes = _Slice[slices, Self.LayoutType._shape_types]
+        comptime NewShapeTypes = _Slice[
+            slices.values, Self.LayoutType._shape_types
+        ]
         var new_shape = Coord[*NewShapeTypes]()
 
         comptime for i in range(Self.rank):

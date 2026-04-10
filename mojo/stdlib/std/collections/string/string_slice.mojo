@@ -2102,7 +2102,7 @@ def _get_kgen_string[
         `#kgen.param.expr<data_to_str,`,
         string,
         `,`,
-        extra,
+        extra.values,
         `> : !kgen.string`,
     ]
 

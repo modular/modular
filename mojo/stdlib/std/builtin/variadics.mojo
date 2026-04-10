@@ -84,7 +84,7 @@ struct Variadic:
 
     comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
         T
-    ] = values_
+    ] = values_.values
     """Turn discrete values (bound by `T`) into a single variadic.
 
     Parameters:
@@ -99,7 +99,7 @@ struct Variadic:
     comptime concat_types[
         T: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[T]
     ] = __mlir_attr[
-        `#kgen.param_list.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
+        `#kgen.param_list.concat<`, Ts.values, `> :`, Variadic.TypesOfTrait[T]
     ]
     """Represents the concatenation of multiple variadic sequences of types.
 
@@ -111,7 +111,7 @@ struct Variadic:
     comptime concat_values[
         T: AnyType, //, *Ts: Variadic.ValuesOfType[T]
     ] = __mlir_attr[
-        `#kgen.param_list.concat<`, Ts, `> :`, Variadic.ValuesOfType[T]
+        `#kgen.param_list.concat<`, Ts.values, `> :`, Variadic.ValuesOfType[T]
     ]
     """Represents the concatenation of multiple variadic sequences of values.
 
@@ -291,7 +291,7 @@ struct Variadic:
     # The resulting variadic of types is [Int, String]
     comptime output = Variadic.map_types_to_types[input_types, mapper]
 
-    assert_equal(ParameterList[*output].size, 2)
+    assert_equal(output.size, 2)
     assert_true(_type_is_eq[output[0], Int]())
     assert_true(_type_is_eq[output[1], String]())
     ```
@@ -342,7 +342,7 @@ struct Variadic:
         Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
     ] = __mlir_attr[
         `#kgen.param_list.zip<`,
-        types,
+        types.values,
         `> : `,
         _MLIR.KGENParamListType[Variadic.TypesOfTrait[Trait]],
     ]
@@ -358,7 +358,7 @@ struct Variadic:
         type: AnyType, //, *values: Variadic.ValuesOfType[type]
     ] = __mlir_attr[
         `#kgen.param_list.zip<`,
-        values,
+        values.values,
         `> : `,
         _MLIR.KGENParamListType[Variadic.ValuesOfType[type]],
     ]
@@ -639,24 +639,23 @@ struct _ParameterListIter[type: Copyable, //, *values: type](
     ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
         var index = self.index
 
-        comptime params = ParameterList[*Self.values]()
-        if index >= params.size:
+        if index >= Self.values.size:
             raise StopIteration()
         self.index = index + 1
-        return params[index]
+        return Self.values[index]
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = ParameterList[*Self.values].size - self.index
+        var len = Self.values.size - self.index
         return (len, {len})
 
 
 # TODO: Make this conform to Iterable when IteratorType can be conditionally
 # defined only when 'type' is Copyable.
-struct ParameterList[type: AnyType, //, *values: type](
+struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
@@ -820,9 +819,11 @@ struct ParameterList[type: AnyType, //, *values: type](
     def __iter__(
         ref self,
     ) -> _ParameterListIter[
-        *rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
-            Self.values
-        )
+        *ParameterList[
+            rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
+                Self.values
+            )
+        ]()
     ] where conforms_to(Self.type, Copyable):
         """Iterate over the list.
 
