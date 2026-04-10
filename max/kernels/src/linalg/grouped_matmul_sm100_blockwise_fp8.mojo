@@ -746,7 +746,7 @@ def load_AB[
     a_scales_tile_rank: Int,
     a_scales_tile_shape: IndexList[a_scales_tile_rank],
     a_scales_desc_shape: IndexList[a_scales_tile_rank],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     expert_ids_layout: Layout,
     /,
     *,
@@ -774,7 +774,7 @@ def load_AB[
     a_scales_smem_base: UnsafePointer[
         Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
-    load_mma_pipeline: ProducerConsumerPipeline[Int(num_pipeline_stages)],
+    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
@@ -1135,7 +1135,7 @@ def multi_stage_reg_epilogue[
 
 @always_inline
 def promote_accumulators[
-    pipeline_stages: UInt,
+    pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     accum_type: DType,
     accum_layout: Layout,
@@ -1174,7 +1174,7 @@ def promote_accumulators[
     ],
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
-    load_mma_pipeline: ProducerConsumerPipeline[Int(pipeline_stages)],
+    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     work_tile_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
     stage_stride_cols: UInt,
@@ -1498,7 +1498,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     b_scales_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     cluster_shape: StaticTuple[Int32, 3],
     expert_n: Int,
     expert_ids_layout: Layout,
@@ -1600,15 +1600,13 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         alignment=128,
     ]()
 
-    comptime a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
-    comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
+    comptime a_smem_size = a_smem_layout.size() * num_pipeline_stages
+    comptime b_smem_size = b_smem_layout.size() * num_pipeline_stages
     comptime c_smem_size = config.output_tile_shape[
         0
     ] * config.output_tile_shape[1] * config.num_output_stages
 
-    comptime a_scales_smem_size = a_scales_smem_layout.size() * Int(
-        num_pipeline_stages
-    )
+    comptime a_scales_smem_size = a_scales_smem_layout.size() * num_pipeline_stages
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
@@ -1622,14 +1620,14 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
         BM,
         BK,
-        Int(num_pipeline_stages),
+        num_pipeline_stages,
         swizzle_mode_to_bytes[config.a_swizzle],
     ](a_smem_base)
     var b_smem_tt = SMemTileArray2D[
         b_type,
         BN,
         BK,
-        Int(num_pipeline_stages),
+        num_pipeline_stages,
         swizzle_mode_to_bytes[config.b_swizzle],
     ](b_smem_base)
     var load_mma_mbar_ptr = (a_scales_smem_base + a_scales_smem_size).bitcast[
@@ -1637,11 +1635,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ]()
 
     # Load warp as producer and mma warp as consumer
-    var load_mma_pipeline = ProducerConsumerPipeline[Int(num_pipeline_stages)](
+    var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
         load_mma_mbar_ptr
     )
 
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * Int(num_pipeline_stages)
+    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
     ](mma_output_mbar_ptr)
@@ -2191,7 +2189,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         + mma_mbar_bytes_per_stage
     )
 
-    comptime max_pipeline_stages = UInt(
+    comptime max_pipeline_stages: Int = (
         smem_leftover // producer_consumer_smem_per_stage
     )
 
@@ -2199,9 +2197,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         max_pipeline_stages >= 1
     ), "not enough smem even for one pipeline stage!"
 
-    comptime producer_consumer_smem = producer_consumer_smem_per_stage * Int(
-        max_pipeline_stages
-    )
+    comptime producer_consumer_smem = producer_consumer_smem_per_stage * max_pipeline_stages
 
     comptime smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem

@@ -135,7 +135,7 @@ def load_AB[
     b_desc_shape: IndexList[b_tma_rank],
     a_smem_layout: Layout,
     b_smem_layout: Layout,
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     /,
     *,
     block_tile_shape: IndexList[3],
@@ -164,7 +164,7 @@ def load_AB[
     tma_mbar: UnsafePointer[
         mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
     ],
-    producer_phase: PipelineState[Int(num_pipeline_stages)],
+    producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
@@ -519,7 +519,7 @@ def kernel_8[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     num_clc_pipeline_stages: UInt,
     num_accum_pipeline_stages: UInt,
     num_output_stages: Int = 2,
@@ -597,8 +597,8 @@ def kernel_8[
         alignment=128,
     ]()
 
-    comptime a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
-    comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
+    comptime a_smem_size = a_smem_layout.size() * num_pipeline_stages
+    comptime b_smem_size = b_smem_layout.size() * num_pipeline_stages
     comptime c_smem_size = output_tile_shape[0] * output_tile_shape[
         1
     ] * num_output_stages
@@ -714,8 +714,8 @@ def kernel_8[
     fence_mbarrier_init()
     cluster_sync()
 
-    var consumer_phase = PipelineState[Int(num_pipeline_stages)]()
-    var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
+    var consumer_phase = PipelineState[num_pipeline_stages]()
+    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
     var clc_pipe_producer_state = PipelineState[Int(num_clc_pipeline_stages)](
         0, 1, 0
@@ -1115,7 +1115,7 @@ def blackwell_kernel_8[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages=UInt(max_pipeline_stages),
+        num_pipeline_stages=max_pipeline_stages,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
         num_accum_pipeline_stages=UInt(max_accum_pipeline_stages),
         num_output_stages=num_output_stages,

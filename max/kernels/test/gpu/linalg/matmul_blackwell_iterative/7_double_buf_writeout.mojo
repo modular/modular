@@ -123,7 +123,7 @@ def load_AB[
     b_desc_shape: IndexList[b_tma_rank],
     a_smem_layout: Layout,
     b_smem_layout: Layout,
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     /,
     *,
     block_tile_shape: IndexList[3],
@@ -154,7 +154,7 @@ def load_AB[
     tma_mbar: UnsafePointer[
         mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
     ],
-    producer_phase: PipelineState[Int(num_pipeline_stages)],
+    producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
@@ -499,7 +499,7 @@ def kernel_7[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     num_output_stages: Int = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
     transpose_b: Bool = True,
@@ -566,9 +566,9 @@ def kernel_7[
     ] * num_output_stages
 
     var a_smem_base = base_ptr_smem  # need space for 4096 (64 x 64) elements by 2 bytes or 8192 total, which is 0x2000
-    var b_smem_base = (
-        a_smem_base + a_smem_size * Int(num_pipeline_stages)
-    ).bitcast[Scalar[b_type]]()
+    var b_smem_base = (a_smem_base + a_smem_size * num_pipeline_stages).bitcast[
+        Scalar[b_type]
+    ]()
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -579,7 +579,7 @@ def kernel_7[
         circular=False,
     ](
         a_smem_base,
-        a_smem_size * Int(num_pipeline_stages),
+        a_smem_size * num_pipeline_stages,
     )
 
     var b_smem = LayoutTensorIter[
@@ -591,12 +591,12 @@ def kernel_7[
         circular=False,
     ](
         b_smem_base,
-        b_smem_size * Int(num_pipeline_stages),
+        b_smem_size * num_pipeline_stages,
     )
 
-    var c_smem_base = (
-        b_smem_base + b_smem_size * Int(num_pipeline_stages)
-    ).bitcast[Scalar[c_type]]()
+    var c_smem_base = (b_smem_base + b_smem_size * num_pipeline_stages).bitcast[
+        Scalar[c_type]
+    ]()
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
@@ -614,8 +614,8 @@ def kernel_7[
     # adding 8 bytes for ptr_tmem_addr (smem poll is 8 byte casted)
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     # + num_pipeline_stages is 1 * num_pipeline_stage so 8 bytes for each barrier at each stage
-    var mma_mbar_ptr = tma_mbar_ptr + (num_pipeline_stages)
-    var compute_barrier_base = mma_mbar_ptr + (num_pipeline_stages)
+    var mma_mbar_ptr = tma_mbar_ptr + num_pipeline_stages
+    var compute_barrier_base = mma_mbar_ptr + num_pipeline_stages
     var ptr_tmem_addr = (compute_barrier_base + 1).bitcast[UInt32]()
 
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
@@ -650,8 +650,8 @@ def kernel_7[
 
     cluster_sync()
 
-    var consumer_phase = PipelineState[Int(num_pipeline_stages)]()
-    var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
+    var consumer_phase = PipelineState[num_pipeline_stages]()
+    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
     tmem_addr = ptr_tmem_addr[0]
 
@@ -874,7 +874,7 @@ def blackwell_kernel_7[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages=UInt(num_pipeline_stages),
+        num_pipeline_stages=num_pipeline_stages,
         num_output_stages=num_output_stages,
         output_tile_shape=output_tile_shape,
     ]

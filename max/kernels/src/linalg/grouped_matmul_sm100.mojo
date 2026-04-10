@@ -142,7 +142,7 @@ def load_AB[
     b_dim1: Int,
     b_num_tiles: Int,
     b_swizzle_bytes: Int,
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     //,
     *,
     block_tile_shape: IndexList[3],
@@ -164,7 +164,7 @@ def load_AB[
     tma_mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
-    producer_phase: PipelineState[Int(num_pipeline_stages)],
+    producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
@@ -248,7 +248,7 @@ def load_AB_cuda_core[
     b_dim1: Int,
     b_num_tiles: Int,
     b_swizzle_bytes: Int,
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     //,
     *,
     K_actual: Int,
@@ -273,7 +273,7 @@ def load_AB_cuda_core[
     tma_mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
-    producer_phase: PipelineState[Int(num_pipeline_stages)],
+    producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
     iter_idx: UInt32,
@@ -885,7 +885,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     num_output_stages: Int = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
@@ -969,10 +969,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
     comptime a_smem_size = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=a_swizzle
-    ].static_product * Int(num_pipeline_stages)
+    ].static_product * num_pipeline_stages
     comptime b_smem_size = tile_layout_k_major_typed[
         b_type, BN, BK, swizzle_mode=b_swizzle
-    ].static_product * Int(num_pipeline_stages)
+    ].static_product * num_pipeline_stages
     comptime c_smem_size = output_tile_shape[0] * output_tile_shape[
         1
     ] * num_output_stages
@@ -986,14 +986,14 @@ def blackwell_tma_umma_warp_specialized_kernel[
         a_type,
         BM,
         BK,
-        Int(num_pipeline_stages),
+        num_pipeline_stages,
         swizzle_mode_to_bytes[a_swizzle],
     ](a_smem_base)
     var b_smem_tt = SMemTileArray2D[
         b_type,
         BN,
         BK,
-        Int(num_pipeline_stages),
+        num_pipeline_stages,
         swizzle_mode_to_bytes[b_swizzle],
     ](b_smem_base)
 
@@ -1047,8 +1047,8 @@ def blackwell_tma_umma_warp_specialized_kernel[
     fence_mbarrier_init()
     cluster_sync()
 
-    var consumer_phase = PipelineState[Int(num_pipeline_stages)]()
-    var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
+    var consumer_phase = PipelineState[num_pipeline_stages]()
+    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
     var accum_pipeline_producer_state = PipelineState[
         num_accum_pipeline_stages
@@ -1337,7 +1337,7 @@ def grouped_matmul_sm100_persistent[
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     cta_group: Int = 1,
-    num_pipeline_stages: Optional[UInt] = None,
+    num_pipeline_stages: Optional[Int] = None,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -1400,7 +1400,7 @@ def _grouped_matmul_sm100_persistent[
     expert_m: Int,
     K: Int,
     cta_group: Int = 1,
-    num_pipeline_stages: Optional[UInt] = None,
+    num_pipeline_stages: Optional[Int] = None,
     transpose_c: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1563,7 +1563,7 @@ def _grouped_matmul_sm100_persistent[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    comptime max_pipeline_stages = UInt(
+    comptime max_pipeline_stages: Int = (
         smem_leftover // producer_consumer_smem_per_stage
     )
 
@@ -1577,9 +1577,7 @@ def _grouped_matmul_sm100_persistent[
         ), "Pipeline stage must be less than or equal to max pipeline stages"
 
     comptime pipeline_stage = num_pipeline_stages.value() if num_pipeline_stages else max_pipeline_stages
-    comptime producer_consumer_smem = producer_consumer_smem_per_stage * Int(
-        pipeline_stage
-    )
+    comptime producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stage
 
     comptime smem_size = (
         # clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem

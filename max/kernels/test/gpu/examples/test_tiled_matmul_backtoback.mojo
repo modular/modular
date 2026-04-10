@@ -67,7 +67,7 @@ struct BackToBackMatmulConfig[
     # WM x WN x WK
     var warp_tile_shape: IndexList[3, element_type=DType.uint64]
 
-    var num_pipeline_stages: UInt
+    var num_pipeline_stages: Int
 
     def num_warps_m(self) -> Int:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]
@@ -81,10 +81,10 @@ struct BackToBackMatmulConfig[
     def shared_mem_usage(self, K: Int) -> Int:
         return (
             self.block_tile_shape[0] * K
-            + Int(
+            + (
                 self.num_pipeline_stages
-                * UInt(self.block_tile_shape[1])
-                * UInt(self.block_tile_shape[2])
+                * self.block_tile_shape[1]
+                * self.block_tile_shape[2]
             )
         ) * size_of[Self.src_type]()
 
@@ -98,7 +98,7 @@ struct BackToBackMatmulConfig[
         out self,
         block_tile_shape: IndexList[3, element_type=DType.uint64],
         warp_tile_shape: IndexList[3, element_type=DType.uint64],
-        num_pipeline_stages: UInt = 2,
+        num_pipeline_stages: Int = 2,
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
@@ -181,7 +181,7 @@ def b2b_gemm[
     comptime BK = config.block_tile_shape[2]
     comptime WM = config.warp_tile_shape[0]
     comptime WN = config.warp_tile_shape[1]
-    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_pipeline_stages: Int = config.num_pipeline_stages
     comptime assert WN == BN
     # We have, roughly
     #
