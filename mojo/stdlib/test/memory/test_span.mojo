@@ -31,16 +31,16 @@ def test_span_list_int() raises:
     assert_equal(s2[1], l[3])
     assert_equal(s2[2], l[4])
     assert_equal(s2[3], l[5])
-    assert_equal(s[-1], l[-1])
+    assert_equal(s[len(s) - 1], l[len(l) - 1])
 
     # Test mutation
     s[0] = 9
     assert_equal(s[0], 9)
     assert_equal(l[0], 9)
 
-    s[-1] = 0
-    assert_equal(s[-1], 0)
-    assert_equal(l[-1], 0)
+    s[len(s) - 1] = 0
+    assert_equal(s[len(s) - 1], 0)
+    assert_equal(l[len(l) - 1], 0)
 
 
 def test_span_list_str() raises:
@@ -61,9 +61,9 @@ def test_span_list_str() raises:
     assert_equal(s[0], "h")
     assert_equal(l[0], "h")
 
-    s[-1] = "i"
-    assert_equal(s[-1], "i")
-    assert_equal(l[-1], "i")
+    s[len(s) - 1] = "i"
+    assert_equal(s[len(s) - 1], "i")
+    assert_equal(l[len(l) - 1], "i")
 
 
 def test_span_array_int() raises:
@@ -84,9 +84,9 @@ def test_span_array_int() raises:
     assert_equal(s[0], 9)
     assert_equal(l[0], 9)
 
-    s[-1] = 0
-    assert_equal(s[-1], 0)
-    assert_equal(l[-1], 0)
+    s[len(s) - 1] = 0
+    assert_equal(s[len(s) - 1], 0)
+    assert_equal(l[len(l) - 1], 0)
 
 
 def test_span_array_str() raises:
@@ -107,9 +107,9 @@ def test_span_array_str() raises:
     assert_equal(s[0], "h")
     assert_equal(l[0], "h")
 
-    s[-1] = "i"
-    assert_equal(s[-1], "i")
-    assert_equal(l[-1], "i")
+    s[len(s) - 1] = "i"
+    assert_equal(s[len(s) - 1], "i")
+    assert_equal(l[len(l) - 1], "i")
 
 
 def test_indexing() raises:
@@ -254,7 +254,7 @@ def test_merge() raises:
     def inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
         var either = Span(a) if cond else Span(b)
         either[0] = 0
-        either[-1] = 10
+        either[len(either) - 1] = 10
 
     inner(True, a, b)
     inner(False, a, b)

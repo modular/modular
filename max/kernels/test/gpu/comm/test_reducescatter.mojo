@@ -25,7 +25,12 @@ from comm.reducescatter import (
     elementwise_epilogue_type,
 )
 from internal_utils._testing import test_value_for_gpu_element
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceMulticastBuffer,
+    get_gpu_target,
+)
 from std.testing import assert_almost_equal, assert_true
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
@@ -60,6 +65,7 @@ def reducescatter_test[
     rank: Int,
     axis: Int,
     use_custom_epilogue: Bool = False,
+    use_multimem: Bool = False,
 ](list_of_ctx: List[DeviceContext], shape: Coord) raises where (
     shape.flat_rank == rank and shape.rank == rank
 ):
@@ -72,6 +78,8 @@ def reducescatter_test[
 
     var num_elements = shape.product()
 
+    var multimem_tag = "-multimem" if use_multimem else ""
+    var epilogue_tag = "-custom_epilogue" if use_custom_epilogue else ""
     comptime if rank == 1:
         print(
             String(
@@ -81,7 +89,8 @@ def reducescatter_test[
                 ngpus,
                 "gpus-",
                 num_elements,
-                "-custom_epilogue" if use_custom_epilogue else "",
+                multimem_tag,
+                epilogue_tag,
             )
         )
     else:
@@ -97,7 +106,9 @@ def reducescatter_test[
                 shape[0].value(),
                 "x",
                 shape[1].value(),
-                ")-custom_epilogue" if use_custom_epilogue else ")",
+                ")",
+                multimem_tag,
+                epilogue_tag,
             )
         )
 
@@ -128,9 +139,10 @@ def reducescatter_test[
     )
 
     for gpu_idx in range(ngpus):
-        in_bufs_list.append(
-            list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](num_elements)
-        )
+        if not use_multimem:
+            in_bufs_list.append(
+                list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](num_elements)
+            )
         out_bufs_list.append(
             list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](
                 config.rank_num_elements(gpu_idx)
@@ -142,7 +154,8 @@ def reducescatter_test[
         for j in range(num_elements):
             h[j] = test_value_for_gpu_element[dtype](gpu_idx, j)
 
-        list_of_ctx[gpu_idx].enqueue_copy(in_bufs_list[gpu_idx], h)
+        if not use_multimem:
+            list_of_ctx[gpu_idx].enqueue_copy(in_bufs_list[gpu_idx], h)
 
         signal_buffers.append(
             list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
@@ -156,20 +169,33 @@ def reducescatter_test[
             signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
         )
 
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Create input buffers
     comptime InputTileType = type_of(
         TileTensor[mut=False](in_bufs_list[0].unsafe_ptr(), row_major(shape))
     )
-    var in_bufs = InlineArray[InputTileType, ngpus](uninitialized=True)
+    comptime num_input_bufs = 1 if use_multimem else ngpus
+    var in_bufs = InlineArray[InputTileType, num_input_bufs](uninitialized=True)
 
-    comptime for i in range(ngpus):
-        in_bufs[i] = InputTileType(
-            in_bufs_list[i].unsafe_ptr(),
+    comptime if use_multimem:
+        var multicast_buf = DeviceMulticastBuffer[dtype](
+            list_of_ctx.copy(), num_elements
+        )
+        comptime for i in range(ngpus):
+            var unicast_buf = multicast_buf.unicast_buffer_for(list_of_ctx[i])
+            list_of_ctx[i].enqueue_copy(unicast_buf, host_in[i])
+        in_bufs[0] = InputTileType(
+            multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
             row_major(shape),
         )
+    else:
+        comptime for i in range(ngpus):
+            in_bufs[i] = InputTileType(
+                in_bufs_list[i].unsafe_ptr(),
+                row_major(shape),
+            )
 
     comptime shape_type = DynamicCoord[DType.int, rank]
 
@@ -231,9 +257,10 @@ def reducescatter_test[
                 outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
             axis=axis,
+            use_multimem=use_multimem,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Create TileTensors, run reduce-scatter, and verify results.
@@ -354,11 +381,12 @@ def reducescatter_test[
 
             result_host.free()
 
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         host_in[i].free()
 
 
-def run_reducescatter_sweep() raises:
+@parameter
+def run_reducescatter_sweep[use_multimem: Bool]() raises:
     """Run reduce-scatter tests across 1D and 2D configurations."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
     for i in range(DeviceContext.number_of_devices()):
@@ -379,13 +407,26 @@ def run_reducescatter_sweep() raises:
         if DeviceContext.number_of_devices() < ngpus:
             continue
 
-        reducescatter_test[
-            dtype=dtype,
-            ngpus=ngpus,
-            rank=1,
-            axis=0,
-            use_custom_epilogue=use_custom_epilogue,
-        ](list_of_ctx, Coord(Idx(length)))
+        try:
+            reducescatter_test[
+                dtype=dtype,
+                ngpus=ngpus,
+                rank=1,
+                axis=0,
+                use_custom_epilogue=use_custom_epilogue,
+                use_multimem=use_multimem,
+            ](list_of_ctx, Coord(Idx(length)))
+        except e:
+            if (
+                use_multimem
+                and "multimem is only supported on SM90+ GPUs" in String(e)
+            ):
+                print(
+                    "Skipping multimem test - SM90+ not supported by"
+                    " compilation target"
+                )
+            else:
+                raise e^
 
     # 2D axis tests.
     comptime for dtype_idx, ngpus_idx, shape_idx, epilogue_idx in product(
@@ -404,13 +445,26 @@ def run_reducescatter_sweep() raises:
             continue
 
         comptime for axis in range(2):
-            reducescatter_test[
-                dtype=dtype,
-                ngpus=ngpus,
-                rank=2,
-                axis=axis,
-                use_custom_epilogue=use_custom_epilogue,
-            ](list_of_ctx, Coord((Idx(M), Idx(D))))
+            try:
+                reducescatter_test[
+                    dtype=dtype,
+                    ngpus=ngpus,
+                    rank=2,
+                    axis=axis,
+                    use_custom_epilogue=use_custom_epilogue,
+                    use_multimem=use_multimem,
+                ](list_of_ctx, Coord((Idx(M), Idx(D))))
+            except e:
+                if (
+                    use_multimem
+                    and "multimem is only supported on SM90+ GPUs" in String(e)
+                ):
+                    print(
+                        "Skipping multimem test - SM90+ not supported by"
+                        " compilation target"
+                    )
+                else:
+                    raise e^
 
 
 def main() raises:
@@ -419,6 +473,7 @@ def main() raises:
     )
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
-    run_reducescatter_sweep()
+    # Standard (non-multimem) sweep
+    run_reducescatter_sweep[use_multimem=False]()
 
     print("All reduce-scatter tests passed!")

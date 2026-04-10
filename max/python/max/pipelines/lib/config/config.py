@@ -29,6 +29,7 @@ from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
+from max.pipelines.lib.interfaces import PipelineModel
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
@@ -253,12 +254,6 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
-    cache: DenoisingCacheConfig = Field(
-        default_factory=DenoisingCacheConfig,
-        description="Denoising cache configuration for diffusion pipelines.",
-    )
-    """Cache configuration for FBCache and TaylorSeer optimizations."""
-
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -317,8 +312,10 @@ class PipelineConfig(ConfigFileModel):
 
         return extracted
 
-    def _create_cache_config_if_needed(self, kwargs: dict[str, Any]) -> None:
-        """Extract denoising cache kwargs and create DenoisingCacheConfig if any provided."""
+    def _create_denoising_cache_config_if_needed(
+        self, kwargs: dict[str, Any]
+    ) -> None:
+        """Extract denoising cache kwargs and set on runtime.denoising_cache."""
         cache_kwargs = PipelineConfig._extract_kwargs_for_config(
             kwargs, DenoisingCacheConfig
         )
@@ -326,7 +323,7 @@ class PipelineConfig(ConfigFileModel):
             # Remove None values so DenoisingCacheConfig defaults are used
             filtered = {k: v for k, v in cache_kwargs.items() if v is not None}
             if filtered:
-                self.cache = DenoisingCacheConfig(**filtered)
+                self.runtime.denoising_cache = DenoisingCacheConfig(**filtered)
 
     def _create_lora_config_if_needed(self, kwargs: dict[str, Any]) -> None:
         """Extract LoRA kwargs and create valid LoRAConfig if enable_lora provided."""
@@ -664,7 +661,7 @@ class PipelineConfig(ConfigFileModel):
         delattr(self, "_unmatched_kwargs")
 
         # Process specialized config creation
-        self._create_cache_config_if_needed(unmatched_kwargs)
+        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
         self._create_lora_config_if_needed(unmatched_kwargs)
 
         # Build model manifest from kwargs — must come before sampling
@@ -1289,6 +1286,11 @@ class PipelineConfig(ConfigFileModel):
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,
             # since they don't use KV cache.
+            return
+
+        if not issubclass(arch.pipeline_model, PipelineModel):
+            # Non-PipelineModel architectures (e.g. PipelineExecutor) skip
+            # memory estimation — they don't expose these classmethods.
             return
 
         devices = load_devices(model_config.device_specs)

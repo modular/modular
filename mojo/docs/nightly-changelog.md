@@ -8,6 +8,23 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Added `abi("C")` as a function effect for declaring C calling convention on
+  function definitions and function pointer types. Functions marked with
+  `abi("C")` use the platform C ABI (System V x86-64 / ARM64 AAPCS) for
+  struct arguments and return values, enabling safe interop with C libraries:
+
+  ```mojo
+  # C-ABI function definition (safe as a callback into C code)
+  def add(a: Int32, b: Int32) abi("C") -> Int32:
+      return a + b
+
+  # C-ABI function pointer type (safe for use with DLHandle.get_function)
+  var f = handle.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+  ```
+
+  `DLHandle.get_function[]` now enforces that the type parameter carries
+  `abi("C")`, preventing silent ABI mismatches when loading C symbols.
+
 - String literals now support `\uXXXX` and `\UXXXXXXXX` unicode escape
   sequences, matching Python. The resulting code point is stored as UTF-8.
   Invalid code points and surrogates are rejected at parse time.
@@ -29,6 +46,23 @@ This version is still a work in progress.
   ```
 
 ## Language changes
+
+- Variadic parameters value lists are now passed instead of `ParameterList`
+  instead of `!kgen.param_list`. This makes it much more ergonomic to work with
+  these types, e.g. simple logic just works:
+
+  ```mojo
+  def callee[*values: Int]():
+      var v = 0
+      for i in range(len(values)):
+          v += values[i]
+      for elt in values:
+          v += elt
+  ```
+
+  Similarly, the `ParameterList` struct has other methods for transforming the
+  value list, which are directly accessible on `values`. One caveat so far is
+  that parameter variadics of types are still using the old representation.
 
 - All Mojo functions now has a unique "function literal type". In practice, it
   means that:
@@ -98,6 +132,10 @@ This version is still a work in progress.
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
   - `Variant`: `Copyable`, `ImplicitlyCopyable`
 
+- `OwnedDLHandle.get_symbol()` now returns `Optional[UnsafePointer[...]]`
+  instead of aborting when a symbol is not found. This allows callers to handle
+  missing symbols gracefully.
+
 - GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
   `Int`.
 
@@ -154,6 +192,12 @@ This version is still a work in progress.
   - `InlineArray` now conforms to `IterableOwned`.
   - `Span` now conforms to `IterableOwned` (conditional on `T: Copyable`).
     The owned iterator yields copies of elements by value.
+  - Iterator adaptors (`enumerate`, `zip`, `map`, `peekable`, `take_while`,
+    `drop_while`, `product`, `cycle`, `count`, `repeat`) now conform to
+    `IterableOwned`.
+  - Added owned overloads of `enumerate()`, `zip()`, `map()`, `peekable()`,
+    `take_while()`, `drop_while()`, `product()`, and `cycle()` that consume the
+    input iterable.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same
@@ -198,6 +242,9 @@ This version is still a work in progress.
   `enqueue_copy_to` on `DeviceContext`, `DeviceBuffer`, and `HostBuffer`,
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
+
+- `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
+  or `String.count_codepoints()`.
 
 ## Tooling changes
 

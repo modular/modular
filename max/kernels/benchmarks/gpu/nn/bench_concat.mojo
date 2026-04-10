@@ -80,15 +80,15 @@ def bench_concat[
 
     # Create TileTensors with dynamic layouts
     var input0_device = TileTensor(
-        input0_device_buffer.unsafe_ptr(),
+        input0_device_buffer,
         row_major(Coord(shape0)),
     )
     var input1_device = TileTensor(
-        input1_device_buffer.unsafe_ptr(),
+        input1_device_buffer,
         row_major(Coord(shape1)),
     )
     var output_device = TileTensor(
-        output_device_buffer.unsafe_ptr(),
+        output_device_buffer,
         row_major(Coord(out_shape)),
     )
 

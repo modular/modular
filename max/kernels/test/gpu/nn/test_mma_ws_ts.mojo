@@ -791,7 +791,7 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
     var k_device_ptr = k_inp.device_data.value().unsafe_ptr()
 
     var c_ref_tt = TileTensor(
-        p_ref_device.unsafe_ptr(),
+        p_ref_device,
         row_major(Coord(Idx(P_REF_ROWS), Idx(P_REF_COLS))),
     )
     var a_tt = TileTensor(
@@ -1037,7 +1037,7 @@ def test_sparse_mma_ws_ts[
     var q_device_ptr = q_inp.device_data.value().unsafe_ptr()
 
     var c_ref_tt = TileTensor(
-        p_ref_device.unsafe_ptr(),
+        p_ref_device,
         row_major(Coord(Idx(p_ref_rows), Idx(p_ref_cols))),
     )
     var a_tt = TileTensor(
@@ -1362,7 +1362,7 @@ def test_sparse_paged_mma_ws_ts[
     var q_device_ptr = q_inp.device_data.value().unsafe_ptr()
 
     var c_ref_tt = TileTensor(
-        p_ref_device.unsafe_ptr(),
+        p_ref_device,
         row_major(Coord(Idx(p_ref_rows), Idx(p_ref_cols))),
     )
     var a_tt = TileTensor(

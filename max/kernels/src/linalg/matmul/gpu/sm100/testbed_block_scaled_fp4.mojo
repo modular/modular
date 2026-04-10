@@ -103,7 +103,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     k_group_size: Int = 1,
     num_clc_pipeline_stages: Int = 2,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
-    use_cpasync_sfb: Optional[Bool] = None,
     is_small_bn: Bool = False,
     normal_epilogue: Bool = False,
 ](
@@ -148,13 +147,13 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # This row major layout correlates to this
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-mma-scale-factor-a-layout-4x
@@ -199,15 +198,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # LayoutTensors for reference matmul (vendor_blas)
     var a_lt = a_tensor.to_layout_tensor()
@@ -323,7 +318,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
         num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
-        use_cpasync_sfb=use_cpasync_sfb,
         is_small_bn=is_small_bn,
     )
 
@@ -395,11 +389,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref_tensor_lt,
+            c_ref_tensor_lt.as_any_origin(),
             a_lt,
             b_lt,
-            a_scales=a_scales_lt.get_immutable(),
-            b_scales=b_scales_lt.get_immutable(),
+            a_scales=a_scales_lt.get_immutable().as_any_origin(),
+            b_scales=b_scales_lt.get_immutable().as_any_origin(),
             transpose_b=transpose_b,
             c_row_major=True,
             alpha=alpha,

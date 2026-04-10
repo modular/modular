@@ -25,6 +25,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout import Coord, Idx, TileTensor
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
@@ -738,7 +739,7 @@ def _matmul_dispatch_sm100[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c_tensor: TileTensor[mut=True, c_type, ...],
+    c_tensor: NullableTileTensor[mut=True, c_type, ...],
     a_tensor: TileTensor[a_type, ...],
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
@@ -754,7 +755,7 @@ def _matmul_dispatch_sm100[
     ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
-        if not c_tensor.ptr._is_not_null():
+        if not c_tensor.ptr:
             raise "c must be allocated!"
 
         blackwell_matmul_tma_umma_warp_specialized[
@@ -762,7 +763,7 @@ def _matmul_dispatch_sm100[
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+        ](c_tensor.value(), a_tensor, b_tensor, ctx)
         return
 
     else:
@@ -777,35 +778,36 @@ def _matmul_dispatch_sm100[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
-        @parameter
-        @__copy_capture(c_tensor)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            comptime assert c_tensor.flat_rank >= 2
-            comptime assert idx.element_type.is_integral()
-            var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
-            var c_val = c_tensor.load[
-                width=simd_width,
-                # load_alignment is in bytes, lambda alignment is in elements
-                alignment=alignment * size_of[c_type](),
-            ](c_coord)
-            epilogue[c_type, simd_width, alignment=alignment](
-                IndexList[2](idx[0], idx[1]), c_val
-            )
-
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
-        if c_tensor.ptr._is_not_null():
+        if c_tensor.ptr:
             var m = Int(c_tensor.dim[0]())
             var n = Int(c_tensor.dim[1]())
+            var c_tt = c_tensor.value()
+
+            @parameter
+            @__copy_capture(c_tt)
+            def epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                comptime assert c_tt.flat_rank >= 2
+                comptime assert idx.element_type.is_integral()
+                var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
+                var c_val = c_tt.load[
+                    width=simd_width,
+                    # load_alignment is in bytes, lambda alignment is in elements
+                    alignment=alignment * size_of[c_type](),
+                ](c_coord)
+                epilogue[c_type, simd_width, alignment=alignment](
+                    IndexList[2](idx[0], idx[1]), c_val
+                )
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-            ](c_tensor, a_tensor, b_tensor, ctx)
+            ](c_tt, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
                 Index(m, n), ctx

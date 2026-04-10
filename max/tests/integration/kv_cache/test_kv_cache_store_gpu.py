@@ -67,7 +67,7 @@ def _allocate_batch(
 
 def test_kv_cache_store_ragged_executes() -> None:
     device, kv_manager = _make_session_and_kv_manager()
-    kv_params = kv_manager.params
+    kv_params = kv_manager.cache_params()
 
     prompt_lens = [33, 66, 1]
     batch_size = len(prompt_lens)
@@ -152,7 +152,7 @@ def test_kv_cache_store_ragged_executes() -> None:
 
 def test_kv_cache_store_padded_executes() -> None:
     device, kv_manager = _make_session_and_kv_manager()
-    kv_params = kv_manager.params
+    kv_params = kv_manager.cache_params()
 
     valid_lengths = [33, 66, 1]
     batch_size = len(valid_lengths)
@@ -263,7 +263,7 @@ def _make_session_and_kv_manager_fp8() -> tuple[
 def test_store_k_scale_cache_executes() -> None:
     """Test that store_k_scale_cache kernel executes and writes to kv_scales buffer."""
     device, kv_manager = _make_session_and_kv_manager_fp8()
-    kv_params = kv_manager.params
+    kv_params = kv_manager.cache_params()
 
     prompt_lens = [33, 66, 1]
     batch_size = len(prompt_lens)

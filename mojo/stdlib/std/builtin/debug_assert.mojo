@@ -32,7 +32,6 @@ from std.sys._amdgpu import (
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
-
 from std.collections.string.string_slice import _get_kgen_string
 from std.reflection import call_location, SourceLocation
 
@@ -92,7 +91,7 @@ def debug_assert[
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
-](*messages: *Ts):
+](*messages: *Ts, location: Optional[SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -173,6 +172,7 @@ def debug_assert[
     Args:
         messages: A set of [`Writable`](/mojo/std/format/Writable/)
             arguments to convert to a `String` message.
+        location: Source location to report on assertion failure.
     """
 
     comptime if _assert_enabled[assert_mode, cpu_only]():
@@ -188,7 +188,9 @@ def debug_assert[
 
         var slice = message.as_string_slice()
         _debug_assert_msg(
-            slice.unsafe_ptr(), slice.byte_length(), call_location()
+            slice.unsafe_ptr(),
+            slice.byte_length(),
+            location.value() if location else call_location(),
         )
 
 
@@ -198,7 +200,7 @@ def debug_assert[
     *Ts: Writable,
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
-](cond: Bool, *messages: *Ts):
+](cond: Bool, *messages: *Ts, location: Optional[SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -282,6 +284,7 @@ def debug_assert[
         cond: The bool value to assert.
         messages: A set of [`Writable`](/mojo/std/format/Writable/)
             arguments to convert to a `String` message.
+        location: Source location to report on assertion failure.
     """
 
     comptime if _assert_enabled[assert_mode, cpu_only]():
@@ -296,8 +299,11 @@ def debug_assert[
         message.nul_terminate()
 
         var slice = message.as_string_slice()
+
         _debug_assert_msg(
-            slice.unsafe_ptr(), slice.byte_length(), call_location()
+            slice.unsafe_ptr(),
+            slice.byte_length(),
+            location.value() if location else call_location(),
         )
 
     elif _use_compiler_assume:
@@ -395,9 +401,11 @@ def debug_assert[
     comptime if _assert_enabled[assert_mode, cpu_only]():
         if cond:
             return
+
         _debug_assert_msg(
             message.unsafe_ptr(),
-            len(message) + 1,  # include null terminator
+            # include StringLiteral null terminator for printf statements
+            message.byte_length() + 1,
             call_location(),
         )
     elif _use_compiler_assume:

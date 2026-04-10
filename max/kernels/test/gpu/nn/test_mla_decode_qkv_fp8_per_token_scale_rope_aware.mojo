@@ -517,19 +517,19 @@ def run_test[
 
     # Q: [total_q_tokens, num_heads, 640] float8_e4m3fn
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[PHYSICAL_DIM]())),
     )
 
     # Output: [total_q_tokens, num_heads, V_DEPTH=512] bfloat16
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     # Row offsets for ragged layout
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -551,7 +551,7 @@ def run_test[
     var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[fp8_type](UInt(num_heads), UInt(LOGICAL_DEPTH)),
+        config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
         ragged=True,
         per_token_scale_rope_aware=True,
     ](
@@ -634,11 +634,11 @@ def run_test[
 
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[LOGICAL_DEPTH]())),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -649,7 +649,7 @@ def run_test[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[LOGICAL_DEPTH]())),
         )
 
@@ -1189,19 +1189,19 @@ def run_test_with_scales[
 
     # Q: [total_q_tokens, num_heads, 640] float8_e4m3fn
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[PHYSICAL_DIM]())),
     )
 
     # Output: [total_q_tokens, num_heads, V_DEPTH=512] bfloat16
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     # Row offsets for ragged layout
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -1223,7 +1223,7 @@ def run_test_with_scales[
     var scalar_args_buf_lt2 = mla_args2.gpu_layout_tensor()
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[fp8_type](UInt(num_heads), UInt(LOGICAL_DEPTH)),
+        config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
         ragged=True,
         per_token_scale_rope_aware=True,
     ](
@@ -1344,11 +1344,11 @@ def run_test_with_scales[
 
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[LOGICAL_DEPTH]())),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -1359,7 +1359,7 @@ def run_test_with_scales[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[LOGICAL_DEPTH]())),
         )
 

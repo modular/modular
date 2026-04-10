@@ -101,17 +101,13 @@ def test_matmul_sm90_swapAB_comparison[
 
     # Construct TileTensors for device buffers
     # transpose_b=True: b shape is (N, K)
-    var a_tensor = TileTensor(
-        a_dev_buffer.unsafe_ptr(), row_major(Coord(m, k))
-    ).as_immut()
-    var b_tensor = TileTensor(
-        b_dev_buffer.unsafe_ptr(), row_major(Coord(n, k))
-    ).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_immut()
     var c_normal_tensor = TileTensor(
-        c_normal_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_normal_dev_buffer, row_major(Coord(m, n))
     )
     var c_swapAB_tensor = TileTensor(
-        c_swapAB_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_swapAB_dev_buffer, row_major(Coord(m, n))
     )
 
     # Initialize matmul operands with random values
@@ -505,17 +501,13 @@ def test_matmul_sm90_swapAB_comparison_v2[
 
     # Construct TileTensors for device buffers
     # transpose_b=True: b shape is (N, K)
-    var a_tensor = TileTensor(
-        a_dev_buffer.unsafe_ptr(), row_major(Coord(m, k))
-    ).as_immut()
-    var b_tensor = TileTensor(
-        b_dev_buffer.unsafe_ptr(), row_major(Coord(n, k))
-    ).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_immut()
     var c_normal_tensor = TileTensor(
-        c_normal_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_normal_dev_buffer, row_major(Coord(m, n))
     )
     var c_swapAB_tensor = TileTensor(
-        c_swapAB_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_swapAB_dev_buffer, row_major(Coord(m, n))
     )
 
     # Initialize matmul operands with random values

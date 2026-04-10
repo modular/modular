@@ -244,8 +244,9 @@ def fp8_index_kernel[
             comptime for mma_m in range(BN // thread_dim_x):
                 comptime for mma_n in range(num_heads // thread_dim_y):
                     logits[mma_m, mma_n] += (
-                        k_smem_frag[mma_m, k][0] * q_smem_frag[mma_n, k][0]
-                    ).cast[DType.float32]()
+                        k_smem_frag[mma_m, k][0].cast[DType.float32]()
+                        * q_smem_frag[mma_n, k][0].cast[DType.float32]()
+                    )
 
         comptime for l_i in range(BN // thread_dim_x):
             comptime for l_j in range(num_heads // thread_dim_y):
@@ -425,11 +426,13 @@ def _index_matmul_max[
         o_ptr, o_runtime_layout
     )
 
+    # Cast each FP8 code to F32 before multiply so we match TileLang-style GEMM
+    # (FP8×FP8 in low precision can saturate/widen differently than F32 products).
     var accum = Float32(0.0)
-    for d in range(depth):
-        accum += (
-            k_batch[key_idx, 0, d][0] * q_batch[seq_idx, head_idx, d][0]
-        ).cast[DType.float32]()
+    for d in range(Int(depth)):
+        var kd = k_batch[key_idx, 0, d][0].cast[DType.float32]()
+        var qd = q_batch[seq_idx, head_idx, d][0].cast[DType.float32]()
+        accum += kd * qd
 
     accum = max(accum, 0) * q_s[start_of_seq + UInt32(seq_idx), head_idx][0]
     o_batch[seq_idx, key_idx, head_idx] = accum
@@ -569,6 +572,7 @@ def fp8_index_naive[
     var logits_size = batch_size * max_seq_len * max_num_keys * num_heads
 
     var logits_dev = ctx.enqueue_create_buffer[DType.float32](logits_size)
+    logits_dev.enqueue_fill(Float32(0.0))
 
     comptime logits_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads

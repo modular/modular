@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements comparison and equality traits for Mojo types."""
 
 from std.builtin.constrained import _constrained_field_conforms_to
 from std.builtin.range import _ZeroStartingRange

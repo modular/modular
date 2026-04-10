@@ -17,11 +17,12 @@ from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    lt_to_tt,
+    row_major,
 )
 from std.logger import Logger
 
@@ -813,15 +814,15 @@ def _mla_decode_sm100_dispatch_impl[
                 * v_depth
             )
         )
-        var o_accum_split = LayoutTensor[output_type, Layout.row_major[5]()](
-            o_accum_split_data.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[5]()].row_major(
-                Index(
-                    num_partitions,
-                    batch_size,
-                    q_max_seq_len,
-                    Int(num_heads),
-                    Int(v_depth),
+        var o_accum_split = TileTensor(
+            o_accum_split_data,
+            row_major(
+                Coord(
+                    Idx(num_partitions),
+                    Idx(batch_size),
+                    Idx(q_max_seq_len),
+                    Idx(Int(num_heads)),
+                    Idx(Int(v_depth)),
                 )
             ),
         )
@@ -829,14 +830,14 @@ def _mla_decode_sm100_dispatch_impl[
         var lse_accum_data = ctx.enqueue_create_buffer[AccumType](
             Int(num_partitions * batch_size * q_max_seq_len * num_heads)
         )
-        var lse_accum_split = LayoutTensor[AccumType, Layout.row_major[4]()](
-            lse_accum_data.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[4]()].row_major(
-                Index(
-                    num_partitions,
-                    batch_size,
-                    q_max_seq_len,
-                    Int(num_heads),
+        var lse_accum_split = TileTensor(
+            lse_accum_data,
+            row_major(
+                Coord(
+                    Idx(num_partitions),
+                    Idx(batch_size),
+                    Idx(q_max_seq_len),
+                    Idx(Int(num_heads)),
                 )
             ),
         )
@@ -863,7 +864,7 @@ def _mla_decode_sm100_dispatch_impl[
         ](
             q,
             k,
-            lt_to_tt(o_accum_split),
+            o_accum_split,
             lse_accum_split_ptr,
             scale,
             batch_size,
@@ -895,8 +896,8 @@ def _mla_decode_sm100_dispatch_impl[
                 ragged=ragged,
                 warps_per_head=wph,
             ](
-                lt_to_tt(o_accum_split),
-                lt_to_tt(lse_accum_split),
+                o_accum_split,
+                lse_accum_split,
                 output,
                 input_row_offsets_ptr,
                 batch_size,

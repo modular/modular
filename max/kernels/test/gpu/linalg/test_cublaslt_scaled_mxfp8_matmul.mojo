@@ -173,15 +173,11 @@ def test_scaled_mxfp8_cublaslt[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var a_scales = TileTensor(
-        a_scales_device.unsafe_ptr(), row_major(a_scales_shape)
-    )
-    var b_scales = TileTensor(
-        b_scales_device.unsafe_ptr(), row_major(b_scales_shape)
-    )
+    var a = TileTensor(a_device, row_major(a_shape))
+    var b = TileTensor(b_device, row_major(b_shape))
+    var c = TileTensor(c_device, row_major(c_shape))
+    var a_scales = TileTensor(a_scales_device, row_major(a_scales_shape))
+    var b_scales = TileTensor(b_scales_device, row_major(b_scales_shape))
 
     matmul(
         ctx,
@@ -196,7 +192,7 @@ def test_scaled_mxfp8_cublaslt[
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
-    var c_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
+    var c_ref = TileTensor(c_device_ref, row_major(c_shape))
     naive_block_scaled_matmul[
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
         SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,

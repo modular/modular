@@ -97,11 +97,13 @@ def test_warmup_graph_capture_batch_size(
     pipeline._pipeline_config = MagicMock()
     pipeline._pipeline_config.runtime.max_batch_size = config_max_batch_size
     pipeline._kv_manager = MagicMock()
-    pipeline._kv_manager.params = MagicMock()
-    pipeline._kv_manager.params.page_size = 128
+    mock_kv_params = MagicMock()
+    mock_kv_params.page_size = 128
+    pipeline._kv_manager.params = mock_kv_params
+    pipeline._kv_manager.cache_params.return_value = mock_kv_params
     pipeline._kv_manager._total_num_pages = 100
-    pipeline._extra_kv_managers = []
     pipeline._spec_decode_state = None
+    pipeline._kv_manager.num_caches = 1
     pipeline.session = MagicMock()
 
     with patch(
@@ -117,7 +119,7 @@ def test_warmup_graph_capture_batch_size(
         assert call_kwargs["model"] is mock_model.model
         assert call_kwargs["execute_model"] is mock_model.execute
         assert call_kwargs["session"] is pipeline.session
-        assert call_kwargs["kv_params"] is pipeline._kv_manager.params
+        assert call_kwargs["kv_params"] is mock_kv_params
         assert callable(call_kwargs["warmup_model_inputs"])
         assert (
             call_kwargs["max_cache_length_upper_bound"]

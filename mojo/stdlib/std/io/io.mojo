@@ -298,7 +298,7 @@ def _printf[
             var s = buf.as_string_slice()
             _metal_print_write(
                 s.unsafe_ptr().bitcast[UInt8](),
-                len(s),
+                s.byte_length(),
             )
         elif not is_gpu():
             _printf_cpu[fmt](*args, file=file)
@@ -439,7 +439,7 @@ def print[
             var slice = buffer.as_string_slice()
             _metal_print_write(
                 slice.unsafe_ptr().bitcast[UInt8](),
-                len(slice),
+                slice.byte_length(),
             )
         elif is_gpu():
             var buffer = _WriteBufferHeap()

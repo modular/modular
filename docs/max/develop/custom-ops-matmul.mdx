@@ -20,7 +20,7 @@ For demonstration purposes, we'll show you how to incrementally improve the
 performance of a custom matrix multiplication (matmul) op. We're not teaching
 you how to build a matmul op, because MAX already contains leading-edge
 implementations of matmul that you can use with the
-[MAX graph API](/max/api/python/generated/max.graph.Graph). Rather, we're using
+[`Graph`](/max/api/python/generated/max.graph.Graph) API. Rather, we're using
 a basic matmul operation (AKA "GPU kernel") to teach you GPU programming
 strategies that might help with your other GPU code written in Mojo.
 
@@ -105,10 +105,10 @@ download the code and run the benchmark script:
 
 ## Introduction
 
-AI models in [MAX](/max/intro) are built as computational graphs using the [MAX
-graph API](/max/develop/get-started-with-max-graph-in-python). MAX contains
-within it a powerful graph compiler that can take these graphs and optimize them
-for best performance on a wide range of hardware.
+MAX models are built as computational graphs using the
+[`Graph`](/max/api/python/generated/max.graph.Graph) API. MAX contains within
+it a powerful graph compiler that can take these graphs and optimize them for
+best performance on a wide range of hardware.
 
 Each node in a MAX graph is defined by an operation that performs a calculation
 on zero or more inputs and produces one or more outputs. These inputs and

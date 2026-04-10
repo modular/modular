@@ -42,6 +42,7 @@ import argparse
 import asyncio
 import base64
 import json
+import logging
 import os
 import time
 from io import BytesIO
@@ -562,7 +563,7 @@ async def generate_image(args: argparse.Namespace) -> None:
             f"{arch.pipeline_model}"
         )
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
-    cache_config = DenoisingCacheConfig(
+    config.runtime.denoising_cache = DenoisingCacheConfig(
         first_block_caching=args.first_block_caching,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
@@ -575,7 +576,6 @@ async def generate_image(args: argparse.Namespace) -> None:
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
         pipeline_model=pipeline_model,
-        cache_config=cache_config,
     )
 
     print(f"Generating image for prompt: '{args.prompt}'")
@@ -832,6 +832,10 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code. 0 indicates success.
     """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s: %(message)s",
+    )
     args = parse_args(argv)
 
     try:

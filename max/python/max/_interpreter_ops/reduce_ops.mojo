@@ -227,6 +227,42 @@ def _reduce_mul[
 # =============================================================================
 
 
+def _normalize_reduce_shape(
+    in_buffer: PythonObject,
+    axis: PythonObject,
+) raises -> IndexList[3]:
+    """Compute normalized rank-3 shape for reduction along an axis.
+
+    Collapses an N-dimensional tensor shape into three dimensions:
+    - dim0: product of dims before the reduction axis
+    - dim1: the reduction axis dimension
+    - dim2: product of dims after the reduction axis
+
+    Args:
+        in_buffer: The input buffer object (must have a .shape attribute).
+        axis: The axis along which to reduce (integer).
+
+    Returns:
+        An IndexList[3] with [dim0, dim1, dim2].
+    """
+    var axis_val = Int(py=axis)
+    var in_shape_py = in_buffer.shape
+    var rank = Int(py=len(in_shape_py))
+    var in_shape = _get_shape(in_shape_py, rank)
+
+    var dim0 = 1
+    for i in range(axis_val):
+        dim0 *= in_shape[i]
+
+    var dim1 = in_shape[axis_val]
+
+    var dim2 = 1
+    for i in range(axis_val + 1, rank):
+        dim2 *= in_shape[i]
+
+    return IndexList[3](dim0, dim1, dim2)
+
+
 def reduce_dispatcher[
     reduce_fn: ReduceFn
 ](
@@ -248,28 +284,8 @@ def reduce_dispatcher[
         device_context_ptr: Device context pointer (must be null for CPU).
     """
     var dtype = _get_dtype(in_buffer)
-    var axis_val = Int(py=axis)
     var ctx = _get_ctx(device_context_ptr)
-
-    # Extract input shape and compute normalized rank-3 shape:
-    # dim0: product of dims before axis
-    # dim1: the reduction axis dimension
-    # dim2: product of dims after axis
-    var in_shape_py = in_buffer.shape
-    var rank = Int(py=len(in_shape_py))
-    var in_shape = _get_shape(in_shape_py, rank)
-
-    var dim0 = 1
-    for i in range(axis_val):
-        dim0 *= in_shape[i]
-
-    var dim1 = in_shape[axis_val]
-
-    var dim2 = 1
-    for i in range(axis_val + 1, rank):
-        dim2 *= in_shape[i]
-
-    var normalized_shape = IndexList[3](dim0, dim1, dim2)
+    var normalized_shape = _normalize_reduce_shape(in_buffer, axis)
 
     # Float types
     if dtype == DType.float16:
@@ -462,15 +478,44 @@ def reduce_op[
 # reduce_dispatcher[_reduce_max] directly (parametric def type can't be inferred).
 
 
+def _reduce_bool_dispatcher[
+    reduce_fn: ReduceFn
+](
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Handle DType.bool reduction for max/min only.
+
+    Bool is not numeric so it cannot go through the generic
+    reduce_dispatcher (sum/mean/mul would fail the SIMD numeric
+    constraint). This helper dispatches directly for bool buffers.
+    """
+    var ctx = _get_ctx(device_context_ptr)
+    var normalized_shape = _normalize_reduce_shape(in_buffer, axis)
+    reduce_op[DType.bool, reduce_fn](
+        _get_buffer_ptr[DType.bool](out_buffer),
+        _get_buffer_ptr[DType.bool](in_buffer),
+        normalized_shape,
+        ctx,
+    )
+
+
 def reduce_max_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
     device_context_ptr: PythonObject,
 ) raises:
-    reduce_dispatcher[_reduce_max](
-        out_buffer, in_buffer, axis, device_context_ptr
-    )
+    if _get_dtype(in_buffer) == DType.bool:
+        _reduce_bool_dispatcher[_reduce_max](
+            out_buffer, in_buffer, axis, device_context_ptr
+        )
+    else:
+        reduce_dispatcher[_reduce_max](
+            out_buffer, in_buffer, axis, device_context_ptr
+        )
 
 
 def reduce_min_dispatcher(
@@ -479,9 +524,14 @@ def reduce_min_dispatcher(
     axis: PythonObject,
     device_context_ptr: PythonObject,
 ) raises:
-    reduce_dispatcher[_reduce_min](
-        out_buffer, in_buffer, axis, device_context_ptr
-    )
+    if _get_dtype(in_buffer) == DType.bool:
+        _reduce_bool_dispatcher[_reduce_min](
+            out_buffer, in_buffer, axis, device_context_ptr
+        )
+    else:
+        reduce_dispatcher[_reduce_min](
+            out_buffer, in_buffer, axis, device_context_ptr
+        )
 
 
 def reduce_sum_dispatcher(

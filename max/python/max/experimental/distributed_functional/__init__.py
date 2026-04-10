@@ -32,6 +32,8 @@ from .collectives import (
     all_gather,
     all_reduce_sum,
     auto_reduce_partial,
+    distributed_broadcast,
+    distributed_scatter,
     materialize,
     reduce_scatter,
     resolve_partials,

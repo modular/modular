@@ -376,6 +376,27 @@ struct TileTensor[
         self.ptr = other.ptr
         self.layout = other.layout
 
+    @always_inline("builtin")
+    @implicit
+    def __init__(
+        other: TileTensor[mut=Self.mut, ...],
+        out self: TileTensor[
+            other.dtype,
+            other.LayoutType,
+            AnyOrigin[mut=Self.mut],
+            address_space=other.address_space,
+            linear_idx_type=other.linear_idx_type,
+            element_size=other.element_size,
+        ],
+    ):
+        """Implicitly cast a TileTensor to have an `AnyOrigin`.
+
+        Args:
+            other: The TileTensor to cast from.
+        """
+        self.ptr = other.ptr.unsafe_origin_cast[AnyOrigin[mut=Self.mut]]()
+        self.layout = other.layout
+
     @always_inline("nodebug")
     def __getitem__(
         self, coord: Coord
@@ -801,10 +822,9 @@ struct TileTensor[
     def write_to(self, mut w: Some[Writer]):
         """Format and write the tensor's contents to a writer.
 
-        This method formats the tensor's contents and writes them to the
-        provided writer. For 2D tensors, it formats the output in a 2D grid. For
-        tensors of other ranks, it prints all values in column-major coordinate
-        order.
+        Uses bracket-delimited, comma-separated format. For 2D tensors,
+        the output shows nested row structure. For other ranks, values are
+        printed as a flat bracketed list in column-major coordinate order.
 
         Args:
             w: The writer instance to write the formatted output to.
@@ -815,40 +835,19 @@ struct TileTensor[
         from layout import TileTensor
         from layout.tile_layout import row_major
 
-        def main() raises:
-            var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
-            var tensor = TileTensor(storage, row_major[2, 3]()).fill(1.0)
-            print(tensor)  # Internally calls `write_to` with a StringWriter
+        def main():
+            var storage = InlineArray[Float32, 4](uninitialized=True)
+            var vec = TileTensor(storage, row_major[4]()).fill(1.0)
+            print(vec)   # [1.0, 1.0, 1.0, 1.0]
+
+            var storage2 = InlineArray[Float32, 6](uninitialized=True)
+            var mat = TileTensor(storage2, row_major[2, 3]()).fill(1.0)
+            print(mat)   # [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
         ```
-
-        Output for a 2x3 tensor:
-
-        ```
-        [[1.0, 1.0, 1.0],
-            [1.0, 1.0, 1.0]]
-        ```
-
-        Notes:
-
-        - For 2D tensors, the output is formatted as a 2D grid with rows and
-            columns.
-        - For tensors of other ranks, values are printed in column-major
-            coordinate order.
-        - Empty tensors (size 0) produce no output.
-        - This method is used by the `__str__` method to convert the tensor to a
-            string.
-        - The formatting is designed for human readability rather than parsing.
-        - For large tensors, the output may be truncated to avoid excessive
-            output.
         """
 
         if self.layout.product() == 0:
             return
-
-        # The 2D print works only for layout shape (M, N).
-        # Check both original and coalesced layouts so that (M, 1) and
-        # ((M), (N)) can all be printed in 2D. Shapes like ((2, 2), 2) will be
-        # printed elementwise.
 
         comptime if Self.flat_rank == 2:
             comptime assert Self.flat_rank == 2
@@ -856,6 +855,8 @@ struct TileTensor[
             comptime if Self.static_shape[0] > -1 and Self.static_shape[1] > -1:
                 _pretty_print_2d_tensor(self, w)
                 return
+
+        _pretty_print_elementwise(self, w)
 
     @always_inline("nodebug")
     def tile[
@@ -920,6 +921,54 @@ struct TileTensor[
         return _tile[stride_layout=stride_layout](
             self, coord[*tile_sizes](), coordinates
         )
+
+    @always_inline("nodebug")
+    def tile[
+        tile_shape_types: Variadic.TypesOfTrait[CoordLike],
+        //,
+    ](
+        self, tile_shape: Coord[*tile_shape_types], coordinates: Coord
+    ) -> TileTensor[
+        dtype=Self.dtype,
+        origin=Self.origin,
+        LayoutType=Layout[
+            shape_types=tile_shape_types,
+            stride_types=Self.LayoutType._stride_types,
+        ],
+        address_space=Self.address_space,
+        element_size=Self.element_size,
+    ]:
+        """Extract a tile (sub-tensor) with shape specified as a Coord argument.
+
+        This overload accepts the tile shape as a Coord value rather than
+        compile-time Int parameters, enabling use cases where tile shapes
+        are constructed programmatically or passed as values.
+
+        Parameters:
+            tile_shape_types: Types of the tile shape elements (inferred).
+
+        Args:
+            tile_shape: The dimensions of the tile as a Coord.
+            coordinates: The tile coordinates as a Coord.
+
+        Returns:
+            A view into the original tensor representing the specified tile.
+
+        Example:
+
+        ```mojo
+        from layout.tile_layout import row_major
+        from layout import TileTensor
+        from layout.coord import coord
+
+        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var tensor = TileTensor(storage, row_major[4, 4]()).fill(1.0)
+
+        # Extract the tile at position (1, 0) with tile size 2x2
+        var t = tensor.tile(coord[2, 2](), coord[1, 0]())
+        ```
+        """
+        return _tile(self, tile_shape, coordinates)
 
     @always_inline("nodebug")
     def tile_with_offset[
@@ -1337,15 +1386,13 @@ struct TileTensor[
     ](self) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types=_Slice[slices, Self.LayoutType._shape_types],
+            shape_types=_Slice[slices.values, Self.LayoutType._shape_types],
             stride_types=Self.LayoutType._stride_types,
         ],
         Self.origin,
         address_space=Self.address_space,
         element_size=Self.element_size,
-    ] where (
-        ParameterList[*slices].size == Self.flat_rank and Self.all_dims_known
-    ):
+    ] where (slices.size == Self.flat_rank and Self.all_dims_known):
         """Extract a slice from the tensor using slice objects.
 
         This method creates a view into a subset of the tensor defined by the
@@ -1401,7 +1448,7 @@ struct TileTensor[
         # Compute offset based on slice start indices and strides
         var offset = 0
 
-        comptime for i in range(ParameterList[*slices].size):
+        comptime for i in range(slices.size):
             comptime slice_i = slices[i]
             comptime slice_start = slice_i.start.or_else(0)
             var stride_i = self.layout.stride[i]().value()
@@ -1410,7 +1457,9 @@ struct TileTensor[
         # Build new shape tuple with runtime types
         # Even though slice bounds are compile-time known, we use RuntimeInt
         # because we can't change ComptimeInt[4] to ComptimeInt[2] in the type system
-        comptime NewShapeTypes = _Slice[slices, Self.LayoutType._shape_types]
+        comptime NewShapeTypes = _Slice[
+            slices.values, Self.LayoutType._shape_types
+        ]
         var new_shape = Coord[*NewShapeTypes]()
 
         comptime for i in range(Self.rank):
@@ -2180,7 +2229,7 @@ struct NullableTileTensor[
         Returns:
             A `TileTensor` backed by the stored pointer and layout.
         """
-        assert Bool(self.ptr), t"TileTensor cannot be null - {call_location()}"
+        assert Bool(self.ptr), "TileTensor cannot be null"
         return TileTensor[
             Self.dtype,
             Self.LayoutType,
@@ -2229,6 +2278,20 @@ struct NullableTileTensor[
                     self.layout.shape[i]().value()
                 )
         abort("attempt to dynamically index out of bounds")
+
+    def num_elements(self) -> Int:
+        """Returns the total number of elements in the tensor.
+
+        Computes the product of all shape dimensions.
+
+        Returns:
+            The total element count.
+        """
+        var result = 1
+
+        comptime for i in range(Self.rank):
+            result *= self.layout.shape[i]().value()
+        return result
 
     @always_inline("nodebug")
     def to_layout_tensor(
@@ -2341,6 +2404,22 @@ def stack_allocation[
 
 
 @always_inline
+def _pretty_print_elementwise[W: Writer](tensor: TileTensor, mut writer: W):
+    var n = tensor.layout.product()
+    writer.write("[")
+    for i in range(n):
+        var offset = tensor.layout[linear_idx_type=tensor.linear_idx_type](
+            RuntimeInt[tensor.linear_idx_type](
+                Scalar[tensor.linear_idx_type](i)
+            )
+        )
+        writer.write(tensor.ptr.load[width=tensor.element_size](offset))
+        if i < n - 1:
+            writer.write(", ")
+    writer.write("]")
+
+
+@always_inline
 def _pretty_print_2d_tensor[
     W: Writer
 ](tensor: TileTensor, mut writer: W) where tensor.flat_rank == 2:
@@ -2348,11 +2427,17 @@ def _pretty_print_2d_tensor[
     comptime assert tensor.flat_rank == 2
     var m_dim = tensor.layout.shape[0]()
     var n_dim = tensor.layout.shape[1]()
+    writer.write("[")
     for m in range(m_dim.value()):
+        writer.write("[")
         for n in range(n_dim.value()):
-            writer.write(tensor[m, n], " ")
+            writer.write(tensor[m, n])
+            if n < n_dim.value() - 1:
+                writer.write(", ")
+        writer.write("]")
         if m < m_dim.value() - 1:
-            writer.write("\n")
+            writer.write(", ")
+    writer.write("]")
 
 
 @always_inline("nodebug")

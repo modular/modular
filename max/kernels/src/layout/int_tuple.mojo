@@ -524,11 +524,10 @@ struct IntTuple(
               less than `MinimumValue`, assertion fails with an error message.
             - Structure validation performed when assertions are enabled.
         """
-        comptime size = ParameterList[*elements].size
-        self._store = IntArray(size + 1)
-        self._store[0] = size
-        for i in range(size):
-            var value = ParameterList[*elements]()[i]
+        self._store = IntArray(elements.size + 1)
+        self._store[0] = elements.size
+        for i in range(elements.size):
+            var value = elements[i]
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",
@@ -1653,7 +1652,7 @@ def to_unknown(t: IntTuple) -> IntTuple:
 
 @always_inline
 def _merge[
-    cmp: def(IntTuple, IntTuple) -> Bool,
+    cmp: def(IntTuple, IntTuple) thin -> Bool,
 ](left: IntTuple, right: IntTuple) -> IntTuple:
     var result = IntTuple()
     var i = 0
@@ -1674,7 +1673,7 @@ def _merge[
 
 
 def sorted[
-    cmp: def(IntTuple, IntTuple) -> Bool = IntTuple.__lt__,
+    cmp: def(IntTuple, IntTuple) thin -> Bool = IntTuple.__lt__,
 ](tuple: IntTuple) -> IntTuple:
     """Sort an IntTuple using the provided comparison function.
 
@@ -1799,7 +1798,7 @@ def apply[func: def(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
     return res
 
 
-def shallow_apply[func: def(IntTuple) -> Int](t: IntTuple) -> IntTuple:
+def shallow_apply[func: def(IntTuple) thin -> Int](t: IntTuple) -> IntTuple:
     """Apply a function to each top-level element of an `IntTuple`.
 
     Unlike `apply()`, this function only operates on the immediate children
@@ -1822,7 +1821,7 @@ def shallow_apply[func: def(IntTuple) -> Int](t: IntTuple) -> IntTuple:
 
 @always_inline("nodebug")
 def apply_zip[
-    func: def(IntTuple, IntTuple) -> IntTuple
+    func: def(IntTuple, IntTuple) thin -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     """Apply a function to pairs of elements from two `IntTuple`s.
 
@@ -1871,7 +1870,7 @@ def apply_zip[
 
 @always_inline("nodebug")
 def apply_zip[
-    func: def(IntTuple, IntTuple, IntTuple) -> IntTuple
+    func: def(IntTuple, IntTuple, IntTuple) thin -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
     """Apply a function to triplets of elements from three `IntTuple`s.
 
@@ -2102,7 +2101,7 @@ def congruent(a: IntTuple, b: IntTuple) -> Bool:
 
 
 def apply_predicate[
-    predicate: def(IntTuple, IntTuple) -> Bool
+    predicate: def(IntTuple, IntTuple) thin -> Bool
 ](a: IntTuple, b: IntTuple) -> Bool:
     """Apply a predicate function recursively to two `IntTuple`s.
 

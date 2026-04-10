@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the string strategy for generating random `String` values in property tests."""
 
 from std.testing.prop.random import Rng
 

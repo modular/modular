@@ -15,6 +15,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
+from max.nn.quant_config import QuantConfig
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (
@@ -165,6 +166,7 @@ class Flux2TransformerBlock(Module):
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Initialize Flux2TransformerBlock.
 
@@ -207,6 +209,7 @@ class Flux2TransformerBlock(Module):
             eps=eps,
             dtype=dtype,
             device=device,
+            quant_config=quant_config,
         )
         self.norm2 = LayerNorm(
             dim,
@@ -223,6 +226,7 @@ class Flux2TransformerBlock(Module):
             bias=bias,
             dtype=dtype,
             device=device,
+            quant_config=quant_config,
         )
         self.norm2_context = LayerNorm(
             dim,
@@ -239,6 +243,7 @@ class Flux2TransformerBlock(Module):
             bias=bias,
             dtype=dtype,
             device=device,
+            quant_config=quant_config,
         )
 
     def __call__(
@@ -330,6 +335,7 @@ class Flux2SingleTransformerBlock(Module):
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Initialize Flux2SingleTransformerBlock.
 
@@ -364,6 +370,7 @@ class Flux2SingleTransformerBlock(Module):
             mlp_mult_factor=2,
             dtype=dtype,
             device=device,
+            quant_config=quant_config,
         )
 
     def __call__(
@@ -448,6 +455,7 @@ class Flux2Transformer2DModel(Module):
         device = config.device
         dtype = config.dtype
         eps = config.eps
+        quant_config = config.quant_config
 
         self.device = device
         self.patch_size = patch_size
@@ -514,6 +522,7 @@ class Flux2Transformer2DModel(Module):
                     mlp_ratio=mlp_ratio,
                     eps=eps,
                     bias=False,
+                    quant_config=quant_config,
                 )
                 for _ in range(num_layers)
             ]
@@ -529,6 +538,7 @@ class Flux2Transformer2DModel(Module):
                     mlp_ratio=mlp_ratio,
                     eps=eps,
                     bias=False,
+                    quant_config=quant_config,
                 )
                 for _ in range(num_single_layers)
             ]

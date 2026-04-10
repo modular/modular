@@ -4956,6 +4956,10 @@ class CreateChatCompletionRequest(BaseModel):
         min_length=1,
     )
     # Extra args
+    chat_template_kwargs: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Additional keyword arguments to pass to the chat template (e.g., {'enable_thinking': True} for reasoning models).",
+    )
     ignore_eos: bool = Field(default=False, description="Whether to ignore the EOS token and continue generating tokens after the EOS token is generated.")
     target_endpoint: Optional[str] = Field(
         None,

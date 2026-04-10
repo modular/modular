@@ -87,9 +87,9 @@ def _serialize[
     # first and last 3 columns. The intermediaries are filled with '...'
     # to indicate something is here but we are not displaying it.
 
-    var column_elem_count = 1 if rank < 1 else shape[-1]
+    var column_elem_count = 1 if rank < 1 else shape[len(shape) - 1]
     # If the tensor is a rank-1 vector, then the number of rows is 1.
-    var row_elem_count = 1 if rank < 2 else shape[-2]
+    var row_elem_count = 1 if rank < 2 else shape[len(shape) - 2]
 
     var matrix_elem_count = column_elem_count * row_elem_count
 

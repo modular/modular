@@ -22,21 +22,30 @@ from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
 
 
+struct _MLIR:
+    comptime POPArrayType[
+        size: __mlir_type.index, elt_type: AnyType
+    ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
+
+    comptime KGENParamListType[elt_type: AnyType] = __mlir_type[
+        `!kgen.param_list<`, elt_type, `>`
+    ]
+    comptime KGENTypeListType[elt_type: type_of(AnyType)] = __mlir_type[
+        `!kgen.param_list<`, elt_type, `>`
+    ]
+
+
 struct Variadic:
     """A namespace for variadic utilities."""
 
-    comptime ValuesOfType[type: AnyType] = __mlir_type[
-        `!kgen.param_list<`, type, `>`
-    ]
+    comptime ValuesOfType[type: AnyType] = _MLIR.KGENParamListType[type]
     """Represents a raw variadic sequence of values of the specified type.
 
     Parameters:
         type: The type of values in the variadic sequence.
     """
 
-    comptime TypesOfTrait[T: type_of(AnyType)] = __mlir_type[
-        `!kgen.param_list<`, T, `>`
-    ]
+    comptime TypesOfTrait[T: type_of(AnyType)] = _MLIR.KGENTypeListType[T]
     """Represents a raw variadic sequence of types that satisfy the specified trait.
 
     Parameters:
@@ -48,7 +57,7 @@ struct Variadic:
     # ===-----------------------------------------------------------------------===#
 
     comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.param_list<`, T, `>`
+        `#kgen.param_list<>: `, _MLIR.KGENTypeListType[T], `>`
     ]
     """Empty comptime variadic of type values.
 
@@ -57,7 +66,7 @@ struct Variadic:
     """
 
     comptime empty_of_type[T: AnyType] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.param_list<`, T, `>`
+        `#kgen.param_list<>: `, _MLIR.KGENParamListType[T], `>`
     ]
     """Empty comptime variadic of values.
 
@@ -75,7 +84,7 @@ struct Variadic:
 
     comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
         T
-    ] = values_
+    ] = values_.values
     """Turn discrete values (bound by `T`) into a single variadic.
 
     Parameters:
@@ -90,7 +99,7 @@ struct Variadic:
     comptime concat_types[
         T: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[T]
     ] = __mlir_attr[
-        `#kgen.variadic.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
+        `#kgen.param_list.concat<`, Ts.values, `> :`, Variadic.TypesOfTrait[T]
     ]
     """Represents the concatenation of multiple variadic sequences of types.
 
@@ -102,7 +111,7 @@ struct Variadic:
     comptime concat_values[
         T: AnyType, //, *Ts: Variadic.ValuesOfType[T]
     ] = __mlir_attr[
-        `#kgen.variadic.concat<`, Ts, `> :`, Variadic.ValuesOfType[T]
+        `#kgen.param_list.concat<`, Ts.values, `> :`, Variadic.ValuesOfType[T]
     ]
     """Represents the concatenation of multiple variadic sequences of values.
 
@@ -155,7 +164,7 @@ struct Variadic:
         count: Int,
         Mapper: _TabulateIntToValueGeneratorType[ToT],
     ]: Variadic.ValuesOfType[ToT] = __mlir_attr[
-        `#kgen.variadic.tabulate<`,
+        `#kgen.param_list.tabulate<`,
         count._mlir_value,
         `,`,
         _IndexToIntTabulateWrap[Mapper, ...],
@@ -177,7 +186,7 @@ struct Variadic:
         count: Int,
         Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
     ]: Variadic.TypesOfTrait[Trait] = __mlir_attr[
-        `#kgen.variadic.tabulate<`,
+        `#kgen.param_list.tabulate<`,
         count._mlir_value,
         `,`,
         _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
@@ -282,7 +291,7 @@ struct Variadic:
     # The resulting variadic of types is [Int, String]
     comptime output = Variadic.map_types_to_types[input_types, mapper]
 
-    assert_equal(ParameterList[*output].size, 2)
+    assert_equal(output.size, 2)
     assert_true(_type_is_eq[output[0], Int]())
     assert_true(_type_is_eq[output[1], String]())
     ```
@@ -332,11 +341,10 @@ struct Variadic:
     comptime zip_types[
         Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
     ] = __mlir_attr[
-        `#kgen.variadic.zip<`,
-        types,
-        `> : !kgen.param_list<`,
-        Variadic.TypesOfTrait[Trait],
-        `>`,
+        `#kgen.param_list.zip<`,
+        types.values,
+        `> : `,
+        _MLIR.KGENParamListType[Variadic.TypesOfTrait[Trait]],
     ]
     """
     Zips a group of variadics of types together.
@@ -349,11 +357,10 @@ struct Variadic:
     comptime zip_values[
         type: AnyType, //, *values: Variadic.ValuesOfType[type]
     ] = __mlir_attr[
-        `#kgen.variadic.zip<`,
-        values,
-        `> : !kgen.param_list<`,
-        Variadic.ValuesOfType[type],
-        `>`,
+        `#kgen.param_list.zip<`,
+        values.values,
+        `> : `,
+        _MLIR.KGENParamListType[Variadic.ValuesOfType[type]],
     ]
     """
     Zips a group of variadics of values together.
@@ -459,7 +466,9 @@ struct Variadic:
 
 
 @fieldwise_init
-struct TypeList[type: type_of(AnyType), //, *values: type](Sized):
+struct TypeList[type: type_of(AnyType), //, *values: type](
+    Sized, TrivialRegisterPassable
+):
     """A compile-time list of types conforming to a common trait.
 
     `TypeList` provides type-level operations on variadic sequences of types,
@@ -492,7 +501,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](Sized):
 
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
+            `#kgen.param_list.size<:`,
             type_of(Self.values),
             ` `,
             +Self.values,
@@ -608,7 +617,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](Sized):
 
 @fieldwise_init
 struct _ParameterListIter[type: Copyable, //, *values: type](
-    ImplicitlyCopyable, Iterable, Iterator
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
     """Const Iterator for ParameterList.
 
@@ -630,24 +639,23 @@ struct _ParameterListIter[type: Copyable, //, *values: type](
     ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
         var index = self.index
 
-        comptime params = ParameterList[*Self.values]()
-        if index >= params.size:
+        if index >= Self.values.size:
             raise StopIteration()
         self.index = index + 1
-        return params[index]
+        return Self.values[index]
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = ParameterList[*Self.values].size - self.index
+        var len = Self.values.size - self.index
         return (len, {len})
 
 
 # TODO: Make this conform to Iterable when IteratorType can be conditionally
 # defined only when 'type' is Copyable.
-struct ParameterList[type: AnyType, //, *values: type](
+struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
@@ -686,7 +694,7 @@ struct ParameterList[type: AnyType, //, *values: type](
 
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
+            `#kgen.param_list.size<:`,
             type_of(Self.values),
             ` `,
             +Self.values,
@@ -744,7 +752,7 @@ struct ParameterList[type: AnyType, //, *values: type](
         return self.get_span()[idx]
 
     comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
-        `#kgen.variadic.get<:`,
+        `#kgen.param_list.get<:`,
         type_of(Self.values),
         ` `,
         +Self.values,
@@ -811,9 +819,11 @@ struct ParameterList[type: AnyType, //, *values: type](
     def __iter__(
         ref self,
     ) -> _ParameterListIter[
-        *rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
-            Self.values
-        )
+        *ParameterList[
+            rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
+                Self.values
+            )
+        ]()
     ] where conforms_to(Self.type, Copyable):
         """Iterate over the list.
 
@@ -876,12 +886,6 @@ struct _VariadicListIter[
             raise StopIteration()
         self.index = index + 1
         return self.src[][index]
-
-
-struct _MLIR:
-    comptime POPArrayType[
-        size: __mlir_type.index, elt_type: AnyType
-    ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
 
 
 struct VariadicList[
@@ -1506,9 +1510,9 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
-    `, "From": !kgen.param_list<`,
-    From,
-    `>, "Idx":`,
+    `, "From": `,
+    _MLIR.KGENTypeListType[From],
+    `, "Idx":`,
     Int,
     `>`,
     +Prev,
@@ -1539,7 +1543,7 @@ comptime _ReduceVariadicAndIdxToVariadic[
         Variadic.TypesOfTrait[To], From
     ],
 ] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
+    `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
@@ -1565,9 +1569,9 @@ comptime _ReduceValueIdxGeneratorTypeGenerator[
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
-    `, "From": !kgen.param_list<`,
-    From,
-    `>, "Idx":`,
+    `, "From": `,
+    _MLIR.KGENParamListType[From],
+    `, "Idx":`,
     Int,
     `>`,
     +Prev,
@@ -1599,7 +1603,7 @@ comptime _ReduceValueAndIdxToVariadic[
         Variadic.TypesOfTrait[To], From
     ],
 ] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
+    `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
@@ -1631,7 +1635,7 @@ comptime _ReduceValueAndIdxToValue[
         Variadic.ValuesOfType[To], From
     ],
 ] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
+    `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
@@ -1663,7 +1667,7 @@ comptime _ReduceVariadicAndIdxToValue[
         Variadic.ValuesOfType[To], From
     ],
 ] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
+    `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
@@ -1696,9 +1700,9 @@ comptime _TypeToTypeGenerator[
 comptime _VariadicIdxToTypeGeneratorTypeGenerator[
     From: type_of(AnyType), To: type_of(AnyType)
 ] = __mlir_type[
-    `!lit.generator<<"From": !kgen.param_list<`,
-    From,
-    `>, "Idx":`,
+    `!lit.generator<<"From": `,
+    _MLIR.KGENTypeListType[From],
+    `, "Idx":`,
     Int,
     `>`,
     To,
@@ -1745,9 +1749,9 @@ Parameters:
 comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
     From: AnyType, To: type_of(AnyType)
 ] = __mlir_type[
-    `!lit.generator<<"From": !kgen.param_list<`,
-    From,
-    `>, "Idx":`,
+    `!lit.generator<<"From": `,
+    _MLIR.KGENParamListType[From],
+    `, "Idx":`,
     Int,
     `>`,
     To,

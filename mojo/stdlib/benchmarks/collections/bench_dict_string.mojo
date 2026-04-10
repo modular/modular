@@ -116,7 +116,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     @always_inline
     def add(mut self, key: StringSlice):
         var prev_end = 0 if self.count == 0 else self.keys_end[self.count - 1]
-        var key_length = len(key)
+        var key_length = key.byte_length()
         var new_end = prev_end + Scalar[Self.KeyEndType](key_length)
 
         var needs_realocation = False
@@ -427,7 +427,7 @@ struct StringDict[
     def upsert(
         mut self,
         key: StringSlice,
-        update: def(value: Optional[Self.V]) -> Self.V,
+        update: def(value: Optional[Self.V]) thin -> Self.V,
     ):
         var key_index = self._find_key_index(key)
         if key_index == 0:

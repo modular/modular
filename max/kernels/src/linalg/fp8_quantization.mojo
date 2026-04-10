@@ -21,9 +21,9 @@ from std.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx_int as block_idx,
-    global_idx_int as global_idx,
-    thread_idx_int as thread_idx,
+    block_idx,
+    global_idx,
+    thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
@@ -1746,29 +1746,31 @@ def blockwise_scaled_fp8_with_epilogue[
                 simd_width_of[c_type, target=get_gpu_target()]()
             )
 
-            @parameter
-            @__copy_capture(c)
-            def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
-                var c_val = c.value().load_linear[simd_width](idx)
-                epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
-                )
-
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
             if c.ptr:
                 var m = Int(c.dim[0]())
                 var n = Int(c.dim[1]())
 
+                var c_tt = c.value()
+
+                @parameter
+                @__copy_capture(c_tt)
+                def epilogue_wrapper[
+                    simd_width: Int, rank: Int, alignment: Int = 1
+                ](idx: IndexList[rank]):
+                    var c_coord = Index(idx[0], idx[1])
+                    var c_val = c_tt.load_linear[simd_width](idx)
+                    epilogue[c_type, simd_width, alignment=alignment](
+                        c_coord, c_val
+                    )
+
                 blockwise_fp8_matmul[
                     transpose_b=transpose_b,
                     a_scales_type=a_scales_type,
                     b_scales_type=b_scales_type,
                     config=matmul_config,
-                ](c.value(), a, b, a_scales, b_scales, ctx)
+                ](c_tt, a, b, a_scales, b_scales, ctx)
                 elementwise[epilogue_wrapper, simd_size, target="gpu"](
                     Index(m, n), ctx
                 )
@@ -1780,7 +1782,7 @@ def blockwise_scaled_fp8_with_epilogue[
             var c_n = Int(c.dim[1]())
             var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_m * c_n)
             var c_tmp = TileTensor(
-                tmp_device_buffer.unsafe_ptr(),
+                tmp_device_buffer,
                 row_major(Coord(Idx(c_m), Idx(c_n))),
             )
 

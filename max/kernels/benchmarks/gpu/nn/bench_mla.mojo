@@ -135,7 +135,7 @@ def bench_decode[
             )
 
             flare_mla_decoding[
-                config=MHAConfig[qkv_type](UInt(num_heads), UInt(depth)),
+                config=MHAConfig[qkv_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
                 output_device.as_any_origin(),
@@ -252,11 +252,11 @@ def bench_prefill[
 
     # Row offsets tensors (these don't need cache busting offsets).
     var input_row_offsets_device = TileTensor(
-        input_row_offsets_device_ptr.unsafe_ptr(),
+        input_row_offsets_device_ptr,
         row_major(Coord(Idx(batch_size + 1))),
     )
     var cache_row_offsets_device = TileTensor(
-        cache_row_offsets_device_ptr.unsafe_ptr(),
+        cache_row_offsets_device_ptr,
         row_major(Coord(Idx(batch_size + 1))),
     )
 

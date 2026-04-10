@@ -25,11 +25,11 @@ The following snippet shows the outline of a custom operation:
 struct AddVectorsCustom:
 
     @staticmethod
-    def execute[...](...) raises:
+    def execute[...](...):
         pass
 
     @staticmethod
-    def shape(...) raises -> IndexList:
+    def shape(...) -> IndexList:
         pass
 ```
 
@@ -97,7 +97,7 @@ struct AddVectorsCustom:
         y: InputTensor[dtype = out.dtype, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
-    ) raises:
+    ):
 
         @parameter
         @always_inline
@@ -129,6 +129,6 @@ output tensor matches the first input tensor, you could use the following
     def shape(
         in1: InputTensor,
         in2: InputTensor,
-    ) raises -> IndexList[in1.rank]:
+    ) -> IndexList[in1.rank]:
         return in1.spec.shape
 ```

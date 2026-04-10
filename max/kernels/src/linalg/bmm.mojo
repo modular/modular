@@ -41,7 +41,6 @@ from layout import (
     RuntimeLayout,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
 )
@@ -110,29 +109,6 @@ def _get_batch_dims[
         comptime i = rank - idx - 3
         res[i] = curr_index % shape[i]
         curr_index //= shape[i]
-
-
-@parameter
-def _reshape_to_3d[layout: Layout]() -> Layout:
-    comptime rank = len(layout.shape)
-
-    # NOTE: need to cast because int tuple returns comptime int
-    comptime last = Int(layout.shape[rank - 1])
-    comptime second_last = Int(layout.shape[rank - 2])
-
-    return Layout(
-        IntTuple(
-            UNKNOWN_VALUE,
-            second_last,
-            last,
-        ),
-        IntTuple(
-            second_last * last if last != UNKNOWN_VALUE
-            and second_last != UNKNOWN_VALUE else UNKNOWN_VALUE,
-            last,
-            1,
-        ),
-    )
 
 
 @always_inline
@@ -625,17 +601,6 @@ def batched_matmul_kernel_gpu[
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
-
-
-@always_inline
-def get_shape_index_list[
-    rank: Int, dtype: DType, layout: Layout
-](tensor: LayoutTensor[dtype, layout, ...]) -> IndexList[rank]:
-    var index_list = IndexList[rank](0)
-
-    comptime for i in range(rank):
-        index_list[i] = tensor.dim(i)
-    return index_list
 
 
 @always_inline

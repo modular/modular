@@ -248,8 +248,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         return Bool(len(self))
 
     def _write_counter_body[
-        f_key: def(Self.V, mut Some[Writer]),
-        f_val: def(Int, mut Some[Writer]),
+        f_key: def(Self.V, mut Some[Writer]) thin,
+        f_val: def(Int, mut Some[Writer]) thin,
     ](self, mut writer: Some[Writer]) where conforms_to(Self.V, Writable):
         """Write the counter's key-value pairs to a writer.
 

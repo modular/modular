@@ -21,8 +21,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
 from linalg.matmul import matmul
-from layout import Layout, LayoutTensor, lt_to_tt, UNKNOWN_VALUE
-from layout.runtime_layout import RuntimeLayout
+from layout import Coord, Idx, TileTensor, row_major
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import (
     ManagedTensorSlice,
@@ -270,32 +269,21 @@ def matmul_op[
         n: Number of columns in rhs and output.
         ctx: Device context pointer (null for CPU).
     """
-    # Define static layout type with unknown dimensions for 2D row-major matrices
-    comptime layout_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    comptime LayoutType = RuntimeLayout[layout_2d]
-
-    # Create LayoutTensors with runtime shapes
-    var c = LayoutTensor[dtype, layout_2d, MutExternalOrigin](
-        out_ptr, LayoutType.row_major(IndexList[2](m, n))
-    )
-    var a = LayoutTensor[dtype, layout_2d, MutExternalOrigin](
-        lhs_ptr, LayoutType.row_major(IndexList[2](m, k))
-    )
-    var b = LayoutTensor[dtype, layout_2d, MutExternalOrigin](
-        rhs_ptr, LayoutType.row_major(IndexList[2](k, n))
-    )
+    var c = TileTensor(out_ptr, row_major(Coord(Idx(m), Idx(n))))
+    var a = TileTensor(lhs_ptr, row_major(Coord(Idx(m), Idx(k))))
+    var b = TileTensor(rhs_ptr, row_major(Coord(Idx(k), Idx(n))))
 
     if not ctx:
-        matmul[target="cpu"](lt_to_tt(c), lt_to_tt(a), lt_to_tt(b), None)
+        matmul[target="cpu"](c, a, b, None)
     else:
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
                 var device_ctx = DeviceContextPtr(ctx)
                 matmul[target="gpu"](
-                    lt_to_tt(c),
-                    lt_to_tt(a),
-                    lt_to_tt(b),
+                    c,
+                    a,
+                    b,
                     device_ctx,
                 )
                 # TODO(MXF-108): Remove device sync

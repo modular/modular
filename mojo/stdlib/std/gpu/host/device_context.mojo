@@ -2063,7 +2063,7 @@ struct DeviceFunction[
                 self._func_impl.module_name.as_c_string_slice(),
                 self._func_impl.function_name.as_c_string_slice(),
                 self._func_impl.asm.as_c_string_slice(),
-                c_size_t(len(self._func_impl.asm)),
+                c_size_t(self._func_impl.asm.byte_length()),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice(),
                 Int32(Int(OptimizationLevel)),
@@ -2090,7 +2090,7 @@ struct DeviceFunction[
             ](
                 self._handle,
                 mapping.name.as_c_string_slice(),
-                c_size_t(len(mapping.name)),
+                c_size_t(mapping.name.byte_length()),
                 mapping.ptr,
                 c_size_t(mapping.byte_count),
             )
@@ -3164,7 +3164,7 @@ struct DeviceExternalFunction:
                 module_name.as_c_string_slice(),
                 function_name.as_c_string_slice(),
                 asm.as_c_string_slice(),
-                c_size_t(len(asm)),
+                c_size_t(asm.byte_length()),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice(),
                 Int32(Int(OptimizationLevel)),
@@ -3200,7 +3200,7 @@ struct DeviceExternalFunction:
             ](
                 self._handle,
                 mapping.name.as_c_string_slice(),
-                c_size_t(len(mapping.name)),
+                c_size_t(mapping.name.byte_length()),
                 mapping.ptr,
                 c_size_t(mapping.byte_count),
             )
@@ -3812,7 +3812,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: def(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) thin -> None,
         *,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
@@ -3890,7 +3890,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: def(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) thin -> None,
         *,
         compile_options: StaticString = CompilationTarget[
             Self.default_device_info.target()
@@ -4570,7 +4570,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: def(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -4702,7 +4702,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: def(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,

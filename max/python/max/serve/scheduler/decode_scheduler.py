@@ -113,7 +113,6 @@ class DecodeScheduler(Scheduler):
             pipeline=pipeline,
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
-            extra_kv_caches=getattr(pipeline, "extra_kv_managers", []),
             dp_padder=dp_padder,
         )
         self.scheduler_logger = SchedulerLogger()

@@ -185,6 +185,7 @@ def _run_cpu_ctx_memcpy_async(
 
     host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
+    cpu_ctx.synchronize()
 
     for i in range(length):
         assert_equal(host_buf[i], Int64(2 * i))

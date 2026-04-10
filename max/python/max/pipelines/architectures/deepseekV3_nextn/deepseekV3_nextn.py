@@ -172,6 +172,7 @@ class DeepseekV3NextN(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        split_prefix: str = "draft",
     ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("host_input_row_offsets must be located on CPU")
@@ -201,7 +202,7 @@ class DeepseekV3NextN(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="draft",
+                prefix=split_prefix,
             )
             norm_hidden, _ = split_batch_replicated(
                 devices,
@@ -209,20 +210,26 @@ class DeepseekV3NextN(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="draft",
+                prefix=split_prefix,
             )
 
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
                 )
                 for i in range(len(devices))
             ]
             norm_hidden = [
                 ops.rebind(
                     norm_hidden[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
                 )
                 for i in range(len(devices))
             ]
@@ -232,7 +239,10 @@ class DeepseekV3NextN(Module):
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
                 )
                 for i in range(len(devices))
             ]

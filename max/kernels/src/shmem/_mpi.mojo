@@ -96,7 +96,7 @@ def MPI_Init(
             UnsafePointer[
                 Span[StaticString, StaticConstantOrigin], MutAnyOrigin
             ],
-        ) -> c_int,
+        ) thin -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
     if result != 0:
         raise Error("failed to MPI_Init with error code:", result)
@@ -118,7 +118,7 @@ def MPI_Init_thread(
             ],
             c_int,
             UnsafePointer[c_int, MutAnyOrigin],
-        ) -> c_int,
+        ) thin -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv), required, provided)
     if result != 0:
         raise Error("failed to MPI_Init_thread with error code:", result)
@@ -132,7 +132,7 @@ def MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
     """
     var result = _get_mpi_function[
         "MPI_Initialized",
-        def(UnsafePointer[c_int, MutExternalOrigin]) -> c_int,
+        def(UnsafePointer[c_int, MutExternalOrigin]) thin -> c_int,
     ]()(flag)
     if result != 0:
         raise Error("failed to check MPI_Initialized with error code:", result)
@@ -146,7 +146,7 @@ def MPI_Finalize() raises:
     """
     var result = _get_mpi_function[
         "MPI_Finalize",
-        def() -> c_int,
+        def() thin -> c_int,
     ]()()
     if result != 0:
         raise Error("failed to finalize MPI with error code:", result)
@@ -163,7 +163,7 @@ def MPI_Comm_split(
         "MPI_Comm_split",
         def(
             MPIComm, c_int, c_int, UnsafePointer[MPIComm, MutAnyOrigin]
-        ) -> c_int,
+        ) thin -> c_int,
     ]()(comm, color, key, newcomm)
     if result != 0:
         raise Error("failed to MPI_Comm_split with error code:", result)
@@ -175,7 +175,7 @@ def MPI_Comm_rank(
     """Get the rank of the current process in the communicator."""
     var result = _get_mpi_function[
         "MPI_Comm_rank",
-        def(MPIComm, UnsafePointer[c_int, MutAnyOrigin]) -> c_int,
+        def(MPIComm, UnsafePointer[c_int, MutAnyOrigin]) thin -> c_int,
     ]()(comm, rank)
     if result != 0:
         raise Error("failed to get MPI_Comm_rank with error code:", result)
@@ -187,7 +187,7 @@ def MPI_Comm_size(
     """Get the size of the communicator."""
     var result = _get_mpi_function[
         "MPI_Comm_size",
-        def(MPIComm, UnsafePointer[c_int, MutAnyOrigin]) -> c_int,
+        def(MPIComm, UnsafePointer[c_int, MutAnyOrigin]) thin -> c_int,
     ]()(comm, size)
     if result != 0:
         raise Error("failed to get MPI_Comm_size with error code:", result)
@@ -203,4 +203,6 @@ def get_mpi_comm_world() raises -> MPIComm:
     var comm_world_ptr = handle.get_symbol[OpaquePointer[MutExternalOrigin]](
         cstr_name="ompi_mpi_comm_world".as_c_string_slice().unsafe_ptr()
     )
-    return comm_world_ptr
+    if not comm_world_ptr:
+        raise Error("symbol ompi_mpi_comm_world not found in MPI library")
+    return comm_world_ptr.value()

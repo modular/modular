@@ -10,9 +10,6 @@ also add your own. The MAX Python API provides a familiar interface that
 simplifies converting your pretrained model from Hugging Face or PyTorch into an
 end-to-end inference pipeline.
 
-This page provides a brief tour of the process to bring a pretrained model from
-Hugging Face to MAX so you can take it into production.
-
 ## What you use vs. what you write
 
 MAX provides significant infrastructure that you don't need to build:
@@ -63,8 +60,7 @@ as `Linear`, `MLP`, `AttentionWithRope`, `Embedding`, `RMSNorm`, `Transformer`,
 model-specific behavior (such as novel attention or custom MoE gating).
 
 Learn more in
-[Get started with MAX graphs](/max/develop/get-started-with-max-graph-in-python/),
-and [Build an MLP block as a module](/max/develop/build-an-mlp-block/).
+[Build a model graph with Module](/max/develop/modules/).
 
 ### Weight adapter
 
@@ -118,10 +114,10 @@ to find your code.
 Learn more in
 [Serve custom model architectures](/max/develop/serve-custom-model-architectures/).
 
-## Deploying your model
+## Deploy your model
 
 After you build your model architecture in MAX, you can test it locally and
-optionally contribute it back to MAX so everybody can use it.
+optionally contribute it back to MAX so everybody can use it:
 
 - **Test locally**: to serve your model with a local endpoint, use the
   `--custom-architectures` flag.

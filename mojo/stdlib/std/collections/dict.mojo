@@ -41,6 +41,7 @@ from std.compile import get_type_name
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
 from std.sys.intrinsics import likely
+from std.math import ceildiv
 
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.memory import alloc, bitcast, memcpy, memset, pack_bits
@@ -287,7 +288,7 @@ struct _DictEntryIter[
         K: The key type of the elements in the dictionary.
         V: The value type of the elements in the dictionary.
         H: The type of the hasher in the dictionary.
-        origin: The origin of the List
+        origin: The origin of the Dict.
         forward: The iteration direction. `False` is backwards.
     """
 
@@ -500,11 +501,11 @@ struct _DictKeyIter[
     """Iterator over immutable Dict key references.
 
     Parameters:
-        mut: Whether the reference to the vector is mutable.
+        mut: Whether the reference to the dictionary is mutable.
         K: The key type of the elements in the dictionary.
         V: The value type of the elements in the dictionary.
         H: The type of the hasher in the dictionary.
-        origin: The origin of the List
+        origin: The origin of the Dict.
         forward: The iteration direction. `False` is backwards.
     """
 
@@ -547,11 +548,11 @@ struct _DictValueIter[
     is mutable.
 
     Parameters:
-        mut: Whether the reference to the vector is mutable.
+        mut: Whether the reference to the dictionary is mutable.
         K: The key type of the elements in the dictionary.
         V: The value type of the elements in the dictionary.
         H: The type of the hasher in the dictionary.
-        origin: The origin of the List
+        origin: The origin of the Dict.
         forward: The iteration direction. `False` is backwards.
     """
 
@@ -920,9 +921,9 @@ struct Dict[
     def __init__(out self, *, capacity: Int):
         """Initialize an empty dictionary with a pre-reserved capacity.
 
-        The capacity is rounded up to the next power of two (minimum 16)
-        to satisfy internal layout requirements. The usable capacity
-        before resizing is 7/8 of the rounded value.
+        The capacity is defined by `next_power_of_two(ceildiv(capacity * 8, 7))`
+        (minimum 16) to satisfy internal layout requirements. The usable
+        capacity before resizing is `7 // 8` of the rounded value.
 
         Args:
             capacity: The requested minimum number of slots.
@@ -931,10 +932,12 @@ struct Dict[
 
         ```mojo
         var x = Dict[Int, Int](capacity=1000)
-        # Actual capacity is 1024; can hold 896 entries without resizing.
+        # Actual capacity is 2048; can hold 1792 entries without resizing.
         ```
         """
-        self._capacity = max(next_power_of_two(capacity), _INITIAL_CAPACITY)
+        self._capacity = max(
+            next_power_of_two(ceildiv(capacity * 8, 7)), _INITIAL_CAPACITY
+        )
         self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
         memset(self._ctrl, _CTRL_EMPTY, self._capacity + _GROUP_WIDTH)
         self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
@@ -1216,8 +1219,8 @@ struct Dict[
         hasher._update_with_simd(combined)
 
     def _write_dict_body[
-        f_key: def(Self.K, mut Some[Writer]),
-        f_val: def(Self.V, mut Some[Writer]),
+        f_key: def(Self.K, mut Some[Writer]) thin,
+        f_val: def(Self.V, mut Some[Writer]) thin,
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.K, Writable
     ) and conforms_to(Self.V, Writable):

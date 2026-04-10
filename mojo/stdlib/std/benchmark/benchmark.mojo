@@ -436,7 +436,7 @@ struct _RunOptions[timing_fn: def(num_iters: Int) raises capturing[_] -> Int](
 
 @always_inline
 def run[
-    *, func1: def() raises -> None
+    *, func1: def() thin raises -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -490,7 +490,7 @@ def run[
 
 @always_inline
 def run[
-    *, func2: def() -> None
+    *, func2: def() thin -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,

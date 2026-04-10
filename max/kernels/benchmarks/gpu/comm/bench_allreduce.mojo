@@ -193,9 +193,7 @@ def bench_reduce[
             )
 
     for i in range(ngpus):
-        out_tensors[i] = TileTensor(
-            out_dev[i].unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tensors[i] = TileTensor(out_dev[i], row_major(Idx(length)))
         # Ensure setup has propagated.
         list_of_ctx[i].synchronize()
 
@@ -208,9 +206,7 @@ def bench_reduce[
     var out_tensors_capture = StaticTuple[OutTensorType, ngpus]()
 
     comptime for i in range(ngpus):
-        out_tensors_capture[i] = TileTensor(
-            out_dev[i].unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tensors_capture[i] = TileTensor(out_dev[i], row_major(Idx(length)))
 
     # Pre-initialize vendor CCL communicators from the main thread.
     # ncclCommInitAll is not thread-safe, so we must initialize before

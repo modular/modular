@@ -50,8 +50,8 @@ def test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
     var shape = Coord(
         RuntimeInt[DType.int64](Int64(m)), RuntimeInt[DType.int64](Int64(n))
     )
-    var in_tt = TileTensor(device_in.unsafe_ptr(), row_major(shape))
-    var out_tt = TileTensor(device_out.unsafe_ptr(), row_major(shape))
+    var in_tt = TileTensor(device_in, row_major(shape))
+    var out_tt = TileTensor(device_out, row_major(shape))
 
     convert_e4m3fn_to_e4m3fnuz(in_tt, out_tt, ctx)
     ctx.synchronize()

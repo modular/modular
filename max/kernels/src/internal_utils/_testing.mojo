@@ -208,7 +208,7 @@ def assert_with_measure[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         Int,
-    ) -> Float64,
+    ) thin -> Float64,
 ](
     x: UnsafePointer[Scalar[dtype], _],
     y: UnsafePointer[Scalar[dtype], _],
@@ -314,12 +314,13 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
 @parameter
 def test_value_for_gpu_element[
     dtype: DType,
+    modulo: Int = 251 if dtype == DType.float32 else 13,
 ](gpu_rank: Int, element_idx: Int) -> Scalar[dtype]:
     """Generates unique deterministic test values per GPU and element index.
 
     Creates predictable values for testing multi-GPU operations where each
     GPU's contribution needs to be distinguishable. Uses prime modulus to
-    avoid power-of-two aliasing patterns.
+    avoid power-of-two aliasing patterns. 251 is the largest prime < 256.
 
     Args:
         gpu_rank: The rank/ID of the GPU (0-indexed).
@@ -332,5 +333,4 @@ def test_value_for_gpu_element[
         `test_value_for_gpu_element[DType.float32](0, 0)` !=
         `test_value_for_gpu_element[DType.float32](1, 0)`.
     """
-    # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
-    return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % 251)
+    return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % modulo)

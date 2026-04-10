@@ -130,12 +130,12 @@ def bench_bmm[
     var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
     var a_device = TileTensor(
-        a_device_buffer.unsafe_ptr(),
+        a_device_buffer,
         row_major(Coord(b, m, k)),
     ).as_any_origin()
 
     var b_device = TileTensor(
-        b_device_buffer.unsafe_ptr(),
+        b_device_buffer,
         row_major(
             Coord(
                 b,
@@ -149,7 +149,7 @@ def bench_bmm[
         ),
     ).as_any_origin()
     var c_device = TileTensor(
-        c_device_buffer.unsafe_ptr(),
+        c_device_buffer,
         row_major(Coord(b, m, n)),
     ).as_any_origin()
 

@@ -39,11 +39,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import (
-    block_idx_int as block_idx,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import block_idx, lane_id, thread_idx
 from std.gpu.memory import (
     AddressSpace,
     external_memory,

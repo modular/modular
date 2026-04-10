@@ -1,6 +1,6 @@
 ---
 title: Jupyter Notebooks
-sidebar_position: 6
+sidebar_position: 5
 description: Using Mojo in local and Colab Jupyter Notebooks
 ---
 
@@ -123,7 +123,7 @@ Each Mojo cell must contain a complete program, including a `main()` function.
 ```mojo
 %%mojo
 
-def main() raises:
+def main():
   print("Hello Mojo")
 ```
 
@@ -148,7 +148,7 @@ def threehello():
     repeat[3]("Hello 🔥!")
 
 # Run
-def main() raises:
+def main():
     threehello()
 ```
 

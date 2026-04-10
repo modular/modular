@@ -38,6 +38,7 @@ def test_uninit_check_no_false_positives_e2e() -> None:
         [sys.executable, str(_SCRIPTS_DIR / "well_behaved_model.py")],
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=120,
         env={**os.environ, "MODULAR_MAX_UNINITIALIZED_READ_CHECK": "true"},
     )
@@ -60,6 +61,7 @@ def test_uninit_check_disabled_by_default_e2e() -> None:
         [sys.executable, str(_SCRIPTS_DIR / "well_behaved_model.py")],
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=120,
         env=env,
     )
@@ -77,6 +79,7 @@ def test_uninit_check_env_var_sets_allocator_and_define() -> None:
         [sys.executable, str(_SCRIPTS_DIR / "env_var_plumbing.py")],
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=120,
         env={**os.environ, "MODULAR_MAX_UNINITIALIZED_READ_CHECK": "true"},
     )
@@ -100,6 +103,7 @@ def test_uninit_check_detects_uninitialized_read_e2e() -> None:
         [sys.executable, str(_SCRIPTS_DIR / "trigger_uninit_read.py")],
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=120,
         env={
             **os.environ,

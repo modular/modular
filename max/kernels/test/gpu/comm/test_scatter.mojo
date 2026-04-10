@@ -91,9 +91,7 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        tt_input_bufs[dp] = TileTensor(
-            dev_buf.unsafe_ptr(), row_major(Idx(n))
-        ).as_immut()
+        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(Idx(n))).as_immut()
         input_devbufs.append(dev_buf)
     host_buf.free()
 

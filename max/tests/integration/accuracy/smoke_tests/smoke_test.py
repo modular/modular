@@ -85,6 +85,10 @@ class ModelAlias(TypedDict):
 # configurations while keeping results separate in dashboards.
 # max_serve_args are only applied to MAX frameworks, not vllm/sglang.
 MODEL_ALIASES: dict[str, ModelAlias] = {
+    "google/gemma-4-26b-a4b-it__no_dgc": {
+        "hf_model_path": "google/gemma-4-26B-A4B-it",
+        "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
+    },
     "meta-llama/llama-3.1-8b-instruct__modulev3": {
         "hf_model_path": "meta-llama/llama-3.1-8b-instruct",
         "max_serve_args": "--prefer-module-v3",
@@ -103,6 +107,10 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     },
     "microsoft/phi-4__modulev3": {
         "hf_model_path": "microsoft/phi-4",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "google/gemma-3-1b-it__modulev3": {
+        "hf_model_path": "google/gemma-3-1b-it",
         "max_serve_args": "--prefer-module-v3",
     },
     "nvidia/deepseek-v3.1-nvfp4__fp8kv": {
@@ -143,7 +151,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "max_serve_args": (
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 1"
+            "--num-speculative-tokens 3"
         ),
     },
     "nvidia/kimi-k2.5-nvfp4__eagle": {
@@ -155,7 +163,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--draft-data-parallel-degree 8 "
             "--draft-quantization-encoding bfloat16 "
             "--speculative-method eagle "
-            "--num-speculative-tokens 1 "
+            "--num-speculative-tokens 3 "
             "--kv-cache-format float8_e4m3fn "
             "--device-memory-utilization 0.75 "
             "--max-batch-input-tokens 4096 "
@@ -343,6 +351,7 @@ def call_eval(
             "academic-ds",
             "deepseek-r1",
             "deepseek-v3",
+            "gemma-4",
             "gpt-oss",
             "internvl3_5",
             "qwen3",
@@ -617,6 +626,7 @@ def smoke_test(
         kw in model
         for kw in (
             "gemma-3",
+            "gemma-4",
             "idefics",
             "internvl",
             "kimi-k2",
@@ -646,7 +656,8 @@ def smoke_test(
     if disable_timeouts:
         timeout = sys.maxsize
     elif is_huge_moe(model):
-        timeout = 1800
+        # TODO(GEX-3508): Reduce timeout once model build time is optimized
+        timeout = 2700
     else:
         timeout = 900
 

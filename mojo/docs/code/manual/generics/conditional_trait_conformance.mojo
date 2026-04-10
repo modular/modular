@@ -48,7 +48,7 @@ struct Foo[T: AnyType](Copyable, Writable where conforms_to(T, Writable)):
     pass
 
 
-def main() raises:
+def main():
     var w_int = Wrapper[Int](42)
     print(w_int)  # Wrapper[Int](value=42)
 

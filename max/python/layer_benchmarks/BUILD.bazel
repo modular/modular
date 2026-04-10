@@ -1,0 +1,100 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "benchmark_utils",
+    srcs = ["benchmark_utils.py"],
+    ignore_extra_deps = ["//max/python/max/profiler"],
+    ignore_unresolved_imports = [
+        "max._core.profiler.Trace",
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/profiler",
+        requirement("numpy"),
+        requirement("tabulate"),
+    ],
+)
+
+# -- Model test bed framework --
+
+modular_py_library(
+    name = "testbed",
+    srcs = glob(
+        ["testbed/**/*.py"],
+        exclude = ["testbed/dump_ir_cli.py"],
+    ),
+    ignore_extra_deps = [
+        "//max/python/max/profiler",
+    ],
+    ignore_unresolved_imports = [
+        "max._core.driver.Buffer",
+        "max._core.profiler.Trace",
+    ],
+    imports = ["."],
+    deps = [
+        ":benchmark_utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/profiler",
+        requirement("cyclopts"),
+        requirement("torch"),
+        requirement("numpy"),
+        requirement("tabulate"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_binary(
+    name = "dump_ir",
+    srcs = ["testbed/dump_ir_cli.py"],
+    imports = ["."],
+    main = "testbed/dump_ir_cli.py",
+    deps = [
+        ":testbed",
+        requirement("cyclopts"),
+    ],
+)
+
+# -- Harness tests --
+
+_HARNESS_TEST_DEPS = [":testbed"]
+
+_GPU_CONSTRAINTS = ["//:has_gpu"] + select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+modular_py_test(
+    name = "harness_rms_norm",
+    srcs = ["test_harness_rms_norm.py"],
+    exec_properties = {"test.resources:gpu-memory": "10"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS,
+)
+
+modular_py_test(
+    name = "testbed_validation",
+    srcs = ["test_testbed_validation.py"],
+    exec_properties = {"test.resources:gpu-memory": "10"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS + [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
+    ],
+)

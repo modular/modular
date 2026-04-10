@@ -36,6 +36,7 @@ from layout import (
     row_major,
 )
 from layout.int_tuple import to_index_list
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.accumulate import _Accumulator
 from linalg.matmul.cpu.apple_accelerate import (
     _cblas_f32,
@@ -256,14 +257,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         comptime transpose_width = 4
         comptime tile_sizes = [transpose_width, 1]
 
-        comptime layout = Layout.row_major(transpose_width, transpose_width)
-        var transpose_stack = InlineArray[Scalar[Self.dtype], layout.size()](
-            uninitialized=True
+        var transpose_buffer = tt_stack_allocation[dtype=Self.dtype,](
+            row_major[transpose_width, transpose_width]()
         )
-        var transpose_buffer = LayoutTensor[
-            Self.dtype,
-            layout,
-        ](transpose_stack)
 
         @parameter
         @always_inline
@@ -273,14 +269,16 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 # input tensor.
                 comptime for i in range(transpose_width):
                     var val = input_b_fn[simd_width=transpose_width](n + i, k)
-                    transpose_buffer.store(Index(i, 0), val)
+                    transpose_buffer.store_linear[width=transpose_width](
+                        Index(i, 0), val
+                    )
 
                 transpose_inplace[4, 4](transpose_buffer)
 
                 comptime for i in range(transpose_width):
-                    var val = transpose_buffer.load[width=transpose_width](
-                        Index(i, 0)
-                    )
+                    var val = transpose_buffer.load_linear[
+                        width=transpose_width
+                    ](Index(i, 0))
                     packed_ptr.store((k + i) * aligned_n + n, val)
 
             else:

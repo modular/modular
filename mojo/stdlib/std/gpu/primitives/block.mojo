@@ -237,9 +237,9 @@ def _block_reduce[
     block_dim_y: Int = 1,
     block_dim_z: Int = 1,
     *,
-    warp_reduce_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
-        dtype
-    ],
+    warp_reduce_fn: def[dtype: DType, width: Int](
+        SIMD[dtype, width]
+    ) thin -> Scalar[dtype],
     broadcast: Bool = False,
 ](val: Scalar[dtype], *, initial_val: Scalar[dtype]) -> Scalar[dtype]:
     """Performs a single block-level reduction operation.

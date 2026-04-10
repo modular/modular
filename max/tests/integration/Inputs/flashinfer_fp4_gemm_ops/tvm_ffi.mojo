@@ -64,7 +64,7 @@ comptime SafeFunction = def(
     args: Pointer[TVMFFIAny, MutAnyOrigin],
     nargs: Int32,
     result: Pointer[TVMFFIAny, MutAnyOrigin],
-) -> Int32
+) thin abi("C") -> Int32
 
 comptime TVMFFIByteArray = Span[Byte, MutAnyOrigin]
 
@@ -123,7 +123,7 @@ def _tvm_ffi_error_move_from_raised(
     lib = OwnedDLHandle(path="libtvm_ffi.so")
     comptime FnType = def(
         UnsafePointer[UnsafePointer[TVMFFIObject, MutAnyOrigin], MutAnyOrigin]
-    ) -> None
+    ) thin abi("C") -> None
     fn_ptr = lib.get_function[FnType]("TVMFFIErrorMoveFromRaised")
     fn_ptr(UnsafePointer(to=result))
 

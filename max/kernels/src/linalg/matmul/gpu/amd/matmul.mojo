@@ -426,12 +426,10 @@ def gemm_kernel_amd[
 
         comptime num_repeats_col = BK // k_tile_size
         comptime outer_block_size = num_repeats_col * inner_block_size
-        comptime num_repeats_row = config.num_threads() // UInt(
-            outer_block_size
-        )
+        comptime num_repeats_row = config.num_threads() // outer_block_size
 
         comptime tiler_layout = Layout.row_major(
-            Int(num_repeats_row),
+            num_repeats_row,
             num_repeats_col,
         )
         return blocked_product(
@@ -546,11 +544,9 @@ def gemm_kernel_amd[
 
     # Compute per-thread load counts for schedule parameterization.
     comptime threads_per_row = BK // simd_width
-    comptime rows_per_thread_block = config.num_threads() // UInt(
-        threads_per_row
-    )
-    comptime a_loads_per_thread = BM // Int(rows_per_thread_block)
-    comptime b_loads_per_thread = BN // Int(rows_per_thread_block)
+    comptime rows_per_thread_block = config.num_threads() // threads_per_row
+    comptime a_loads_per_thread = BM // rows_per_thread_block
+    comptime b_loads_per_thread = BN // rows_per_thread_block
 
     comptime schedule = build_default_matmul_schedule[
         num_k_tiles=num_k_tiles,
@@ -619,7 +615,7 @@ def gemm_kernel_amd[
     # Accumulate the warp-k tiles via shared memory.
     comptime if num_warps_k > 1:
         warp_split_k_reduction[
-            BM, BN, Int(config.num_threads() // UInt(num_warps_k)), num_warps_k
+            BM, BN, config.num_threads() // num_warps_k, num_warps_k
         ](warp_k, mma_op.out_reg_tile, reduction_smem.ptr)
 
         if warp_k != 0:

@@ -53,7 +53,7 @@ comptime _TraceType_MAX = 4
 def _setup_category(
     name_category: def(
         UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
-    ) -> NoneType,
+    ) thin -> NoneType,
     value: Int,
     name: StaticString,
 ):
@@ -61,7 +61,9 @@ def _setup_category(
 
 
 def _setup_categories(
-    name_category: def(UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]) -> NoneType
+    name_category: def(
+        UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
+    ) thin -> NoneType
 ):
     _setup_category(name_category, _TraceType_OTHER, "Other")
     _setup_category(name_category, _TraceType_ASYNCRT, "AsyncRT")
@@ -103,7 +105,7 @@ def _init_dylib() -> OwnedDLHandle:
                 dylib._handle.get_function[
                     def(
                         UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
-                    ) -> NoneType
+                    ) thin -> NoneType
                 ]("nvtxNameCategoryA")
             )
 
@@ -275,28 +277,28 @@ struct _dylib_function[fn_name: StaticString, fn_type: TrivialRegisterPassable](
 # NVTX_DECLSPEC void NVTX_API nvtxMarkEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxMarkEx = _dylib_function[
     "nvtxMarkEx",
-    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) -> NoneType,
+    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> NoneType,
 ]
 
 # NVTX_DECLSPEC nvtxRangeId_t NVTX_API nvtxRangeStartEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxRangeStartEx = _dylib_function[
     "nvtxRangeStartEx",
-    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) -> RangeID,
+    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> RangeID,
 ]
 
 # NVTX_DECLSPEC void NVTX_API nvtxRangeEnd(nvtxRangeId_t id);
 comptime _nvtxRangeEnd = _dylib_function[
-    "nvtxRangeEnd", def(RangeID) -> NoneType
+    "nvtxRangeEnd", def(RangeID) thin -> NoneType
 ]
 
 # NVTX_DECLSPEC int NVTX_API nvtxRangePushEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxRangePushEx = _dylib_function[
     "nvtxRangePushEx",
-    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) -> Int32,
+    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> Int32,
 ]
 
 # NVTX_DECLSPEC int NVTX_API nvtxRangePop(void);
-comptime _nvtxRangePop = _dylib_function["nvtxRangePop", def() -> Int32]
+comptime _nvtxRangePop = _dylib_function["nvtxRangePop", def() thin -> Int32]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -305,24 +307,25 @@ comptime _nvtxRangePop = _dylib_function["nvtxRangePop", def() -> Int32]
 
 # ROCTX_API void roctxMarkA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxMarkA = _dylib_function[
-    "roctxMarkA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) -> NoneType
+    "roctxMarkA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> NoneType
 ]
 
 # ROCTX_API int roctxRangePushA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxRangePushA = _dylib_function[
-    "roctxRangePushA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) -> Int32
+    "roctxRangePushA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> Int32
 ]
 
 # ROCTX_API int roctxRangePop() ROCTX_VERSION_4_1;
-comptime _roctxRangePop = _dylib_function["roctxRangePop", def() -> Int32]
+comptime _roctxRangePop = _dylib_function["roctxRangePop", def() thin -> Int32]
 # ROCTX_API roctx_range_id_t roctxRangeStartA(const char* message)
 comptime _roctxRangeStartA = _dylib_function[
-    "roctxRangeStartA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) -> RangeID
+    "roctxRangeStartA",
+    def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> RangeID,
 ]
 
 # ROCTX_API void roctxRangeStop(roctx_range_id_t id) ROCTX_VERSION_4_1;
 comptime _roctxRangeStop = _dylib_function[
-    "roctxRangeStop", def(RangeID) -> NoneType
+    "roctxRangeStop", def(RangeID) thin -> NoneType
 ]
 
 # ===-----------------------------------------------------------------------===#
@@ -369,7 +372,7 @@ struct _RangeStart:
 
 
 struct _RangeEnd:
-    var _fn: def(RangeID) -> NoneType
+    var _fn: def(RangeID) thin -> NoneType
 
     def __init__(out self) raises:
         comptime if has_nvidia_gpu_accelerator():

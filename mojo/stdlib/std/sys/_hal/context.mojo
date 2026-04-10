@@ -67,7 +67,7 @@ struct Context[device_origin: MutOrigin](Movable):
         )
 
         if status != STATUS_SUCCESS:
-            var err = plugin.get_status_message(status)
+            var err = plugin.get_status_message(driver._handle, status)
             raise HALError(
                 err.status,
                 message="failed to create context from device: " + err.message,

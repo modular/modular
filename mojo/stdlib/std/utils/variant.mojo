@@ -902,7 +902,7 @@ struct Variant[*Ts: Movable](
         return Variadic.contains[Trait=AnyType, T, Self.Ts]
 
     # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
-    def destroy_with[T: Movable](deinit self, destroy_func: def(var T)):
+    def destroy_with[T: Movable](deinit self, destroy_func: def(var T) thin):
         """Destroy a value contained in this Variant in-place using a caller
         provided destructor function.
 

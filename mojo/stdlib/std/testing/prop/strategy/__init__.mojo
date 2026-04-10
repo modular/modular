@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the `Strategy` trait and exports built-in strategies for property-based testing."""
 
 from std.testing.prop.random import Rng
 from .simd_strategy import *

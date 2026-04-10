@@ -89,19 +89,19 @@ def test_concat_d2d_copy_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(),
+        input_0_device_buffer,
         row_major(Coord(IndexList[rank](2, 128))),
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(),
+        input_1_device_buffer,
         row_major(Coord(IndexList[rank](3, 128))),
     )
     var input_2_dyn = TileTensor(
-        input_2_device_buffer.unsafe_ptr(),
+        input_2_device_buffer,
         row_major(Coord(IndexList[rank](5, 128))),
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(),
+        output_device_buffer,
         row_major(Coord(IndexList[rank](10, 128))),
     )
 
@@ -209,15 +209,15 @@ def test_concat_non_last_axis(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(),
+        input_0_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 4))),
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(),
+        input_1_device_buffer,
         row_major(Coord(IndexList[rank](2, 5, 4))),
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(),
+        output_device_buffer,
         row_major(Coord(IndexList[rank](2, 8, 4))),
     )
 
@@ -308,15 +308,15 @@ def test_concat_last_axis_vectorized(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(),
+        input_0_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 8))),
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(),
+        input_1_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 16))),
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(),
+        output_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 24))),
     )
 
@@ -406,15 +406,15 @@ def test_concat_last_axis_unaligned(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(),
+        input_0_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 7))),
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(),
+        input_1_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 11))),
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(),
+        output_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 18))),
     )
 
@@ -484,7 +484,7 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     )
 
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(), row_major(Coord(output_shape))
+        output_device_buffer, row_major(Coord(output_shape))
     )
 
     # Input lambda: generates data on-the-fly
@@ -601,15 +601,15 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(),
+        input_0_device_buffer,
         row_major(Coord(IndexList[rank](3, 16))),
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(),
+        input_1_device_buffer,
         row_major(Coord(IndexList[rank](5, 16))),
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(),
+        output_device_buffer,
         row_major(Coord(IndexList[rank](8, 16))),
     )
 
@@ -713,15 +713,15 @@ def test_concat_different_dtypes(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(),
+        input_0_device_buffer,
         row_major(Coord(IndexList[rank](4, 8))),
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(),
+        input_1_device_buffer,
         row_major(Coord(IndexList[rank](4, 12))),
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(),
+        output_device_buffer,
         row_major(Coord(IndexList[rank](4, 20))),
     )
 
@@ -809,15 +809,15 @@ def test_concat_high_rank(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(),
+        input_0_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 4, 4, 8))),
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(),
+        input_1_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 7, 4, 8))),
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(),
+        output_device_buffer,
         row_major(Coord(IndexList[rank](2, 3, 11, 4, 8))),
     )
 

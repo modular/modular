@@ -13,12 +13,12 @@
 
 from std.math import align_up, ceildiv
 from std.gpu import (
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
-    grid_dim_int as grid_dim,
-    block_dim_int as block_dim,
-    global_idx_int as global_idx,
-    lane_id_int as lane_id,
+    block_idx,
+    thread_idx,
+    grid_dim,
+    block_dim,
+    global_idx,
+    lane_id,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
@@ -1260,25 +1260,27 @@ def block_scaled_matmul_with_epilogue[
                 simd_width_of[c_type, target=get_gpu_target()]()
             )
 
-            @parameter
-            @__copy_capture(c, n)
-            def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
-                var c_val = rebind[SIMD[c_type, simd_width]](
-                    c.value().ptr.load[width=simd_width](idx[0] * n + idx[1])
-                )
-                epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
-                )
-
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
             if c.ptr:
+                var c_tt = c.value()
+
+                @parameter
+                @__copy_capture(c_tt, n)
+                def epilogue_wrapper[
+                    simd_width: Int, rank: Int, alignment: Int = 1
+                ](idx: IndexList[rank]):
+                    var c_coord = Index(idx[0], idx[1])
+                    var c_val = rebind[SIMD[c_type, simd_width]](
+                        c_tt.ptr.load[width=simd_width](idx[0] * n + idx[1])
+                    )
+                    epilogue[c_type, simd_width, alignment=alignment](
+                        c_coord, c_val
+                    )
+
                 matmul[scales_type=scales_dtype](
                     ctx,
-                    c.value(),
+                    c_tt,
                     a,
                     b,
                     a_scales=a_scales,

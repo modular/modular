@@ -60,45 +60,29 @@ def is_defined[name: StaticString]() -> Bool:
 
 
 def _is_bool_like[val: StaticString]() -> Bool:
-    comptime lower_val = val.lower()
     return (
-        lower_val == "true"
-        or lower_val == "1"
-        or lower_val == "on"
-        or lower_val == "false"
-        or lower_val == "0"
-        or lower_val == "off"
+        val == "0"
+        or val == "1"
+        or val == "true"
+        or val == "True"
+        or val == "TRUE"
+        or val == "false"
+        or val == "False"
+        or val == "FALSE"
+        or val == "on"
+        or val == "On"
+        or val == "ON"
+        or val == "off"
+        or val == "Off"
+        or val == "OFF"
     )
 
 
-def get_defined_bool[name: StaticString]() -> Bool:
-    """Try to get a boolean-valued define. Compilation fails if the
-    name is not defined or the value is not a recognized boolean
-    (`True`, `False`, `1`, `0`, `on`, `off`).
-
-    Parameters:
-        name: The name of the define.
-
-    Returns:
-        A boolean parameter value.
-    """
-    comptime val = get_defined_string[name]().lower()
-
-    comptime assert _is_bool_like[val](), String(
-        "the boolean define value of `",
-        name,
-        "` with value `",
-        get_defined_string[name](),
-        "` is not recognized",
-    )
-
-    return val == "true" or val == "1" or val == "on"
-
-
-def get_defined_bool[name: StaticString, default: Bool]() -> Bool:
-    """Try to get a boolean-valued define. If the name is not defined,
-    return a default value instead. The value must be a recognized boolean
-    (`True`, `False`, `1`, `0`, `on`, `off`).
+def get_defined_bool[name: StaticString, default: Bool = False]() -> Bool:
+    """Get a boolean-valued define. If the name is not defined, return a default
+    value instead. If the name is defined this will return `True` if the value
+    is ("1", "true", "True", "TRUE", "on", "On", "ON") otherwise it will return
+    `False`.
 
     Parameters:
         name: The name of the define.
@@ -107,9 +91,17 @@ def get_defined_bool[name: StaticString, default: Bool]() -> Bool:
     Returns:
         A boolean parameter value.
     """
-
     comptime if is_defined[name]():
-        return get_defined_bool[name]()
+        comptime val = get_defined_string[name]()
+        return (
+            val == "1"
+            or val == "true"
+            or val == "True"
+            or val == "TRUE"
+            or val == "on"
+            or val == "On"
+            or val == "ON"
+        )
     else:
         return default
 

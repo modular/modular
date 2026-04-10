@@ -218,7 +218,7 @@ def struct_field_type_by_name[
 #       comptime count = struct_field_count[T]()
 #
 # The implementation approach varies by API:
-# - struct_field_count: Uses #kgen.variadic.size<#kgen.struct_field_types<T>>
+# - struct_field_count: Uses #kgen.param_list.size<#kgen.struct_field_types<T>>
 # - struct_field_types/names: Use magic functions for type validation
 # - struct_field_index/type_by_name: Use KGEN attributes directly (require
 #   compile-time string literal for field name, only available with concrete
@@ -259,7 +259,7 @@ def struct_field_count[T: AnyType]() -> Int:
     # This avoids needing a dedicated struct_field_count attribute.
     return Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:!kgen.param_list<!kgen.type> `,
+            `#kgen.param_list.size<:!kgen.param_list<!kgen.type> `,
             `#kgen.struct_field_types<`,
             T,
             `>> : index`,

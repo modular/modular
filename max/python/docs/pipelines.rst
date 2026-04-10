@@ -79,7 +79,6 @@ Tokenizers
    :template: autosummary/class.rst
 
    IdentityPipelineTokenizer
-   PreTrainedPipelineTokenizer
    TextAndVisionTokenizer
    TextTokenizer
 

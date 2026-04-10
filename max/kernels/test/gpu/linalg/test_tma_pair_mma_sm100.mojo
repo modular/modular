@@ -213,8 +213,8 @@ def tma_umma_kernel_pair_cta[
         transpose_b=transpose_b,
     ]()
 
-    var rank_m = Int(block_id_in_cluster.x)
-    var rank_n = Int(block_id_in_cluster.y)
+    var rank_m = block_id_in_cluster.x
+    var rank_n = block_id_in_cluster.y
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (

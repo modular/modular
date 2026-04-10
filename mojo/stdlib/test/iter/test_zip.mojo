@@ -153,5 +153,56 @@ def test_zip_bounds() raises:
     assert_false(Bool(zipD.bounds()[1]))
 
 
+def test_zip2_owned() raises:
+    var la: List[String] = ["a", "b"]
+    var lb: List[Int] = [1, 2]
+    var it = zip(la^, lb^)
+    var elem = next(it)
+    assert_equal(elem[0], "a")
+    assert_equal(elem[1], 1)
+    elem = next(it)
+    assert_equal(elem[0], "b")
+    assert_equal(elem[1], 2)
+    with assert_raises():
+        _ = next(it)
+
+
+def test_zip3_owned() raises:
+    var la: List[Int] = [1, 2]
+    var lb: List[Int] = [3, 4]
+    var lc: List[Int] = [5, 6]
+    var it = zip(la^, lb^, lc^)
+    var elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 3)
+    assert_equal(elem[2], 5)
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 4)
+    assert_equal(elem[2], 6)
+    with assert_raises():
+        _ = next(it)
+
+
+def test_zip4_owned() raises:
+    var la: List[Int] = [1, 2]
+    var lb: List[Int] = [3, 4]
+    var lc: List[Int] = [5, 6]
+    var ld: List[Int] = [7, 8]
+    var it = zip(la^, lb^, lc^, ld^)
+    var elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 3)
+    assert_equal(elem[2], 5)
+    assert_equal(elem[3], 7)
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 4)
+    assert_equal(elem[2], 6)
+    assert_equal(elem[3], 8)
+    with assert_raises():
+        _ = next(it)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

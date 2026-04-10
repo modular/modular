@@ -202,7 +202,7 @@ nvidia = [
   "torchaudio",
   "torchvision==0.25.0",
   "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-
+  "tilelang==0.1.8",
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "vllm==0.17.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",

@@ -26,5 +26,5 @@ def make_it_quack(duck: DefaultDuck):
     duck.quack()
 
 
-def main() raises:
+def main():
     make_it_quack(DefaultDuck())

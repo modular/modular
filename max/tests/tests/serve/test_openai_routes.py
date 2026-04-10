@@ -222,6 +222,35 @@ def test_create_chat_completion_request_with_target_endpoint() -> None:
     assert parsed_request_default.model == "gpt-3.5-turbo"
 
 
+def test_create_chat_completion_request_with_chat_template_kwargs() -> None:
+    """Test that CreateChatCompletionRequest correctly parses chat_template_kwargs field."""
+    # Test with chat_template_kwargs provided
+    request_with_kwargs = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "chat_template_kwargs": {"enable_thinking": True, "thinking": True},
+    }
+
+    parsed_request = CreateChatCompletionRequest.model_validate(
+        request_with_kwargs
+    )
+    assert parsed_request.chat_template_kwargs == {
+        "enable_thinking": True,
+        "thinking": True,
+    }
+
+    # Test without chat_template_kwargs (should default to None)
+    request_without_kwargs = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello"}],
+    }
+
+    parsed_request_default = CreateChatCompletionRequest.model_validate(
+        request_without_kwargs
+    )
+    assert parsed_request_default.chat_template_kwargs is None
+
+
 # ============================================================================
 # Tests for log probabilities functionality
 # ============================================================================

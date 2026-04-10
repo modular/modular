@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-Tensor Memory Accelerator (TMA) Asynchronous Operations Module
+Tensor Memory Accelerator (TMA) Asynchronous Operations Module.
 
 Provides high-performance abstractions for NVIDIA's Tensor Memory Accelerator (TMA),
 enabling efficient asynchronous data movement between global and shared memory in GPU kernels.
@@ -2075,6 +2075,81 @@ struct TMATensorTile[
                         ),
                         multicast_mask,
                     )
+
+    @always_inline
+    def async_multicast_load_4d[
+        cta_group: Int = 1,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int, Int, Int],
+        multicast_mask: UInt16,
+    ):
+        """
+        Schedules an asynchronous 4D multicast load from global to shared memory.
+
+        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+
+        Parameters:
+            cta_group: If issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 4D coordinates in the source tensor from which to copy.
+            multicast_mask: Bit mask specifying which CTAs should receive the data.
+        """
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_dim3 = Self.desc_shape[3]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+        comptime num_copies_dim3 = ceildiv(Self.tile_shape[3], copy_dim3)
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
+                        comptime copy_offset: UInt32 = UInt32(
+                            _desc_offset[
+                                4,
+                                Index(
+                                    num_copies_dim0,
+                                    num_copies_dim1,
+                                    num_copies_dim2,
+                                    num_copies_dim3,
+                                ),
+                                Self.is_k_major,
+                            ](Index(n, m, i, j))
+                            * copy_size
+                        )
+
+                        cp_async_bulk_tensor_shared_cluster_global_multicast[
+                            cta_group=cta_group
+                        ](
+                            dst.ptr.mut_cast[True]() + copy_offset,
+                            UnsafePointer(to=self.descriptor).bitcast[
+                                NoneType
+                            ](),
+                            mem_barrier.unsafe_ptr(),
+                            Index(
+                                coords[0] + (j * copy_dim3),
+                                coords[1] + (i * copy_dim2),
+                                coords[2] + (m * copy_dim1),
+                                coords[3] + (n * copy_dim0),
+                            ),
+                            multicast_mask,
+                        )
 
     @always_inline
     def async_multicast_load_partitioned[

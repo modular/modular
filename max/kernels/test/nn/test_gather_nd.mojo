@@ -58,7 +58,7 @@ def main():
             uninitialized=True
         )
         var output_data_buffer = TileTensor(
-            output_data_data.unsafe_ptr(), row_major(Coord(output_shape))
+            output_data_data, row_major(Coord(output_shape))
         )
         _gather_nd_impl[batch_dims](
             data.make_dynamic[DType.int64](),
@@ -103,7 +103,7 @@ def main():
             uninitialized=True
         )
         var output_data_buffer = TileTensor(
-            output_data_data.unsafe_ptr(), row_major(Coord(output_shape))
+            output_data_data, row_major(Coord(output_shape))
         )
         _gather_nd_impl[batch_dims](
             data.make_dynamic[DType.int64](),
@@ -158,7 +158,7 @@ def main():
             uninitialized=True
         )
         var output_data_buffer = TileTensor(
-            output_data_data.unsafe_ptr(), row_major(Coord(output_shape))
+            output_data_data, row_major(Coord(output_shape))
         )
         _gather_nd_impl[batch_dims](
             data.make_dynamic[DType.int64](),
@@ -213,7 +213,7 @@ def main():
             uninitialized=True
         )
         var output_data_buffer = TileTensor(
-            output_data_data.unsafe_ptr(), row_major(Coord(output_shape))
+            output_data_data, row_major(Coord(output_shape))
         )
         _gather_nd_impl[batch_dims](
             data.make_dynamic[DType.int64](),
@@ -266,7 +266,7 @@ def main():
             uninitialized=True
         )
         var output_data_buffer = TileTensor(
-            output_data_data.unsafe_ptr(), row_major(Coord(output_shape))
+            output_data_data, row_major(Coord(output_shape))
         )
         _gather_nd_impl[batch_dims](
             data.make_dynamic[DType.int64](),
@@ -346,7 +346,7 @@ def main():
             uninitialized=True
         )
         var output_data_buffer = TileTensor(
-            output_data_data.unsafe_ptr(), row_major(Coord(output_shape))
+            output_data_data, row_major(Coord(output_shape))
         )
         _gather_nd_impl[batch_dims](
             data.make_dynamic[DType.int64](),
@@ -403,7 +403,7 @@ def main():
             uninitialized=True
         )
         var output_data_buffer = TileTensor(
-            output_data_data.unsafe_ptr(), row_major(Coord(output_shape))
+            output_data_data, row_major(Coord(output_shape))
         )
         _gather_nd_impl[batch_dims](
             data.make_dynamic[DType.int64](),
@@ -466,7 +466,7 @@ def main():
             uninitialized=True
         )
         var output_data_buffer = TileTensor(
-            output_data_data.unsafe_ptr(), row_major(Coord(output_shape))
+            output_data_data, row_major(Coord(output_shape))
         )
         _gather_nd_impl[batch_dims](
             data.make_dynamic[DType.int64](),

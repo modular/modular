@@ -135,7 +135,9 @@ def _project_on_axis[
     return p_t
 
 
-comptime _swizzle_signature = def[dtype: DType](Scalar[dtype]) -> Scalar[dtype]
+comptime _swizzle_signature = def[dtype: DType](Scalar[dtype]) thin -> Scalar[
+    dtype
+]
 
 
 def _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
@@ -3243,7 +3245,7 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        comptime num_tiles = ParameterList[*tile_sizes].size
+        comptime num_tiles = tile_sizes.size
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3358,7 +3360,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        comptime num_tiles = ParameterList[*tile_sizes].size
+        comptime num_tiles = tile_sizes.size
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3511,7 +3513,7 @@ struct LayoutTensor[
         ```
         """
 
-        comptime tiles_rank = ParameterList[*tile_sizes].size
+        comptime tiles_rank = tile_sizes.size
         comptime __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         comptime assert (
             __tiled_layout[1].rank() == tiles_rank
@@ -3541,9 +3543,11 @@ struct LayoutTensor[
             # In order to calculate the bound we only need to use the last
             # element in the IntTuple.
             comptime is_axis_val = Self.layout.shape[axis].is_value()
-            comptime bound = Self.layout.shape[axis].value() * Self.layout.stride[axis].value() \
+            comptime axis_shape = Self.layout.shape[axis]
+            comptime axis_stride = Self.layout.stride[axis]
+            comptime bound = axis_shape.value() * axis_stride.value() \
                 if is_axis_val \
-                else Self.layout.shape[axis][-1].value() * Self.layout.stride[axis][-1].value()
+                else axis_shape[len(axis_shape) - 1].value() * axis_stride[len(axis_stride) - 1].value()
             comptime assert axis != UNKNOWN_VALUE
             comptime dim_bound = Self.shape[axis]() \
                 if is_axis_val \
@@ -6823,7 +6827,7 @@ def copy_dram_to_sram_async[
 
 comptime binary_op_type = def[dtype: DType, width: Int](
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
-) -> SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
 """
 Type alias for binary operations on SIMD vectors.
 

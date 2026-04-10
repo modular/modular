@@ -239,17 +239,15 @@ class ServeGraphCaptureRunner:
         warmup_model_inputs: WarmupModelInputs,
         max_cache_length_upper_bound: int,
         max_batch_size: int,
-        # TODO(b-rod): Replace single extra_dispatch_resolver with a
-        # list[AttentionDispatchResolver] to support N extra KV caches
-        # generically, instead of assuming at most one extra cache.
-        extra_dispatch_resolver: AttentionDispatchResolver | None = None,
         num_speculative_tokens: int = 0,
+        num_kv_caches: int = 1,
     ) -> None:
         self._model = model
         self._execute_model = execute_model
         self._warmup_model_inputs = warmup_model_inputs
-        self._extra_dispatch_resolver = extra_dispatch_resolver
         self._num_speculative_tokens = num_speculative_tokens
+        self._num_kv_caches = num_kv_caches
+        self._n_devices = len(kv_params.devices)
         if max_cache_length_upper_bound < 1:
             raise ValueError(
                 "Decode graph capture requires a positive decode "
@@ -346,28 +344,30 @@ class ServeGraphCaptureRunner:
                         )
                     )
 
-                    # Patch extra KV caches with the same
-                    # max_cache_valid_length so kernel specialization
-                    # is consistent with replay.
+                    # Patch dispatch metadata for extra caches.
+                    # Combined layout: [cache0_dev0..devN, cache1_dev0..devN, ...]
                     if (
-                        self._extra_dispatch_resolver is not None
-                        and capture_inputs.extra_kv_cache_inputs
+                        self._num_kv_caches > 1
+                        and capture_inputs.kv_cache_inputs is not None
                     ):
-                        extra_dispatch = self._extra_dispatch_resolver(
-                            batch_size=batch_size,
-                            max_prompt_length=self._num_speculative_tokens + 1,
-                            max_cache_valid_length=max_cache_valid_length,
+                        all_inputs = list(capture_inputs.kv_cache_inputs.inputs)
+                        extra_dispatch = self._resolver(
+                            batch_size,
+                            self._num_speculative_tokens + 1,
+                            max_cache_valid_length,
                         )
-                        patched_extras: list[KVCacheInputs] = []
-                        for extra_kv in capture_inputs.extra_kv_cache_inputs:
-                            patched_extras.append(
-                                _patch_kv_cache_for_capture(
-                                    extra_kv,
-                                    extra_dispatch,
-                                    max_cache_valid_length,
-                                )
+                        for cache_idx in range(1, self._num_kv_caches):
+                            start = cache_idx * self._n_devices
+                            end = start + self._n_devices
+                            patched = _patch_kv_cache_for_capture(
+                                KVCacheInputs(inputs=all_inputs[start:end]),
+                                extra_dispatch,
+                                max_cache_valid_length,
                             )
-                        capture_inputs.extra_kv_cache_inputs = patched_extras
+                            all_inputs[start:end] = list(patched.inputs)
+                        capture_inputs.kv_cache_inputs = KVCacheInputs(
+                            inputs=all_inputs
+                        )
 
                     input_buffers = capture_inputs.buffers
                     packed_key = _pack_model_graph_key(key)

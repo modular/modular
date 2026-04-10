@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements type rebind/trait downcast
+"""Implements type rebind/trait downcast.
 
 These are Mojo built-ins, so you don't need to import them.
 """

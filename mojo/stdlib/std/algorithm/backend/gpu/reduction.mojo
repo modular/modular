@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements GPU reduction algorithms for parallel data aggregation."""
 
 from std.math import align_up
 from std.math.uutils import udivmod, ufloordiv

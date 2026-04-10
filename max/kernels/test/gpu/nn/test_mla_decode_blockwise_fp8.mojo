@@ -425,17 +425,17 @@ def run_test_blockwise_fp8[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -454,7 +454,7 @@ def run_test_blockwise_fp8[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+        config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
     ](
         out_tt,
@@ -901,17 +901,17 @@ def run_bench_blockwise_fp8[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -936,7 +936,7 @@ def run_bench_blockwise_fp8[
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+            config=MHAConfig[q_type](num_heads, DEPTH),
             ragged=True,
         ](
             out_tt,

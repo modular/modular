@@ -20,9 +20,10 @@ import threading
 from collections.abc import Sequence
 
 import zmq
-from max.kv_cache.connectors.dkv.client_api_pb2 import (  # type: ignore
+from max.kv_cache.connectors.dkv.client_api_pb2 import (
     AcquireBlocksRequest,
     AcquireBlocksResponse,
+    AcquiredBlock,
     BlockMetadata,
     DecrementBlocksResponse,
     ErrorResponse,
@@ -63,6 +64,13 @@ class MockDKVServer:
         # Configurable behavior
         self._error_response: str | None = None
         self._blocks_to_acquire: list[BlockDescriptor] | None = None
+        self._existing_seq_hashes: set[int] = set()
+
+        # Stable block map: seq_hash → BlockDescriptor. Ensures re-acquiring
+        # the same hash returns identical metadata (same offset/device), just
+        # like the real dKV slab allocator.
+        self._acquired_blocks: dict[int, BlockDescriptor] = {}
+        self._next_offset: int = 0
 
         # Recorded operations for assertions
         self._registered_blocks: list[list[BlockDescriptor]] = []
@@ -70,7 +78,7 @@ class MockDKVServer:
         self._read_blocks_log: list[list[BlockDescriptor]] = []
         self._decremented_blocks: list[list[BlockDescriptor]] = []
         self._request_count = 0
-        self._acquire_parent_hashes: list[str] = []
+        self._acquire_parent_hashes: list[int] = []
 
     def start(self) -> None:
         """Starts the mock server in a daemon thread."""
@@ -132,6 +140,15 @@ class MockDKVServer:
         with self._lock:
             self._blocks_to_acquire = list(blocks)
 
+    def set_existing_seq_hashes(self, hashes: set[int]) -> None:
+        """Configures seq_hashes treated as already existing in dKV.
+
+        Blocks whose seq_hash is in this set will have
+        ``newly_acquired=False`` in the acquire response.
+        """
+        with self._lock:
+            self._existing_seq_hashes = set(hashes)
+
     # ---------------------------------------------------------------------------
     # State inspection for assertions
     # ---------------------------------------------------------------------------
@@ -167,10 +184,16 @@ class MockDKVServer:
             return self._request_count
 
     @property
-    def acquire_parent_hashes(self) -> list[str]:
+    def acquire_parent_hashes(self) -> list[int]:
         """Returns all parent_seq_hash values received by acquire operations."""
         with self._lock:
             return list(self._acquire_parent_hashes)
+
+    @property
+    def existing_seq_hashes(self) -> set[int]:
+        """Returns the set of seq_hashes treated as already existing."""
+        with self._lock:
+            return set(self._existing_seq_hashes)
 
     # ---------------------------------------------------------------------------
     # Internal
@@ -263,11 +286,29 @@ class MockDKVServer:
             return resp.SerializeToString()
 
     def _handle_acquire(self, acquire_req: AcquireBlocksRequest) -> bytes:
-        """Handles an acquire_blocks request."""
-        seq_hashes = list(acquire_req.seq_hashes)
+        """Handles an acquire_blocks request.
+
+        Flattens all ``BlockSequence`` entries into one response,
+        parallel to the concatenation of all ``seq_hashes``.
+
+        Models the real dKV idempotent acquire semantics:
+        - First acquire of a hash allocates a stable slab slot and
+          returns ``newly_acquired=True``.
+        - Subsequent acquires of the same hash return the *same*
+          ``BlockDescriptor`` (identical offset/device) with
+          ``newly_acquired=False``.
+        """
+        seq_hashes: list[int] = []
+        for seq in acquire_req.sequences:
+            seq_hashes.extend(seq.seq_hashes)
 
         with self._lock:
-            self._acquire_parent_hashes.append(acquire_req.parent_seq_hash)
+            for seq in acquire_req.sequences:
+                self._acquire_parent_hashes.append(seq.parent_seq_hash)
+
+            blocks: list[BlockDescriptor] = []
+            newly_acquired: list[bool] = []
+
             if self._blocks_to_acquire is not None:
                 if len(self._blocks_to_acquire) != len(seq_hashes):
                     msg = (
@@ -278,22 +319,49 @@ class MockDKVServer:
                     return RpcResponse(
                         error=ErrorResponse(message=msg)
                     ).SerializeToString()
-                blocks = list(self._blocks_to_acquire)
-            else:
-                blocks = [
-                    BlockDescriptor(
-                        seq_hash=h,
-                        agent_id=1,
-                        device_id=0,
-                        offset=i * _DEFAULT_BLOCK_SIZE,
-                        length=_DEFAULT_BLOCK_SIZE,
+                # Override path: use caller-supplied descriptors but
+                # still respect idempotency tracking.
+                for h, bd in zip(
+                    seq_hashes, self._blocks_to_acquire, strict=False
+                ):
+                    already = (
+                        h in self._existing_seq_hashes
+                        or h in self._acquired_blocks
                     )
-                    for i, h in enumerate(seq_hashes)
-                ]
+                    # Always ensure a stable descriptor exists, even
+                    # for pre-seeded hashes that were never acquired.
+                    if h not in self._acquired_blocks:
+                        self._acquired_blocks[h] = bd
+                    blocks.append(self._acquired_blocks[h])
+                    newly_acquired.append(not already)
+            else:
+                for h in seq_hashes:
+                    already = (
+                        h in self._existing_seq_hashes
+                        or h in self._acquired_blocks
+                    )
+                    if h not in self._acquired_blocks:
+                        bd = BlockDescriptor(
+                            seq_hash=h,
+                            agent_id=1,
+                            device_id=0,
+                            offset=self._next_offset,
+                            length=_DEFAULT_BLOCK_SIZE,
+                        )
+                        self._next_offset += _DEFAULT_BLOCK_SIZE
+                        self._acquired_blocks[h] = bd
+                    blocks.append(self._acquired_blocks[h])
+                    newly_acquired.append(not already)
 
-        pb_blocks = [b.to_proto() for b in blocks]
+            self._existing_seq_hashes.update(seq_hashes)
+
         resp = RpcResponse(
-            acquire_blocks=AcquireBlocksResponse(blocks=pb_blocks)
+            acquire_blocks=AcquireBlocksResponse(
+                blocks=[
+                    AcquiredBlock(metadata=b.to_proto(), newly_acquired=n)
+                    for b, n in zip(blocks, newly_acquired, strict=False)
+                ]
+            )
         )
         return resp.SerializeToString()
 

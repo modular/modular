@@ -20,12 +20,7 @@ SF_VECTOR_SIZE (32) consecutive elements.
 """
 
 from std.math import ceildiv
-from std.gpu import (
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
-    grid_dim_int as grid_dim,
-    block_dim_int as block_dim,
-)
+from std.gpu import block_idx, thread_idx, grid_dim, block_dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo
 from std.sys.info import _accelerator_arch
@@ -255,6 +250,9 @@ def _cast_bf16_to_fp8(
             in_tt.load[width=width](coord).cast[out_tt.dtype](),
         )
 
-    elementwise[cast_fn, simd_width_of[input.dtype](), target="gpu"](
-        Index(num_rows, num_cols), ctx
-    )
+    elementwise[
+        cast_fn,
+        simd_width_of[input.dtype](),
+        target="gpu",
+        _trace_description="mxfp4_dequant_cast",
+    ](Index(num_rows, num_cols), ctx)

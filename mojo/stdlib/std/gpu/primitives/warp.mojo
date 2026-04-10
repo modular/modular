@@ -829,7 +829,7 @@ def lane_group_reduce[
     //,
     shuffle: def[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
-    ) -> SIMD[dtype, simd_width],
+    ) thin -> SIMD[dtype, simd_width],
     func: _ReduceFn,
     num_lanes: Int,
     *,
@@ -887,7 +887,7 @@ def reduce[
     //,
     shuffle: def[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
-    ) -> SIMD[dtype, simd_width],
+    ) thin -> SIMD[dtype, simd_width],
     func: _ReduceFn,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Performs a generic warp-wide reduction operation using shuffle operations.

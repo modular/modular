@@ -877,6 +877,20 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.3e-2
     kl_div_threshold: 9.0e-1
 
+  google/gemma-4-26B-A4B-it-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
+    pipeline: "google/gemma-4-26B-A4B-it"
+    compatible_with: [gpu]
+    encoding: bfloat16
+
+  google/gemma-4-31B-it-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
+    pipeline: "google/gemma-4-31B-it"
+    compatible_with: [gpu]
+    encoding: bfloat16
+
   HKUSTAudio/Llasa-8B-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
@@ -940,8 +954,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    ssim_threshold: 0.17
-    lpips_threshold: 0.95
+    ssim_threshold: 0.55
+    lpips_threshold: 0.40
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
 
@@ -955,8 +969,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    ssim_threshold: 0.17
-    lpips_threshold: 0.95
+    ssim_threshold: 0.55
+    lpips_threshold: 0.40
     timeout: 3600
     config_params_override: {"prefer_module_v3": true}
 

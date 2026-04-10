@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements `UnsafeMaybeUninit`, a wrapper for memory that may or may not be initialized."""
 
 from std.builtin.rebind import downcast
 from std.os import abort

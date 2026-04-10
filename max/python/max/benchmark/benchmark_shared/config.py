@@ -43,6 +43,7 @@ BaseBackend = Literal[
     "sglang",
     "trtllm",
     "vllm",
+    "vllm-omni",
 ]
 
 Backend = Literal[
@@ -54,6 +55,9 @@ Backend = Literal[
     "trtllm-chat",
     "vllm",
     "vllm-chat",
+    # vllm-omni has no -chat variant: it always uses /v1/chat/completions
+    # for pixel generation and does not support text generation.
+    "vllm-omni",
 ]
 
 Endpoint = Literal[
@@ -61,6 +65,7 @@ Endpoint = Literal[
     "/v1/chat/completions",
     "/v2/models/ensemble/generate_stream",
     "/v1/responses",
+    "/v1/images/generations",
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
@@ -81,6 +86,22 @@ BenchmarkTask = Literal[
 PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
     "text-to-image",
     "image-to-image",
+)
+
+# Default endpoint per backend for pixel generation tasks.
+# Backends not listed here do not support pixel generation.
+# NOTE: Each endpoint value here is coupled to a specific request driver in
+# get_request_driver_class() in request.py. Adding a new backend that reuses
+# an existing endpoint will route to that endpoint's existing driver.
+PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[str, Endpoint] = {
+    "modular": "/v1/responses",
+    "sglang": "/v1/images/generations",
+    "vllm-omni": "/v1/chat/completions",
+}
+
+# Valid endpoints for pixel generation tasks (union of all backend defaults).
+PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
+    PIXEL_GEN_DEFAULT_ENDPOINT.values()
 )
 
 
@@ -523,7 +544,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 
     endpoint: Endpoint = Field(
         default="/v1/chat/completions",
-        description="API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream",
+        description="API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v1/images/generations, /v2/models/ensemble/generate_stream. For pixel generation tasks, auto-selected from backend if not specified.",
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
@@ -550,6 +571,23 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Request Configuration"},
     )
 
+    max_concurrent_conversations: int | None = Field(
+        default=None,
+        description=(
+            "Maximum conversation workers active at once for KV-cache stress "
+            "benchmarking. When set, runs run_kv_cache_stress_benchmark "
+            "instead of run_multiturn_benchmark: each worker drives one chat "
+            "session to completion before picking up the next, keeping all "
+            "session KV caches resident simultaneously. "
+            "--max-concurrency caps in-flight turn requests and must be <= "
+            "--max-concurrent-conversations to stress the server's KV-cache: "
+            "more open sessions than active turns grows the footprint and "
+            "increases the likelihood of offloading or dropping pre-computed "
+            "historical KV data."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
     # Workload configuration (serving-specific)
     max_benchmark_duration_s: int | None = Field(
         default=None,
@@ -572,6 +610,17 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "Delay between chat turns in milliseconds. Accepts a float or int for a constant delay, "
             "or a distribution string: 'N(mean,std)' for normal, 'U(lower,upper)' for continuous uniform, "
             "'DU(lower,upper)' for discrete uniform, 'G(shape,scale)' for gamma, or 'LN(mean,std)' for log-normal."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
+    )
+
+    force_unique_runs: bool = Field(
+        default=False,
+        description=(
+            "Prepend a single run-level UUID prefix to every prompt in this run. "
+            "All requests in the same run share the same prefix, preserving "
+            "within-run system-prompt prefix caching while preventing KV-cache "
+            "reuse across benchmark runs."
         ),
         json_schema_extra={"group": "Workload Configuration"},
     )

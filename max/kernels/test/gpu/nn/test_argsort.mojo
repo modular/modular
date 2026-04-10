@@ -30,7 +30,7 @@ def reverse_filler(i: Int, n: Int) -> Float32:
 def test_argsort[
     dtype: DType = DType.float32,
     *,
-    filler: def(Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
     # Allocate host memory
@@ -50,11 +50,11 @@ def test_argsort[
 
     # Create device LayoutTensors
     var device_indices_tensor = TileTensor(
-        device_indices.unsafe_ptr(),
+        device_indices,
         row_major(Idx(N)),
     )
     var device_input_tensor = TileTensor(
-        device_input.unsafe_ptr(),
+        device_input,
         row_major(Idx(N)),
     )
 
@@ -99,7 +99,7 @@ def test_argsort[
 def test_argsort_helper[
     *,
     dtype: DType,
-    filler: def(Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
     ascending: Bool,
 ](ctx: DeviceContext) raises:
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=3731)

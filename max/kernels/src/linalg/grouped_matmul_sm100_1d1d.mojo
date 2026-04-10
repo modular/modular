@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.math.uutils import ufloordiv
+from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE
@@ -357,14 +357,14 @@ def copy_accum_to_gmem[
             comptime if elementwise_compute_lambda_fn:
                 comptime if not register_based_epilogue:
                     shared_memory_epilogue[
-                        UInt(MMA_M),
+                        MMA_M,
                         data_paths,
-                        UInt(num_stages),
-                        UInt(stage),
-                        UInt(stageN),
+                        num_stages,
+                        Int(stage),
+                        stageN,
                         c_smem_warp_tile_upper.dtype,
-                        UInt(c_smem_tile.shape[1]()),
-                        UInt(simd_size),
+                        c_smem_tile.shape[1](),
+                        simd_size,
                         c_smem_warp_tile_upper.layout,
                         c_smem_warp_tile_lower.layout,
                         swizzle,
@@ -373,8 +373,8 @@ def copy_accum_to_gmem[
                     ](
                         M,
                         N,
-                        UInt(c_col),
-                        UInt(c_row),
+                        Int(c_col),
+                        Int(c_row),
                         c_smem_warp_tile_upper,
                         c_smem_warp_tile_lower,
                     )
@@ -846,8 +846,8 @@ def load_AB[
         Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
-    peer_cta_coord: Tuple[UInt, UInt, UInt],
-    work_tile_coord: Tuple[UInt, UInt],
+    peer_cta_coord: Tuple[Int, Int, Int],
+    work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
     iter_idx: UInt32,
@@ -889,12 +889,12 @@ def load_AB[
     var stage = load_mma_pipeline.producer_stage()
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
     var expert_offset: Int = Int(expert_id) * scheduler.static_MN
-    var a_gmem_slice_coord = Int(
-        peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
+    var a_gmem_slice_coord = (
+        peer_cta_coord[2] * a_tma_rows + work_tile_coord[0]
     ) + (expert_offset if config.AB_swapped else 0)
-    var b_gmem_slice_coord: Int = Int(
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
+    var b_gmem_slice_coord: Int = (
+        peer_cta_coord[1] * b_tma_rows
+        + peer_cta_coord[0] * BN
         + work_tile_coord[1]
     ) + (expert_offset if not config.AB_swapped else 0)
 
@@ -942,10 +942,10 @@ def load_AB[
             ](sfb_smem_base + offset * sfb_smem_tile_size)
 
             var a_smem_slice = type_of(a_smem_tile)(
-                a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
+                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
             )
             var b_smem_slice = type_of(b_smem_tile)(
-                b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
+                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
             )
 
             a_tma_op.async_multicast_load[cta_group](
@@ -974,17 +974,17 @@ def load_AB[
             )
             if config.AB_swapped:
                 a_m = Int(expert_id) * sf_groups_per_expert + ufloordiv(
-                    Int(work_tile_coord[0]), SF_MN_GROUP_SIZE
+                    work_tile_coord[0], SF_MN_GROUP_SIZE
                 )
-                b_n = ufloordiv(
-                    Int(work_tile_coord[1]), SF_MN_GROUP_SIZE
-                ) + Int(group_scale_offset)
+                b_n = ufloordiv(work_tile_coord[1], SF_MN_GROUP_SIZE) + Int(
+                    group_scale_offset
+                )
             else:
-                a_m = ufloordiv(
-                    Int(work_tile_coord[0]), SF_MN_GROUP_SIZE
-                ) + Int(group_scale_offset)
+                a_m = ufloordiv(work_tile_coord[0], SF_MN_GROUP_SIZE) + Int(
+                    group_scale_offset
+                )
                 b_n = Int(expert_id) * sf_groups_per_expert + ufloordiv(
-                    Int(work_tile_coord[1]), SF_MN_GROUP_SIZE
+                    work_tile_coord[1], SF_MN_GROUP_SIZE
                 )
 
             sfa_tma_op.async_copy_4d[cta_group](
@@ -1072,7 +1072,7 @@ def consumer_main_loop[
     elect_one_warp: Bool,
     iter_idx: UInt32,
     k_start: UInt32,
-    work_tile_coord: Tuple[UInt, UInt],
+    work_tile_coord: Tuple[Int, Int],
 ):
     comptime BM = block_tile_shape[0]
     comptime MMA_N = mma_shape[1]
@@ -1134,7 +1134,7 @@ def consumer_main_loop[
             # columns to read their half.
             var sfb_tmem_adj: UInt32
             comptime if MMA_N in (64, 192):
-                sfb_tmem_adj = UInt32(work_tile_coord[1] % 2) * 2
+                sfb_tmem_adj = UInt32(umod(work_tile_coord[1], 2)) * 2
             else:
                 sfb_tmem_adj = UInt32(0)
 
@@ -1994,8 +1994,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % UInt(config.cta_group),
-        rank_m // UInt(config.cta_group),
+        umod(rank_m, config.cta_group),
+        ufloordiv(rank_m, config.cta_group),
         rank_n,
     )  # v,m,n
 
@@ -2012,7 +2012,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
-    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
+    b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -2065,7 +2065,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_smem_base,
                         load_mma_pipeline,
                         peer_cta_coord,
-                        (UInt(work_info.m), UInt(work_info.n)),
+                        (Int(work_info.m), Int(work_info.n)),
                         a_multicast_mask,
                         b_multicast_mask,
                         i * UInt32(config.k_group_size),
@@ -2153,8 +2153,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             i * UInt32(config.k_group_size),
                             0,
                             work_tile_coord=(
-                                UInt(work_info.m),
-                                UInt(work_info.n),
+                                Int(work_info.m),
+                                Int(work_info.n),
                             ),
                         )
                         load_mma_pipeline.consumer_step()

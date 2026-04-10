@@ -140,15 +140,13 @@ def verify_matmul[
     var b_size = shape_b[0].value() * shape_b[1].value()
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = TileTensor(a_device.unsafe_ptr(), row_major(shape_a))
+    var a_device_nd = TileTensor(a_device, row_major(shape_a))
     var b_device = ctx.enqueue_create_buffer[a_type](b_size)
-    var b_device_nd = TileTensor(b_device.unsafe_ptr(), row_major(shape_b))
+    var b_device_nd = TileTensor(b_device, row_major(shape_b))
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = TileTensor(c_device.unsafe_ptr(), row_major(shape_c))
+    var c_device_nd = TileTensor(c_device, row_major(shape_c))
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = TileTensor(
-        c_device_ref.unsafe_ptr(), row_major(shape_c)
-    )
+    var c_device_ref_nd = TileTensor(c_device_ref, row_major(shape_c))
 
     init_vector_launch[a_type](a_device, a_size, init_type, ctx)
     init_vector_launch[a_type](b_device, b_size, init_type, ctx)

@@ -743,8 +743,8 @@ def multistage_gemm_kernel[
     comptime num_pipeline_stages = Int(config.num_pipeline_stages)
 
     comptime num_warps_m = config.num_warps_m()
-    comptime num_warps_n = Int(config.num_warps_n())
-    comptime num_threads = Int(config.num_threads())
+    comptime num_warps_n = config.num_warps_n()
+    comptime num_threads = config.num_threads()
 
     comptime num_warp_k_partitions = Int(config.num_warp_k_partitions)
     comptime num_threads_per_warp_k_part = num_threads // num_warp_k_partitions

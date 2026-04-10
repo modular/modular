@@ -1610,7 +1610,7 @@ comptime _IntToComptimeIntMapper[
 
 comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    ParamListType=values,
+    ParamListType=values.values,
     Reducer=_IntToComptimeIntMapper,
 ]
 

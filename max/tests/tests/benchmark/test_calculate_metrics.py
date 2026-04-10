@@ -26,6 +26,11 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
 )
+from max.diagnostics.cpu import CPUMetrics
+
+_EMPTY_CPU_METRICS = CPUMetrics(
+    user=0.0, user_percent=0.0, system=0.0, system_percent=0.0, elapsed=0.0
+)
 
 
 def _make_mock_tokenizer(token_counts: dict[str, int]) -> MagicMock:
@@ -64,10 +69,11 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -108,10 +114,11 @@ def test_tpot_weighted_mean() -> None:
         dur_s=2.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -145,10 +152,11 @@ def test_tpot_zero_decode_tokens() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -165,10 +173,11 @@ def test_empty_outputs_no_crash() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -197,10 +206,11 @@ def test_itl_metrics_unchanged() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -234,10 +244,11 @@ def test_failed_requests_excluded() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -287,10 +298,11 @@ def test_skip_last_n_requests() -> None:
         dur_s=3.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -299,10 +311,11 @@ def test_skip_last_n_requests() -> None:
         dur_s=3.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -351,10 +364,11 @@ def test_skip_first_and_last_n_requests() -> None:
         dur_s=3.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -407,10 +421,11 @@ def test_skip_last_with_cancelled_requests() -> None:
         dur_s=3.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -444,10 +459,11 @@ def test_skip_all_requests_warns() -> None:
             dur_s=1.0,
             tokenizer=tokenizer,
             gpu_metrics=None,
-            cpu_metrics={},
+            cpu_metrics=_EMPTY_CPU_METRICS,
             skip_first_n_requests=1,
             skip_last_n_requests=1,
             max_concurrency=None,
+            max_concurrent_conversations=None,
             collect_gpu_stats=False,
         )
         assert len(w) == 1
@@ -473,7 +489,7 @@ def test_calculate_pixel_generation_metrics() -> None:
         outputs=outputs,
         dur_s=5.0,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         max_concurrency=None,
         collect_gpu_stats=False,
     )
@@ -513,10 +529,11 @@ def test_request_submit_time_set_on_output() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
     # Metrics are computed normally regardless of submit time

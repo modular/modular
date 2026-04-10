@@ -35,6 +35,12 @@ from max.experimental.distributed_functional.collectives import (
     to_numpy,
 )
 from max.experimental.distributed_functional.collectives import (
+    distributed_broadcast as df_broadcast,
+)
+from max.experimental.distributed_functional.collectives import (
+    distributed_scatter as df_scatter,
+)
+from max.experimental.distributed_functional.collectives import (
     shard as df_shard,
 )
 from max.experimental.realization_context import set_seed
@@ -3471,6 +3477,152 @@ class TestDistributedAllgatherHandler:
             realization_context(ctx),
         ):
             result = all_gather(sharded_t, tensor_axis=0)
+
+        assert result.placements == (Replicated(),)
+        for shard in result.local_shards:
+            np.testing.assert_allclose(to_numpy(shard), data, rtol=1e-5)
+
+
+class TestDistributedScatterHandler:
+    """Tests for the DistributedScatterOp interpreter handler."""
+
+    @_NEED_2_GPUS
+    def test_scatter_via_graph_ops(self) -> None:
+        """Build a graph using ops.distributed_scatter and run via MOInterpreter."""
+        shape = [4]
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+
+        input_types: list[GType[Any]] = [
+            TensorType(DType.float32, shape, gpu0),
+            TensorType(DType.float32, shape, gpu0),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("scatter_e2e", input_types=input_types) as graph:
+            t0, t1, b0, b1 = graph.inputs
+            scatter_out = graph_ops.distributed_scatter(
+                [t0.tensor, t1.tensor], [b0.buffer, b1.buffer]
+            )
+            graph.output(*scatter_out)
+
+        a_np = np.array([1, 2, 3, 4], dtype=np.float32)
+        b_np = np.array([10, 20, 30, 40], dtype=np.float32)
+
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_numpy(a_np).to(dev0),
+            Buffer.from_numpy(b_np).to(dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph)
+        outputs = interp.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        out0, out1 = outputs[0], outputs[1]
+        assert isinstance(out0, Buffer)
+        assert isinstance(out1, Buffer)
+        np.testing.assert_allclose(out0.to(CPU()).to_numpy(), a_np, rtol=1e-5)
+        np.testing.assert_allclose(out1.to(CPU()).to_numpy(), b_np, rtol=1e-5)
+
+    @_NEED_2_GPUS
+    def test_scatter_distributed_tensor_e2e(self) -> None:
+        """E2E: scatter pre-split chunks to Sharded via interpreter."""
+        num_gpus = min(accelerator_count(), 2)
+        devices = tuple(Accelerator(i) for i in range(num_gpus))
+        mesh = DeviceMesh(
+            devices=devices, mesh_shape=(num_gpus,), axis_names=("dp",)
+        )
+
+        data = np.arange(16, dtype=np.float32).reshape(4, 4)
+        rows_per_chunk = 4 // num_gpus
+        chunks = [
+            Tensor.from_dlpack(
+                np.ascontiguousarray(
+                    data[i * rows_per_chunk : (i + 1) * rows_per_chunk]
+                )
+            )
+            for i in range(num_gpus)
+        ]
+
+        mapping = PlacementMapping(mesh, (Sharded(0),))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = df_scatter(chunks, mapping)
+
+        assert result.placements == (Sharded(0),)
+        for i, shard in enumerate(result.local_shards):
+            expected = data[i * rows_per_chunk : (i + 1) * rows_per_chunk]
+            np.testing.assert_allclose(to_numpy(shard), expected, rtol=1e-5)
+
+
+class TestDistributedBroadcastHandler:
+    """Tests for the DistributedBroadcastOp interpreter handler."""
+
+    @_NEED_2_GPUS
+    def test_broadcast_via_graph_ops(self) -> None:
+        """Build a graph using ops.distributed_broadcast and run via MOInterpreter."""
+        shape = [4]
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+
+        input_types: list[GType[Any]] = [
+            TensorType(DType.float32, shape, gpu0),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("broadcast_e2e", input_types=input_types) as graph:
+            t0, b0, b1 = graph.inputs
+            broadcast_out = graph_ops.distributed_broadcast(
+                t0.tensor, [b0.buffer, b1.buffer]
+            )
+            graph.output(*broadcast_out)
+
+        a_np = np.array([1, 2, 3, 4], dtype=np.float32)
+
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_numpy(a_np).to(dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph)
+        outputs = interp.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        out0, out1 = outputs[0], outputs[1]
+        assert isinstance(out0, Buffer)
+        assert isinstance(out1, Buffer)
+        np.testing.assert_allclose(out0.to(CPU()).to_numpy(), a_np, rtol=1e-5)
+        np.testing.assert_allclose(out1.to(CPU()).to_numpy(), a_np, rtol=1e-5)
+
+    @_NEED_2_GPUS
+    def test_broadcast_distributed_tensor_e2e(self) -> None:
+        """E2E: broadcast a tensor to Replicated via interpreter."""
+        num_gpus = min(accelerator_count(), 2)
+        devices = tuple(Accelerator(i) for i in range(num_gpus))
+        mesh = DeviceMesh(
+            devices=devices, mesh_shape=(num_gpus,), axis_names=("dp",)
+        )
+
+        data = np.arange(16, dtype=np.float32).reshape(4, 4)
+        t = Tensor(storage=Buffer.from_numpy(data).to(devices[0]))
+
+        mapping = PlacementMapping(mesh, (Replicated(),))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = df_broadcast(t, mapping)
 
         assert result.placements == (Replicated(),)
         for shard in result.local_shards:

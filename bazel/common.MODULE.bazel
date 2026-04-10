@@ -412,7 +412,7 @@ http_archive(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
 )
 
-SHELLCHECK_VERSION = "v0.10.0"
+SHELLCHECK_VERSION = "v0.11.0"
 
 [
     http_archive(
@@ -429,9 +429,9 @@ SHELLCHECK_VERSION = "v0.10.0"
         ],
     )
     for arch, sha in [
-        ("linux.x86_64", "sha256-bIgasGmOTm6iNSRfIoMoYFRPF7o4ZEL+fp1in4y+34c="),
-        ("linux.aarch64", "sha256-Mkp+id6Poq7Q0MKPPatZz4TG10JkAiwAwir2Ze0aCbs="),
-        ("darwin.aarch64", "sha256-u9LxSCYyju52edpyIfK8OvsBH2qSi4SMgMMh9gRt34E="),
+        ("linux.x86_64", "sha256-jDvhKwXVwXegTCnjx4zomshvFZVoHKsUm2W5fE4icZg="),
+        ("linux.aarch64", "sha256-ErMxwdLba56xPPymQwaxsVeobraduDAj4mHqp+fBRYg="),
+        ("darwin.aarch64", "sha256-Vq/92N5VJ4lNym3D1+Cpmoc7DwBNeqvDCuQH0/SLCnk="),
     ]
 ]
 

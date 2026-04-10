@@ -378,6 +378,7 @@ def test_collect_server_metrics_raises_on_error(mock_fetch: MagicMock) -> None:
 def test_benchmark_metrics_server_metrics_defaults_to_none() -> None:
     """Test BenchmarkMetrics.server_metrics defaults to None when not provided."""
     metrics = BenchmarkMetrics(
+        duration=10.0,
         completed=100,
         failures=0,
         total_input=1000,
@@ -397,8 +398,6 @@ def test_benchmark_metrics_server_metrics_defaults_to_none() -> None:
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
-        cpu_utilization_user=None,
-        cpu_utilization_system=None,
         # Note: server_metrics not passed, should default to None
     )
 

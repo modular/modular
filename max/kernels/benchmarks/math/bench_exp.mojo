@@ -38,7 +38,7 @@ def _ri(v: Int) -> RuntimeInt[DType.int64]:
 
 
 def apply[
-    func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -56,7 +56,7 @@ def apply[
 
 
 def bench_unary[
-    func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -66,7 +66,7 @@ def bench_unary[
 
 
 def bench_unary[
-    func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,

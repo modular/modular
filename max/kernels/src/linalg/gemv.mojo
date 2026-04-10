@@ -51,12 +51,11 @@ from std.gpu.primitives.grid_controls import (
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
+    stack_allocation as tt_stack_allocation,
 )
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
@@ -358,24 +357,14 @@ def gemv_split_k[
     # which rows of the weight matrix each thread will process
     var tile_id_n = block_idx.y * tile_n
     var tid = thread_idx.x
-    var tile_w = LayoutTensor[
-        b_type,
-        Layout.row_major(tile_n, simd_width),
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
-    ].stack_allocation()
+    var tile_w = tt_stack_allocation[
+        dtype=b_type, address_space=AddressSpace.LOCAL
+    ](row_major[tile_n, simd_width]())
     # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector
-    var acc = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(tile_m, tile_n),
-            MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
+    var acc = tt_stack_allocation[
+        dtype=accum_type, address_space=AddressSpace.LOCAL
+    ](row_major[tile_m, tile_n]()).fill(0)
     var output_idx = tile_id_m * n + tile_id_n
     var iteration = 0
     comptime WeightVecType = SIMD[b_type, simd_width]
@@ -402,11 +391,15 @@ def gemv_split_k[
                 var b_vec = weight_tile.load[simd_width, non_temporal=True](
                     Coord(Idx(i), Idx(thread_idx.x * simd_width))
                 )
-                tile_w.store(i, 0, rebind[WeightVecType](b_vec))
+                tile_w.store(
+                    Coord(Idx(i), Idx(0)), rebind[WeightVecType](b_vec)
+                )
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
                 var b_vec = vec_weight_tile[i, thread_idx.x]
-                tile_w.store(i, 0, rebind[WeightVecType](b_vec))
+                tile_w.store(
+                    Coord(Idx(i), Idx(0)), rebind[WeightVecType](b_vec)
+                )
 
         # Load activations and accumulate dot products.
         comptime for i in range(tile_m):
@@ -423,7 +416,7 @@ def gemv_split_k[
                 )
                 var local_accum = rebind[Scalar[accum_type]](acc[i, j])
                 local_accum = _dot_accum(act_native, weight_native, local_accum)
-                acc.store(i, j, local_accum)
+                acc[i, j] = local_accum
 
         iteration += 1
 
@@ -451,12 +444,9 @@ def gemv_split_k[
     comptime k_warp_num = num_threads // WARP_SIZE
     var warp_id = warp_id()
     var lane_id = lane_id()
-    var shmem = LayoutTensor[
-        accum_type,
-        Layout.row_major(1, tile_m * tile_n * k_warp_num),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
+    var shmem = tt_stack_allocation[
+        dtype=accum_type, address_space=AddressSpace.SHARED
+    ](row_major[1, tile_m * tile_n * k_warp_num]())
 
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.

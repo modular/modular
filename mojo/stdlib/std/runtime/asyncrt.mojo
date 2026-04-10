@@ -59,7 +59,7 @@ struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
     to available.
     """
 
-    comptime callback_fn_type = def(_Chain) -> None
+    comptime callback_fn_type = def(_Chain) thin -> None
 
     var callback: Self.callback_fn_type
     var chain: _Chain
@@ -460,7 +460,7 @@ struct TaskGroupContext(TrivialRegisterPassable):
     when they complete.
     """
 
-    comptime tg_callback_fn_type = def(mut TaskGroup) -> None
+    comptime tg_callback_fn_type = def(mut TaskGroup) thin -> None
     """Type definition for callback functions that operate on TaskGroups."""
 
     var callback: Self.tg_callback_fn_type

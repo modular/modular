@@ -2740,7 +2740,7 @@ def compute_mla_dispatch_args_scalar(
 ) -> TensorValue:
     """Computes scalar dispatch arguments for the MLA decode kernel.
 
-    Produces a CPU tensor of shape ``[4]`` containing pre-computed integer
+    Produces a CPU tensor of shape ``[3]`` containing pre-computed integer
     arguments used by the capturable MLA decode kernel variant to enable CUDA
     graph capture.
 
@@ -2754,7 +2754,7 @@ def compute_mla_dispatch_args_scalar(
         device: The :class:`~max.graph.DeviceRef` on which to run the op.
 
     Returns:
-        A CPU :class:`~max.graph.TensorValue` of shape ``[4]`` and dtype
+        A CPU :class:`~max.graph.TensorValue` of shape ``[3]`` and dtype
         ``int64`` containing the dispatch scalar arguments.
     """
     results = ops.custom(
@@ -3104,23 +3104,6 @@ def flare_mla_decompress_k_cache(
     return results[1].tensor
 
 
-def kv_cache_get_max_seq_len(
-    kv_params: KVCacheParams,
-    kv_collection: PagedCacheValues,
-) -> TensorValue:
-    """This kernel returns the maximum sequence length."""
-    assert kv_params.page_size is not None
-
-    return ops.inplace_custom(
-        "mo.kv_cache.get_max_seq_len.paged",
-        device=DeviceRef.CPU(),
-        values=[*kv_collection],
-        out_types=[
-            TensorType(dtype=DType.uint32, shape=[1], device=DeviceRef.CPU())
-        ],
-    )[0].tensor[0]
-
-
 def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -3467,6 +3450,12 @@ def moe_router_group_limited(
     routed_scaling_factor: float,
 ) -> tuple[TensorValue, TensorValue]:
     """Group limited MoE router.
+    When `n_groups > 1`, selects up to `topk_group` expert groups, then
+    picks ``n_experts_per_tok`` experts within those groups (DeepSeek-V3 style).
+    When ``n_groups == 1``, there is only one group, so group selection is
+    skipped and routing uses the dedicated GPU single-group path
+    (``mo.moe.single.group.router``, implemented as ``single_group_router`` in
+    Mojo). In that case ``topk_group`` is not used by the kernel.
 
     Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566.
 
@@ -3481,8 +3470,11 @@ def moe_router_group_limited(
             n_routed_experts.
         topk_group: The maximum number of expert groups that a token will be
             routed to.
-        norm_weights: Whether to normalize the selected expert weights.
-        routed_scaling_factor: The scaling factor for the routed expert weights.
+        norm_weights: Whether to normalize the selected expert weights when
+            n_groups > 1. When n_groups == 1, normalization is currently
+            always enabled (norm_weights is treated as True) so behavior
+            matches the previous graph path that always divided weights by their
+            sum per token.
 
     Returns:
         A tuple of two tensors:
@@ -3491,13 +3483,6 @@ def moe_router_group_limited(
         - expert_weights: The weights of the routed experts for each token.
             Shape: [num_tokens, n_experts_per_tok].
     """
-    parameters: dict[str, int | str | DType | bool] = {
-        "n_routed_experts": n_routed_experts,
-        "n_experts_per_tok": n_experts_per_tok,
-        "n_groups": n_groups,
-        "topk_group": topk_group,
-        "norm_weights": norm_weights,
-    }
 
     if expert_bias.rank != 1:
         raise ValueError(
@@ -3508,8 +3493,25 @@ def moe_router_group_limited(
             f"expected expert_bias of shape [num_experts] but got {expert_bias.shape}"
         )
 
+    if n_groups == 1:
+        parameters: dict[str, int | str | DType | bool] = {
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "norm_weights": norm_weights,
+        }
+        op_name = "mo.moe.single.group.router"
+    else:
+        parameters = {
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "n_groups": n_groups,
+            "topk_group": topk_group,
+            "norm_weights": norm_weights,
+        }
+        op_name = "mo.moe.router.group.limited"
+
     results = ops.custom(
-        "mo.moe.router.group.limited",
+        op_name,
         device=expert_scores.device,
         values=[
             expert_scores,
@@ -4229,87 +4231,6 @@ def quantize_dynamic_scaled_float8(
         ],
         parameters={
             "group_size_or_per_token": group_size,
-        },
-    )
-
-    return result[0].tensor, result[1].tensor
-
-
-def batched_quantize_dynamic_scaled_float8(
-    input: TensorValue,
-    input_scale_spec: InputScaleSpec,
-    weight_scale_spec: WeightScaleSpec,
-    scale_ub: float = 1200.0,
-    group_size_or_per_token: int = -1,
-    out_type: DType = DType.float8_e4m3fn,
-    scales_type: DType = DType.bfloat16,
-) -> tuple[TensorValue, TensorValue]:
-    """Dynamically quantize the input tensor to fp8.
-
-    Args:
-        input: The input tensor to quantize. Shape: [batch_size, seq_len, hidden_size]
-        scale_ub: The upper bound of the scale factor.
-        group_size_or_per_token: The group size for quantization. When set to -1,
-            the quantization is column-wise.
-        out_type: The type of the output tensor.
-        scales_type: The type of the scales tensor.
-
-    Returns:
-        The quantized tensor and the scales.
-    """
-    if input.rank != 3:
-        raise ValueError("input must be rank 3 tensor")
-
-    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-        raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
-
-    if scales_type not in (DType.float32, DType.bfloat16, DType.float16):
-        raise ValueError("scales_type must be float32, bfloat16, or float16")
-
-    group_size = (
-        group_size_or_per_token
-        if group_size_or_per_token != -1
-        else input.shape[2]
-    )
-
-    a_scales_dim1 = input.shape[1]
-    if input_scale_spec.is_block or weight_scale_spec.is_block:
-        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
-            raise ValueError(
-                "both input and weight must be blockwise scaled for blockwise scaling"
-            )
-
-        # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
-        padding_size = 16 // scales_type.size_in_bytes
-        a_scales_dim1 = (
-            (input.shape[1] + padding_size - 1) // padding_size
-        ) * padding_size
-
-    result = ops.custom(
-        "mo.batched.quantize.dynamic.scaled.fp8",
-        device=input.device,
-        values=[
-            input,
-            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
-        ],
-        out_types=[
-            TensorType(
-                dtype=out_type,
-                shape=[input.shape[0], input.shape[1], input.shape[2]],
-                device=input.device,
-            ),
-            TensorType(
-                dtype=scales_type,
-                shape=[
-                    input.shape[0],
-                    input.shape[2] // group_size,
-                    a_scales_dim1,
-                ],
-                device=input.device,
-            ),
-        ],
-        parameters={
-            "group_size_or_per_token": group_size_or_per_token,
         },
     )
 

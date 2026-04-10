@@ -7,6 +7,7 @@ _FILECHECK_TESTS = [
     "test_list_getitem_invalid_index_int.mojo",
     "test_list_getitem_invalid_index_uint.mojo",
     "test_optional_none_abort.mojo",
+    "test_check_bounds_assert_error.mojo",
 ]
 
 _LIT_TESTS = [
@@ -36,6 +37,7 @@ _EXPECT_CRASH = [
     "test_list_getitem_invalid_index_int.mojo",
     "test_list_getitem_invalid_index_uint.mojo",
     "test_optional_none_abort.mojo",
+    "test_check_bounds_assert_error.mojo",
 ]
 
 [

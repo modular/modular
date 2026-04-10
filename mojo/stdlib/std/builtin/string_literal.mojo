@@ -40,7 +40,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     ImplicitlyCopyable,
     IntableRaising,
     PathLike,
-    Sized,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -188,25 +187,13 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return PythonObject(self)
 
     @always_inline("nodebug")
-    def __len__(self) -> Int:
-        """Get the string length.
-
-        Returns:
-            The length of this value.
-        """
-        # TODO(MSTDL-160):
-        #   Properly count Unicode codepoints instead of returning this length
-        #   in bytes.
-        return self.byte_length()
-
-    @always_inline("nodebug")
     def __bool__(self) -> Bool:
         """Convert the string to a bool value.
 
         Returns:
             True if the string is not empty.
         """
-        return len(self) != 0
+        return self.byte_length() != 0
 
     @always_inline
     def __int__(self) raises -> Int:

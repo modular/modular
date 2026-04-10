@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from unittest.mock import patch
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
 from max.benchmark.benchmark_serving import (
     _add_spec_decode_result,
+    _ConcurrentTurnsRequestDriver,
     chat_session_driver,
     elide_data_uris_in_string,
     get_request,
@@ -35,6 +37,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
 from max.benchmark.benchmark_shared.metrics import (
     PercentileMetrics,
     SpecDecodeMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
     ThroughputMetrics,
     calculate_spec_decode_stats,
@@ -744,6 +747,63 @@ def test_chat_session_driver_forwards_sampling_params() -> None:
     assert captured_inputs[0].top_k == 50
 
 
+def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
+    """First user message gets the run prefix when run_prefix is set."""
+
+    captured: list[RequestFuncInput] = []
+
+    class CapturingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            captured.append(request_func_input)
+            return RequestFuncOutput(
+                success=True,
+                latency=0.1,
+                ttft=0.05,
+                prompt_len=request_func_input.prompt_len,
+                generated_text="Hello",
+            )
+
+    async def run_test() -> None:
+        chat_session = ChatSession(
+            id=0,
+            messages=[
+                ChatMessage(source="user", content="Hi", num_tokens=5),
+                ChatMessage(source="assistant", content="Hello", num_tokens=5),
+                ChatMessage(source="user", content="Again", num_tokens=5),
+                ChatMessage(source="assistant", content="Hi", num_tokens=5),
+            ],
+        )
+        request_counter = RequestCounter(max_requests=10, total_sent_requests=0)
+
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=CapturingDriver(),
+            request_counter=request_counter,
+            chat_session=chat_session,
+            max_chat_len=4096,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+            run_prefix="RUN-UUID: ",
+            run_prefix_len=4,
+        )
+
+    asyncio.run(run_test())
+
+    assert len(captured) == 2
+    assert isinstance(captured[0].prompt, list)
+    first_user_text = captured[0].prompt[0]["content"][0]["text"]
+    assert first_user_text.endswith("Hi")
+    assert first_user_text != "Hi"
+    assert isinstance(captured[1].prompt, list)
+    second_user_text = captured[1].prompt[2]["content"][0]["text"]
+    assert second_user_text == "Again"
+
+
 def _make_4turn_session(
     prefix_turns: int = 0,
     delay_ms: float = 1000.0,
@@ -848,19 +908,20 @@ def test_prefix_turns_dont_count_against_max_requests() -> None:
         return outputs, len(driver.calls), counter.total_sent_requests
 
     outputs, total_calls, counter_value = asyncio.run(run_test())
-    assert total_calls == 4
+    # Prefix turns are built locally, so only measured turns hit the server.
+    assert total_calls == 2
     assert counter_value == 2
     assert len(outputs) == 2
 
 
-def test_prefix_turns_skip_delays() -> None:
-    """Prefix turns should run without inter-turn delays."""
+def test_prefix_turns_no_server_or_delays() -> None:
+    """Prefix turns are built locally: no server calls, no delays."""
     sleep_calls: list[float] = []
 
     async def mock_sleep(seconds: float) -> None:
         sleep_calls.append(seconds)
 
-    async def run_test() -> None:
+    async def run_test() -> int:
         session = _make_4turn_session(prefix_turns=2, delay_ms=5000.0)
         counter = RequestCounter(max_requests=100)
         driver = _CapturingDriver()
@@ -876,9 +937,12 @@ def test_prefix_turns_skip_delays() -> None:
                 top_p=None,
                 top_k=None,
             )
+        return len(driver.calls)
 
-    asyncio.run(run_test())
-    # Only turn 3 has a delay (turn 4 has no delay_until_next_message)
+    total_calls = asyncio.run(run_test())
+    # Prefix turns don't hit the server.
+    assert total_calls == 2
+    # Only turn 3 has a delay (turn 4 has no delay_until_next_message).
     assert len(sleep_calls) == 1
     assert sleep_calls[0] == pytest.approx(5.0)
 
@@ -960,12 +1024,12 @@ def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
     stats = calculate_spec_decode_stats(before, after)
 
     assert stats is not None
-    assert stats["num_drafts"] == 12
-    assert stats["draft_tokens"] == 36
-    assert stats["accepted_tokens"] == 24
-    assert stats["acceptance_rate"] == pytest.approx((24 / 36) * 100)
-    assert stats["acceptance_length"] == pytest.approx(1 + 24 / 12)
-    assert stats["per_position_acceptance_rates"] == pytest.approx(
+    assert stats.num_drafts == 12
+    assert stats.draft_tokens == 36
+    assert stats.accepted_tokens == 24
+    assert stats.acceptance_rate == pytest.approx((24 / 36) * 100)
+    assert stats.acceptance_length == pytest.approx(1 + 24 / 12)
+    assert stats.per_position_acceptance_rates == pytest.approx(
         [12 / 12, 8 / 12, 4 / 12]
     )
 
@@ -973,14 +1037,14 @@ def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
 def test_add_spec_decode_result_uses_vllm_json_keys() -> None:
     """Spec decode stats are serialized under vLLM-compatible keys."""
     result: dict[str, object] = {}
-    stats = {
-        "num_drafts": 5,
-        "draft_tokens": 18,
-        "accepted_tokens": 9,
-        "acceptance_rate": 50.0,
-        "acceptance_length": 2.8,
-        "per_position_acceptance_rates": [1.0, 0.6, 0.2],
-    }
+    stats = SpecDecodeStats(
+        num_drafts=5,
+        draft_tokens=18,
+        accepted_tokens=9,
+        acceptance_rate=50.0,
+        acceptance_length=2.8,
+        per_position_acceptance_rates=[1.0, 0.6, 0.2],
+    )
 
     _add_spec_decode_result(result, stats)
 
@@ -992,3 +1056,27 @@ def test_add_spec_decode_result_uses_vllm_json_keys() -> None:
         "spec_decode_accepted_tokens": 9,
         "spec_decode_per_position_acceptance_rates": [1.0, 0.6, 0.2],
     }
+
+
+def test_concurrent_turns_driver_expired_deadline_cancels_without_calling_base() -> (
+    None
+):
+    """A turn that acquires the semaphore after the deadline is cancelled, not forwarded."""
+    semaphore = asyncio.Semaphore(10)
+    mock_driver = AsyncMock()
+    mock_driver.tokenizer = None
+    driver = _ConcurrentTurnsRequestDriver(
+        mock_driver,
+        semaphore,
+        benchmark_should_end_time=time.perf_counter_ns() - 1,
+    )
+
+    output_cls = MagicMock()
+    output_cls.return_value = MagicMock()
+    inp = MagicMock()
+    inp.get_output_type.return_value = output_cls
+
+    asyncio.run(driver.request(inp))
+
+    assert output_cls.call_args.kwargs["cancelled"] is True
+    mock_driver.request.assert_not_called()

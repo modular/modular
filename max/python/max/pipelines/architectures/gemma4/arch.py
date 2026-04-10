@@ -19,12 +19,13 @@ from .context import Gemma4Context
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma4ForConditionalGenerationConfig
 from .tokenizer import Gemma4Tokenizer
+from .tool_parser import Gemma4ToolParser
 
 example_repo_ids = [
     # it = Instruction tuned (recommended).
     # pt = Pre-trained.
     "google/gemma-4-31B-it",
-    "google/gemma-4-26B-A4B-it",
+    # "google/gemma-4-26B-A4B-it"
 ]
 
 gemma4_arch = SupportedArchitecture(
@@ -48,4 +49,5 @@ gemma4_arch = SupportedArchitecture(
     required_arguments={"max_num_steps": 1},
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
+    tool_parser=Gemma4ToolParser,
 )

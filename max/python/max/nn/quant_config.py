@@ -205,6 +205,12 @@ class QuantConfig:
     can_use_fused_mlp: bool = False
     """Whether the quantization scales can be used with fused MLP operations."""
 
+    scales_pre_interleaved: bool = False
+    """Whether weight scales in the checkpoint are already stored in the 5D
+    TCGEN-interleaved layout expected by the FP4 matmul kernel (NVFP4 only).
+    Note that scales in the 5D TCGEN-interleaved layout are typically flattened 
+    to 2D `[M, K//16]` in the checkpoint."""
+
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:
         """The weight and input scale granularities on the M, N, and K axes."""

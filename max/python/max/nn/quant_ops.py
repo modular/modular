@@ -242,7 +242,6 @@ def quantized_matmul(
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
-    scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Single entry point for all quantized dense matmuls.
 
@@ -257,8 +256,6 @@ def quantized_matmul(
             static FP8).
         quant_config: The quantization configuration.
         weight_scale_2: Additional weight scale factor (NVFP4 only).
-        scales_pre_interleaved: If True, weight_scale is already in 5D
-            TCGEN interleaved layout (NVFP4 only).
 
     Returns:
         The output tensor.
@@ -273,7 +270,7 @@ def quantized_matmul(
                 weight_scale,
                 input_scale,
                 weight_scale_2,
-                scales_pre_interleaved=scales_pre_interleaved,
+                scales_pre_interleaved=quant_config.scales_pre_interleaved,
             )
         case (
             QuantFormat.COMPRESSED_TENSORS_FP8
@@ -307,7 +304,6 @@ def quantized_fused_qkv_matmul(
     weight_scale_2: TensorValue | None = None,
     bias: TensorValue | None = None,
     _output_dim: int | None = None,
-    scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Single entry point for quantized fused QKV matmuls.
 
@@ -330,8 +326,6 @@ def quantized_fused_qkv_matmul(
         _output_dim: Optional output dimension override for the FP8
             kernel. If not provided, defaults to
             ``n_heads * head_dim``.
-        scales_pre_interleaved: If True, weight_scale is already in 5D
-            TCGEN interleaved layout (NVFP4 only).
 
     Returns:
         The query projection output tensor.
@@ -349,7 +343,7 @@ def quantized_fused_qkv_matmul(
             )
 
             weight_scale = weight_scale.to(x.device)
-            if scales_pre_interleaved:
+            if quant_config.scales_pre_interleaved:
                 weight_scale = _reshape_pre_interleaved_scales(weight_scale)
             else:
                 weight_scale = block_scales_interleave(weight_scale)

@@ -147,18 +147,18 @@ def _test_rope_ragged_gpu_impl[
     ctx.synchronize()
 
     # ===== Step 4: Create TileTensor views =====
-    var q_device_tensor = TileTensor(q_device_buffer.unsafe_ptr(), q_layout)
+    var q_device_tensor = TileTensor(q_device_buffer, q_layout)
     var input_row_offsets_device_tensor = TileTensor(
-        input_row_offsets_device_buffer.unsafe_ptr(), input_row_offsets_layout
+        input_row_offsets_device_buffer, input_row_offsets_layout
     )
     var start_pos_device_tensor = TileTensor(
-        start_pos_device_buffer.unsafe_ptr(), start_pos_layout
+        start_pos_device_buffer, start_pos_layout
     )
     var freqs_cis_device_tensor = TileTensor(
-        freqs_cis_device_buffer.unsafe_ptr(), freqs_cis_layout
+        freqs_cis_device_buffer, freqs_cis_layout
     )
     var position_ids_device_tensor_static = TileTensor(
-        position_ids_device_buffer.unsafe_ptr(), position_ids_layout
+        position_ids_device_buffer, position_ids_layout
     )
     var position_ids_device_tensor = TileTensor[
         DType.uint32,
@@ -173,9 +173,7 @@ def _test_rope_ragged_gpu_impl[
         DType.int64
     ]()
 
-    var q_out_device_tensor = TileTensor(
-        q_out_device_buffer.unsafe_ptr(), q_layout
-    )
+    var q_out_device_tensor = TileTensor(q_out_device_buffer, q_layout)
 
     @always_inline
     @__copy_capture(q_out_device_tensor)

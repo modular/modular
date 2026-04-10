@@ -951,6 +951,12 @@ def _handle_slice(
     stop_np = stops_buffer.to_numpy().astype(np.int64)
     step_np = steps_buffer.to_numpy().astype(np.int64)
 
+    # Normalize negative starts/stops relative to input dims (NumPy
+    # convention: -1 means last element, etc.).
+    input_shape_np = np.array(input_buffer.shape, dtype=np.int64)
+    start_np = np.where(start_np < 0, start_np + input_shape_np, start_np)
+    stop_np = np.where(stop_np < 0, stop_np + input_shape_np, stop_np)
+
     rank = len(start_np)
     output_shape = tuple(
         int(max(0, int(np.ceil((stop_np[i] - start_np[i]) / step_np[i]))))
@@ -1918,6 +1924,100 @@ def _handle_scatter_nd_add(
         )
 
     return [output]
+
+
+def _scatter_nd_reduction_common(
+    op: mo.ScatterNdMaxOp | mo.ScatterNdMinOp | mo.ScatterNdMulOp,
+    inputs: Sequence[Buffer | None],
+    mojo_fn_name: str,
+) -> Sequence[Buffer]:
+    """Shared logic for scatter_nd_max/min/mul handlers.
+
+    Copies input to output, then applies the named Mojo scatter-nd kernel.
+
+    Args:
+        op: The scatter_nd reduction operation.
+        inputs: Input buffers - input, updates, indices, outputParamDecls.
+        mojo_fn_name: Name of the Mojo dispatcher function on
+            ``gather_scatter_ops`` (e.g. ``"ScatterNdMax"``).
+
+    Returns:
+        List containing the scatter_nd result buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # updates
+    assert isinstance(inputs[2], Buffer)  # indices
+
+    input_buffer = inputs[0]
+    updates_buffer = inputs[1]
+    indices_buffer = inputs[2]
+
+    in_shape = list(input_buffer.shape)
+    idx_shape = list(indices_buffer.shape)
+    index_depth = idx_shape[-1]
+
+    batch_size = 1
+    indices_outer_size = prod(idx_shape[:-1]) if len(idx_shape) > 1 else 1
+    suffix_size = (
+        prod(in_shape[index_depth:]) if index_depth < len(in_shape) else 1
+    )
+    input_data_stride = prod(in_shape) if in_shape else 1
+    input_inner_shape = in_shape
+
+    output = Buffer(
+        shape=in_shape, dtype=input_buffer.dtype, device=target_device
+    )
+    total_elements = prod(in_shape) if in_shape else 1
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.data_movement_ops.Memcpy(
+        output, input_buffer, 0, 0, total_elements, ctx_ptr
+    )
+
+    if indices_outer_size > 0:
+        mojo_fn = getattr(ops.gather_scatter_ops, mojo_fn_name)
+        mojo_fn(
+            output,
+            updates_buffer,
+            indices_buffer,
+            (
+                batch_size,
+                indices_outer_size,
+                index_depth,
+                suffix_size,
+                input_data_stride,
+                input_inner_shape,
+            ),
+            ctx_ptr,
+        )
+
+    return [output]
+
+
+@register_op_handler(mo.ScatterNdMaxOp)
+def _handle_scatter_nd_max(
+    op: mo.ScatterNdMaxOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter_nd.max via the shared scatter-nd reduction helper."""
+    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMax")
+
+
+@register_op_handler(mo.ScatterNdMinOp)
+def _handle_scatter_nd_min(
+    op: mo.ScatterNdMinOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter_nd.min via the shared scatter-nd reduction helper."""
+    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMin")
+
+
+@register_op_handler(mo.ScatterNdMulOp)
+def _handle_scatter_nd_mul(
+    op: mo.ScatterNdMulOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter_nd.mul via the shared scatter-nd reduction helper."""
+    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMul")
 
 
 # Split operations
@@ -3180,5 +3280,107 @@ def _handle_distributed_allgather(
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
         output_buffers.append(bufs[input_idx].to(device))
 
+    output_buffers.append(None)
+    return output_buffers
+
+
+@register_op_handler(mo.DistributedScatterOp)
+def _handle_distributed_scatter(
+    op: mo.DistributedScatterOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.distributed.scatter by distributing root inputs to devices.
+
+    Operands (flat): N input tensors (all on root), N signal buffers, 1 input chain.
+    Results: N output tensors (one per device), 1 output chain.
+
+    Each input[i] is copied to the device indicated by result[i]'s type.
+
+    The interpreter executes sequentially on the host, so signal buffers
+    and chains are unused.
+
+    Args:
+        op: The scatter operation.
+        inputs: Flat operand buffers from the interpreter dispatcher.
+
+    Returns:
+        N output buffers followed by None for the chain.
+    """
+    num_inputs = len(op.inputs)
+    bufs: list[Buffer] = []
+    for i in range(num_inputs):
+        b = inputs[i]
+        assert isinstance(b, Buffer), f"scatter input {i} is not a Buffer"
+        bufs.append(b)
+
+    # All inputs should reside on the root device.
+    if bufs:
+        root_device = bufs[0].device
+        for i, buf in enumerate(bufs[1:], 1):
+            assert buf.device == root_device, (
+                f"scatter expects all inputs on root device {root_device}, "
+                f"but input {i} is on {buf.device}"
+            )
+
+    results = list(op.results)
+    num_outputs = len(results) - 1  # exclude trailing chain
+    assert num_outputs == num_inputs, (
+        f"scatter expects N inputs and N outputs, "
+        f"got {num_inputs} inputs and {num_outputs} outputs"
+    )
+
+    output_buffers: list[Buffer | None] = []
+    for idx, result in enumerate(results[:-1]):
+        result_type: mo.TensorType = result.type  # type: ignore[assignment]
+        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
+        output_buffers.append(bufs[idx].to(device))
+
+    # Trailing None for the output chain.
+    output_buffers.append(None)
+    return output_buffers
+
+
+@register_op_handler(mo.DistributedBroadcastOp)
+def _handle_distributed_broadcast(
+    op: mo.DistributedBroadcastOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.distributed.broadcast by replicating input to all devices.
+
+    Operands (flat): 1 input tensor, N signal buffers, 1 input chain.
+    Results: N output tensors (one per device, all copies of the input),
+    1 output chain.
+
+    The interpreter executes sequentially on the host, so signal buffers
+    and chains are unused.
+
+    Args:
+        op: The broadcast operation.
+        inputs: Flat operand buffers from the interpreter dispatcher.
+
+    Returns:
+        N output buffers followed by None for the chain.
+    """
+    # op.root identifies the source device, but in the flat operand layout
+    # inputs[0] is always the root tensor; the interpreter simply copies it
+    # to every output device regardless of root index.
+    input_buf = inputs[0]
+    assert isinstance(input_buf, Buffer), "broadcast input is not a Buffer"
+
+    num_signal_bufs = len(op.signal_buffers)
+    results = list(op.results)
+    num_outputs = len(results) - 1  # exclude trailing chain
+    assert num_outputs == num_signal_bufs, (
+        f"broadcast expects one output per signal buffer, "
+        f"got {num_outputs} outputs and {num_signal_bufs} signal buffers"
+    )
+
+    output_buffers: list[Buffer | None] = []
+    for result in results[:-1]:
+        result_type: mo.TensorType = result.type  # type: ignore[assignment]
+        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
+        output_buffers.append(input_buf.to(device))
+
+    # Trailing None for the output chain.
     output_buffers.append(None)
     return output_buffers

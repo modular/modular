@@ -55,6 +55,7 @@ def _make_nvfp4_config(num_layers: int, num_single_layers: int) -> QuantConfig:
         attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
         format=QuantFormat.NVFP4,
+        scales_pre_interleaved=True,
     )
 
 

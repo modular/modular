@@ -782,7 +782,7 @@ def _warp_reduce_topk[
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
         comptime fn_type = def[dtype: DType, simd_width: Int](
             val: SIMD[dtype, simd_width], offset: UInt32
-        ) -> SIMD[dtype, simd_width]
+        ) thin -> SIMD[dtype, simd_width]
         comptime xor_fn: fn_type = warp.shuffle_xor
         comptime down_fn: fn_type = warp.shuffle_down
 
@@ -2075,7 +2075,7 @@ def topk_gpu[
             product(internal_cache_shape)
         )
         var device_local_topk_vals = TileTensor(
-            internal_vals_buf.unsafe_ptr(),
+            internal_vals_buf,
             row_major(Coord(internal_cache_shape)),
         )
 
@@ -2084,7 +2084,7 @@ def topk_gpu[
             product(internal_cache_shape)
         )
         var device_local_topk_idxs = TileTensor(
-            internal_idxs_buf.unsafe_ptr(),
+            internal_idxs_buf,
             row_major(Coord(internal_cache_shape)),
         )
 
@@ -2153,7 +2153,7 @@ def _topk_topp_sampling_fi[
     # Step 1: softmax with temperature.
     var probs_buf = ctx.enqueue_create_buffer[dtype](batch_size * d)
     var probs = TileTensor(
-        probs_buf.unsafe_ptr(),
+        probs_buf,
         row_major(Coord(IndexList[2](batch_size, d))),
     )
     softmax_with_temperature(
@@ -2288,7 +2288,7 @@ def fused_token_sampling_gpu[
             out_vals_shape.flattened_length()
         )
         var out_vals = TileTensor(
-            out_vals_buf.unsafe_ptr(),
+            out_vals_buf,
             row_major(Coord(out_vals_shape)),
         )
 
@@ -2519,7 +2519,7 @@ def gumbel_sampling_gpu[
             out_vals_shape.flattened_length()
         )
         var out_vals = TileTensor(
-            out_vals_buf.unsafe_ptr(),
+            out_vals_buf,
             row_major(Coord(out_vals_shape)),
         )
 

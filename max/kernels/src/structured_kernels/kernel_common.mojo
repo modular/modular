@@ -255,8 +255,8 @@ struct KernelContext[
         self.is_first_cta_in_cluster = block_rank_in_cluster() == 0
 
         # CTA coordinates
-        self.rank_m = Int(block_id_in_cluster.x)
-        self.rank_n = Int(block_id_in_cluster.y)
+        self.rank_m = block_id_in_cluster.x
+        self.rank_n = block_id_in_cluster.y
 
         # Peer CTA coordinate: (peer_id, mma_coord_m, mma_coord_n)
         var cta_quotient, cta_remainder = udivmod(self.rank_m, Self.cta_group)

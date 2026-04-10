@@ -65,12 +65,15 @@ HF_MODELS: dict[str, set[str]] = {
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": MULTI | {"max-ci@H100"},  # TODO(MODELS-1021) and GEX-3248
+    "google/gemma-4-26b-a4b-it": MULTI,
+    "google/gemma-4-31b-it": MULTI,
     "meta-llama/llama-3.1-8b-instruct": MULTI,
     "meta-llama/llama-3.2-1b-instruct": MULTI,
     "microsoft/phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
     "mistralai/mistral-nemo-instruct-2407": MULTI | {"vllm"},
     "mistralai/mistral-small-3.1-24b-instruct-2503": MULTI | {"vllm"},
+    "modularai/llama-3.1-405b-instruct-autofp8": NON_XL | {"max"},
     "nvidia/deepseek-v3.1-nvfp4": NON_XL | {"8xMI355"},
     "nvidia/kimi-k2.5-nvfp4": NON_XL | {"8xMI355"},
     "opengvlab/internvl3-8b-instruct": MULTI | {"sglang"},
@@ -99,6 +102,7 @@ HF_MODELS: dict[str, set[str]] = {
 CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/llama-3.1-8b-instruct__modulev3": MULTI,
     "meta-llama/llama-3.2-1b-instruct__modulev3": MULTI,
+    "google/gemma-3-1b-it__modulev3": MULTI,
     "unsloth/gpt-oss-20b-bf16__modulev3": DISABLE,  # TODO(MXF-121)
     "microsoft/phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
@@ -110,6 +114,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": MULTI | {"vllm", "sglang"},
     "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
     "nvidia/kimi-k2.5-nvfp4__eagle": NON_XL | {"8xMI355"},
+    "google/gemma-4-26b-a4b-it__no_dgc": MULTI | {"vllm@MI355", "sglang@MI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

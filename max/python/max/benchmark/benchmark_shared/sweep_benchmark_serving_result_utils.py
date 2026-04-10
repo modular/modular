@@ -30,14 +30,21 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, NamedTuple, TextIO
+from typing import ClassVar, NamedTuple, TextIO
 
+from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkMetrics,
+    PixelGenerationBenchmarkMetrics,
+    StandardPercentileMetrics,
+)
 from typing_extensions import Self
 
 
-def _percentile_key(prefix: str, p: int) -> str:
-    """Return the raw JSON key for a given percentile (handles median special case)."""
-    return f"median_{prefix}" if p == 50 else f"p{p}_{prefix}"
+def _get_percentile(metrics: StandardPercentileMetrics, p: int) -> float:
+    """Extract a percentile value from a typed metrics object."""
+    if p == 50:
+        return metrics.median
+    return getattr(metrics, f"p{p}")
 
 
 @dataclass
@@ -45,17 +52,17 @@ class SweepServingBenchmarkResult:
     """Base benchmark result shared by all task types.
 
     Stores the fields common to every sweep iteration: duration, throughput,
-    request-latency statistics, GPU utilization, and the path to the per-run
-    JSON file.  Percentile values are stored in a ``dict`` keyed by the
-    integer percentile (e.g. ``{50: 490.0, 99: 800.0}``).
+    request-latency statistics, GPU utilization, and the full result dict
+    returned by ``benchmark_serving``.  Percentile values are stored in a
+    ``dict`` keyed by the integer percentile (e.g. ``{50: 490.0, 99: 800.0}``).
     """
 
     duration: float
     throughput: float
     req_latency_mean: float
     gpu_utilization: float
-    results_filename: str
     req_latency_percentiles: dict[int, float]
+    result_filename: str | None = None
 
 
 @dataclass
@@ -68,36 +75,36 @@ class LLMBenchmarkResult(SweepServingBenchmarkResult):
     itl_percentiles: dict[int, float] = field(default_factory=dict)
 
     @classmethod
-    def from_benchmark_json(
+    def from_metrics(
         cls,
-        data: dict[str, Any],
+        metrics: BenchmarkMetrics,
         percentiles: list[int],
-        results_filename: str,
+        result_filename: str | None = None,
     ) -> LLMBenchmarkResult:
-        """Construct from the raw JSON emitted by ``benchmark_serving``."""
+        """Construct from a typed :class:`BenchmarkMetrics` object."""
+        gpu_util = metrics.gpu_utilization
+        mean_gpu = sum(gpu_util) / len(gpu_util) if gpu_util else 0.0
         return cls(
-            duration=data["duration"],
-            throughput=data["request_throughput"],
-            req_latency_mean=data["mean_latency_ms"],
-            gpu_utilization=data["gpu_utilization"],
-            results_filename=results_filename,
+            duration=metrics.duration,
+            throughput=metrics.request_throughput,
+            req_latency_mean=metrics.latency_ms.mean,
+            gpu_utilization=mean_gpu,
             req_latency_percentiles={
-                p: data[_percentile_key("latency_ms", p)] for p in percentiles
+                p: _get_percentile(metrics.latency_ms, p) for p in percentiles
             },
-            ttft_mean=data["mean_ttft_ms"],
-            itl_mean=data["mean_itl_ms"],
+            result_filename=result_filename,
+            ttft_mean=metrics.ttft_ms.mean,
+            itl_mean=metrics.itl_ms.mean,
             ttft_percentiles={
-                p: data[_percentile_key("ttft_ms", p)] for p in percentiles
+                p: _get_percentile(metrics.ttft_ms, p) for p in percentiles
             },
             itl_percentiles={
-                p: data[_percentile_key("itl_ms", p)] for p in percentiles
+                p: _get_percentile(metrics.itl_ms, p) for p in percentiles
             },
         )
 
     @classmethod
-    def zeros(
-        cls, percentiles: list[int], results_filename: str = ""
-    ) -> LLMBenchmarkResult:
+    def zeros(cls, percentiles: list[int]) -> LLMBenchmarkResult:
         """Create a zeroed-out result (used for dry runs)."""
         pz = {p: 0.0 for p in percentiles}
         return cls(
@@ -105,7 +112,6 @@ class LLMBenchmarkResult(SweepServingBenchmarkResult):
             throughput=0.0,
             req_latency_mean=0.0,
             gpu_utilization=0.0,
-            results_filename=results_filename,
             req_latency_percentiles=dict(pz),
             ttft_mean=0.0,
             itl_mean=0.0,
@@ -121,23 +127,25 @@ class TextToImageBenchmarkResult(SweepServingBenchmarkResult):
     total_generated_outputs: int = 0
 
     @classmethod
-    def from_benchmark_json(
+    def from_metrics(
         cls,
-        data: dict[str, Any],
+        metrics: PixelGenerationBenchmarkMetrics,
         percentiles: list[int],
-        results_filename: str,
+        result_filename: str | None = None,
     ) -> TextToImageBenchmarkResult:
-        """Construct from the raw JSON emitted by ``benchmark_serving``."""
+        """Construct from a typed :class:`PixelGenerationBenchmarkMetrics` object."""
+        gpu_util = metrics.gpu_utilization
+        mean_gpu = sum(gpu_util) / len(gpu_util) if gpu_util else 0.0
         return cls(
-            duration=data["duration"],
-            throughput=data["request_throughput"],
-            req_latency_mean=data["mean_latency_ms"],
-            gpu_utilization=data.get("gpu_utilization", 0.0),
-            results_filename=results_filename,
+            duration=metrics.duration,
+            throughput=metrics.request_throughput,
+            req_latency_mean=metrics.latency_ms.mean,
+            gpu_utilization=mean_gpu,
             req_latency_percentiles={
-                p: data[_percentile_key("latency_ms", p)] for p in percentiles
+                p: _get_percentile(metrics.latency_ms, p) for p in percentiles
             },
-            total_generated_outputs=data.get("total_generated_outputs", 0),
+            result_filename=result_filename,
+            total_generated_outputs=metrics.total_generated_outputs,
         )
 
 
@@ -320,17 +328,12 @@ class SweepServingBenchmarkResultWriter(_BaseSweepResultWriter):
             result=result,
         )
         self._emit_line(",".join(values))
-        self._maybe_upload_result_json(result)
+        if self.upload and result.result_filename:
+            self._upload_result(result.result_filename)
 
-    def _maybe_upload_result_json(
-        self, result: SweepServingBenchmarkResult
-    ) -> None:
-        if self.upload is None:
-            return
-        results_path = result.results_filename.strip()
-        if not results_path:
-            return
-        cmd = _build_sweep_serving_upload_cmd(self.upload, results_path)
+    def _upload_result(self, result_filename: str) -> None:
+        assert self.upload is not None
+        cmd = _build_sweep_serving_upload_cmd(self.upload, result_filename)
         print(f"Uploading benchmark results to BigQuery: {cmd}")
         if self.upload.dry_run:
             print(f"Dry run: {' '.join(cmd)}")

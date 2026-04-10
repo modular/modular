@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-GPU Launch Attributes for Kernel Execution Control
+GPU Launch Attributes for Kernel Execution Control.
 
 This module provides structures for configuring GPU kernel execution through launch attributes.
 It implements a Mojo interface to CUDA's launch attribute system, allowing fine-grained control

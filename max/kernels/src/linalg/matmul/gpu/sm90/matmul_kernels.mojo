@@ -450,8 +450,8 @@ struct HopperMatmulSM90Kernel[
             WARPGROUP_SIZE,
         )
 
-        var rank_m = Int(block_id_in_cluster.y)
-        var rank_n = Int(block_id_in_cluster.x)
+        var rank_m = block_id_in_cluster.y
+        var rank_n = block_id_in_cluster.x
 
         var warp_id = warp_id()
         var lane_predicate = elect_one_sync()

@@ -218,6 +218,54 @@ def test_tile() raises:
         assert_equal(data[i], UInt32(expected[i]))
 
 
+def test_tile_with_coord_shape() raises:
+    """Test tile() with a mixed static/dynamic tile shape Coord.
+
+    The tile shape has one ComptimeInt (rows) and one RuntimeInt (cols),
+    exercising the mixed compile-time/runtime Coord path.
+    """
+    # Create a 4x4 tensor with values 0..15 in row-major order
+    var data = InlineArray[UInt32, 16](fill=0)
+    var layout_tensor = TileTensor(data, row_major(Idx[4](), Idx[4]()))
+
+    # Mixed tile shape: static rows, dynamic cols
+    var tile_shape = Coord(Idx[2](), Idx(2))
+
+    var counter = 0
+
+    # Tile with Coord shape — same logic as test_tile but using the
+    # tile(tile_shape, tile_coord) overload instead of tile[2, 2](coord).
+    comptime for tile_i in range(2):
+        comptime for tile_j in range(2):
+            var current_tile = layout_tensor.tile(
+                tile_shape,
+                (Idx(tile_i), Idx(tile_j)),
+            )
+
+            for i in range(2):
+                for j in range(2):
+                    current_tile[(Idx(i), Idx(j))] = UInt32(counter)
+                    counter += 1
+
+    # Must match the same memory layout as the parametric tile[] version.
+    var expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
+    for i in range(16):
+        assert_equal(data[i], UInt32(expected[i]))
+
+    # Also verify reading back through the mixed Coord-based tile.
+    var t00 = layout_tensor.tile(tile_shape, (Idx[0](), Idx[0]()))
+    assert_equal(t00[(Idx(0), Idx(0))], UInt32(0))
+    assert_equal(t00[(Idx(0), Idx(1))], UInt32(1))
+    assert_equal(t00[(Idx(1), Idx(0))], UInt32(2))
+    assert_equal(t00[(Idx(1), Idx(1))], UInt32(3))
+
+    var t11 = layout_tensor.tile(tile_shape, (Idx[1](), Idx[1]()))
+    assert_equal(t11[(Idx(0), Idx(0))], UInt32(12))
+    assert_equal(t11[(Idx(0), Idx(1))], UInt32(13))
+    assert_equal(t11[(Idx(1), Idx(0))], UInt32(14))
+    assert_equal(t11[(Idx(1), Idx(1))], UInt32(15))
+
+
 def test_tensor_span_constructor() raises:
     var bytes: List[UInt8] = [0, 1, 2, 3]
     var _tensor = TileTensor(
@@ -1092,3 +1140,40 @@ def test_select_keep_all() raises:
     for i in range(3):
         for j in range(4):
             assert_equal(selected[i, j], Int32(i * 4 + j))
+
+
+def test_write_to_1d() raises:
+    comptime layout = row_major[4]()
+    var storage: InlineArray[Float32, layout.static_product] = [1, 2, 3, 4]
+    var tensor = TileTensor(storage, layout)
+    assert_equal(String(tensor), "[1.0, 2.0, 3.0, 4.0]")
+
+
+def test_write_to_1d_single_element() raises:
+    var storage: InlineArray[Float32, 1] = [42]
+    var tensor = TileTensor(storage, row_major[1]())
+    assert_equal(String(tensor), "[42.0]")
+
+
+def test_write_to_2d() raises:
+    var storage: InlineArray[Float32, 6] = [1, 2, 3, 4, 5, 6]
+    var tensor = TileTensor(storage, row_major[2, 3]())
+    assert_equal(String(tensor), "[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]")
+
+
+def test_write_to_2d_dynamic() raises:
+    """A 2D tensor with a runtime dimension falls through to the elementwise
+    printer because `static_shape` is unknown."""
+    var storage: InlineArray[Float32, 6] = [1, 2, 3, 4, 5, 6]
+    var tensor = TileTensor(storage, row_major(Idx[2](), Idx(Int(3))))
+    # Elementwise printer iterates in column-major coordinate order.
+    assert_equal(String(tensor), "[1.0, 4.0, 2.0, 5.0, 3.0, 6.0]")
+
+
+def test_write_to_3d() raises:
+    """Test that printing a 3D TileTensor produces output via the generic
+    fallback."""
+    var storage: InlineArray[Float32, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
+    var tensor = TileTensor(storage, row_major[2, 2, 2]())
+    # Elements are printed in column-major coordinate order.
+    assert_equal(String(tensor), "[1.0, 5.0, 3.0, 7.0, 2.0, 6.0, 4.0, 8.0]")

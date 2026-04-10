@@ -46,7 +46,7 @@ def validate_bare_raises(value: Int) raises -> Int:
     return validate_typed(value)
 
 
-def main() raises:
+def main():
     # Pattern 1: Wrapping Error into typed errors
     print("--- Wrapping Error into typed errors ---")
     try:

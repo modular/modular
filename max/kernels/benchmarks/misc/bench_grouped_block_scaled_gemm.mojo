@@ -205,11 +205,11 @@ def bench_grouped_block_scaled_gemm[
 
     # Create TileTensors - 3D with batch=1
     var a_template = TileTensor(
-        a_device.unsafe_ptr(),
+        a_device,
         row_major(Coord(Idx[1](), Idx(M), Idx[K_ARRAY]())),
     )
     var b_template = TileTensor(
-        b_device.unsafe_ptr(),
+        b_device,
         row_major(
             Coord(
                 Idx[1](),
@@ -219,13 +219,13 @@ def bench_grouped_block_scaled_gemm[
         ),
     )
     var c_template = TileTensor(
-        c_device.unsafe_ptr(),
+        c_device,
         row_major(Coord(Idx[1](), Idx(M), n)),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var sfa_template = TileTensor(
-        sfa_device.unsafe_ptr(),
+        sfa_device,
         row_major(
             Coord(
                 Idx[1](),
@@ -237,7 +237,7 @@ def bench_grouped_block_scaled_gemm[
         ),
     )
     var sfb_template = TileTensor(
-        sfb_device.unsafe_ptr(),
+        sfb_device,
         row_major(
             Coord(
                 Idx[1](),
@@ -294,23 +294,23 @@ def bench_grouped_block_scaled_gemm[
     )
 
     var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(),
+        a_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(),
+        b_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(),
+        c_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(),
+        sfa_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(),
+        sfb_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
 

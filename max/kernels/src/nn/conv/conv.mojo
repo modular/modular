@@ -802,7 +802,7 @@ struct ConvDirectNHWC[
             uninitialized=True
         )
         var input_base_offsets = TileTensor(
-            input_base_stack.unsafe_ptr(), row_major[micro_kernel_height]()
+            input_base_stack, row_major[micro_kernel_height]()
         )
 
         comptime for i in range(micro_kernel_height):
@@ -2871,6 +2871,104 @@ def pack_filter_lt[
 
                 # Hence, packed filter is incremented by simd_size
                 packed_filter_ptr = packed_filter_ptr + simd_size
+
+
+@always_inline
+def pack_filter_from_fcrs(
+    filter: TileTensor,
+    packed_filter: TileTensor[mut=True, ...],
+    num_groups: Int,
+):
+    """This packs the filter from FCRS to FRSCf (2D) or FCQRS to FQRSCf (3D).
+
+    The filter arrives with its actual dtype (e.g., float32). We transpose
+    FCRS→RSCF in a temp buffer using the actual dtype, then create an int64-
+    reinterpreted TileTensor for pack_filter (which expects int64).
+
+    Args:
+        filter: Filter TileTensor with actual element dtype in FCRS layout.
+        packed_filter: Output TileTensor with int64 dtype (for pack_filter).
+        num_groups: Number of groups in the convolution.
+    """
+
+    var filter_lt = filter.to_layout_tensor()
+    var total_elems = filter_lt.size()
+
+    # Allocate temporary buffer for RSCF-ordered data (actual dtype).
+    var rscf_buf = alloc[Scalar[filter.dtype]](total_elems)
+
+    # Transpose FCRS→RSCF or FCQRS→QRSCF and create a TileTensor for packing.
+    comptime if filter_lt.rank == 4:
+        # FCRS [F, C, R, S] → RSCF [R, S, C, F]
+        var dim_F = filter_lt.dim[0]()
+        var dim_C = filter_lt.dim[1]()
+        var dim_R = filter_lt.dim[2]()
+        var dim_S = filter_lt.dim[3]()
+        for f in range(dim_F):
+            for c in range(dim_C):
+                for r in range(dim_R):
+                    for s in range(dim_S):
+                        var src = (
+                            f * dim_C * dim_R * dim_S
+                            + c * dim_R * dim_S
+                            + r * dim_S
+                            + s
+                        )
+                        var dst = (
+                            r * dim_S * dim_C * dim_F
+                            + s * dim_C * dim_F
+                            + c * dim_F
+                            + f
+                        )
+                        rscf_buf.store(dst, filter_lt.ptr.load(src))
+        # Reinterpret as int64 for pack_filter (matches existing convention).
+        var rscf_tile = TileTensor(
+            rscf_buf.bitcast[Scalar[DType.int64]](),
+            row_major((Idx(dim_R), Idx(dim_S), Idx(dim_C), Idx(dim_F))),
+        )
+        pack_filter(rscf_tile, packed_filter, num_groups)
+    else:
+        # FCQRS [F, C, Q, R, S] → QRSCF [Q, R, S, C, F]
+        var dim_F = filter_lt.dim[0]()
+        var dim_C = filter_lt.dim[1]()
+        var dim_Q = filter_lt.dim[2]()
+        var dim_R = filter_lt.dim[3]()
+        var dim_S = filter_lt.dim[4]()
+        for f in range(dim_F):
+            for c in range(dim_C):
+                for q in range(dim_Q):
+                    for r in range(dim_R):
+                        for s in range(dim_S):
+                            var src = (
+                                f * dim_C * dim_Q * dim_R * dim_S
+                                + c * dim_Q * dim_R * dim_S
+                                + q * dim_R * dim_S
+                                + r * dim_S
+                                + s
+                            )
+                            var dst = (
+                                q * dim_R * dim_S * dim_C * dim_F
+                                + r * dim_S * dim_C * dim_F
+                                + s * dim_C * dim_F
+                                + c * dim_F
+                                + f
+                            )
+                            rscf_buf.store(dst, filter_lt.ptr.load(src))
+        var rscf_tile = TileTensor(
+            rscf_buf.bitcast[Scalar[DType.int64]](),
+            row_major(
+                (
+                    Idx(dim_Q),
+                    Idx(dim_R),
+                    Idx(dim_S),
+                    Idx(dim_C),
+                    Idx(dim_F),
+                )
+            ),
+        )
+        pack_filter(rscf_tile, packed_filter, num_groups)
+
+    rscf_buf.free()
 
 
 @always_inline

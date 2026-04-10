@@ -16,28 +16,28 @@ from std.math.uutils import umod, ufloordiv, udivmod
 from std.sys import simd_width_of
 from std.sys.intrinsics import readfirstlane
 
-from std.gpu import lane_id, warp_id as get_warp_id, WARP_SIZE
-from std.gpu.sync import s_waitcnt
+from std.gpu import lane_id, warp_id as get_warp_id
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
+from layout.layout import blocked_product
 from layout._utils import idx2crd
-from layout.coord import Coord, ComptimeInt
-from layout.tile_layout import Layout as TileLayout, col_major as tt_col_major
+from layout.layout_tensor import (
+    ThreadScope,
+    copy_dram_to_local,
+    copy_local_to_shared,
+)
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from layout.tile_layout import row_major as tt_row_major
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from std.memory.pointer import AddressSpace as BaseAddressSpace
+
 from std.utils import IndexList
 
-from structured_kernels.amd_tile_io import (
-    LdsTileLoader,
-    RegTileLoader,
-    tt_copy_local_to_shared,
-)
-
-from .mma import TiledMmaOp
 from .utils import (
     LocalLayoutTensor,
+    SharedLayoutTensor,
+    get_fragment_layout,
     get_warp_coords,
+    get_warp_layout,
+    load_b_tile,
     pad,
 )
 import std.itertools
@@ -47,6 +47,10 @@ trait KVBuffer:
     comptime _dtype: DType
     comptime mma_tile_layout: Layout
     comptime _num_stages: Int
+
+    @staticmethod
+    def get_dtype() -> DType:
+        ...
 
     def load_from_dram(mut self):
         ...
@@ -67,8 +71,6 @@ trait KVBuffer:
         ...
 
 
-# Legacy traits — only used by RDNA mma_rdna.mojo.
-# CDNA attention paths use TiledMmaOp with TileTensor directly.
 trait RegisterBuffer:
     comptime reg_dtype: DType
     comptime reg_tile_layout: Layout
@@ -150,7 +152,13 @@ struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
 
 struct KVBufferImpl[
     dtype: DType,
-    kv_tile_layout: TensorLayout,
+    layout: Layout,
+    address_space: BaseAddressSpace,
+    alignment: Int,
+    origin: Origin,
+    masked: Bool,
+    layout_int_type: DType,
+    linear_idx_type: DType,
     //,
     config: KVBufferConfig,
     tensor_core_mma: TiledTensorCore,
@@ -175,191 +183,197 @@ struct KVBufferImpl[
     )
     comptime simd_width = simd_width_of[Self.dtype]()
 
-    # Thread layout for DRAM→register and register→SMEM distribution.
-    # token_gen uses a layout matching the vectorized smem tile shape;
-    # non-token_gen uses the standard (num_threads//4, 4) grid.
-    comptime _btile_dim0 = Self.config.btile_dim0
-    comptime _btile_dim1 = Self.config.btile_dim1
-    comptime _thread_rows = (
+    # Shared memory layout: row_major(btile_dim0, btile_dim1)
+    # All vector columns within a row are contiguous, enabling effective
+    # swizzle-based bank conflict reduction.
+    #
+    # For BN=128, BK=32: row_major(128, 32) with stride (32, 1)
+    # Row i, column j is at offset i*32 + j
+    # Vector columns at offsets {0, 8, 16, 24} within each row hit
+    # different banks when swizzle is applied.
+
+    comptime smem_layout = Layout.row_major(
+        Self.config.btile_dim0, Self.config.btile_dim1
+    )
+
+    comptime thread_layout = Layout.row_major(
         min(
             Self.num_threads,
-            (Self._btile_dim0 * Self._btile_dim1) // Self.simd_width,
+            (Self.config.btile_dim0 * Self.config.btile_dim1)
+            // Self.simd_width,
         )
         * Self.simd_width
-        // Self._btile_dim1
-    ) if Self.token_gen else Self.num_threads // 4
-    comptime _thread_cols = (
-        Self._btile_dim1 // Self.simd_width
-    ) if Self.token_gen else 4
+        // Self.smem_layout.stride[0].value(),
+        Self.smem_layout.stride[0].value() // Self.simd_width,
+    ) if Self.token_gen else Layout.row_major(Self.num_threads // 4, 4)
 
-    # TileTensor register storage for DMA staging.
-    comptime _rows_per_stage = Self.num_mmas * Self.num_k_tiles
-    comptime _load_rows = Self.num_stages * Self._rows_per_stage
-    comptime _load_layout = tt_row_major[Self._load_rows, Self.simd_width]()
-    comptime LoadTile = TileTensor[
+    comptime LoadTileType = LocalLayoutTensor[
         Self.dtype,
-        type_of(Self._load_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
+        Layout.row_major(
+            Self.num_stages * Self.num_mmas * Self.num_k_tiles,
+            Self.simd_width,
+        ),
     ]
-    var load_tile: Self.LoadTile
+    var load_tile: Self.LoadTileType
 
-    # TileTensor register storage for MMA operand.
-    comptime _mma_rows = Self.num_mmas
-    comptime _mma_cols = Self.simd_width
-    comptime mma_tile_layout = Layout.row_major(Self._mma_rows, Self._mma_cols)
-    comptime _mma_layout = tt_row_major[Self._mma_rows, Self._mma_cols]()
-    comptime MmaTile = TileTensor[
+    comptime mma_tile_layout = Layout.row_major(Self.num_mmas, Self.simd_width)
+
+    comptime MMATileType = LocalLayoutTensor[
         Self.dtype,
-        type_of(Self._mma_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
+        Self.mma_tile_layout,
     ]
-    var mma_tile: Self.MmaTile
+    var mma_tile: Self.MMATileType
 
     comptime wtile_dim0 = Self.config.wtile_dim0
     comptime wtile_dim1 = Self.config.wtile_dim1
 
-    # TiledMmaOp for SMEM→register loads.
-    comptime _TiledMma = TiledMmaOp[
-        out_type=Self.tensor_core_mma.out_type,
-        in_type=Self.dtype,
-        shape=Self.tensor_core_mma.shape,
-        group_size=Self.tensor_core_mma.group_size,
-        transpose_b=Self.tensor_core_mma.transpose_b,
-    ]
-
-    # SMEM TileTensor (stored once, used by copy_to_shared and load_from_shared).
-    comptime _smem_layout = tt_row_major[Self._btile_dim0, Self._btile_dim1]()
-    comptime SmemTile = TileTensor[
+    comptime SharedTileType = LayoutTensor[
         Self.dtype,
-        type_of(Self._smem_layout),
+        Self.smem_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
-    var smem_tile: Self.SmemTile
+    comptime SharedWarpTileType = Self.SharedTileType.TileType[
+        Self.wtile_dim0, Self.wtile_dim1
+    ]
 
-    # DRAM tile and loader.
-    comptime GmemTileType = TileTensor[
-        Self.dtype, Self.kv_tile_layout, ImmutAnyOrigin
+    var smem_ptr: UnsafePointer[
+        Scalar[Self.dtype],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
-    comptime RegLoaderType = RegTileLoader[
-        Self.dtype, Self._thread_rows, Self._thread_cols, Self.num_threads
-    ]
-    var gmem_tile: Self.GmemTileType
-    var reg_loader: Self.RegLoaderType
-    var tile_idx: Int
+
+    var bounds: Int
     var load_tile_id: Int
+
+    comptime GlobalTensorType = LayoutTensor[
+        Self.dtype,
+        Self.layout,
+        Self.origin,
+        address_space=Self.address_space,
+        alignment=Self.alignment,
+        masked=Self.masked,
+        layout_int_type=Self.layout_int_type,
+        linear_idx_type=Self.linear_idx_type,
+    ]
+
+    comptime GlobalTiledIteratorType = Self.GlobalTensorType.TiledIteratorType[
+        Self.config.btile_dim0,
+        Self.config.btile_dim1,
+        axis=Self.config.iterator_axis,
+    ]
+
+    var global_iterator: Self.GlobalTiledIteratorType
 
     @always_inline
     def __init__(
         out self,
-        gmem_tile: Self.GmemTileType,
+        global_tile: Self.GlobalTensorType,
+        num_b_rows: Optional[Int],
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ],
     ):
-        self.load_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
-            Self._load_layout
-        )
-        self.mma_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
-            Self._mma_layout
-        )
-        self.smem_tile = Self.SmemTile(shared_ptr, Self._smem_layout)
-        self.gmem_tile = gmem_tile
-        self.reg_loader = Self.RegLoaderType(gmem_tile)
-        self.tile_idx = 0
+        # comptime assert
+        self.load_tile = type_of(self.load_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
+        self.smem_ptr = shared_ptr
+        comptime stride = Self.GlobalTiledIteratorType.layout.stride[0].value()
+        self.bounds = num_b_rows.value() * stride if num_b_rows else Int.MAX
+        self.global_iterator = global_tile.tiled_iterator[
+            Self.config.btile_dim0,
+            Self.config.btile_dim1,
+            axis=Self.config.iterator_axis,
+        ](0, 0)
         self.load_tile_id = 0
+
+    @always_inline
+    @staticmethod
+    def get_dtype() -> DType:
+        return Self._dtype
 
     @always_inline
     def load_from_dram(
         mut self,
     ):
-        # Build per-iteration DRAM sub-tile on-the-fly.
-        var row_idx = 0 if Self.config.iterator_axis == 1 else self.tile_idx
-        var col_idx = self.tile_idx if Self.config.iterator_axis == 1 else 0
-        var src = self.gmem_tile.tile[Self._btile_dim0, Self._btile_dim1](
-            row_idx, col_idx
+        copy_dram_to_local[src_thread_layout=Self.thread_layout,](
+            self.load_tile.split[Self.num_stages]()[
+                self.load_tile_id
+            ].vectorize[1, Self.simd_width](),
+            self.global_iterator,
+            UInt32(self.bounds),
         )
-        var dst = self.load_tile.tile[Self._rows_per_stage, Self.simd_width](
-            self.load_tile_id, 0
-        )
-        self.reg_loader.load(
-            dst,
-            src.vectorize[1, Self.simd_width](),
-        )
-        self.tile_idx += 1
+        self.global_iterator._incr()
         self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
 
     @always_inline
-    def get_mma_tile(
-        self,
-    ) -> LocalLayoutTensor[Self.dtype, Self.mma_tile_layout]:
-        return rebind[LocalLayoutTensor[Self.dtype, Self.mma_tile_layout]](
-            self.mma_tile.to_layout_tensor()
-        )
+    def get_mma_tile(self) -> Self.MMATileType:
+        return self.mma_tile
 
     @always_inline
     def copy_to_shared[
         tile_id: Int = 0
     ](self,):
-        tt_copy_local_to_shared[
-            Self._thread_rows,
-            Self._thread_cols,
-            Self.swizzle,
-            Self.num_threads,
+        var smem_tile = Self.SharedTileType(self.smem_ptr)
+        copy_local_to_shared[
+            thread_layout=Self.thread_layout,
+            swizzle=Self.swizzle,
+            row_major=True,
         ](
-            self.smem_tile.vectorize[1, Self.simd_width](),
-            self.load_tile.tile[Self._rows_per_stage, Self.simd_width](
-                tile_id, 0
-            ).vectorize[1, Self.simd_width](),
+            smem_tile.vectorize[1, Self.simd_width](),
+            self.load_tile.split[Self.num_stages]()[tile_id].vectorize[
+                1, Self.simd_width
+            ](),
         )
 
     @always_inline
     def load_from_shared[
         k_mma: Int,
     ](self):
+        comptime num_warps_n = Self.BN // Self.WN
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
+        var smem_tile = Self.SharedTileType(self.smem_ptr)
+
         var wtile_coord0 = Self.config.get_wtile_coord()[0]
         var wtile_coord1 = Self.config.get_wtile_coord()[1]
+        var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
+            wtile_coord0, wtile_coord1
+        )
 
-        comptime if not Self.token_gen:
-            var warp_tile = self.smem_tile.tile[
-                Self.wtile_dim0, Self.wtile_dim1
-            ](wtile_coord0, wtile_coord1)
-            Self._TiledMma.load_b[swizzle=Self.swizzle](
-                warp_tile, self.mma_tile, UInt(k_mma)
+        comptime if Self.swizzle and not Self.token_gen:
+            # Use load_b_tile which handles distribute + swizzle correctly.
+            # Each frag_tile keeps the full K width so load_b_tile computes
+            # distance from frag_tile.ptr; the frag offset has bits above
+            # the swizzle range so XOR is applied correctly.
+            #
+            # Adjust mma_shape K dimension by group_size so load_b_tile tiles
+            # by the full K_slice (MMA_K * group_size) per k_mma iteration,
+            # matching the thread distribution across the warp.
+            comptime adjusted_shape = IndexList[3](
+                Self.tensor_core_mma.shape[0],
+                Self.tensor_core_mma.shape[1],
+                Self.MMA_K * Self.tensor_core_mma.group_size,
             )
+            var mma_vec = self.mma_tile.vectorize[1, Self.simd_width]()
+            comptime for frag_i in range(Self.num_mmas):
+                var frag_tile = warp_tile.tile[Self.MMA_N, Self.wtile_dim1](
+                    frag_i, 0
+                )
+                var result = load_b_tile[adjusted_shape, Self.swizzle, k_mma](
+                    frag_tile
+                )
+                mma_vec[frag_i, 0] = rebind[type_of(mma_vec[frag_i, 0])](result)
         else:
-            # Token-gen: use LayoutTensor path (TileTensor distribute
-            # produces different offsets for single-row token-gen tiles).
-            comptime _smem_row_major = Layout.row_major(
-                Self._btile_dim0, Self._btile_dim1
-            )
-            var smem_warp = LayoutTensor[
-                Self.dtype,
-                _smem_row_major,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-            ](self.smem_tile.ptr)
-            var warp_tile = smem_warp.tile[Self.wtile_dim0, Self.wtile_dim1](
-                wtile_coord0, wtile_coord1
-            )
-            comptime MMATileType = LocalLayoutTensor[
-                Self.dtype,
-                Layout.row_major(Self._mma_rows, Self._mma_cols),
-            ]
-            var mma_frag = rebind[MMATileType](self.mma_tile.to_layout_tensor())
             Self.tensor_core_mma.mma_op.load_b[swizzle=Self.swizzle](
                 warp_tile,
-                mma_frag.vectorize[1, Self.simd_width](),
+                self.get_mma_tile().vectorize[1, Self.simd_width](),
                 UInt(k_mma),
             )
 
 
 comptime KBuffer[
-    kv_tile_layout: TensorLayout,
     tensor_core_mma: TiledTensorCore,
     swizzle: Optional[Swizzle],
     BN: Int,
@@ -370,7 +384,6 @@ comptime KBuffer[
     num_stages: Int = 1,
     token_gen: Bool = False,
 ] = KVBufferImpl[
-    kv_tile_layout=kv_tile_layout,
     config=KBufferConfig[BN, BK, WN],
     tensor_core_mma=tensor_core_mma,
     swizzle=swizzle,
@@ -384,7 +397,6 @@ comptime KBuffer[
 ]
 
 comptime VBuffer[
-    kv_tile_layout: TensorLayout,
     tensor_core_mma: TiledTensorCore,
     swizzle: Optional[Swizzle],
     BN: Int,
@@ -395,7 +407,6 @@ comptime VBuffer[
     num_stages: Int = 1,
     token_gen: Bool = False,
 ] = KVBufferImpl[
-    kv_tile_layout=kv_tile_layout,
     config=VBufferConfig[BN, BK, WN, depth],
     tensor_core_mma=tensor_core_mma,
     swizzle=swizzle,
@@ -409,227 +420,15 @@ comptime VBuffer[
 ]
 
 
-# ===----------------------------------------------------------------------=== #
-# KVBufferLDS: Direct DRAM→LDS DMA (Option B: serialized, single SMEM)
-# ===----------------------------------------------------------------------=== #
-
-
-struct KVBufferLDS[
-    dtype: DType,
-    kv_tile_layout: TensorLayout,
-    //,
-    config: KVBufferConfig,
-    tensor_core_mma: TiledTensorCore,
-    swizzle: Optional[Swizzle],
-    BN: Int,
-    WN: Int,
-    BK: Int,
-    depth: Int,
-    num_threads: Int,
-    token_gen: Bool = False,
-](KVBuffer):
-    """KV buffer with direct DRAM→LDS DMA (no register staging).
-
-    Serialized single-buffer variant for comparison with KVBufferImpl's
-    register double-buffered approach. Each iteration:
-      1. load_from_dram(): issues DRAM→LDS DMA via LdsTileLoader
-      2. copy_to_shared(): s_waitcnt vmcnt(0) to wait for DMA
-      3. barrier(): make SMEM visible
-      4. load_from_shared(): SMEM→registers via TiledMmaOp.load_b
-      5. MMA
-      6. barrier()
-
-    No register staging buffer, no prefetch overlap between iterations.
-    Requires warp_id for DMA work distribution.
-    """
-
-    comptime _dtype = Self.dtype
-    comptime _num_stages = 1
-    comptime MMA_N = Self.tensor_core_mma.shape[1]
-    comptime MMA_K = Self.tensor_core_mma.shape[2]
-    comptime num_warps_n = Self.BN // Self.WN
-    comptime num_mmas = ceildiv(Self.config.wsize, Self.MMA_N)
-
-    comptime num_k_tiles = ceildiv(
-        Self.BK, Self.MMA_K * Self.tensor_core_mma.group_size
-    )
-    comptime simd_width = simd_width_of[Self.dtype]()
-
-    comptime _btile_dim0 = Self.config.btile_dim0
-    comptime _btile_dim1 = Self.config.btile_dim1
-
-    # DMA distribution across warps.
-    comptime warp_tile_rows = 32
-    comptime _num_warps = Self.num_threads // WARP_SIZE
-    comptime _num_row_groups = Self._btile_dim0 // Self.warp_tile_rows
-    comptime _num_col_groups = max(Self._btile_dim1 // 32, 1)
-    comptime _total_tiles = Self._num_row_groups * Self._num_col_groups
-    comptime _tiles_per_warp = ceildiv(Self._total_tiles, Self._num_warps)
-    # Each 32×32 warp-tile produces 2 VM instructions inside
-    # tt_copy_dram_to_sram_lds (loop: 32/16 = 2 sub-tiles per tile).
-    comptime vm_instrs_per_load = UInt32(Self._tiles_per_warp * 2)
-
-    # TileTensor register storage for MMA operand.
-    comptime _mma_rows = Self.num_mmas
-    comptime _mma_cols = Self.simd_width
-    comptime mma_tile_layout = Layout.row_major(Self._mma_rows, Self._mma_cols)
-    comptime _mma_layout = tt_row_major[Self._mma_rows, Self._mma_cols]()
-    comptime MmaTile = TileTensor[
-        Self.dtype,
-        type_of(Self._mma_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]
-    var mma_tile: Self.MmaTile
-
-    comptime wtile_dim0 = Self.config.wtile_dim0
-    comptime wtile_dim1 = Self.config.wtile_dim1
-
-    # TiledMmaOp for SMEM→register loads.
-    comptime _TiledMma = TiledMmaOp[
-        out_type=Self.tensor_core_mma.out_type,
-        in_type=Self.dtype,
-        shape=Self.tensor_core_mma.shape,
-        group_size=Self.tensor_core_mma.group_size,
-        transpose_b=Self.tensor_core_mma.transpose_b,
-    ]
-
-    # SMEM TileTensor (stored once, used by load_from_dram and load_from_shared).
-    comptime _smem_layout = tt_row_major[Self._btile_dim0, Self._btile_dim1]()
-    comptime SmemTile = TileTensor[
-        Self.dtype,
-        type_of(Self._smem_layout),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ]
-    var smem_tile: Self.SmemTile
-
-    # DRAM tile and loader.
-    comptime GmemTileType = TileTensor[
-        Self.dtype, Self.kv_tile_layout, ImmutAnyOrigin
-    ]
-    comptime LdsLoaderType = LdsTileLoader[Self.dtype, Self.swizzle]
-    var gmem_tile: Self.GmemTileType
-    var lds_loader: Self.LdsLoaderType
-    var tile_idx: Int
-    var warp_id: UInt32
-
-    @always_inline
-    def __init__(
-        out self,
-        gmem_tile: Self.GmemTileType,
-        shared_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ],
-        warp_id: UInt32,
-    ):
-        self.mma_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
-            Self._mma_layout
-        )
-        self.smem_tile = Self.SmemTile(shared_ptr, Self._smem_layout)
-        self.gmem_tile = gmem_tile
-        self.lds_loader = Self.LdsLoaderType(gmem_tile)
-        self.tile_idx = 0
-        self.warp_id = warp_id
-
-    @always_inline
-    def load_from_dram(mut self):
-        """Issue direct DRAM→LDS DMA distributed across warps."""
-        # Build per-iteration DRAM sub-tile on-the-fly.
-        var row_idx = 0 if Self.config.iterator_axis == 1 else self.tile_idx
-        var col_idx = self.tile_idx if Self.config.iterator_axis == 1 else 0
-        var dram_tile = self.gmem_tile.tile[Self._btile_dim0, Self._btile_dim1](
-            row_idx, col_idx
-        )
-
-        # Distribute work: each warp handles tiles_per_warp sub-tiles.
-        comptime for t in range(Self._tiles_per_warp):
-            comptime tile_offset = Int(t) * Self._num_warps
-            var warp_tile_idx = UInt32(tile_offset) + self.warp_id
-
-            comptime if Self._num_col_groups > 1:
-                var warp_row, warp_col = divmod(
-                    warp_tile_idx, UInt32(Self._num_col_groups)
-                )
-                var smem_warp = self.smem_tile.tile[Self.warp_tile_rows, 32](
-                    Int(warp_row), Int(warp_col)
-                )
-                var gmem_warp = dram_tile.tile[Self.warp_tile_rows, 32](
-                    Int(warp_row), Int(warp_col)
-                )
-                var lds_base = UInt32(readfirstlane(Int32(Int(smem_warp.ptr))))
-                self.lds_loader.load(smem_warp, gmem_warp, lds_base)
-            else:
-                var smem_warp = self.smem_tile.tile[
-                    Self.warp_tile_rows, Self._btile_dim1
-                ](Int(warp_tile_idx), 0)
-                var gmem_warp = dram_tile.tile[
-                    Self.warp_tile_rows, Self._btile_dim1
-                ](Int(warp_tile_idx), 0)
-                var lds_base = UInt32(readfirstlane(Int32(Int(smem_warp.ptr))))
-                self.lds_loader.load(smem_warp, gmem_warp, lds_base)
-
-        self.tile_idx += 1
-
-    @always_inline
-    def get_mma_tile(
-        self,
-    ) -> LocalLayoutTensor[Self.dtype, Self.mma_tile_layout]:
-        return rebind[LocalLayoutTensor[Self.dtype, Self.mma_tile_layout]](
-            self.mma_tile.to_layout_tensor()
-        )
-
-    @always_inline
-    def copy_to_shared[
-        tile_id: Int = 0
-    ](self,):
-        """Wait for outstanding DRAM→LDS DMA to complete."""
-        s_waitcnt[vmcnt=0]()
-
-    @always_inline
-    def load_from_shared[
-        k_mma: Int,
-    ](self):
-        """Load MMA operands from SMEM to registers."""
-        var wtile_coord0 = Self.config.get_wtile_coord()[0]
-        var wtile_coord1 = Self.config.get_wtile_coord()[1]
-        var warp_tile = self.smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
-            wtile_coord0, wtile_coord1
-        )
-        Self._TiledMma.load_b[swizzle=Self.swizzle](
-            warp_tile, self.mma_tile, UInt(k_mma)
-        )
-
-
-comptime KBufferLDS[
-    kv_tile_layout: TensorLayout,
-    tensor_core_mma: TiledTensorCore,
-    swizzle: Optional[Swizzle],
-    BN: Int,
-    WN: Int,
-    BK: Int,
-    depth: Int,
-    num_threads: Int,
-    token_gen: Bool = False,
-] = KVBufferLDS[
-    kv_tile_layout=kv_tile_layout,
-    config=KBufferConfig[BN, BK, WN],
-    tensor_core_mma=tensor_core_mma,
-    swizzle=swizzle,
-    BN=BN,
-    WN=WN,
-    BK=BK,
-    depth=depth,
-    num_threads=num_threads,
-    token_gen=token_gen,
-]
-
-
 struct VBufferTransposeLoads[
     dtype: DType,
-    kv_tile_layout: TensorLayout,
+    layout: Layout,
+    address_space: BaseAddressSpace,
+    alignment: Int,
+    origin: Origin,
+    masked: Bool,
+    layout_int_type: DType,
+    linear_idx_type: DType,
     //,
     tensor_core_mma: TiledTensorCore,
     BN: Int,
@@ -643,10 +442,41 @@ struct VBufferTransposeLoads[
     comptime simd_width = simd_width_of[Self.dtype]()
     comptime num_repeats = Self.BK // Self.simd_width
 
-    # V Buffer shared memory layout:
-    # num_repeats contiguous row_major(pad_depth, simd_width) blocks.
-    # Block b starts at offset b * pad_depth * simd_width.
-    # Padding = depth//simd_width (0 for depth=64) avoids bank conflicts.
+    # V Buffer shared memory layout
+    # - base_layout: Layout.row_major(depth + padding, simd_width) -> (depth+padding)xsimd_width tiles
+    # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
+    # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout with padding
+    #
+    # Resulting shape: (depth + padding)x(simd_width x num_repeats) = (depth + depth//8)xBK tensor
+    # Where padding = depth//8 helps avoid bank conflicts, BK = simd_width x num_repeats
+    #
+    # This creates num_repeats blocks of (depth+padding)xsimd_width arranged horizontally:
+    # Within each simd_width-column block, elements are consecutive (stride 1)
+    # Between blocks: stride = (depth + padding) x simd_width
+    #
+    # ASCII diagram for depth=128, padding=16, simd_width=8, BK=32 (showing first 2 of 4 blocks):
+    # ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+    # │        Block 0 (144x8)                     │        Block 1 (144x8)                     │     ... 2 more blocks           │
+    # ├────────────────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────┤
+    # │   0    1    2    3    4    5    6    7     │ 1152 1153 1154 1155 1156 1157 1158 1159    │ (Block 2: 2304-3455)            │
+    # │   8    9   10   11   12   13   14   15     │ 1160 1161 1162 1163 1164 1165 1166 1167    │ (Block 3: 3456-4607)            │
+    # │  16   17   18   19   20   21   22   23     │ 1168 1169 1170 1171 1172 1173 1174 1175    │                                 │
+    # │  24   25   26   27   28   29   30   31     │ 1176 1177 1178 1179 1180 1181 1182 1183    │                                 │
+    # │ ...                                        │  ...                                       │                                 │
+    # │1144 1145 1146 1147 1148 1149 1150 1151     │ 2296 2297 2298 2299 2300 2301 2302 2303    │                                 │
+    # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    # stride between blocks = (depth + padding) x simd_width = 144 x 8 = 1152
+
+    comptime base_layout = Layout.row_major(
+        Self.pad[Self.depth](),
+        Self.simd_width,
+    )
+    comptime tiler_layout = Layout.row_major(1, Self.num_repeats)
+    comptime smem_layout = blocked_product(
+        Self.base_layout,
+        Self.tiler_layout,
+        coalesce_output=True,
+    )
 
     comptime MMA_M = Self.tensor_core_mma.shape[0]
     comptime MMA_K = Self.tensor_core_mma.shape[2]
@@ -658,70 +488,76 @@ struct VBufferTransposeLoads[
     comptime depth_tile_size = min(Self.depth, 128)
 
     # for depth = 64, we use 8B loads instead of 16B loads
+    # this keeps the layout of the memory access the same but may not be optimal
+    # can come back to this if perf becomes an issue
     comptime load_width = 4 if Self.depth == 64 else Self.simd_width
     comptime loads_per_thread_per_depth_tile = (
         Self.depth_tile_size * Self.BK
     ) // (Self.load_width * Self.num_threads)
 
-    # TileTensor register storage for DMA staging.
-    comptime _load_rows_per_stage = (
-        Self.loads_per_thread_per_depth_tile
-        * (Self.depth // Self.depth_tile_size)
+    comptime LoadTileType = LocalLayoutTensor[
+        Self.dtype,
+        Layout.row_major(
+            (
+                Self.loads_per_thread_per_depth_tile
+                * (Self.depth // Self.depth_tile_size)
+            )
+            * Self.num_stages,
+            Self.load_width,
+        ),
+    ]
+
+    var load_tile: Self.LoadTileType
+
+    comptime mma_tile_layout = Layout.row_major(
+        Self.depth // Self.MMA_M, Self.simd_width
     )
-    comptime _load_rows = Self._load_rows_per_stage * Self.num_stages
-    comptime _load_layout = tt_row_major[Self._load_rows, Self.load_width]()
-    comptime LoadTile = TileTensor[
-        Self.dtype,
-        type_of(Self._load_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]
-    var load_tile: Self.LoadTile
 
-    # TileTensor register storage for MMA operand.
-    comptime _mma_rows = Self.depth // Self.MMA_M
-    comptime _mma_cols = Self.simd_width
-    comptime mma_tile_layout = Layout.row_major(Self._mma_rows, Self._mma_cols)
-    comptime _mma_layout = tt_row_major[Self._mma_rows, Self._mma_cols]()
-    comptime MmaTile = TileTensor[
+    comptime MMATileType = LocalLayoutTensor[
         Self.dtype,
-        type_of(Self._mma_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
+        Self.mma_tile_layout,
     ]
-    var mma_tile: Self.MmaTile
 
-    # Ephemeral LayoutTensor type for copy_to_shared and load_from_shared
-    # (complex blocked_product SMEM layout + interleaved transpose).
-    # Constructed inline from smem_ptr at each call site.
+    var mma_tile: Self.MMATileType
+
+    comptime SharedTileType = LayoutTensor[
+        Self.dtype,
+        Self.smem_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
+
     var smem_ptr: UnsafePointer[
         Scalar[Self.dtype],
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
 
-    # DRAM tile and loader.
-    comptime GmemTileType = TileTensor[
-        Self.dtype, Self.kv_tile_layout, ImmutAnyOrigin
-    ]
-    # Warp-scoped RegTileLoader: thread_layout = row_major(4, 16), warp_scope=True
-    comptime _dram_thread_rows = 4
-    comptime _dram_thread_cols = Self.depth_tile_size // Self.load_width
-    comptime RegLoaderType = RegTileLoader[
+    comptime GlobalTensorType = LayoutTensor[
         Self.dtype,
-        Self._dram_thread_rows,
-        Self._dram_thread_cols,
-        warp_scope=True,
+        Self.layout,
+        Self.origin,
+        address_space=Self.address_space,
+        alignment=Self.alignment,
+        masked=Self.masked,
+        layout_int_type=Self.layout_int_type,
+        linear_idx_type=Self.linear_idx_type,
     ]
-    var gmem_tile: Self.GmemTileType
-    var reg_loader: Self.RegLoaderType
-    var tile_idx: Int
+
+    comptime GlobalTiledIteratorType = Self.GlobalTensorType.TiledIteratorType[
+        Self.BK,
+        Self.depth,
+        axis=0,
+    ]
+
+    var global_iterator: Self.GlobalTiledIteratorType
+    var global_base_tile: Self.GlobalTensorType
     var current_stage: Int
 
     @always_inline
     def __init__(
         out self,
-        gmem_tile: Self.GmemTileType,
+        global_tile: Self.GlobalTensorType,
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
@@ -739,18 +575,20 @@ struct VBufferTransposeLoads[
             == 16
         ), "tensor_core_mma.shape[2] * tensor_core_mma.group_size must be 16"
 
-        self.gmem_tile = gmem_tile
-        self.reg_loader = Self.RegLoaderType(gmem_tile)
+        self.global_base_tile = global_tile
+        self.global_iterator = global_tile.tiled_iterator[
+            Self.BK, Self.depth, axis=0
+        ](0, 0)
 
-        self.load_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
-            Self._load_layout
-        )
-        self.mma_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
-            Self._mma_layout
-        )
+        self.load_tile = type_of(self.load_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
         self.smem_ptr = shared_ptr
-        self.tile_idx = 0
         self.current_stage = 0
+
+    @always_inline
+    @staticmethod
+    def get_dtype() -> DType:
+        return Self._dtype
 
     @always_inline
     @staticmethod
@@ -761,124 +599,151 @@ struct VBufferTransposeLoads[
     def load_from_dram(
         mut self,
     ):
-        # Build per-iteration DRAM sub-tile: BK × depth (axis=0 iteration).
-        var dram_tile = self.gmem_tile.tile[Self.BK, Self.depth](
-            self.tile_idx, 0
-        )
+        var global_tile = self.global_iterator[]
         var warp_id = get_warp_id()
 
         comptime assert (
             Self.loads_per_thread_per_depth_tile == 2
         ), "loads_per_thread_per_depth_tile must be 2"
+        var load_tile = self.load_tile.split[Self.num_stages]()[
+            self.current_stage
+        ]
 
         comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
+            # every lane loads 2 elements (=8B for depth=64 and 16B for depth=128)
+            # we transpose the global tile when writing to shared memory
+            # the load pattern here is such that it enables us to use 16B loads
+            # from shared memory and use p from registers instead of going through the shared memory.
+            # warp 0 lane 0 will load first element of row 0 and row 8
+            # warp 0 lane 16 will load first element of row 1 and row 9
+            # warp 0 lane 32 will load first element of row 2 and row 10
+            # warp 0 lane 48 will load first element of row 3 and row 11
+            # warp 1 lane 0 will load first element of row 4 and row 12
+            # warp 1 lane 16 will load first element of row 5 and row 13
+            # warp 1 lane 32 will load first element of row 6 and row 14
+            # warp 1 lane 48 will load first element of row 7 and row 15
+            # warp 2 lane 0 will load first element of row 16 and row 24
+            # warp 2 lane 16 will load first element of row 17 and row 25
+            # warp 2 lane 32 will load first element of row 18 and row 26
+            # warp 2 lane 48 will load first element of row 19 and row 27
+            # warp 3 lane 0 will load first element of row 20 and row 28
+            # warp 3 lane 16 will load first element of row 21 and row 29
+            # warp 3 lane 32 will load first element of row 22 and row 30
+            # warp 3 lane 48 will load first element of row 23 and row 31
+
+            # so when we transpose and write to shared memory, the shared memory tile (of size depthxBK)
+            # will effectively have its columns permuted as:
+            # 0,8,1,9,2,10,3,11,4,12,5,13,6,14,7,15,16,24,17,25,18,26,19,27,20,28,21,29,22,30,23,31
+
+            # we will have to interleave the elements of p in register to match this pattern for second mma to be correct.
+            # which means that the output of softmax(which will be of size 16), we will have to be divided into into 2x8 and first 8 will be
+            # interleaved and second 8 will be interleaved independently and use for two different mma operations.
+            # This explanation will likely be clearer with a diagram, I will come back to this later.
+
             comptime for i in range(Self.loads_per_thread_per_depth_tile):
-                # Same warp-level tiling as before:
-                # 16-row sub-tile → 8-row sub-tile → 4×depth_tile_size sub-tile
                 var warp_tile = (
-                    dram_tile.tile[16, Self.depth](
+                    global_tile.tile[16, Self.depth](
                         warp_id // 2,
                         0,
                     )
                     .tile[8, Self.depth](i, 0)
                     .tile[4, Self.depth_tile_size](warp_id % 2, depth_idx)
                 )
-                var dst_stage = self.load_tile.tile[
-                    Self._load_rows_per_stage, Self.load_width
-                ](self.current_stage, 0)
-                self.reg_loader.load(
-                    dst_stage.tile[1, Self.load_width](
+                copy_dram_to_local[
+                    src_thread_layout=Layout.row_major(4, 16),
+                    thread_scope=ThreadScope.WARP,
+                ](
+                    load_tile.tile[1, Self.load_width](
                         i + depth_idx * Self.loads_per_thread_per_depth_tile,
                         0,
-                    ),
+                    ).vectorize[1, Self.load_width](),
                     warp_tile.vectorize[1, Self.load_width](),
+                    self.global_base_tile,
                 )
 
         self.current_stage = (self.current_stage + 1) % Self.num_stages
-        self.tile_idx += 1
+        self.global_iterator._incr()
 
     @always_inline
-    def get_mma_tile(
-        self,
-    ) -> LocalLayoutTensor[Self.dtype, Self.mma_tile_layout]:
-        return rebind[LocalLayoutTensor[Self.dtype, Self.mma_tile_layout]](
-            self.mma_tile.to_layout_tensor()
-        )
+    def get_mma_tile(self) -> Self.MMATileType:
+        return self.mma_tile
 
     @always_inline
     def copy_to_shared[
         tile_id: Int = 0
     ](self,):
-        # Each warp writes to its block in the blocked SMEM layout.
-        # SMEM = num_repeats contiguous row_major(pad_depth, simd_width) blocks.
+        # we multiply v^T x p^T instead of p x v
+        # here all threads work to load 16xdepth tile at a time
+        # with each warp loading 4xdepth tile
+        # each thread loads v_reg_tile is therefore BK//MMA_N 16B elements
+
+        # transpose v_global_tile to v_smem
+        # each thread writes 8x2 elements to smem using 4x4B writes
+        # shared memory layout is row_major(depth, BK // num_warps) repeated num_warps times
+        # and each warp writes to a different tile in smem
+
         var warp_id = get_warp_id()
         var lane_coords = idx2crd[Layout.col_major(16, 4)](lane_id())
         var lane_row = lane_coords[0]
         var lane_col = lane_coords[1]
 
-        comptime pad_depth = Self.pad[Self.depth]()
-        comptime pad_depth_tile = Self.pad[Self.depth_tile_size]()
-        comptime pad_lw = Self.pad[Self.load_width]()
-        comptime block_size = pad_depth * Self.simd_width
-
-        # Warp's block base pointer.
-        var block_ptr = self.smem_ptr + warp_id * block_size
-
-        # Source register tile for this pipeline stage.
-        var load_stage = self.load_tile.tile[
-            Self._load_rows_per_stage, Self.load_width
-        ](tile_id, 0)
+        var smem_tensor = Self.SharedTileType(self.smem_ptr)
+        var load_tile = self.load_tile.split[Self.num_stages]()[tile_id]
 
         comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
-            # Depth chunk within the block (row_major stride = simd_width).
-            var chunk_ptr = (
-                block_ptr + depth_idx * pad_depth_tile * Self.simd_width
+            var smem_warp_tile = smem_tensor.tile[
+                Self.pad[Self.depth](),
+                Self.simd_width,
+            ](0, warp_id).tile[
+                Self.pad[Self.depth_tile_size](),
+                Self.simd_width,
+            ](
+                depth_idx, 0
             )
 
-            # Per-lane sub-tile: (pad_load_width, 2) at (lane_row, lane_col).
-            # Offset = lane_row * pad_lw * simd_width + lane_col * 2
-            # Then write at row stride = simd_width within the sub-tile.
-            var lane_base = (
-                chunk_ptr + lane_row * pad_lw * Self.simd_width + lane_col * 2
+            var lane_tile = (
+                smem_warp_tile.tile[Self.pad[Self.load_width](), 2](
+                    lane_row, lane_col
+                )
+                .slice[: Self.load_width, :]()
+                .vectorize[1, 2]()
             )
 
             comptime for j in range(Self.load_width):
-                var reg_tile_0 = load_stage[0 + depth_idx * 2, j][0]
-                var reg_tile_1 = load_stage[1 + depth_idx * 2, j][0]
+                # each thread loads 2x8 elements from gmem
+                # they are interleaved and written to smem
+                var reg_tile_0 = load_tile[0 + depth_idx * 2, j][0]
+                var reg_tile_1 = load_tile[1 + depth_idx * 2, j][0]
                 var reg_pair = SIMD[Self.dtype, 2](reg_tile_0, reg_tile_1)
-                (lane_base + j * Self.simd_width).store(reg_pair)
+                lane_tile[j, 0] = rebind[lane_tile.element_type](reg_pair)
 
     @always_inline
     def load_from_shared[
         k_mma: Int,
     ](self):
-        # Load MMA operands from padded blocked SMEM to registers.
-        # SMEM = contiguous row_major(pad_depth, simd_width) blocks.
-        # Each thread reads one SIMD[simd_width] row per depth_idx.
-        var col_idx, lane_ = udivmod(lane_id(), 32)
-        var lane = Int(lane_)
-
-        comptime pad_depth = Self.pad[Self.depth]()
-        comptime pad_mma_m = Self.pad[Self.MMA_M]()
-        comptime pad_sw = Self.pad[Self.simd_width]()
-        comptime block_size = pad_depth * Self.simd_width
-
-        # Select the block for this k_mma group.
-        var block_ptr = self.smem_ptr + (col_idx + k_mma * 2) * block_size
-
-        # MMA tile register storage — vectorize for SIMD writes.
-        var mma_vec = self.mma_tile.vectorize[1, Self.simd_width]()
+        # MMA
+        # threads in 16x4 layout
+        # each column loads depth x 8 elements from smem
+        var col_idx, lane = udivmod(lane_id(), 32)
+        var smem_tensor = Self.SharedTileType(self.smem_ptr)
 
         comptime for depth_idx in range(Self.num_depth_tiles):
-            # Row within block:
-            #   depth_idx * pad_MMA_M + (lane // sw) * pad_sw + (lane % sw)
-            var row = (
-                depth_idx * pad_mma_m
-                + (lane // Self.simd_width) * pad_sw
-                + (lane % Self.simd_width)
+            # TODO: document and parameterize this magic
+            var smem_fragment = (
+                smem_tensor.tile[Self.pad[Self.depth](), 8](
+                    0, col_idx + k_mma * 2
+                )
+                .vectorize[1, Self.simd_width]()
+                .tile[Self.pad[Self.MMA_M](), 1](depth_idx, 0)
+                .tile[Self.pad[Self.simd_width](), 1](
+                    ufloordiv(lane, Self.simd_width), 0
+                )
+                .slice[: Self.simd_width, :]()
+                .tile[1, 1](umod(lane, Self.simd_width), 0)
             )
-            var elem_ptr = block_ptr + row * Self.simd_width
-            mma_vec[depth_idx, 0] = elem_ptr.load[width=Self.simd_width]()
+            self.mma_tile.vectorize[1, Self.simd_width]().tile[1, 1](
+                depth_idx, 0
+            ).copy_from(smem_fragment)
 
 
 struct QRegisterBuffer[
@@ -891,7 +756,7 @@ struct QRegisterBuffer[
     BK: Int,
     depth: Int,
     thread_layout: Layout,
-]:
+](RegisterMMABuffer):
     comptime reg_dtype = Self.dtype
     comptime mma_dtype = Self.dtype
     comptime simd_width = simd_width_of[Self.dtype]()
@@ -900,86 +765,77 @@ struct QRegisterBuffer[
     comptime num_mmas = ceildiv(Self.WM, Self.MMA_M)
     comptime num_k_tiles = ceildiv(Self.BK, Self.MMA_K * Self.k_group_size)
 
+    comptime MMATileType = Self.RegisterTileType.SplitElementType[
+        Self.num_tiles
+    ].SplitElementType[Self.num_k_tiles]
+    comptime mma_tile_layout = Self.MMATileType.layout
+
     comptime num_tiles = Self.depth // Self.BK
-    comptime _total_rows = Self.num_mmas * Self.num_k_tiles * Self.num_tiles
-    comptime _rows_per_tile = Self.num_mmas * Self.num_k_tiles
-
-    # TileTensor storage in registers.
-    comptime reg_layout = tt_row_major[Self._total_rows, Self.simd_width]()
-    comptime RegType = TileTensor[
+    comptime reg_tile_layout = Layout.row_major(
+        Self.num_mmas * Self.num_k_tiles * Self.num_tiles, Self.simd_width
+    )
+    comptime RegisterTileType = LocalLayoutTensor[
         Self.dtype,
-        type_of(Self.reg_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
+        Self.reg_tile_layout,
     ]
-    var reg_tile: Self.RegType
 
-    # Thread layout for warp-scoped RegTileLoader (col-major to match
-    # get_warp_layout[mma_shape] used by the original copy_dram_to_local).
-    comptime _q_thread_rows = Self.thread_layout.shape[0].value()
-    comptime _q_thread_cols = Self.thread_layout.shape[1].value()
+    var reg_tile: Self.RegisterTileType
+
+    comptime TiledIteratorType = Self.RegisterTileType.TiledIteratorType[
+        Self.num_mmas * Self.num_k_tiles, Self.simd_width, axis=0
+    ]
+
+    # TODO: This is expensive, dereferencing q_gmem_warp_iter[] is expensive and
+    # using its dim() is also expensive. Need to find a better way to do this.
+
+    @staticmethod
+    @always_inline
+    def get_dtype() -> DType:
+        return Self.reg_dtype
 
     @always_inline
-    def __init__[
-        q_tile_layout: TensorLayout
-    ](out self, q_tile: TileTensor[Self.dtype, q_tile_layout, ImmutAnyOrigin],):
-        """Load Q tile from DRAM into registers via buffer_load intrinsics.
+    def __init__(out self, tensor: LayoutTensor[Self.dtype, ...]):
+        self.reg_tile = type_of(self.reg_tile).stack_allocation()
 
-        Each warp loads its [WM, depth] sub-tile using col-major thread
-        distribution (matching get_warp_layout[mma_shape]), then tiles
-        it into BK-wide strips stored in register memory.
-
-        Args:
-            q_tile: The full Q tile as a DRAM TileTensor.
-        """
-        self.reg_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
-            Self.reg_layout
-        )
-
+        comptime num_warps_n = Self.BN // Self.WN
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
-        # Warp's portion of Q: [WM, depth] sub-tile at (warp_row, 0).
-        var warp_tile = q_tile.tile[Self.WM, Self.depth](warp_row, 0)
-        var reg_loader = RegTileLoader[
-            Self.dtype,
-            Self._q_thread_rows,
-            Self._q_thread_cols,
-            warp_scope=True,
-            col_major_threads=True,
-        ](warp_tile)
+        var bounds = max(
+            min(Int32(Self.WM), Int32(tensor.dim[0]() - Self.WM * warp_row))
+            * Int32(tensor.stride[0]()),
+            0,
+        )
+        var gmem_warp_iter = tensor.tiled_iterator[Self.WM, Self.BK, axis=1](
+            warp_row, 0
+        )
+        var mma_tiles = self.reg_tile.split[Self.num_tiles]()
 
-        # Load each BK-wide strip along the depth axis.
         comptime for i in range(Self.num_tiles):
-            var src = warp_tile.tile[Self.WM, Self.BK](0, i)
-            var dst = self.reg_tile.tile[Self._rows_per_tile, Self.simd_width](
-                i, 0
+            var reg_tile = mma_tiles[i]
+            copy_dram_to_local[
+                src_thread_layout=Self.thread_layout,
+                thread_scope=ThreadScope.WARP,
+            ](
+                reg_tile.vectorize[1, Self.simd_width](),
+                gmem_warp_iter,
+                UInt32(Int(readfirstlane(bounds))),
             )
-            reg_loader.load(
-                dst,
-                src.vectorize[1, Self.simd_width](),
-            )
+            gmem_warp_iter._incr()
 
     @always_inline
-    def mma_tile[
-        tile_idx: Int, k_idx: Int
-    ](self) -> TileTensor[
-        Self.dtype,
-        type_of(tt_row_major[Self.num_mmas, Self.simd_width]()),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]:
-        """Return MMA-sized sub-tile for the given tile and k indices."""
-        return rebind[
-            TileTensor[
-                Self.dtype,
-                type_of(tt_row_major[Self.num_mmas, Self.simd_width]()),
-                MutExternalOrigin,
-                address_space=AddressSpace.LOCAL,
-            ]
-        ](
-            self.reg_tile.tile[Self._rows_per_tile, Self.simd_width](
-                tile_idx, 0
-            ).tile[Self.num_mmas, Self.simd_width](k_idx, 0)
-        )
+    def get_iter(self) -> Self.TiledIteratorType:
+        return self.reg_tile.tiled_iterator[
+            Self.num_mmas * Self.num_k_tiles, Self.simd_width, axis=0
+        ]()
+
+    @always_inline
+    def get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+        return self.reg_tile.split[Self.num_tiles]()[tile_idx].split[
+            Self.num_k_tiles
+        ]()[k_idx]
+
+    @always_inline
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+        return self.reg_tile
 
     @always_inline
     def scale[accum_type: DType](self, scale_factor: Scalar[accum_type]):
@@ -989,12 +845,11 @@ struct QRegisterBuffer[
         Used for pre-scaling Q by (1/sqrt(d) * log2e) so that QK matmul
         produces already-scaled scores, eliminating scale from the hot loop.
         """
+        var mma_tiles = self.reg_tile.split[Self.num_tiles]()
         comptime for tile in range(Self.num_tiles):
+            var tile_data = mma_tiles[tile].split[Self.num_k_tiles]()
             comptime for k in range(Self.num_k_tiles):
-                var sub = self.reg_tile.tile[
-                    Self._rows_per_tile, Self.simd_width
-                ](tile, 0).tile[Self.num_mmas, Self.simd_width](k, 0)
-                var vec = sub.vectorize[1, Self.simd_width]()
+                var vec = tile_data[k].vectorize[1, Self.simd_width]()
                 comptime for row in range(Self.num_mmas):
                     var q_f32 = vec[row, 0].cast[accum_type]()
                     q_f32 *= scale_factor
@@ -1010,44 +865,55 @@ struct OutputRegisterBuffer[
     num_m_mmas: Int,
     num_n_mmas: Int,
     output_frag_size: Int,
-]:
+](RegisterBuffer):
     comptime reg_dtype = Self.dtype
 
-    comptime _total_rows = Self.num_n_mmas * Self.num_m_mmas
-
-    # TileTensor storage in registers.
-    comptime reg_layout = tt_row_major[
-        Self._total_rows, Self.output_frag_size
-    ]()
-    comptime RegType = TileTensor[
+    comptime reg_tile_layout = Layout.row_major(
+        Self.num_n_mmas * Self.num_m_mmas, Self.output_frag_size
+    )
+    comptime RegisterTileType = LocalLayoutTensor[
         Self.dtype,
-        type_of(Self.reg_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
+        Self.reg_tile_layout,
     ]
-    var reg_tile: Self.RegType
+
+    var reg_tile: Self.RegisterTileType
 
     @always_inline
     def __init__(out self):
-        self.reg_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
-            Self.reg_layout
-        )
+        self.reg_tile = Self.RegisterTileType.stack_allocation()
+
+    @staticmethod
+    @always_inline
+    def get_dtype() -> DType:
+        return Self.reg_dtype
+
+    @always_inline
+    def vectorize(
+        self,
+    ) -> Self.RegisterTileType.VectorizedType[1, Self.output_frag_size]:
+        return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
     def apply_softmax_denominator[
         layout_type: TensorLayout, //
     ](self, rowsum: TileTensor[Self.dtype, layout_type, ...]):
-        comptime assert rowsum.flat_rank == 2
-        var reg_vec = self.reg_tile.vectorize[1, Self.output_frag_size]()
+        var rowsum_lt = rowsum.to_layout_tensor()
         comptime for m_mma in range(Self.num_m_mmas):
-            var rowsum_inv = recip(rowsum[m_mma, 0][0])
+            var rowsum_inv = recip(rowsum_lt[m_mma, 0])
 
             comptime for n_mma in range(Self.num_n_mmas):
-                reg_vec[n_mma * Self.num_m_mmas + m_mma, 0] *= rowsum_inv
+                comptime for i in range(Self.output_frag_size):
+                    self.reg_tile[n_mma * Self.num_m_mmas + m_mma, i] *= rebind[
+                        Self.RegisterTileType.element_type
+                    ](rowsum_inv)
 
     @always_inline
     def zero(self):
         _ = self.reg_tile.fill(0)
+
+    @always_inline
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+        return self.reg_tile
 
 
 struct PRegisterBuffer[
@@ -1066,7 +932,7 @@ struct PRegisterBuffer[
     k_group_size: Int,
     tr_load_enabled: Bool = False,
     num_stages: Int = 1,
-]:
+](RegisterMMABuffer):
     comptime reg_dtype = Self.accum_type_
     comptime mma_dtype = Self.dtype
     comptime mma_tile_layout = Layout.row_major(
@@ -1076,47 +942,38 @@ struct PRegisterBuffer[
         Self.num_n_mmas * Self.num_m_mmas, Self.output_frag_size
     )
 
-    # TileTensor storage (with staging dimension).
-    comptime _staged_rows = (
-        Self.num_stages * Self.num_n_mmas * Self.num_m_mmas
+    comptime reg_tile_layout_ = Layout.row_major(
+        Self.num_stages * Self.num_n_mmas * Self.num_m_mmas,
+        Self.output_frag_size,
     )
-    comptime _tiles_per_stage = Self.num_n_mmas * Self.num_m_mmas
-    comptime reg_layout = tt_row_major[
-        Self._staged_rows, Self.output_frag_size
-    ]()
-    comptime RegType = TileTensor[
+
+    comptime RegisterTileType_ = LocalLayoutTensor[
         Self.accum_type_,
-        type_of(Self.reg_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
+        Self.reg_tile_layout_,
     ]
-    var reg_tile: Self.RegType
 
-    # TileTensor type for a single pipeline stage sub-tile.
-    comptime stage_layout = tt_row_major[
-        Self._tiles_per_stage, Self.output_frag_size
-    ]()
-    comptime StageTileType = TileTensor[
+    comptime RegisterTileType = LocalLayoutTensor[
         Self.accum_type_,
-        type_of(Self.stage_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
+        Self.reg_tile_layout,
+    ]
+    comptime MMATileType = LocalLayoutTensor[
+        Self.mma_dtype,
+        Self.mma_tile_layout,
     ]
 
-    # TiledMmaOp for SMEM→register A-matrix loads.
-    comptime _TiledMma = TiledMmaOp[
-        out_type=Self.accum_type_,
-        in_type=Self.dtype,
-        shape=Self.mma_shape,
-        group_size=Self.k_group_size,
-        transpose_b=False,
+    var reg_tile: Self.RegisterTileType_
+
+    comptime shared_memory_layout = blocked_product(
+        Layout.row_major(Self.BM, Self.BK),
+        Layout.row_major(1, Self.BN // Self.BK),
+    )
+
+    comptime SharedMemoryTileType = SharedLayoutTensor[
+        Self.dtype,
+        Self.shared_memory_layout,
     ]
 
-    var shared_memory_ptr: UnsafePointer[
-        Scalar[Self.dtype],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ]
+    var shared_memory_tile: Self.SharedMemoryTileType
 
     @always_inline
     def __init__(
@@ -1127,236 +984,191 @@ struct PRegisterBuffer[
             address_space=AddressSpace.SHARED,
         ],
     ):
-        self.reg_tile = tt_stack_allocation[
-            Self.accum_type_, AddressSpace.LOCAL
-        ](Self.reg_layout)
-        self.shared_memory_ptr = shared_ptr
+        self.reg_tile = Self.RegisterTileType_.stack_allocation()
+        self.shared_memory_tile = Self.SharedMemoryTileType(shared_ptr)
 
     @always_inline
-    def get_mma_tile_shared[
-        tile_idx: Int, k_idx: Int
-    ](self) -> Self.MmaTileType:
-        var result = tt_stack_allocation[Self.mma_dtype, AddressSpace.LOCAL](
-            Self._mma_layout
-        )
-        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
-        # Inline blocked offset: each BM×BK block is contiguous.
-        var smem_block = TileTensor[
-            Self.dtype,
-            type_of(tt_row_major[Self.BM, Self.BK]()),
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ](
-            self.shared_memory_ptr + tile_idx * Self.BM * Self.BK,
-            tt_row_major[Self.BM, Self.BK](),
-        )
-        var warp_tile = smem_block.tile[Self.WM, Self.BK](warp_row, 0)
-        Self._TiledMma.load_a[swizzle=None](warp_tile, result, UInt(k_idx))
-        return result
-
-    @always_inline
-    def stage_tile[stage: Int = 0](self) -> Self.StageTileType:
-        """Return the TileTensor sub-tile for the given pipeline stage."""
-        return rebind[Self.StageTileType](
-            self.reg_tile.tile[Self._tiles_per_stage, Self.output_frag_size](
-                stage, 0
-            )
-        )
-
-    # TileTensor type for MMA operand (cast from accum_type to mma_dtype).
-    comptime _mma_simd = simd_width_of[Self.mma_dtype]()
-    comptime _mma_layout = tt_row_major[Self.num_m_mmas, Self._mma_simd]()
-    comptime MmaTileType = TileTensor[
-        Self.mma_dtype,
-        type_of(Self._mma_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]
-
-    @always_inline
-    def mma_tile[
+    def get_mma_tile_reg[
         tile_idx: Int, k_idx: Int, stage: Int = 0
-    ](self) -> Self.MmaTileType:
-        """TileTensor MMA operand with cast+interleave via SIMD whole-vector ops.
+    ](self) -> Self.MMATileType:
+        comptime OutputTileType = LocalLayoutTensor[
+            Self.mma_dtype,
+            Layout.row_major(Self.num_m_mmas, Self.output_frag_size),
+        ]
 
-        Converts f32 accumulator rows to bf16 MMA fragments using SIMD cast,
-        interleave, and slice — no per-element [j] indexing needed.
-        """
-        comptime if Self.shared_memory_backed:
-            return self.get_mma_tile_shared[tile_idx, k_idx]()
+        var out = OutputTileType.stack_allocation()
 
-        var result = tt_stack_allocation[Self.mma_dtype, AddressSpace.LOCAL](
-            Self._mma_layout
-        )
-        var result_vec = result.vectorize[1, Self._mma_simd]()
-
-        # Read source tile for this stage.
-        var src = self.stage_tile[stage]()
-        var src_vec = src.vectorize[1, Self.output_frag_size]()
+        var reg_tile = self.reg_tile.split[Self.num_stages]()[stage]
 
         comptime if Self.tr_load_enabled:
+            # if tr loads are used then we don't need any packing logic
+            # just convert the registers to bf16
+
             comptime if Self.mma_shape[0] == 32:
-                # 32x32 MMA: cast full row, then slice to k_idx chunk.
-                # src is SIMD[f32, output_frag_size], cast → SIMD[bf16, frag].
-                # Result takes _mma_simd elements starting at k_idx offset.
                 comptime assert (
                     Self.output_frag_size == 16
                 ), "output_frag_size must be 16 for 32x32 mma shape"
 
-                var casted = src_vec[tile_idx, 0].cast[Self.mma_dtype]()
-                result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
-                    casted.slice[
-                        Self._mma_simd, offset=k_idx * Self._mma_simd
-                    ]()
-                )
-
+                comptime for j in range(Self.output_frag_size):
+                    out[0, j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
             elif Self.mma_shape[0] == 16:
-                # 16x16 MMA: cast two halves and join.
-                # reg_tile_split = stage[tile_idx * 2*num_m_mmas : ...], shape
-                # [2*num_m_mmas, output_frag_size].  Row m → first half,
-                # row m+num_m_mmas → second half.
                 comptime assert (
                     Self.output_frag_size == 4
                 ), "output_frag_size must be 4 for 16x16 mma shape"
 
-                # The stage tile is [num_n_mmas * num_m_mmas, frag].
-                # For 16x16, split into num_n_mmas//2 groups.
-                comptime group_rows = 2 * Self.num_m_mmas
-                var group = src.tile[group_rows, Self.output_frag_size](
-                    tile_idx, 0
-                ).vectorize[1, Self.output_frag_size]()
+                var mma_reg_tile = Self.MMATileType.stack_allocation()
+                var reg_tile_split = reg_tile.split[Self.num_n_mmas // 2]()[
+                    tile_idx
+                ]
 
-                comptime for m in range(Self.num_m_mmas):
-                    var lo = group[m, 0].cast[Self.mma_dtype]()
-                    var hi = group[m + Self.num_m_mmas, 0].cast[
+                comptime for m, j in std.itertools.product(
+                    range(Self.num_m_mmas), range(Self.output_frag_size)
+                ):
+                    mma_reg_tile[m, j] = reg_tile_split[m, j].cast[
                         Self.mma_dtype
                     ]()
-                    var joined = lo.join(hi)
-                    result_vec[m, 0] = rebind[type_of(result_vec[m, 0])](
-                        joined.slice[
-                            Self._mma_simd,
-                            offset=k_idx * Self._mma_simd,
-                        ]()
-                    )
+                    mma_reg_tile[m, Self.output_frag_size + j] = reg_tile_split[
+                        m + Self.num_m_mmas, j
+                    ].cast[Self.mma_dtype]()
+                return mma_reg_tile
             else:
                 comptime assert False, String(
                     "Unsupported mma shape: ", Self.mma_shape[0]
                 )
         else:
-            # Non-tr_load: cast + interleave pairs of 4-element sub-groups.
-            # Input [0..3, 4..7, 8..11, 12..15] →
-            # Output [0,4, 1,5, 2,6, 3,7, 8,12, 9,13, 10,14, 11,15]
-            var row = src_vec[tile_idx, 0].cast[Self.mma_dtype]()
-            var lo4 = row.slice[4, offset=0]()
-            var hi4 = row.slice[4, offset=4]()
-            var lo_half = lo4.interleave(hi4)  # 8 elems
+            # this is special packing, the pattern here depends on how we load
+            # and transpose the v tile when writing to the shared memory
+            comptime for j in range(4):
+                out[0, 2 * j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
+                out[0, 2 * j + 1] = reg_tile[tile_idx, 4 + j].cast[
+                    Self.mma_dtype
+                ]()
+                out[0, 2 * j + 8] = reg_tile[tile_idx, 8 + j].cast[
+                    Self.mma_dtype
+                ]()
+                out[0, 2 * j + 8 + 1] = reg_tile[tile_idx, 12 + j].cast[
+                    Self.mma_dtype
+                ]()
+        return rebind[Self.MMATileType](
+            out.tile[Self.num_n_mmas, simd_width_of[Self.mma_dtype]()](0, k_idx)
+        )
 
-            var lo4b = row.slice[4, offset=8]()
-            var hi4b = row.slice[4, offset=12]()
-            var hi_half = lo4b.interleave(hi4b)  # 8 elems
+    @always_inline
+    def get_mma_tile_shared[
+        tile_idx: Int, k_idx: Int
+    ](self) -> Self.MMATileType:
+        var mma_reg_tile = Self.MMATileType.stack_allocation()
+        comptime num_warps_n = Self.WN // Self.BN
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_tile = self.shared_memory_tile.tile[Self.WM, Self.BK](
+            warp_row, tile_idx
+        )
 
-            var packed = lo_half.join(hi_half)  # 16 elems
-            result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
-                packed.slice[Self._mma_simd, offset=k_idx * Self._mma_simd]()
-            )
+        comptime tensor_core_mma = TiledTensorCore[
+            Self.accum_type_,
+            Self.dtype,
+            Self.mma_shape,
+            group_size=Self.k_group_size,
+            transpose_b=False,
+        ]()
 
-        return result
+        tensor_core_mma.mma_op.load_a[swizzle=None](
+            warp_tile,
+            mma_reg_tile.vectorize[1, simd_width_of[Self.dtype]()](),
+            UInt(k_idx),
+        )
+        return mma_reg_tile
+
+    @always_inline
+    def get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+        return self.get_mma_tile[tile_idx, k_idx, 0]()
+
+    @always_inline
+    def get_mma_tile[
+        tile_idx: Int, k_idx: Int, stage: Int
+    ](self) -> Self.MMATileType:
+        return self.get_mma_tile_reg[
+            tile_idx, k_idx, stage
+        ]() if not Self.shared_memory_backed else self.get_mma_tile_shared[
+            tile_idx, k_idx
+        ]()
+
+    @staticmethod
+    @always_inline
+    def get_dtype() -> DType:
+        return Self.mma_dtype
+
+    @always_inline
+    def vectorize[
+        stage: Int = 0
+    ](
+        self,
+        out res: Self.RegisterTileType.VectorizedType[1, Self.output_frag_size],
+    ):
+        return rebind[type_of(res)](
+            self.reg_tile.split[Self.num_stages]()[stage].vectorize[
+                1, Self.output_frag_size
+            ]()
+        )
 
     @always_inline
     def zero[stage: Int](self):
-        _ = self.stage_tile[stage]().fill(0)
+        _ = self.reg_tile.split[Self.num_stages]()[stage].fill(0)
 
     @always_inline
     def zero(self):
         self.zero[0]()
 
     @always_inline
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+        return rebind[Self.RegisterTileType](
+            self.reg_tile.split[Self.num_stages]()[stage]
+        )
+
+    @always_inline
+    def get_shared_memory_tile(
+        self, tile_idx: Int
+    ) -> Self.SharedMemoryTileType.TileType[Self.BM, Self.BK]:
+        return self.shared_memory_tile.tile[Self.BM, Self.BK](0, tile_idx)
+
+    @always_inline
     def copy_to_shared(self):
-        comptime frag_w = Self.output_frag_size
+        comptime warp_layout = get_warp_layout[Self.mma_shape]()
+        comptime fragment_layout = get_fragment_layout[Self.mma_shape]()
+        comptime num_warps_n = Self.BN // Self.WN
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         comptime num_n_mmas_per_bk = Self.num_n_mmas // (Self.WN // Self.BK)
 
+        # for the following indexing logic, WN must be equal to BN or BK
         comptime assert (
             Self.WN == Self.BK or Self.WN == Self.BN
         ), "WN must be equal to BN or BK"
 
-        var p_reg_vec = self.stage_tile[0]().vectorize[
-            1, Self.output_frag_size
-        ]()
-
-        # 3D thread layout: (warp_rows, warp_cols, 1).
-        # The trailing 1 leaves the inner frag_w elements undistributed,
-        # so each thread gets frag_w contiguous scalars.
-        comptime warp_m = Self.mma_shape[0]
-        comptime warp_n = WARP_SIZE // warp_m
-        comptime tl_3d = tt_col_major[warp_m, warp_n, 1]()
+        var p_reg_vectorized = self.vectorize()
 
         comptime for i in range(Self.WN // Self.BK):
-            var block_idx = Int(i) + warp_col * (Self.WN // Self.BK)
-            # Inline blocked offset: each BM×BK block is contiguous.
-            var smem_block = TileTensor[
-                Self.dtype,
-                type_of(tt_row_major[Self.BM, Self.BK]()),
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-            ](
-                self.shared_memory_ptr + block_idx * Self.BM * Self.BK,
-                tt_row_major[Self.BM, Self.BK](),
+            var p_smem_tile = self.get_shared_memory_tile(
+                i + warp_col * (Self.WN // Self.BK)
             )
-            var p_smem_warp_tile = smem_block.tile[Self.WM, Self.BK](
-                warp_row, 0
+            var p_smem_warp_tile = p_smem_tile.tile[Self.WM, Self.BK](
+                warp_row, i
             )
 
             comptime for m_mma, n_mma in std.itertools.product(
                 range(Self.num_m_mmas), range(num_n_mmas_per_bk)
             ):
-                var mma_tile = p_smem_warp_tile.tile[
+                var p_smem_mma_tile = p_smem_warp_tile.tile[
                     Self.mma_shape[0], Self.mma_shape[1]
                 ](m_mma, n_mma)
-
-                # Reshape MMA tile to 3D: (mma_M, mma_N/frag_w, frag_w)
-                # with stride (S0, frag_w, 1). The inner frag_w dimension
-                # embeds the element layout as a regular dimension instead
-                # of tracking it via element_size.
-                comptime mma_M = Self.mma_shape[0]
-                comptime mma_N = Self.mma_shape[1]
-                comptime S0 = type_of(mma_tile).LayoutType._stride_types[
-                    0
-                ].static_value
-                comptime layout_3d = type_of(
-                    TileLayout(
-                        Coord(
-                            ComptimeInt[mma_M](),
-                            ComptimeInt[mma_N // frag_w](),
-                            ComptimeInt[frag_w](),
-                        ),
-                        Coord(
-                            ComptimeInt[S0](),
-                            ComptimeInt[frag_w](),
-                            ComptimeInt[1](),
-                        ),
-                    )
-                )
-                var mma_3d = TileTensor[
-                    Self.dtype,
-                    layout_3d,
-                    MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
-                    element_size=1,
-                ](mma_tile.ptr, layout_3d())
-
-                # Distribute: each thread gets shape (1, 1, frag_w) =
-                # frag_w contiguous scalars at stride 1.
-                var dst_frag = mma_3d.distribute[tl_3d](lane_id())
-
-                # Load register SIMD vector and store to SMEM.
-                var p_reg_tile = p_reg_vec.tile[1, 1](
+                var p_reg_tile = p_reg_vectorized.tile[1, 1](
                     (n_mma + i * num_n_mmas_per_bk) * Self.num_m_mmas + m_mma,
                     0,
                 )
-                comptime frag_size = p_reg_tile.element_size
-                var reg_val = p_reg_tile.ptr.load[width=frag_size]().cast[
-                    Self.dtype
-                ]()
-                dst_frag.ptr.store[width=frag_w](reg_val)
+                copy_local_to_shared[thread_layout=warp_layout](
+                    p_smem_mma_tile.vectorize[
+                        fragment_layout.shape[0].value(),
+                        fragment_layout.shape[1].value(),
+                    ](),
+                    p_reg_tile,
+                )

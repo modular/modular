@@ -2394,8 +2394,13 @@ class ConvOp(max._core.Operation):
     The op supports 1D-3D convolution, with the following layout assumptions:
     - input has channel last layout. For 2D, that's NHWC, i.e.,
       (batch_size, height, width, in_channels)
-    - filter has layout RSCF, i.e.,
-      (height, width, in_channels / num_groups, out_channels)
+    - filter has layout FCRS, i.e.,
+      (out_channels, in_channels / num_groups, height, width)
+
+    The filter_layout attribute specifies the memory layout of the filter
+    tensor. If empty, the layout is inferred by the InferLayouts pass
+    (defaults to FCRS for 2D, FCQRS for 3D). Supported layouts include
+    FCRS, RSCF (legacy), and packed variants like FRSCf.
 
     `strides`, `dilations`, and `padding` must be of rank 1, or unranked.
     If the input has static rank, all hyperparameters with static shape must
@@ -2445,7 +2450,7 @@ class ConvOp(max._core.Operation):
       %ng = mo.constant {device = #M.device_ref<"cpu", 0>, value = #M.dense_array<1> : tensor<si64>}
         : %!mo.tensor<[], si64>
       %res = mo.conv(%input, %filter) [strides = %st, dilations = %di, paddings = %pa, num_groups = %ng] : (
-        !mo.tensor<[10, 5, 5, 32], f32>, !mo.tensor<[2, 2, 32, 64], f32>,
+        !mo.tensor<[10, 5, 5, 32], f32>, !mo.tensor<[64, 32, 2, 2], f32>,
         !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[4], si64>, !mo.tensor<[], si64>
       ) -> !mo.tensor<[10, 4, 4, 64], f32>
     ```

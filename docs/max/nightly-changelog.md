@@ -36,6 +36,8 @@ This version is still a work in progress.
 
 ### Python API {#26-3-max-python}
 
+- Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)
+  which previously raised a `RuntimeError` at compile time.
 - Setting `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` enables detection of
   uninitialized memory reads in Mojo kernels. `InferenceSession` automatically
   enables the debug allocator poison and compiles kernels with load-time
@@ -61,6 +63,8 @@ This version is still a work in progress.
   `max.pipelines.lib`.
 - `max.diagnostics.gpu.BackgroundRecorder`'s sampling interval can now be
   configured.
+- Introduced `CPUMetrics` alongside the existing GPU diagnostics and open source
+  it under from `max.diagnostics`.
 - Added experimental `max.experimental.distributed` module with `DTensor`,
   `DeviceMesh`, and placement types (`Replicated`, `Sharded`, `Partial`) for
   expressing how tensors are distributed across multiple devices. Op dispatch
@@ -106,6 +110,19 @@ This version is still a work in progress.
 - Added `scatter_add` op handler to the experimental eager interpreter (CPU),
   accumulating `updates` into a copy of `input` at `indices` along `axis`
   and summing duplicate indices via `max.experimental.functional.scatter_add`.
+- Added `max.graph.ops.scatter_max`, `max.graph.ops.scatter_min`, and
+  `max.graph.ops.scatter_mul` graph operations (and corresponding
+  `max.experimental.functional` wrappers) for element-wise scatter with
+  max, min, and multiply reductions at duplicate indices along an axis.
+- Added `max.graph.ops.scatter_nd_max`, `max.graph.ops.scatter_nd_min`, and
+  `max.graph.ops.scatter_nd_mul` graph operations (and corresponding
+  `max.experimental.functional` wrappers) for N-dimensional scatter with
+  max, min, and multiply reductions at duplicate index vectors.
+- Added `scatter_nd_max`, `scatter_nd_min`, and `scatter_nd_mul` op handlers
+  to the experimental eager interpreter (CPU), applying max, min, and multiply
+  reductions at duplicate N-dimensional scatter indices via
+  `max.experimental.functional.scatter_nd_max`, `.scatter_nd_min`, and
+  `.scatter_nd_mul`.
 - `max.graph.ops.pad` (and `max.graph.experimental.functional.pad`) now
   accepts `mode='reflect'` and `mode='edge'` in addition to
   `mode='constant'`.
@@ -124,6 +141,16 @@ This version is still a work in progress.
 - Added `distributed.allgather` op handler to the experimental eager
   interpreter, enabling multi-GPU eager execution of allgather collectives
   without falling back to compilation.
+- Added `distributed.scatter` op handler to the experimental eager
+  interpreter, enabling multi-GPU eager execution of scatter collectives
+  without falling back to compilation.
+- Added `distributed_scatter` collective to `distributed_functional` for
+  hardware-accelerated root-to-device tensor distribution.
+- Added `distributed.broadcast` op handler to the eager interpreter,
+  enabling multi-GPU eager execution of broadcast collectives
+  without falling back to compilation.
+- Added `distributed_broadcast` collective to `distributed_functional` for
+  hardware-accelerated root-to-all tensor replication.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

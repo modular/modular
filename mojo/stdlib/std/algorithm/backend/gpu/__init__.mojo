@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements GPU algorithm backend utilities including reduction and element-wise operations."""
 
 from .elementwise import _elementwise_impl_gpu
 from .reduction import (

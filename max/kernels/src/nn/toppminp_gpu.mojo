@@ -807,7 +807,7 @@ def _topp_minp_sampling_gpu[
     # TODO: Should softmax be done in-place without needing this other buffer?
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
     var input_probs = TileTensor(
-        probs_buf.unsafe_ptr(),
+        probs_buf,
         row_major(Idx(batch_size), Idx(vocab_size)),
     )
 

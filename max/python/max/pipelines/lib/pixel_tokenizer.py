@@ -38,7 +38,7 @@ from max.interfaces.request.open_responses import (
     InputTextContent,
 )
 from max.pipelines.core import PixelContext
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from .diffusion_schedulers import SchedulerFactory
 
@@ -64,6 +64,50 @@ async def run_with_default_executor(
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args, **kwargs)
+
+
+def _load_diffusion_tokenizer(
+    model_path: str,
+    *,
+    subfolder: str,
+    revision: str | None,
+    trust_remote_code: bool,
+    model_max_length: int | None,
+) -> Any:
+    """Load a diffusion-pipeline tokenizer subfolder.
+
+    Loads `tokenizer.json` directly via `PreTrainedTokenizerFast`,
+    falling back to `AutoTokenizer` only if that fails. We avoid
+    `AutoTokenizer` as the primary path because it dispatches on the
+    `tokenizer_class` field in `tokenizer_config.json`, and in
+    `transformers` v5 some of those classes (notably `LlamaTokenizerFast`,
+    now aliased to the slow `LlamaTokenizer`) overwrite the loaded
+    pre-tokenizer with a SentencePiece `Metaspace` regardless of what
+    was in `tokenizer.json`. That silently breaks ByteLevel-BPE
+    tokenizers like FLUX.2's Mistral-Small-3.
+    """
+    try:
+        return PreTrainedTokenizerFast.from_pretrained(
+            model_path,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+            model_max_length=model_max_length,
+            subfolder=subfolder,
+        )
+    except Exception:
+        logger.warning(
+            "PreTrainedTokenizerFast.from_pretrained failed for %s/%s; "
+            "falling back to AutoTokenizer.",
+            model_path,
+            subfolder,
+        )
+        return AutoTokenizer.from_pretrained(
+            model_path,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+            model_max_length=model_max_length,
+            subfolder=subfolder,
+        )
 
 
 class LockedTokenizer:
@@ -167,23 +211,23 @@ class PixelGenerationTokenizer(
 
         try:
             self.delegate = LockedTokenizer(
-                AutoTokenizer.from_pretrained(
+                _load_diffusion_tokenizer(
                     model_path,
+                    subfolder=subfolder,
                     revision=revision,
                     trust_remote_code=trust_remote_code,
                     model_max_length=self.max_length,
-                    subfolder=subfolder,
                 )
             )
 
             if subfolder_2 is not None:
                 self.delegate_2 = LockedTokenizer(
-                    AutoTokenizer.from_pretrained(
+                    _load_diffusion_tokenizer(
                         model_path,
+                        subfolder=subfolder_2,
                         revision=revision,
                         trust_remote_code=trust_remote_code,
                         model_max_length=self.secondary_max_length,
-                        subfolder=subfolder_2,
                     )
                 )
             else:
@@ -303,6 +347,28 @@ class PixelGenerationTokenizer(
             return latent_image_ids.reshape(
                 -1, latent_image_ids.shape[-1]
             ).astype(np.float32)
+
+    @staticmethod
+    def _build_text_ids(batch_size: int, seq_len: int) -> npt.NDArray[np.int64]:
+        """Create 4D text position IDs in (T, H, W, L) format.
+
+        For text tokens: T=0, H=0, W=0, L=arange(seq_len).
+
+        Returns:
+            Array of shape ``(batch_size, seq_len, 4)`` int64.
+        """
+        coords = np.stack(
+            [
+                np.zeros(seq_len, dtype=np.int64),
+                np.zeros(seq_len, dtype=np.int64),
+                np.zeros(seq_len, dtype=np.int64),
+                np.arange(seq_len, dtype=np.int64),
+            ],
+            axis=-1,
+        )  # (seq_len, 4)
+        return np.ascontiguousarray(
+            np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
+        )
 
     def _randn_tensor(
         self,
@@ -1064,6 +1130,23 @@ class PixelGenerationTokenizer(
             request.body.seed,
         )
 
+        # 4b. Build text position IDs for Flux2-family pipelines.
+        text_ids = np.array([], dtype=np.int64)
+        negative_text_ids = np.array([], dtype=np.int64)
+        if self._pipeline_class_name in (
+            PipelineClassName.FLUX2,
+            PipelineClassName.FLUX2_KLEIN,
+        ):
+            text_ids = self._build_text_ids(
+                image_options.num_images,
+                int(token_buffer.array.shape[0]),
+            )
+            if negative_token_buffer is not None:
+                negative_text_ids = self._build_text_ids(
+                    image_options.num_images,
+                    int(negative_token_buffer.array.shape[0]),
+                )
+
         # 5. Build the context
         context = PixelContext(
             request_id=request.request_id,
@@ -1078,6 +1161,8 @@ class PixelGenerationTokenizer(
             sigmas=sigmas,
             latents=latents,
             latent_image_ids=latent_image_ids,
+            text_ids=text_ids,
+            negative_text_ids=negative_text_ids,
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,

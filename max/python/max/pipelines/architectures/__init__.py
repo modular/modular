@@ -49,6 +49,7 @@ def register_all_models() -> None:
         flux2_modulev3_arch,
     )
     from .gemma3 import gemma3_arch
+    from .gemma3_modulev3 import gemma3_modulev3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gemma4 import gemma4_arch
     from .gpt_oss import gpt_oss_arch
@@ -102,6 +103,7 @@ def register_all_models() -> None:
         flux2_modulev3_arch,
         flux2_klein_modulev3_arch,
         gemma3_arch,
+        gemma3_modulev3_arch,
         gemma3_multimodal_arch,
         gemma4_arch,
         granite_arch,

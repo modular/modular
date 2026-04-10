@@ -61,7 +61,7 @@ struct Device[driver_origin: MutOrigin](Movable):
             driver._handle, id, OutParam[DeviceHandle](to=device_handle)
         )
         if status != STATUS_SUCCESS:
-            var err = driver._plugin.get_status_message(status)
+            var err = driver._plugin.get_status_message(driver._handle, status)
             raise HALError(
                 err.status,
                 message="Failed to get device "

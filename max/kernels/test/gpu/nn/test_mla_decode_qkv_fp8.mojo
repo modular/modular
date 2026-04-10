@@ -208,13 +208,13 @@ def test[
 
     # ---- Construct TileTensors for kernel inputs ----
     var q_fp8_tt = TileTensor(
-        q_fp8_device_ptr.unsafe_ptr(),
+        q_fp8_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var out_tt = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
         ),
@@ -308,7 +308,7 @@ def test[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
+        comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             mla_decode_sm100_dispatch[
                 q_type,
@@ -543,13 +543,13 @@ def bench[
 
     # TileTensors for kernel inputs
     var q_fp8_tt = TileTensor(
-        q_fp8_device_ptr.unsafe_ptr(),
+        q_fp8_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var out_tt = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
         ),
@@ -601,7 +601,7 @@ def bench[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
+        comptime config = MHAConfig[q_type](num_heads, depth)
         mla_decode_sm100_dispatch[
             q_type,
             type_of(k_operand),

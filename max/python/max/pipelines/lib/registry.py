@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 
     from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
+    from .pipeline_executor import PipelineExecutor
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config.config_enums import RopeType, SupportedEncoding
@@ -66,6 +67,10 @@ from .tokenizer import TextTokenizer
 logger = logging.getLogger("max.pipelines")
 
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
+
+PipelineModelType: TypeAlias = (
+    "type[PipelineModel[Any]] | type[PipelineExecutor[Any, Any, Any]]"
+)
 
 
 def _load_raw_config_json(huggingface_repo: HuggingFaceRepo) -> dict[str, Any]:
@@ -240,8 +245,13 @@ class SupportedArchitecture:
     supported_encodings: set[SupportedEncoding]
     """A dictionary of supported quantization encodings."""
 
-    pipeline_model: type[PipelineModel[Any]]
-    """The `PipelineModel` class that defines the model graph structure and execution logic."""
+    pipeline_model: PipelineModelType
+    """The model class that defines the graph structure and execution logic.
+
+    Accepts either a :class:`PipelineModel` subclass (for LLM and other
+    token-generation architectures) or a :class:`PipelineExecutor` subclass
+    (for newer executor-based architectures such as diffusion pipelines).
+    """
 
     task: PipelineTask
     """The pipeline task type that this architecture supports."""
@@ -572,7 +582,13 @@ class PipelineRegistry:
                 # Fallback for non-transformers models (e.g. diffusers
                 # components): load the raw config.json and wrap it in a
                 # PretrainedConfig so callers get uniform attribute access.
+                # If the config declares a model_type, re-raise so the
+                # user gets a clear error about the unrecognized type
+                # rather than a confusing downstream AttributeError from
+                # nested dicts.
                 config_dict = _load_raw_config_json(huggingface_repo)
+                if "model_type" in config_dict:
+                    raise
                 self._cached_huggingface_configs[huggingface_repo] = (
                     PretrainedConfig.from_dict(config_dict)
                 )
@@ -678,6 +694,12 @@ class PipelineRegistry:
             arch_config = arch.config.initialize(pipeline_config)
             max_length = arch_config.get_max_seq_len()
         else:
+            if not issubclass(arch.pipeline_model, PipelineModel):
+                raise TypeError(
+                    f"Architecture '{arch.name}' must implement "
+                    "ArchConfigWithKVCache or use a PipelineModel "
+                    "to calculate max_seq_len."
+                )
             max_length = arch.pipeline_model.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             )
@@ -795,7 +817,7 @@ class PipelineRegistry:
             pixel_factory_kwargs: dict[str, Any] = {
                 "pipeline_config": pipeline_config,
                 "pipeline_model": arch.pipeline_model,
-                "cache_config": pipeline_config.cache,
+                "cache_config": pipeline_config.runtime.denoising_cache,
             }
 
             pipeline_factory = cast(
@@ -896,6 +918,10 @@ class PipelineRegistry:
                     f"MAX-Optimized architecture not found for draft model "
                     f"'{pipeline_config.draft_model.model_path}'"
                 )
+            assert issubclass(draft_arch.pipeline_model, PipelineModel), (
+                f"Draft model must be a PipelineModel, "
+                f"got {draft_arch.pipeline_model.__name__}"
+            )
             factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
             factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
 

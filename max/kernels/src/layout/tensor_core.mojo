@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-Tensor Core Module for High-Performance Matrix Operations
+Tensor Core Module for High-Performance Matrix Operations.
 
 Provides abstractions for using GPU Tensor Cores to perform optimized matrix operations.
 It supports both NVIDIA and AMD GPU architectures with hardware-specific optimizations.
@@ -81,6 +81,7 @@ from layout._utils import load_to_simd, idx2crd
 from layout.int_tuple import product
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
+from layout.tile_tensor import TileTensor
 from layout.swizzle import (
     ComposedLayout,
     Swizzle,
@@ -1314,7 +1315,7 @@ def _load_matrix_frag[
     comptime row_size = mma_tile.stride[0]()
     comptime num_mat_per_row = row_size // simd_size
 
-    var lane: UInt = UInt(lane_id())
+    var lane = lane_id()
 
     # We load 4 matrices a time for max throughput. Each matrix has 8 vectors
     # and each thread loads one vector. The 4 matrices for 16x8x8 and 16x8x16
@@ -1356,9 +1357,7 @@ def _load_matrix_frag[
         swizzle.value() if swizzle else Swizzle(0, 0, 1),
     )
 
-    var lane_offset = eval_composed[ldmatrix_layout](lane, UInt(offset)) * UInt(
-        simd_size
-    )
+    var lane_offset = eval_composed[ldmatrix_layout](lane, offset) * simd_size
 
     return ld_matrix[res.size, transpose=transposed](mma_tile.ptr + lane_offset)
 
@@ -1580,6 +1579,55 @@ struct TiledTensorCore[
                 a_reg_k.vectorize[1, a_frag_size](),
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
+
+    @staticmethod
+    @always_inline
+    def mma[
+        swap_a_b: Bool = False
+    ](
+        a_reg_tile: LayoutTensor,
+        b_reg_tile: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
+        c_reg_tile: LayoutTensor[mut=True, ...],
+    ):
+        """Perform a matrix multiply-accumulate with TileTensor b operand.
+
+        Converts b_reg_tile to LayoutTensor preserving the origin, so the
+        compiler can track aliases back to the stack allocation.
+
+        Parameters:
+            swap_a_b: If True, swap A and B operands before the MMA.
+
+        Args:
+            a_reg_tile: The A operand as a LayoutTensor in registers.
+            b_reg_tile: The B operand as a TileTensor in registers.
+            c_reg_tile: The C accumulator as a mutable LayoutTensor.
+        """
+        Self.mma[swap_a_b](
+            a_reg_tile, b_reg_tile.to_layout_tensor(), c_reg_tile
+        )
+
+    @staticmethod
+    @always_inline
+    def mma[
+        swap_a_b: Bool = False
+    ](
+        a_reg_tile: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
+        b_reg_tile: LayoutTensor,
+        c_reg_tile: LayoutTensor[mut=True, ...],
+    ):
+        """Perform a matrix multiply-accumulate with TileTensor a operand.
+
+        Parameters:
+            swap_a_b: If True, swap A and B operands before the MMA.
+
+        Args:
+            a_reg_tile: The A operand as a TileTensor in registers.
+            b_reg_tile: The B operand as a LayoutTensor in registers.
+            c_reg_tile: The C accumulator as a mutable LayoutTensor.
+        """
+        Self.mma[swap_a_b](
+            a_reg_tile.to_layout_tensor(), b_reg_tile, c_reg_tile
+        )
 
 
 @always_inline

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements C string interoperability utilities."""
 
 from std.collections.string.string_slice import _unsafe_strlen
 from std.memory import UnsafeMaybeUninit

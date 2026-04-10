@@ -170,6 +170,15 @@ class Value(Generic[MlirType]):
 
 
 class _ChainValue(Value[mo.ChainType]):
+    """Represents a chain value used to sequence side-effecting ops.
+
+    When creating a graph, a global sequence of chains is initialized to
+    sequence side-effecting ops. Every side-effecting op, such as
+    ``buffer_load()``, ``buffer_store()``, and
+    ``buffer_store_slice()``, consumes the current chain and produces a new
+    one. Each chain can be used at most once, which prevents data races.
+    """
+
     def __init__(self, value: Value[Any] | _Value[mo.ChainType]) -> None:
         if isinstance(value, _Value):
             assert isinstance(value.type, mo.ChainType)

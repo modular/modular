@@ -24,7 +24,6 @@ import math
 import os
 import random
 import re
-import resource
 import statistics
 import subprocess
 import sys
@@ -34,18 +33,19 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, TypeGuard
 from urllib.parse import urlparse
+from uuid import uuid4
+
+try:
+    from asyncio import TaskGroup  # type: ignore[attr-defined]  # added in 3.11
+except ImportError:
+    from taskgroup import TaskGroup  # Python < 3.11 backport
 
 import numpy as np
 import yaml
 from cyclopts import App, Parameter
 from cyclopts.config import Env
 from tqdm.asyncio import tqdm
-from transformers import (
-    AutoTokenizer,
-    PreTrainedTokenizer,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-)
+from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
@@ -53,15 +53,13 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
+    PIXEL_GEN_DEFAULT_ENDPOINT,
+    PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
     Backend,
     BenchmarkTask,
     Endpoint,
     ServingBenchmarkConfig,
-)
-from max.benchmark.benchmark_shared.cpu_metrics import (
-    CpuMetricsCollector,
-    collect_pids_for_port,
 )
 from max.benchmark.benchmark_shared.datasets import (
     AgenticCodeBenchmarkDataset,
@@ -97,6 +95,7 @@ from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PixelGenerationBenchmarkMetrics,
     SpecDecodeMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
     ThroughputMetrics,
     calculate_spec_decode_stats,
@@ -119,6 +118,16 @@ from max.benchmark.benchmark_shared.server_metrics import (
     print_server_metrics,
 )
 from max.benchmark.benchmark_shared.steady_state import detect_steady_state
+from max.benchmark.benchmark_shared.utils import (
+    get_tokenizer,
+    print_section,
+    set_ulimit,
+)
+from max.diagnostics.cpu import (
+    CPUMetrics,
+    CPUMetricsCollector,
+    collect_pids_for_port,
+)
 from max.diagnostics.gpu import GPUDiagContext
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
@@ -143,28 +152,51 @@ def compute_output_len(
     )
 
 
-def get_tokenizer(
-    pretrained_model_name_or_path: str,
-    model_max_length: int | None,
-    trust_remote_code: bool,
-) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
-    return AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path,
-        model_max_length=model_max_length,
-        trust_remote_code=trust_remote_code,
-    )
+def _prepend_run_prefix_to_formatted_prompt(
+    prompt: str | list[dict[str, Any]],
+    run_prefix: str,
+) -> str | list[dict[str, Any]]:
+    """Return a new prompt with `run_prefix` prepended to the first message."""
+    if isinstance(prompt, str):
+        return run_prefix + prompt
 
-
-# from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
-def set_ulimit(target_soft_limit: int = 65535) -> None:
-    resource_type = resource.RLIMIT_NOFILE
-    current_soft, current_hard = resource.getrlimit(resource_type)
-
-    if current_soft < target_soft_limit:
-        try:
-            resource.setrlimit(resource_type, (target_soft_limit, current_hard))
-        except ValueError as e:
-            print(f"Fail to set RLIMIT_NOFILE: {e}")
+    # Chat format: prepend to the text content of the first message.
+    # content may be a plain string or a list of typed content blocks.
+    if not prompt:
+        raise ValueError("run_prefix: empty prompt list")
+    msg = prompt[0]
+    content = msg.get("content")
+    if isinstance(content, str):
+        new_msg: dict[str, Any] = {**msg, "content": run_prefix + content}
+    elif isinstance(content, list):
+        text_block_idx = next(
+            (
+                idx
+                for idx, block in enumerate(content)
+                if isinstance(block, dict) and block.get("type") == "text"
+            ),
+            None,
+        )
+        if text_block_idx is None:
+            raise ValueError(
+                "run_prefix: no text block found in content list; cannot"
+                " prepend run prefix"
+            )
+        new_block = {
+            **content[text_block_idx],
+            "text": run_prefix + str(content[text_block_idx].get("text", "")),
+        }
+        new_content: list[Any] = [
+            *content[:text_block_idx],
+            new_block,
+            *content[text_block_idx + 1 :],
+        ]
+        new_msg = {**msg, "content": new_content}
+    else:
+        raise ValueError(
+            "run_prefix: unsupported prompt shape for first message"
+        )
+    return [new_msg, *prompt[1:]]
 
 
 def get_default_trace_path() -> str:
@@ -283,6 +315,8 @@ def build_single_turn_request_input(
     top_p: float | None,
     top_k: int | None,
     max_output_len: int | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> BaseRequestFuncInput:
     request_model_id = model_id if lora_id is None else lora_id
     if benchmark_task == "text-generation":
@@ -290,16 +324,21 @@ def build_single_turn_request_input(
             filter(None, (request.output_len, max_output_len)),
             default=None,
         )
+        prompt = request.prompt_formatted
+        prompt_len = request.prompt_len
+        if run_prefix:
+            prompt = _prepend_run_prefix_to_formatted_prompt(prompt, run_prefix)
+            prompt_len = prompt_len + run_prefix_len
         return RequestFuncInput(
             model=request_model_id,
             session_id=None,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
-            prompt=request.prompt_formatted,
+            prompt=prompt,
             images=request.encoded_images,
             api_url=api_url,
-            prompt_len=request.prompt_len,
+            prompt_len=prompt_len,
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
         )
@@ -308,20 +347,18 @@ def build_single_turn_request_input(
             raise TypeError(
                 "pixel-generation benchmark requires PixelGenerationSampledRequest."
             )
+        prompt = request.prompt_formatted
+        if run_prefix and isinstance(prompt, str):
+            prompt = run_prefix + prompt
         return PixelGenerationRequestFuncInput(
             model=request_model_id,
             session_id=None,
-            prompt=request.prompt_formatted,
+            prompt=prompt,
             input_image_paths=request.input_image_paths,
             api_url=api_url,
             image_options=request.image_options,
         )
     raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
-
-
-def print_section(title: str, char: str = "-") -> None:
-    """Helper function to print a section with formatted header."""
-    print("{s:{c}^{n}}".format(s=title, n=50, c=char))
 
 
 def _is_vllm_backend(backend: Backend) -> bool:
@@ -330,22 +367,22 @@ def _is_vllm_backend(backend: Backend) -> bool:
 
 def _add_spec_decode_result(
     result: dict[str, Any],
-    spec_decode_stats: dict[str, Any] | None,
+    spec_decode_stats: SpecDecodeStats | None,
 ) -> None:
     """Add speculative decoding stats to the JSON result."""
     if spec_decode_stats is None:
         return
-    result["spec_decode_acceptance_rate"] = spec_decode_stats["acceptance_rate"]
-    result["spec_decode_acceptance_length"] = spec_decode_stats[
-        "acceptance_length"
-    ]
-    result["spec_decode_num_drafts"] = int(spec_decode_stats["num_drafts"])
-    result["spec_decode_draft_tokens"] = int(spec_decode_stats["draft_tokens"])
-    result["spec_decode_accepted_tokens"] = int(
-        spec_decode_stats["accepted_tokens"]
+    result["spec_decode_acceptance_rate"] = spec_decode_stats.acceptance_rate
+    result["spec_decode_acceptance_length"] = (
+        spec_decode_stats.acceptance_length
     )
-    result["spec_decode_per_position_acceptance_rates"] = spec_decode_stats.get(
-        "per_position_acceptance_rates", []
+    result["spec_decode_num_drafts"] = int(spec_decode_stats.num_drafts)
+    result["spec_decode_draft_tokens"] = int(spec_decode_stats.draft_tokens)
+    result["spec_decode_accepted_tokens"] = int(
+        spec_decode_stats.accepted_tokens
+    )
+    result["spec_decode_per_position_acceptance_rates"] = (
+        spec_decode_stats.per_position_acceptance_rates
     )
 
 
@@ -441,7 +478,7 @@ def print_benchmark_summary(
     achieved_request_rate: float,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
-    spec_decode_stats: dict[str, Any] | None = None,
+    spec_decode_stats: SpecDecodeStats | None = None,
     lora_manager: LoRABenchmarkManager | None = None,
 ) -> None:
     """Print benchmark summary for text-generation and pixel-generation."""
@@ -492,6 +529,16 @@ def print_benchmark_summary(
         )
     )
     print("{:<40} {:<10}".format("Max Concurrency:", metrics.max_concurrency))
+    if (
+        isinstance(metrics, BenchmarkMetrics)
+        and metrics.max_concurrent_conversations is not None
+    ):
+        print(
+            "{:<40} {:<10}".format(
+                "Max Concurrent Conversations:",
+                metrics.max_concurrent_conversations,
+            )
+        )
 
     if isinstance(metrics, BenchmarkMetrics):
         print_section(title="Client Experience Metrics")
@@ -548,49 +595,46 @@ def print_benchmark_summary(
                 )
             )
     if collect_cpu_stats:
+        cpu = metrics.cpu_metrics
         print_section(title="CPU Statistics")
         print(
             "{:<40} {:<10.2f}".format(
                 "CPU utilization user (%):",
-                metrics.cpu_utilization_user or 0.0,
+                cpu.user_percent if cpu else 0.0,
             )
         )
         print(
             "{:<40} {:<10.2f}".format(
                 "CPU utilization system (%):",
-                metrics.cpu_utilization_system or 0.0,
+                cpu.system_percent if cpu else 0.0,
             )
         )
     if spec_decode_stats is not None:
         print_section(title="Speculative Decoding")
         print(
             "{:<40} {:<10.2f}".format(
-                "Acceptance rate (%):", spec_decode_stats["acceptance_rate"]
+                "Acceptance rate (%):", spec_decode_stats.acceptance_rate
             )
         )
         print(
             "{:<40} {:<10.2f}".format(
-                "Acceptance length:", spec_decode_stats["acceptance_length"]
+                "Acceptance length:", spec_decode_stats.acceptance_length
+            )
+        )
+        print(
+            "{:<40} {:<10}".format("Drafts:", int(spec_decode_stats.num_drafts))
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Draft tokens:", int(spec_decode_stats.draft_tokens)
             )
         )
         print(
             "{:<40} {:<10}".format(
-                "Drafts:", int(spec_decode_stats["num_drafts"])
+                "Accepted tokens:", int(spec_decode_stats.accepted_tokens)
             )
         )
-        print(
-            "{:<40} {:<10}".format(
-                "Draft tokens:", int(spec_decode_stats["draft_tokens"])
-            )
-        )
-        print(
-            "{:<40} {:<10}".format(
-                "Accepted tokens:", int(spec_decode_stats["accepted_tokens"])
-            )
-        )
-        per_pos_rates = spec_decode_stats.get(
-            "per_position_acceptance_rates", []
-        )
+        per_pos_rates = spec_decode_stats.per_position_acceptance_rates
         if per_pos_rates:
             print("Per-position acceptance (%):")
             for pos, rate in enumerate(per_pos_rates):
@@ -627,19 +671,22 @@ def _steady_state_metric_values(
     ]
 
 
-def _add_confidence_fields(
-    result: dict[str, Any],
-    metrics_by_prefix: list[tuple[str, Any]],
-) -> None:
-    """Add confidence interval fields to the result dict for each metric."""
-    for prefix, metric_obj in metrics_by_prefix:
-        ci = getattr(metric_obj, "confidence_info", None)
-        if ci:
-            result[f"{prefix}_ci_lower"] = ci.ci_lower
-            result[f"{prefix}_ci_upper"] = ci.ci_upper
-            result[f"{prefix}_ci_relative_width"] = ci.ci_relative_width
-            result[f"{prefix}_confidence"] = ci.confidence
-            result[f"{prefix}_sample_size"] = ci.sample_size
+def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
+    """Parse ``KEY=VALUE`` metadata strings into a flat dict.
+
+    The special key ``server_cpu`` is mapped to ``cpu``.
+    """
+    result: dict[str, str] = {}
+    for item in metadata or ():
+        if "=" not in item:
+            raise ValueError(
+                "Invalid metadata format. Please use KEY=VALUE format."
+            )
+        key, value = item.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        result["cpu" if key == "server_cpu" else key] = value
+    return result
 
 
 def _add_optional_result(
@@ -939,10 +986,11 @@ def calculate_metrics(
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
     gpu_metrics: list[dict[str, GPUStats]] | None,
-    cpu_metrics: dict[str, Any],
+    cpu_metrics: CPUMetrics | None,
     skip_first_n_requests: int,
     skip_last_n_requests: int,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None = None,
 ) -> tuple[BenchmarkMetrics, list[int]]:
@@ -1040,12 +1088,14 @@ def calculate_metrics(
     )
 
     metrics = BenchmarkMetrics(
+        duration=dur_s,
         completed=completed,
         failures=failures,
         total_input=total_input,
         total_output=sum(actual_output_lens),
         nonempty_response_chunks=nonempty_response_chunks,
         max_concurrency=max_concurrency or len(outputs),
+        max_concurrent_conversations=max_concurrent_conversations,
         request_throughput=completed / dur_s,
         # Use specialized metric classes that handle percentile calculations automatically
         input_throughput=ThroughputMetrics(
@@ -1072,8 +1122,7 @@ def calculate_metrics(
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
-        cpu_utilization_user=cpu_metrics.get("user_percent"),
-        cpu_utilization_system=cpu_metrics.get("system_percent"),
+        cpu_metrics=cpu_metrics,
         server_metrics=server_metrics,
     )
 
@@ -1093,7 +1142,7 @@ def calculate_pixel_generation_metrics(
     outputs: Sequence[PixelGenerationRequestFuncOutput],
     dur_s: float,
     gpu_metrics: list[dict[str, GPUStats]] | None,
-    cpu_metrics: dict[str, Any],
+    cpu_metrics: CPUMetrics | None,
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None = None,
@@ -1131,6 +1180,7 @@ def calculate_pixel_generation_metrics(
     )
 
     return PixelGenerationBenchmarkMetrics(
+        duration=dur_s,
         completed=completed,
         failures=failures,
         max_concurrency=max_concurrency or len(outputs),
@@ -1142,8 +1192,7 @@ def calculate_pixel_generation_metrics(
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
-        cpu_utilization_user=cpu_metrics.get("user_percent"),
-        cpu_utilization_system=cpu_metrics.get("system_percent"),
+        cpu_metrics=cpu_metrics,
         server_metrics=server_metrics,
     )
 
@@ -1162,6 +1211,8 @@ async def chat_session_driver(
     ignore_first_turn_stats: bool = False,
     benchmark_should_end_time: int | None = None,
     randomize_session_start: bool = False,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
@@ -1186,10 +1237,46 @@ async def chat_session_driver(
     prefix_end_idx = chat_session.prefix_turns * 2
     applied_initial_sleep = False
 
-    while content_idx + 1 < len(messages):
-        is_prefix_turn = content_idx < prefix_end_idx
-
+    # Build prefix turns locally (no server round-trips). The first
+    # measured turn sends the full history for KV cache prefill.
+    while content_idx < prefix_end_idx and content_idx + 1 < len(messages):
         chat_len += messages[content_idx].num_tokens
+        output_len = messages[content_idx + 1].num_tokens
+        if chat_len + output_len > max_chat_len:
+            logger.warning(
+                f"Session {chat_session.id}: prefix exceeded max chat"
+                f" length {max_chat_len}, no measured turns possible"
+            )
+            break
+
+        user_prompt = messages[content_idx].content
+        message_history.append(
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": user_prompt}],
+            }
+        )
+        # Synthetic placeholder for the assistant response.
+        assistant_content = messages[content_idx + 1].content
+        if not assistant_content:
+            assistant_content = " ".join(["token"] * max(output_len, 1))
+        message_history.append(
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": assistant_content}],
+            }
+        )
+        chat_len += output_len
+        content_idx += 2
+
+    # If prefix exhausted the chat length budget, skip measured turns.
+    if content_idx < prefix_end_idx:
+        return session_outputs
+
+    while content_idx + 1 < len(messages):
+        chat_len += messages[content_idx].num_tokens
+        if content_idx == 0 and run_prefix:
+            chat_len += run_prefix_len
         output_len = messages[content_idx + 1].num_tokens
         if chat_len + output_len > max_chat_len:
             logger.warning(
@@ -1197,12 +1284,13 @@ async def chat_session_driver(
             )
             break
 
-        if not is_prefix_turn:
-            advance_request = request_counter.advance_until_max()
-            if not advance_request:  # reached max_requests
-                break
+        advance_request = request_counter.advance_until_max()
+        if not advance_request:  # reached max_requests
+            break
 
         user_prompt = messages[content_idx].content
+        if content_idx == 0 and run_prefix:
+            user_prompt = run_prefix + user_prompt
         message_history.append(
             {
                 "role": "user",
@@ -1213,7 +1301,7 @@ async def chat_session_driver(
         request_func_input.prompt_len = chat_len
         request_func_input.max_tokens = output_len
 
-        if not is_prefix_turn and not applied_initial_sleep:
+        if not applied_initial_sleep:
             applied_initial_sleep = True
             if randomize_session_start:
                 delay_ms = messages[content_idx + 1].delay_until_next_message
@@ -1235,15 +1323,12 @@ async def chat_session_driver(
                 )
             response = raw_response
 
-        if not is_prefix_turn:
-            if (
-                skip_session_count is None
-                or chat_session.id is None
-                or chat_session.id >= skip_session_count
-            ) and not (
-                ignore_first_turn_stats and content_idx == prefix_end_idx
-            ):
-                session_outputs.append(response)
+        if (
+            skip_session_count is None
+            or chat_session.id is None
+            or chat_session.id >= skip_session_count
+        ) and not (ignore_first_turn_stats and content_idx == prefix_end_idx):
+            session_outputs.append(response)
 
         if not response.success:
             if not response.cancelled:
@@ -1261,9 +1346,8 @@ async def chat_session_driver(
         )
         chat_len += output_len
 
-        if not is_prefix_turn:
-            if delay_ms := messages[content_idx + 1].delay_until_next_message:
-                await asyncio.sleep(delay_ms / 1000)
+        if delay_ms := messages[content_idx + 1].delay_until_next_message:
+            await asyncio.sleep(delay_ms / 1000)
 
         content_idx += 2
 
@@ -1271,6 +1355,7 @@ async def chat_session_driver(
 
 
 async def run_single_turn_benchmark(
+    *,
     input_requests: Sequence[SampledRequest],
     benchmark_task: BenchmarkTask,
     request_rate: float,
@@ -1286,6 +1371,8 @@ async def run_single_turn_benchmark(
     top_p: float | None,
     top_k: int | None,
     lora_manager: LoRABenchmarkManager | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> list[BaseRequestFuncOutput]:
     """Run single-turn benchmark scenario."""
     if timing_data is None:
@@ -1331,6 +1418,8 @@ async def run_single_turn_benchmark(
             top_p=top_p,
             top_k=top_k,
             max_output_len=max_output_len,
+            run_prefix=run_prefix,
+            run_prefix_len=run_prefix_len,
         )
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))
@@ -1343,6 +1432,7 @@ async def run_single_turn_benchmark(
 
 
 async def run_multiturn_benchmark(
+    *,
     chat_sessions: Sequence[ChatSession],
     max_requests: int,
     semaphore: asyncio.Semaphore | None,
@@ -1360,6 +1450,8 @@ async def run_multiturn_benchmark(
     top_p: float | None,
     top_k: int | None,
     randomize_session_start: bool = False,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> list[RequestFuncOutput]:
     """Run multi-turn chat benchmark scenario."""
 
@@ -1396,6 +1488,8 @@ async def run_multiturn_benchmark(
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
                 randomize_session_start=randomize_session_start,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
             )
         async with semaphore:
             return await chat_session_driver(
@@ -1412,6 +1506,8 @@ async def run_multiturn_benchmark(
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
                 randomize_session_start=randomize_session_start,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
             )
 
     tasks: list[asyncio.Task[list[RequestFuncOutput]]] = []
@@ -1436,6 +1532,148 @@ async def run_multiturn_benchmark(
         )
 
     return [output for sublist in session_outputs for output in sublist]
+
+
+class _ConcurrentTurnsRequestDriver(RequestDriver):
+    """Wraps a RequestDriver to cap the number of concurrent in-flight turns.
+
+    Acquires a semaphore slot before issuing each turn request and releases it
+    as soon as the response returns. Inter-turn delays (e.g. delay_until_next_message)
+    fall outside the slot's hold window, so idle user-think-time does not consume
+    concurrency capacity.
+
+    With many concurrent conversations, a turn request may wait in the semaphore
+    backlog long enough for the deadline to expire. Cancel it when stale.
+    """
+
+    def __init__(
+        self,
+        request_driver: RequestDriver,
+        semaphore: asyncio.Semaphore,
+        benchmark_should_end_time: int | None = None,
+    ) -> None:
+        super().__init__(tokenizer=request_driver.tokenizer)
+        self._request_driver = request_driver
+        self._semaphore = semaphore
+        self._benchmark_should_end_time = benchmark_should_end_time
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> BaseRequestFuncOutput:
+        async with self._semaphore:
+            if (
+                self._benchmark_should_end_time is not None
+                and time.perf_counter_ns() >= self._benchmark_should_end_time
+            ):
+                return request_func_input.get_output_type()(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
+            return await self._request_driver.request(request_func_input)
+
+
+async def run_kv_cache_stress_benchmark(
+    *,
+    chat_sessions: Sequence[ChatSession],
+    max_requests: int,
+    max_concurrent_conversations: int,
+    semaphore: asyncio.Semaphore | None,
+    benchmark_should_end_time: int | None,
+    request_driver: RequestDriver,
+    model_id: str,
+    api_url: str,
+    tokenizer: PreTrainedTokenizerBase,
+    skip_first_n_requests: int,
+    ignore_first_turn_stats: bool,
+    lora_manager: LoRABenchmarkManager | None,
+    warmup_delay_ms: float,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
+    randomize_session_start: bool = False,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
+) -> list[RequestFuncOutput]:
+    """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
+
+    Two independent concurrency controls:
+
+    - `max_concurrent_conversations`: at most this many chat sessions are
+      driven at once. Workers pick up the next session from the queue when one
+      finishes, growing the server's KV-cache footprint.
+    - `semaphore` (`max_concurrency` in the CLI): caps the number of turn
+      requests in-flight globally across all concurrent sessions. Workers that
+      cannot acquire a turn slot block without sending a request; the session's
+      `session_id` and client-side conversation state are preserved in the
+      backlog until a slot becomes available.
+
+    NOTE: TTFT reflects pure server-side cost (KV re-computation or reloading)
+          since the timer starts only after the semaphore is acquired. Backlog
+          wait reduces each session's firing cadence beyond what
+          `delay_between_chat_turns` specifies — sessions are less frequent
+          than configured.
+    """
+    request_counter = RequestCounter(
+        max_requests=max_requests,
+        total_sent_requests=0,
+    )
+
+    inflight_limited_driver: RequestDriver = (
+        _ConcurrentTurnsRequestDriver(
+            request_driver, semaphore, benchmark_should_end_time
+        )
+        if semaphore is not None
+        else request_driver
+    )
+
+    # Queue holds (original_index, session) pairs so LoRA assignment is stable.
+    session_queue: asyncio.Queue[tuple[int, ChatSession]] = asyncio.Queue()
+    for idx, session in enumerate(chat_sessions):
+        await session_queue.put((idx, session))
+
+    num_workers = min(max_concurrent_conversations, len(chat_sessions))
+    worker_outputs: list[list[RequestFuncOutput]] = [
+        [] for _ in range(num_workers)
+    ]
+
+    async def _conversation_worker(worker_idx: int) -> None:
+        # Stagger workers to avoid thundering-herd at startup.
+        if warmup_delay_ms > 0:
+            await asyncio.sleep(worker_idx * warmup_delay_ms / 1000)
+
+        while True:
+            try:
+                idx, chat_session = session_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+
+            lora_id = (
+                lora_manager.get_lora_for_request(idx) if lora_manager else None
+            )
+            session_outputs = await chat_session_driver(
+                model_id=model_id if lora_id is None else lora_id,
+                api_url=api_url,
+                request_driver=inflight_limited_driver,
+                request_counter=request_counter,
+                chat_session=chat_session,
+                max_chat_len=tokenizer.model_max_length,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                skip_session_count=skip_first_n_requests,
+                ignore_first_turn_stats=ignore_first_turn_stats,
+                benchmark_should_end_time=benchmark_should_end_time,
+                randomize_session_start=randomize_session_start,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
+            )
+
+            worker_outputs[worker_idx].extend(session_outputs)
+
+    async with TaskGroup() as tg:
+        for i in range(num_workers):
+            tg.create_task(_conversation_worker(i))
+
+    return [output for worker in worker_outputs for output in worker]
 
 
 def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
@@ -1487,6 +1725,8 @@ async def run_single_test_prompt(
     top_p: float | None,
     top_k: int | None,
     max_output_len: int | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
 ) -> None:
     logger.info("Starting initial single prompt test run...")
     if isinstance(samples, ChatSamples):
@@ -1522,6 +1762,8 @@ async def run_single_test_prompt(
         top_p=top_p,
         top_k=top_k,
         max_output_len=test_max_output_len,
+        run_prefix=run_prefix,
+        run_prefix_len=run_prefix_len,
     )
     test_output = await request_driver.request(test_input)
     if not test_output.success:
@@ -1536,6 +1778,195 @@ async def run_single_test_prompt(
         )
 
 
+def _build_pixel_generation_result(
+    *,
+    outputs: Sequence[BaseRequestFuncOutput],
+    benchmark_duration: float,
+    gpu_metrics: list[dict[str, GPUStats]] | None,
+    cpu_metrics: CPUMetrics | None,
+    max_concurrency: int | None,
+    collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None,
+) -> tuple[dict[str, object], PixelGenerationBenchmarkMetrics]:
+    """Compute metrics and build the result dict for pixel-generation tasks."""
+    if not _is_pixel_generation_outputs(outputs):
+        raise TypeError(
+            "Expected all outputs to be PixelGenerationRequestFuncOutput"
+            " in pixel-generation benchmark flow."
+        )
+    metrics = calculate_pixel_generation_metrics(
+        outputs=outputs,
+        dur_s=benchmark_duration,
+        gpu_metrics=gpu_metrics,
+        cpu_metrics=cpu_metrics,
+        max_concurrency=max_concurrency,
+        collect_gpu_stats=collect_gpu_stats,
+        server_metrics=server_metrics,
+    )
+    result = metrics.to_result_dict()
+    result.update(
+        {
+            "latencies": [output.latency for output in outputs],
+            "num_generated_outputs": [
+                output.num_generated_outputs for output in outputs
+            ],
+            "errors": [output.error for output in outputs],
+            "request_submit_times": [
+                output.request_submit_time for output in outputs
+            ],
+            "request_complete_times": [
+                output.request_complete_time for output in outputs
+            ],
+        }
+    )
+    return result, metrics
+
+
+def _build_text_generation_result(
+    *,
+    outputs: Sequence[BaseRequestFuncOutput],
+    benchmark_duration: float,
+    tokenizer: PreTrainedTokenizerBase | None,
+    gpu_metrics: list[dict[str, GPUStats]] | None,
+    cpu_metrics: CPUMetrics | None,
+    skip_first_n_requests: int,
+    skip_last_n_requests: int,
+    max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
+    collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None,
+    spec_decode_stats: SpecDecodeStats | None,
+) -> tuple[dict[str, object], BenchmarkMetrics]:
+    """Compute metrics and build the result dict for text-generation tasks."""
+    if not _is_text_generation_outputs(outputs):
+        raise TypeError(
+            "Expected all outputs to be RequestFuncOutput"
+            " in text-generation benchmark flow."
+        )
+    text_metrics, actual_output_lens = calculate_metrics(
+        outputs=outputs,
+        dur_s=benchmark_duration,
+        tokenizer=tokenizer,
+        gpu_metrics=gpu_metrics,
+        cpu_metrics=cpu_metrics,
+        skip_first_n_requests=skip_first_n_requests,
+        skip_last_n_requests=skip_last_n_requests,
+        max_concurrency=max_concurrency,
+        max_concurrent_conversations=max_concurrent_conversations,
+        collect_gpu_stats=collect_gpu_stats,
+        server_metrics=server_metrics,
+    )
+
+    result = text_metrics.to_result_dict()
+    result.update(
+        {
+            "skip_first_n_requests": skip_first_n_requests,
+            "skip_last_n_requests": skip_last_n_requests,
+            "input_lens": [output.prompt_len for output in outputs],
+            "output_lens": actual_output_lens,
+            "ttfts": [output.ttft for output in outputs],
+            "itls": [output.itl for output in outputs],
+            "generated_texts": [output.generated_text for output in outputs],
+            "errors": [output.error for output in outputs],
+            "request_submit_times": [
+                output.request_submit_time for output in outputs
+            ],
+            "request_complete_times": [
+                output.request_complete_time for output in outputs
+            ],
+        }
+    )
+
+    _add_spec_decode_result(result, spec_decode_stats)
+
+    for warn in text_metrics.confidence_warnings():
+        logger.warning(f"Confidence: {warn}")
+
+    _add_steady_state_result(
+        result,
+        outputs=outputs,
+        tokenizer=tokenizer,
+        gpu_metrics=gpu_metrics,
+        cpu_metrics=cpu_metrics,
+        max_concurrency=max_concurrency,
+        max_concurrent_conversations=max_concurrent_conversations,
+        collect_gpu_stats=collect_gpu_stats,
+        server_metrics=server_metrics,
+    )
+
+    return result, text_metrics
+
+
+def _add_steady_state_result(
+    result: dict[str, object],
+    *,
+    outputs: Sequence[RequestFuncOutput],
+    tokenizer: PreTrainedTokenizerBase | None,
+    gpu_metrics: list[dict[str, GPUStats]] | None,
+    cpu_metrics: CPUMetrics | None,
+    max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
+    collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None,
+) -> None:
+    """Detect steady-state window and add its metrics to *result*."""
+    steady = detect_steady_state(outputs)
+    result["steady_state_detected"] = steady.detected
+    result["steady_state_start_index"] = steady.start_index
+    result["steady_state_end_index"] = steady.end_index
+    result["steady_state_count"] = steady.steady_state_count
+    result["steady_state_warning"] = steady.warning
+
+    if steady.detected:
+        ss_index_set = set(steady.steady_state_indices)
+        ss_outputs = [
+            out
+            for i, out in enumerate(outputs)
+            if i in ss_index_set and out.success and not out.cancelled
+        ]
+        ss_valid = [
+            out
+            for out in ss_outputs
+            if out.request_submit_time is not None
+            and out.request_complete_time is not None
+        ]
+        if len(ss_valid) >= 2:
+            ss_valid.sort(key=lambda o: o.request_submit_time or 0.0)
+            first_submit = ss_valid[0].request_submit_time
+            last_complete = ss_valid[-1].request_complete_time
+            assert first_submit is not None and last_complete is not None
+            ss_duration = last_complete - first_submit
+            ss_duration = max(ss_duration, 1e-9)
+
+            ss_metrics, _ = calculate_metrics(
+                outputs=ss_outputs,
+                dur_s=ss_duration,
+                tokenizer=tokenizer,
+                gpu_metrics=gpu_metrics,
+                cpu_metrics=cpu_metrics,
+                skip_first_n_requests=0,
+                skip_last_n_requests=0,
+                max_concurrency=max_concurrency,
+                max_concurrent_conversations=max_concurrent_conversations,
+                collect_gpu_stats=collect_gpu_stats,
+                server_metrics=server_metrics,
+            )
+            for suffix, value in _steady_state_metric_values(ss_metrics):
+                result[f"steady_state_{suffix}"] = value
+            for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
+                pm = getattr(ss_metrics, name)
+                result.update(
+                    pm.confidence_to_flat_dict(f"steady_state_{name}")
+                )
+        logger.info(
+            f"Steady-state detected: requests [{steady.start_index},"
+            f" {steady.end_index}) ({steady.steady_state_count} of"
+            f" {steady.total_requests} requests)"
+        )
+    elif steady.warning:
+        logger.warning(f"Steady-state detection: {steady.warning}")
+
+
 async def benchmark(
     backend: Backend,
     benchmark_task: BenchmarkTask,
@@ -1547,6 +1978,7 @@ async def benchmark(
     request_rate: float,
     burstiness: float,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     disable_tqdm: bool,
     do_test_prompt: bool,
     collect_gpu_stats: bool,
@@ -1568,7 +2000,10 @@ async def benchmark(
     lora_manager: LoRABenchmarkManager | None,
     trace_path: str | None = None,
     trace_session: str | None = None,
-) -> tuple[dict[str, Any], BenchmarkMetrics | PixelGenerationBenchmarkMetrics]:
+    force_unique_runs: bool = False,
+) -> tuple[
+    dict[str, object], BenchmarkMetrics | PixelGenerationBenchmarkMetrics
+]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
             "--ignore-first-turn-stats and --skip-first-n-requests both set."
@@ -1583,6 +2018,29 @@ async def benchmark(
         await lora_manager.benchmark_loading(
             api_url=base_url,
         )
+
+    # Generate a single run-level unique prefix so all requests in this run
+    # share the same constant prefix. This prevents cross-run KV-cache
+    # pollution while preserving within-run system-prompt prefix caching
+    # (requests with the same system prompt still share a common token prefix).
+    run_prefix: str | None = None
+    run_prefix_len: int = 0
+    if force_unique_runs:
+        if benchmark_task == "image-to-image":
+            raise ValueError(
+                "--force-unique-runs is not supported for image-to-image:"
+                " the primary input is the image, not text, and systems may"
+                " cache vision embeddings independently, so we can't guarantee"
+                " uniqueness across benchmark runs."
+            )
+        run_prefix = f"{uuid4()}: "
+        if benchmark_task not in PIXEL_GENERATION_TASKS:
+            # prompt_len is not tracked for pixel generation tasks, so
+            # run_prefix_len is not needed there.
+            assert tokenizer is not None
+            run_prefix_len = len(
+                tokenizer(run_prefix, add_special_tokens=False).input_ids
+            )
 
     request_driver_class: type[RequestDriver] = get_request_driver_class(
         api_url, task=benchmark_task
@@ -1604,6 +2062,8 @@ async def benchmark(
             top_p=top_p,
             top_k=top_k,
             max_output_len=max_output_len,
+            run_prefix=run_prefix,
+            run_prefix_len=run_prefix_len,
         )
 
     if burstiness == 1.0:
@@ -1644,7 +2104,7 @@ async def benchmark(
                 pids = collect_pids_for_port(
                     int(urlparse(api_url).port or 8000)
                 )
-                cpu_collector = CpuMetricsCollector(pids)
+                cpu_collector = CPUMetricsCollector(pids)
                 cpu_collector.start()
             except:
                 logger.warning(
@@ -1701,6 +2161,12 @@ async def benchmark(
         try:
             outputs: Sequence[BaseRequestFuncOutput]
             if isinstance(samples, RequestSamples):
+                if max_concurrent_conversations is not None:
+                    raise ValueError(
+                        "--max-concurrent-conversations is only valid for "
+                        "multi-turn workloads. Set --num-chat-sessions to "
+                        "enable multi-turn mode."
+                    )
                 # single-turn chat scenario
                 outputs = await run_single_turn_benchmark(
                     input_requests=samples.requests,
@@ -1718,6 +2184,46 @@ async def benchmark(
                     top_p=top_p,
                     top_k=top_k,
                     lora_manager=lora_manager,
+                    run_prefix=run_prefix,
+                    run_prefix_len=run_prefix_len,
+                )
+            elif max_concurrent_conversations is not None:
+                # KV-cache stress benchmark: two independent concurrency knobs.
+                # max_concurrent_conversations caps active session workers;
+                # max_concurrency (semaphore) caps in-flight turns globally.
+                if (
+                    max_concurrency is not None
+                    and max_concurrency > max_concurrent_conversations
+                ):
+                    raise ValueError(
+                        f"--max-concurrency ({max_concurrency}) must be <= "
+                        f"--max-concurrent-conversations "
+                        f"({max_concurrent_conversations}): to stress the "
+                        "server's KV-cache, more sessions must be open than "
+                        "turns in-flight."
+                    )
+                assert tokenizer is not None
+                assert isinstance(max_concurrent_conversations, int)
+                outputs = await run_kv_cache_stress_benchmark(
+                    chat_sessions=samples.chat_sessions,
+                    max_requests=max_requests,
+                    max_concurrent_conversations=max_concurrent_conversations,
+                    semaphore=semaphore,
+                    benchmark_should_end_time=benchmark_should_end_time,
+                    request_driver=request_driver,
+                    model_id=model_id,
+                    api_url=api_url,
+                    tokenizer=tokenizer,
+                    skip_first_n_requests=skip_first_n_requests,
+                    ignore_first_turn_stats=ignore_first_turn_stats,
+                    lora_manager=lora_manager,
+                    warmup_delay_ms=warmup_delay_ms,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    randomize_session_start=randomize_session_start,
+                    run_prefix=run_prefix,
+                    run_prefix_len=run_prefix_len,
                 )
             else:
                 # multi-turn chat scenario
@@ -1739,6 +2245,8 @@ async def benchmark(
                     top_p=top_p,
                     top_k=top_k,
                     randomize_session_start=randomize_session_start,
+                    run_prefix=run_prefix,
+                    run_prefix_len=run_prefix_len,
                 )
 
             # Close pbar if it was created
@@ -1802,11 +2310,10 @@ async def benchmark(
     if collect_gpu_stats and gpu_recorder is not None:
         gpu_metrics = gpu_recorder.stats
 
+    cpu_metrics_result: CPUMetrics | None = None
     if collect_cpu_stats and cpu_collector is not None:
         cpu_collector.stop()
-        cpu_metrics = cpu_collector.dump_stats()
-    else:
-        cpu_metrics = {}
+        cpu_metrics_result = cpu_collector.dump_stats()
 
     # Collect server-side metrics from Prometheus endpoint (with delta from baseline)
     server_metrics = None
@@ -1841,91 +2348,36 @@ async def benchmark(
             round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
         )
 
+    result: dict[str, object]
+    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics
     if benchmark_task in PIXEL_GENERATION_TASKS:
-        if not _is_pixel_generation_outputs(outputs):
-            raise TypeError(
-                "Expected all outputs to be PixelGenerationRequestFuncOutput"
-                " in pixel-generation benchmark flow."
-            )
-        pixel_metrics = calculate_pixel_generation_metrics(
+        result, metrics = _build_pixel_generation_result(
             outputs=outputs,
-            dur_s=benchmark_duration,
+            benchmark_duration=benchmark_duration,
             gpu_metrics=gpu_metrics,
-            cpu_metrics=cpu_metrics,
+            cpu_metrics=cpu_metrics_result,
             max_concurrency=max_concurrency,
             collect_gpu_stats=collect_gpu_stats,
             server_metrics=server_metrics,
         )
-
-        print_benchmark_summary(
-            metrics=pixel_metrics,
+    else:
+        result, metrics = _build_text_generation_result(
+            outputs=outputs,
             benchmark_duration=benchmark_duration,
-            request_rate=request_rate,
-            achieved_request_rate=achieved_request_rate,
+            tokenizer=tokenizer,
+            gpu_metrics=gpu_metrics,
+            cpu_metrics=cpu_metrics_result,
+            skip_first_n_requests=skip_first_n_requests,
+            skip_last_n_requests=skip_last_n_requests,
             max_concurrency=max_concurrency,
+            max_concurrent_conversations=max_concurrent_conversations,
             collect_gpu_stats=collect_gpu_stats,
-            collect_cpu_stats=collect_cpu_stats,
-            spec_decode_stats=None,
-            lora_manager=lora_manager,
+            server_metrics=server_metrics,
+            spec_decode_stats=spec_decode_stats,
         )
-
-        result = {
-            "duration": benchmark_duration,
-            "completed": pixel_metrics.completed,
-            "failures": pixel_metrics.failures,
-            "max_concurrency": pixel_metrics.max_concurrency,
-            "request_throughput": pixel_metrics.request_throughput,
-            "total_generated_outputs": pixel_metrics.total_generated_outputs,
-            "mean_latency_ms": pixel_metrics.latency_ms.mean,
-            "median_latency_ms": pixel_metrics.latency_ms.median,
-            "std_latency_ms": pixel_metrics.latency_ms.std,
-            "p90_latency_ms": pixel_metrics.latency_ms.p90,
-            "p95_latency_ms": pixel_metrics.latency_ms.p95,
-            "p99_latency_ms": pixel_metrics.latency_ms.p99,
-            "latencies": [output.latency for output in outputs],
-            "num_generated_outputs": [
-                output.num_generated_outputs for output in outputs
-            ],
-            "errors": [output.error for output in outputs],
-            "request_submit_times": [
-                output.request_submit_time for output in outputs
-            ],
-            "request_complete_times": [
-                output.request_complete_time for output in outputs
-            ],
-            "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
-            "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
-            "gpu_utilization": pixel_metrics.gpu_utilization,
-        }
-
-        _add_optional_result(
-            result=result,
-            metrics=pixel_metrics,
-            lora_manager=lora_manager,
-        )
-
-        return result, pixel_metrics
-
-    if not _is_text_generation_outputs(outputs):
-        raise TypeError(
-            "Expected all outputs to be RequestFuncOutput"
-            " in text-generation benchmark flow."
-        )
-    text_metrics, actual_output_lens = calculate_metrics(
-        outputs=outputs,
-        dur_s=benchmark_duration,
-        tokenizer=tokenizer,
-        gpu_metrics=gpu_metrics,
-        cpu_metrics=cpu_metrics,
-        skip_first_n_requests=skip_first_n_requests,
-        skip_last_n_requests=skip_last_n_requests,
-        max_concurrency=max_concurrency,
-        collect_gpu_stats=collect_gpu_stats,
-        server_metrics=server_metrics,
-    )
 
     print_benchmark_summary(
-        metrics=text_metrics,
+        metrics=metrics,
         benchmark_duration=benchmark_duration,
         request_rate=request_rate,
         max_concurrency=max_concurrency,
@@ -1936,174 +2388,48 @@ async def benchmark(
         lora_manager=lora_manager,
     )
 
-    result = {
-        "duration": benchmark_duration,
-        "completed": text_metrics.completed,
-        "failures": text_metrics.failures,
-        "max_concurrency": text_metrics.max_concurrency,
-        "skip_first_n_requests": skip_first_n_requests,
-        "skip_last_n_requests": skip_last_n_requests,
-        "total_input_tokens": text_metrics.total_input,
-        "total_output_tokens": text_metrics.total_output,
-        "request_throughput": text_metrics.request_throughput,
-        "mean_input_throughput": text_metrics.input_throughput.mean,
-        "std_input_throughput": text_metrics.input_throughput.std,
-        "median_input_throughput": text_metrics.input_throughput.median,
-        "p90_input_throughput": text_metrics.input_throughput.p90,
-        "p95_input_throughput": text_metrics.input_throughput.p95,
-        "p99_input_throughput": text_metrics.input_throughput.p99,
-        "mean_output_throughput": text_metrics.output_throughput.mean,
-        "std_output_throughput": text_metrics.output_throughput.std,
-        "median_output_throughput": text_metrics.output_throughput.median,
-        "p90_output_throughput": text_metrics.output_throughput.p90,
-        "p95_output_throughput": text_metrics.output_throughput.p95,
-        "p99_output_throughput": text_metrics.output_throughput.p99,
-        "mean_ttft_ms": text_metrics.ttft_ms.mean,
-        "median_ttft_ms": text_metrics.ttft_ms.median,
-        "std_ttft_ms": text_metrics.ttft_ms.std,
-        "p90_ttft_ms": text_metrics.ttft_ms.p90,
-        "p95_ttft_ms": text_metrics.ttft_ms.p95,
-        "p99_ttft_ms": text_metrics.ttft_ms.p99,
-        "mean_tpot_ms": text_metrics.tpot_ms.mean,
-        "median_tpot_ms": text_metrics.tpot_ms.median,
-        "std_tpot_ms": text_metrics.tpot_ms.std,
-        "p90_tpot_ms": text_metrics.tpot_ms.p90,
-        "p95_tpot_ms": text_metrics.tpot_ms.p95,
-        "p99_tpot_ms": text_metrics.tpot_ms.p99,
-        "mean_itl_ms": text_metrics.itl_ms.mean,
-        "median_itl_ms": text_metrics.itl_ms.median,
-        "std_itl_ms": text_metrics.itl_ms.std,
-        "p90_itl_ms": text_metrics.itl_ms.p90,
-        "p95_itl_ms": text_metrics.itl_ms.p95,
-        "p99_itl_ms": text_metrics.itl_ms.p99,
-        "mean_latency_ms": text_metrics.latency_ms.mean,
-        "median_latency_ms": text_metrics.latency_ms.median,
-        "std_latency_ms": text_metrics.latency_ms.std,
-        "p90_latency_ms": text_metrics.latency_ms.p90,
-        "p95_latency_ms": text_metrics.latency_ms.p95,
-        "p99_latency_ms": text_metrics.latency_ms.p99,
-        "input_lens": [output.prompt_len for output in outputs],
-        "output_lens": actual_output_lens,
-        "ttfts": [output.ttft for output in outputs],
-        "itls": [output.itl for output in outputs],
-        "generated_texts": [output.generated_text for output in outputs],
-        "errors": [output.error for output in outputs],
-        "request_submit_times": [
-            output.request_submit_time for output in outputs
-        ],
-        "request_complete_times": [
-            output.request_complete_time for output in outputs
-        ],
-        "peak_gpu_memory_mib": text_metrics.peak_gpu_memory_mib,
-        "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
-        "gpu_utilization": text_metrics.gpu_utilization,
-    }
-
-    _add_spec_decode_result(result, spec_decode_stats)
-
     _add_optional_result(
         result=result,
-        metrics=text_metrics,
+        metrics=metrics,
         lora_manager=lora_manager,
     )
 
-    _add_confidence_fields(
-        result,
-        [
-            ("ttft_ms", text_metrics.ttft_ms),
-            ("tpot_ms", text_metrics.tpot_ms),
-            ("itl_ms", text_metrics.itl_ms),
-            ("latency_ms", text_metrics.latency_ms),
-            ("output_throughput", text_metrics.output_throughput),
-            ("input_throughput", text_metrics.input_throughput),
-        ],
-    )
+    return result, metrics
 
-    for warn in text_metrics.confidence_warnings():
-        logger.warning(f"Confidence: {warn}")
 
-    # Steady-state metrics mirror the full-run metrics above but are
-    # prefixed with "steady_state_" and computed only over the detected window
-    steady = detect_steady_state(outputs)
-    result["steady_state_detected"] = steady.detected
-    result["steady_state_start_index"] = steady.start_index
-    result["steady_state_end_index"] = steady.end_index
-    result["steady_state_count"] = steady.steady_state_count
-    result["steady_state_warning"] = steady.warning
-
-    if steady.detected:
-        ss_index_set = set(steady.steady_state_indices)
-        ss_outputs = [
-            out
-            for i, out in enumerate(outputs)
-            if i in ss_index_set and out.success and not out.cancelled
-        ]
-        ss_valid = [
-            out
-            for out in ss_outputs
-            if out.request_submit_time is not None
-            and out.request_complete_time is not None
-        ]
-        if len(ss_valid) >= 2:
-            ss_valid.sort(key=lambda o: o.request_submit_time or 0.0)
-            first_submit = ss_valid[0].request_submit_time
-            last_complete = ss_valid[-1].request_complete_time
-            assert first_submit is not None and last_complete is not None
-            ss_duration = last_complete - first_submit
-            ss_duration = max(ss_duration, 1e-9)
-
-            ss_metrics, _ = calculate_metrics(
-                outputs=ss_outputs,
-                dur_s=ss_duration,
-                tokenizer=tokenizer,
-                gpu_metrics=gpu_metrics,
-                cpu_metrics=cpu_metrics,
-                skip_first_n_requests=0,
-                skip_last_n_requests=0,
-                max_concurrency=max_concurrency,
-                collect_gpu_stats=collect_gpu_stats,
-                server_metrics=server_metrics,
-            )
-            for suffix, value in _steady_state_metric_values(ss_metrics):
-                result[f"steady_state_{suffix}"] = value
-            _add_confidence_fields(
-                result,
-                [
-                    ("steady_state_ttft_ms", ss_metrics.ttft_ms),
-                    ("steady_state_tpot_ms", ss_metrics.tpot_ms),
-                    ("steady_state_itl_ms", ss_metrics.itl_ms),
-                    ("steady_state_latency_ms", ss_metrics.latency_ms),
-                ],
-            )
-        logger.info(
-            f"Steady-state detected: requests [{steady.start_index},"
-            f" {steady.end_index}) ({steady.steady_state_count} of"
-            f" {steady.total_requests} requests)"
-        )
-    elif steady.warning:
-        logger.warning(f"Steady-state detection: {steady.warning}")
-
-    return result, text_metrics
+# Backends that only support pixel generation, not text generation.
+PIXEL_GEN_ONLY_BACKENDS: frozenset[str] = frozenset({"vllm-omni"})
 
 
 def validate_task_and_endpoint(
-    benchmark_task: BenchmarkTask, endpoint: Endpoint
+    benchmark_task: BenchmarkTask, endpoint: Endpoint, backend: str
 ) -> None:
     if benchmark_task == "text-generation":
-        if endpoint == "/v1/responses":
+        if backend in PIXEL_GEN_ONLY_BACKENDS:
             raise ValueError(
-                "--benchmark-task text-generation does not support "
-                "--endpoint /v1/responses"
+                f"Backend {backend!r} only supports pixel generation"
+                f" tasks, not --benchmark-task text-generation."
+            )
+        if endpoint in ("/v1/responses", "/v1/images/generations"):
+            raise ValueError(
+                f"--benchmark-task text-generation does not support "
+                f"--endpoint {endpoint}"
             )
     elif benchmark_task in PIXEL_GENERATION_TASKS:
-        if endpoint != "/v1/responses":
+        if endpoint not in PIXEL_GENERATION_ENDPOINTS:
             raise ValueError(
-                "--benchmark-task pixel-generation requires "
-                "--endpoint /v1/responses"
+                f"--benchmark-task {benchmark_task} requires --endpoint"
+                f" to be one of {sorted(PIXEL_GENERATION_ENDPOINTS)},"
+                f" got {endpoint!r}"
             )
 
 
-def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
+ServingBenchmarkMetrics = BenchmarkMetrics | PixelGenerationBenchmarkMetrics
+
+
+def main_with_parsed_args(
+    args: ServingBenchmarkConfig,
+) -> ServingBenchmarkMetrics | None:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
         datefmt="%H:%M:%S",
@@ -2124,7 +2450,34 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     benchmark_task: BenchmarkTask = args.benchmark_task
     endpoint: Endpoint = args.endpoint
 
-    validate_task_and_endpoint(benchmark_task, endpoint)
+    # Auto-select the correct endpoint for pixel generation based on the
+    # backend. Each pixel-gen backend requires a specific endpoint (e.g.,
+    # sglang needs /v1/images/generations, vllm-omni needs
+    # /v1/chat/completions). We auto-select when the current endpoint
+    # doesn't match this backend's expected pixel-gen endpoint.
+    if benchmark_task in PIXEL_GENERATION_TASKS:
+        backend_key = args.backend.removesuffix("-chat")
+        if backend_key in PIXEL_GEN_DEFAULT_ENDPOINT:
+            expected = PIXEL_GEN_DEFAULT_ENDPOINT[backend_key]
+            if endpoint != expected:
+                logger.info(
+                    "Auto-selected endpoint %s for backend %s"
+                    " (pixel generation task)",
+                    expected,
+                    args.backend,
+                )
+                endpoint = expected
+        else:
+            raise ValueError(
+                f"Backend {args.backend!r} does not have a default"
+                f" pixel-generation endpoint. Explicitly pass --endpoint"
+                f" with one of {sorted(PIXEL_GENERATION_ENDPOINTS)}."
+            )
+
+    validate_task_and_endpoint(benchmark_task, endpoint, args.backend)
+    # chat is only meaningful for text-generation (enables chat template
+    # formatting). For pixel generation via /v1/chat/completions
+    # (vllm-omni), the pixel-gen code path ignores this flag.
     chat = endpoint == "/v1/chat/completions"
 
     if args.base_url is not None:
@@ -2140,7 +2493,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
-            args.model_max_length,
+            model_max_length=args.model_max_length,
             trust_remote_code=args.trust_remote_code,
         )
 
@@ -2539,6 +2892,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             request_rate=request_rate,
             burstiness=args.burstiness,
             max_concurrency=max_concurrency,
+            max_concurrent_conversations=args.max_concurrent_conversations,
             disable_tqdm=args.disable_tqdm,
             do_test_prompt=not args.skip_test_prompt,
             collect_gpu_stats=args.collect_gpu_stats,
@@ -2560,6 +2914,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             lora_manager=lora_manager,
             trace_path=trace_path,
             trace_session=args.trace_session,
+            force_unique_runs=args.force_unique_runs,
         )
     )
 
@@ -2571,59 +2926,29 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         logger.info("finished benchmark run: Failed.")
         sys.exit(1)
 
-    # Save config and results to json
+    # Optionally persist to file (used by the standalone CLI entry point
+    # and BigQuery upload in the sweep harness).
     if args.result_filename:
-        logger.info("saving results")
-        result_json: dict[str, Any] = {}
-
-        # Setup
-        current_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        result_json["date"] = current_dt
-        result_json["backend"] = backend
-        result_json["benchmark_task"] = benchmark_task
-        result_json["model_id"] = model_id
-        result_json["tokenizer_id"] = tokenizer_id
-        result_json["num_prompts"] = benchmark_result["completed"]
-        result_json["dataset_name"] = args.dataset_name
-        result_json["client_args"] = args.model_dump()
-        # json doesn't allow infinity as numeric, so cast this to string
-        result_json["client_args"]["request_rate"] = str(
-            result_json["client_args"]["request_rate"]
-        )
-
-        # Metadata
-        if args.metadata:
-            for item in args.metadata:
-                if "=" in item:
-                    kvstring = item.split("=")
-                    key = kvstring[0].strip()
-                    value = kvstring[1].strip()
-
-                    if key == "server_cpu":
-                        # Map server_cpu to cpu for consistency with existing data pipeline
-                        result_json["cpu"] = value
-                    else:
-                        result_json[key] = value
-                else:
-                    raise ValueError(
-                        "Invalid metadata format. Please use KEY=VALUE format."
-                    )
-
-        # Traffic
-        result_json["request_rate"] = (
-            request_rate if request_rate < float("inf") else "inf"
-        )
-        result_json["burstiness"] = args.burstiness
-        result_json["max_concurrency"] = args.max_concurrency
-
-        # Merge with benchmark result
-        result_json = {**result_json, **benchmark_result}
-
-        # Add LoRA metrics if present
-        if "lora_metrics" in benchmark_result:
-            result_json["lora_metrics"] = benchmark_result["lora_metrics"]
-
-        # Save to file
+        client_args = args.model_dump()
+        client_args["request_rate"] = str(client_args["request_rate"])
+        result_json: dict[str, Any] = {
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "backend": backend,
+            "benchmark_task": benchmark_task,
+            "model_id": model_id,
+            "tokenizer_id": tokenizer_id,
+            "num_prompts": benchmark_metrics.completed,
+            "dataset_name": args.dataset_name,
+            "client_args": client_args,
+            "request_rate": (
+                request_rate if request_rate < float("inf") else "inf"
+            ),
+            "burstiness": args.burstiness,
+            "max_concurrency": args.max_concurrency,
+            "max_concurrent_conversations": args.max_concurrent_conversations,
+            **_parse_metadata(args.metadata),
+            **benchmark_result,
+        }
         file_name = args.result_filename
         logger.info(f"Writing file: {file_name}")
         if os.path.isfile(file_name):
@@ -2637,7 +2962,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
 
     # Save output lengths if requested
     if args.record_output_lengths and benchmark_task == "text-generation":
-        # Save relevant input args for context
         args_to_save = (
             "backend",
             "burstiness",
@@ -2653,7 +2977,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             "top_k",
             "top_p",
         )
-        output_lens_dict = {}
+        output_lens_dict: dict[str, object] = {}
         args_dict = args.model_dump()
         output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
         output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
@@ -2665,6 +2989,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
 
     logger.info("finished benchmark run: Success.")
+    return benchmark_metrics
 
 
 def _extract_metadata_args(

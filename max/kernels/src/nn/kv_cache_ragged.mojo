@@ -41,6 +41,7 @@ from layout import (
     lt_to_tt,
     row_major,
 )
+from layout.tile_tensor import NullableTileTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.fp4_quantization import (
@@ -1526,12 +1527,12 @@ def _matmul_blockwise_scaled_fp8_common[
 
     # Construct a null-pointer TileTensor for the output (allocated by the
     # callee when an epilogue is present).
-    var c_tt = TileTensor[
+    var c_tt = NullableTileTensor[
         output_dtype,
         RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
         MutAnyOrigin,
     ](
-        ptr={_unsafe_null = ()},
+        ptr={},
         layout=row_major(
             (
                 RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
@@ -1587,12 +1588,12 @@ def _matmul_blockwise_scaled_fp4_common[
 
     # Construct a null-pointer TileTensor for the output (allocated by the
     # callee when an epilogue is present).
-    var c_tt = TileTensor[
+    var c_tt = NullableTileTensor[
         output_dtype,
         RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
         MutAnyOrigin,
     ](
-        ptr={_unsafe_null = ()},
+        ptr={},
         layout=row_major(
             (
                 RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
@@ -3049,7 +3050,7 @@ def _flare_mla_decode_kv_cache_ragged[
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[
             rank=q.rank,
-            config=MHAConfig[q_dtype](UInt(_q_num_heads), UInt(_q_head_dim)),
+            config=MHAConfig[q_dtype](_q_num_heads, _q_head_dim),
             ragged=True,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
         ](

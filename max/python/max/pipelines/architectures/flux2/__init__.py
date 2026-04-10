@@ -12,6 +12,5 @@
 # ===----------------------------------------------------------------------=== #
 
 from .arch import flux2_arch
-from .model import Flux2TransformerModel
 
-__all__ = ["Flux2TransformerModel", "flux2_arch"]
+__all__ = ["flux2_arch"]

@@ -122,6 +122,8 @@ class BatchMetrics:
         nixl_write_latency_avg_ms = 0.0
         rpc_acquire_latency_avg_ms = 0.0
         rpc_read_latency_avg_ms = 0.0
+        nixl_read_gib_per_s = 0.0
+        nixl_write_gib_per_s = 0.0
         num_replicas = sch_config.data_parallel_degree
         if kv_cache is not None:
             # TODO SERVOPT-939: Add some sugar
@@ -185,6 +187,8 @@ class BatchMetrics:
             nixl_write_latency_avg_ms = agg.nixl_write_latency_avg_ms
             rpc_acquire_latency_avg_ms = agg.rpc_acquire_latency_avg_ms
             rpc_read_latency_avg_ms = agg.rpc_read_latency_avg_ms
+            nixl_read_gib_per_s = agg.nixl_read_gib_per_s
+            nixl_write_gib_per_s = agg.nixl_write_gib_per_s
 
             kv_cache.reset_metrics()
 
@@ -241,6 +245,8 @@ class BatchMetrics:
             nixl_write_latency_avg_ms=nixl_write_latency_avg_ms,
             rpc_acquire_latency_avg_ms=rpc_acquire_latency_avg_ms,
             rpc_read_latency_avg_ms=rpc_read_latency_avg_ms,
+            nixl_read_gib_per_s=nixl_read_gib_per_s,
+            nixl_write_gib_per_s=nixl_write_gib_per_s,
         )
 
     def pretty_format(self) -> str:

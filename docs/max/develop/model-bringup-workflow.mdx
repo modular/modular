@@ -41,6 +41,8 @@ A custom architecture lives in a directory:
 └── weight_adapters.py
 ```
 
+Each file serves a distinct role:
+
 - `layers/`: holds custom layer implementations for components that differ
   fundamentally from anything in `max.nn`.
 - `__init__.py`: exposes the `ARCHITECTURES` list that MAX reads to register

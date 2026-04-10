@@ -74,10 +74,10 @@ def outer_product_acc(
 @always_inline
 def _reduce[
     axis: Int,
-    init_func: def[dtype: DType, width: Int]() -> SIMD[dtype, width],
+    init_func: def[dtype: DType, width: Int]() thin -> SIMD[dtype, width],
     func: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) -> (SIMD[dtype, width]),
+    ) thin -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     comptime assert (
         inp.layout.known_shape() and outp.layout.known_shape()

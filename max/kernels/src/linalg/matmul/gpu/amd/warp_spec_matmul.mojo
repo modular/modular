@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-AMD Warp-Specialized Matrix Multiplication
+AMD Warp-Specialized Matrix Multiplication.
 
 Architecture Overview:
 - Producer warps: Load tiles from global to shared memory

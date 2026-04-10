@@ -48,8 +48,11 @@ def _compute_reference_sigmas(
     latent_w = width // VAE_SCALE_FACTOR
     image_seq_len = (latent_h // PATCH_SIZE) * (latent_w // PATCH_SIZE)
 
-    # Base sigmas: linearly spaced from 1.0 to 1/N
-    sigmas = np.linspace(1.0, 1.0 / num_inference_steps, num_inference_steps)
+    # Base sigmas: linearly spaced from 1.0 to 1/num_train_timesteps
+    # (matches diffusers FlowMatchEulerDiscreteScheduler which uses
+    # sigma_min = 1/num_train_timesteps, not 1/num_inference_steps)
+    num_train_timesteps = 1000
+    sigmas = np.linspace(1.0, 1.0 / num_train_timesteps, num_inference_steps)
 
     # Dynamic shifting: compute mu from linear interpolation
     slope = (QWEN_MAX_SHIFT - QWEN_BASE_SHIFT) / (

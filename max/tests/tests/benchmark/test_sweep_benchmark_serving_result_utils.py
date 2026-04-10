@@ -20,6 +20,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkMetrics,
+    PixelGenerationBenchmarkMetrics,
+    StandardPercentileMetrics,
+    ThroughputMetrics,
+)
 from max.benchmark.benchmark_shared.sweep_benchmark_serving_result_utils import (
     BENCHMARK_DATAPOINTS,
     SUPPORTED_SWEEP_SERVING_PERCENTILES,
@@ -32,10 +38,11 @@ from max.benchmark.benchmark_shared.sweep_benchmark_serving_result_utils import 
     TextToImageBenchmarkResult,
     TextToImageBenchmarkResultWriter,
     _build_sweep_serving_upload_cmd,
-    _percentile_key,
+    _get_percentile,
     format_float,
     validate_sweep_serving_percentiles,
 )
+from max.diagnostics.cpu import CPUMetrics
 
 
 def test_supported_percentiles_frozen_set() -> None:
@@ -66,18 +73,18 @@ def test_format_float() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _percentile_key helper
+# _get_percentile helper
 # ---------------------------------------------------------------------------
 
 
-def test_percentile_key_median() -> None:
-    assert _percentile_key("ttft_ms", 50) == "median_ttft_ms"
-    assert _percentile_key("latency_ms", 50) == "median_latency_ms"
+def test_get_percentile_median() -> None:
+    m = StandardPercentileMetrics([0.048, 0.050, 0.052], scale_factor=1000.0)
+    assert _get_percentile(m, 50) == m.median
 
 
-def test_percentile_key_non_median() -> None:
-    assert _percentile_key("ttft_ms", 90) == "p90_ttft_ms"
-    assert _percentile_key("latency_ms", 99) == "p99_latency_ms"
+def test_get_percentile_p99() -> None:
+    m = StandardPercentileMetrics([0.048, 0.050, 0.052], scale_factor=1000.0)
+    assert _get_percentile(m, 99) == m.p99
 
 
 def test_llm_result_construction() -> None:
@@ -86,7 +93,6 @@ def test_llm_result_construction() -> None:
         throughput=1.5,
         req_latency_mean=200.0,
         gpu_utilization=0.7,
-        results_filename="out.json",
         req_latency_percentiles={50: 190.0},
         ttft_mean=80.0,
         itl_mean=15.0,
@@ -104,7 +110,6 @@ def test_t2i_result_construction() -> None:
         throughput=2.0,
         req_latency_mean=600.0,
         gpu_utilization=0.5,
-        results_filename="img.json",
         req_latency_percentiles={50: 580.0, 90: 700.0},
         total_generated_outputs=42,
     )
@@ -119,57 +124,86 @@ def test_t2i_result_default_total_generated_outputs() -> None:
         throughput=1.0,
         req_latency_mean=1.0,
         gpu_utilization=0.0,
-        results_filename="",
         req_latency_percentiles={},
     )
     assert r.total_generated_outputs == 0
 
 
 # ---------------------------------------------------------------------------
-# LLMBenchmarkResult.from_benchmark_json
+# LLMBenchmarkResult.from_metrics
 # ---------------------------------------------------------------------------
 
 
-def _make_llm_json() -> dict[str, float]:
-    """Minimal JSON payload matching benchmark_serving output for an LLM run."""
-    return {
-        "duration": 12.0,
-        "request_throughput": 3.5,
-        "mean_latency_ms": 400.0,
-        "gpu_utilization": 0.9,
-        "mean_ttft_ms": 50.0,
-        "mean_itl_ms": 10.0,
-        "median_ttft_ms": 48.0,
-        "median_itl_ms": 9.5,
-        "median_latency_ms": 390.0,
-        "p90_ttft_ms": 60.0,
-        "p90_itl_ms": 12.0,
-        "p90_latency_ms": 450.0,
-        "p99_ttft_ms": 80.0,
-        "p99_itl_ms": 18.0,
-        "p99_latency_ms": 550.0,
-    }
+def _make_llm_metrics() -> BenchmarkMetrics:
+    """Build a minimal :class:`BenchmarkMetrics` for LLM tests."""
+    ttfts = [0.048, 0.050, 0.060, 0.080]
+    itls = [0.0095, 0.010, 0.012, 0.018]
+    latencies = [0.390, 0.400, 0.450, 0.550]
+    return BenchmarkMetrics(
+        duration=12.0,
+        completed=100,
+        failures=0,
+        total_input=5000,
+        total_output=10000,
+        nonempty_response_chunks=100,
+        max_concurrency=4,
+        request_throughput=3.5,
+        input_throughput=ThroughputMetrics([500.0], unit="tok/s"),
+        output_throughput=ThroughputMetrics([1000.0], unit="tok/s"),
+        ttft_ms=StandardPercentileMetrics(
+            ttfts, scale_factor=1000.0, unit="ms"
+        ),
+        tpot_ms=StandardPercentileMetrics(
+            [0.01], scale_factor=1000.0, unit="ms"
+        ),
+        itl_ms=StandardPercentileMetrics(itls, scale_factor=1000.0, unit="ms"),
+        latency_ms=StandardPercentileMetrics(
+            latencies, scale_factor=1000.0, unit="ms"
+        ),
+        max_input=100,
+        max_output=200,
+        max_total=300,
+        peak_gpu_memory_mib=[8000.0],
+        available_gpu_memory_mib=[2000.0],
+        gpu_utilization=[0.9],
+        cpu_metrics=CPUMetrics(
+            user=1.0,
+            user_percent=10.0,
+            system=0.5,
+            system_percent=5.0,
+            elapsed=10.0,
+        ),
+    )
 
 
-def test_llm_from_benchmark_json_single_percentile() -> None:
-    data = _make_llm_json()
-    r = LLMBenchmarkResult.from_benchmark_json(data, [50], "res.json")
+def test_llm_from_metrics_basic() -> None:
+    m = _make_llm_metrics()
+    r = LLMBenchmarkResult.from_metrics(m, [50])
     assert r.duration == 12.0
     assert r.throughput == 3.5
-    assert r.ttft_mean == 50.0
-    assert r.itl_mean == 10.0
-    assert r.ttft_percentiles == {50: 48.0}
-    assert r.itl_percentiles == {50: 9.5}
-    assert r.req_latency_percentiles == {50: 390.0}
-    assert r.results_filename == "res.json"
+    assert r.ttft_mean == m.ttft_ms.mean
+    assert r.itl_mean == m.itl_ms.mean
+    assert r.req_latency_mean == m.latency_ms.mean
+    assert r.gpu_utilization == 0.9
+    assert r.ttft_percentiles == {50: m.ttft_ms.median}
+    assert r.itl_percentiles == {50: m.itl_ms.median}
+    assert r.req_latency_percentiles == {50: m.latency_ms.median}
 
 
-def test_llm_from_benchmark_json_multiple_percentiles() -> None:
-    data = _make_llm_json()
-    r = LLMBenchmarkResult.from_benchmark_json(data, [50, 90, 99], "r.json")
-    assert r.ttft_percentiles == {50: 48.0, 90: 60.0, 99: 80.0}
-    assert r.itl_percentiles == {50: 9.5, 90: 12.0, 99: 18.0}
-    assert r.req_latency_percentiles == {50: 390.0, 90: 450.0, 99: 550.0}
+def test_llm_from_metrics_multiple_percentiles() -> None:
+    m = _make_llm_metrics()
+    r = LLMBenchmarkResult.from_metrics(m, [50, 90, 99])
+    assert r.ttft_percentiles[50] == m.ttft_ms.median
+    assert r.ttft_percentiles[90] == m.ttft_ms.p90
+    assert r.ttft_percentiles[99] == m.ttft_ms.p99
+    assert r.itl_percentiles[90] == m.itl_ms.p90
+    assert r.req_latency_percentiles[99] == m.latency_ms.p99
+
+
+def test_llm_from_metrics_preserves_result_filename() -> None:
+    m = _make_llm_metrics()
+    r = LLMBenchmarkResult.from_metrics(m, [50], result_filename="/tmp/r.json")
+    assert r.result_filename == "/tmp/r.json"
 
 
 # ---------------------------------------------------------------------------
@@ -184,63 +218,60 @@ def test_llm_zeros_all_fields_zero() -> None:
     assert r.ttft_mean == 0.0
     assert r.itl_mean == 0.0
     assert r.gpu_utilization == 0.0
-    assert r.results_filename == ""
+    assert r.result_filename is None
     assert r.ttft_percentiles == {50: 0.0, 99: 0.0}
     assert r.itl_percentiles == {50: 0.0, 99: 0.0}
     assert r.req_latency_percentiles == {50: 0.0, 99: 0.0}
 
 
-def test_llm_zeros_custom_filename() -> None:
-    r = LLMBenchmarkResult.zeros([50], results_filename="dry.json")
-    assert r.results_filename == "dry.json"
-
-
 # ---------------------------------------------------------------------------
-# TextToImageBenchmarkResult.from_benchmark_json
+# TextToImageBenchmarkResult.from_metrics
 # ---------------------------------------------------------------------------
 
 
-def _make_t2i_json() -> dict[str, float | int | str]:
-    """Minimal JSON payload matching benchmark_serving output for a T2I run."""
-    return {
-        "benchmark_task": "text-to-image",
-        "duration": 20.0,
-        "request_throughput": 0.8,
-        "mean_latency_ms": 1500.0,
-        "gpu_utilization": 0.6,
-        "total_generated_outputs": 16,
-        "median_latency_ms": 1400.0,
-        "p90_latency_ms": 1700.0,
-        "p99_latency_ms": 1900.0,
-    }
-
-
-def test_t2i_from_benchmark_json() -> None:
-    data = _make_t2i_json()
-    r = TextToImageBenchmarkResult.from_benchmark_json(
-        data, [50, 90], "t2i.json"
+def _make_t2i_metrics() -> PixelGenerationBenchmarkMetrics:
+    """Build a minimal :class:`PixelGenerationBenchmarkMetrics` for T2I tests."""
+    latencies = [1.4, 1.5, 1.7, 1.9]
+    return PixelGenerationBenchmarkMetrics(
+        duration=20.0,
+        completed=16,
+        failures=0,
+        max_concurrency=2,
+        request_throughput=0.8,
+        total_generated_outputs=16,
+        latency_ms=StandardPercentileMetrics(
+            latencies, scale_factor=1000.0, unit="ms"
+        ),
+        peak_gpu_memory_mib=[8000.0],
+        available_gpu_memory_mib=[2000.0],
+        gpu_utilization=[0.6],
+        cpu_metrics=CPUMetrics(
+            user=1.0,
+            user_percent=10.0,
+            system=0.5,
+            system_percent=5.0,
+            elapsed=10.0,
+        ),
     )
+
+
+def test_t2i_from_metrics() -> None:
+    m = _make_t2i_metrics()
+    r = TextToImageBenchmarkResult.from_metrics(m, [50, 90])
     assert r.duration == 20.0
     assert r.throughput == 0.8
-    assert r.req_latency_mean == 1500.0
+    assert r.req_latency_mean == m.latency_ms.mean
     assert r.gpu_utilization == 0.6
     assert r.total_generated_outputs == 16
-    assert r.req_latency_percentiles == {50: 1400.0, 90: 1700.0}
-    assert r.results_filename == "t2i.json"
+    assert r.req_latency_percentiles[50] == m.latency_ms.median
+    assert r.req_latency_percentiles[90] == m.latency_ms.p90
 
 
-def test_t2i_from_benchmark_json_missing_gpu_util() -> None:
-    data = _make_t2i_json()
-    del data["gpu_utilization"]
-    r = TextToImageBenchmarkResult.from_benchmark_json(data, [50], "x.json")
+def test_t2i_from_metrics_no_gpu() -> None:
+    m = _make_t2i_metrics()
+    m.gpu_utilization = []
+    r = TextToImageBenchmarkResult.from_metrics(m, [50])
     assert r.gpu_utilization == 0.0
-
-
-def test_t2i_from_benchmark_json_missing_total_outputs() -> None:
-    data = _make_t2i_json()
-    del data["total_generated_outputs"]
-    r = TextToImageBenchmarkResult.from_benchmark_json(data, [50], "x.json")
-    assert r.total_generated_outputs == 0
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +351,6 @@ def test_format_row_values_llm() -> None:
         throughput=2.5,
         req_latency_mean=500.0,
         gpu_utilization=0.85,
-        results_filename="/tmp/out.json",
         req_latency_percentiles={50: 490.0},
         ttft_mean=100.0,
         itl_mean=20.0,
@@ -360,7 +390,6 @@ def test_format_row_values_t2i() -> None:
         throughput=1.0,
         req_latency_mean=1200.0,
         gpu_utilization=0.0,
-        results_filename="r.json",
         req_latency_percentiles={50: 1100.0, 90: 1300.0},
         total_generated_outputs=8,
     )
@@ -389,7 +418,6 @@ def test_context_manager_writes_csv(tmp_path: Path) -> None:
         throughput=3.0,
         req_latency_mean=10.0,
         gpu_utilization=0.0,
-        results_filename="",
         req_latency_percentiles={50: 10.0},
         ttft_mean=1.0,
         itl_mean=2.0,
@@ -450,7 +478,7 @@ def test_build_sweep_serving_upload_cmd_all_options(tmp_path: Path) -> None:
 def test_upload_skipped_when_settings_none(tmp_path: Path) -> None:
     out = tmp_path / "r.csv"
     result = LLMBenchmarkResult.zeros([50])
-    result.results_filename = "/x.json"
+    result.result_filename = str(tmp_path / "r.json")
     with patch("subprocess.run") as run_mock:
         with LLMBenchmarkResultWriter(
             out,
@@ -476,7 +504,7 @@ def test_upload_dry_run_no_subprocess(tmp_path: Path) -> None:
         dry_run=True,
     )
     result = LLMBenchmarkResult.zeros([50])
-    result.results_filename = str(tmp_path / "keep.json")
+    result.result_filename = str(tmp_path / "r.json")
     with patch("subprocess.run") as run_mock:
         with LLMBenchmarkResultWriter(
             out,
@@ -493,7 +521,7 @@ def test_upload_dry_run_no_subprocess(tmp_path: Path) -> None:
     run_mock.assert_not_called()
 
 
-def test_upload_empty_results_filename_skips_subprocess(tmp_path: Path) -> None:
+def test_upload_no_result_filename_skips_subprocess(tmp_path: Path) -> None:
     out = tmp_path / "r.csv"
     script = tmp_path / "upload.py"
     script.touch()
@@ -521,13 +549,11 @@ def test_upload_non_dry_run_invokes_subprocess(tmp_path: Path) -> None:
     out = tmp_path / "r.csv"
     script = tmp_path / "upload.py"
     script.touch()
-    json_path = tmp_path / "k.json"
-    json_path.write_text("{}")
     upload = SweepServingBenchmarkUploadSettings(
         script_path=script, dry_run=False
     )
     result = LLMBenchmarkResult.zeros([50])
-    result.results_filename = str(json_path)
+    result.result_filename = str(tmp_path / "r.json")
     with patch("subprocess.run") as run_mock:
         with LLMBenchmarkResultWriter(
             out,

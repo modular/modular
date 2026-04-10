@@ -1384,12 +1384,12 @@ def produce[
 
                 else:
                     comptime for d_idx in range(depth // 64):
-                        comptime d: UInt = UInt(d_idx * 64)
+                        comptime d: Int = d_idx * 64
                         q_tma_op.async_copy_4d(
                             q_producer(q_idx),
                             pq_mbar,
                             (
-                                Int(d),
+                                d,
                                 0,
                                 Int(position.head_idx),
                                 Int(position.q_row),

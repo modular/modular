@@ -51,7 +51,7 @@ comptime cblas_gemm_type = def(
     Float32,
     UnsafePointer[Float32, MutAnyOrigin],
     Int32,
-) -> None
+) thin -> None
 
 # ===-----------------------------------------------------------------------===#
 # Constants

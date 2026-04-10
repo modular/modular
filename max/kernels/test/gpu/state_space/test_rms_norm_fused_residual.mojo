@@ -118,7 +118,7 @@ def run_rms_norm_fused_residual_gpu[
         residual_output_d.unsafe_ptr(),
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var gamma_tensor = TileTensor(gamma_d.unsafe_ptr(), row_major(Idx(cols)))
+    var gamma_tensor = TileTensor(gamma_d, row_major(Idx(cols)))
 
     var epsilon = Scalar[dtype](1e-5)
     var weight_offset = Scalar[dtype](0.0)

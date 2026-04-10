@@ -32,6 +32,8 @@ src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directo
 extend-exclude = [
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",
+  "*_pb2.py", # Generated protobuf stubs
+  "*_pb2.pyi", # Generated protobuf stubs
   "*max/serve/schemas/openai.py", # Generated file
   "third-party",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
@@ -145,6 +147,10 @@ follow_imports = "skip"
 [[tool.mypy.overrides]]
 module = "absl.*"
 follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "cyclopts.*"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "lmcache.*"

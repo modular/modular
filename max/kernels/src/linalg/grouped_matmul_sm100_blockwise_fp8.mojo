@@ -746,7 +746,7 @@ def load_AB[
     a_scales_tile_rank: Int,
     a_scales_tile_shape: IndexList[a_scales_tile_rank],
     a_scales_desc_shape: IndexList[a_scales_tile_rank],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     expert_ids_layout: Layout,
     /,
     *,
@@ -774,9 +774,9 @@ def load_AB[
     a_scales_smem_base: UnsafePointer[
         Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
-    load_mma_pipeline: ProducerConsumerPipeline[Int(num_pipeline_stages)],
-    peer_cta_coord: Tuple[UInt, UInt, UInt],
-    work_tile_coord: Tuple[UInt, UInt],
+    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
+    peer_cta_coord: Tuple[Int, Int, Int],
+    work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
     iter_idx: UInt,
@@ -814,13 +814,11 @@ def load_AB[
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
 
-    var a_gmem_slice_coord = Int(peer_cta_coord[2]) * a_tma_rows + Int(
-        work_tile_coord[0]
-    )
+    var a_gmem_slice_coord = peer_cta_coord[2] * a_tma_rows + work_tile_coord[0]
     var expert_id = expert_ids[Int(scheduler.current_group_idx)]
     var b_gmem_slice_coord_vec = type_of(expert_id)(
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
+        peer_cta_coord[1] * b_tma_rows
+        + peer_cta_coord[0] * BN
         + work_tile_coord[1]
     ) + expert_id * type_of(expert_id)(scheduler.static_MN)
     comptime assert b_gmem_slice_coord_vec.size == 1
@@ -853,10 +851,10 @@ def load_AB[
     ](a_scales_smem_base + Int(stage) * a_scales_smem_tile_size)
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
+        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
+        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
@@ -881,7 +879,7 @@ def load_AB[
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[0],
-            (Int(work_tile_coord[0]), Int(iter_idx)),
+            (work_tile_coord[0], Int(iter_idx)),
         )
 
 
@@ -1137,7 +1135,7 @@ def multi_stage_reg_epilogue[
 
 @always_inline
 def promote_accumulators[
-    pipeline_stages: UInt,
+    pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     accum_type: DType,
     accum_layout: Layout,
@@ -1176,8 +1174,8 @@ def promote_accumulators[
     ],
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
-    load_mma_pipeline: ProducerConsumerPipeline[Int(pipeline_stages)],
-    work_tile_coord: Tuple[UInt, UInt],
+    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
+    work_tile_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
     stage_stride_cols: UInt,
     k_iter: UInt,
@@ -1243,12 +1241,12 @@ def promote_accumulators[
         )
 
         var global_bn_start = bn
-        var begin_n = min(BK - Int(global_bn_start % UInt(BK)), MMA_N)
+        var begin_n = min(BK - umod(global_bn_start, BK), MMA_N)
         var end_n = min(N - Int32(global_bn_start), Int32(MMA_N))
 
         # find the first b_scale index just by dividing by block size (128)
         # we use `b_scale_next_n` to find the second b_scale index later
-        b_scale_idx0 = Int(global_bn_start // UInt(BK))
+        b_scale_idx0 = ufloordiv(global_bn_start, BK)
         # If MMA_N > BK (128) then we should use two scales_b in each block. `next_n` determines the border between the two scales_b.
         # Example: N = 960, MMA_N = 192, num_of_b_scales: ceildiv(960, BK) = 8
         # <------------------------------------ MMA_N (192) ------------------------------------>
@@ -1296,7 +1294,8 @@ def promote_accumulators[
         # when MMA_N == BK == 128 we only have one scale_b per block
         b_scale_0 = rebind[Scalar[accum_type]](
             b_scales[
-                b_scale_m_offset + type_of(b_scale_m_offset)(bn // UInt(MMA_N)),
+                b_scale_m_offset
+                + type_of(b_scale_m_offset)(ufloordiv(bn, MMA_N)),
                 k_iter,
             ].cast[accum_type]()
         )
@@ -1499,7 +1498,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     b_scales_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     cluster_shape: StaticTuple[Int32, 3],
     expert_n: Int,
     expert_ids_layout: Layout,
@@ -1601,15 +1600,13 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         alignment=128,
     ]()
 
-    comptime a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
-    comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
+    comptime a_smem_size = a_smem_layout.size() * num_pipeline_stages
+    comptime b_smem_size = b_smem_layout.size() * num_pipeline_stages
     comptime c_smem_size = config.output_tile_shape[
         0
     ] * config.output_tile_shape[1] * config.num_output_stages
 
-    comptime a_scales_smem_size = a_scales_smem_layout.size() * Int(
-        num_pipeline_stages
-    )
+    comptime a_scales_smem_size = a_scales_smem_layout.size() * num_pipeline_stages
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
@@ -1623,14 +1620,14 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
         BM,
         BK,
-        Int(num_pipeline_stages),
+        num_pipeline_stages,
         swizzle_mode_to_bytes[config.a_swizzle],
     ](a_smem_base)
     var b_smem_tt = SMemTileArray2D[
         b_type,
         BN,
         BK,
-        Int(num_pipeline_stages),
+        num_pipeline_stages,
         swizzle_mode_to_bytes[config.b_swizzle],
     ](b_smem_base)
     var load_mma_mbar_ptr = (a_scales_smem_base + a_scales_smem_size).bitcast[
@@ -1638,11 +1635,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ]()
 
     # Load warp as producer and mma warp as consumer
-    var load_mma_pipeline = ProducerConsumerPipeline[Int(num_pipeline_stages)](
+    var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
         load_mma_mbar_ptr
     )
 
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * Int(num_pipeline_stages)
+    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
     ](mma_output_mbar_ptr)
@@ -1772,8 +1769,8 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % UInt(config.cta_group),
-        rank_m // UInt(config.cta_group),
+        umod(rank_m, config.cta_group),
+        ufloordiv(rank_m, config.cta_group),
         rank_n,
     )  # v,m,n
 
@@ -1790,7 +1787,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
-    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
+    b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1825,7 +1822,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     a_scales_smem_base,
                     load_mma_pipeline,
                     peer_cta_coord,
-                    (UInt(work_info.m), UInt(work_info.n)),
+                    (Int(work_info.m), Int(work_info.n)),
                     a_multicast_mask,
                     b_multicast_mask,
                     i,
@@ -1977,7 +1974,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     mma_output_pipeline,
                     tmem_addr,
                     load_mma_pipeline,
-                    work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
+                    work_tile_coord=(Int(work_info.m), Int(work_info.n)),
                     elect_one_warp=elect_one_warp,
                     stage_stride_cols=UInt(stage_stride_cols),
                     k_iter=k_iter,
@@ -2192,7 +2189,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         + mma_mbar_bytes_per_stage
     )
 
-    comptime max_pipeline_stages = UInt(
+    comptime max_pipeline_stages: Int = (
         smem_leftover // producer_consumer_smem_per_stage
     )
 
@@ -2200,9 +2197,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         max_pipeline_stages >= 1
     ), "not enough smem even for one pipeline stage!"
 
-    comptime producer_consumer_smem = producer_consumer_smem_per_stage * Int(
-        max_pipeline_stages
-    )
+    comptime producer_consumer_smem = producer_consumer_smem_per_stage * max_pipeline_stages
 
     comptime smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem

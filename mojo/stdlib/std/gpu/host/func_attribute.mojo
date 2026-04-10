@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-GPU Kernel Function Attributes Module
+GPU Kernel Function Attributes Module.
 
 This module provides structures for defining and managing GPU kernel function attributes.
 It implements functionality similar to CUDA's CUfunction_attribute enum, allowing

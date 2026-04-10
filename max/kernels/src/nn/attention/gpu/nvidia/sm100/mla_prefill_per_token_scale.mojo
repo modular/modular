@@ -1143,7 +1143,7 @@ def mla_sm100_prefill_per_token_scale[
         rope_gmem_dtype=rope_dtype,
         scale_dtype=scale_dtype,
     ](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
         depth=q_depth,
         page_size=KType.page_size,

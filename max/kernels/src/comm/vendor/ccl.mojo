@@ -111,12 +111,12 @@ struct _Group:
 
     def __enter__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupStart", def() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupStart", def() thin -> ncclResult_t]()()
         )
 
     def __exit__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupEnd", def() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupEnd", def() thin -> ncclResult_t]()()
         )
 
 
@@ -131,7 +131,7 @@ def ncclCommInitAll(
 ) raises -> ncclResult_t:
     return _get_ccl_function[
         "ncclCommInitAll",
-        def(type_of(comms), Int, type_of(devlist)) -> ncclResult_t,
+        def(type_of(comms), Int, type_of(devlist)) thin -> ncclResult_t,
     ]()(comms, ndev, devlist)
 
 
@@ -156,7 +156,7 @@ def _ccl_allreduce(
             ncclRedOp_t,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(sendbuff, recvbuff, count, datatype, op, comm, stream_ptr)
 
 
@@ -180,7 +180,7 @@ def _ccl_allgather(
             ncclDataType_t,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(sendbuff, recvbuff, count, datatype, comm, stream_ptr)
 
 
@@ -206,7 +206,7 @@ def _ccl_broadcast(
             Int,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(
         sendbuff,
         recvbuff,
@@ -377,9 +377,12 @@ def allreduce[
                 val,
             )
 
-        elementwise[epilogue_wrapper, simd_size, target="gpu"](
-            IndexList[1](output_tensor.num_elements()), ctx
-        )
+        elementwise[
+            epilogue_wrapper,
+            simd_size,
+            target="gpu",
+            _trace_description="ccl_epilogue",
+        ](IndexList[1](output_tensor.num_elements()), ctx)
 
 
 @parameter
@@ -387,7 +390,7 @@ def _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
     try:
-        _ = _get_ccl_function[name, def() -> ncclResult_t]()
+        _ = _get_ccl_function[name, def() thin -> ncclResult_t]()
         return True
     except:
         return False

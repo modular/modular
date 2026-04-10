@@ -30,9 +30,10 @@ import numpy as np
 from max._core.driver import Device
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental import functional as F
+from max.engine import InferenceSession, Model
 from max.experimental.tensor import Tensor
-from max.graph import TensorType
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn.layer import Module
 
 if TYPE_CHECKING:
     from .cache_mixin import DenoisingCacheConfig, DenoisingCacheState
@@ -59,6 +60,110 @@ class TaylorSeerState:
     """Step index of the last full transformer computation."""
 
 
+class _TaylorPredictModule(Module):
+    """ModuleV2 wrapper for the Taylor series prediction graph."""
+
+    def __init__(self, dtype: DType, device: DeviceRef) -> None:
+        super().__init__()
+        self.dtype = dtype
+        self.device = device
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        tensor_type = TensorType(
+            self.dtype,
+            shape=["batch", "seq", "channels"],
+            device=self.device,
+        )
+        scalar_type = TensorType(DType.float32, shape=[1], device=self.device)
+        order_type = TensorType(DType.int32, shape=[1], device=self.device)
+        return (
+            tensor_type,  # factor_0
+            tensor_type,  # factor_1
+            tensor_type,  # factor_2
+            scalar_type,  # step_offset
+            order_type,  # max_order
+        )
+
+    def __call__(
+        self,
+        factor_0: TensorValue,
+        factor_1: TensorValue,
+        factor_2: TensorValue,
+        step_offset: TensorValue,
+        max_order: TensorValue,
+    ) -> TensorValue:
+        """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2."""
+        offset = ops.cast(step_offset, factor_0.dtype)
+        result = factor_0 + factor_1 * offset
+        offset_sq_half = (
+            offset
+            * offset
+            * ops.constant(0.5, factor_0.dtype, device=factor_0.device)
+        )
+        order2_term = factor_2 * offset_sq_half
+        use_order2 = max_order >= ops.constant(
+            2, DType.int32, device=max_order.device
+        )
+        use_order2_cast = ops.cast(
+            ops.broadcast_to(use_order2, order2_term.shape),
+            order2_term.dtype,
+        )
+        result = result + order2_term * use_order2_cast
+        return result
+
+
+class _TaylorUpdateModule(Module):
+    """ModuleV2 wrapper for the Taylor factor update graph."""
+
+    def __init__(self, dtype: DType, device: DeviceRef) -> None:
+        super().__init__()
+        self.dtype = dtype
+        self.device = device
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        tensor_type = TensorType(
+            self.dtype,
+            shape=["batch", "seq", "channels"],
+            device=self.device,
+        )
+        scalar_type = TensorType(DType.float32, shape=[1], device=self.device)
+        order_type = TensorType(DType.int32, shape=[1], device=self.device)
+        return (
+            tensor_type,  # new_output
+            tensor_type,  # old_factor_0
+            tensor_type,  # old_factor_1
+            scalar_type,  # delta_step
+            order_type,  # max_order
+        )
+
+    def __call__(
+        self,
+        new_output: TensorValue,
+        old_factor_0: TensorValue,
+        old_factor_1: TensorValue,
+        delta_step: TensorValue,
+        max_order: TensorValue,
+    ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Compute Taylor factors via divided differences."""
+        delta = ops.cast(delta_step, new_output.dtype)
+        eps = ops.constant(1e-9, new_output.dtype, device=new_output.device)
+        safe_delta = delta + eps
+
+        new_factor_0 = new_output
+        new_factor_1 = (new_output - old_factor_0) / safe_delta
+        new_factor_2 = (new_factor_1 - old_factor_1) / safe_delta
+        use_order2 = max_order >= ops.constant(
+            2, DType.int32, device=max_order.device
+        )
+        use_order2_cast = ops.cast(
+            ops.broadcast_to(use_order2, new_factor_2.shape),
+            new_factor_2.dtype,
+        )
+        new_factor_2 = new_factor_2 * use_order2_cast
+
+        return new_factor_0, new_factor_1, new_factor_2
+
+
 class TaylorSeer:
     """Standalone TaylorSeer caching module.
 
@@ -78,87 +183,68 @@ class TaylorSeer:
             ).to(device)
         )
 
-        tensor_type = TensorType(
-            dtype, shape=["batch", "seq", "channels"], device=device
-        )
-        scalar_type = TensorType(DType.float32, shape=[1], device=device)
-        order_type = TensorType(DType.int32, shape=[1], device=device)
+        device_ref = DeviceRef.from_device(device)
+        self._session = InferenceSession([device])
 
-        from .diffusion_pipeline import max_compile
+        predict_module = _TaylorPredictModule(dtype, device_ref)
+        with Graph(
+            "taylor_predict", input_types=predict_module.input_types()
+        ) as predict_graph:
+            predict_output = predict_module(
+                *(value.tensor for value in predict_graph.inputs)
+            )
+            predict_graph.output(predict_output)
+        self._predict_model: Model = self._session.load(predict_graph)
 
-        self.compiled_predict = max_compile(
-            TaylorSeer.predict,
-            input_types=[
-                tensor_type,  # factor_0
-                tensor_type,  # factor_1
-                tensor_type,  # factor_2
-                scalar_type,  # step_offset
-                order_type,  # max_order
-            ],
-        )
-        self.compiled_update = max_compile(
-            TaylorSeer.update,
-            input_types=[
-                tensor_type,  # new_output
-                tensor_type,  # old_factor_0
-                tensor_type,  # old_factor_1
-                scalar_type,  # delta_step
-                order_type,  # max_order
-            ],
-        )
+        update_module = _TaylorUpdateModule(dtype, device_ref)
+        with Graph(
+            "taylor_update", input_types=update_module.input_types()
+        ) as update_graph:
+            update_outputs = update_module(
+                *(value.tensor for value in update_graph.inputs)
+            )
+            update_graph.output(*update_outputs)
+        self._update_model: Model = self._session.load(update_graph)
 
-    @staticmethod
-    def predict(
+    def compiled_predict(
+        self,
         factor_0: Tensor,
         factor_1: Tensor,
         factor_2: Tensor,
         step_offset: Tensor,
         max_order: Tensor,
     ) -> Tensor:
-        """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2."""
-        offset = F.cast(step_offset, factor_0.dtype)
-        result = factor_0 + factor_1 * offset
-        offset_sq_half = (
-            offset
-            * offset
-            * F.constant(0.5, factor_0.dtype, device=factor_0.device)
+        """Run the compiled Taylor predict graph on eager tensors."""
+        buffers = self._predict_model.execute(
+            factor_0.driver_tensor,
+            factor_1.driver_tensor,
+            factor_2.driver_tensor,
+            step_offset.driver_tensor,
+            max_order.driver_tensor,
         )
-        order2_term = factor_2 * offset_sq_half
-        use_order2 = max_order >= F.constant(
-            2, DType.int32, device=max_order.device
-        )
-        use_order2_cast = F.cast(
-            F.broadcast_to(use_order2, order2_term.shape), order2_term.dtype
-        )
-        result = result + order2_term * use_order2_cast
-        return result
+        return Tensor.from_dlpack(buffers[0])
 
-    @staticmethod
-    def update(
+    def compiled_update(
+        self,
         new_output: Tensor,
         old_factor_0: Tensor,
         old_factor_1: Tensor,
         delta_step: Tensor,
         max_order: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Compute Taylor factors via divided differences."""
-        delta = F.cast(delta_step, new_output.dtype)
-        eps = F.constant(1e-9, new_output.dtype, device=new_output.device)
-        safe_delta = delta + eps
-
-        new_factor_0 = new_output
-        new_factor_1 = (new_output - old_factor_0) / safe_delta
-        new_factor_2 = (new_factor_1 - old_factor_1) / safe_delta
-        use_order2 = max_order >= F.constant(
-            2, DType.int32, device=max_order.device
+        """Run the compiled Taylor update graph on eager tensors."""
+        buffers = self._update_model.execute(
+            new_output.driver_tensor,
+            old_factor_0.driver_tensor,
+            old_factor_1.driver_tensor,
+            delta_step.driver_tensor,
+            max_order.driver_tensor,
         )
-        use_order2_cast = F.cast(
-            F.broadcast_to(use_order2, new_factor_2.shape),
-            new_factor_2.dtype,
+        return (
+            Tensor.from_dlpack(buffers[0]),
+            Tensor.from_dlpack(buffers[1]),
+            Tensor.from_dlpack(buffers[2]),
         )
-        new_factor_2 = new_factor_2 * use_order2_cast
-
-        return new_factor_0, new_factor_1, new_factor_2
 
     @staticmethod
     def should_skip(step: int, warmup_steps: int, cache_interval: int) -> bool:

@@ -238,6 +238,7 @@ def next[
 struct _Enumerate[InnerIteratorType: Iterator](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
+    IterableOwned,
     Iterator,
 ):
     """An iterator that yields tuples of the index and the element of the
@@ -248,6 +249,7 @@ struct _Enumerate[InnerIteratorType: Iterator](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
     var _inner: Self.InnerIteratorType
     var _count: Int
 
@@ -271,6 +273,10 @@ struct _Enumerate[InnerIteratorType: Iterator](
         Self.InnerIteratorType, Copyable
     ):
         return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
 
     def __next__(mut self) raises StopIteration -> Self.Element:
         # This raises on error.
@@ -313,6 +319,23 @@ def enumerate[
     return _Enumerate(iter(iterable), start=start)
 
 
+@always_inline
+def enumerate(
+    var iterable: Some[IterableOwned], *, start: Int = 0
+) -> _Enumerate[type_of(iterable).IteratorOwnedType]:
+    """Returns an iterator that yields tuples of the index and the element of
+    the original iterator, consuming the iterable.
+
+    Args:
+        iterable: An iterable object to consume and enumerate.
+        start: The starting index for enumeration (default is 0).
+
+    Returns:
+        An enumerate iterator that yields tuples of `(index, element)`.
+    """
+    return _Enumerate(iter(iterable^), start=start)
+
+
 # ===-----------------------------------------------------------------------===#
 # zip
 # ===-----------------------------------------------------------------------===#
@@ -326,6 +349,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     Iterable where conforms_to(IteratorTypeA, Copyable) and conforms_to(
         IteratorTypeB, Copyable
     ),
+    IterableOwned,
     Iterator,
 ):
     comptime Element = Tuple[
@@ -334,6 +358,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
     var _inner_b: Self.IteratorTypeB
@@ -344,6 +369,10 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         Self.IteratorTypeA, Copyable
     ) and conforms_to(Self.IteratorTypeB, Copyable):
         return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
 
     def __init__(
         out self, *, copy: Self
@@ -402,6 +431,7 @@ struct _Zip3[
         and conforms_to(IteratorTypeB, Copyable)
         and conforms_to(IteratorTypeC, Copyable)
     ),
+    IterableOwned,
     Iterator,
 ):
     comptime Element = Tuple[
@@ -412,6 +442,7 @@ struct _Zip3[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
     var _inner_b: Self.IteratorTypeB
@@ -425,6 +456,10 @@ struct _Zip3[
         and conforms_to(Self.IteratorTypeC, Copyable)
     ):
         return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
 
     def __init__(
         out self, *, copy: Self
@@ -508,6 +543,7 @@ struct _Zip4[
         and conforms_to(IteratorTypeC, Copyable)
         and conforms_to(IteratorTypeD, Copyable)
     ),
+    IterableOwned,
     Iterator,
 ):
     comptime Element = Tuple[
@@ -519,6 +555,7 @@ struct _Zip4[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
     var _inner_b: Self.IteratorTypeB
@@ -534,6 +571,10 @@ struct _Zip4[
         and conforms_to(Self.IteratorTypeD, Copyable)
     ):
         return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
 
     def __init__(
         out self, *, copy: Self
@@ -739,6 +780,83 @@ def zip[
     )
 
 
+@always_inline
+def zip(
+    var iterable_a: Some[IterableOwned],
+    var iterable_b: Some[IterableOwned],
+) -> _Zip2[
+    type_of(iterable_a).IteratorOwnedType,
+    type_of(iterable_b).IteratorOwnedType,
+]:
+    """Returns an iterator that yields tuples of the elements of the original
+    iterables, consuming both iterables.
+
+    Args:
+        iterable_a: The first iterable to consume.
+        iterable_b: The second iterable to consume.
+
+    Returns:
+        A zip iterator that yields tuples of elements from both iterables.
+    """
+    return _Zip2(iter(iterable_a^), iter(iterable_b^))
+
+
+@always_inline
+def zip(
+    var iterable_a: Some[IterableOwned],
+    var iterable_b: Some[IterableOwned],
+    var iterable_c: Some[IterableOwned],
+) -> _Zip3[
+    type_of(iterable_a).IteratorOwnedType,
+    type_of(iterable_b).IteratorOwnedType,
+    type_of(iterable_c).IteratorOwnedType,
+]:
+    """Returns an iterator that yields tuples of the elements of the original
+    iterables, consuming all three iterables.
+
+    Args:
+        iterable_a: The first iterable to consume.
+        iterable_b: The second iterable to consume.
+        iterable_c: The third iterable to consume.
+
+    Returns:
+        A zip iterator that yields tuples of elements from all three iterables.
+    """
+    return _Zip3(iter(iterable_a^), iter(iterable_b^), iter(iterable_c^))
+
+
+@always_inline
+def zip(
+    var iterable_a: Some[IterableOwned],
+    var iterable_b: Some[IterableOwned],
+    var iterable_c: Some[IterableOwned],
+    var iterable_d: Some[IterableOwned],
+) -> _Zip4[
+    type_of(iterable_a).IteratorOwnedType,
+    type_of(iterable_b).IteratorOwnedType,
+    type_of(iterable_c).IteratorOwnedType,
+    type_of(iterable_d).IteratorOwnedType,
+]:
+    """Returns an iterator that yields tuples of the elements of the original
+    iterables, consuming all four iterables.
+
+    Args:
+        iterable_a: The first iterable to consume.
+        iterable_b: The second iterable to consume.
+        iterable_c: The third iterable to consume.
+        iterable_d: The fourth iterable to consume.
+
+    Returns:
+        A zip iterator that yields tuples of elements from all four iterables.
+    """
+    return _Zip4(
+        iter(iterable_a^),
+        iter(iterable_b^),
+        iter(iterable_c^),
+        iter(iterable_d^),
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 # map
 # ===-----------------------------------------------------------------------===#
@@ -749,16 +867,18 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: def(var InnerIteratorType.Element) -> OutputType,
+    function: def(var InnerIteratorType.Element) thin -> OutputType,
 ](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
+    IterableOwned,
     Iterator,
 ):
     comptime Element = Self.OutputType
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
 
@@ -776,6 +896,10 @@ struct _MapIterator[
     ):
         return self.copy()
 
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
     def __next__(mut self) raises StopIteration -> Self.Element:
         return Self.function(next(self._inner))
 
@@ -789,7 +913,9 @@ def map[
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: def(var IterableType.IteratorType[origin].Element) -> ResultType,
+    function: def(
+        var IterableType.IteratorType[origin].Element
+    ) thin -> ResultType,
 ](ref[origin] iterable: IterableType) -> _MapIterator[function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable.
@@ -830,6 +956,37 @@ def map[
     }
 
 
+@always_inline
+def map[
+    IterableType: IterableOwned,
+    ResultType: Copyable,
+    //,
+    function: def(
+        var IterableType.IteratorOwnedType.Element
+    ) thin -> ResultType,
+](var iterable: IterableType) -> _MapIterator[function]:
+    """Returns an iterator that applies `function` to each element of the input
+    iterable, consuming the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+        ResultType: The return type of the function.
+        function: The function to apply to each element.
+
+    Args:
+        iterable: The iterable to consume and map over.
+
+    Returns:
+        A map iterator that yields the results of applying `function` to each
+        element.
+    """
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return {
+        rebind_var[_MapIterator[function].InnerIteratorType](iter(iterable^))
+    }
+
+
 # ===-----------------------------------------------------------------------===#
 # peekable
 # ===-----------------------------------------------------------------------===#
@@ -843,12 +1000,14 @@ struct _PeekableIterator[InnerIterator: Iterator](
     Iterable where conforms_to(InnerIterator, Copyable) and conforms_to(
         InnerIterator.Element, Copyable
     ),
+    IterableOwned,
     Iterator,
 ):
     comptime Element = Self.InnerIterator.Element
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIterator
     var _next: Optional[Self.Element]
@@ -875,6 +1034,10 @@ struct _PeekableIterator[InnerIterator: Iterator](
         Self.InnerIterator, Copyable
     ) and conforms_to(Self.InnerIterator.Element, Copyable):
         return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
 
     def __next__(mut self) raises StopIteration -> Self.Element:
         if self._next:
@@ -913,6 +1076,21 @@ def peekable(
         A peekable iterator.
     """
     return {iter(iterable)}
+
+
+def peekable(
+    var iterable: Some[IterableOwned],
+) -> _PeekableIterator[type_of(iterable).IteratorOwnedType]:
+    """Returns a peekable iterator that can use the `peek` method to look ahead
+    at the next element without advancing the iterator, consuming the iterable.
+
+    Args:
+        iterable: The iterable to consume and create a peekable iterator from.
+
+    Returns:
+        A peekable iterator.
+    """
+    return {iter(iterable^)}
 
 
 # ===-----------------------------------------------------------------------===#

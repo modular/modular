@@ -18,7 +18,7 @@ def func1() raises -> None:
     func2()
 
 
-def main() raises:
+def main():
     try:
         func1()
     except e:

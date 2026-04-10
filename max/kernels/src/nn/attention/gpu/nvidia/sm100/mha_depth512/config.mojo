@@ -10,16 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Configuration for depth=512 pair-CTA SM100 (Blackwell) MHA kernels.
+"""Configuration for pair-CTA SM100 (Blackwell) MHA kernels (depth 256/512).
 
 This config drives a fundamentally different kernel design from FA4:
 two neighboring SMs cooperate via cta_group=2, cluster_shape=(2,1,1).
-Each CTA processes BM=64 Q rows; the pair-CTA MMA instruction operates
-on MMA_M=128 combined rows. P@V uses SS MMA (P in SMEM, not TMEM).
+P@V uses SS MMA (P in SMEM, not TMEM).
+
+Depth-dependent geometry (MMA_M, BM, BN, num_qk_stages):
+  depth=512: MMA_M=128, BM=64,  BN=256, num_qk_stages=4, split O into O_lo/O_hi
+  depth=256: MMA_M=256, BM=128, BN=128, num_qk_stages=2, single O
 
 K and V are extensively sub-staged to fit in SMEM:
-  - Q@K': K sub-tiled along depth into num_qk_stages=4 chunks (BK0=128)
-  - P@V:  V sub-tiled along BN (reduction dim) into num_pv_stages=4 chunks
+  - Q@K': K sub-tiled along depth into num_qk_stages chunks (BK0=128)
+  - P@V:  V sub-tiled along BN (reduction dim) into num_pv_stages=2 chunks
 """
 
 from std.math import align_down
@@ -43,15 +46,12 @@ struct Depth512SM100Config[
 
     # --- MMA geometry ---
     comptime MMA_K: Int = 16 if Self.qkv_dtype.is_half_float() else 32
-    comptime MMA_M: Int = 128  # Pair-CTA MMA instruction M dimension
-    comptime BM: Int = 64  # Per-CTA block tile M (each CTA's Q rows)
 
     # --- Pair-CTA constants ---
     comptime cta_group: Int = 2
     comptime num_threads: Int = 384  # 12 warps (3 warp groups of 128)
 
     # --- Sub-staging ---
-    comptime num_qk_stages: Int = 4  # K sub-tiled along depth
     comptime num_pv_stages: Int = 2  # V sub-tiled along BN (reduction)
 
     # --- Hardware limits ---
@@ -60,6 +60,13 @@ struct Depth512SM100Config[
     )
     comptime sm100_tmem_cols: Int = 512
     comptime mbar_size: Int = size_of[DType.int64]()
+
+    # --- Depth-dependent geometry (computed in __init__) ---
+    var MMA_M: Int  # 128 for depth>256, 256 for depth<=256
+    var BM: Int  # MMA_M // cta_group (64 or 128)
+    var num_qk_stages: Int  # qk_depth // 128 (4 or 2)
+    var split_o: Bool  # True: O split into O_lo/O_hi; False: single O
+    var v_cols_per_cta: Int  # V columns per CTA per PV sub-stage
 
     # --- Runtime fields ---
     var BN: Int
@@ -71,13 +78,14 @@ struct Depth512SM100Config[
     var num_q_heads: Int
     var num_kv_heads: Int
 
-    # TMEM offsets (logical column coordinates)
-    var TMEM_O: Int  # O region start (= O_lo start)
-    var TMEM_O_hi: Int  # O_hi start (= ov_depth // 4, physical cols)
+    # TMEM offsets (column addresses)
+    var TMEM_O: Int  # O region start
+    var TMEM_O_hi: Int  # O_hi start (only used when split_o)
     var TMEM_S_even: Int  # S double-buffer even
     var TMEM_S_odd: Int  # S double-buffer odd
     var tmem_used: Int
 
+    var fuse_gqa: Bool
     var num_kv_stages: Int  # Fused KV pipeline buffer slots
     var smem_used: Int
     var swizzle_mode: TensorMapSwizzle
@@ -100,60 +108,73 @@ struct Depth512SM100Config[
         self.ov_depth = ov_depth
         self.swizzle_mode = swizzle_mode
 
-        # BN from TMEM constraint: (ov_depth + 2*BN) / 2 <= 512
-        # => BN <= 512 - ov_depth/2
+        # Depth-dependent MMA geometry.
+        # depth>256: MMA_M=128, BM=64, split O into O_lo/O_hi (each MMA_N=ov_depth/2)
+        # depth<=256: MMA_M=256, BM=128, single O (MMA_N=ov_depth)
+        self.split_o = ov_depth > 256
+        self.MMA_M = 128 if self.split_o else 256
+        self.BM = self.MMA_M // Self.cta_group
+        self.num_qk_stages = qk_depth // 128
+        self.fuse_gqa = group > 1 and (self.MMA_M % group == 0)
+
+        # BN from TMEM constraint.
+        # Physical TMEM cols for an accumulator = MMA_M * MMA_N / 256.
+        # Constraint: O_cols + 2*S_cols <= 512
+        #   => MMA_M*(ov_depth + 2*BN)/256 <= 512
+        #   => BN <= (512*256/MMA_M - ov_depth) / 2
         self.BN = min(
             256,
-            align_down(Self.sm100_tmem_cols - ov_depth // 2, Self.MMA_K),
+            align_down(
+                (Self.sm100_tmem_cols * 256 // self.MMA_M - ov_depth) // 2,
+                Self.MMA_K,
+            ),
         )
         if page_size % self.BN != 0:
             self.BN = prev_power_of_two(self.BN)
 
         # BK sub-tile sizes
-        self.BK0 = qk_depth // Self.num_qk_stages
+        self.BK0 = qk_depth // self.num_qk_stages
         self.BK1 = self.BN // Self.num_pv_stages
 
-        # TMEM layout in PHYSICAL columns (cta_group=2 halves logical→physical).
-        # Each MMA with logical MMA_N produces MMA_N/2 physical TMEM columns.
+        # V columns per CTA per PV sub-stage.
+        # split_o: V_lo/V_hi each have MMA_N=ov_depth/2, per CTA = ov_depth/4
+        # !split_o: single V MMA_N=ov_depth, per CTA = ov_depth/2
+        self.v_cols_per_cta = ov_depth // 4 if self.split_o else ov_depth // 2
+
+        # TMEM layout (column addresses).
+        # Physical cols per accumulator = MMA_M * MMA_N / 256.
         #
-        # O_lo:   phys cols [0,            ov_depth/4)
-        # O_hi:   phys cols [ov_depth/4,   ov_depth/2)
-        # S_even: phys cols [ov_depth/2,   ov_depth/2 + BN/2)
-        # S_odd:  phys cols [ov_depth/2 + BN/2, ov_depth/2 + BN)
-        #
-        # For ov_depth=512, BN=256:
-        #   O: phys 0-255, S: phys 256-511 → exactly 512 physical cols.
+        # split_o (depth=512, MMA_M=128):
+        #   O_lo: [0, 128), O_hi: [128, 256), S_even: [256, 384), S_odd: [384, 512)
+        # !split_o (depth=256, MMA_M=256):
+        #   O: [0, 256), S_even: [256, 384), S_odd: [384, 512)
         self.TMEM_O = 0
-        self.TMEM_O_hi = ov_depth // 4
-        self.TMEM_S_even = ov_depth // 2
-        self.TMEM_S_odd = self.TMEM_S_even + self.BN // 2
-        self.tmem_used = self.TMEM_S_odd + self.BN // 2
+        self.TMEM_O_hi = ov_depth // 4  # only meaningful when split_o
+        self.TMEM_S_even = self.MMA_M * ov_depth // 256
+        s_cols = self.MMA_M * self.BN // 256
+        self.TMEM_S_odd = self.TMEM_S_even + s_cols
+        self.tmem_used = self.TMEM_S_odd + s_cols
 
         # SMEM budget
         var smem_use = size_of[UInt32]()  # tmem_addr
 
         # Q: BM rows × full depth
-        q_bytes = Self.BM * qk_depth * Self.qkv_dtype_size
+        q_bytes = self.BM * qk_depth * Self.qkv_dtype_size
 
         # P buffer: BM × BN (softmax writes P here for SS MMA P@V)
-        self.p_buf_bytes = Self.BM * self.BN * Self.qkv_dtype_size
+        self.p_buf_bytes = self.BM * self.BN * Self.qkv_dtype_size
 
         # Correction: BM float32 elements
-        correction_bytes = Self.BM * size_of[DType.float32]()
+        correction_bytes = self.BM * size_of[DType.float32]()
 
-        # Fixed barriers:
-        #   count-256: PO_lo (P ready + O_lo rescaled)
-        #   count-128: PO_hi, S_even consumer, S_odd consumer, C producer, C consumer
-        #   count-1:   S_even producer, S_odd producer, O_mma_lo, O_mma_hi
-        misc_mbars_fixed = 10
+        # Fixed barriers: 10 when split_o (PO_hi + O_mma_hi), 8 otherwise.
+        misc_mbars_fixed = 10 if self.split_o else 8
         smem_use += q_bytes + self.p_buf_bytes + correction_bytes
         smem_use += misc_mbars_fixed * Self.mbar_size
 
         # KV pipeline: fused K/V sub-tiles share buffer slots.
-        # K sub-tile: BN//2 × BK0 elements
-        # V sub-tile: (BN/num_pv_stages) × ov_depth elements//2
-        # These have equal element count when qk_depth == ov_depth
-        # and num_qk_stages == num_pv_stages.
+        # K sub-tile: (BN//2) × BK0 elements
+        # V sub-tile: BK1 × v_cols_per_cta elements
         kv_sub_tile_bytes = (self.BN // 2) * self.BK0 * Self.qkv_dtype_size
         kv_barrier_bytes = 2 * Self.mbar_size  # per buffer slot
         bytes_per_slot = kv_sub_tile_bytes + kv_barrier_bytes
@@ -165,6 +186,17 @@ struct Depth512SM100Config[
         self.smem_used = smem_use
 
     @always_inline
+    def BM_eff(self) -> Int:
+        """Number of distinct sequence positions per CTA tile.
+
+        When fuse_gqa, each CTA tile covers BM // group seq positions
+        × group heads = BM physical rows.
+        """
+        if self.fuse_gqa:
+            return self.BM // self.group
+        return self.BM
+
+    @always_inline
     def rope_depth(self) -> Int:
         return self.qk_depth - self.ov_depth
 
@@ -174,7 +206,7 @@ struct Depth512SM100Config[
 
     @always_inline
     def correction_smem_elements(self) -> Int:
-        return Self.BM
+        return self.BM
 
     @always_inline
     def num_active_warps_per_group(self) -> Int:
@@ -190,12 +222,18 @@ struct Depth512SM100Config[
             and self.num_kv_stages >= 2
             and self.tmem_used <= Self.sm100_tmem_cols
             and self.smem_used <= Self.sm100_smem_carveout
-            and self.num_kv_stages >= Self.num_qk_stages
+            and self.num_kv_stages >= self.num_qk_stages
         )
 
     def description(self) -> String:
         return String(
-            "qk_depth = ",
+            "MMA_M = ",
+            self.MMA_M,
+            "\nBM = ",
+            self.BM,
+            "\nsplit_o = ",
+            self.split_o,
+            "\nqk_depth = ",
             self.qk_depth,
             "\nov_depth = ",
             self.ov_depth,
@@ -205,8 +243,12 @@ struct Depth512SM100Config[
             self.BK0,
             "\nBK1 = ",
             self.BK1,
+            "\nnum_qk_stages = ",
+            self.num_qk_stages,
             "\nnum_kv_stages = ",
             self.num_kv_stages,
+            "\nv_cols_per_cta = ",
+            self.v_cols_per_cta,
             "\ntmem_used = ",
             self.tmem_used,
             " (physical: ",

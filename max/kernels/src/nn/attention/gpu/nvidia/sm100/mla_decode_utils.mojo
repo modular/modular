@@ -2906,8 +2906,8 @@ struct MLA_SM100_Decode_Common[
         ],
         smem: SharedMemPointer[Scalar[Self.kv_type]],
         mbar: MBarType,
-        col_start: UInt,
-        row_start: UInt,
+        col_start: Int,
+        row_start: Int,
     ):
         # TMA only uses .ptr from the destination — layout is irrelevant
         # (swizzle is in the TMA descriptor). Use flat row_major TileTensor.
@@ -2919,9 +2919,7 @@ struct MLA_SM100_Decode_Common[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](smem, kv_tt_layout)
-        tma.async_copy_3d(
-            smem_tensor, mbar[], (Int(col_start), Int(0), Int(row_start))
-        )
+        tma.async_copy_3d(smem_tensor, mbar[], (col_start, 0, row_start))
 
     @staticmethod
     @always_inline
@@ -2934,8 +2932,8 @@ struct MLA_SM100_Decode_Common[
         ],
         smem: SharedMemPointer[Scalar[Self.q_type]],
         mbar: MBarType,
-        col_start: UInt,
-        row_start: UInt,
+        col_start: Int,
+        row_start: Int,
     ):
         comptime q_elements = Self.config.BM * Self.config.BK0
         comptime q_tt_layout = tt_row_major[q_elements]()
@@ -2946,7 +2944,7 @@ struct MLA_SM100_Decode_Common[
             address_space=AddressSpace.SHARED,
         ](smem, q_tt_layout)
 
-        tma.async_copy(smem_tensor, mbar[], (Int(col_start), Int(row_start)))
+        tma.async_copy(smem_tensor, mbar[], (col_start, row_start))
 
     @staticmethod
     @always_inline

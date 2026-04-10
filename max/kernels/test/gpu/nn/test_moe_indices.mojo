@@ -204,7 +204,7 @@ def test_moe_create_indices[
     )
 
     var top_k_host = TileTensor(
-        top_k_buffer_host.unsafe_ptr(),
+        top_k_buffer_host,
         row_major(Idx(token_expert_order_length)),
     )
 

@@ -32,7 +32,6 @@ from nn.attention.mha_mask import (
     MHAMask,
     SlidingWindowCausalMask,
 )
-from nn.attention.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from std.testing import assert_almost_equal, assert_equal
 
 
@@ -119,45 +118,35 @@ def test[
 
     # Construct device buffers.
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
+        v_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
-    )
-
-    comptime config = MHAConfig[qkv_type](
-        UInt(num_heads),
-        UInt(depth),
-        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
-        num_pipeline_stages=UInt(4) if (
-            ctx.default_device_info == H100
-            or _is_sm10x_gpu(ctx.default_device_info)
-        ) else 2,
     )
 
     @parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[config=config](
+        flash_attention(
             output_device,
             q_device,
             k_device,
@@ -191,19 +180,12 @@ def test[
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
     var output_device_ref = TileTensor(
-        output_ref_device_ptr.unsafe_ptr(),
+        output_ref_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
 
-    comptime config_baseline = MHAConfig[qkv_type](
-        UInt(num_heads),
-        UInt(depth),
-        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
-        num_pipeline_stages=2,
-        algorithm=FlashAttentionAlgorithm(2),
-    )
     mha_gpu_naive(
         q_device,
         k_device,
@@ -265,7 +247,7 @@ def test[
 
     for repeat in range(16):
         # test reproducibility
-        flash_attention[config=config](
+        flash_attention(
             output_device_ref,
             q_device,
             k_device,

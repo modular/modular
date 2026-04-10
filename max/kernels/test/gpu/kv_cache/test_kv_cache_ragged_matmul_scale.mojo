@@ -351,11 +351,11 @@ def execute_matmul_k_cache_ragged_scale[
         ),
     )
     var hidden_state_ragged_tt = TileTensor(
-        hidden_state_ragged_device.unsafe_ptr(),
+        hidden_state_ragged_device,
         row_major(Coord(Idx(Int(ragged_total_length)), Idx[hidden_size]())),
     )
     var weight_ref_tt = TileTensor(
-        weight_device.unsafe_ptr(),
+        weight_device,
         row_major(Coord(Idx[Int(kv_hidden_size)](), Idx[hidden_size]())),
     )
     var ref_input_scale_tt = TileTensor(

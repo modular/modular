@@ -2508,9 +2508,7 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("mi355x", "gfx950")
         .replace("gfx90", "gfx90a")
         .replace("amdgpu:", "")
-        # Apple normalization, handle the Metal4 variant before the
-        # general "metal:" → "apple-m" replacement.
-        .replace("metal:5:4", "apple-m5-metal4")
+        # Apple normalization, general "metal:" → "apple-m" replacement.
         .replace("metal:", "apple-m")
     )
 

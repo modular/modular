@@ -136,6 +136,7 @@ from nn.bicubic import resize_bicubic
 from nn.concat import concat, fused_concat
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter as _pack_conv_filter
+from nn.conv.conv import pack_filter_from_fcrs as _pack_conv_filter_from_fcrs
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
 from nn.conv.conv_transpose import (
     conv_transpose_shape,
@@ -233,7 +234,7 @@ from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
-from nn.moe import moe_create_indices, router_group_limited
+from nn.moe import moe_create_indices, router_group_limited, single_group_router
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
     group_norm,
@@ -7661,33 +7662,6 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         )
 
 
-@compiler.register("mo.kv_cache.get_max_seq_len.paged")
-struct Struct_kv_cache_get_max_seq_len_paged:
-    @always_inline
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        max_seq_len: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
-        context: DeviceContextPtr,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            cache_lengths,
-            kv_lookup_table,
-            max_lengths,
-        )
-        # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,
-        # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
-        max_seq_len[0] = kv_collection.max_seq_length
-
-
 @compiler.register("mo.mla.graph.prefill.paged.fp8")
 struct Struct_mla_prefill_graph_paged:
     @always_inline
@@ -7801,6 +7775,14 @@ struct Struct_mla_compute_dispatch_args_scalar:
             max_cache_valid_length_tensor.unsafe_ptr()[0]
         )
         var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
+
+        if batch_size < 0:
+            raise Error("batch_size must be non-negative.")
+        if batch_size == 0:
+            output[0] = Int64(0)
+            output[1] = Int64(q_max_seq_len)
+            output[2] = Int64(1)
+            return
 
         comptime sm_count = ctx.default_device_info.sm_count
         comptime _half_sms = sm_count // 2
@@ -8443,6 +8425,54 @@ struct Struct_moe_router_group_limited:
             n_groups,
             topk_group,
             norm_weights,
+            target=target,
+            scores_input_fn=OptionalReg[
+                def[
+                    width: Int
+                ](IndexList[2]) capturing -> SIMD[scores_type, width]
+            ](scores_input_fn),
+        ](
+            expert_indices.to_tile_tensor[DType.int64](),
+            expert_weights.to_tile_tensor[DType.int64](),
+            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
+            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
+            routed_scaling_factor,
+            context,
+        )
+
+
+@compiler.register("mo.moe.single.group.router")
+struct Struct_moe_single_group_router:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        scores_type: DType,
+        bias_type: DType,
+        //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        norm_weights: Bool,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
+        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        routed_scaling_factor: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        def scores_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+            return expert_scores._lambda_load[width=width](coords)
+
+        single_group_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights=norm_weights,
             target=target,
             scores_input_fn=OptionalReg[
                 def[
@@ -9282,6 +9312,24 @@ def layout_transform_conv_filter_common[
     )
 
 
+def _layout_transform_conv_filter_from_fcrs[
+    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+](
+    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
+    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+):
+    comptime assert packed_rank == filter_rank + 1
+
+    # With the compiler-level FCRS→RSCF transpose in PatternFusion,
+    # this kernel should no longer be called. But keep it as a fallback
+    # using int64 convention (same as the RSCF path).
+    _pack_conv_filter_from_fcrs(
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
+        num_groups,
+    )
+
+
 @compiler.register("layout_transform_QRSCF_to_FQRSCf")
 struct LayoutTransformQRSCF2FQRSCf:
     @always_inline
@@ -9308,6 +9356,39 @@ struct LayoutTransformRSCF2FRSCf:
         filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
     ):
         layout_transform_conv_filter_common[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+# Note: These FCRS/FCQRS kernels are currently unused — the compiler
+# transposes FCRS to RSCF in PatternFusion before packing, so only the
+# RSCF kernels above are invoked. Kept as fallback; can be removed in cleanup.
+@compiler.register("layout_transform_FCRS_to_FRSCf")
+struct LayoutTransformFCRS2FRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+@compiler.register("layout_transform_FCQRS_to_FQRSCf")
+struct LayoutTransformFCQRS2FQRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
             packed_filter, filter
         )
 
@@ -11142,49 +11223,6 @@ struct QuantizeDynamicScaledFloat8:
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(0),
-        )
-
-
-@compiler.register("mo.batched.quantize.dynamic.scaled.fp8")
-struct BatchedQuantizeDynamicScaledFloat8:
-    @always_inline
-    @staticmethod
-    def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
-        group_size_or_per_token: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=output_type, rank=3, ...],
-        scales: OutputTensor[dtype=scales_type, rank=3, ...],
-        input: FusedInputTensor[dtype=input_type, rank=3, ...],
-        scale_ub: Float32,
-        ctx: DeviceContextPtr,
-    ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int
-        ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                Index(batch, row, col)
-            )
-
-        batched_quantize_dynamic_scaled_fp8[
-            input_fn=input_fn,
-            group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[2]),
-        ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
-            scale_ub,
-            ctx.get_device_context(),
-            num_rows=input.dim_size(1),
-            batch_size=input.dim_size(0),
         )
 
 

@@ -32,11 +32,11 @@ from .memory import (
     memmove,
     memset,
     memset_zero,
-    stack_allocation,
     destroy_n,
     uninit_copy_n,
     uninit_move_n,
 )
+from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,

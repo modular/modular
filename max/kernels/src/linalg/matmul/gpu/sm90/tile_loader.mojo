@@ -33,7 +33,7 @@ from std.gpu.memory import (
 )
 from ....structuring import SMemBarrier, SMemTile
 from layout.swizzle import make_swizzle
-from std.gpu import thread_idx_int as thread_idx
+from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.sync import async_copy_arrive
 from structured_kernels.pipeline import (

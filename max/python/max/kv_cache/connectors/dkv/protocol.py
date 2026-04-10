@@ -27,9 +27,10 @@ from enum import Enum
 from google.protobuf.message import DecodeError
 from typing_extensions import Self
 
-from .client_api_pb2 import (  # type: ignore[attr-defined]
+from .client_api_pb2 import (
     AcquireBlocksRequest,
     BlockMetadata,
+    BlockSequence,
     DecrementBlocksRequest,
     ExchangeMetadataRequest,
     ReadBlocksRequest,
@@ -154,26 +155,37 @@ def _fill_blocks(
 
 
 def build_acquire_request(
-    seq_hashes: Sequence[int],
-    parent_seq_hash: int = 0,
+    sequences: Sequence[tuple[int, Sequence[int]]],
 ) -> bytes:
     """Builds a serialized ``RpcRequest`` for acquiring blocks.
 
     Args:
-        seq_hashes: The ordered sequence hashes for the blocks to acquire.
-        parent_seq_hash: The optional parent sequence hash when extending
-            an existing sequence. Defaults to ``""``.
+        sequences: A list of ``(parent_seq_hash, seq_hashes)`` tuples.
+            Each tuple represents one sequence of blocks sharing the
+            same parent in the trie. Multiple sequences can be batched
+            into a single RPC.
 
     Returns:
         The serialized request bytes.
 
     Raises:
-        ValueError: If ``seq_hashes`` is empty.
+        ValueError: If ``sequences`` is empty or every sequence has
+            an empty ``seq_hashes`` list.
     """
-    if not seq_hashes:
-        raise ValueError("seq_hashes must not be empty")
-    inner = AcquireBlocksRequest(parent_seq_hash=parent_seq_hash)
-    inner.seq_hashes.extend(_to_uint64(h) for h in seq_hashes)
+    if not sequences:
+        raise ValueError("sequences must not be empty")
+    pb_seqs: list[BlockSequence] = []
+    for parent_hash, hashes in sequences:
+        if not hashes:
+            continue
+        seq = BlockSequence(parent_seq_hash=parent_hash)
+        seq.seq_hashes.extend(_to_uint64(h) for h in hashes)
+        pb_seqs.append(seq)
+    if not pb_seqs:
+        raise ValueError(
+            "sequences must contain at least one non-empty seq_hashes"
+        )
+    inner = AcquireBlocksRequest(sequences=pb_seqs)
     req = RpcRequest(acquire_blocks=inner)
     return req.SerializeToString()
 
@@ -335,13 +347,26 @@ def _require_response_kind(
         )
 
 
-def parse_acquire_response(data: bytes) -> list[BlockDescriptor]:
-    """Parses and validates an acquire-blocks response payload."""
+def parse_acquire_response(
+    data: bytes,
+) -> tuple[list[BlockDescriptor], list[bool]]:
+    """Parses and validates an acquire-blocks response payload.
+
+    Returns:
+        A tuple of (block descriptors, newly_acquired flags).
+        ``newly_acquired[i]`` is True when the block was freshly
+        allocated, False when the server already held that seq_hash.
+    """
     resp = _parse_response(data)
     _require_response_kind(
         resp, RpcResponseKind.ACQUIRE_BLOCKS, payload_len=len(data)
     )
-    return [BlockDescriptor.from_proto(pb) for pb in resp.acquire_blocks.blocks]
+    blocks = [
+        BlockDescriptor.from_proto(ab.metadata)
+        for ab in resp.acquire_blocks.blocks
+    ]
+    newly_acquired = [ab.newly_acquired for ab in resp.acquire_blocks.blocks]
+    return blocks, newly_acquired
 
 
 def parse_register_response(data: bytes) -> None:

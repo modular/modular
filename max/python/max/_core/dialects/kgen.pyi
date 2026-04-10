@@ -517,25 +517,36 @@ class ExportKindAttr(max._core.Attribute):
     @property
     def value(self) -> ExportKind: ...
 
-class FuncLiteralAttr(max._core.Attribute):
+class FnTypeIsCABIAttr(max._core.Attribute):
     """
-    The `#kgen.func.literal` attribute represent a instance of a function
-    literal: It is conceptually an empty struct and its type contains all the
-    static information about the function it refers to.
+    The `#kgen.fn_type_is_cabi` attribute returns true if the given type value
+    refers to a Mojo function pointer type annotated with the `abi("C")` effect,
+    and false otherwise (including for non-function types).
+
+    This is used to enforce that `DLHandle.get_function` is always called with
+    an explicit `abi("C")` function pointer type, ensuring dynamically-loaded
+    symbols are called with the correct C ABI.
 
     Example:
 
     ```mlir
-    #kgen.func.literal : !kgen.func.literal<@foo() -> ()>
+    #kgen.fn_type_is_cabi<#kgen.type<!kgen.generator<(f64) cabi -> f64>>> : i1
+    // evaluates to true
+
+    #kgen.fn_type_is_cabi<#kgen.type<!kgen.generator<(f64) -> f64>>> : i1
+    // evaluates to false
     ```
     """
 
-    @overload
-    def __init__(self, type: FuncLiteralType) -> None: ...
-    @overload
-    def __init__(self, type: FuncLiteralType) -> None: ...
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        type: max._core.dialects.builtin.IntegerType,
+    ) -> None: ...
     @property
-    def type(self) -> FuncLiteralType: ...
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IntegerType: ...
 
 class FuncSymbolAttr(max._core.Attribute):
     """
@@ -838,6 +849,34 @@ class LinkDependencyArrayAttr(max._core.Attribute):
         self,
     ) -> Sequence[max._core.dialects.builtin.FlatSymbolRefAttr]: ...
 
+class LinkageNameAttr(max._core.Attribute):
+    """
+    Holds a name expression (string literal or DataToStr) and a boolean `mangle`
+    flag. The flag is stored but not yet acted upon — both `mangle=true` and
+    `mangle=false` currently use the prefix verbatim as the symbol name
+    (with PTX sanitization applied on top for GPU targets).
+
+    Intended future semantics: when `mangle=true`, the final symbol name will be
+    derived from the prefix and a hash of the auto-mangled parameter values,
+    guaranteeing uniqueness across instantiations while remaining human-readable
+    (e.g. `my_kernel_a3f2c1b0`).
+    """
+
+    @overload
+    def __init__(
+        self, name: max._core.dialects.builtin.TypedAttr, mangle: bool
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.TypedAttr,
+        mangle: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def mangle(self) -> max._core.dialects.builtin.BoolAttr: ...
+
 class MLIROpAttr(max._core.Attribute):
     """
     The `#kgen.param.mlir_op` attribute represents an MLIR operation as a
@@ -1091,6 +1130,49 @@ class ParamIndexRefAttr(max._core.Attribute):
     def index(self) -> int: ...
     @property
     def type(self) -> max._core.Type | None: ...
+
+class ParamListAttr(max._core.Attribute):
+    """
+    The `#kgen.param_list` attribute contains a homogeneous list of elements of
+    !kgen.param_list type.
+
+    Example:
+
+    ```mlir
+    #kgen.param_list<1, 2> : !kgen.param_list<index>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        values: Sequence[max._core.dialects.builtin.TypedAttr],
+        type: ParamListType,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        values: Sequence[max._core.dialects.builtin.TypedAttr],
+        type: ParamListType,
+    ) -> None: ...
+    @property
+    def values(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+    @property
+    def type(self) -> ParamListType: ...
+
+class ParamListSizeAttr(max._core.Attribute):
+    @overload
+    def __init__(
+        self, param_list: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.dialects.builtin.IndexType,
+        param_list: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def param_list(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class ParamOperatorAttr(max._core.Attribute):
     @overload
@@ -1780,45 +1862,16 @@ class UpcastAttr(max._core.Attribute):
     @property
     def input_type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class VariadicAttr(max._core.Attribute):
-    """
-    The `#kgen.variadic` attribute contains a homogeneous list of elements of an
-    variadic type. It is used to represent constant variadic sequence values.
-
-    Example:
-
-    ```mlir
-    #kgen.variadic<1, 2> : !kgen.param_list<index>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: ParamListType,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: ParamListType,
-    ) -> None: ...
-    @property
-    def values(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
-    @property
-    def type(self) -> ParamListType: ...
-
 class VariadicConcatAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.concat` attribute is used to concatenate a variadic of
+    The `#kgen.param_list.concat` attribute is used to concatenate a variadic of
     variadic (type) value.
 
     Example:
     ```mlir
-    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !param_list<!AnyType>
+    #kgen.param_list.concat<[[Int, Int], [Float, Float]]> : !param_list<!AnyType>
     // ->
-    #kgen.variadic<[Int, Int, Float, Float]> : !param_list<!AnyType>
+    #kgen.param_list<[Int, Int, Float, Float]> : !param_list<!AnyType>
     ```
     """
 
@@ -1826,43 +1879,43 @@ class VariadicConcatAttr(max._core.Attribute):
     def __init__(
         self,
         type: ParamListType,
-        variadics: max._core.dialects.builtin.TypedAttr,
+        param_lists: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: ParamListType,
-        variadics: max._core.dialects.builtin.TypedAttr,
+        param_lists: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> ParamListType: ...
     @property
-    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def param_lists(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariadicGetAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        param_list: max._core.dialects.builtin.TypedAttr,
         index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: max._core.Type,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        param_list: max._core.dialects.builtin.TypedAttr,
         index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> max._core.Type | None: ...
     @property
-    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def param_list(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def index(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariadicReduceAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
+    The `#kgen.param_list.reduce` attribute is used to reduce a variadic of
     (type) value to a (type) value by repeatedly applying the provided reducer
     on each element of the variadic.
     """
@@ -1871,7 +1924,7 @@ class VariadicReduceAttr(max._core.Attribute):
         self,
         type: max._core.Type,
         base: max._core.dialects.builtin.TypedAttr,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        param_list: max._core.dialects.builtin.TypedAttr,
         generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
@@ -1879,36 +1932,22 @@ class VariadicReduceAttr(max._core.Attribute):
     @property
     def base(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def param_list(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class VariadicSizeAttr(max._core.Attribute):
-    @overload
-    def __init__(
-        self, variadic: max._core.dialects.builtin.TypedAttr
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        type: max._core.dialects.builtin.IndexType,
-        variadic: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
-
 class VariadicTabulateAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.tabulate` attribute produces a variadic of (type) values
+    The `#kgen.param_list.tabulate` attribute produces a variadic of (type) values
     by invoking the provided generator function N times with indices 0, 1, ...,
     N-1, where N is the integer count. The generator is a function from index to
     (element type); each result is collected into the result variadic.
 
     Example:
     ```mlir
-    #kgen.variadic.tabulate<:!kgen.param_list<f32> 3, fn(i: index) -> f32> : !kgen.param_list<f32>
+    #kgen.param_list.tabulate<:!kgen.param_list<f32> 3, fn(i: index) -> f32> : !kgen.param_list<f32>
     // ->
-    #kgen.variadic<0, 1, 2> : !kgen.param_list<f32>
+    #kgen.param_list<0, 1, 2> : !kgen.param_list<f32>
     ```
     """
 
@@ -1935,14 +1974,14 @@ class VariadicTabulateAttr(max._core.Attribute):
 
 class VariadicZipAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.zip` attribute is used to zip a variadic of
-    variadic (type) value.
+    The `#kgen.param_list.zip` attribute is used to zip a param_list of
+    param_list value.
 
     Example:
     ```mlir
-    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
+    #kgen.param_list.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
     // ->
-    #kgen.variadic<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
+    #kgen.param_list<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
     ```
 
     At the moment, when the provided variadics are of different lengths, we zip
@@ -1954,18 +1993,18 @@ class VariadicZipAttr(max._core.Attribute):
     def __init__(
         self,
         type: ParamListType,
-        input_type_value: max._core.dialects.builtin.TypedAttr,
+        param_lists: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: ParamListType,
-        input_type_value: max._core.dialects.builtin.TypedAttr,
+        param_lists: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> ParamListType: ...
     @property
-    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def param_lists(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariantAttr(max._core.Attribute):
     """
@@ -2098,6 +2137,8 @@ class FnEffects(enum.Enum):
     register_passable = 128
 
     extern = 256
+
+    cabi = 512
 
 class InlineLevel(enum.Enum):
     automatic = 0
@@ -2902,7 +2943,7 @@ class FuncOp(max._core.Operation):
         _llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr,
         cross_device_captures: max._core.dialects.m.StringArrayAttr,
         coroutine_type: max._core.dialects.builtin.TypeAttr,
-        linkage_name: max._core.dialects.builtin.TypedAttr,
+        linkage_name: LinkageNameAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2915,7 +2956,7 @@ class FuncOp(max._core.Operation):
         export_kind: ExportKind = ExportKind.not_exported,
         external: bool = False,
         convergent: bool = False,
-        linkage_name: max._core.dialects.builtin.TypedAttr = ...,
+        linkage_name: LinkageNameAttr = ...,
         decorators: Sequence[max._core.dialects.builtin.TypedAttr] = [],
         llvm_metadata: max._core.dialects.builtin.DictionaryAttr = ...,
         llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr = ...,
@@ -2981,11 +3022,9 @@ class FuncOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
     @property
-    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    def linkage_name(self) -> LinkageNameAttr | None: ...
     @linkage_name.setter
-    def linkage_name(
-        self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> None: ...
+    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
 
 class GeneratorOp(max._core.Operation):
     """
@@ -3023,7 +3062,7 @@ class GeneratorOp(max._core.Operation):
         export_kind: ExportKindAttr,
         external: max._core.dialects.builtin.UnitAttr,
         inlined_form: max._core.dialects.builtin.TypedAttr,
-        linkage_name: max._core.dialects.builtin.TypedAttr,
+        linkage_name: LinkageNameAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
@@ -3039,7 +3078,7 @@ class GeneratorOp(max._core.Operation):
         input_params: Sequence[ParamDeclAttr],
         inline_level: InlineLevel = InlineLevel.automatic,
         inlined_form: max._core.dialects.builtin.TypedAttr = ...,
-        linkage_name_attr: max._core.dialects.builtin.TypedAttr = ...,
+        linkage_name_attr: LinkageNameAttr = ...,
         llvm_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
         llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
     ) -> None: ...
@@ -3102,11 +3141,9 @@ class GeneratorOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.TypedAttr, /
     ) -> None: ...
     @property
-    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    def linkage_name(self) -> LinkageNameAttr | None: ...
     @linkage_name.setter
-    def linkage_name(
-        self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> None: ...
+    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
     @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
@@ -3449,7 +3486,7 @@ class ParamDeclareRegionOp(max._core.Operation):
         function_type: max._core.dialects.builtin.TypeAttr,
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
-        linkage_name: max._core.dialects.builtin.TypedAttr,
+        linkage_name: LinkageNameAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         isolated: max._core.dialects.builtin.UnitAttr,
@@ -3485,11 +3522,9 @@ class ParamDeclareRegionOp(max._core.Operation):
     @inline_level.setter
     def inline_level(self, arg: InlineLevelAttr, /) -> None: ...
     @property
-    def linkage_name(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    def linkage_name(self) -> LinkageNameAttr | None: ...
     @linkage_name.setter
-    def linkage_name(
-        self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> None: ...
+    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
     @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
@@ -4402,14 +4437,11 @@ class ClosureType(max._core.Type):
 
     def __init__(
         self,
-        parent_symbol: max._core.dialects.builtin.SymbolRefAttr,
-        name: max._core.dialects.builtin.StringAttr,
+        closure_attr: max._core.dialects.builtin.TypedAttr,
         closure_memory_kind: ClosureMemoryKind,
     ) -> None: ...
     @property
-    def parent_symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
-    @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
+    def closure_attr(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def closure_memory_kind(self) -> ClosureMemoryKind: ...
 
@@ -4804,7 +4836,7 @@ class StructType(max._core.Type):
     memory layout of the data it describes.
 
     The element types are stored as a `TypedAttr` which can be either:
-    - A concrete `VariadicAttr` with resolved types
+    - A concrete `ParamListAttr` with resolved types
     - A parametric expression (e.g., a variadic parameter reference) before elaboration
 
     Example:

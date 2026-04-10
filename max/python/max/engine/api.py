@@ -458,10 +458,12 @@ class InferenceSession:
             custom_extensions: The extensions to load for the model.
               Supports paths to `.mojopkg` custom ops.
 
-            weights_registry: A mapping from names of model weights' names to
-              their values. The values are currently expected to be dlpack
-              arrays. If an array is a read-only numpy array, the user must
+            weights_registry: Model weight names mapped to
+              their values. The values should be dlpack
+              arrays. If an array is a read-only numpy array, you must
               ensure that its lifetime extends beyond the lifetime of the model.
+              Although ``weights_registry`` is technically optional, you'll always
+              need to load weights in practice.
 
         Returns:
             The loaded model, compiled and ready to execute.

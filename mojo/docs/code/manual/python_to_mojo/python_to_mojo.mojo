@@ -191,7 +191,7 @@ def test_draw[T: Drawable](shape: T):
     shape.draw()  # Compiler guarantees shape has draw()
 
 
-def test_traitbound() raises:
+def test_traitbound():
     var c = Circle()
     test_draw(c)  # Works because Circle implements Drawable
 

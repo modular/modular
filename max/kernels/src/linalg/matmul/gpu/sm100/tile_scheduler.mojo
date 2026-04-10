@@ -219,11 +219,11 @@ struct TileScheduler[
         return WorkInfo(
             m=UInt32(
                 Int(new_m_global) * Self.cluster_shape[0]
-                + Int(block_id_in_cluster.x)
+                + block_id_in_cluster.x
             ),
             n=UInt32(
                 Int(new_n_global) * Self.cluster_shape[1]
-                + Int(block_id_in_cluster.y)
+                + block_id_in_cluster.y
             ),
             k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,

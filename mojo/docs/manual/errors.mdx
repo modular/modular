@@ -247,9 +247,9 @@ to its signature:
 
 ```mojo
 def validate_username(username: String) raises ValidationError -> String:
-    if len(username) == 0:
+    if username.byte_length() == 0:
         raise ValidationError(field="username", reason="cannot be empty")
-    if len(username) < 3:
+    if username.count_codepoints() < 3:
         raise ValidationError(
             field="username", reason="must be at least 3 characters"
         )
@@ -542,9 +542,12 @@ compile-time parameter for the error type:
 ```mojo
 def run_action[
     ErrorType: AnyType
-](action: fn() raises ErrorType -> Int) raises ErrorType -> Int:
+](action: def() thin raises ErrorType -> Int) raises ErrorType -> Int:
     return action()
 ```
+
+The function type uses `thin` because `action` is a noncapturing function
+value.
 
 The `ErrorType` parameter is inferred from the function you pass in. If the
 function raises `NetworkError`, then `run_action` raises `NetworkError`. If the
@@ -655,7 +658,7 @@ bare `raises` function. If you catch the typed error locally, you still get full
 field access:
 
 ```mojo
-def error_caller() raises:
+def error_caller():
     try:
         _ = validate_typed(-5)
     except e:
@@ -1097,7 +1100,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
-    def __exit__(mut self, e: Error) raises -> Bool:
+    def __exit__(mut self, e: Error) -> Bool:
         if String(e) == "just a warning":
             print("Suppressing error:", e)
             self.__exit__()

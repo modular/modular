@@ -48,16 +48,16 @@ struct _CoroutineContext(TrivialRegisterPassable):
     and contain the resume function and a payload pointer."""
 
     # Passed the coroutine being completed and its context's payload.
-    comptime _resume_fn_type = def(AnyCoroutine) -> None
+    comptime _resume_fn_type = def(AnyCoroutine) thin -> None
 
     var _resume_fn: Self._resume_fn_type
     var _parent_hdl: AnyCoroutine
 
 
 @always_inline
-def _coro_get_resume_fn(handle: AnyCoroutine) -> def(AnyCoroutine) -> None:
+def _coro_get_resume_fn(handle: AnyCoroutine) -> def(AnyCoroutine) thin -> None:
     """This function is a generic coroutine resume function."""
-    return __mlir_op.`co.resume`[_type=def(AnyCoroutine) -> None](handle)
+    return __mlir_op.`co.resume`[_type=def(AnyCoroutine) thin -> None](handle)
 
 
 @always_inline

@@ -264,7 +264,7 @@ def _reflection_write_to[
     T: Writable,
     W: Writer,
     //,
-    f: def[FieldType: Writable](field: FieldType, mut writer: W),
+    f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
     comptime names = struct_field_names[T]()
     comptime types = struct_field_types[T]()

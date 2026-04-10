@@ -120,7 +120,7 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
         ]()
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
-        # Destroy the remaiing elements that have not yet been
+        # Destroy the remaining elements that have not yet been
         # iterated over.
         destroy_n(
             self._list.unsafe_ptr().bitcast[TDestructible]() + self._index,
@@ -278,9 +278,9 @@ struct List[T: Copyable](
     my_list.extend([50, 60])     # [10, 15, 20, 30, 40, 50, 60]
 
     # Access elements
-    print(my_list[0])            # 10 (first element)
-    print(my_list[-1])           # 60 (last element)
-    my_list[1] = 25              # Modify element: [10, 25, 20, 30, 40, 50, 60]
+    print(my_list[0])                # 10 (first element)
+    print(my_list[len(my_list) - 1]) # 60 (last element)
+    my_list[1] = 25                  # Modify element: [10, 25, 20, 30, 40, 50, 60]
 
     # Remove elements
     print(my_list.pop())      # Removes and returns last element (60)
@@ -408,7 +408,7 @@ struct List[T: Copyable](
         self._annotate_new()
 
     def __init__(out self, *, length: Int, fill: Self.T):
-        """Constructs a list with the given capacity.
+        """Constructs a list with the given length.
 
         Args:
             length: The requested length of the list.
@@ -689,7 +689,7 @@ struct List[T: Copyable](
         return len(self) > 0
 
     def _write_self_to[
-        f: def(Self.T, mut Some[Writer])
+        f: def(Self.T, mut Some[Writer]) thin
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
