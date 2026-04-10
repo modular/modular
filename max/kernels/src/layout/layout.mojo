@@ -955,32 +955,29 @@ def coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
     for z in zip(flatten(layout.shape), flatten(layout.stride)):
         var shape = Int(z[0])
         var stride = Int(z[1])
+        var last_shape = len(result_shape) - 1
+        var last_stride = len(result_stride) - 1
 
         # skip their shape-1s
         if shape == 1:
             continue
         # replace our shape-1 with anything
-        elif result_shape[-1] == 1:
-            # result_shape[-1] = shape
-            result_shape.replace_entry(len(result_shape) - 1, int_value=shape)
-            # result_stride[-1] = stride
-            result_stride.replace_entry(
-                len(result_stride) - 1, int_value=stride
-            )
+        elif result_shape[last_shape] == 1:
+            result_shape.replace_entry(last_shape, int_value=shape)
+            result_stride.replace_entry(last_stride, int_value=stride)
 
         # merge modes if the shape*stride match and computable.
-        elif Int(result_shape[-1]) * Int(
-            result_stride[-1]
+        elif Int(result_shape[last_shape]) * Int(
+            result_stride[last_stride]
         ) == stride and UNKNOWN_VALUE not in (
             shape,
             stride,
-            Int(result_shape[-1]),
-            Int(result_stride[-1]),
+            Int(result_shape[last_shape]),
+            Int(result_stride[last_stride]),
         ):
-            # result_shape[-1] = to_int(result_shape[-1]) * shape
             result_shape.replace_entry(
-                len(result_shape) - 1,
-                int_value=Int(result_shape[-1]) * shape,
+                last_shape,
+                int_value=Int(result_shape[last_shape]) * shape,
             )
 
         # append a new mode
@@ -1042,10 +1039,9 @@ def composition(var layout_a: Layout, var layout_b: Layout) -> Layout:
         var result_stride = IntTuple()
         var rest_shape = layout_b.shape
         var rest_stride = layout_b.stride
+        var flat_stride_a = flatten(layout_a.stride)
 
-        for z in zip(
-            flatten(layout_a.shape)[:-1], flatten(layout_a.stride)[:-1]
-        ):
+        for z in zip(flatten(layout_a.shape)[:-1], flat_stride_a[:-1]):
             var s = Int(z[0])
             var d = Int(z[1])
 
@@ -1057,7 +1053,10 @@ def composition(var layout_a: Layout, var layout_b: Layout) -> Layout:
 
         result_shape.append(rest_shape)
         result_stride.append(
-            mul(rest_stride, Int(flatten(layout_a.stride)[-1]))
+            mul(
+                rest_stride,
+                Int(flat_stride_a[len(flat_stride_a) - 1]),
+            )
         )
 
         return coalesce(Layout(result_shape, result_stride))

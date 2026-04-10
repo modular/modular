@@ -107,7 +107,9 @@ def bench_math2[math_f2p: def(Int, Int, /) thin -> Int](mut b: Bencher) raises:
     @parameter
     def call_fn() raises:
         for i, input_val in enumerate(List(int_inputs[: len(int_inputs) // 2])):
-            var result = keep(math_f2p(input_val, int_inputs[-(i + 1)]))
+            var result = keep(
+                math_f2p(input_val, int_inputs[len(int_inputs) - (i + 1)])
+            )
             keep(result)
 
     b.iter[call_fn]()

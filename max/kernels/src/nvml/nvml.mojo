@@ -577,18 +577,19 @@ struct Device(Writable):
     def set_max_gpu_clocks(device: Device) raises:
         var max_mem_clock = device.mem_clocks()
         sort(max_mem_clock)
+        var max_mem = max_mem_clock[len(max_mem_clock) - 1]
 
-        var max_graphics_clock = device.graphics_clocks(max_mem_clock[-1])
+        var max_graphics_clock = device.graphics_clocks(max_mem)
         sort(max_graphics_clock)
 
         for clock_val in reversed(max_graphics_clock):
             try:
-                device.set_clock(max_mem_clock[-1], clock_val)
+                device.set_clock(max_mem, clock_val)
                 print(
                     "the device clocks for device=",
                     device,
                     " were set to mem=",
-                    max_mem_clock[-1],
+                    max_mem,
                     " and graphics=",
                     clock_val,
                     sep="",

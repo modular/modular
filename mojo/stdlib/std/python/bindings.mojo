@@ -347,7 +347,7 @@ struct PythonModuleBuilder:
             A reference to a type builder registered in the module builder.
         """
         self.type_builders.append(PythonTypeBuilder.bind[T](type_name))
-        return self.type_builders[-1]
+        return self.type_builders[len(self.type_builders) - 1]
 
     def def_py_c_function(
         mut self,

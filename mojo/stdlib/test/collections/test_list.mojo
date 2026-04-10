@@ -64,19 +64,19 @@ def test_list() raises:
     assert_equal(3, list[3])
     assert_equal(4, list[4])
 
-    assert_equal(0, list[-5])
-    assert_equal(3, list[-2])
-    assert_equal(4, list[-1])
+    assert_equal(0, list[len(list) - 5])
+    assert_equal(3, list[len(list) - 2])
+    assert_equal(4, list[len(list) - 1])
 
     list[2] = -2
     assert_equal(-2, list[2])
 
-    list[-5] = 5
-    assert_equal(5, list[-5])
-    list[-2] = 3
-    assert_equal(3, list[-2])
-    list[-1] = 7
-    assert_equal(7, list[-1])
+    list[len(list) - 5] = 5
+    assert_equal(5, list[len(list) - 5])
+    list[len(list) - 2] = 3
+    assert_equal(3, list[len(list) - 2])
+    list[len(list) - 1] = 7
+    assert_equal(7, list[len(list) - 1])
 
 
 struct WeirdList[T: AnyType]:
@@ -182,9 +182,9 @@ def test_list_pop() raises:
     assert_equal(1, list[1])
     assert_equal(2, list[2])
 
-    # Test pop with negative index
+    # Test pop with index 0 (first element)
     for i in range(0, 2):
-        assert_equal(i, list.pop(-len(list)))
+        assert_equal(i, list.pop(0))
 
     # test default index as well
     assert_equal(2, list.pop())

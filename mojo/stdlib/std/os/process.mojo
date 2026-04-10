@@ -385,7 +385,8 @@ struct Process:
         comptime assert (
             CompilationTarget.is_linux() or CompilationTarget.is_macos()
         ), "Unknown platform process execution not implemented"
-        var file_name = String(path.split(sep)[-1])
+        var parts = path.split(sep)
+        var file_name = String(parts[len(parts) - 1])
 
         var arg_count = len(argv)
         var argv_array_ptr_cstr_ptr = List[

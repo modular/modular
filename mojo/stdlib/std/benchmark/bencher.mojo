@@ -686,7 +686,7 @@ struct Bench(Writable):
             split = stem.split(".")
             if len(split) > 1:
                 stem = ".".join(split[:-1])
-                current_suffix = String(split[-1])
+                current_suffix = String(split[len(split) - 1])
 
             self.config.out_file = Path(
                 ".".join(Span[String]([stem + suffix, current_suffix^]))

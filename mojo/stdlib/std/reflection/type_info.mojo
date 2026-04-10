@@ -120,9 +120,13 @@ def _unqualified_type_name[type: AnyType]() -> StaticString:
     comptime name = get_type_name[type]()
     comptime parameter_list_start = name.find("[")
     if parameter_list_start == -1:
-        return name.split(".")[-1]
+        # HACK: Split is evaluated twice because `List[StringSlice]` cannot
+        # be materialized to runtime from a comptime context.
+        comptime n = len(name.split("."))
+        return name.split(".")[n - 1]
     else:
-        comptime base_name = name[byte=:parameter_list_start].split(".")[-1]
+        comptime split = name[byte=:parameter_list_start].split(".")
+        comptime base_name = split[len(split) - 1]
         comptime parameters = name[byte=parameter_list_start:]
         return get_static_string[base_name, parameters]()
 

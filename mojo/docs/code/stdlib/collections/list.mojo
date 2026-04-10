@@ -67,8 +67,8 @@ def pop():
     value = numbers.pop(2)
     print(value)  # 3
     print(numbers)  # ['1', '2', '4']
-    value = numbers.pop(-2)
-    print(value)  # 2, negative index
+    value = numbers.pop(len(numbers) - 2)
+    print(value)  # 2
 
 
 def resize():

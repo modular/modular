@@ -3543,9 +3543,11 @@ struct LayoutTensor[
             # In order to calculate the bound we only need to use the last
             # element in the IntTuple.
             comptime is_axis_val = Self.layout.shape[axis].is_value()
-            comptime bound = Self.layout.shape[axis].value() * Self.layout.stride[axis].value() \
+            comptime axis_shape = Self.layout.shape[axis]
+            comptime axis_stride = Self.layout.stride[axis]
+            comptime bound = axis_shape.value() * axis_stride.value() \
                 if is_axis_val \
-                else Self.layout.shape[axis][-1].value() * Self.layout.stride[axis][-1].value()
+                else axis_shape[len(axis_shape) - 1].value() * axis_stride[len(axis_stride) - 1].value()
             comptime assert axis != UNKNOWN_VALUE
             comptime dim_bound = Self.shape[axis]() \
                 if is_axis_val \

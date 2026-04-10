@@ -143,9 +143,9 @@ def test_getitem() raises:
     assert_equal(l1[1], 2)
     assert_equal(l1[2], 3)
 
-    assert_equal(l1[-1], 3)
-    assert_equal(l1[-2], 2)
-    assert_equal(l1[-3], 1)
+    assert_equal(l1[len(l1) - 1], 3)
+    assert_equal(l1[len(l1) - 2], 2)
+    assert_equal(l1[len(l1) - 3], 1)
 
 
 def test_setitem() raises:
@@ -155,7 +155,7 @@ def test_setitem() raises:
     assert_equal(l1[1], 2)
     assert_equal(l1[2], 3)
 
-    l1[-1] = 5
+    l1[len(l1) - 1] = 5
     assert_equal(l1[0], 4)
     assert_equal(l1[1], 2)
     assert_equal(l1[2], 5)
@@ -186,19 +186,19 @@ def test_list() raises:
     assert_equal(3, list[3])
     assert_equal(4, list[4])
 
-    assert_equal(0, list[-5])
-    assert_equal(3, list[-2])
-    assert_equal(4, list[-1])
+    assert_equal(0, list[len(list) - 5])
+    assert_equal(3, list[len(list) - 2])
+    assert_equal(4, list[len(list) - 1])
 
     list[2] = -2
     assert_equal(-2, list[2])
 
-    list[-5] = 5
-    assert_equal(5, list[-5])
-    list[-2] = 3
-    assert_equal(3, list[-2])
-    list[-1] = 7
-    assert_equal(7, list[-1])
+    list[len(list) - 5] = 5
+    assert_equal(5, list[len(list) - 5])
+    list[len(list) - 2] = 3
+    assert_equal(3, list[len(list) - 2])
+    list[len(list) - 1] = 7
+    assert_equal(7, list[len(list) - 1])
 
 
 def test_list_clear() raises:
@@ -234,9 +234,9 @@ def test_list_pop() raises:
     assert_equal(1, list[1])
     assert_equal(2, list[2])
 
-    # Test pop with negative index
+    # Test pop with index 0 (first element)
     for i in range(0, 2):
-        var popped: Int = list.pop(-len(list))
+        var popped: Int = list.pop(0)
         assert_equal(i, popped)
 
     # test default index as well
