@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, fields, replace
 from typing import Any, ClassVar
 
@@ -26,14 +27,25 @@ from max.experimental.tensor import Tensor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.denoising_cache import TaylorSeerCache
 from max.pipelines.lib.interfaces import TensorStruct
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.profiler import traced
 from typing_extensions import Self
 
-from .components import Denoiser, ImageEncoder, TextEncoder, VaeDecoder
+from .components import (
+    DenoiseCompute,
+    DenoisePredict,
+    Denoiser,
+    ImageEncoder,
+    TextEncoder,
+    VaeDecoder,
+)
+
+logger = logging.getLogger("max.pipelines")
 
 # ---------------------------------------------------------------------------
 # Input / Output structs
@@ -194,8 +206,9 @@ class Flux2Executor(
     image_encoder: ImageEncoder
     """Graph 2: VAE encode + BN-normalize + patchify + pack."""
 
-    denoiser: Denoiser
-    """Graph 3: Fused concat + transformer + scheduler step."""
+    denoiser: Denoiser | None
+    """Graph 3: Fused concat + transformer + scheduler step.
+    ``None`` when TaylorSeer is enabled (split into compute + predict)."""
 
     decoder: VaeDecoder
     """Graph 4: BN-denormalize + unpatchify + VAE decode -> uint8."""
@@ -217,6 +230,12 @@ class Flux2Executor(
         self._manifest = manifest
         self._session = session
         self._runtime_config = runtime_config
+
+        # Cache configuration (TaylorSeer / FBCache / TeaCache).
+        self._cache_config: DenoisingCacheConfig = (
+            runtime_config.denoising_cache
+        )
+        self._resolve_cache_defaults()
 
         # Derive VAE scale factor from manifest config, falling back to 8.
         vae_config = (
@@ -245,7 +264,36 @@ class Flux2Executor(
         self.text_encoder = TextEncoder(manifest, session)
         self.image_encoder = ImageEncoder(manifest, session)
         self.decoder = VaeDecoder(manifest, session)
-        self.denoiser = Denoiser(manifest, session)
+
+        # Conditionally build fused OR split denoise graphs.
+        self._denoise_compute: DenoiseCompute | None
+        self._denoise_predict: DenoisePredict | None
+        self._taylor_cache: TaylorSeerCache | None
+
+        if self._cache_config.taylorseer:
+            logger.info(
+                "TaylorSeer enabled: building split DenoiseCompute + "
+                "DenoisePredict graphs (warmup=%d, interval=%d, order=%d).",
+                self._cache_config.taylorseer_warmup_steps,
+                self._cache_config.taylorseer_cache_interval,
+                self._cache_config.taylorseer_max_order,
+            )
+            self.denoiser = None
+            self._denoise_compute = DenoiseCompute(manifest, session)
+            self._denoise_predict = DenoisePredict(
+                manifest, session, self._model_dtype, self._model_device
+            )
+            self._taylor_cache = TaylorSeerCache(
+                config=self._cache_config,
+                dtype=self._model_dtype,
+                device=self._model_device,
+                session=session,
+            )
+        else:
+            self.denoiser = Denoiser(manifest, session)
+            self._denoise_compute = None
+            self._denoise_predict = None
+            self._taylor_cache = None
 
     # -- PipelineExecutor interface -------------------------------------------
 
@@ -447,6 +495,7 @@ class Flux2Executor(
         """Run Graph 3: one fused denoise step.
 
         Executes concat + transformer forward + Euler scheduler step.
+        Only used when TaylorSeer is disabled (fused path).
 
         Args:
             latents: Current latent state, shape ``(B, seq, C)``.
@@ -466,6 +515,11 @@ class Flux2Executor(
         Returns:
             Updated latents, shape ``(B, seq, C)``.
         """
+        assert self.denoiser is not None, (
+            "_denoise_step called but fused Denoiser was not compiled. "
+            "This is a bug — TaylorSeer path should use "
+            "_denoise_compute + _denoise_predict instead."
+        )
         return self.denoiser(
             latents,
             image_latents,
@@ -520,8 +574,16 @@ class Flux2Executor(
     ) -> Buffer:
         """Orchestrate the N-step denoising loop.
 
-        Each step executes the fused denoise graph (Graph 3) which
-        performs concat + transformer + Euler scheduler step.
+        When TaylorSeer is disabled, each step executes the fused denoise
+        graph (Graph 3: concat + transformer + Euler step).
+
+        When TaylorSeer is enabled, the loop alternates between:
+        - **Compute steps** (warmup + every K-th step): run
+          ``DenoiseCompute`` (transformer-only), then update Taylor
+          factors.
+        - **Predict steps** (all other steps): predict ``noise_pred``
+          from cached Taylor factors, skipping the transformer entirely.
+        Both paths feed into ``DenoisePredict`` (Euler step).
 
         Args:
             latents: Preprocessed packed latents, shape ``(B, seq, C)``.
@@ -546,20 +608,57 @@ class Flux2Executor(
             Final denoised latents, shape ``(B, seq, C)``.
         """
         num_steps: int = np.from_dlpack(num_inference_steps).item()  # type: ignore[assignment]
-        for i in range(num_steps):
-            timestep_i = timesteps[i : i + 1]
-            dt_i = dts[i : i + 1]
-            latents = self._denoise_step(
-                latents,
-                image_latents,
-                prompt_embeds,
-                timestep_i,
-                dt_i,
-                guidance,
-                latent_image_ids,
-                image_latent_ids,
-                text_ids,
+
+        if self._taylor_cache is None:
+            # Fused path (no TaylorSeer).
+            for i in range(num_steps):
+                timestep_i = timesteps[i : i + 1]
+                dt_i = dts[i : i + 1]
+                latents = self._denoise_step(
+                    latents,
+                    image_latents,
+                    prompt_embeds,
+                    timestep_i,
+                    dt_i,
+                    guidance,
+                    latent_image_ids,
+                    image_latent_ids,
+                    text_ids,
+                )
+        else:
+            # TaylorSeer path: split compute + predict.
+            assert self._denoise_compute is not None
+            assert self._denoise_predict is not None
+
+            # Infer state dimensions from latents shape for factor
+            # allocation.  latents is (B, seq, C).
+            batch_size, seq_len, output_dim = latents.shape
+            state = self._taylor_cache.create_state(
+                batch_size, seq_len, output_dim
             )
+
+            for i in range(num_steps):
+                timestep_i = timesteps[i : i + 1]
+                dt_i = dts[i : i + 1]
+
+                if self._taylor_cache.should_skip(i):
+                    # Predict step: skip the transformer.
+                    noise_pred = self._taylor_cache.predict(state, i)
+                else:
+                    # Compute step: run full transformer.
+                    noise_pred = self._denoise_compute(
+                        latents,
+                        image_latents,
+                        prompt_embeds,
+                        timestep_i,
+                        guidance,
+                        latent_image_ids,
+                        image_latent_ids,
+                        text_ids,
+                    )
+                    self._taylor_cache.update(state, noise_pred, i)
+
+                latents = self._denoise_predict(latents, noise_pred, dt_i)
         return latents
 
     # -- Latent preprocessing -------------------------------------------------
@@ -648,3 +747,22 @@ class Flux2Executor(
             Buffer.from_dlpack(timesteps),
             Buffer.from_dlpack(dts),
         )
+
+    # -- Cache defaults -------------------------------------------------------
+
+    # Flux2 model-specific defaults (matching DiffusionPipeline subclass).
+    _DEFAULT_TAYLORSEER_CACHE_INTERVAL: int = 5
+    _DEFAULT_TAYLORSEER_WARMUP_STEPS: int = 9
+    _DEFAULT_TAYLORSEER_MAX_ORDER: int = 1
+
+    def _resolve_cache_defaults(self) -> None:
+        """Fill nullable DenoisingCacheConfig fields with Flux2 defaults."""
+        cc = self._cache_config
+        if cc.taylorseer_cache_interval is None:
+            cc.taylorseer_cache_interval = (
+                self._DEFAULT_TAYLORSEER_CACHE_INTERVAL
+            )
+        if cc.taylorseer_warmup_steps is None:
+            cc.taylorseer_warmup_steps = self._DEFAULT_TAYLORSEER_WARMUP_STEPS
+        if cc.taylorseer_max_order is None:
+            cc.taylorseer_max_order = self._DEFAULT_TAYLORSEER_MAX_ORDER

@@ -88,6 +88,10 @@ class PixelGenerationPipeline(
                 "MODULAR_FLUX2_USE_EXECUTOR is set: using Flux2Executor "
                 "instead of Flux2Pipeline."
             )
+            # Merge CLI-supplied cache_config into runtime so the executor
+            # receives TaylorSeer / FBCache / TeaCache settings.
+            if cache_config is not None:
+                pipeline_config.runtime.denoising_cache = cache_config
             self._use_executor = True
             self._executor = Flux2Executor(
                 manifest=pipeline_config.models,
