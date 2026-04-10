@@ -933,7 +933,7 @@ trait ImplicitlyDestructible:
 struct ParameterList[type: AnyType, //, *values: type](TrivialRegisterPassable):
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
+            `#kgen.param_list.size<:`,
             type_of(Self.values),
             ` `,
             +Self.values,
@@ -949,7 +949,7 @@ struct ParameterList[type: AnyType, //, *values: type](TrivialRegisterPassable):
         pass
 
     comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
-        `#kgen.variadic.get<:`,
+        `#kgen.param_list.get<:`,
         type_of(Self.values),
         ` `,
         +Self.values,
@@ -966,7 +966,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
 ):
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
+            `#kgen.param_list.size<:`,
             type_of(Self.values),
             ` `,
             +Self.values,
@@ -975,7 +975,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
     )
 
     comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
-        `#kgen.variadic.get<:`,
+        `#kgen.param_list.get<:`,
         type_of(Self.values),
         ` `,
         +Self.values,

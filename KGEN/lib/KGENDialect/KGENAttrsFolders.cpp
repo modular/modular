@@ -25,19 +25,20 @@ using namespace KGEN;
 
 FailureOr<TypedAttr> VariadicReduceAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
-  auto va = sugarDynCast<VariadicAttr>(getVariadic());
+  auto paramList = sugarDynCast<ParamListAttr>(getParamList());
   auto reducer = sugarDynCast<GeneratorAttr>(getGenerator());
 
-  if (!va || !reducer)
+  if (!paramList || !reducer)
     return failure();
 
   // We have a concrete value for both the generator/variadic, then fold
-  unsigned eltCnt = va.getValues().size();
+  unsigned eltCnt = paramList.getValues().size();
   TypedAttr reducedVal = sugarCast<TypedAttr>(getBase());
   for (unsigned i = 0; i < eltCnt; ++i) {
-    IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
-    GeneratorAttr spGen =
-        reducer.getSpecializedGenerator({reducedVal, va, vaIdx}, &context);
+    IntegerAttr vaIdx =
+        IntegerAttr::get(IndexType::get(paramList.getContext()), i);
+    GeneratorAttr spGen = reducer.getSpecializedGenerator(
+        {reducedVal, paramList, vaIdx}, &context);
     if (!spGen)
       return TypedAttr();
     // This should never happen, we should have verified VariadicMapAttr.
@@ -75,7 +76,7 @@ FailureOr<TypedAttr> VariadicTabulateAttr::evaluateWithContext(
       return failure();
     values.push_back(sugarCast<TypedAttr>(spGen.getInstantiatedValue()));
   }
-  return {VariadicAttr::get(values, resultType)};
+  return {ParamListAttr::get(values, resultType)};
 }
 
 //===----------------------------------------------------------------------===//
@@ -235,7 +236,7 @@ FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
     SmallVector<TypedAttr> resultAttrs;
     for (StructDefFieldAttr field : structType.getFields())
       resultAttrs.push_back(field.getTypeValue());
-    return cast<TypedAttr>(VariadicAttr::get(resultAttrs, getType()));
+    return cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
   }
 
   // If the decl is null, we are in an async context and the struct instance is
@@ -254,7 +255,7 @@ FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
         SmallVector<TypedAttr> resultAttrs;
         for (TypedAttr fieldType : fieldTypes)
           resultAttrs.push_back(evaluator.getReboundAttribute(fieldType));
-        result = cast<TypedAttr>(VariadicAttr::get(resultAttrs, getType()));
+        result = cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
       });
   return result;
 }
@@ -278,7 +279,7 @@ FailureOr<TypedAttr> StructFieldNamesAttr::evaluateWithContext(
     resultAttrs.push_back(
         StringAttr::get(name.getValue(), StringType::get(ctx)));
 
-  return cast<TypedAttr>(VariadicAttr::get(resultAttrs, getType()));
+  return cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
 }
 
 FailureOr<TypedAttr> StructFieldIndexByNameAttr::evaluateWithContext(

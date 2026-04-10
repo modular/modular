@@ -151,8 +151,8 @@ lit.fn @expect_field_type_by_name_lit<T: !kgen.type>(%arg: !kgen.param<#kgen.str
 
 #mypair_index_i32 = #kgen.type<!lit.struct<@MyPair<:type index, :type i32>>> : !kgen.type
 
-!StructFieldTypesExpected = !lit.struct<@VariadicWrapper<:type !kgen.type, :!kgen.param_list<!kgen.type> #kgen.variadic<index, i32>>>
-!StructFieldNamesExpected = !lit.struct<@VariadicWrapper<:type !kgen.string, :!kgen.param_list<!kgen.string> #kgen.variadic<"first", "second">>>
+!StructFieldTypesExpected = !lit.struct<@VariadicWrapper<:type !kgen.type, :!kgen.param_list<!kgen.type> #kgen.param_list<index, i32>>>
+!StructFieldNamesExpected = !lit.struct<@VariadicWrapper<:type !kgen.string, :!kgen.param_list<!kgen.string> #kgen.param_list<"first", "second">>>
 !StructFieldIndexByNameExpected = !pop.simd<1, si32>
 !StructFieldTypeByNameExpected = index
 

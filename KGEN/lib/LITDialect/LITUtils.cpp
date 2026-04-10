@@ -59,7 +59,7 @@ bool LIT::isFirstLevelTypeExpr(TypedAttr typeExpr) {
 
 bool LIT::isTypeExpr(TypedAttr attr) { return isMetaType(attr.getType()); }
 bool LIT::isVariadicOfTypeExpr(TypedAttr attr) {
-  auto va = sugarDynCast<VariadicAttr>(attr);
+  auto va = sugarDynCast<ParamListAttr>(attr);
   return va && llvm::all_of(va.getValues(), LIT::isTypeExpr);
 }
 

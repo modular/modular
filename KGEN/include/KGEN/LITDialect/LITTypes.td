@@ -679,7 +679,7 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
     /// If the pack type is concrete, returns the attribute representing the
     /// variadic sequence that the pack type is based upon. Otherwise, returns
     /// a null attribute.
-    VariadicAttr getVariadicIfResolved() const;
+    ParamListAttr getVariadicIfResolved() const;
 
     /// This returns the element type of the variadic list parameter, typically
     /// something like !kgen.type or a trait type.

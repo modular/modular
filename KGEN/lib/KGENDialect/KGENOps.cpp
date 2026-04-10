@@ -1335,7 +1335,7 @@ static void printPackCreateType(OpAsmPrinter &p, Operation *op, Type resultType,
 }
 
 LogicalResult PackCreateOp::verify() {
-  VariadicAttr elementTypesAttr = getType().getVariadicIfResolved();
+  ParamListAttr elementTypesAttr = getType().getVariadicIfResolved();
   if (!elementTypesAttr)
     return emitOpError() << "cannot create pack with parametric element types";
   ArrayRef<TypedAttr> elementTypes = elementTypesAttr.getValues();

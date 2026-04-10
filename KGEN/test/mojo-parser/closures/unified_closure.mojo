@@ -826,8 +826,8 @@ def rebindResult():
 
 # // -----
 
-# COM: Verify VariadicAttr matching: closure returning Tuple with parameterized
-# COM: elements requires recursive matching through #kgen.variadic param values.
+# COM: Verify ParamListAttr matching: closure returning Tuple with parameterized
+# COM: elements requires recursive matching through #kgen.param_list param values.
 
 
 struct ToyIndex[size: Int](RegisterPassable):

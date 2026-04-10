@@ -182,7 +182,7 @@ struct ParamSubst[
 # CHECK-LABEL: lit.fn @"testParamSubst
 def testParamSubst():
   # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:param_list<index> [1, 2]>>,
-  var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.param_list<index>`]
+  var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.param_list<1, 2> : !kgen.param_list<index>`]
 
 
 # Test parameter substitution.

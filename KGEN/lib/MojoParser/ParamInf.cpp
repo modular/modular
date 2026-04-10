@@ -67,7 +67,7 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature,
   // preceding defaults won't be used anyway.
   auto packInfo = variadicPackType.getVariadicPackInfo();
   // See if resolved.
-  auto packed = sugarDynCast<VariadicAttr>(packInfo.typeList);
+  auto packed = sugarDynCast<ParamListAttr>(packInfo.typeList);
 
   // The caller should know the concrete type list unless we bound the pack
   // directly as a parameter.  This is an unpack like situation.
@@ -1026,7 +1026,7 @@ LogicalResult ParamInf::inferFromParamList() {
 
       if (!isDeferred) {
         expectedVA = cast<ParamListType>(evaluator.getReboundType(expectedVA));
-        auto paramVA = VariadicAttr::get(elements, expectedVA);
+        auto paramVA = ParamListAttr::get(elements, expectedVA);
         if (failed(applyBinding(idx, paramVA)))
           return failure();
       }
@@ -1384,8 +1384,8 @@ LogicalResult ParamInf::inferForCall(
       // case, then we need to perform an implicit conversion to the element
       // type that was explicitly specified.  Be careful though, it is possible
       // the specified type list is completely wrong in length or content.
-      VariadicAttr eltsTypesIfResolved =
-          dyn_cast<VariadicAttr>(packType.getVariadic());
+      ParamListAttr eltsTypesIfResolved =
+          dyn_cast<ParamListAttr>(packType.getVariadic());
 
       SmallVector<TypedAttr> types;
       SmallVector<TypedAttr> argOrigins;
@@ -1484,7 +1484,7 @@ LogicalResult ParamInf::inferForCall(
       // If there are no arguments for the pack, use the location of the call.
       if (!packArgExpr)
         packArgExpr = getGivenBindings().getExpr();
-      auto actualVA = VariadicAttr::get(types, variadicType);
+      auto actualVA = ParamListAttr::get(types, variadicType);
       if (succeeded(matcher.matchParams(actualVA, packType.getVariadic())))
         continue;
 
@@ -1824,7 +1824,7 @@ LogicalResult ParamInf::inferFromDefaults() {
 
     if (isInferableVA) {
       auto type = evaluator.getReboundType(declaredParamTypes[idx]);
-      auto empty = VariadicAttr::get({}, sugarCast<ParamListType>(type));
+      auto empty = ParamListAttr::get({}, sugarCast<ParamListType>(type));
       if (failed(setInferredValue(idx, empty)))
         return failure();
     }

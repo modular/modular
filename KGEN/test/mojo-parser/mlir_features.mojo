@@ -93,7 +93,7 @@ def testAttrConcatWithoutType[
 ]():
     # CHECK: lit.alias.decl *"x{{.*}}": param_list<index> = <[1, length]>
     comptime x = __mlir_attr[
-        `#kgen.variadic<`, +one, `,`, length, `> : !kgen.param_list<index>`
+        `#kgen.param_list<`, +one, `,`, length, `> : !kgen.param_list<index>`
     ]
 
 

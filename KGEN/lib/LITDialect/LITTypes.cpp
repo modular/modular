@@ -1198,8 +1198,8 @@ RefPackType RefPackType::get(TypedAttr variadic, TypedAttr origin,
   return get(variadic.getContext(), variadic, origin, addressSpace);
 }
 
-VariadicAttr RefPackType::getVariadicIfResolved() const {
-  return ::dyn_cast<VariadicAttr>(getVariadic());
+ParamListAttr RefPackType::getVariadicIfResolved() const {
+  return ::dyn_cast<ParamListAttr>(getVariadic());
 }
 
 /// Return the effective type (always a reference) of each element given

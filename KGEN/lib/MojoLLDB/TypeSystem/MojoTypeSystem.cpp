@@ -642,7 +642,7 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
     return llvm::range_size(structDecl.getFieldDecls());
 
   if (auto packType = dyn_cast<PackType>(astType)) {
-    if (auto attr = dyn_cast<VariadicAttr>(packType.getVariadic()))
+    if (auto attr = dyn_cast<ParamListAttr>(packType.getVariadic()))
       return llvm::range_size(attr.getValues());
     return 0;
   }

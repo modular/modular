@@ -2024,7 +2024,7 @@ kgen.generator @nested_parametric_type_tests() {
   // CHECK-NEXT: kgen.param.constant: param_list<type> = <[i32, #[[TYPEVALUE_NESTED_LIST_I32]]]>
   kgen.param.constant: param_list<type> = <#kgen.struct_field_types<#nested_list_i32>>
   // CHECK-NEXT: kgen.param.constant: param_list<type> = <[i32, #[[TYPEVALUE_NESTED_LIST_I32]]]>
-  kgen.param.constant: param_list<type> = <#kgen.struct_field_types<#kgen.variadic.get<:!kgen.param_list<type> #kgen.struct_field_types<#nested_list_i32>, 1>>>
+  kgen.param.constant: param_list<type> = <#kgen.struct_field_types<#kgen.param_list.get<:!kgen.param_list<type> #kgen.struct_field_types<#nested_list_i32>, 1>>>
 
   // The "data" field should correctly reflect the bound type parameter T=i32
   // CHECK-NEXT: kgen.param.constant: type = <i32>

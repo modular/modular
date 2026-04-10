@@ -32,7 +32,7 @@ class FuncLiteralTypeGeneratorType;
 class StructDefFieldAttr;
 class SymbolConstantAttr;
 class ParamListType;
-class VariadicAttr;
+class ParamListAttr;
 
 /// Create an uninitialized TypedAttr instance of the type.
 TypedAttr createUninitializedValueOf(Type type);

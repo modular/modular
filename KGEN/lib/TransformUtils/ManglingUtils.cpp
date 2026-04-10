@@ -70,8 +70,8 @@ static void printParameterMangling(TypedAttr value, raw_ostream &os) {
   // if (sugarIsa<AnyOriginAttr>(value))
   //  return;
 
-  // Handle VariadicAttr of types as well, which are common for variadic packs.
-  if (auto variadic = dyn_cast<VariadicAttr>(value)) {
+  // Handle ParamListAttr of types as well, which are common for variadic packs.
+  if (auto variadic = dyn_cast<ParamListAttr>(value)) {
     os << '[';
     llvm::interleaveComma(variadic.getValues(), os, [&](TypedAttr paramValue) {
       printParameterMangling(paramValue, os);

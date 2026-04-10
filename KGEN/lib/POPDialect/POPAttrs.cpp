@@ -2209,12 +2209,12 @@ Type VariadicToArrayAttr::getElementType() const {
 }
 
 POP::ArrayType VariadicToArrayAttr::getType() const {
-  auto size = VariadicSizeAttr::get(getVariadic());
+  auto size = ParamListSizeAttr::get(getVariadic());
   return ArrayType::get(size, getElementType());
 }
 
 TypedAttr VariadicToArrayAttr::get(TypedAttr variadic) {
-  auto vaAttr = sugarDynCast<VariadicAttr>(variadic);
+  auto vaAttr = sugarDynCast<ParamListAttr>(variadic);
   if (vaAttr) {
     ArrayRef<TypedAttr> values = vaAttr.getValues();
     auto arrayType =

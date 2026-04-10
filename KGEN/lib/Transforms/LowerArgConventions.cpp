@@ -271,7 +271,7 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
     return;
 
   if (packType) {
-    auto variadic = cast_or_null<VariadicAttr>(packType.getVariadic());
+    auto variadic = cast_or_null<ParamListAttr>(packType.getVariadic());
     assert(variadic && "expected variadic pack type");
     SmallVector<Type> types;
     for (auto member : variadic.getValues()) {
@@ -831,7 +831,7 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
 static void flattenPackOperand(OpBuilder &builder, Location loc, Value pack,
                                PackType packTy,
                                SmallVectorImpl<Value> &results) {
-  VariadicAttr variadic = packTy.getVariadicIfResolved();
+  ParamListAttr variadic = packTy.getVariadicIfResolved();
   assert(variadic && "unresolved variadic pack on pop.external_call");
 
   for (auto [i, typeExpr] : llvm::enumerate(variadic.getValues())) {

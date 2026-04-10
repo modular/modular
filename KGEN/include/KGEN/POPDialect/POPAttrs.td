@@ -1093,7 +1093,7 @@ def POP_VariadicToArrayAttr : POP_ExprAttr<"VariadicToArray", "variadic_to_array
     Example:
 
     ```mlir
-    #pop.variadic_to_array<:!kgen.param_list<index> #kgen.variadic<1, 2, 3>>
+    #pop.variadic_to_array<:!kgen.param_list<index> #kgen.param_list<1, 2, 3>>
       : !pop.array<3, index>
     ```
   }];

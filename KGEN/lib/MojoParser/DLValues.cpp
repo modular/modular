@@ -263,7 +263,7 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   assert(srcRValueType.getParamBindings().size() == 1 &&
          "Tuple has one pack parameter");
   TypedAttr packAttr = srcRValueType.getParamBindings()[0];
-  auto packVariadic = dyn_cast<VariadicAttr>(packAttr);
+  auto packVariadic = dyn_cast<ParamListAttr>(packAttr);
   if (!packVariadic) {
     emitError() << "cannot unpack value of parametric tuple type "
                 << srcRValueType << " into a fixed arity";

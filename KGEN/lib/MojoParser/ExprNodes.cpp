@@ -2281,7 +2281,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
           ArrayRef<TypedAttr> paramValues = drt.getParamValues();
           assert(paramValues.size() == 1 &&
                  "_types tuple ParamValues must be size 1");
-          auto variadic = sugarCast<VariadicAttr>(paramValues[0]);
+          auto variadic = sugarCast<ParamListAttr>(paramValues[0]);
           for (TypedAttr type : variadic.getValues()) {
             if (pushTypeToState(type, "value in _type tuple is not a type")
                     .failed())
@@ -4556,7 +4556,7 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
 // have been specialized.
 //
 // Note: struct_field_count is implemented purely in stdlib using
-// #kgen.variadic.size<#kgen.struct_field_types<T>> without a magic function.
+// #kgen.param_list.size<#kgen.struct_field_types<T>> without a magic function.
 //
 // See stdlib/std/reflection/reflection.mojo for detailed documentation.
 
@@ -4882,7 +4882,7 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
   assert(expectedType.getParamBindings().size() == 1 &&
          "Tuple has one variadic parameter");
   // This must be a fully resolved tuple type.
-  auto vaAttr = sugarCast<VariadicAttr>(expectedType.getParamBindings()[0]);
+  auto vaAttr = sugarCast<ParamListAttr>(expectedType.getParamBindings()[0]);
   if (vaAttr.getValues().size() == exprs.size()) {
     for (auto [i, typeElt] : llvm::enumerate(vaAttr.getValues())) {
       PValue eltPVal = getTupleItem(ASTType(typeElt), i);
@@ -5001,7 +5001,7 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       assert(expectedType.getParamBindings().size() == 1 &&
              "Tuple has one variadic parameter");
       if (auto variadicAttr =
-              sugarDynCast<VariadicAttr>(expectedType.getParamBindings()[0])) {
+              sugarDynCast<ParamListAttr>(expectedType.getParamBindings()[0])) {
         if (variadicAttr.getValues().size() == exprs.size()) {
           for (auto typeElt : variadicAttr.getValues())
             eltTypes.push_back(ASTType(typeElt));

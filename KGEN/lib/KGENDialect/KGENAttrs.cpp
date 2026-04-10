@@ -133,18 +133,18 @@ EmitAsAttr EmitAsAttr::get(MLIRContext *ctx, EmitAs val) {
 EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 
 //===----------------------------------------------------------------------===//
-// VariadicAttr
+// ParamListAttr
 //===----------------------------------------------------------------------===//
 
 /// The variadic attribute is a constant if all element values are constants.
-bool VariadicAttr::isConstant() const {
+bool ParamListAttr::isConstant() const {
   return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant) &&
          !isParameterizedType(getType());
 }
 
-LogicalResult VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                   ArrayRef<TypedAttr> values,
-                                   ParamListType type) {
+LogicalResult
+ParamListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                      ArrayRef<TypedAttr> values, ParamListType type) {
   Type elementType = type.getElementType();
   for (auto [idx, value] : llvm::enumerate(values))
     if (value.getType() != elementType)
@@ -166,18 +166,18 @@ OptionalParseResult ParamListType::parseValue(AsmParser &p,
   if (failed(p.parseOptionalLSquare()))
     return std::nullopt;
   if (succeeded(p.parseOptionalRSquare())) {
-    value = VariadicAttr::get({}, *this);
+    value = ParamListAttr::get({}, *this);
     return mlir::success();
   }
   SmallVector<TypedAttr> values;
   if (failed(parseVariadicValue(p, values, *this)))
     return failure();
-  value = VariadicAttr::get(values, *this);
+  value = ParamListAttr::get(values, *this);
   return p.parseRSquare();
 }
 
 LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value) const {
-  auto variadic = ::dyn_cast<VariadicAttr>(value);
+  auto variadic = ::dyn_cast<ParamListAttr>(value);
   if (!variadic)
     return failure();
   p << '[';
@@ -194,7 +194,7 @@ LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value) const {
 // If not folded, they are not a constant.
 bool VariadicReduceAttr::isConstant() const { return false; }
 bool VariadicZipAttr::isConstant() const { return false; }
-bool VariadicSizeAttr::isConstant() const { return false; }
+bool ParamListSizeAttr::isConstant() const { return false; }
 bool VariadicGetAttr::isConstant() const { return false; }
 bool VariadicTabulateAttr::isConstant() const { return false; }
 bool VariadicConcatAttr::isConstant() const { return false; }
@@ -254,15 +254,15 @@ VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 TypedAttr VariadicZipAttr::get(ParamListType type, TypedAttr variadics) {
-  auto va = sugarDynCast<VariadicAttr>(variadics);
+  auto va = sugarDynCast<ParamListAttr>(variadics);
   if (!va || va.getValues().empty())
     return Base::get(type.getContext(), type, variadics);
 
   size_t zipLen = std::numeric_limits<size_t>::max();
   bool fullyResolved = true;
-  SmallVector<VariadicAttr> elts =
+  SmallVector<ParamListAttr> elts =
       llvm::map_to_vector(va.getValues(), [&](TypedAttr elt) {
-        auto vaElt = sugarDynCast<VariadicAttr>(elt);
+        auto vaElt = sugarDynCast<ParamListAttr>(elt);
         zipLen = vaElt ? std::min(zipLen, vaElt.getValues().size()) : 0;
         fullyResolved = fullyResolved && vaElt;
         return vaElt;
@@ -277,17 +277,17 @@ TypedAttr VariadicZipAttr::get(ParamListType type, TypedAttr variadics) {
 
   // return <[[]]>
   if (zipLen == 0)
-    return VariadicAttr::get({VariadicAttr::get({}, eltVATps)}, type);
+    return ParamListAttr::get({ParamListAttr::get({}, eltVATps)}, type);
 
   // Do zipping.
   SmallVector<TypedAttr> zippedElts(zipLen, nullptr);
   for (unsigned i = 0; i < zipLen; ++i) {
     SmallVector<TypedAttr> toZip = llvm::map_to_vector(
-        elts, [i](VariadicAttr elt) { return elt.getValues()[i]; });
-    zippedElts[i] = VariadicAttr::get(toZip, eltVATps);
+        elts, [i](ParamListAttr elt) { return elt.getValues()[i]; });
+    zippedElts[i] = ParamListAttr::get(toZip, eltVATps);
   }
 
-  return VariadicAttr::get(zippedElts, type);
+  return ParamListAttr::get(zippedElts, type);
 }
 
 TypedAttr VariadicZipAttr::getChecked(
@@ -332,7 +332,7 @@ TypedAttr VariadicTabulateAttr::get(ParamListType type, TypedAttr count,
   // We can always fold an empty tabulate.
   auto cntAttr = sugarDynCast<IntegerAttr>(count);
   if (cntAttr && cntAttr.getInt() == 0)
-    return VariadicAttr::get({}, type);
+    return ParamListAttr::get({}, type);
 
   // Defer to evaluateWithContext when we don't have an evaluation context
   // (e.g. we can't specialize the generator here).
@@ -348,16 +348,16 @@ TypedAttr VariadicTabulateAttr::getChecked(
 }
 
 LogicalResult
-VariadicSizeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         TypedAttr variadic) {
+ParamListSizeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                          TypedAttr variadic) {
   if (!isa<ParamListType>(variadic.getType()))
     return emitError() << "expected a 'variadic' type for the count, got: "
                        << variadic.getType();
   return success();
 }
 
-TypedAttr VariadicSizeAttr::get(TypedAttr variadic) {
-  auto vaAttr = sugarDynCast<VariadicAttr>(variadic);
+TypedAttr ParamListSizeAttr::get(TypedAttr variadic) {
+  auto vaAttr = sugarDynCast<ParamListAttr>(variadic);
   if (vaAttr)
     return IntegerAttr::get(IndexType::get(variadic.getContext()),
                             vaAttr.getValues().size());
@@ -365,7 +365,7 @@ TypedAttr VariadicSizeAttr::get(TypedAttr variadic) {
   return Base::get(variadic.getContext(), variadic);
 }
 
-TypedAttr VariadicSizeAttr::getChecked(
+TypedAttr ParamListSizeAttr::getChecked(
     function_ref<::mlir::InFlightDiagnostic()> emitError, TypedAttr variadic) {
   if (failed(verify(emitError, variadic)))
     return {};
@@ -391,7 +391,7 @@ VariadicGetAttr::verify(function_ref<InFlightDiagnostic()> emitError, Type type,
 }
 
 TypedAttr VariadicGetAttr::get(TypedAttr variadic, TypedAttr index) {
-  if (auto vaAttr = sugarDynCast<VariadicAttr>(variadic)) {
+  if (auto vaAttr = sugarDynCast<ParamListAttr>(variadic)) {
     auto idxAttr = sugarDynCast<IntegerAttr>(index);
     // If the index is known-constant and in-range, we can simplify it.
     if (idxAttr && size_t(idxAttr.getInt()) < vaAttr.getValues().size())
@@ -447,15 +447,15 @@ VariadicConcatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 TypedAttr VariadicConcatAttr::get(ParamListType type, TypedAttr variadics) {
-  auto va = sugarDynCast<VariadicAttr>(variadics);
+  auto va = sugarDynCast<ParamListAttr>(variadics);
   if (!va)
     return Base::get(type.getContext(), type, variadics);
 
   size_t concatLen = 0;
   bool fullyResolved = true;
-  SmallVector<VariadicAttr> elts =
+  SmallVector<ParamListAttr> elts =
       llvm::map_to_vector(va.getValues(), [&](TypedAttr elt) {
-        auto vaElt = sugarDynCast<VariadicAttr>(elt);
+        auto vaElt = sugarDynCast<ParamListAttr>(elt);
         concatLen += (vaElt ? vaElt.getValues().size() : 0);
         fullyResolved = fullyResolved && vaElt;
         return vaElt;
@@ -470,7 +470,7 @@ TypedAttr VariadicConcatAttr::get(ParamListType type, TypedAttr variadics) {
   for (auto elt : elts)
     concatElts.append(elt.getValues().begin(), elt.getValues().end());
 
-  return VariadicAttr::get(concatElts, type);
+  return ParamListAttr::get(concatElts, type);
 }
 
 TypedAttr VariadicConcatAttr::getChecked(
@@ -629,7 +629,7 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
   }
 
   // This is a constant variadic of type value, fold each elements.
-  if (auto variadicAttr = sugarDynCast<VariadicAttr>(inputTypeValue)) {
+  if (auto variadicAttr = sugarDynCast<ParamListAttr>(inputTypeValue)) {
     auto dstVATp = cast<ParamListType>(type);
     Type elemTp = dstVATp.getElementType();
 
@@ -637,7 +637,7 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
     for (auto typeValue : variadicAttr.getValues())
       converted.push_back(getCastAttr<CastAttr>(elemTp, typeValue));
 
-    return VariadicAttr::get(converted, dstVATp);
+    return ParamListAttr::get(converted, dstVATp);
   }
 
   // FIXME(MOCO-3601): unified upcast/downcast.
@@ -3527,7 +3527,7 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
                                         TypedAttr addrSpaceOperand,
                                         Type resultType) {
   // Fold a concrete variadic list of types.
-  auto variadic = sugarDynCast<VariadicAttr>(variadicOperand);
+  auto variadic = sugarDynCast<ParamListAttr>(variadicOperand);
   if (!variadic)
     return {};
 
@@ -3542,13 +3542,13 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
     results.push_back(TypeParamAttr::get(typeValue, mlirType, resultEltType));
   }
 
-  return VariadicAttr::get(results, cast<ParamListType>(resultType));
+  return ParamListAttr::get(results, cast<ParamListType>(resultType));
 }
 
 static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
                                               Type resultType) {
   // Fold a concrete variadic list of types.
-  auto variadic = sugarDynCast<VariadicAttr>(variadicOperand);
+  auto variadic = sugarDynCast<ParamListAttr>(variadicOperand);
   if (!variadic)
     return {};
 
@@ -3566,7 +3566,7 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
         cast<PointerType>(eltCst.getMlirType()).getElementType(),
         resultEltType));
   }
-  return VariadicAttr::get(results, cast<ParamListType>(resultType));
+  return ParamListAttr::get(results, cast<ParamListType>(resultType));
 }
 
 static TypedAttr simplifyStrConcat(TypedAttr lhs, TypedAttr rhs) {
@@ -3620,7 +3620,7 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
   // https://www.notion.so/modularai/1571044d37bb80198d96f6772ebb1515
   for (Type type : argTypes)
     results.push_back(TypeParamAttr::get(type, traitType));
-  return VariadicAttr::get(results, variadicType);
+  return ParamListAttr::get(results, variadicType);
 }
 
 /// Construct a parameter operator attribute, folding it if possible.
