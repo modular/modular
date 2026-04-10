@@ -412,7 +412,9 @@ def choose_config[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+](M: Int, N: Int, K: Int, B: Int) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+]:
     comptime assert a_type == b_type, "a_type and b_type must be the same"
 
     comptime num_SMs = B200.sm_count
@@ -448,7 +450,7 @@ def choose_config[
                 MMA_N_GRANULARITY,
             ),
         ):
-            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
+            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm) * B
             num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
                 num_waves == min_num_waves
@@ -481,7 +483,7 @@ def choose_config[
                     max_mma_n, min_mma_n - 1, -MMA_N_GRANULARITY
                 ):
                     var mma_m = bm * cta_group
-                    var num_clusters = ceildiv(M, mma_m) * ceildiv(N, mma_n)
+                    var num_clusters = ceildiv(M, mma_m) * ceildiv(N, mma_n) * B
                     var num_waves = ceildiv(num_clusters, num_SMs // cta_group)
                     if num_waves > min_num_waves:
                         break
@@ -555,7 +557,7 @@ def choose_config[
     )
 
 
-def build_configs[
+def build_sm100_matmul_configs[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -568,14 +570,45 @@ def build_configs[
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):  # [8, 256)
-        config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K)
+        config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K, 1)
         if config not in set:
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):  # [256, 8192]
-        config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K)
+        config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K, 1)
         if config not in set:
             set.add(config)
+
+    return set^
+
+
+def build_sm100_batched_matmul_configs[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    N: Int,
+    K: Int,
+    transpose_b: Bool = True,
+]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
+    comptime config_t = MatmulConfig[a_type, b_type, c_type, transpose_b]
+
+    var set = Set[config_t]()
+
+    for b in [1, 2, 4, 8, 16, 32, 64, 128]:
+        for m in range(8, 256, 8):  # [8, 256)
+            config = choose_config[a_type, b_type, c_type, transpose_b](
+                m, N, K, b
+            )
+            if config not in set:
+                set.add(config)
+
+    for b in [1, 2, 4, 8, 16, 32, 64, 128]:
+        for m in range(256, 8192 + 1, 64):  # [256, 8192]
+            config = choose_config[a_type, b_type, c_type, transpose_b](
+                m, N, K, b
+            )
+            if config not in set:
+                set.add(config)
 
     return set^
 

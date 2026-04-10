@@ -20,5 +20,5 @@ from ..sm100_structured.structured_kernels.config import (
     MatmulConfig,
     BlockScaledMatmulConfig,
     choose_config,
-    build_configs,
+    build_sm100_matmul_configs,
 )
