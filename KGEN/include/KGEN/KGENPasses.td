@@ -120,6 +120,13 @@ def CheckLifetimes : Pass<"check-lifetimes"> {
     use of a value, diagnoses use-before-definition problems, and implements a
     borrow checker.
   }];
+  let options = [
+    Option<"extendTrivialDebugLifetimes", "extend-trivial-debug-lifetimes",
+           "bool", "false",
+           "At -O0, suppress debuginfo.kill markers for variables whose "
+           "type has no destructor, keeping them visible in the debugger "
+           "through the end of their lexical scope.">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//

@@ -32,7 +32,8 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
 
   // These passes doesn't touch parameters, no need to re-verify them after it.
   // Insert calls to destructors, reject use before free, and borrow check.
-  pm.addPass(createCheckLifetimes());
+  pm.addPass(createCheckLifetimes(
+      {/*extendTrivialDebugLifetimes=*/options.optimizationLevel == 0}));
 }
 
 void KGEN::buildMOGGPreElabPipeline(mlir::PassManager &pm,
