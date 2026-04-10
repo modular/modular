@@ -10,6 +10,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/xxhash.h"
+#include <limits>
 
 using namespace M;
 using namespace KGEN;
@@ -133,4 +134,34 @@ StringAttr KGEN::sanitizeSymbolToUnderscores(StringAttr name,
   VerboseCompilerTimeTraceScope traceScope("sanitizeSymbolToUnderscores",
                                            [name] { return name.str(); });
   return sanitizeSymbolImpl(name, charToKeep, /*appendEncoding=*/false);
+}
+
+/// Append a uniqueness suffix to @p userName to prevent symbol collisions
+/// between structurally different instantiations sharing the same @__name
+/// prefix. The suffix is "_" + 8 lowercase hex chars of
+/// xxh3_64(symName + funcTypeStr).
+///
+/// \param userName     The sanitized @__name prefix string.
+/// \param symName      The auto-mangled wrapper symbol name, used as a hash
+///                     input to disambiguate instantiations that share a
+///                     prefix.
+/// \param funcTypeStr  The printed MLIR function type, used as a hash input to
+///                     disambiguate closures capturing different types.
+StringAttr KGEN::appendAutoMangledSuffix(StringAttr userName, StringRef symName,
+                                         StringRef funcTypeStr) {
+  // Hash the auto-mangled sym_name concatenated with the printed function type.
+  // symName encodes generator parameter values; funcTypeStr encodes captured
+  // variable types, disambiguating instantiations whose parameters are
+  // identical but whose captured types differ (e.g. uint32 vs uint64 shape
+  // variants of the same closure).
+  SmallString<512> toHash;
+  toHash += symName;
+  toHash += funcTypeStr;
+  uint32_t hash = static_cast<uint32_t>(llvm::xxh3_64bits(toHash));
+  std::string suffix = llvm::utohexstr(hash, /*LowerCase=*/true, /*Width=*/8);
+
+  SmallString<128> result(userName.getValue());
+  result += "_";
+  result += suffix;
+  return StringAttr::get(userName.getContext(), result);
 }

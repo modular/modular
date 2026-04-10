@@ -123,13 +123,6 @@ private:
 
   ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) override;
 
-  /// Compute the expected mangled name of a generator from a parameter.
-  /// Returns both the mangled name and the generator referenced by the
-  /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-  getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                         TypedAttr symCst, bool sanitize = false) override;
-
   GeneratorOp getGenerator(SymbolRefAttr symbol) override;
 
   ErrorOr<CrossDeviceFunction>

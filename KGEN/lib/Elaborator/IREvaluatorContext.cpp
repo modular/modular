@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "IREvaluatorContext.h"
+#include "ElaboratorHelper.h"
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -80,17 +81,16 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
   TargetInfoAttr target =
       cast<TargetParamAttr>(getLinkageNameAttr.getTarget()).getTarget();
 
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      evaluateMangledName(getLinkageNameAttr.getFunc(),
-                          /*sanitize=*/target.isGPU(), *errorLoc,
-                          "get_linkage_name");
+  ErrorTreeOr<StringAttr> nameOrError = evaluateMangledName(
+      getLinkageNameAttr.getFunc(),
+      /*sanitize=*/target.isGPU(), *errorLoc, "get_linkage_name");
 
-  if (pairOrError.isError()) {
-    emitError(pairOrError.takeError());
+  if (nameOrError.isError()) {
+    emitError(nameOrError.takeError());
     return failure();
   }
 
-  auto [mangledName, _] = pairOrError.takeValue();
+  StringAttr mangledName = nameOrError.takeValue();
 
   if (!mangledName)
     return TypedAttr(); // Not ready yet — signal retry.
@@ -305,18 +305,19 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
       cast<StringAttr>(attr.getEmissionOptions()).getValue();
   bool propagateError = cast<BoolAttr>(attr.getPropagateError()).getValue();
   SymbolConstantAttr symbol = extractSymbolConstantAttr(attr.getFunc());
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      evaluateMangledName(symbol, /*sanitize=*/false, *errorLoc,
-                          "compile_assembly");
-  if (pairOrError.isError()) {
-    getParentNode()->setToError(pairOrError.takeError());
+  ErrorTreeOr<StringAttr> nameOrError = evaluateMangledName(
+      symbol, /*sanitize=*/false, *errorLoc, "compile_assembly");
+  if (nameOrError.isError()) {
+    getParentNode()->setToError(nameOrError.takeError());
     return failure();
   }
 
-  auto [name, func] = pairOrError.takeValue();
+  StringAttr name = nameOrError.takeValue();
 
   if (!name)
     return TypedAttr(); // Not ready yet — signal retry.
+
+  GeneratorOp func = getGenerator(symbol.getSymbol());
 
   // Construct the expected result type.
   MLIRContext *ctx = attr.getContext();
@@ -373,51 +374,92 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
                        populateFnRef})};
 }
 
-/// Evaluate the mangled name of a function, including evaluating any explicit
-/// linkage name. This may return an empty StringAttr, signalling that the
-/// function is not yet ready.
-ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
+/// Compute the final name for a @__name-decorated generator in the given
+/// context. Two cases:
+///   sanitize=false  → resolved verbatim (host-side lookup)
+///   sanitize=true   → applyGPULinkageName (single-sourced with
+///   renameFunctions)
+static StringAttr applyLinkageName(StringAttr resolved, LinkageNameAttr lna,
+                                   SymbolConstantAttr symbol,
+                                   GeneratorOp generator, bool sanitize) {
+  if (!sanitize)
+    return resolved;
+  // symName is the auto-mangled wrapper symbol used as a hash input
+  // (mangle=true). Always use mangleParameterValues so the host and GPU paths
+  // hash the same seed. renameFunctions (GPU side) calls applyGPULinkageName
+  // with func.getSymName() — the concrete function's MLIR sym — which equals
+  // mangleParameterValues for both constant and parametric @__name. Using the
+  // @__name literal here instead would produce a different hash whenever
+  // sym_name != literal, causing a runtime kernel-launch failure.
+  std::string symName =
+      mangleParameterValues(generator, symbol.getParamValues());
+  return applyGPULinkageName(resolved, lna, symName,
+                             symbol.getType().getBody().getValues());
+}
+
+/// Evaluate the mangled name of a function. Returns an empty StringAttr to
+/// signal "not ready yet" (caller should retry).
+ErrorTreeOr<StringAttr>
 IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
                                         Location errorLoc,
                                         StringRef errorContext) {
-  // Ask the elaborator for the expected mangled name
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      getExpectedMangledName(errorLoc, errorContext, symCst, sanitize);
+  auto symbol = extractSymbolConstantAttr(symCst);
+  if (!symbol)
+    return ErrorTree(errorLoc,
+                     "'" + errorContext +
+                         "' function argument did not resolve to a concrete "
+                         "function");
 
-  if (pairOrError.isError())
-    return pairOrError.takeError();
+  if (!symbol.getType().isFullyBound()) {
+    std::string errMsg;
+    llvm::raw_string_ostream os(errMsg);
+    os << "'" << errorContext << "' function is not fully bound: "
+       << symbol.getSymbol().getLeafReference().getValue() << " missing "
+       << symbol.getType().getInputParamTypes().size()
+       << " parameter binding(s)";
+    return ErrorTree(errorLoc, errMsg);
+  }
 
-  auto [name, generator] = pairOrError.takeValue();
+  GeneratorOp generator = getGenerator(symbol.getSymbol());
+  if (!generator) {
+    std::string errMsg;
+    llvm::raw_string_ostream os(errMsg);
+    os << "'" << errorContext
+       << "' expected a valid generator reference, but got "
+       << symbol.getSymbol().getLeafReference().getValue() << "\n";
+    return ErrorTree(errorLoc, errMsg);
+  }
 
-  // If the generator has an explicit linkage name, evaluate and return the
-  // resolved name. This requires a concrete function which may not be ready
-  // for us yet.
   if (generator.getLinkageNameAttr()) {
-    if (auto symbol = extractSymbolConstantAttr(symCst)) {
-      FailureOr<TypedAttr> result = concretizeLinkageName(generator, symbol);
-      if (succeeded(result)) {
-        if (!*result) {
-          // Concrete function not ready yet — signal retry.
-          return std::make_pair(StringAttr(), GeneratorOp());
-        }
-        if (auto resolved = dyn_cast<StringAttr>(*result)) {
-          if (!sanitize)
-            name = resolved;
-          else
-            name = sanitizeSymbolToAlnum(resolved);
-          return std::make_pair(name, generator);
-        }
-        // Else, we couldn't resolve the linkage name - fall through to an
-        // error.
-      }
+    // @__name is present: evaluate the (possibly parametric) name expression.
+    // concretizeLinkageName may return "not ready yet" if the concrete FuncOp
+    // hasn't been elaborated — signal retry with an empty StringAttr.
+    FailureOr<TypedAttr> result = concretizeLinkageName(generator, symbol);
+    if (failed(result))
       return ErrorTree(
           {errorLoc,
            "'" + errorContext + "' failed to resolve linkage name for '" +
                symbol.getSymbol().getLeafReference().getValue() + "'"});
-    }
+    if (!*result)
+      return StringAttr(); // retry
+    auto resolved = dyn_cast<StringAttr>(*result);
+    if (!resolved)
+      return ErrorTree(
+          {errorLoc, "'" + errorContext +
+                         "' linkage name did not resolve to a string for '" +
+                         symbol.getSymbol().getLeafReference().getValue() +
+                         "'"});
+    auto lna = cast<LinkageNameAttr>(generator.getLinkageNameAttr());
+    return applyLinkageName(resolved, lna, symbol, generator, sanitize);
   }
 
-  return std::make_pair(name, generator);
+  // No @__name: use the auto-mangled sym_name, optionally sanitized.
+  StringAttr name = StringAttr::get(
+      generator.getContext(),
+      mangleParameterValues(generator, symbol.getParamValues()));
+  if (sanitize)
+    name = sanitizeSymbolToAlnum(name);
+  return name;
 }
 
 FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
@@ -435,21 +477,17 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
 
   // Slice out a standalone module to re-elaborate with the new target later.
 
-  TargetInfoAttr target =
-      cast<TargetParamAttr>(compileOffloadClosureAttr.getTarget()).getTarget();
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      evaluateMangledName(compileOffloadClosureAttr.getFunc(),
-                          /*sanitize=*/target.isGPU(), *errorLoc,
-                          "compile_offload_closure");
-
-  if (pairOrError.isError()) {
-    emitError(pairOrError.takeError());
-    return failure();
-  }
-  auto [name, generator] = pairOrError.takeValue();
-
-  if (!name)
-    return TypedAttr(); // Not ready yet — signal retry.
+  // compile_offload_closure attrs are compiler-generated; these invariants
+  // must hold.
+  auto closureSymbolForLookup =
+      extractSymbolConstantAttr(compileOffloadClosureAttr.getFunc());
+  assert(closureSymbolForLookup &&
+         "compile_offload_closure func must resolve to a SymbolConstantAttr");
+  assert(closureSymbolForLookup.getType().isFullyBound() &&
+         "compile_offload_closure func must be fully bound");
+  GeneratorOp generator = getGenerator(closureSymbolForLookup.getSymbol());
+  assert(generator &&
+         "compile_offload_closure must reference a valid GeneratorOp");
 
   // Construct the expected result type.
   MLIRContext *ctx = compileOffloadClosureAttr.getContext();
@@ -464,9 +502,18 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   auto sig = FuncType::get(bb.getFunctionType(nonePtr, noneType),
                            ArgConvention::ReadReg, FnEffects().setCapturing());
 
-  OwningOpRef<FuncOp> populateFunc = FuncOp::create(
-      bb, bb.getStringAttr(name.getValue() + "_populate_captures"), sig,
-      InlineLevel::Always);
+  // Use the auto-mangled sym_name (NOT @__name) for the stub name. Each
+  // distinct closure instantiation gets its own stub keyed by the pre-rename
+  // sym, even when multiple instantiations share the same @__name value
+  // (e.g. closures capturing uint32 vs uint64). writeCaptureArgs in the GPU
+  // compilation path names the populate function body using the same
+  // pre-rename sym, so the fill step can match stub to body by name.
+  std::string stubBaseName =
+      mangleParameterValues(generator, closureSymbolForLookup.getParamValues());
+
+  OwningOpRef<FuncOp> populateFunc =
+      FuncOp::create(bb, bb.getStringAttr(stubBaseName + "_populate_captures"),
+                     sig, InlineLevel::Always);
 
   auto populate = cast<FuncOp>(populateFunc.get());
   auto populateFnRef = SymbolConstantAttr::get(populate);

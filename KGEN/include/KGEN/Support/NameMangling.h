@@ -30,6 +30,18 @@ StringAttr sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep = 32);
 /// hashing and digit-start fixup behave identically to sanitizeSymbolToAlnum.
 StringAttr sanitizeSymbolToUnderscores(StringAttr name, size_t charToKeep = 32);
 
+/// Append a uniqueness suffix "_XXXXXXXX" (8 hex chars of xxh3_64) to
+/// @p userName, hashing @p symName and @p funcTypeStr together.
+///
+/// \param userName     The sanitized @__name prefix string.
+/// \param symName      The auto-mangled wrapper symbol name, used as a hash
+///                     input to disambiguate instantiations that share a
+///                     prefix.
+/// \param funcTypeStr  The printed MLIR function type, used as a hash input to
+///                     disambiguate closures capturing different types.
+StringAttr appendAutoMangledSuffix(StringAttr userName, StringRef symName,
+                                   StringRef funcTypeStr);
+
 } // namespace M::KGEN
 
 #endif // KGEN_NAMEMANGLING_H

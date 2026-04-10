@@ -5,70 +5,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "ElaboratorHelper.h"
-#include "IREvaluatorContext.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/Support/NameMangling.h"
-#include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 using namespace M;
 using namespace KGEN;
-
-ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-KGEN::getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                             TypedAttr symCst, SymbolTable &symTab,
-                             bool sanitize) {
-  auto symbol = extractSymbolConstantAttr(symCst);
-  if (!symbol) {
-    return ErrorTree(
-        errorLoc,
-        "'" + errorContext +
-            "' function argument did not resolve to a concrete function");
-  }
-  if (!symbol.getType().isFullyBound()) {
-    std::string errMsg;
-    llvm::raw_string_ostream os(errMsg);
-    os << "'" << errorContext << "' function is not fully bound: "
-       << symbol.getSymbol().getLeafReference().getValue() << " missing "
-       << symbol.getType().getInputParamTypes().size()
-       << " parameter binding(s)";
-    return ErrorTree(errorLoc, errMsg);
-  }
-  auto func = symTab.lookup<GeneratorOp>(
-      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
-
-  if (!func) {
-    std::string errMsg;
-    llvm::raw_string_ostream os(errMsg);
-    os << "'" << errorContext
-       << "' expected a valid generator reference, but got "
-       << symbol.getSymbol().getLeafReference().getValue() << "\n";
-    return ErrorTree(errorLoc, errMsg);
-  }
-
-  // Determine the final base name from an explicit linkage name or the
-  // auto-mangled parameter values.
-  // TODO: When mangle=true, hash the auto-mangled parameter values into the
-  // prefix to guarantee uniqueness across instantiations (e.g.
-  // "my_kernel_a3f2c1b0"). For now both mangle=true and mangle=false
-  // use the prefix verbatim; PTX sanitization is applied afterwards
-  // when sanitize=true.
-  StringAttr baseName;
-  if (auto lna = func.getLinkageNameAttr()) {
-    if (auto prefix = dyn_cast<StringAttr>(lna.getName()))
-      baseName = StringAttr::get(func.getContext(), prefix.getValue());
-  }
-  if (!baseName)
-    baseName =
-        StringAttr::get(func.getContext(),
-                        mangleParameterValues(func, symbol.getParamValues()));
-  if (sanitize)
-    baseName = sanitizeSymbolToAlnum(baseName);
-
-  return std::make_pair(baseName, func);
-}
 
 static void
 replaceSymNames(Operation *op,
@@ -90,6 +34,36 @@ replaceSymNames(Operation *op,
                                         /*replaceTypes=*/true);
 }
 
+/// Apply the @__name linkage name formula for GPU targets.
+///
+/// This function is called from two places that must produce identical names:
+///
+///   1. renameFunctions (post-elaboration, GPU side): renames the concrete
+///      FuncOp in the PTX module to its final symbol.
+///
+///   2. applyLinkageName (during parameter evaluation, host side): computes
+///      the name that get_linkage_name will return so the host runtime knows
+///      what PTX symbol to dispatch to.
+///
+/// Centralizing the formula here ensures the PTX symbol written into the
+/// binary and the name the host looks up are always identical.
+StringAttr KGEN::applyGPULinkageName(StringAttr resolved, LinkageNameAttr lna,
+                                     StringRef symName,
+                                     mlir::FunctionType funcType) {
+  if (!lna.getMangle().getValue())
+    return sanitizeSymbolToUnderscores(resolved);
+  // mangle=true: sanitize the @__name prefix, then append a uniqueness suffix
+  // derived from symName and the printed function type. This matches the PTX
+  // symbol produced by the GPU rename loop (renameFunctions) and the name
+  // looked up by the host (get_linkage_name / applyLinkageName).
+  std::string funcTypeStr;
+  llvm::raw_string_ostream os(funcTypeStr);
+  funcType.print(os);
+  StringAttr sanitized =
+      sanitizeSymbolToUnderscores(resolved, std::numeric_limits<size_t>::max());
+  return appendAutoMangledSuffix(sanitized, symName, funcTypeStr);
+}
+
 void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
   DenseMap<SymbolRefAttr, StringAttr> symToRename;
   DenseMap<StringAttr, FuncOp> renamedTo;
@@ -108,17 +82,24 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
         continue;
       }
       StringRef prefix = prefixAttr.getValue();
-      // Use the linkage name verbatim. For GPU functions, the isGPU block
-      // below will apply sanitizeSymbolToAlnum, just like any other function.
-      // TODO: When mangle=true, hash the auto-mangled parameter values into
-      // the prefix to guarantee uniqueness across instantiations.
-      newName = StringAttr::get(theModule.getContext(), prefix);
+      StringAttr userName = StringAttr::get(theModule.getContext(), prefix);
+      if (isGPU) {
+        newName =
+            applyGPULinkageName(userName, linkageNameAttr, func.getSymName(),
+                                func.getFunctionType());
+      } else {
+        // mangle=false + non-GPU: use the linkage name verbatim.
+        newName = StringAttr::get(theModule.getContext(), prefix);
+      }
       func.removeLinkageNameAttr();
     }
 
-    if (isGPU)
-      newName =
-          sanitizeSymbolToAlnum(newName ? newName : func.getSymNameAttr());
+    if (isGPU) {
+      // When @__name is set, newName is already set above.
+      // When @__name is absent, sanitize the auto-mangled sym_name as before.
+      if (!newName)
+        newName = sanitizeSymbolToAlnum(func.getSymNameAttr());
+    }
 
     if (!newName || newName == func.getSymNameAttr())
       continue;
@@ -130,9 +111,32 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
       mlir::emitRemark(it->second.getLoc()) << "existing function here";
       continue;
     }
-    symToRename[FlatSymbolRefAttr::get(func.getSymNameAttr())] = newName;
+    StringAttr oldSym = func.getSymNameAttr();
+    symToRename[FlatSymbolRefAttr::get(oldSym)] = newName;
     func.setSymName(newName);
     DebugInfo::updateSubprogram(func, newName);
+
+    // On host targets, also rename the companion populate_captures stub when
+    // a host function carries @__name. GPU kernels live only in standalone GPU
+    // modules and never have stubs in the host module, so this is a no-op for
+    // GPU targets.
+    if (!isGPU) {
+      MLIRContext *ctx = theModule.getContext();
+      SmallString<128> stubOldStr(oldSym.getValue());
+      stubOldStr += "_populate_captures";
+      SmallString<128> stubNewStr(newName.getValue());
+      stubNewStr += "_populate_captures";
+      if (Operation *stubOp = mlir::SymbolTable::lookupSymbolIn(
+              theModule, StringRef(stubOldStr))) {
+        // populate_captures stubs are always FuncOps — created as such in
+        // evaluateCompileOffloadClosureAttr. A non-FuncOp here is a bug.
+        auto stubFunc = cast<FuncOp>(stubOp);
+        StringAttr stubOldAttr = StringAttr::get(ctx, StringRef(stubOldStr));
+        StringAttr stubNewAttr = StringAttr::get(ctx, StringRef(stubNewStr));
+        symToRename[FlatSymbolRefAttr::get(stubOldAttr)] = stubNewAttr;
+        stubFunc.setSymName(stubNewAttr);
+      }
+    }
   }
 
   replaceSymNames(theModule, symToRename);

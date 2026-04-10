@@ -736,14 +736,6 @@ GeneratorOp ParametricIREvaluator::getGenerator(SymbolRefAttr symbol) {
       cast<FlatSymbolRefAttr>(symbol).getAttr());
 }
 
-ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-ParametricIREvaluator::getExpectedMangledName(Location errorLoc,
-                                              StringRef errorContext,
-                                              TypedAttr symCst, bool sanitize) {
-  return elaborator->getExpectedMangledName(errorLoc, errorContext, symCst,
-                                            sanitize);
-}
-
 ErrorOr<CrossDeviceFunction>
 ParametricIREvaluator::compileAsm(MLIRContext *ctx, GeneratorOp func,
                                   SymbolConstantAttr symbol, StringAttr name,
@@ -764,6 +756,12 @@ ImplNodeBase *ParametricIREvaluator::getParentNode() { return parent; }
 FailureOr<TypedAttr>
 ParametricIREvaluator::concretizeLinkageName(GeneratorOp gen,
                                              SymbolConstantAttr symbol) {
+  assert(gen.getLinkageNameAttr() && "concretizeLinkageName requires function "
+                                     "to have a linkageName attribute");
+
+  // Look up (or trigger elaboration of) the concrete FuncOp for this generator
+  // instantiation. The FuncOp's linkageName will be concretized during its own
+  // elaboration by processGenericOp.
   FuncOp func;
   ErrorTreeOr<FuncOp> funcOr =
       elaborator->getConcreteFunction(parent, gen.getLoc(), symbol);

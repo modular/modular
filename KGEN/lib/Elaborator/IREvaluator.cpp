@@ -438,13 +438,6 @@ ParamNodeBase *IREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {
   return elaborator->lookupImplNode(symbol)->parent;
 }
 
-ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-IREvaluator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                                    TypedAttr symCst, bool sanitize) {
-  return elaborator->getExpectedMangledName(errorLoc, errorContext, symCst,
-                                            sanitize);
-}
-
 GeneratorOp IREvaluator::getGenerator(SymbolRefAttr symbol) {
   return elaborator->oldSymTab.lookup<GeneratorOp>(
       cast<FlatSymbolRefAttr>(symbol).getAttr());
@@ -470,6 +463,9 @@ ImplNodeBase *IREvaluator::getParentNode() { return parent; }
 
 FailureOr<TypedAttr>
 IREvaluator::concretizeLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) {
+  assert(gen.getLinkageNameAttr() &&
+         "concretizeLinkageName requires gen to have a linkageName attribute");
+
   // Look up (or trigger elaboration of) the concrete FuncOp for this generator
   // instantiation. The FuncOp's linkageName will be concretized during its own
   // elaboration by processGenericOp.
