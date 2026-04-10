@@ -62,6 +62,7 @@ from std.builtin.format_int import bin, hex, oct
 from std.builtin.identifiable import Identifiable
 from std.builtin.int import (
     Indexer,
+    SIMDSize,
     Int,
     Intable,
     IntableRaising,

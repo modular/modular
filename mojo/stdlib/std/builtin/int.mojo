@@ -169,6 +169,13 @@ trait _FromInt:
         ...
 
 
+comptime SIMDSize = Int
+"""The size of a SIMD type. This will be distinct from the
+   Int type in the future and should be used as parameter types
+   when inferring parameter values from the width of a simd
+   argument."""
+
+
 @lldb_formatter_wrapping_type
 struct Int(
     Absable,
@@ -924,6 +931,11 @@ struct Int(
         Returns:
             The corresponding __mlir_type.index value.
         """
+        return self._mlir_value
+
+    @doc_hidden
+    @always_inline("builtin")
+    def _int_mlir_index(self) -> __mlir_type.index:
         return self._mlir_value
 
     @always_inline("builtin")
