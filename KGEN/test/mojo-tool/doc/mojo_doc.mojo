@@ -405,7 +405,7 @@ def vectorize_unified[
 
 
 # FIXME: sugar regression.
-# CHECK: "signature": "tile_and_unswitch[workgroup_function: def[width: Int, sw: Bool](Int, Int) capturing -> None, *tile_size_list: ParameterList[tile_size_list.values]](offset: Int, upperbound: Int)",
+# CHECK: "signature": "tile_and_unswitch[workgroup_function: def[width: Int, sw: Bool](Int, Int) capturing -> None, *tile_size_list: Int](offset: Int, upperbound: Int)",
 
 
 def tile_and_unswitch[
@@ -584,9 +584,9 @@ def variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:     "parameters":
 # CHECK:         "name": "*nums",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "type": "ParameterList"
+# CHECK:         "type": "Int"
 
-# CHECK:     "signature": "variadic_params_args[*nums: ParameterList[nums.values]](*vals: Int, *, var **kwargs: String)",
+# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, var **kwargs: String)",
 
 
 def variadic_params_args[*nums: Int](*vals: Int, **kwargs: String):
