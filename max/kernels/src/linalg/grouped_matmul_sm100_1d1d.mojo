@@ -357,14 +357,14 @@ def copy_accum_to_gmem[
             comptime if elementwise_compute_lambda_fn:
                 comptime if not register_based_epilogue:
                     shared_memory_epilogue[
-                        UInt(MMA_M),
+                        MMA_M,
                         data_paths,
-                        UInt(num_stages),
-                        UInt(stage),
-                        UInt(stageN),
+                        num_stages,
+                        Int(stage),
+                        stageN,
                         c_smem_warp_tile_upper.dtype,
-                        UInt(c_smem_tile.shape[1]()),
-                        UInt(simd_size),
+                        c_smem_tile.shape[1](),
+                        simd_size,
                         c_smem_warp_tile_upper.layout,
                         c_smem_warp_tile_lower.layout,
                         swizzle,
@@ -373,8 +373,8 @@ def copy_accum_to_gmem[
                     ](
                         M,
                         N,
-                        UInt(c_col),
-                        UInt(c_row),
+                        Int(c_col),
+                        Int(c_row),
                         c_smem_warp_tile_upper,
                         c_smem_warp_tile_lower,
                     )

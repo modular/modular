@@ -327,14 +327,14 @@ def stsm_helper[
 
 @always_inline
 def shared_memory_epilogue[
-    MMA_M: UInt,
-    data_paths: UInt,
-    num_stages: UInt,
-    stage: UInt,
-    stageN: UInt,
+    MMA_M: Int,
+    data_paths: Int,
+    num_stages: Int,
+    stage: Int,
+    stageN: Int,
     c_type: DType,
-    shared_n: UInt,
-    simd_size: UInt,
+    shared_n: Int,
+    simd_size: Int,
     c_smem_upper_layout: Layout,
     c_smem_lower_layout: Layout,
     swizzle: Swizzle,
@@ -343,8 +343,8 @@ def shared_memory_epilogue[
 ](
     M: UInt32,
     N: UInt32,
-    c_col: UInt,
-    c_row: UInt,
+    c_col: Int,
+    c_row: Int,
     c_smem_warp_tile_upper: LayoutTensor[
         c_type, c_smem_upper_layout, MutAnyOrigin, ...
     ],
@@ -370,38 +370,38 @@ def shared_memory_epilogue[
     # 4 threads can access 8 elements (8 x 4 = 32). If stageN is 16 then 16 x 2 is used. Since each fragment contains 16 rows,
     # there will be 2 chunks created when using 8x4.
 
-    comptime distribute_cols = Int(stageN) // Int(simd_size)
+    comptime distribute_cols = stageN // simd_size
     comptime distribute_rows = WARP_SIZE // distribute_cols
 
     comptime distribute_layout = Layout.row_major(
         distribute_rows, distribute_cols
     )
     var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
-        1, Int(simd_size)
+        1, simd_size
     ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
-        1, Int(simd_size)
+        1, simd_size
     ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     comptime fragment_size = c_smem_upper_frag.layout.size()
 
     var local_row, local_col = udivmod(lane_id(), distribute_cols)
 
-    var shared_memory_col = local_col * Int(simd_size)
+    var shared_memory_col = local_col * simd_size
     shared_memory_row_lower_half += local_row
     shared_memory_row_upper_half += local_row
 
     comptime for i in range(fragment_size):
-        comptime alignment = align_of[SIMD[c_type, Int(simd_size)]]()
+        comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
         # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
         # luckily removing the swizzle is as simple as swizzling a second time
         var swz_offset_upper = (
-            shared_memory_row_upper_half * Int(shared_n) + shared_memory_col
+            shared_memory_row_upper_half * shared_n + shared_memory_col
         )
         var swz_offset_lower = (
-            shared_memory_row_lower_half * Int(shared_n) + shared_memory_col
+            shared_memory_row_lower_half * shared_n + shared_memory_col
         )
 
         var offset_upper = swizzle(swz_offset_upper)
@@ -418,7 +418,7 @@ def shared_memory_epilogue[
 
         comptime if MMA_M != 256:
             comptime blocked_m_128_layout = blocked_product(
-                Layout.row_major(Int(data_paths * 2), Int(stageN)),
+                Layout.row_major(data_paths * 2, stageN),
                 Layout.col_major(2, 2),
                 coalesce_output=True,
             )
@@ -468,19 +468,19 @@ def shared_memory_epilogue[
         else:
             # can't cast to uint64 as it's not supported yet
             # this will cost us slightly in performance
-            comptime fast_div = FastDiv[DType.uint32](Int(shared_n))
+            comptime fast_div = FastDiv[DType.uint32](shared_n)
 
             shared_upper_row = (
                 Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            shared_upper_col = Int64(offset_upper % Int(shared_n))
+            shared_upper_col = Int64(offset_upper % shared_n)
 
             shared_lower_row = (
                 Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            shared_lower_col = Int64(offset_lower % Int(shared_n))
+            shared_lower_col = Int64(offset_lower % shared_n)
 
         # now we need to add the global tile offset
         var global_upper_row = shared_upper_row + Int64(c_row)
@@ -517,22 +517,22 @@ def shared_memory_epilogue[
 
 @always_inline
 def shared_memory_epilogue[
-    MMA_M: UInt,
-    data_paths: UInt,
-    num_stages: UInt,
-    stage: UInt,
-    stageN: UInt,
+    MMA_M: Int,
+    data_paths: Int,
+    num_stages: Int,
+    stage: Int,
+    stageN: Int,
     c_type: DType,
-    shared_n: UInt,
-    simd_size: UInt,
+    shared_n: Int,
+    simd_size: Int,
     swizzle: Swizzle,
     compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: Int,
 ](
     M: UInt32,
     N: UInt32,
-    c_col: UInt,
-    c_row: UInt,
+    c_col: Int,
+    c_row: Int,
     c_smem_warp_tile_upper: TileTensor[mut=True, c_type, ...],
     c_smem_warp_tile_lower: TileTensor[mut=True, c_type, ...],
 ):
@@ -554,36 +554,36 @@ def shared_memory_epilogue[
     # 4 threads can access 8 elements (8 x 4 = 32). If stageN is 16 then 16 x 2 is used. Since each fragment contains 16 rows,
     # there will be 2 chunks created when using 8x4.
 
-    comptime distribute_cols = Int(stageN) // Int(simd_size)
+    comptime distribute_cols = stageN // simd_size
     comptime distribute_rows = WARP_SIZE // distribute_cols
 
     comptime distribute_layout = row_major[distribute_rows, distribute_cols]()
     var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
-        1, Int(simd_size)
+        1, simd_size
     ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
-        1, Int(simd_size)
+        1, simd_size
     ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     comptime fragment_size = c_smem_upper_frag.LayoutType.static_product
 
     var local_row, local_col = udivmod(lane_id(), distribute_cols)
 
-    var shared_memory_col = local_col * Int(simd_size)
+    var shared_memory_col = local_col * simd_size
     shared_memory_row_lower_half += local_row
     shared_memory_row_upper_half += local_row
 
     comptime for i in range(fragment_size):
-        comptime alignment = align_of[SIMD[c_type, Int(simd_size)]]()
+        comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
         # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
         # luckily removing the swizzle is as simple as swizzling a second time
         var swz_offset_upper = (
-            shared_memory_row_upper_half * Int(shared_n) + shared_memory_col
+            shared_memory_row_upper_half * shared_n + shared_memory_col
         )
         var swz_offset_lower = (
-            shared_memory_row_lower_half * Int(shared_n) + shared_memory_col
+            shared_memory_row_lower_half * shared_n + shared_memory_col
         )
 
         var offset_upper = swizzle(swz_offset_upper)
@@ -600,7 +600,7 @@ def shared_memory_epilogue[
 
         comptime if MMA_M != 256:
             comptime blocked_m_128_layout = BlockedProductLayout[
-                type_of(row_major[Int(data_paths * 2), Int(stageN)]()),
+                type_of(row_major[data_paths * 2, stageN]()),
                 type_of(col_major[2, 2]()),
                 coalesce_output=True,
             ]()
@@ -632,19 +632,19 @@ def shared_memory_epilogue[
         else:
             # can't cast to uint64 as it's not supported yet
             # this will cost us slightly in performance
-            comptime fast_div = FastDiv[DType.uint32](Int(shared_n))
+            comptime fast_div = FastDiv[DType.uint32](shared_n)
 
             shared_upper_row = (
                 Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            shared_upper_col = Int64(offset_upper % Int(shared_n))
+            shared_upper_col = Int64(offset_upper % shared_n)
 
             shared_lower_row = (
                 Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            shared_lower_col = Int64(offset_lower % Int(shared_n))
+            shared_lower_col = Int64(offset_lower % shared_n)
 
         # now we need to add the global tile offset
         var global_upper_row = shared_upper_row + Int64(c_row)
