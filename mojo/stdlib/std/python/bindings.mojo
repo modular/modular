@@ -1101,8 +1101,12 @@ def _py_function_wrapper[
     *,
     is_method: Bool = False,
 ]() -> GenericPyFunction:
-    """Converts a PyObjectFunction to a format that can be used by def_py_method.
+    """Converts a PyObjectFunction to a GenericPyFunction for CPython.
+
+    Creates a wrapper that unpacks Python arguments and calls the user's
+    function with the correct arity, handling raises/void normalization.
     """
+    comptime FuncT = type_of(func)
 
     comptime if func.has_kwargs:
 
@@ -1112,10 +1116,10 @@ def _py_function_wrapper[
             mut py_args: PythonObject,
             mut py_kwargs: PythonObject,
         ) raises -> PythonObject:
-            comptime if is_method:
-                return func._call_method(py_self, py_args, py_kwargs)
-            else:
-                return func._call_func(py_args, py_kwargs)
+            var kwargs = FuncT._convert_kwargs(py_kwargs)
+            return FuncT._dispatch_kwargs[is_method](
+                func._func, py_self, py_args, kwargs
+            )
 
         return GenericPyFunction(wrapper_with_kwargs)
     else:
@@ -1124,10 +1128,7 @@ def _py_function_wrapper[
         def wrapper(
             mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
-            comptime if is_method:
-                return func._call_method(py_self, py_args)
-            else:
-                return func._call_func(py_args)
+            return FuncT._dispatch[is_method](func._func, py_self, py_args)
 
         return GenericPyFunction(wrapper)
 
