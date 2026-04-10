@@ -395,6 +395,23 @@ class TestProcessProvidedWeights:
         assert "W._shard.1" in result
         assert len(result) == 3
 
+    def test_tensor_weights_passthrough(self) -> None:
+        """Tensor weights (from module.parameters) pass through as-is."""
+        param = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
+        weight = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        result = _process_provided_weights({"W": weight}, [("W", param)])
+        assert "W" in result
+        assert len(result) == 1
+
+    def test_distributed_tensor_weights_expanded(self) -> None:
+        """Distributed Tensor weights are expanded to shard entries."""
+        param = _make_realized_sharded([4, 8], 2, shard_axis=0)
+        weight = _make_realized_sharded([4, 8], 2, shard_axis=0)
+        result = _process_provided_weights({"W": weight}, [("W", param)])
+        assert len(result) == 2
+        assert "W._shard.0" in result
+        assert "W._shard.1" in result
+
 
 # ═════════════════════════════════════════════════════════════════════════
 #  Module.compile() smoke tests
@@ -452,6 +469,22 @@ class TestModuleCompileDistributed:
         result = compiled(x)
         assert list(result.shape) == [3, 8]
         # Output is the input (identity), not the weight
+        np.testing.assert_allclose(np.from_dlpack(result), 1.0)
+
+    def test_compile_with_parameter_tensors_as_weights(self) -> None:
+        """Passing dict(model.parameters) as weights compiles successfully.
+
+        Reproduces the pattern used in benchmarks where module parameters
+        (which may be Tensor objects rather than raw DLPackArrays) are
+        provided directly as the weights argument.
+        """
+        W = Tensor.ones([4], dtype=DType.float32, device=CPU())
+        model = _IdentityModule(W=W)
+        input_type = TensorType(DType.float32, [3, 8], CPU())
+        compiled = model.compile(input_type, weights=dict(model.parameters))
+        x = Tensor.ones([3, 8], dtype=DType.float32, device=CPU())
+        result = compiled(x)
+        assert list(result.shape) == [3, 8]
         np.testing.assert_allclose(np.from_dlpack(result), 1.0)
 
     def test_compile_with_distributed_input_type(self) -> None:

@@ -307,12 +307,13 @@ def _process_provided_weights(
             )
 
         prepared = _prepare_weight_for_parameter(name, weights[name], param)
+        shards = prepared.local_shards
 
         if not param.is_distributed:
-            result[name] = prepared.buffers[0]
+            result[name] = shards[0]
         else:
-            for i, buf in enumerate(prepared.buffers):
-                result[f"{name}._shard.{i}"] = buf
+            for i, shard in enumerate(shards):
+                result[f"{name}._shard.{i}"] = shard
 
     return result
 
