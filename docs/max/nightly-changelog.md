@@ -146,6 +146,12 @@ This version is still a work in progress.
   `max.graph.ops.resize` now supports `InterpolationMode.NEAREST`.
 - Added `resize_nearest` op handler to the experimental eager interpreter
   (CPU) via `max.experimental.functional.resize_nearest`.
+- Added `max.graph.ops.resize_bicubic` for bicubic interpolation resizing
+  (rank-4 NCHW, half_pixel coord mapping, a=-0.75 Catmull-Rom kernel);
+  `max.graph.ops.resize` now delegates its `InterpolationMode.BICUBIC` path
+  to `resize_bicubic`.
+- Added `resize_bicubic` op handler to the experimental eager interpreter
+  (CPU) via `max.experimental.functional.resize_bicubic`.
 - Added `distributed.allreduce.sum` op handler to the experimental eager
   interpreter, enabling multi-GPU eager execution of allreduce collectives
 - Added `distributed.allgather` op handler to the experimental eager

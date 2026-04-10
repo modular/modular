@@ -7132,6 +7132,131 @@ class TestResizeNearestOp:
         np.testing.assert_allclose(np.from_dlpack(out), ref)
 
 
+class TestResizeBicubicOp:
+    """Tests for bicubic resize interpreter op (mo.resize.bicubic).
+
+    The kernel uses half_pixel coordinate mapping, a=-0.75 Catmull-Rom
+    cubic filter, rank-4 NCHW only.  The numpy reference below reproduces
+    the exact algorithm from ``cpu_bicubic_kernel`` in ``nn/bicubic.mojo``.
+    """
+
+    @staticmethod
+    def _cubic_kernel(x: float) -> float:
+        """Catmull-Rom cubic kernel with a = -0.75."""
+        a = -0.75
+        abs_x = abs(x)
+        abs_x2 = abs_x * abs_x
+        abs_x3 = abs_x2 * abs_x
+        if abs_x <= 1.0:
+            return (a + 2) * abs_x3 - (a + 3) * abs_x2 + 1
+        elif abs_x < 2.0:
+            return a * abs_x3 - 5 * a * abs_x2 + 8 * a * abs_x - 4 * a
+        return 0.0
+
+    @staticmethod
+    def _resize_bicubic_ref(x: np.ndarray, out_shape: list[int]) -> np.ndarray:
+        """Numpy reference matching ``cpu_bicubic_kernel`` in nn/bicubic.mojo."""
+        b, c, in_h, in_w = x.shape
+        _, _, out_h, out_w = out_shape
+
+        scale_h = in_h / out_h
+        scale_w = in_w / out_w
+
+        out = np.zeros(out_shape, dtype=np.float32)
+
+        for bi in range(b):
+            for ci in range(c):
+                for y_out in range(out_h):
+                    in_y = (y_out + 0.5) * scale_h - 0.5
+                    y_floor = int(np.floor(in_y))
+                    dy = in_y - y_floor
+
+                    for x_out in range(out_w):
+                        in_x = (x_out + 0.5) * scale_w - 0.5
+                        x_floor = int(np.floor(in_x))
+                        dx = in_x - x_floor
+
+                        val = 0.0
+                        for i in range(4):
+                            y_pos = min(max(y_floor + i - 1, 0), in_h - 1)
+                            wy = TestResizeBicubicOp._cubic_kernel(i - 1.0 - dy)
+                            for j in range(4):
+                                x_pos = min(max(x_floor + j - 1, 0), in_w - 1)
+                                wx = TestResizeBicubicOp._cubic_kernel(
+                                    j - 1.0 - dx
+                                )
+                                val += float(x[bi, ci, y_pos, x_pos]) * wy * wx
+                        out[bi, ci, y_out, x_out] = val
+        return out
+
+    def test_2d_upsample(self) -> None:
+        """Upsample a 4x4 spatial input to 8x8 using bicubic."""
+        rng = np.random.default_rng(200)
+        x_np = rng.standard_normal((1, 1, 4, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 8, 8]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(x, out_shape)
+
+        ref = self._resize_bicubic_ref(x_np, out_shape)
+        np.testing.assert_allclose(np.from_dlpack(out), ref, atol=1e-5)
+
+    def test_2d_downscale(self) -> None:
+        """Downscale an 8x8 spatial input to 4x4 using bicubic."""
+        rng = np.random.default_rng(201)
+        x_np = rng.standard_normal((1, 1, 8, 8)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 4, 4]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(x, out_shape)
+
+        ref = self._resize_bicubic_ref(x_np, out_shape)
+        np.testing.assert_allclose(np.from_dlpack(out), ref, atol=1e-5)
+
+    def test_multichannel(self) -> None:
+        """Resize a multi-batch, multi-channel NCHW tensor."""
+        rng = np.random.default_rng(202)
+        x_np = rng.standard_normal((2, 3, 6, 6)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [2, 3, 10, 10]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(x, out_shape)
+
+        ref = self._resize_bicubic_ref(x_np, out_shape)
+        np.testing.assert_allclose(np.from_dlpack(out), ref, atol=1e-5)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_dtypes(self, dtype: DType) -> None:
+        """Bicubic resize preserves the requested dtype."""
+        rng = np.random.default_rng(203)
+        np_dtype = dtype.to_numpy()
+        x_np = rng.standard_normal((1, 1, 4, 4)).astype(np_dtype)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 6, 6]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(x, out_shape)
+
+        ref = self._resize_bicubic_ref(x_np.astype(np.float32), out_shape)
+        out_np = np.from_dlpack(out).astype(np.float32)
+        np.testing.assert_allclose(out_np, ref, atol=1e-2)
+
+
 class TestDistributedScatterSimulated:
     """Test distributed_scatter on a simulated CPU mesh."""
 

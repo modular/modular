@@ -3336,6 +3336,56 @@ def _handle_resize_nearest(
     return [output]
 
 
+@register_op_handler(mo.ResizeBicubicOp)
+def _handle_resize_bicubic(
+    op: mo.ResizeBicubicOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.resize.bicubic via Mojo CPU bicubic kernel.
+
+    Operands:
+      inputs[0]: input data tensor (rank-4 NCHW).
+      inputs[1]: size -- 1-D int64 tensor whose values give the full output
+                 shape (4 values: N, C, H, W).
+
+    The kernel uses hardcoded half_pixel coordinate mapping and
+    a=-0.75 Catmull-Rom cubic filter.  No configurable attributes.
+
+    Args:
+        op: The resize-bicubic operation.
+        inputs: Two buffers -- input data and size.
+
+    Returns:
+        List containing a single output buffer with shape given by ``size``
+        and the same dtype as ``input``.
+    """
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # size (int64 output-shape vector)
+
+    input_buffer = inputs[0]
+    size_buffer = inputs[1]
+
+    in_shape = list(input_buffer.shape)
+    rank = len(in_shape)
+    out_shape = size_buffer.to_numpy().astype(int).flatten().tolist()
+
+    assert rank == 4, (
+        f"resize_bicubic: input must be rank 4 (NCHW), got rank {rank}"
+    )
+    assert len(out_shape) == 4, (
+        f"resize_bicubic: size must have 4 elements, got {len(out_shape)}"
+    )
+
+    target_device = _get_target_device(op)
+    output = Buffer(shape=out_shape, dtype=input_buffer.dtype, device=CPU())
+    ops.resize_ops.ResizeBicubic(
+        output,
+        input_buffer,
+        (in_shape, out_shape),
+        target_device._device_context_ptr(),
+    )
+    return [output]
+
+
 # Distributed operations
 
 

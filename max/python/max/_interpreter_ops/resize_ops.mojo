@@ -13,29 +13,20 @@
 
 """Mojo kernel wrappers for resize MO interpreter operations.
 
-Both ``mo.resize.linear`` and ``mo.resize.nearest`` are CPU-only
-(``MO_HostOnly`` trait).
+**Linear** and **nearest-neighbor** resizes are CPU-only (``MO_HostOnly``).
+**Bicubic** uses ``MO_SingleDeviceWithHostOperands``; the interpreter
+handler runs the CPU path.
 
-**Linear** resize uses a separable 1-D tent filter applied sequentially
-along each spatial dimension.
-
-**Nearest-neighbor** resize selects the nearest input sample for each
-output coordinate, parameterised by a rounding mode.
-
-Compile-time dispatch (both modes):
-  - ``coord_mode`` — Int 0–3 (half_pixel / align_corners /
-                     asymmetric / half_pixel_1D)
-  - ``dtype``      — via ``dispatch_dtype``
-  - ``rank``       — 1–MAX_RANK (if-elif inside the dispatch body)
-
-Additional compile-time parameter per mode:
-  - Linear:  ``antialias`` — Bool
-  - Nearest: ``round_mode`` — Int 0–3 (HalfDown / HalfUp / Floor / Ceil)
+Compile-time dispatch:
+  - Linear / Nearest: ``coord_mode`` x ``dtype`` x ``rank``
+    + ``antialias`` (linear) or ``round_mode`` (nearest)
+  - Bicubic: ``dtype`` only (rank is fixed at 4, no configurable modes)
 
 Runtime parameters passed through the Python ``params`` tuple::
 
     Linear:  (coord_mode, antialias, rank, in_shape, out_shape)
     Nearest: (coord_mode, round_mode, rank, in_shape, out_shape)
+    Bicubic: (in_shape, out_shape)
 """
 
 from std.os import abort
@@ -45,6 +36,7 @@ from std.python.bindings import PythonModuleBuilder
 from layout import Coord, TileTensor, row_major
 from std.utils import IndexList
 
+from nn.bicubic import cpu_bicubic_kernel
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
@@ -96,6 +88,10 @@ def PyInit_resize_ops() -> PythonObject:
         b.def_function[resize_nearest_dispatcher](
             "ResizeNearest",
             docstring="Resize using nearest-neighbor interpolation (CPU-only)",
+        )
+        b.def_function[resize_bicubic_dispatcher](
+            "ResizeBicubic",
+            docstring="Resize using bicubic interpolation (CPU path)",
         )
         return b.finalize()
     except e:
@@ -532,4 +528,95 @@ def resize_nearest_dispatcher(
         in_shape,
         out_shape,
         rank,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Bicubic resize kernel
+# ===----------------------------------------------------------------------=== #
+#
+# Wraps ``cpu_bicubic_kernel(output, input)`` from ``nn.bicubic``.
+# The kernel is rank-4 only (NCHW), uses hardcoded half_pixel coordinate
+# mapping and a=-0.75 Catmull-Rom cubic filter.  No compile-time mode
+# parameters — just dtype dispatch.
+
+
+@always_inline
+def _resize_bicubic_impl[
+    dtype: DType,
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    in_shape: InlineArray[Int, MAX_RANK],
+    out_shape: InlineArray[Int, MAX_RANK],
+) raises:
+    """Resize input into output using bicubic interpolation (rank-4 only).
+
+    Parameters:
+        dtype: Element data type of both tensors.
+
+    Args:
+        out_ptr: Output buffer pointer.
+        in_ptr: Input buffer pointer.
+        in_shape: Input shape; entries 0..3 are valid (NCHW).
+        out_shape: Output shape; entries 0..3 are valid (NCHW).
+    """
+    var in_idx = IndexList[4](0)
+    var out_idx = IndexList[4](0)
+    for i in range(4):
+        in_idx[i] = in_shape[i]
+        out_idx[i] = out_shape[i]
+
+    var in_tt = TileTensor(in_ptr, row_major(Coord(in_idx)))
+    var out_tt = TileTensor(out_ptr, row_major(Coord(out_idx)))
+
+    cpu_bicubic_kernel(out_tt, in_tt)
+
+
+# ===----------------------------------------------------------------------=== #
+# Bicubic dispatcher
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct _ResizeBicubicBody(Dispatchable):
+    """Dispatch body for bicubic resize — dtype dispatch only.
+
+    The kernel is rank-4 (NCHW) with no configurable modes, so this is
+    the simplest of the three resize dispatchers.
+    """
+
+    var out_addr: Int
+    var in_addr: Int
+    var in_shape: InlineArray[Int, MAX_RANK]
+    var out_shape: InlineArray[Int, MAX_RANK]
+
+    def call[t: DType](self) raises -> None:
+        var out_ptr = _make_ptr[t](self.out_addr)
+        var in_ptr = _make_ptr[t](self.in_addr)
+        _resize_bicubic_impl[t](out_ptr, in_ptr, self.in_shape, self.out_shape)
+
+
+def resize_bicubic_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Bicubic resize dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-allocated with output shape).
+        in_buffer: Input data buffer.
+        params: Python tuple ``(in_shape_list, out_shape_list)``.
+        device_context_ptr: Device context pointer (unused, CPU path).
+    """
+    var dtype = _get_dtype(in_buffer)
+    var in_shape = _get_shape(params[0], 4)
+    var out_shape = _get_shape(params[1], 4)
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var in_addr = Int(py=in_buffer._data_ptr())
+
+    _dispatch_float_dtype(
+        _ResizeBicubicBody(out_addr, in_addr, in_shape, out_shape), dtype
     )

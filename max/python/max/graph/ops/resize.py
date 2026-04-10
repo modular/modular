@@ -181,6 +181,52 @@ def resize_nearest(
     )[0].tensor
 
 
+def resize_bicubic(
+    input: TensorValueLike,
+    size: ShapeLike,
+) -> TensorValue:
+    """Resize a tensor using bicubic interpolation.
+
+    Produces an output tensor whose dimensions are given by ``size`` using
+    a 4x4-pixel Catmull-Rom (a=-0.75) cubic convolution filter with
+    half_pixel coordinate mapping.  Input must be rank-4 NCHW.
+
+    Args:
+        input: The input symbolic tensor to resize.  Must have rank 4.
+        size: Desired output shape of length 4 (N, C, H, W).
+
+    Returns:
+        A new symbolic tensor with shape ``size`` and the same dtype as
+        ``input``.
+
+    Raises:
+        ValueError: If ``input`` doesn't have rank 4 or ``size`` has a
+            different length.
+    """
+    input = TensorValue(input)
+    size = Shape(size)
+
+    if input.rank != 4:
+        raise ValueError(
+            f"resize_bicubic requires rank-4 (NCHW) input, got rank"
+            f" {input.rank}"
+        )
+    if len(size) != 4:
+        raise ValueError(
+            f"size must have 4 elements for NCHW format, got {len(size)}"
+        )
+
+    result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
+
+    return Graph.current._add_op_generated(
+        rmo.MoResizeBicubicOp,
+        result_type.to_mlir(),
+        input,
+        shape_to_tensor(size),
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+
+
 def resize(
     input: TensorValueLike,
     shape: ShapeLike,
@@ -224,22 +270,7 @@ def resize(
         return resize_nearest(input, shape)
 
     if interpolation == InterpolationMode.BILINEAR:
-        # Delegate to resize_linear with default half_pixel coordinate mode.
         return resize_linear(input, shape)
 
-    # NOTE: half_pixel is the default coordinate transform mode.
-    # This matches the behavior of torchvision and other libraries.
-
-    # Create the result type with the new shape.
-    result_type = TensorType(
-        dtype=input.dtype, shape=shape, device=input.device
-    )
-
-    # Stage bicubic resize op.
-    return Graph.current._add_op_generated(
-        rmo.MoResizeBicubicOp,
-        result_type.to_mlir(),
-        input,
-        shape_to_tensor(shape),
-        kgen.ParamDeclArrayAttr([]),
-    )[0].tensor
+    # BICUBIC (only remaining option after NEAREST and BILINEAR).
+    return resize_bicubic(input, shape)
