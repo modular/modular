@@ -147,7 +147,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "max_serve_args": (
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 1"
+            "--num-speculative-tokens 3"
         ),
     },
     "nvidia/kimi-k2.5-nvfp4__eagle": {
@@ -159,7 +159,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--draft-data-parallel-degree 8 "
             "--draft-quantization-encoding bfloat16 "
             "--speculative-method eagle "
-            "--num-speculative-tokens 2 "
+            "--num-speculative-tokens 3 "
             "--kv-cache-format float8_e4m3fn "
             "--device-memory-utilization 0.75 "
             "--max-batch-input-tokens 4096 "
