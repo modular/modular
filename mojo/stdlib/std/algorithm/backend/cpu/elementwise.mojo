@@ -37,6 +37,7 @@ def _elementwise_impl_cpu[
     ) unified register_passable -> None,
     *,
     use_blocking_impl: Bool = False,
+    trace_description: StaticString = "",
 ](func: FuncType, *, shape: IndexList[rank, ...]):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
@@ -46,6 +47,7 @@ def _elementwise_impl_cpu[
         simd_width: The SIMD vector width to use.
         FuncType: The body function type.
         use_blocking_impl: If true the function executes without sub-tasks.
+        trace_description: Description of the trace.
 
     Args:
         func: The closure carrying the captured state of the body function.

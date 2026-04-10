@@ -261,6 +261,9 @@ def rope_ragged[
             launch_shape_index_list
         )
     else:
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape_index_list, context.value()
-        )
+        elementwise[
+            func=rope_fn,
+            simd_width=kernel_simd_width,
+            target=target,
+            _trace_description="rope",
+        ](launch_shape_index_list, context.value())

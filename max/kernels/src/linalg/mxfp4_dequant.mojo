@@ -250,6 +250,9 @@ def _cast_bf16_to_fp8(
             in_tt.load[width=width](coord).cast[out_tt.dtype](),
         )
 
-    elementwise[cast_fn, simd_width_of[input.dtype](), target="gpu"](
-        Index(num_rows, num_cols), ctx
-    )
+    elementwise[
+        cast_fn,
+        simd_width_of[input.dtype](),
+        target="gpu",
+        _trace_description="mxfp4_dequant_cast",
+    ](Index(num_rows, num_cols), ctx)

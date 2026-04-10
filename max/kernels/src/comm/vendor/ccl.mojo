@@ -377,9 +377,12 @@ def allreduce[
                 val,
             )
 
-        elementwise[epilogue_wrapper, simd_size, target="gpu"](
-            IndexList[1](output_tensor.num_elements()), ctx
-        )
+        elementwise[
+            epilogue_wrapper,
+            simd_size,
+            target="gpu",
+            _trace_description="ccl_epilogue",
+        ](IndexList[1](output_tensor.num_elements()), ctx)
 
 
 @parameter

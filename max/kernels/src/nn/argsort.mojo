@@ -407,6 +407,7 @@ def _argsort_gpu[
             fill_indices_iota_no_padding,
             simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
             target="gpu",
+            _trace_description="argsort_fill_indices",
         ](n, ctx)
 
         return _argsort_gpu_impl[ascending=ascending](indices, input, ctx)
@@ -460,9 +461,12 @@ def _argsort_gpu[
 
     # we want to fill one element at a time to handle the case where n is not a
     # power of 2, so we set the simdwidth to be 1.
-    elementwise[fill_indices_iota, simd_width=1, target="gpu"](
-        pow_2_length, ctx
-    )
+    elementwise[
+        fill_indices_iota,
+        simd_width=1,
+        target="gpu",
+        _trace_description="argsort_fill_indices_padded",
+    ](pow_2_length, ctx)
 
     # Run the argsort implementation with the padded input and indices.
     _argsort_gpu_impl[ascending=ascending](padded_indices, padded_input, ctx)
@@ -482,6 +486,7 @@ def _argsort_gpu[
         extract_indices,
         simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
         target="gpu",
+        _trace_description="argsort_extract_indices",
     ](n, ctx)
 
     # Free the temporary input buffer
