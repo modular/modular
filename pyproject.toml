@@ -147,6 +147,10 @@ module = "absl.*"
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
+module = "cyclopts.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "lmcache.*"
 follow_imports = "skip"
 
