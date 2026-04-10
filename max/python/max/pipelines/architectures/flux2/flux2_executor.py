@@ -183,8 +183,7 @@ class Flux2Executor(
     """Flux2 pipeline executor.
 
     Implements the :class:`PipelineExecutor` interface for Flux2 image
-    generation. This class will eventually replace :class:`Flux2Pipeline`
-    by wiring together the same sub-components (text encoder, transformer
+    generation, wiring together the sub-components (text encoder, transformer
     denoiser, VAE) through the tensor-in/tensor-out executor contract.
 
     Graph structure (4 graphs, 3 for t2i):
@@ -220,8 +219,7 @@ class Flux2Executor(
     """Default number of denoising steps when the user does not specify one."""
 
     # Default residual threshold when FBCache is enabled but the request
-    # does not specify one.  Matches Flux2Pipeline.default_residual_threshold
-    # (overrides the DiffusionPipeline base default of 0.05).
+    # does not specify one.
     _DEFAULT_RESIDUAL_THRESHOLD: float = 0.06
 
     # Fallback VAE scale factor when not derivable from the manifest.
@@ -754,7 +752,7 @@ class Flux2Executor(
 
     # -- Cache defaults -------------------------------------------------------
 
-    # Flux2 model-specific defaults (matching DiffusionPipeline subclass).
+    # Flux2 model-specific defaults.
     _DEFAULT_TAYLORSEER_CACHE_INTERVAL: int = 5
     _DEFAULT_TAYLORSEER_WARMUP_STEPS: int = 9
     _DEFAULT_TAYLORSEER_MAX_ORDER: int = 1
