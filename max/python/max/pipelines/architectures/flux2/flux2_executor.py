@@ -73,6 +73,9 @@ class Flux2ExecutorInputs(TensorStruct):
     tokens: Buffer
     """Token IDs for the text encoder, shape ``(S,)``."""
 
+    text_ids: Buffer
+    """Text position IDs for the transformer, shape ``(1, S, 4)`` int64."""
+
     latents: Buffer
     """Packed latent noise tensor, shape ``(B, seq, C*4)``."""
 
@@ -201,7 +204,7 @@ class Flux2Executor(
     # -- Compiled graphs (set during __init__) --------------------------------
 
     text_encoder: TextEncoder
-    """Graph 1: Mistral3 text encoder -> prompt_embeds + text_ids."""
+    """Graph 1: Mistral3 text encoder -> prompt_embeds."""
 
     image_encoder: ImageEncoder
     """Graph 2: VAE encode + BN-normalize + patchify + pack."""
@@ -329,6 +332,7 @@ class Flux2Executor(
         image_seq_len = packed_h * packed_w
 
         tokens = Buffer.from_dlpack(context.tokens.array)
+        text_ids = Buffer.from_dlpack(context.text_ids)
         latents = self._patchify_and_pack(context.latents)
         latent_image_ids = Buffer.from_dlpack(context.latent_image_ids)
         timesteps, dts = self._prepare_scheduler(context.sigmas)
@@ -368,6 +372,7 @@ class Flux2Executor(
 
         return Flux2ExecutorInputs(
             tokens=tokens,
+            text_ids=text_ids,
             latents=latents,
             latent_image_ids=latent_image_ids,
             timesteps=timesteps,
@@ -392,10 +397,11 @@ class Flux2Executor(
         inputs = inputs.to(self._model_device)
 
         # 1) Encode prompts (Graph 1).
-        prompt_embeds, text_ids = self._encode_prompts(
+        prompt_embeds = self._encode_prompts(
             inputs.tokens,
             inputs.num_images_per_prompt,
         )
+        text_ids = inputs.text_ids
 
         # 2) Encode image if img2img (Graph 2).
         #    For text-to-image, pass zero-seq-length tensors so the fused
@@ -439,22 +445,17 @@ class Flux2Executor(
         self,
         tokens: Buffer,
         num_images_per_prompt: Buffer,
-    ) -> tuple[Buffer, Buffer]:
-        """Run Graph 1: encode text prompts into embeddings and text IDs.
+    ) -> Buffer:
+        """Run Graph 1: encode text prompts into embeddings.
 
         Args:
             tokens: Token IDs, shape ``(S,)``.
             num_images_per_prompt: 1-element int64 tensor.
 
         Returns:
-            A tuple of ``(prompt_embeds, text_ids)`` where:
-            - ``prompt_embeds`` has shape ``(B, S, L*D)``
-            - ``text_ids`` has shape ``(B, S, 4)`` int64
+            ``prompt_embeds`` Buffer of shape ``(B, S, L*D)``.
         """
-        prompt_embeds, text_ids = self.text_encoder(tokens)
-        # text_ids are built from numpy on CPU; move to device.
-        text_ids = text_ids.to(self._model_device)
-        return prompt_embeds, text_ids
+        return self.text_encoder(tokens)
 
     # -- Graph 2: Image Encode (img2img only) ---------------------------------
 

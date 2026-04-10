@@ -785,6 +785,16 @@ class PixelContext:
     )
     """Precomputed latent image IDs for generation."""
 
+    text_ids: npt.NDArray[np.int64] = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+    """Precomputed text position IDs, shape ``(B, seq_len, 4)`` int64."""
+
+    negative_text_ids: npt.NDArray[np.int64] = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+    """Precomputed text position IDs for the negative prompt."""
+
     height: int = field(default=1024)
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
