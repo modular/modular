@@ -42,13 +42,13 @@ M = 512
 N = 1024
 
 
-def allreduce_graph(signals: Signals) -> Graph:
+def allreduce_graph(signals: Signals, m: int = 512) -> Graph:
     devices = signals.devices
     num_devices = len(devices)
 
     # Create input types for each device
     input_types = [
-        TensorType(dtype=DType.float32, shape=[M, N], device=devices[i])
+        TensorType(dtype=DType.float32, shape=[m, N], device=devices[i])
         for i in range(num_devices)
     ]
     # Combine tensor types and buffer types
@@ -76,8 +76,15 @@ def allreduce_graph(signals: Signals) -> Graph:
         return graph
 
 
-def test_allreduce_execution() -> None:
-    """Tests multi-device allreduce execution."""
+@pytest.mark.parametrize(
+    "m",
+    [
+        pytest.param(7, id="small-2d-1stage"),
+        pytest.param(512, id="large-2d-2stage"),
+    ],
+)
+def test_allreduce_execution(m: int) -> None:
+    """Tests multi-device allreduce execution with 2D inputs."""
     # Use available GPUs, minimum 2, maximum 4
     available_gpus = accelerator_count()
     if available_gpus < 2:
@@ -86,7 +93,7 @@ def test_allreduce_execution() -> None:
     num_gpus = min(available_gpus, 4)
 
     signals = Signals(devices=[DeviceRef.GPU(id=id) for id in range(num_gpus)])
-    graph = allreduce_graph(signals)
+    graph = allreduce_graph(signals, m=m)
     host = CPU()
 
     # Create device objects
@@ -97,7 +104,7 @@ def test_allreduce_execution() -> None:
     compiled = session.load(graph)
 
     # Create input tensors
-    a_np = np.ones((M, N)).astype(np.float32)
+    a_np = np.ones((m, N)).astype(np.float32)
     # Expected output: sum of (1 * 1) + (1 * 2) + ... + (1 * num_gpus)
     # = 1 + 2 + ... + num_gpus = num_gpus * (num_gpus + 1) / 2
     expected_sum = num_gpus * (num_gpus + 1) // 2
