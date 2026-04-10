@@ -51,9 +51,10 @@ flux2_arch = SupportedArchitecture(
     task=PipelineTask.PIXEL_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     example_repo_ids=[
         "black-forest-labs/FLUX.2-dev",
+        "black-forest-labs/FLUX.2-dev-NVFP4",
     ],
     pipeline_model=Flux2Pipeline,  # type: ignore[arg-type]
     context_type=PixelContext,

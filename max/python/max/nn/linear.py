@@ -23,6 +23,7 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Dim,
     ShardingStrategy,
     TensorValue,
     TensorValueLike,
@@ -129,10 +130,17 @@ class Linear(Module, Shardable):
         self.clip_weight = clip_weight
         self.quant_config = quant_config
 
+        # Packed FP4 weights are stored as uint8 (two values per byte).
+        weight_dtype = (
+            DType.uint8
+            if quant_config is not None and quant_config.is_fp4
+            else dtype
+        )
+
         if not is_sharding:
             self.weight = Weight(
                 name=f"{name}.weight" if name else "weight",
-                dtype=dtype,
+                dtype=weight_dtype,
                 shape=(out_dim, fp4_packed_k(in_dim, quant_config)),
                 device=device,
                 quantization_encoding=quantization_encoding,
@@ -492,7 +500,18 @@ def linear(
         return ops.qmatmul(quantization_encoding, None, x, weight)
     elif quant_config:
         assert weight_scale is not None
-        return quantized_matmul(
+
+        # The FP4 matmul kernel requires rank-2 inputs. Flatten leading
+        # dims before the call and restore them afterward.
+        leading_dims: list[Dim] | None = None
+        if quant_config.is_fp4 and x.rank > 2:
+            leading_dims = list(x.shape[:-1])
+            m_dim: Dim = Dim(1)
+            for d in leading_dims:
+                m_dim = m_dim * d
+            x = ops.reshape(x, [m_dim, x.shape[-1]])
+
+        res = quantized_matmul(
             x,
             weight,
             weight_scale,
@@ -500,6 +519,11 @@ def linear(
             quant_config,
             weight_scale_2,
         )
+
+        if leading_dims is not None:
+            res = ops.reshape(res, [*leading_dims, res.shape[-1]])
+
+        return res
     else:
         return x @ weight.T
 

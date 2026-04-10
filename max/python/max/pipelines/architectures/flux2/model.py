@@ -21,8 +21,12 @@ from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 
+from ..flux2_modulev3.model import Flux2TransformerModel as _V3TransformerModel
+from ..flux2_modulev3.nvfp4_weight_adapter import convert_nvfp4_state_dict
 from .flux2 import Flux2Transformer2DModel
 from .model_config import Flux2Config
+
+_split_stacked_qkv = _V3TransformerModel._split_stacked_qkv
 
 
 class Flux2TransformerModel(ComponentModel):
@@ -46,18 +50,23 @@ class Flux2TransformerModel(ComponentModel):
     def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
 
+        if self.config.quant_config is not None:
+            state_dict = convert_nvfp4_state_dict(state_dict)
+
+        stacked_qkv = any(
+            ".attn.qkv_proj." in k or ".attn.add_qkv_proj." in k
+            for k in state_dict
+        )
+        if stacked_qkv:
+            state_dict = _split_stacked_qkv(state_dict)
+
         has_guidance_embedder = any(
             "time_guidance_embed.guidance_embedder." in k for k in state_dict
         )
-        if not has_guidance_embedder and getattr(
-            self.config, "guidance_embeds", True
-        ):
-            if hasattr(self.config, "model_copy"):
-                self.config = self.config.model_copy(
-                    update={"guidance_embeds": False}
-                )
-            else:
-                self.config.guidance_embeds = False
+        if not has_guidance_embedder and self.config.guidance_embeds:
+            self.config = self.config.model_copy(
+                update={"guidance_embeds": False}
+            )
 
         nn_model = Flux2Transformer2DModel(self.config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
