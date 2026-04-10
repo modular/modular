@@ -104,27 +104,25 @@ struct CountBox(Bumpable, ImplicitlyCopyable):
 
 
 def takes_int_params[*args: Int]():
-    comptime args_list = ParameterList[*args]()
-
     # CHECK-LABEL: -- Testing parameter varargs
     print("-- Testing parameter varargs")
 
     # can dynamically index the parameter list.
     var total = 0
-    for i in range(len(args_list)):
-        total += args_list[i]
+    for i in range(len(args)):
+        total += args[i]
     print("index:", total)
     # CHECK-NEXT: index: 15
 
     # can iterate the parameter list.
     total = 0
-    for i in args_list:
+    for i in args:
         total += i
     print("iterate: ", total)
     # CHECK-NEXT: iterate: 15
 
     # can also get statically-indexed elements as comptime values.
-    comptime elt = args_list[3]
+    comptime elt = args[3]
     print("comptime elt3: ", elt)
     # CHECK-NEXT: comptime elt3: 4
 
@@ -576,7 +574,7 @@ def test_tuple():
 def takes_variadic_params[
     T: Copyable, //, *values: T
 ]() -> Span[T, StaticConstantOrigin]:
-    return ParameterList[*values]().get_span()
+    return values.get_span()
 
 
 def test_comptime_variadics():

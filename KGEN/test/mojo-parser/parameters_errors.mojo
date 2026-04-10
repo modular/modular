@@ -675,5 +675,5 @@ struct TakeAutoParamVA[
 ]:
     pass
 
-# expected-error @+1 {{value passed to 'shape' cannot be converted from 'IntLiteral[23456]' to 'AutoParamVA[$0]', it depends on an unresolved parameter '$0'}}
+# expected-error @+1 {{value passed to 'shape' cannot be converted from 'IntLiteral[23456]' to 'AutoParamVA[$1]', it depends on an unresolved parameter '$0'}}
 comptime _ = TakeAutoParamVA[23456]

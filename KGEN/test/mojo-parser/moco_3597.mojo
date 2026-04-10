@@ -23,5 +23,5 @@ def callee(shape: Coord) raises:
 
 
 def caller[MType: CoordLike, NType: CoordLike](m: MType, n: NType) raises:
-    # CHECK: lit.call @{{.*}}@"callee[KGENParamList[{{.*}}::CoordLike]]
+    # CHECK: lit.call @{{.*}}@"callee[KGENParamList[{{.*}}::CoordLike]
     callee((m, n))

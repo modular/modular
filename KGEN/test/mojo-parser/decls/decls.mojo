@@ -154,13 +154,13 @@ def callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}Int]()"
     paramOverload[a]()
 
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b, c]>()
+    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b, c]
     paramOverload[a, b, c]()
 
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload({{.*}}Int)"
     paramOverload(x)
 
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b]>(%x)
+    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b], {{.*}}>(%x)
     paramOverload[a, b](x)
 
 struct VariadicStruct[*Ts: TrivialRegisterPassable]:

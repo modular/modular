@@ -200,15 +200,15 @@ def variadicParameter[*Ts: TrivialRegisterPassable](x: Int):
 # CHECK-SAME: [[ARGX:%.*]]: !FloatDyn
 # CHECK-SAME: [[ARGY:%.*]]: !Int
 def usePacks(x: FloatDyn, y: Int):
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int]
     var a: MyTuple[Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int, !FloatDyn, !Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int, !FloatDyn, !Int]
     var b: MyTuple[Int, FloatDyn, Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!Int]
     var c = MyTuple[Int](1)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!FloatDyn, [{{.*}}@__MLIRType<:non_struct_type index>, index]]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> [!FloatDyn, [{{.*}}@__MLIRType<:non_struct_type index>, index]]
     var d = MyTuple(3.14, Int(6)._mlir_value)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> []>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:param_list<!AnyType> []
     var e = MyTuple()
 
     pack(Int(1)._mlir_value)
@@ -220,9 +220,9 @@ def usePacks(x: FloatDyn, y: Int):
 
     packBorrowed(Int(1)._mlir_value, x, y)
 
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn]>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn]
     variadicParameter[Int, FloatDyn](1)
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!TrivialRegisterPassable> []>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!TrivialRegisterPassable> []
     variadicParameter(Int(2))
 
 
@@ -305,7 +305,7 @@ def variadic_pack_intable_sink_borrowed[*Ts: Intable](*elts: *Ts):
 # CHECK-SAME: [imm *[[IMP_ORIGIN_0:.*]]]
 # CHECK-SAME: read_mem|pack_vararg
 def forward_variadic_pack_borrowed_intable[*Ts: Intable](*pack: *Ts):
-    # CHECK-NEXT: lit.call tail {{.*}}variadic_pack_intable_sink_borrowed
+    # CHECK: lit.call tail {{.*}}variadic_pack_intable_sink_borrowed
     # CHECK-SAME:[imm *[[IMP_ORIGIN_0]]]
     # CHECK-SAME: :origin<0> *"pack.origin
     variadic_pack_intable_sink_borrowed(*pack)
@@ -321,7 +321,7 @@ def variadic_pack_intable_sink_mutable[*Ts: Intable](mut *elts: *Ts):
 # CHECK-SAME: [imm *[[IMP_ORIGIN_0:.*]]]
 # CHECK-SAME: mut|pack_vararg
 def forward_variadic_pack_mut_intable[*Ts: Intable](mut *pack: *Ts):
-    # CHECK-NEXT: lit.call tail {{.*}}variadic_pack_intable_sink_mutable
+    # CHECK: lit.call tail {{.*}}variadic_pack_intable_sink_mutable
     # CHECK-SAME: [imm *[[IMP_ORIGIN_0]]]
     # CHECK-SAME: :origin<1> *"pack.origin
     variadic_pack_intable_sink_mutable(*pack)

@@ -936,6 +936,79 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   return type;
 }
 
+// If this argument is a homogenous variadic parameter like "*args: SomeType"
+// then the process it into a ParameterList or TypeList.
+static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
+                                       IREmitter &emitter,
+                                       TypeCheckedParamList &tcParamList) {
+  assert(arg.variadicKind == VariadicKind::PosVarArg &&
+         "this applies to variadic arguments");
+
+  // Any _'s in the argument type get autoparameterized before we form something
+  // around it.
+  elementType = addImplicitTypeParams(arg.name, elementType, tcParamList,
+                                      /*append=*/true, arg.loc);
+  if (!elementType)
+    return {};
+
+  // Form a ParameterList/TypeList type.
+  ASTType listType;
+  auto elementMetaType = elementType.extractMetaType();
+  if (sugarIsa<StructMetaType>(elementMetaType) ||
+      sugarIsa<NonStructTypeType>(elementMetaType) ||
+      sugarIsa<TraitType>(elementMetaType))
+    listType = emitter.shared.lookupBuiltinType("ParameterList",
+                                                emitter.declScope, arg.loc);
+  else {
+#if ENABLE_TYPELIST
+    listType = emitter.shared.lookupBuiltinType("TypeList", emitter.declScope,
+                                                arg.loc);
+#else
+    // FIXME: Enable TypeList for non-value vararg params.
+    return ParamListType::get(elementType);
+#endif
+  }
+
+  if (isa<TypeCheckErrorType>(listType))
+    return listType; // Sanity check the returned VariadicList declaration.
+  ASTDecl *listDecl = listType.getDecl(emitter.shared);
+
+  // We expect:
+  //   ParameterList[type: AnyType, //, *values: type](
+  if (!listDecl) {
+    emitter.emitError(arg.loc, "malformed ParameterList");
+    return {};
+  }
+  auto structDeclOp =
+      dyn_cast_if_present<StructDeclOp>(*listDecl->getIfOperation());
+  if (!structDeclOp || structDeclOp.getParams().size() != 2) {
+    emitter.emitError(arg.loc, "malformed ParameterList");
+    return {};
+  }
+
+  ParamBindings bindings(emitter.declScope, arg.typeExpr);
+  bindings.add(arg.typeExpr, PValue(elementType),
+               StringAttr::get(emitter.getContext(), "type"));
+  bindings.add(arg.typeExpr, // 'values' is left unbound.
+               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
+               StringAttr::get(emitter.getContext(), "values"));
+
+  TypeSignatureType sig = structDeclOp.getSignature();
+  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, listDecl,
+                     /*discardError=*/false);
+  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
+
+  if (!bindingValuesAttr)
+    return emitter.shared.getTypeCheckErrorType();
+  ASTType result = structDeclOp.bindReference(bindingValuesAttr.getValue());
+
+  // Add the !kgen.param_list parameter to the parameter list.  It is possible
+  // the element type is a non-inferred parameter, so "append" this.
+  return addImplicitTypeParams(arg.name, result, tcParamList,
+                               /*append=*/false, arg.loc);
+}
+
 TypeCheckedParamList::TypeCheckedParamList(ASTDecl &declScope)
     : declScope(declScope), shared(declScope.getShared()) {}
 
@@ -964,8 +1037,6 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         type = TraitType::get(getFullyResolvedSymbolRef(
             cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
       }
-      type = addImplicitTypeParams(arg.name, type, result,
-                                   /*append=*/false, arg.loc);
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -982,11 +1053,18 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     assert(variadicKind != VariadicKind::PackVarArg &&
            "parameters may not be variadic packs");
 
+    // Variadics turn into ParameterList or TypeList.
     if (variadicKind == VariadicKind::PosVarArg) {
-      if (!type.isTypeCheckErrorType())
-        type = ParamListType::get(type);
-      else
-        variadicKind = VariadicKind::None;
+      type = typeCheckVariadicParams(type, arg, emitter, result);
+      if (!type)
+        arg.variadicKind = VariadicKind::None;
+    }
+
+    type = addImplicitTypeParams(arg.name, type, result,
+                                 /*append=*/false, arg.loc);
+    if (!type) {
+      type = emitter.shared.getTypeCheckErrorType();
+      hasErrors = true;
     }
 
     // Emit default parameter values if present. An error would have been

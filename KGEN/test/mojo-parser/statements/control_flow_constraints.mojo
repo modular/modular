@@ -15,15 +15,7 @@ struct PStruct[*a: Int]:
     @always_inline("builtin")
     @staticmethod
     def predicate() -> Bool:
-        comptime size = Int(
-            mlir_value=__mlir_attr[
-                `#kgen.param_list.size<:`,
-                type_of(Self.a),
-                ` `,
-                +Self.a,
-                `> :index`,
-            ]
-        )
+        comptime size = Self.a.size
         comptime result = size == 2
         return result
 
@@ -31,9 +23,9 @@ struct PStruct[*a: Int]:
 # CHECK-LABEL: lit.fn @"double_where_clause
 # CHECK-SAME: where {<
 # CHECK-SAME: ::@PStruct::@"predicate()"
-# CHECK-SAME: eq(#kgen.param_list.size<:param_list<!Int> *"x.a`">, 2)), #{{[[:alnum:]]+}}>, <
+# CHECK-SAME: eq(#kgen.param_list.size<:param_list<!Int> *"x.a.values``">, 2)), #{{[[:alnum:]]+}}>, <
 # CHECK-SAME: ::@PStruct::@"predicate()"
-# CHECK-SAME: eq(#kgen.param_list.size<:param_list<!Int> *"y.a`2">, 2)), #{{[[:alnum:]]+}}>}
+# CHECK-SAME: eq(#kgen.param_list.size<:param_list<!Int> *"y.a.values``3">, 2)), #{{[[:alnum:]]+}}>}
 def double_where_clause(
     x: PStruct[...], y: PStruct[...]
 ) where type_of(x).predicate() where type_of(y).predicate():

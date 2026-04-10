@@ -17,7 +17,7 @@ def use[T: AnyType](a: T):
 
 # CHECK-LABEL: lit.fn @"tuples_rv
 def tuples_rv(a: Int, b: FloatDyn):
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}Tuple <:param_list<!Movable> []>>,
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}Tuple <:param_list<!Movable> []
     # CHECK: lit.call {{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]])
     use(())
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
@@ -150,21 +150,21 @@ def swap_container_fields(mut v: Container[_]):
 
 
 # CHECK-LABEL: lit.fn @"returnTup0
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> []>
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> []
 def returnTup0() -> Tuple[]:
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
 
 # CHECK-LABEL: lit.fn @"returnTup0a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> []>
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> []
 def returnTup0a() -> ():
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> [!Int]>>,
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> [!Int]
 def returnTup1() -> Tuple[Int]:
     # CHECK: %0 = kgen.param.constant: !Int
     # CHECK:   = lit.ref.pack.create({{.*}}) : !lit.ref.pack<:param_list<!Movable> [!Int],
@@ -173,7 +173,7 @@ def returnTup1() -> Tuple[Int]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> [!Int]>
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> [!Int]
 def returnTup1a() -> Tuple[Int]:
     return (Int(4),)
 
@@ -183,7 +183,7 @@ def returnTup1b() -> Tuple[Int]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup2
-# CHECK-SAME:  %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> [!Int, !FloatDyn]>
+# CHECK-SAME:  %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> [!Int, !FloatDyn]
 def returnTup2() -> Tuple[Int, FloatDyn]:
     # CHECK:  = kgen.param.constant: !Int = <{4}>
     # CHECK:  = kgen.param.constant: !FloatDyn = <{{.*}}{:scalar<f64> "2"}
@@ -192,7 +192,7 @@ def returnTup2() -> Tuple[Int, FloatDyn]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup2a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> [!Int, !FloatDyn]>>,
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!Movable> [!Int, !FloatDyn]
 def returnTup2a() -> Tuple[Int, FloatDyn]:
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:param_list<!Movable> [!Int, !FloatDyn]
     return (Int(4), 2.0)
@@ -204,7 +204,7 @@ def returnTup2b() -> Tuple[Int, FloatDyn]:
 
 
 # CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable>
-# CHECK-SAME: #Tuple <:param_list<!Movable> [upcast(:!ImplicitlyCopyable T), upcast(:!ImplicitlyCopyable T)]>
+# CHECK-SAME: #Tuple <:param_list<!Movable> [upcast(:!ImplicitlyCopyable T), upcast(:!ImplicitlyCopyable T)]
 def takesSugarTuple[T: ImplicitlyCopyable](elements: Tuple[T, T]):
     pass
 

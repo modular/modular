@@ -260,7 +260,7 @@ def implicit_params_with_var_params[*Ts: Int](s: TwoParams[1, _]): pass
 # CHECK-LABEL: lit.fn @"test_implicit_params_with_var_params
 def test_implicit_params_with_var_params():
     # CHECK: [[VAL0:%.*]] = lit.call {{.*}}@TwoParams::@"__init__{{.*}}<:!Int {1}, :!Int {2}>() :
-    # CHECK: call {{.*}}@"implicit_params_with_var_params{{.*}}<:param_list<!Int> [], :!Int {2}>([[VAL0]])
+    # CHECK: call {{.*}}@"implicit_params_with_var_params{{.*}}<:param_list<!Int> [], {{.*}}, :!Int {2}>([[VAL0]])
     implicit_params_with_var_params(TwoParams[1, 2]())
 
 # CHECK-LABEL: lit.fn @"explicit_autoparameterization
@@ -332,7 +332,7 @@ def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () thin -> None]
 
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
-# CHECK-SAME: <["f.__origins__`"]*"f.__origins__`": origin.set, +, f: {{.*}}, x: param_list<!Int> pos_vararg>
+# CHECK-SAME: <["f.__origins__`"]*"f.__origins__`": origin.set, {{.*}} +, f: {{.*}}, x: !lit.struct<#ParameterList{{.*}} pos_vararg>
 def autoparam_param_vararg[f: def () thin [_] -> None, *x: Int]():
     pass
 
@@ -700,11 +700,15 @@ struct UnqualAliasLookup[param: Int]:
 # Variadic parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.fn @"fnWithVariadics{{.*}}"<b: param_list<!Int> pos_vararg>
+# CHECK-LABEL: lit.fn @"fnWithVariadics
+# CHECK-SAME: <["b.values`"]*"b.values`": param_list<!Int>, +, 
+# CHECK-SAME: b: !lit.struct<#ParameterList <:!AnyType !Int, :param_list<!Int> *"b.values`">> pos_vararg>
 def fnWithVariadics[*b: Int]():
   pass
 
-# CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: param_list<!Int> pos_vararg>
+# CHECK-LABEL: lit.struct.decl @StructWithVariadics
+# CHECK-SAME: <["b.values`"]*"b.values`": param_list<!Int>, +, 
+# CHECK-SAME: b: !lit.struct<#ParameterList <:!AnyType !Int, :param_list<!Int> *"b.values`">> pos_vararg>
 struct StructWithVariadics[*b: Int]:
     @implicit
     def __init__(out self, i: Int):
@@ -712,16 +716,16 @@ struct StructWithVariadics[*b: Int]:
 
 # CHECK-LABEL: lit.fn @"useParamVariadics
 def useParamVariadics():
-  # CHECK-NEXT: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> []>()
+  # CHECK-NEXT: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> []
   fnWithVariadics()
 
-  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> [{1}]>()
+  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> [{1}]
   fnWithVariadics[1]()
-  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> [{1}, {2}]>()
+  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:param_list<!Int> [{1}, {2}]
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl *"defAlias{{[^"]*}}": !lit.generator<<"b": param_list<!Int> pos_vararg>!kgen.func.literal<{{.*}}@"fnWithVariadics
+  # CHECK-NEXT: lit.alias.decl *"defAlias{{[^"]*}}": !lit.generator<<"b.values`": param_list<!Int>{{.*}}>!kgen.func.literal<{{.*}}@"fnWithVariadics
   comptime defAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
@@ -731,25 +735,25 @@ def useParamVariadics():
   # HECK-NEXT: lit.ref.store [[TMP]], %defLet
   # var defLet = fnWithVariadics
 
-  # CHECK-NEXT: %a = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> []>
+  # CHECK-NEXT: %a = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> []
   var a: StructWithVariadics[]
-  # CHECK-NEXT: %b = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> [{1}]>
+  # CHECK-NEXT: %b = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> [{1}]
   var b: StructWithVariadics[1]
-  # CHECK-NEXT: %c = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> [{1}, {2}]>
+  # CHECK-NEXT: %c = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:param_list<!Int> [{1}, {2}]
   var c: StructWithVariadics[1, 2]
 
   # TODO(16040): fix symbol name mangling to erase parameter name 'b'
-  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:param_list<!Int> [{1}]>
+  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:param_list<!Int> [{1}]
   var d = StructWithVariadics[1](2)
-  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:param_list<!Int> []>
+  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:param_list<!Int> []
   var e = StructWithVariadics(3)
 
 
 # CHECK-LABEL: lit.fn @"unpack_variadic
 def unpack_variadic[*a: Int]():
-    # CHECK-NEXT: @StructWithVariadics<:param_list<!Int> a>
+    # CHECK-NEXT: @StructWithVariadics<:param_list<!Int> *"a.values`", :!lit.struct<#ParameterList <:!AnyType !Int, :param_list<!Int> *"a.values`">> a>>
     comptime T = StructWithVariadics[*a]
-    # CHECK-NEXT: fnWithVariadics{{.*}}<:param_list<!Int> a>
+    # CHECK-NEXT: fnWithVariadics{{.*}}<:param_list<!Int> *"a.values`", :!lit.struct<#ParameterList <:!AnyType !Int, :param_list<!Int> *"a.values`">> a>>
     comptime f = fnWithVariadics[*a]
 
 
@@ -758,7 +762,7 @@ def variadic_parameter[elems: __mlir_type.`!kgen.param_list<index>`]() -> Int:
     return 3
 
 def dependent_variadic_parameter[
-    type: TrivialRegisterPassable, *values: type
+    type: TrivialRegisterPassable, //, *values: type
 ](): pass
 
 # CHECK-LABEL: lit.fn @"pass_variadic{{.*}}"<elems: param_list<index>>
@@ -766,7 +770,7 @@ def pass_variadic[elems: __mlir_type.`!kgen.param_list<index>`]():
     # CHECK-NEXT: lit.call {{.*}}@"variadic_parameter{{.*}}"<:param_list<index> elems>
     _ = variadic_parameter[elems]()
     # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!TrivialRegisterPassable !Int, :param_list<!Int>
-    _ = dependent_variadic_parameter[Int, 1, 2]()
+    _ = dependent_variadic_parameter[type=Int, 1, 2]()
 
 
 # Variadic list initialization of List does not work in alias domain
@@ -989,7 +993,7 @@ def out_of_order_kw[x: Int, y: IndexParam[x]]():
 
 # CHECK-LABEL: lit.fn @"test_deduce_kw_only
 def test_deduce_kw_only(a: Abstraction[3]):
-    # CHECK: call {{.*}}@"deduce_kw_only{{.*}}<:param_list<!Int> [{1}, {2}], :!Int {3}>(%a)
+    # CHECK: call {{.*}}@"deduce_kw_only{{.*}}:param_list<!Int> [{1}, {2}], {{.*}}:!Int {3}>(%a)
     deduce_kw_only[1, 2](a)
 
 # Make sure the +1 in the 'a' argument doesn't break inference.
@@ -1793,7 +1797,8 @@ struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()]:
     pass
 
 
-# CHECK-LABEL: lit.alias.decl *"WithDefaultParam{{.*}}": meta<!lit.struct<#HasDefaultParam <:param_list<!Int> [{4}], :!lit.struct<#HasParamList <:param_list<!Int> [{4}]>>
+# CHECK-LABEL: lit.alias.decl *"WithDefaultParam
+# CHECK-SAME: meta<!lit.struct<#HasDefaultParam <:param_list<!Int> [{4}], {{.*}}:!lit.struct<#HasParamList <:param_list<!Int> [{4}]
 comptime WithDefaultParam = HasDefaultParam[]
 
 
@@ -1812,7 +1817,7 @@ def _get_element_idx2(buff: NDBuffer[_]):
 
 def _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
     # CHECK:      lit.call tail @parameters::@"_get_element_idx2
-    # CHECK-SAME: <:param_list<!Int> *"shape.values`", :!lit.struct<#DimList <:param_list<!Int> *"shape.values`">> shape>
+    # CHECK-SAME: <:param_list<!Int> *"shape.values.values``", {{.*}}:!lit.struct<#DimList <:param_list<!Int> *"shape.values.values``"{{.*}}>> shape>
     _get_element_idx2(src)
 
 

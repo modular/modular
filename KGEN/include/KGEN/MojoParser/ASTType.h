@@ -11,6 +11,9 @@
 #ifndef KGEN_MOJOPARSER_ASTTYPE_H
 #define KGEN_MOJOPARSER_ASTTYPE_H
 
+// FIXME: Enable this to make parameter variadics of types to be TypeList.
+#define ENABLE_TYPELIST 0
+
 #include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -209,6 +212,7 @@ public:
 
   struct ParameterListInfo {
     Type elementType;
+    TypedAttr valueList;
   };
   /// Given a type of TypeList/ParameterList, return the element type and the
   /// values list that are bound to it. If it isn't a ParameterList/TypeList,

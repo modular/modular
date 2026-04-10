@@ -142,7 +142,58 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
         return UpcastAttr::get(downcast.getType(),
                                downcast.getInputTypeValue());
     }
+
+    // Do the same for param_list.
+    if (auto toList = sugarDynCast<ParamListType>(downcast.getType())) {
+      if (TraitType toEltTrait =
+              sugarDynCast<TraitType>(toList.getElementType())) {
+        auto srcMetaType =
+            sugarDynCast<ParamListType>(downcast.getInputTypeValue().getType());
+        if (srcMetaType && sugarIsa<TraitType>(srcMetaType.getElementType())) {
+
+          auto srcEltTrait = sugarCast<TraitType>(srcMetaType.getElementType());
+          bool srcEltImpliesTo =
+              ASTType(srcEltTrait).checkConformance(toEltTrait, shared, {}) ==
+              ConformanceResult::Yes;
+          if (srcEltImpliesTo)
+            return UpcastAttr::get(downcast.getType(),
+                                   downcast.getInputTypeValue());
+        }
+
+#if 0
+        auto fromType = ASTType(downcast.getInputTypeValue());
+        bool fromImpliesTo = fromType.checkConformance(toTrait, shared, {}) ==
+                             ConformanceResult::Yes;
+        if (fromImpliesTo)
+          return UpcastAttr::get(downcast.getType(),
+                                 downcast.getInputTypeValue());
+#endif
+      }
+    }
   }
+
+#if 0
+  // Handle UpcastAttr: if upcasting to a type that *is* a super trait, then we
+  // can fold this into a TypeParamAttr.
+  if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
+    if (TypedAttr folded = LIT::foldDowncastToStructType(downcast))
+      return folded;
+    // If we are downcasting a more-refined trait to a less-refined trait, use
+    // the more refined trait.
+    if (TraitType toTrait = sugarDynCast<TraitType>(downcast.getType())) {
+      auto fromType = ASTType(downcast.getInputTypeValue());
+      bool fromImpliesTo = fromType.checkConformance(toTrait, shared, {}) ==
+                           ConformanceResult::Yes;
+      if (fromImpliesTo)
+        return UpcastAttr::get(downcast.getType(),
+                               downcast.getInputTypeValue());
+    }
+  }
+#endif
+
+  //  if (auto upcast = sugarDynCastIfPresent<UpcastAttr>(typedAttr)) {
+  //    typedAttr.dump();
+  //  }
 
   // Otherwise, this is not something we can evaluate, which is ok, because
   // the parser won't be able to evaluate everything. The user is expected to

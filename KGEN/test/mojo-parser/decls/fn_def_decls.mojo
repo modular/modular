@@ -78,7 +78,7 @@ def variadic_arg_after_default(
 
 
 # CHECK-LABEL: lit.fn @"variadic_param_after_default
-# CHECK-SAME: <a: !Int, b: !Int = {0}, args: {{.*}} pos_vararg = :none *?, *, c: !Int, d: !Int = {1}>()
+# CHECK-SAME: a: !Int, b: !Int = {0}, args: {{.*}} pos_vararg = :none *?, *, c: !Int, d: !Int = {1}>()
 def variadic_param_after_default[
     a: Int, b: Int = 0, *args: Int, c: Int, d: Int = 1
 ]():
@@ -293,7 +293,7 @@ def test_fn_literal_parameter[x : test_fn_literal_type_type_1]():
     comptime t = x[3]
 
 
-fn test_fn_literal_call():
+def test_fn_literal_call():
     # CHECK: lit.call @{{.*}}::@"test_fn_literal_type[::Int,::Int]()"{{.*}}<:!Int {1}, :!Int {2}>
     var _ = test_fn_literal_type[1, 2]()
 

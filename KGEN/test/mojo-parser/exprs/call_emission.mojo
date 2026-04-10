@@ -218,13 +218,13 @@ def takes_variadic_and_kw_only_params[
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params
 def test_variadic_and_kw_only_params[x: Int]():
-    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:!Int x, :!Int x, :param_list<!Int> [], :!Int x, :!Int {0}>()
+    # CHECK: lit.call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:param_list<!Int> [], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {0}>()
     takes_variadic_and_kw_only_params[x, x, c=x]()
 
-    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:!Int x, :!Int x, :param_list<!Int> [], :!Int x, :!Int x>()
+    # CHECK: lit.call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:param_list<!Int> [], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int x>()
     takes_variadic_and_kw_only_params[x, x, d=x, c=x]()
 
-    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:!Int x, :!Int x, :param_list<!Int> [x, x], :!Int x, :!Int {0}>()
+    # CHECK: lit.call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:param_list<!Int> [x, x], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {0}>()
     takes_variadic_and_kw_only_params[x, x, x, x, c=x]()
 
 
@@ -232,10 +232,10 @@ def test_variadic_and_kw_only_params[x: Int]():
 def test_variadic_and_kw_only_params_indirect[x: Int,
     callee: def [a: Int, b: Int, *args: Int, c: Int, d: Int = 0]() thin -> None]():
 
-    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int x, :param_list<!Int> [], :!Int x, :!Int {0})]()
+    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :param_list<!Int> [], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {0})]()
     callee[x, x, c=x]()
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int x, :param_list<!Int> [x, x], :!Int x, :!Int {0})]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :param_list<!Int> [x, x], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {0})]()
     callee[x, x, x, x, c=x]()
 
 

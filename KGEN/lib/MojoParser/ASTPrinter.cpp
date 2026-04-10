@@ -253,7 +253,7 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
   if (params.empty())
     return;
 
-  SmallVector<std::pair<StringAttr, TypedAttr>> paramsToPrint;
+  SmallVector<std::tuple<StringAttr, TypedAttr, VariadicKind>> paramsToPrint;
 
   // If we're printing for diagnostics, we'll have 'paramInfo'.  In that case we
   // want to avoid printing defaulted parameter values that are the same as
@@ -268,6 +268,28 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
     bool skippedPositional = false;
     for (auto [idx, pog, paramValue] :
          llvm::enumerate(paramInfo.getPogs(), params)) {
+
+      // Inline variadic parameter values if they are known.
+      if (pog.isPosVarArg()) {
+        auto info = ASTType(paramValue.getType()).getParameterListInfo();
+#if !ENABLE_TYPELIST
+        if (!info.valueList) {
+          // Legacy rep can return null here.
+        } else
+#endif
+            if (auto values = dyn_cast<ParamListAttr>(info.valueList)) {
+          // Each value is passed as an individual value to the vararg, not an
+          // unpack.
+          for (auto elt : values.getValues())
+            paramsToPrint.push_back({StringAttr(), elt, VariadicKind::None});
+          continue;
+        } else if (sugarIsa<UnknownAttr>(paramValue)) {
+          paramsToPrint.push_back(
+              {StringAttr(), info.valueList, VariadicKind::PosVarArg});
+          continue;
+        }
+        // TODO: Should add "*" ahead of splatted lists.
+      }
 
       auto passingKind = pog.getPassingKind();
 
@@ -304,26 +326,32 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
         name = paramInfo.getName(idx);
         break;
       }
-      paramsToPrint.push_back({name, paramValue});
+      paramsToPrint.push_back({name, paramValue, VariadicKind::None});
     }
 
   } else {
     // When generating mangled names, don't include names for parameters since
     // positional information is enough.
     for (TypedAttr paramValue : params)
-      paramsToPrint.push_back({StringAttr(), paramValue});
+      paramsToPrint.push_back({StringAttr(), paramValue, VariadicKind::None});
   }
 
   if (!paramsToPrint.empty()) {
     os << '[';
-    llvm::interleaveComma(paramsToPrint, os,
-                          [&](std::pair<StringAttr, TypedAttr> param) {
-                            if (param.first)
-                              os << param.first.strref() << '=';
-                            if (typesImplied && diagShared)
-                              removeImplicitCtorCall(param.second, diagShared);
-                            ASTType::printParam(os, param.second, diagShared);
-                          });
+    llvm::interleaveComma(
+        paramsToPrint, os,
+        [&](std::tuple<StringAttr, TypedAttr, VariadicKind> param) {
+          if (StringAttr name = std::get<0>(param))
+            os << name.strref() << '=';
+
+          if (std::get<2>(param) == VariadicKind::PosVarArg)
+            os << '*';
+
+          TypedAttr value = std::get<1>(param);
+          if (typesImplied && diagShared)
+            removeImplicitCtorCall(value, diagShared);
+          ASTType::printParam(os, value, diagShared);
+        });
     os << ']';
   }
 }

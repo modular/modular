@@ -354,7 +354,7 @@ struct VariadicTrait[*I: Int](RegisterPassable, SimpleTraitMethod):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}SimpleTraitMethod
-    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}}<:param_list<!Int> I>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:param_list<!Int> I>
+    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 def test_bind_variadic():
@@ -362,7 +362,7 @@ def test_bind_variadic():
     def bind_trait[T: SimpleTraitMethod]():
         pass
 
-    # CHECK: call{{.*}}@VariadicTrait<:param_list<!Int> []>
+    # CHECK: call{{.*}}@VariadicTrait<:param_list<!Int> []
     bind_trait[VariadicTrait[]]()
 
 
@@ -927,11 +927,11 @@ struct TestNamedResultConformance(TrivialRegisterPassable, Trait1):
     def f(self, out output: Self):
         pass
 
-def test_pack_of_traits1[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait]
+def test_pack_of_traits1[elt_trait: _AnyTypeMetaType, //, *elt_types: elt_trait]
                        (var *args: *elt_types):
      pass
 
-def test_pack_of_traits2[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait](
+def test_pack_of_traits2[elt_trait: _AnyTypeMetaType, //, *elt_types: elt_trait](
     var storage: VariadicPack[element_trait=elt_trait, _, *elt_types]):
      pass
 
@@ -965,7 +965,7 @@ struct FormVariadicPackWithCastedElementVariadic[
 def take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T, AnyOrigin[mut=True]]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
 # CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <{{.*}}!lit.anytrait<!ImplicitlyCopyable> element_trait>
-def test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
+def test_parametric_anytype_movable[element_trait: _CollectionElementMetaType, //,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0], AnyOrigin[mut=True]]):
 

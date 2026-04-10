@@ -658,6 +658,16 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
       return DowncastAttr::get(type, upcast.getInputTypeValue());
   }
 
+  // downcast(upcast(x)) = x  (when they are exactly the same type)
+  if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue)) {
+    if (upcast.getInputTypeValue().getType() == type) {
+      llvm::errs() << "HERE\n";
+      return upcast.getInputTypeValue();
+    }
+
+    return getCastAttr<CastAttr>(type, upcast.getInputTypeValue());
+  }
+
   return CastAttr::Base::get(type.getContext(), type, inputTypeValue);
 }
 
@@ -4162,6 +4172,11 @@ static std::optional<SugarKind> canElideSugarFor(TypedAttr attr) {
   // implementation details of low-level types, not something we want to expose
   // to Mojo programmers.
   if (isa<IntegerAttr>(attr))
+    return SugarKind::AlwaysInlineBuiltin;
+
+  // Anything that resolves into an UnknownAttr is a struct with no state.  All
+  // the computation is happening in the type domain, as in the literal types.
+  if (isa<UnknownAttr>(attr))
     return SugarKind::AlwaysInlineBuiltin;
 
   // Anything that resolves into an UnknownAttr is a struct with no state.  All

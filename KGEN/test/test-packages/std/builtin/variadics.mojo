@@ -39,9 +39,9 @@ struct Variadic:
         `#kgen.param_list<>: `, _MLIR.KGENParamListType[T], `>`
     ]
     comptime types[T: type_of(AnyType), //, *Ts: T] = Ts
-    comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
+    comptime values[T: AnyType, //, *elts: T]: Variadic.ValuesOfType[
         T
-    ] = values_
+    ] = elts.values
 
     # ===-----------------------------------------------------------------------===#
     # VariadicConcat
@@ -50,12 +50,12 @@ struct Variadic:
     comptime concat_types[
         T: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[T]
     ] = __mlir_attr[
-        `#kgen.param_list.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
+        `#kgen.param_list.concat<`, Ts.values, `> :`, Variadic.TypesOfTrait[T]
     ]
     comptime concat_values[
         T: AnyType, //, *Ts: Variadic.ValuesOfType[T]
     ] = __mlir_attr[
-        `#kgen.param_list.concat<`, Ts, `> :`, Variadic.ValuesOfType[T]
+        `#kgen.param_list.concat<`, Ts.values, `> :`, Variadic.ValuesOfType[T]
     ]
     comptime reverse[
         T: type_of(AnyType), //, *element_types: T
@@ -152,7 +152,7 @@ struct Variadic:
         Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
     ] = __mlir_attr[
         `#kgen.param_list.zip<`,
-        types,
+        types.values,
         `> : `,
         _MLIR.KGENParamListType[Variadic.TypesOfTrait[Trait]],
     ]
@@ -160,7 +160,7 @@ struct Variadic:
         type: AnyType, //, *values: Variadic.ValuesOfType[type]
     ] = __mlir_attr[
         `#kgen.param_list.zip<`,
-        values,
+        values.values,
         `> : `,
         _MLIR.KGENParamListType[Variadic.ValuesOfType[type]],
     ]

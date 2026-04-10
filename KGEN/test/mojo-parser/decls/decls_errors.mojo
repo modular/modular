@@ -373,10 +373,9 @@ def unprovable_constraints[x: Int, y: Int]()
   where unfoldable_predicate(y):
     pass
 
-comptime IntVariadic = __mlir_type[`!kgen.param_list<`, Int, `>`]
-comptime IntSumReducerdef[Prev: Int, *From: Int, Idx: __mlir_type.index]: Int = Prev + From[Idx]
+comptime IntSumReducerdef[Prev: Int, From: Variadic.ValuesOfType[Int], Idx: __mlir_type.index]: Int = Prev + From[Idx]
 
-comptime IntSumReducer[Variadic: IntVariadic] = __mlir_attr[
+comptime IntSumReducer[Variadic: Variadic.ValuesOfType[Int]] = __mlir_attr[
   `#kgen.param_list.reduce<`,
   Int(0),  # base
   `,`,
@@ -389,7 +388,7 @@ comptime IntSumReducer[Variadic: IntVariadic] = __mlir_attr[
 
 # expected-note @below {{function declared here}}
 # expected-note @below {{constraint declared here evaluated to False}}
-def failing_constraint_with_depth[*vals: Int]() where IntSumReducer[vals] == 9:
+def failing_constraint_with_depth[*vals: Int]() where IntSumReducer[vals.values] == 9:
   pass
 
 def test_constraints():
@@ -1245,3 +1244,6 @@ def bar[n: Int]():
 
 
 comptime _ = MyParam.p # expected-error {{'p' refers to an unbound parameter in 'MyParam[?]'}}
+
+def pack_error[trait: type_of(AnyType), *element_types: trait]():
+    pass
