@@ -2212,6 +2212,98 @@ def _handle_scatter_add(
     return [output]
 
 
+def _scatter_reduction_common(
+    op: mo.ScatterMaxOp | mo.ScatterMinOp | mo.ScatterMulOp,
+    inputs: Sequence[Buffer | None],
+    mojo_fn_name: str,
+) -> Sequence[Buffer]:
+    """Shared logic for scatter_max, scatter_min, scatter_mul handlers.
+
+    All three reductions share the same operand layout (input, updates,
+    indices, axis) and the same pre-/post-processing: copy input to output,
+    then apply the Mojo reduction kernel.
+
+    Args:
+        op: The scatter reduction MO operation.
+        inputs: Input buffers - input, updates, indices, axis.
+        mojo_fn_name: Name of the Mojo kernel function to call
+            (``"ScatterMax"``, ``"ScatterMin"``, or ``"ScatterMul"``).
+
+    Returns:
+        List containing the scatter-reduced tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+    assert isinstance(inputs[2], Buffer)
+    assert isinstance(inputs[3], Buffer)
+
+    input_buffer = inputs[0]
+    updates_buffer = inputs[1]
+    indices_buffer = inputs[2]
+
+    axis = int(inputs[3].to_numpy().item())
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+    if axis < 0:
+        axis += ndim
+
+    inner_size = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
+    axis_size = in_shape[axis]
+    upd_shape = list(updates_buffer.shape)
+    num_updates_axis = upd_shape[axis]
+
+    output = Buffer(
+        shape=in_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    total_elements = prod(in_shape)
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.data_movement_ops.Memcpy(
+        output, input_buffer, 0, 0, total_elements, ctx_ptr
+    )
+
+    mojo_fn = getattr(ops.gather_scatter_ops, mojo_fn_name)
+    mojo_fn(
+        output,
+        updates_buffer,
+        indices_buffer,
+        (outer_size, axis_size, inner_size, num_updates_axis),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.ScatterMaxOp)
+def _handle_scatter_max(
+    op: mo.ScatterMaxOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter.max by copying input then applying max reduction."""
+    return _scatter_reduction_common(op, inputs, "ScatterMax")
+
+
+@register_op_handler(mo.ScatterMinOp)
+def _handle_scatter_min(
+    op: mo.ScatterMinOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter.min by copying input then applying min reduction."""
+    return _scatter_reduction_common(op, inputs, "ScatterMin")
+
+
+@register_op_handler(mo.ScatterMulOp)
+def _handle_scatter_mul(
+    op: mo.ScatterMulOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter.mul by copying input then applying mul reduction."""
+    return _scatter_reduction_common(op, inputs, "ScatterMul")
+
+
 def _conv_out_dim(
     in_dim: int, k: int, dilation: int, stride: int, pad_total: int
 ) -> int:
