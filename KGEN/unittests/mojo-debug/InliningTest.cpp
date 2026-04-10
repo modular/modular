@@ -62,8 +62,11 @@ TEST(InliningTest, testLiftedInlinedInoutArgPartialModification) {
   StopContext ctx = buildAndLaunch("inlined_partial_argument.mojo");
 
   SBValue pair = ctx.frame.FindVariable("p");
-  // Pre-req: Make sure the value was actually lifted by mem2reg.
-  EXPECT_FALSE(pair.GetAddress().IsValid());
+  // At -O0, trivial types may be spilled to stack for debugger visibility
+  // (extended debug lifetimes), so we don't assert register placement here.
+  // TODO: Add an -O1 variant to verify mem2reg still promotes register-passable
+  // types.  The test harness (MojoBinary / buildAndLaunch) hardcodes -O0, so
+  // this requires plumbing an opt-level parameter through the test infra first.
   // Check the value is the updated value from the inlined callee.
   ASSERT_EQ((int)pair.GetNumChildren(), 2);
   SBValue firstField = pair.GetChildAtIndex(0);

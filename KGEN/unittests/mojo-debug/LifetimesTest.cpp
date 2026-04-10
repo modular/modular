@@ -24,35 +24,39 @@ static void assertVarNotAvailable(StopContext &ctx, StringRef varName) {
                   .contains("variable not available"));
 }
 
+static void assertVarAvailable(StopContext &ctx, StringRef varName) {
+  SBValue var = ctx.frame.FindVariable(varName.data());
+  ASSERT_TRUE(var.IsValid() && var.GetError().Success())
+      << "expected variable '" << varName.data() << "' to be available";
+}
+
 TEST(LifetimesTest, testFullEagerDestruction) {
   /// Ensures that if a variable is completely destroyed eagerly, the
   /// lifetime of the value is reflected in DWARF.
+  /// Non-trivial types (String) are eagerly destroyed and become unavailable.
+  /// Trivial types (Int, SIMD) persist through the scope at -O0.
   StopContext ctx = buildAndLaunch("full_eager_destruction.mojo");
   SBValue text = ctx.frame.FindVariable("text");
   EXPECT_STREQ(text.GetSummary(), R"("hello")");
-  assertVarNotAvailable(ctx, "number");
-  assertVarNotAvailable(ctx, "simd");
 
   for (size_t i = 0; i < 2; ++i) {
     ctx.resume();
     SBValue number = ctx.frame.FindVariable("number");
     EXPECT_EQ((int)number.GetValueAsSigned(), 8);
     assertVarNotAvailable(ctx, "text");
-    assertVarNotAvailable(ctx, "simd");
   }
 
-  // Nothing is alive coming out of the loop.
+  // Non-trivial types are dead after their last use.
+  // Trivial types (number, simd) persist through the scope at -O0.
   ctx.resume();
   assertVarNotAvailable(ctx, "text");
-  assertVarNotAvailable(ctx, "number");
-  assertVarNotAvailable(ctx, "simd");
+  EXPECT_EQ((int)ctx.frame.FindVariable("number").GetValueAsSigned(), 8);
 
-  // Nothing is alive in the else-block as it's past the last use of all
-  // variables.
+  // Past the last use of all variables; non-trivial dead, trivial persists.
   ctx.resume();
   assertVarNotAvailable(ctx, "text");
-  assertVarNotAvailable(ctx, "number");
-  assertVarNotAvailable(ctx, "simd");
+  EXPECT_EQ((int)ctx.frame.FindVariable("number").GetValueAsSigned(), 8);
+  assertVarAvailable(ctx, "simd");
 
   // `text_moved` should be alive when breaking on the call.
   ctx.resume();
@@ -134,4 +138,68 @@ TEST(LifetimesTest, testRedefined) {
   ctx.resume();
   SBValue y = ctx.frame.FindVariable("y");
   EXPECT_STREQ(y.GetSummary(), R"("world")");
+}
+
+TEST(LifetimesTest, testTrivialTypePersistence) {
+  /// Tests that trivial types (Int, Float64, Bool) remain visible in the
+  /// debugger past their last use point through the end of their scope.
+  ///
+  /// At -O0, the compiler suppresses debuginfo.kill markers for variables
+  /// whose type has no destructor.  This keeps them visible in the debugger
+  /// through the end of their lexical scope, because the -O0
+  /// dbg.value→dbg.declare conversion gives them stable stack slots.
+  StopContext ctx = buildAndLaunch("trivial_type_persistence.mojo");
+
+  // Breakpoint 1: "after last use" — past the last use of my_int, my_float,
+  // my_bool.  Trivial types persist through the scope.
+  SBValue myInt = ctx.frame.FindVariable("my_int");
+  EXPECT_EQ((int)myInt.GetValueAsSigned(), 42);
+  assertVarAvailable(ctx, "my_float");
+  assertVarAvailable(ctx, "my_bool");
+
+  // Breakpoint 2: print(my_string) — my_string should be alive here.
+  // Trivial types are still visible.
+  ctx.resume();
+  SBValue myString = ctx.frame.FindVariable("my_string");
+  EXPECT_STREQ(myString.GetSummary(), R"("hello")");
+
+  myInt = ctx.frame.FindVariable("my_int");
+  EXPECT_EQ((int)myInt.GetValueAsSigned(), 42);
+  assertVarAvailable(ctx, "my_float");
+  assertVarAvailable(ctx, "my_bool");
+
+  // Breakpoint 3: "end" — past last use of my_string (non-trivial, should be
+  // dead). Trivial types still persist.
+  ctx.resume();
+  assertVarNotAvailable(ctx, "my_string");
+
+  myInt = ctx.frame.FindVariable("my_int");
+  EXPECT_EQ((int)myInt.GetValueAsSigned(), 42);
+  assertVarAvailable(ctx, "my_float");
+  assertVarAvailable(ctx, "my_bool");
+}
+
+TEST(LifetimesTest, testOriginTypesDoNotExtendNonTrivialLifetimes) {
+  /// Verifies that extending debug lifetimes of trivial types does NOT
+  /// transitively keep non-trivial values alive.  A trivial Int derived
+  /// from a non-trivial String (via len()) must not prevent the String
+  /// from being ASAP-destroyed.
+  StopContext ctx = buildAndLaunch("origin_type_persistence.mojo");
+
+  // Breakpoint 1: print(my_string) — my_string should be alive.
+  SBValue myString = ctx.frame.FindVariable("my_string");
+  EXPECT_STREQ(myString.GetSummary(), R"("hello")");
+
+  // `length` (trivial Int) persists through the scope.
+  SBValue length = ctx.frame.FindVariable("length");
+  EXPECT_EQ((int)length.GetValueAsSigned(), 5);
+
+  // Breakpoint 2: "after string use" — my_string (non-trivial) should be dead.
+  // The trivial `length` must NOT keep my_string alive.
+  ctx.resume();
+  assertVarNotAvailable(ctx, "my_string");
+
+  // But `length` (trivial) should still be visible.
+  length = ctx.frame.FindVariable("length");
+  EXPECT_EQ((int)length.GetValueAsSigned(), 5);
 }

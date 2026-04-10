@@ -690,6 +690,11 @@ struct ValueSet {
   /// This provides efficient lookup for origins buried in MLIR types.
   CachedOriginFinder &originFinder;
 
+  /// When true, suppress debuginfo.kill markers for values whose type has
+  /// no destructor.  This keeps trivially-destructible variables visible in
+  /// the debugger through the end of their lexical scope at -O0.
+  bool extendTrivialDebugLifetimes = false;
+
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
@@ -697,7 +702,8 @@ struct ValueSet {
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
   ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
-           CachedOriginFinder &originFinder);
+           CachedOriginFinder &originFinder,
+           bool extendTrivialDebugLifetimes = false);
 
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
@@ -749,6 +755,37 @@ struct ValueSet {
     return isTrivial(value.getType(), isIndirect);
   }
 
+  /// Return true if we should suppress the debuginfo.kill for this value.
+  /// At -O0, types without a destructor should stay visible in the debugger
+  /// past their last use.  Without the kill marker, the -O0
+  /// dbg.value→dbg.declare conversion gives them stable stack slots,
+  /// keeping them visible for the whole scope.
+  bool shouldSuppressDebugKill(const ValueInfo &info) const {
+    if (!extendTrivialDebugLifetimes || !info.debugVariable)
+      return false;
+    if (!info.value)
+      return false;
+    // Get the underlying element type for the value.
+    Type eltType;
+    if (info.isIndirect) {
+      if (auto refType = dyn_cast<RefType>(info.value.getType()))
+        eltType = refType.getElementType();
+      else
+        return false;
+    } else {
+      eltType = info.value.getType();
+    }
+    // Use a cheap attribute check: for concrete struct types, just look at the
+    // destructor attribute directly.  This avoids expensive parameter
+    // specialization that getDestructorForType() would perform for generic
+    // types.  For non-struct types (generics, traits), conservatively keep
+    // the kill.
+    auto structType = sugarDynCast<LIT::StructType>(eltType);
+    if (!structType)
+      return false;
+    return !typeDeclInfo.getStructDeclForType(structType).getDestructorAttr();
+  }
+
   raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;
   LLVM_DUMP_METHOD void dumpBV(const BitVector &bits) const {
     auto &os = llvm::errs();
@@ -789,8 +826,10 @@ private:
 /// This sentinel is also used by DestructorInsertion as a marker for
 /// "unreachable" code to avoid unnecessary meets.
 ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
-                   CachedOriginFinder &originFinder)
-    : typeDeclInfo(typeDeclInfo), originFinder(originFinder), func(func) {
+                   CachedOriginFinder &originFinder,
+                   bool extendTrivialDebugLifetimes)
+    : typeDeclInfo(typeDeclInfo), originFinder(originFinder),
+      extendTrivialDebugLifetimes(extendTrivialDebugLifetimes), func(func) {
   addValue(Value(), OriginTrackable(Value()), DebugInfo::DILocalVariableAttr());
 
   // Check if the local variables of this function need debug info.
@@ -2160,12 +2199,14 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
     }
 
     // Ok, the value needs to be dead here.  If we're tracking it and this is
-    // a whole object destroy, emit a debug kill.
+    // a whole object destroy, emit a debug kill (unless we're extending the
+    // debug lifetime of trivially-destructible types at -O0).
     if (valueRef.valueId) {
       const ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
       if (info.debugVariable &&
           (consumedValues.empty() ||
-           valueRef.getNumBits() == consumedValues.size())) {
+           valueRef.getNumBits() == consumedValues.size()) &&
+          !valueSet.shouldSuppressDebugKill(info)) {
         DebugInfo::KillOp::create(builder, info.debugVariable);
       }
     }
@@ -3566,11 +3607,13 @@ void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
 
     /// Emit a debug kill marker for the value if it is tracked with debug info
-    /// an if full value is destroyed.
+    /// and if full value is destroyed (unless extending trivial debug
+    /// lifetimes).
     // TODO(#34115): Emit fragment end-of-life for partial destruction.
     const ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
     if (info.debugVariable && valueRef.startBit == info.startValueBit &&
-        valueRef.endBit == info.endValueBit) {
+        valueRef.endBit == info.endValueBit &&
+        !valueSet.shouldSuppressDebugKill(info)) {
       DebugInfo::KillOp::create(builder, info.debugVariable);
     }
 
@@ -4044,7 +4087,8 @@ CheckLifetimes::processFunction(FunctionLikeOp func, TypeDeclInfo &typeDeclInfo,
 
   // Walk #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
-  ValueSet valueSet(typeDeclInfo, func, originFinder);
+  ValueSet valueSet(typeDeclInfo, func, originFinder,
+                    extendTrivialDebugLifetimes);
 
   // Walk #2: Scan the function and identify any uses of values that are not
   // defined, emitting diagnostics as we go.
