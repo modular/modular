@@ -791,6 +791,15 @@ scatter = functional(ops.scatter)
 #: Scatters values and accumulates duplicates along an axis.
 #: See :func:`max.graph.ops.scatter_add` for details.
 scatter_add = functional(ops.scatter_add)
+#: Scatters values keeping the maximum at duplicate indices.
+#: See :func:`max.graph.ops.scatter_max` for details.
+scatter_max = functional(ops.scatter_max)
+#: Scatters values keeping the minimum at duplicate indices.
+#: See :func:`max.graph.ops.scatter_min` for details.
+scatter_min = functional(ops.scatter_min)
+#: Scatters values multiplying at duplicate indices.
+#: See :func:`max.graph.ops.scatter_mul` for details.
+scatter_mul = functional(ops.scatter_mul)
 #: Scatters values using multi-dimensional indices.
 #: See :func:`max.graph.ops.scatter_nd` for details.
 scatter_nd = functional(ops.scatter_nd)

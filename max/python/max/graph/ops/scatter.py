@@ -275,6 +275,252 @@ def scatter_add(
     return result
 
 
+def scatter_max(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+    axis: int = -1,
+) -> TensorValue:
+    """Creates a new symbolic tensor by scattering the maximum of updates into input.
+
+    Produces an output tensor by scattering elements from updates into input
+    according to indices, keeping the maximum at duplicate indices.  For a 2-D
+    input with ``axis=0`` the update rule is:
+
+    .. code-block:: text
+
+        output[indices[i][j]][j] = max(output[indices[i][j]][j], updates[i][j])
+
+    and with ``axis=1``:
+
+    .. code-block:: text
+
+        output[i][indices[i][j]] = max(output[i][indices[i][j]], updates[i][j])
+
+    Args:
+        input: The input symbolic tensor to scatter into.
+        updates: A symbolic tensor of values to compare.
+        indices: The positions in input to update.
+        axis: The axis along which indices indexes into.
+
+    Returns:
+        A new symbolic tensor with the same shape and dtype as input.
+
+    Raises:
+        ValueError: If ``axis`` is out of range, if dtypes mismatch, if
+            ``indices`` dtype is not int32/int64, or if any input is on a
+            non-CPU device and
+            ``strict_device_placement=DevicePlacementPolicy.Error``.
+    """
+    input = TensorValue(input)
+
+    if not (-input.rank <= axis < input.rank):
+        raise ValueError(
+            f"Invalid axis value {axis}. Axis must be in range"
+            f" [-{input.rank}, {input.rank - 1}]"
+        )
+
+    updates = TensorValue(updates)
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype '{input.dtype}' and updates dtype"
+            f" '{updates.dtype}' must match."
+        )
+
+    indices = TensorValue(indices)
+    if indices.dtype not in [DType.int32, DType.int64]:
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'."
+            " Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+    old_device = input.device if not input.device.is_cpu() else None
+    if old_device is not None:
+        _check_device_placement("ops.scatter_max", "TODO(GEX-2197).")
+        input = transfer_to(input, DeviceRef.CPU())
+        updates = transfer_to(updates, DeviceRef.CPU())
+        indices = transfer_to(indices, DeviceRef.CPU())
+    axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
+
+    result = Graph.current._add_op_generated(
+        rmo.MoScatterMaxOp,
+        input.type,
+        input,
+        updates,
+        indices,
+        axis_constant,
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+    if old_device is not None:
+        return transfer_to(result, old_device)
+    return result
+
+
+def scatter_min(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+    axis: int = -1,
+) -> TensorValue:
+    """Creates a new symbolic tensor by scattering the minimum of updates into input.
+
+    Produces an output tensor by scattering elements from updates into input
+    according to indices, keeping the minimum at duplicate indices.  For a 2-D
+    input with ``axis=0`` the update rule is:
+
+    .. code-block:: text
+
+        output[indices[i][j]][j] = min(output[indices[i][j]][j], updates[i][j])
+
+    and with ``axis=1``:
+
+    .. code-block:: text
+
+        output[i][indices[i][j]] = min(output[i][indices[i][j]], updates[i][j])
+
+    Args:
+        input: The input symbolic tensor to scatter into.
+        updates: A symbolic tensor of values to compare.
+        indices: The positions in input to update.
+        axis: The axis along which indices indexes into.
+
+    Returns:
+        A new symbolic tensor with the same shape and dtype as input.
+
+    Raises:
+        ValueError: If ``axis`` is out of range, if dtypes mismatch, if
+            ``indices`` dtype is not int32/int64, or if any input is on a
+            non-CPU device and
+            ``strict_device_placement=DevicePlacementPolicy.Error``.
+    """
+    input = TensorValue(input)
+
+    if not (-input.rank <= axis < input.rank):
+        raise ValueError(
+            f"Invalid axis value {axis}. Axis must be in range"
+            f" [-{input.rank}, {input.rank - 1}]"
+        )
+
+    updates = TensorValue(updates)
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype '{input.dtype}' and updates dtype"
+            f" '{updates.dtype}' must match."
+        )
+
+    indices = TensorValue(indices)
+    if indices.dtype not in [DType.int32, DType.int64]:
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'."
+            " Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+    old_device = input.device if not input.device.is_cpu() else None
+    if old_device is not None:
+        _check_device_placement("ops.scatter_min", "TODO(GEX-2197).")
+        input = transfer_to(input, DeviceRef.CPU())
+        updates = transfer_to(updates, DeviceRef.CPU())
+        indices = transfer_to(indices, DeviceRef.CPU())
+    axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
+
+    result = Graph.current._add_op_generated(
+        rmo.MoScatterMinOp,
+        input.type,
+        input,
+        updates,
+        indices,
+        axis_constant,
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+    if old_device is not None:
+        return transfer_to(result, old_device)
+    return result
+
+
+def scatter_mul(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+    axis: int = -1,
+) -> TensorValue:
+    """Creates a new symbolic tensor by scattering the product of updates into input.
+
+    Produces an output tensor by scattering elements from updates into input
+    according to indices, multiplying values at duplicate indices.  For a 2-D
+    input with ``axis=0`` the update rule is:
+
+    .. code-block:: text
+
+        output[indices[i][j]][j] *= updates[i][j]
+
+    and with ``axis=1``:
+
+    .. code-block:: text
+
+        output[i][indices[i][j]] *= updates[i][j]
+
+    Args:
+        input: The input symbolic tensor to scatter into.
+        updates: A symbolic tensor of values to multiply.
+        indices: The positions in input to update.
+        axis: The axis along which indices indexes into.
+
+    Returns:
+        A new symbolic tensor with the same shape and dtype as input.
+
+    Raises:
+        ValueError: If ``axis`` is out of range, if dtypes mismatch, if
+            ``indices`` dtype is not int32/int64, or if any input is on a
+            non-CPU device and
+            ``strict_device_placement=DevicePlacementPolicy.Error``.
+    """
+    input = TensorValue(input)
+
+    if not (-input.rank <= axis < input.rank):
+        raise ValueError(
+            f"Invalid axis value {axis}. Axis must be in range"
+            f" [-{input.rank}, {input.rank - 1}]"
+        )
+
+    updates = TensorValue(updates)
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype '{input.dtype}' and updates dtype"
+            f" '{updates.dtype}' must match."
+        )
+
+    indices = TensorValue(indices)
+    if indices.dtype not in [DType.int32, DType.int64]:
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'."
+            " Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+    old_device = input.device if not input.device.is_cpu() else None
+    if old_device is not None:
+        _check_device_placement("ops.scatter_mul", "TODO(GEX-2197).")
+        input = transfer_to(input, DeviceRef.CPU())
+        updates = transfer_to(updates, DeviceRef.CPU())
+        indices = transfer_to(indices, DeviceRef.CPU())
+    axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
+
+    result = Graph.current._add_op_generated(
+        rmo.MoScatterMulOp,
+        input.type,
+        input,
+        updates,
+        indices,
+        axis_constant,
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+    if old_device is not None:
+        return transfer_to(result, old_device)
+    return result
+
+
 def masked_scatter(
     input: TensorValueLike,
     mask: TensorValueLike,

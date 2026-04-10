@@ -110,6 +110,10 @@ This version is still a work in progress.
 - Added `scatter_add` op handler to the experimental eager interpreter (CPU),
   accumulating `updates` into a copy of `input` at `indices` along `axis`
   and summing duplicate indices via `max.experimental.functional.scatter_add`.
+- Added `max.graph.ops.scatter_max`, `max.graph.ops.scatter_min`, and
+  `max.graph.ops.scatter_mul` graph operations (and corresponding
+  `max.experimental.functional` wrappers) for element-wise scatter with
+  max, min, and multiply reductions at duplicate indices along an axis.
 - `max.graph.ops.pad` (and `max.graph.experimental.functional.pad`) now
   accepts `mode='reflect'` and `mode='edge'` in addition to
   `mode='constant'`.

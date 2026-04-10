@@ -88,6 +88,9 @@ from .scatter import (
     masked_scatter,
     scatter,
     scatter_add,
+    scatter_max,
+    scatter_min,
+    scatter_mul,
     scatter_nd,
     scatter_nd_add,
 )
