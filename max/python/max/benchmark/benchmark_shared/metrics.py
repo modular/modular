@@ -393,6 +393,8 @@ class BaseBenchmarkMetrics(Metrics):
             if isinstance(val, (StandardPercentileMetrics, ThroughputMetrics)):
                 d.update(val.to_flat_dict(f.name))
                 d.update(val.confidence_to_flat_dict(f.name))
+            elif isinstance(val, ChunkTimingMetrics):
+                d.update(val.to_flat_dict(f.name))
         return d
 
     def validate(self) -> tuple[bool, list[str]]:
@@ -531,6 +533,100 @@ class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
         d = super().to_result_dict()
         d["total_generated_outputs"] = self.total_generated_outputs
         return d
+
+
+@dataclass
+class ChunkTimingMetrics:
+    """Timing statistics for audio chunks (min, mean, median, p99, max)."""
+
+    min: float
+    mean: float
+    median: float
+    p99: float
+    max: float
+
+    @staticmethod
+    def from_samples(data: list[float]) -> ChunkTimingMetrics:
+        if not data:
+            return ChunkTimingMetrics(
+                min=0.0, mean=0.0, median=0.0, p99=0.0, max=0.0
+            )
+        return ChunkTimingMetrics(
+            min=float(np.min(data)),
+            mean=float(np.mean(data)),
+            median=float(np.median(data)),
+            p99=float(np.percentile(data, 99)),
+            max=float(np.max(data)),
+        )
+
+    def to_flat_dict(self, name: str) -> dict[str, float]:
+        return {
+            f"min_{name}": self.min,
+            f"mean_{name}": self.mean,
+            f"median_{name}": self.median,
+            f"p99_{name}": self.p99,
+            f"max_{name}": self.max,
+        }
+
+
+@dataclass(kw_only=True)
+class TTSBenchmarkMetrics(BaseBenchmarkMetrics):
+    """Container for TTS (text-to-speech) serving benchmark metrics.
+
+    Extends BaseBenchmarkMetrics with TTS-specific fields: real-time factor,
+    chunk timing, audio quality scores, and output length statistics.
+    """
+
+    total_input: int
+    total_output: float
+    nonempty_response_chunks: int
+
+    ttft_ms: StandardPercentileMetrics
+    tpot_ms: StandardPercentileMetrics
+    itl_ms: StandardPercentileMetrics
+    rtf_perc: StandardPercentileMetrics
+    first_chunk: ChunkTimingMetrics
+    nth_chunk: ChunkTimingMetrics
+
+    word_error_rate: float
+    noise_suppression_score: float
+
+    min_output: float
+    mean_output: float
+    median_output: float
+    max_output: float
+
+    startup_time: float
+
+    def to_result_dict(self) -> dict[str, object]:
+        d = super().to_result_dict()
+        d["total_input"] = self.total_input
+        d["total_output"] = self.total_output
+        d["nonempty_response_chunks"] = self.nonempty_response_chunks
+        d["word_error_rate"] = self.word_error_rate
+        d["noise_suppression_score"] = self.noise_suppression_score
+        d["min_output"] = self.min_output
+        d["mean_output"] = self.mean_output
+        d["median_output"] = self.median_output
+        d["max_output"] = self.max_output
+        d["startup_time"] = self.startup_time
+        return d
+
+    def confidence_warnings(self) -> list[str]:
+        warns: list[str] = []
+        for name, metric in [
+            ("ttft_ms", self.ttft_ms),
+            ("tpot_ms", self.tpot_ms),
+            ("rtf_perc", self.rtf_perc),
+        ]:
+            ci = getattr(metric, "confidence_info", None)
+            if ci and ci.confidence in ("low", "insufficient_data"):
+                warns.append(
+                    f"{name}: {ci.confidence} confidence"
+                    f" (CI width {ci.ci_relative_width:.0%} of mean,"
+                    f" n={ci.sample_size})"
+                )
+        return warns
 
 
 # ---------------------------------------------------------------------------
