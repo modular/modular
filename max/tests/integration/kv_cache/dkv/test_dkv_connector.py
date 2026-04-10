@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 import uuid
 from collections.abc import Generator, Mapping
 from unittest.mock import MagicMock, patch
@@ -40,6 +41,7 @@ from max.interfaces import RequestID, TokenBuffer
 from max.kv_cache.connectors.dkv.connector import (
     DKVConnector,
     DKVExternalBlockMetadata,
+    _ConnectorState,
 )
 from max.kv_cache.connectors.dkv.protocol import BlockDescriptor
 from max.kv_cache.paged_kv_cache.transfer_engine import (
@@ -167,8 +169,10 @@ def _make_connector(
     connector._pending_loads = {}
     connector._inflight_reads = {}
     connector._held_blocks = {}
+    connector._pending_acquires = []
     connector._pending_writes = []
     connector._inflight_writes = []
+
     connector._nixl_read_blocks = 0
     connector._nixl_write_blocks = 0
     connector._nixl_read_latency_total_ms = 0.0
@@ -183,9 +187,10 @@ def _make_connector(
     connector._nixl_write_bytes = 0
     connector._nixl_read_blocks_local = 0
     connector._nixl_read_blocks_remote = 0
-    connector._needs_reconnect = False
+    connector._state = _ConnectorState.HEALTHY
     connector._last_reconnect_attempt = 0.0
     connector._reconnect_cooldown_s = 5.0
+    connector._device_buffer = MagicMock()
 
     return connector
 
@@ -298,22 +303,32 @@ class TestInitialization:
 
 
 class TestPutFlow:
-    def test_save_calls_acquire_blocks(
+    def test_save_queues_pending_acquires(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
+        """save() queues (block_ids, block_hashes) batches without any RPC."""
         connector.save([0, 1], [100, 200])
 
-        assert mock_server.request_count == 1
-        assert len(connector._pending_writes) == 2
-        assert connector._pending_writes[0].descriptor.seq_hash == 100
-        assert connector._pending_writes[1].descriptor.seq_hash == 200
+        # No RPC should have been made.
+        assert mock_server.request_count == 0
+        # One save() call = one batch entry in _pending_acquires.
+        assert len(connector._pending_acquires) == 1
+        assert connector._pending_acquires[0] == ([0, 1], [100, 200])
+        assert len(connector._pending_writes) == 0
 
-    def test_flush_registers_acquired_blocks_without_block_store_metadata(
+    def test_flush_batch_acquires_and_registers_without_block_store_metadata(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
+        """flush() batch-acquires all pending, then registers (RPC-only mode)."""
         connector.save([0, 1], [100, 200])
+        # save() queued but made no RPC.
+        assert mock_server.request_count == 0
+
         connector.flush()
 
+        # flush() made exactly 2 RPCs: 1 acquire + 1 register.
+        assert mock_server.request_count == 2
+        assert len(connector._pending_acquires) == 0
         assert len(connector._pending_writes) == 0
         assert len(connector._inflight_writes) == 0
         assert len(mock_server.registered_blocks) == 1
@@ -365,6 +380,7 @@ class TestPutFlow:
     ) -> None:
         connector.save([], [])
         assert mock_server.request_count == 0
+        assert len(connector._pending_acquires) == 0
         assert len(connector._pending_writes) == 0
 
     def test_metrics_track_write_blocks(
@@ -383,8 +399,32 @@ class TestPutFlow:
         connector.save([1, 2], [200, 300])
         connector.flush()
 
-        assert mock_server.request_count == 4  # 2 acquire + 2 register
+        # Each flush does 1 acquire + 1 register = 2 RPCs per batch.
+        assert mock_server.request_count == 4
         assert connector.metrics.nixl_write_blocks == 3
+
+    def test_flush_batch_acquires_all_pending(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Multiple save() calls before one flush() → single flat acquire."""
+        connector.save([0], [100])
+        connector.save([1], [200])
+        connector.save([2], [300])
+
+        # No RPCs yet.
+        assert mock_server.request_count == 0
+        assert len(connector._pending_acquires) == 3
+
+        connector.flush()
+
+        # All pending acquires merged into 1 flat acquire RPC + 1 register = 2.
+        assert mock_server.request_count == 2
+        assert len(connector._pending_acquires) == 0
+        assert len(mock_server.registered_blocks) == 1
+        registered = mock_server.registered_blocks[0]
+        assert len(registered) == 3
+        hashes = {b.seq_hash for b in registered}
+        assert hashes == {100, 200, 300}
 
 
 # ---------------------------------------------------------------------------
@@ -601,9 +641,9 @@ class TestGetFlow:
         # Held blocks must NOT have been decremented.
         assert len(mock_server.decremented_blocks) == 0
         # Connector must be flagged for reconnection.
-        assert connector._needs_reconnect is True
+        assert connector._state != _ConnectorState.HEALTHY
         # Transfer handles must still be in _inflight_reads so that
-        # _maybe_reconnect() / shutdown() can release them safely.
+        # _inline_reconnect() / shutdown() can release them safely.
         assert req_id in connector._inflight_reads
         assert req_id in connector._held_blocks
 
@@ -699,11 +739,36 @@ class TestShutdown:
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
         connector.save([0], [100])
-        # Don't flush, so blocks are still FILLING.
+        # flush() acquires and moves to _pending_writes.
+        connector.flush()
+        # Save more so there are pending writes from a second batch.
+        connector.save([1], [200])
+        connector.flush()
+        # Now manually add a pending write to simulate a partial flush.
+        from max.kv_cache.connectors.dkv.connector import _PendingWrite
+
+        desc = _make_descriptor(300, offset=8192)
+        connector._pending_writes.append(
+            _PendingWrite(device_block_id=2, descriptor=desc)
+        )
         connector.shutdown()
 
-        assert len(mock_server.released_blocks) == 1
-        assert mock_server.released_blocks[0][0].seq_hash == 100
+        # The pending write (block 300) should have been released.
+        assert any(
+            batch[0].seq_hash == 300 for batch in mock_server.released_blocks
+        )
+
+    def test_shutdown_drops_pending_acquires_without_release(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Pending acquires haven't been acquired server-side, no release needed."""
+        connector.save([0], [100])
+        # Don't flush: blocks are only in _pending_acquires.
+        assert len(connector._pending_acquires) == 1
+        connector.shutdown()
+
+        # No release RPC for blocks never acquired on the server.
+        assert len(mock_server.released_blocks) == 0
 
     def test_shutdown_decrements_held_blocks(
         self, connector: DKVConnector, mock_server: MockDKVServer
@@ -731,6 +796,7 @@ class TestShutdown:
         assert len(connector._pending_loads) == 0
         assert len(connector._inflight_reads) == 0
         assert len(connector._held_blocks) == 0
+        assert len(connector._pending_acquires) == 0
         assert len(connector._pending_writes) == 0
         assert len(connector._inflight_writes) == 0
 
@@ -997,19 +1063,19 @@ class TestDPMultiReplica:
         c2 = _make_connector(mock_server.bound_address)
 
         try:
-            # Both connectors save independently.
+            # Both connectors save independently (queues only).
             c1.save([0], [100])
             c2.save([1], [200])
 
-            assert len(c1._pending_writes) == 1
-            assert len(c2._pending_writes) == 1
-            assert c1._pending_writes[0].descriptor.seq_hash == 100
-            assert c2._pending_writes[0].descriptor.seq_hash == 200
+            assert len(c1._pending_acquires) == 1
+            assert len(c2._pending_acquires) == 1
+            assert c1._pending_acquires[0] == ([0], [100])
+            assert c2._pending_acquires[0] == ([1], [200])
 
             c1.flush()
             c2.flush()
 
-            # Both registered independently (4 RPCs: 2 acquire + 2 register).
+            # Each flush does 1 acquire + 1 register = 2 RPCs.
             assert mock_server.request_count == 4
         finally:
             c1._client.close()
@@ -1027,40 +1093,41 @@ class TestReconnection:
     def test_transport_error_sets_reconnect_flag(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
-        """A transport error during save() should set _needs_reconnect."""
+        """A transport error during flush() acquire should trigger reconnect."""
         mock_server.stop()
         # With the server down, the client will raise a transport error
-        # on the next RPC (acquire_blocks). We need a very short timeout
-        # so the test doesn't hang.
+        # on the acquire_blocks RPC in flush(). We need a very short
+        # timeout so the test doesn't hang.
         connector._client._recv_timeout_ms = 200
         connector._client._send_timeout_ms = 200
         connector._client._reset_socket()
 
+        # save() just queues locally, no RPC.
         connector.save([0], [100])
+        assert connector._state == _ConnectorState.HEALTHY
 
-        assert connector._needs_reconnect is True
+        # flush() triggers the acquire RPC which fails, transitioning
+        # to DEGRADED. Inline reconnect defers to the next sync() cycle.
+        connector.flush()
+        assert connector._state == _ConnectorState.DEGRADED
 
-    def test_maybe_reconnect_rate_limits(
+    def test_try_reconnect_rate_limits(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
         """Rapid reconnect attempts should be rate-limited by cooldown."""
-        connector._needs_reconnect = True
+        connector._state = _ConnectorState.DEGRADED
         connector._reconnect_cooldown_s = 100.0  # Very long cooldown
+        connector._last_reconnect_attempt = time.monotonic()
 
-        # Make client.connect() fail so the flag stays True.
-        with patch.object(
-            connector._client,
-            "connect",
-            side_effect=ConnectionError("mock"),
-        ):
-            # First attempt proceeds (updates _last_reconnect_attempt).
-            result1 = connector._maybe_reconnect()
-            assert result1 is False  # Failed to reconnect.
-            assert connector._needs_reconnect is True
+        # With a 100s cooldown and DEGRADED state, _try_reconnect()
+        # returns False immediately without attempting reconnection.
+        result1 = connector._try_reconnect()
+        assert result1 is False
+        assert connector._state == _ConnectorState.DEGRADED
 
-            # Second attempt should be rate-limited (within cooldown).
-            result2 = connector._maybe_reconnect()
-            assert result2 is False
+        # Second attempt should also be rate-limited (within cooldown).
+        result2 = connector._try_reconnect()
+        assert result2 is False
 
     def test_reconnect_clears_inflight_state_and_releases_server_side(
         self, connector: DKVConnector, mock_server: MockDKVServer
@@ -1078,7 +1145,7 @@ class TestReconnection:
         desc_pending = _make_descriptor(200, offset=4096)
         desc_inflight = _make_descriptor(300, offset=8192)
 
-        # Populate state
+        # Populate state (including pending acquires that were never RPCed).
         connector._pending_loads["req1"] = [
             _PendingLoad(
                 descriptor=desc_held,
@@ -1086,6 +1153,7 @@ class TestReconnection:
                 transfer_engine=remote_metadata,
             )
         ]
+        connector._pending_acquires.append(([5], [500]))
         connector._pending_writes.append(
             _PendingWrite(device_block_id=0, descriptor=desc_pending)
         )
@@ -1099,12 +1167,14 @@ class TestReconnection:
             )
         )
 
-        connector._needs_reconnect = True
+        connector._state = _ConnectorState.DEGRADED
         connector._reconnect_cooldown_s = 0.0  # No rate limiting
-        connector._maybe_reconnect()
+        connector._inline_reconnect()
 
-        # All local state cleared.
+        # All local state cleared (including pending_acquires to avoid
+        # stranding blocks from lost transport responses).
         assert len(connector._pending_loads) == 0
+        assert len(connector._pending_acquires) == 0
         assert len(connector._pending_writes) == 0
         assert len(connector._held_blocks) == 0
         assert len(connector._inflight_reads) == 0
@@ -1116,12 +1186,31 @@ class TestReconnection:
         assert mock_server.decremented_blocks[0][0].seq_hash == 100
 
         # 2. release_blocks for pending writes + inflight writes
+        #    (pending acquires are NOT released; never acquired server-side)
         assert len(mock_server.released_blocks) == 2
         released_hashes = {
             mock_server.released_blocks[0][0].seq_hash,
             mock_server.released_blocks[1][0].seq_hash,
         }
         assert released_hashes == {200, 300}
+
+    def test_pending_acquires_cleared_on_reconnect(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """_pending_acquires cleared on reconnect to avoid stranding Filling blocks."""
+        connector.save([0, 1, 2], [100, 200, 300])
+        assert len(connector._pending_acquires) == 1
+
+        connector._state = _ConnectorState.DEGRADED
+        connector._reconnect_cooldown_s = 0.0
+        connector._inline_reconnect()
+
+        # Cleared: a transport timeout may have created phantom Filling
+        # blocks on the server. Retrying would get newly_acquired=false
+        # and skip the WRITE, stranding them.
+        assert len(connector._pending_acquires) == 0
+        # No release RPC (they may or may not exist server-side).
+        assert len(mock_server.released_blocks) == 0
 
     def test_reconnect_disconnects_engine_before_decrementing(
         self, connector: DKVConnector, mock_server: MockDKVServer
@@ -1166,9 +1255,9 @@ class TestReconnection:
 
         connector._client.decrement_blocks = track_decrement
 
-        connector._needs_reconnect = True
+        connector._state = _ConnectorState.DEGRADED
         connector._reconnect_cooldown_s = 0.0
-        connector._maybe_reconnect()
+        connector._inline_reconnect()
 
         assert "disconnect" in call_order
         assert "decrement" in call_order
@@ -1195,18 +1284,17 @@ class TestReconnection:
         connector._engine.bytes_per_page = 4096
 
         try:
-            # Trigger reconnection flag.
-            connector._needs_reconnect = True
+            # Trigger reconnection state.
+            connector._state = _ConnectorState.DEGRADED
             connector._reconnect_cooldown_s = 0.0
 
-            # _maybe_reconnect will call _try_auto_discover_metadata,
+            # _inline_reconnect will call _try_auto_discover_metadata,
             # which calls exchange_metadata on the (still-running) server.
-            result = connector._maybe_reconnect()
+            connector._inline_reconnect()
 
-            # Client reconnect should succeed, flag should be cleared.
+            # Client reconnect should succeed, state should be HEALTHY.
             assert connector._client._socket is not None
-            assert result is True
-            assert connector._needs_reconnect is False
+            assert connector._state == _ConnectorState.HEALTHY
         finally:
             connector._client.close()
 
@@ -1216,23 +1304,22 @@ class TestReconnection:
         """Reconnect should succeed in RPC-only mode when NIXL fails.
 
         If the RPC client reconnects but NIXL auto-discover fails,
-        the connector should still clear _needs_reconnect and operate
+        the connector should still restore to HEALTHY and operate
         in RPC-only mode (save + flush without NIXL transfers).
         """
         # Simulate: connector was working, then transport error happened.
-        connector._needs_reconnect = True
+        connector._state = _ConnectorState.DEGRADED
         connector._reconnect_cooldown_s = 0.0
 
         # _try_auto_discover_metadata will fail because the mock engine
         # doesn't have real NIXL agents, so _default_remote_metadata
         # stays None. But the RPC client reconnects fine.
-        result = connector._maybe_reconnect()
+        connector._inline_reconnect()
 
         # The connector should recover to RPC-only mode.
-        assert result is True
-        assert connector._needs_reconnect is False
+        assert connector._state == _ConnectorState.HEALTHY
         # _default_remote_metadata may or may not be set depending on
-        # the mock, but the key assertion: the flag is cleared.
+        # the mock, but the key assertion: the state is HEALTHY.
 
         # save() + flush() should work in RPC-only mode.
         connector.save([0, 1], [100, 200])
@@ -1245,22 +1332,22 @@ class TestReconnection:
     def test_happy_path_no_overhead(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
-        """When _needs_reconnect is False, _maybe_reconnect is a single bool check."""
-        assert connector._needs_reconnect is False
+        """When state is HEALTHY, _is_healthy is a single enum check."""
+        assert connector._state == _ConnectorState.HEALTHY
 
         # Should return True immediately.
-        assert connector._maybe_reconnect() is True
+        assert connector._is_healthy() is True
 
         # Verify no client reconnection happened (request_count unchanged).
         initial_count = mock_server.request_count
-        connector._maybe_reconnect()
+        connector._is_healthy()
         assert mock_server.request_count == initial_count
 
     def test_lookup_returns_zero_when_degraded(
         self, connector: DKVConnector
     ) -> None:
         """lookup() should return 0 when connector is degraded."""
-        connector._needs_reconnect = True
+        connector._state = _ConnectorState.DEGRADED
         connector._reconnect_cooldown_s = 100.0  # Ensure rate-limited
 
         # Force a past attempt so rate-limiting kicks in.
@@ -1283,7 +1370,7 @@ class TestReconnection:
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
         """save() should be a no-op when connector is degraded."""
-        connector._needs_reconnect = True
+        connector._state = _ConnectorState.DEGRADED
         connector._reconnect_cooldown_s = 100.0
         import time
 
@@ -1292,15 +1379,16 @@ class TestReconnection:
         initial_count = mock_server.request_count
         connector.save([0], [100])
 
-        # No RPC should have been made.
+        # No RPC should have been made, nothing queued.
         assert mock_server.request_count == initial_count
+        assert len(connector._pending_acquires) == 0
         assert len(connector._pending_writes) == 0
 
     def test_flush_noop_when_degraded(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
         """flush() should be a no-op when connector is degraded."""
-        connector._needs_reconnect = True
+        connector._state = _ConnectorState.DEGRADED
         connector._reconnect_cooldown_s = 100.0
         import time
 
@@ -1313,7 +1401,7 @@ class TestReconnection:
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
         """sync() should be a no-op when connector is degraded."""
-        connector._needs_reconnect = True
+        connector._state = _ConnectorState.DEGRADED
         connector._reconnect_cooldown_s = 100.0
         import time
 
@@ -1334,7 +1422,7 @@ class TestNIXLReadLogs:
         mock_server: MockDKVServer,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """sync() should emit an info log with block count, MiB, ms, GiB/s."""
+        """sync() should emit a debug log with block count, MiB, ms, GiB/s."""
         import logging
 
         remote_metadata = _make_transfer_metadata()
@@ -1348,7 +1436,7 @@ class TestNIXLReadLogs:
         connector.lookup(ctx, [100])
         connector.load(ctx, [10])
 
-        with caplog.at_level(logging.INFO, logger="max.pipelines"):
+        with caplog.at_level(logging.DEBUG, logger="max.pipelines"):
             connector.sync()
 
         read_logs = [
@@ -1370,10 +1458,17 @@ class TestNIXLReadLogs:
 class TestMetrics:
     """Tests for dKV latency and classification metrics."""
 
-    def test_save_accumulates_acquire_latency(
+    def test_flush_accumulates_acquire_latency(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
+        """Acquire latency is tracked during flush(), not save()."""
         connector.save([0, 1], [100, 200])
+
+        # save() doesn't do any RPC, so no latency accumulated yet.
+        assert connector._rpc_acquire_latency_count == 0
+        assert connector._rpc_acquire_latency_total_ms == 0.0
+
+        connector.flush()
 
         assert connector._rpc_acquire_latency_count == 1
         assert connector._rpc_acquire_latency_total_ms > 0
@@ -1496,6 +1591,7 @@ class TestMetrics:
         mock_server.set_error_response("simulated failure")
 
         connector.save([0], [100])
+        connector.flush()
 
         assert connector._rpc_acquire_latency_count == 0
         assert connector._rpc_acquire_latency_total_ms == 0.0
@@ -1660,11 +1756,18 @@ class TestDKVCapability:
     def test_save_flush_interleaving(
         self, connector: DKVConnector, mock_server: MockDKVServer
     ) -> None:
-        """Multiple save batches before flush should all register."""
+        """Multiple save batches before flush should flat-acquire and register all."""
         connector.save([0], [100])
         connector.save([1, 2], [200, 300])
+
+        # 2 save() calls = 2 batch entries, no RPCs yet.
+        assert len(connector._pending_acquires) == 2
+        assert mock_server.request_count == 0
+
         connector.flush()
 
+        # All pending acquires merged into 1 flat acquire RPC + 1 register = 2.
+        assert mock_server.request_count == 2
         assert len(mock_server.registered_blocks) == 1
         registered = mock_server.registered_blocks[0]
         assert len(registered) == 3
@@ -1713,6 +1816,52 @@ class TestDKVCapability:
 
         connector.lookup(ctx, [100, 200])
         assert len(connector._pending_loads[req_id]) == 2
+
+    def test_flush_skips_write_for_existing_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """When dKV reports blocks already exist, flush() skips the NIXL WRITE."""
+        mock_server.set_existing_seq_hashes({100})
+        connector.save([0], [100])
+        connector.flush()
+        # Existing block skipped, nothing to write or register.
+        assert len(connector._pending_writes) == 0
+
+    def test_flush_writes_only_new_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """In a mixed batch, only newly acquired blocks get pending writes after flush."""
+        mock_server.set_existing_seq_hashes({200})
+        connector.save([0, 1], [100, 200])
+        connector.flush()
+        # Block 200 was existing and skipped. Block 100 was new, registered.
+        assert len(connector._pending_writes) == 0
+        assert len(mock_server.registered_blocks) == 1
+        assert mock_server.registered_blocks[0][0].seq_hash == 100
+
+    def test_flush_all_new_blocks(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Normal case: all blocks are new, all get pending writes after flush."""
+        connector.save([0, 1], [100, 200])
+        connector.flush()
+        # All new, all registered.
+        assert len(connector._pending_writes) == 0
+        assert len(mock_server.registered_blocks) == 1
+        assert len(mock_server.registered_blocks[0]) == 2
+
+    def test_flush_server_error_warns_without_reconnect(
+        self, connector: DKVConnector, mock_server: MockDKVServer
+    ) -> None:
+        """Non-transport server errors in flush should warn but not trigger reconnection."""
+        mock_server.set_error_response("pool exhausted")
+
+        connector.save([0], [100])
+        connector.flush()
+
+        assert len(connector._pending_acquires) == 0
+        assert len(connector._pending_writes) == 0
+        assert connector._state == _ConnectorState.HEALTHY
 
 
 # ---------------------------------------------------------------------------
@@ -1774,7 +1923,7 @@ class TestE2eRealDKVServer:
             # These blocks were already registered, so we can read them.
             # First acquire new ones to get descriptors for the same hashes.
             # In production, the Orchestrator would provide these.
-            descriptors = client.acquire_blocks(seq_hashes=hashes)
+            descriptors, _ = client.acquire_blocks(sequences=[(0, hashes)])
             # Register them so they're readable.
             client.register_blocks(descriptors)
 

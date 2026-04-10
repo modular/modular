@@ -327,6 +327,14 @@ class BlockManager:
         # Load from host cache via connector - returns the block hashes.
         loaded_hashes = self.connector.load(ctx, device_block_ids)
 
+        # The connector may return fewer hashes than requested (e.g.
+        # transport failure or connector degraded between lookup/load).
+        # Free any surplus pre-allocated device blocks.
+        if len(loaded_hashes) < len(blocks):
+            for surplus_block in blocks[len(loaded_hashes) :]:
+                self.device_block_pool.free_block(surplus_block)
+            blocks = blocks[: len(loaded_hashes)]
+
         # Commit the device blocks into the device prefix cache.
         for device_block, block_hash in zip(blocks, loaded_hashes, strict=True):
             self.device_block_pool.commit_into_prefix_cache(
@@ -411,24 +419,25 @@ class BlockManager:
         # to the block size.
         num_computed_blocks = ctx.tokens.processed_length // self.block_size
 
-        # Commit these blocks into the prefix cache.
+        # Commit these blocks into the prefix cache, collecting newly
+        # committed blocks for a single batched save to the connector.
+        new_bids: list[int] = []
+        new_hashes: list[int] = []
         for block_idx in range(num_committed_blocks, num_computed_blocks):
             block = req_blocks[block_idx]
-
-            # Get the block hash.
             block_hash = req_hashes[block_idx]
 
-            # Get the parent block hash.
             new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
                 block_hash, block
             )
             if new_block is not None:
                 req_blocks[block_idx] = new_block
             else:
-                # This block was newly committed (not a duplicate).
-                # Queue for offload to connector's external tier.
-                # Note: actual D2H copy and metrics are tracked by the connector.
-                self.connector.save([block.bid], [block_hash])
+                new_bids.append(block.bid)
+                new_hashes.append(block_hash)
+
+        if new_bids:
+            self.connector.save(new_bids, new_hashes)
 
         # Update committed index managed by BlockManager.
         self.req_to_committed_idx[ctx.request_id] = (

@@ -9,6 +9,7 @@ package(default_visibility = [
 
 modular_py_library(
     name = "mock_dkv_server",
+    testonly = True,
     srcs = [
         "__init__.py",
         "mock_dkv_server.py",

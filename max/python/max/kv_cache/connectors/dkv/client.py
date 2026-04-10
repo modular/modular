@@ -258,22 +258,30 @@ class DKVClient:
 
     def acquire_blocks(
         self,
-        seq_hashes: Sequence[int],
-        parent_seq_hash: int = 0,
-    ) -> list[BlockDescriptor]:
+        sequences: Sequence[tuple[int, Sequence[int]]],
+    ) -> tuple[list[BlockDescriptor], list[bool]]:
         """Acquires free blocks from the dKV server.
 
+        Multiple sequences can be batched into a single RPC. Each
+        sequence specifies a parent hash and the ordered seq_hashes
+        to acquire under that parent.
+
         Args:
-            seq_hashes: The ordered sequence hashes for the blocks to
-                acquire. The order determines the chaining order.
-            parent_seq_hash: The optional parent sequence hash when
-                extending an existing sequence. Defaults to ``""``.
+            sequences: A list of ``(parent_seq_hash, seq_hashes)``
+                tuples. Each tuple represents one sequence sharing the
+                same parent in the trie.
 
         Returns:
-            The list of acquired block descriptors.
+            A tuple of (block descriptors, newly_acquired flags).
+            The vectors are parallel to the concatenation of all
+            ``seq_hashes`` across the input sequences.
+            ``newly_acquired[i]`` is ``True`` when the block was freshly
+            allocated, ``False`` when the server already held that
+            seq_hash (dedup).
 
         Raises:
-            ValueError: If ``seq_hashes`` is empty.
+            ValueError: If ``sequences`` is empty or all seq_hashes
+                lists are empty.
             DKVError: If the server returned an error.
             DKVTransportTimeoutError: If the request timed out while sending
                 or receiving. Inspect ``request_state`` to determine whether
@@ -282,12 +290,10 @@ class DKVClient:
                 transport error occurred. Inspect ``request_state`` to
                 determine whether the request was sent.
         """
-        data = self._send_recv(
-            build_acquire_request(seq_hashes, parent_seq_hash)
-        )
-        blocks = parse_acquire_response(data)
+        data = self._send_recv(build_acquire_request(sequences))
+        blocks, newly_acquired = parse_acquire_response(data)
         logger.debug("acquired %d blocks", len(blocks))
-        return blocks
+        return blocks, newly_acquired
 
     def register_blocks(self, blocks: Sequence[BlockDescriptor]) -> None:
         """Registers blocks as filled with data.

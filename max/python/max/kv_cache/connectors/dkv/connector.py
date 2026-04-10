@@ -23,6 +23,7 @@ PUT flow: save() via acquire_blocks → flush() posts NIXL WRITE → register_bl
 
 from __future__ import annotations
 
+import enum
 import logging
 import socket
 import sys
@@ -50,6 +51,13 @@ from .protocol import BlockDescriptor
 logger = logging.getLogger("max.pipelines")
 
 _UINT64_MASK = (1 << 64) - 1
+
+
+class _ConnectorState(enum.Enum):
+    """Health state for inline reconnection."""
+
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
 
 
 class DKVExternalBlockMetadata(
@@ -187,7 +195,8 @@ class DKVConnector:
         # Per-request held blocks (need decrement after the read transfer completes)
         self._held_blocks: dict[str, list[BlockDescriptor]] = {}
 
-        # Write pipeline
+        # Write pipeline: each entry is one save() call's (block_ids, hashes).
+        self._pending_acquires: list[tuple[list[int], list[int]]] = []
         self._pending_writes: list[_PendingWrite] = []
         self._inflight_writes: list[_InflightWrite] = []
 
@@ -207,10 +216,12 @@ class DKVConnector:
         self._nixl_read_blocks_local: int = 0
         self._nixl_read_blocks_remote: int = 0
 
-        # Reconnection state
-        self._needs_reconnect: bool = False
-        self._last_reconnect_attempt: float = 0.0
+        # Reconnection state (two-state inline model).
+        # HEALTHY: normal operation.
+        # DEGRADED: last reconnect attempt failed, retry after cooldown.
+        self._state = _ConnectorState.HEALTHY
         self._reconnect_cooldown_s: float = 5.0
+        self._last_reconnect_attempt: float = 0.0
 
         logger.info(
             "DKVConnector initialized: "
@@ -366,26 +377,49 @@ class DKVConnector:
     # ------------------------------------------------------------------
 
     def _set_needs_reconnect(self, reason: str) -> None:
-        """Flag the connector as needing reconnection."""
-        if not self._needs_reconnect:
-            self._needs_reconnect = True
-            logger.warning("dKV reconnection needed: %s", reason)
+        """Mark the connector as needing reconnection.
 
-    def _maybe_reconnect(self) -> bool:
-        """Attempt lazy reconnection if the connector is degraded.
-
-        Returns True if healthy (fast path: single bool check), False if
-        degraded and reconnection either failed or is rate-limited.
+        The actual reconnect runs inline on the next protocol-method
+        entry via ``_is_healthy()``, keeping everything on the
+        scheduler thread (no background threads, no signal hazards).
         """
-        if not self._needs_reconnect:
-            return True
+        if self._state != _ConnectorState.HEALTHY:
+            return
+        self._state = _ConnectorState.DEGRADED
+        logger.warning("dKV reconnection needed: %s", reason)
 
+    def _is_healthy(self) -> bool:
+        """Fast-path health gate called at the top of every protocol method.
+
+        Returns True when healthy (single enum comparison, ~free).
+        When DEGRADED, returns False so the caller skips its work
+        for this scheduler iteration without blocking. Reconnection
+        is attempted only in ``sync()`` (once per scheduler cycle).
+        """
+        return self._state == _ConnectorState.HEALTHY
+
+    def _try_reconnect(self) -> bool:
+        """Attempt reconnect if degraded and cooldown has elapsed.
+
+        Called only from ``sync()`` (the start of every scheduler
+        cycle), so at most one reconnect attempt per iteration.
+        Returns True when healthy (either already or after reconnect).
+        """
+        if self._state == _ConnectorState.HEALTHY:
+            return True
         now = time.monotonic()
         if now - self._last_reconnect_attempt < self._reconnect_cooldown_s:
             return False
-        self._last_reconnect_attempt = now
+        return self._inline_reconnect()
 
-        logger.info("dKV reconnection attempt starting")
+    def _inline_reconnect(self) -> bool:
+        """Run the full teardown-reconnect cycle on the scheduler thread.
+
+        Returns True on success (state becomes HEALTHY), False on
+        failure (state stays DEGRADED, retried after cooldown).
+        """
+        self._last_reconnect_attempt = time.monotonic()
+        logger.info("dKV inline reconnection starting")
 
         # Step 1: Disconnect all stale remotes from the transfer engine.
         # This MUST happen before decrementing held blocks, because
@@ -444,7 +478,12 @@ class DKVConnector:
                 )
 
         # Step 3: Clear all local state.
+        # _pending_acquires MUST be cleared: a transport timeout could
+        # mean the server created Filling blocks but the response was
+        # lost. Retrying would get newly_acquired=false (Filling dedup)
+        # and skip the WRITE, stranding blocks in Filling with no data.
         self._pending_loads.clear()
+        self._pending_acquires.clear()
         self._pending_writes.clear()
         self._held_blocks.clear()
         self._inflight_reads.clear()
@@ -452,21 +491,19 @@ class DKVConnector:
 
         self._default_remote_metadata = None
 
-        # Reconnect the RPC client.
+        # Step 4: Reconnect the RPC client.
         try:
             self._client.close()
             self._client.connect()
         except Exception:
             logger.warning("dKV client reconnect failed", exc_info=True)
+            self._state = _ConnectorState.DEGRADED
             return False
 
         # Re-exchange NIXL metadata (optional, RPC-only mode is valid).
         self._try_auto_discover_metadata()
 
-        # Success: RPC client is connected. NIXL metadata is a bonus,
-        # The connector can operate in RPC-only mode (flush registers directly)
-        # when auto-discover fails, matching the startup behavior.
-        self._needs_reconnect = False
+        self._state = _ConnectorState.HEALTHY
         if self._default_remote_metadata is not None:
             logger.info("dKV reconnection succeeded (NIXL mode)")
         else:
@@ -507,7 +544,7 @@ class DKVConnector:
         Saves matched descriptors into ``_pending_loads`` for ``load()``
         to consume (same state-transfer pattern as LocalConnector).
         """
-        if not self._maybe_reconnect():
+        if not self._is_healthy():
             return 0
         if not block_hashes:
             return 0
@@ -570,11 +607,20 @@ class DKVConnector:
         ``client.read_blocks()`` to pin blocks in dKV (increment
         read_ref_count), and tracks them for decrement on completion.
         """
+        if not self._is_healthy():
+            return []
+
         request_id = str(ctx.request_id)
         pending = self._pending_loads.pop(request_id, None)
 
         if not pending:
             return []
+
+        # The caller may request fewer blocks than lookup() queued (e.g.
+        # limited by free device blocks). Truncate to avoid a length
+        # mismatch; surplus pending loads are discarded.
+        if len(pending) > len(target_block_ids):
+            pending = pending[: len(target_block_ids)]
 
         # Pair pending blocks with allocated device block IDs and group them by
         # remote transfer-engine metadata so each group can reuse a single
@@ -714,62 +760,28 @@ class DKVConnector:
         block_ids: list[int],
         block_hashes: list[int],
     ) -> None:
-        """Queue device blocks for offload to dKV.
-
-        Acquires slots via ``client.acquire_blocks()``, which transitions
-        them to FILLING state in dKV. The actual registration happens
-        in ``flush()``.
-        """
-        if not self._maybe_reconnect():
+        """Queue device blocks for deferred acquire in flush()."""
+        if not self._is_healthy():
             return
         if not block_hashes:
             return
-
-        try:
-            t0 = time.monotonic()
-            descriptors = self._client.acquire_blocks(
-                seq_hashes=block_hashes,
-                parent_seq_hash=0,
-            )
-            self._rpc_acquire_latency_total_ms += (time.monotonic() - t0) * 1000
-            self._rpc_acquire_latency_count += 1
-        except (ConnectionError, TimeoutError) as exc:
-            self._set_needs_reconnect(f"acquire_blocks transport: {exc}")
-            logger.warning(
-                "Failed to acquire %d blocks from dKV",
-                len(block_hashes),
-                exc_info=True,
-            )
-            return
-        except Exception:
-            logger.warning(
-                "Failed to acquire %d blocks from dKV",
-                len(block_hashes),
-                exc_info=True,
-            )
-            return
-
-        for device_bid, desc in zip(block_ids, descriptors, strict=True):
-            self._pending_writes.append(
-                _PendingWrite(
-                    device_block_id=device_bid,
-                    descriptor=desc,
-                )
-            )
+        self._pending_acquires.append((list(block_ids), list(block_hashes)))
 
     @traced
     def sync(self) -> None:
         """Wait for all inflight NIXL READs to complete.
 
         Called before model execution to ensure loaded KV data is in GPU.
+        This is the only protocol method that attempts reconnection
+        (once per scheduler cycle, at the start of each iteration).
         """
-        if not self._maybe_reconnect():
+        if not self._try_reconnect():
             return
         engine = self._ensure_engine()
         for request_id, inflight in list(self._inflight_reads.items()):
             try:
                 for tr in inflight.transfers:
-                    engine.sync_and_release(tr)
+                    engine.sync_and_release(tr, timeout_s=5.0)
             except (ConnectionError, TimeoutError, ValueError) as exc:
                 self._set_needs_reconnect(f"sync_and_release: {exc}")
                 logger.warning(
@@ -778,7 +790,7 @@ class DKVConnector:
                     exc_info=True,
                 )
                 # Leave _inflight_reads and _held_blocks intact.
-                # _maybe_reconnect() will disconnect the engine (releasing
+                # _inline_reconnect() will disconnect the engine (releasing
                 # transfer handles) before decrementing held blocks.
                 continue
             except Exception:
@@ -791,7 +803,7 @@ class DKVConnector:
             elapsed = time.monotonic() - inflight.posted_at
             total_bytes = sum(d.length for d in inflight.descriptors)
             gib_s = (total_bytes / (1 << 30)) / elapsed if elapsed > 0 else 0
-            logger.info(
+            logger.debug(
                 "NIXL READ confirmed: request=%s, %d blocks, %.1f MiB"
                 " in %.1f ms (%.3f GiB/s)",
                 request_id,
@@ -808,17 +820,24 @@ class DKVConnector:
 
     @traced
     def flush(self) -> None:
-        """Register pending writes with dKV.
+        """Acquire deferred blocks, then post NIXL WRITEs.
 
-        When NIXL transfers are wired up, this will:
-        1. Drain completed NIXL writes and register them.
-        2. Post new NIXL WRITE transfers for pending saves.
+        Steps:
+        1. Acquire all blocks queued by save() in a single flat RPC.
+        2. Drain completed NIXL writes and register them.
+        3. Post new NIXL WRITE transfers for newly acquired blocks.
 
-        Without block-store transfer metadata, this falls back to direct
+        Without block-store transfer metadata, falls back to direct
         registration after ``acquire_blocks()``.
         """
-        if not self._maybe_reconnect():
+        if not self._is_healthy():
             return
+
+        # Step 1: acquire all blocks queued by save().
+        if self._pending_acquires:
+            self._flush_pending_acquires()
+
+        # Step 2: drain completed writes.
         self._drain_completed_writes()
 
         if not self._pending_writes:
@@ -908,6 +927,83 @@ class DKVConnector:
         self._nixl_write_blocks += len(self._pending_writes)
         self._pending_writes.clear()
 
+    def _flush_pending_acquires(self) -> None:
+        """Acquire all blocks queued by save().
+
+        Merges all pending batches into a single ``BlockSequence``
+        with ``parent_seq_hash=0``, deduplicating hashes so the
+        server doesn't over-allocate. Sends one batched
+        ``acquire_blocks`` RPC.
+        """
+        batches = self._pending_acquires
+        self._pending_acquires = []
+
+        if not batches:
+            return
+
+        # Deduplicate hashes across batches: the server's pre-scan
+        # counts each occurrence as needing a slot, so duplicates
+        # would over-allocate and can false-exhaust the pool.
+        seen: dict[int, int] = {}  # hash -> first block_id
+        for bids, hashes in batches:
+            for bid, h in zip(bids, hashes, strict=False):
+                if h not in seen:
+                    seen[h] = bid
+        all_hashes = list(seen.keys())
+        all_bids = [seen[h] for h in all_hashes]
+
+        try:
+            t0 = time.monotonic()
+            descriptors, newly_acquired = self._client.acquire_blocks(
+                sequences=[(0, all_hashes)],
+            )
+            self._rpc_acquire_latency_total_ms += (time.monotonic() - t0) * 1000
+            self._rpc_acquire_latency_count += 1
+        except (ConnectionError, TimeoutError) as exc:
+            self._set_needs_reconnect(f"acquire_blocks transport: {exc}")
+            logger.warning(
+                "Failed to acquire %d blocks from dKV",
+                len(all_hashes),
+                exc_info=True,
+            )
+            return
+        except Exception:
+            logger.warning(
+                "Failed to acquire %d blocks from dKV",
+                len(all_hashes),
+                exc_info=True,
+            )
+            return
+
+        if len(descriptors) != len(all_bids) or len(newly_acquired) != len(
+            all_bids
+        ):
+            logger.warning(
+                "dKV acquire response length mismatch: "
+                "requested %d, got %d descriptors, %d flags",
+                len(all_bids),
+                len(descriptors),
+                len(newly_acquired),
+            )
+            return
+
+        skipped = 0
+        for bid, desc, new in zip(
+            all_bids, descriptors, newly_acquired, strict=False
+        ):
+            if new:
+                self._pending_writes.append(
+                    _PendingWrite(device_block_id=bid, descriptor=desc)
+                )
+            else:
+                skipped += 1
+        if skipped > 0:
+            logger.debug(
+                "dKV acquire: %d new, %d existing (skipped WRITE)",
+                len(all_bids) - skipped,
+                skipped,
+            )
+
     def _drain_completed_writes(self) -> None:
         """Register completed NIXL writes with dKV."""
         if not self._inflight_writes:
@@ -923,7 +1019,7 @@ class DKVConnector:
                 gib_s = (
                     (total_bytes / (1 << 30)) / elapsed if elapsed > 0 else 0
                 )
-                logger.info(
+                logger.debug(
                     "NIXL WRITE confirmed: %d blocks, %.1f MiB in %.1f ms"
                     " (%.3f GiB/s)",
                     len(write_info.descriptors),
@@ -949,14 +1045,20 @@ class DKVConnector:
         # Discard unconsumed pending loads (request cancelled before load).
         self._pending_loads.pop(req_id, None)
 
+        # If degraded, skip NIXL sync + RPC decrement. The next
+        # _inline_reconnect() will disconnect the engine (releasing
+        # transfer handles) and decrement all held blocks.
+        if not self._is_healthy():
+            return
+
         # Wait for any inflight reads. We peek first (get, not pop) so
         # that on failure the transfer handles remain in _inflight_reads
-        # for _maybe_reconnect() / shutdown() to release properly.
+        # for _inline_reconnect() / shutdown() to release properly.
         inflight = self._inflight_reads.get(req_id)
         if inflight:
             try:
                 for tr in inflight.transfers:
-                    self._ensure_engine().sync_and_release(tr)
+                    self._ensure_engine().sync_and_release(tr, timeout_s=5.0)
             except Exception as exc:
                 self._set_needs_reconnect(
                     f"on_request_complete sync_and_release: {exc}"
@@ -968,7 +1070,7 @@ class DKVConnector:
                     exc_info=True,
                 )
                 # Leave _inflight_reads[req_id] and _held_blocks[req_id]
-                # intact. _maybe_reconnect() will engine.disconnect()
+                # intact. _inline_reconnect() will engine.disconnect()
                 # (releasing handles) before decrementing held blocks.
                 return
             del self._inflight_reads[req_id]
@@ -983,12 +1085,14 @@ class DKVConnector:
             for inflight in self._inflight_reads.values():
                 try:
                     for tr in inflight.transfers:
-                        self._engine.sync_and_release(tr)
+                        self._engine.sync_and_release(tr, timeout_s=5.0)
                 except Exception:
                     sync_failed = True
             for write_info in self._inflight_writes:
                 try:
-                    self._engine.sync_and_release(write_info.transfer_req)
+                    self._engine.sync_and_release(
+                        write_info.transfer_req, timeout_s=5.0
+                    )
                     self._safe_register_blocks(write_info.descriptors)
                 except Exception:
                     sync_failed = True
@@ -1043,6 +1147,7 @@ class DKVConnector:
                 pass
 
         self._pending_loads.clear()
+        self._pending_acquires.clear()
         if self._engine is not None:
             self._engine.cleanup()
         self._client.close()

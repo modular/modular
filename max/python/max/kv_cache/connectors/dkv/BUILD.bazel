@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "dkv",
     srcs = glob(["*.py"]),
+    data = glob(["*.pyi"]),
     ignore_unresolved_imports = [
         # Provided transitively by the parent //max/python/max/kv_cache
         # target. Declaring them here would create a circular dependency
