@@ -7662,33 +7662,6 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         )
 
 
-@compiler.register("mo.kv_cache.get_max_seq_len.paged")
-struct Struct_kv_cache_get_max_seq_len_paged:
-    @always_inline
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        max_seq_len: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
-        context: DeviceContextPtr,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            cache_lengths,
-            kv_lookup_table,
-            max_lengths,
-        )
-        # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,
-        # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
-        max_seq_len[0] = kv_collection.max_seq_length
-
-
 @compiler.register("mo.mla.graph.prefill.paged.fp8")
 struct Struct_mla_prefill_graph_paged:
     @always_inline
@@ -11250,49 +11223,6 @@ struct QuantizeDynamicScaledFloat8:
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(0),
-        )
-
-
-@compiler.register("mo.batched.quantize.dynamic.scaled.fp8")
-struct BatchedQuantizeDynamicScaledFloat8:
-    @always_inline
-    @staticmethod
-    def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
-        group_size_or_per_token: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=output_type, rank=3, ...],
-        scales: OutputTensor[dtype=scales_type, rank=3, ...],
-        input: FusedInputTensor[dtype=input_type, rank=3, ...],
-        scale_ub: Float32,
-        ctx: DeviceContextPtr,
-    ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int
-        ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                Index(batch, row, col)
-            )
-
-        batched_quantize_dynamic_scaled_fp8[
-            input_fn=input_fn,
-            group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[2]),
-        ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
-            scale_ub,
-            ctx.get_device_context(),
-            num_rows=input.dim_size(1),
-            batch_size=input.dim_size(0),
         )
 
 
