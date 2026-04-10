@@ -15,12 +15,15 @@
 Provides KVCacheIterator (TileTensor-based DRAM tile iteration) and
 KVBuffer (DMA + LDS + register tile management).
 
-TileTensor is used throughout:
+TileTensor is used throughout — no LayoutTensor in this file:
   - DRAM tiles: TileTensor with RuntimeInt valid_rows (KVCacheIterator)
   - SMEM sub-tiles: flat TileTensor views via smem_subtile/smem_mma_subtile
   - DMA: tt_copy_dram_to_sram_lds (both src and dst are TileTensor)
   - LDS loads: tt_load_b / tt_load_b_tr (TileTensor SMEM -> SIMD)
   - MMA register tiles: TileTensor in LOCAL with stack_allocation
+
+TiledTensorCore.mma() in tensor_core.mojo has TileTensor overloads
+that construct LayoutTensor views at the MMA boundary.
 """
 
 from std.math import ceildiv
@@ -43,10 +46,9 @@ from layout.tile_layout import row_major as tt_row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from layout.swizzle import Swizzle
 from nn.attention.mha_operand import MHAOperand
-from structured_kernels.amd_tile_io import (
-    LdsTileLoader,
-    smem_subtile,
-    smem_mma_subtile,
+from layout._utils import make_amd_buffer_resource
+from .tile_utils import smem_subtile, smem_mma_subtile
+from .hw_ops import (
     tt_copy_dram_to_sram_lds,
     tt_load_b,
     tt_load_b_tr,
@@ -146,7 +148,6 @@ struct KVBuffer[
     depth: Int,
     kv_num_heads: Int,
     transpose: Bool,
-    full_kv: Bool = True,
 ]:
     """KV cache buffer managing DMA, LDS staging, and register tiles.
 
@@ -156,12 +157,9 @@ struct KVBuffer[
     block-aligned offsets from the blocked_product layout structure
     (num_repeats contiguous BN×BK blocks) and return flat TileTensor views.
 
-    When full_kv=True (depth<=256), each SMEM stage holds BN x depth
-    elements — the full tile. When full_kv=False (depth=512), each stage
-    holds only BN x BK elements, and the caller iterates over BK blocks.
-
     MMA register tiles (mma_tile) are TileTensor in LOCAL address space.
-    TiledMmaOp (mma.mojo) handles SMEM→register loads and MMA dispatch.
+    TiledTensorCore.mma() has TileTensor overloads that construct
+    LayoutTensor views at the MMA boundary (tensor_core.mojo).
     """
 
     comptime MMA_N = Self.mma_shape[1]
@@ -177,14 +175,12 @@ struct KVBuffer[
 
     comptime warp_tile_rows = 32
     comptime num_repeats = Self.depth // Self.BK
-    comptime smem_cols = Self.depth if Self.full_kv else Self.BK
-    comptime smem_stage_size = Self.BN * Self.smem_cols
+    comptime smem_stage_size = Self.BN * Self.depth
 
     comptime _num_warps = Self.num_threads // WARP_SIZE
-    comptime _dma_col_groups = (Self.depth // Self.BK) if Self.full_kv else 1
-    comptime _total_tiles = (
-        Self.BN // Self.warp_tile_rows
-    ) * Self._dma_col_groups
+    comptime _total_tiles = (Self.BN // Self.warp_tile_rows) * (
+        Self.depth // Self.BK
+    )
     comptime _tiles_per_warp = ceildiv(Self._total_tiles, Self._num_warps)
     comptime vm_instrs_per_load = UInt32(Self._tiles_per_warp * 2)
 
@@ -245,7 +241,7 @@ struct KVBuffer[
         self.lds_base_ptrs = type_of(self.lds_base_ptrs)(uninitialized=True)
 
         comptime for i in range(2):
-            var warp_smem = smem_subtile[
+            var warp_tt = smem_subtile[
                 Self.warp_tile_rows, Self.BK, Self.BN, Self.BK, Self.kv_t.dtype
             ](
                 self.smem_ptr + i * Self.smem_stage_size,
@@ -253,40 +249,19 @@ struct KVBuffer[
                 Int(warp_col),
             )
             self.lds_base_ptrs[i] = UInt32(
-                readfirstlane(Int32(Int(warp_smem.ptr)))
+                readfirstlane(Int32(Int(warp_tt.ptr)))
             )
 
     @always_inline
     def load_from_dram[buffer_idx: Int](mut self):
-        var gmem_tile = self.kv_cache_iter.next_tile()
-        var loader = LdsTileLoader[Self.kv_t.dtype, Self.swizzle](gmem_tile)
+        var gmem_tt = self.kv_cache_iter.next_tile()
+        var bc = make_amd_buffer_resource(gmem_tt)
 
         var smem_base = self.smem_ptr + buffer_idx * Self.smem_stage_size
 
-        comptime if not Self.full_kv:
-            comptime num_warps = Self.num_threads // WARP_SIZE
-            comptime num_row_groups = Self.BN // Self.warp_tile_rows
-            comptime tiles_per_warp = ceildiv(num_row_groups, num_warps)
-
-            comptime for t in range(tiles_per_warp):
-                comptime tile_idx = Int(t) * num_warps
-                var warp_tile_idx = UInt32(tile_idx) + self.warp_id
-                var warp_row = Int(warp_tile_idx)
-                var smem_warp = smem_subtile[
-                    Self.warp_tile_rows,
-                    Self.BK,
-                    Self.BN,
-                    Self.BK,
-                    Self.kv_t.dtype,
-                ](smem_base, warp_row, 0)
-                var gmem_warp_tile = gmem_tile.tile[
-                    Self.warp_tile_rows, Self.BK
-                ](warp_row, 0)
-                var lds_base = UInt32(readfirstlane(Int32(Int(smem_warp.ptr))))
-                loader.load(smem_warp, gmem_warp_tile, lds_base)
-        elif Self.depth == 64:
+        comptime if Self.depth == 64:
             var warp_r, warp_c = divmod(Int(self.warp_id), 2)
-            var smem_warp = smem_subtile[
+            var smem_warp_tt = smem_subtile[
                 Self.warp_tile_rows,
                 Self.BK,
                 Self.BN,
@@ -297,11 +272,16 @@ struct KVBuffer[
                 warp_r,
                 warp_c,
             )
-            var gmem_warp_tile = gmem_tile.tile[Self.warp_tile_rows, Self.BK](
+            var gmem_warp_tile = gmem_tt.tile[Self.warp_tile_rows, Self.BK](
                 warp_r, warp_c
             )
-            var lds_base = UInt32(readfirstlane(Int32(Int(smem_warp.ptr))))
-            loader.load(smem_warp, gmem_warp_tile, lds_base)
+            var lds_base = UInt32(readfirstlane(Int32(Int(smem_warp_tt.ptr))))
+            tt_copy_dram_to_sram_lds[swizzle=Self.swizzle](
+                smem_warp_tt,
+                gmem_warp_tile,
+                lds_base,
+                bc,
+            )
         else:
             comptime num_warps = Self.num_threads // WARP_SIZE
             comptime num_row_groups = Self.BN // Self.warp_tile_rows
@@ -315,18 +295,25 @@ struct KVBuffer[
                 var warp_row, warp_col = divmod(
                     warp_tile, UInt32(num_col_groups)
                 )
-                var smem_warp = smem_subtile[
+                var smem_warp_tt = smem_subtile[
                     Self.warp_tile_rows,
                     Self.BK,
                     Self.BN,
                     Self.BK,
                     Self.kv_t.dtype,
                 ](smem_base, Int(warp_row), Int(warp_col))
-                var gmem_warp_tile = gmem_tile.tile[
-                    Self.warp_tile_rows, Self.BK
-                ](Int(warp_row), Int(warp_col))
-                var lds_base = UInt32(readfirstlane(Int32(Int(smem_warp.ptr))))
-                loader.load(smem_warp, gmem_warp_tile, lds_base)
+                var gmem_warp_tile = gmem_tt.tile[Self.warp_tile_rows, Self.BK](
+                    Int(warp_row), Int(warp_col)
+                )
+                var lds_base = UInt32(
+                    readfirstlane(Int32(Int(smem_warp_tt.ptr)))
+                )
+                tt_copy_dram_to_sram_lds[swizzle=Self.swizzle](
+                    smem_warp_tt,
+                    gmem_warp_tile,
+                    lds_base,
+                    bc,
+                )
 
     # split[N]()[idx] → tile[rows_per_split, cols](idx, 0)
     comptime _rows_per_k_tile = Self.num_mmas * Self.num_k_mmas2
@@ -365,7 +352,7 @@ struct KVBuffer[
             comptime num_warps_n = Self.BN // Self.WN
             var warp_col = umod(get_warp_id(), num_warps_n)
 
-            var warp_smem = smem_subtile[
+            var warp_tt = smem_subtile[
                 Self.wtile_dim0,
                 Self.wtile_dim1,
                 Self.BN,
@@ -376,7 +363,7 @@ struct KVBuffer[
             comptime total_frags = Self.num_mmas * Self.num_k_mmas2
             var frags = tt_load_b[
                 Self.mma_shape, Self.swizzle, total_frags, Self.simd_width
-            ](warp_smem)
+            ](warp_tt)
 
             var mma_dst = self.mma_tile.tile[
                 Self._rows_per_k_tile, Self.simd_width
@@ -393,10 +380,10 @@ struct KVBuffer[
 
             comptime for k in range(Self.BK // MMA_K):
                 comptime for i in range(Self.depth // MMA_M):
-                    var mma_smem = smem_mma_subtile[
+                    var mma_tt = smem_mma_subtile[
                         MMA_K, MMA_M, Self.BN, Self.BK, Self.kv_t.dtype
                     ](smem_base, bk_tile, Int(k), Int(i))
-                    var frag = tt_load_b_tr[Self.mma_shape](mma_smem)
+                    var frag = tt_load_b_tr[Self.mma_shape](mma_tt)
 
                     var mma_dst = self.get_mma_tile[
                         Int(k), bk_tile

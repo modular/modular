@@ -48,8 +48,8 @@ from nn.softmax import _online_softmax_iter_for_mma_output
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
-from nn.attention.gpu.amd.attention import AttentionConfig
-from nn.attention.gpu.amd.buffers import KVBuffer
+from .attention import AttentionConfig
+from .buffers import KVBuffer
 from .buffers_rdna import (
     QRegisterBufferRDNA,
     OutputRegisterBufferRDNA,
@@ -62,7 +62,7 @@ from .buffers_rdna import (
     get_rdna_warp_layout,
 )
 from .mma_rdna import mma_rdna
-from nn.attention.gpu.amd.utils import (
+from .utils import (
     GlobalMemoryManager,
     SharedLayoutTensor,
     SharedMemoryManager,

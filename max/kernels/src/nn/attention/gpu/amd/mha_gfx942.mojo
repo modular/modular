@@ -22,11 +22,8 @@ from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from .attention import Attention, AttentionConfig
-from std.sys import get_defined_bool
-from std.gpu import warp_id as get_warp_id
 from .buffers import (
     KBuffer,
-    KBufferLDS,
     VBuffer,
     VBufferTransposeLoads,
 )
@@ -137,8 +134,8 @@ __extension Attention:
                 UInt32(tile_size), end - kv_tile_start_row
             )
 
-            var k_tile = self.gmem_manager.get_kv_tile(
-                self.k.block_paged_ptr[Self.BN](
+            var k_tile = self.gmem_manager.get_kv_tensor(
+                self.k.block_paged_ptr[Int(Self.BN)](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
@@ -147,8 +144,8 @@ __extension Attention:
                 kv_tile_num_rows,
             )
 
-            var v_tile = self.gmem_manager.get_kv_tile(
-                self.v.block_paged_ptr[Self.BN](
+            var v_tile = self.gmem_manager.get_kv_tensor(
+                self.v.block_paged_ptr[Int(Self.BN)](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
@@ -159,14 +156,24 @@ __extension Attention:
 
             self.zero_p_buffer()
 
-            # Toggle between register-staged (KBuffer) and direct LDS
-            # (KBufferLDS) for K buffer DMA comparison.
-            comptime use_lds_k = get_defined_bool["use_lds_k", False]()
+            var num_b_rows = Int(kv_tile_num_rows)
 
-            comptime kv_layout = Self.GlobalMemoryManagerType.KvTileLayout
+            var k_buffer = KBuffer[
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
+                swizzle=Swizzle(3, 0, 4),
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
+            ](
+                k_tile,
+                num_b_rows,
+                self.smem_manager.get_k_ptr[k_tile.dtype](),
+            )
 
             var v_buffer = VBufferTransposeLoads[
-                kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_pv(),
                 BN=Self.BN,
                 BK=Self.BK,
@@ -180,38 +187,7 @@ __extension Attention:
             def prefetch_function():
                 v_buffer.load_from_dram()
 
-            comptime if use_lds_k:
-                var k_buffer = KBufferLDS[
-                    kv_tile_layout=kv_layout,
-                    tensor_core_mma=Self.get_tensor_core_mma_qk(),
-                    swizzle=Swizzle(3, 0, 4),
-                    BN=Self.BN,
-                    WN=Self.WN,
-                    BK=Self.BK,
-                    depth=Self.depth,
-                    num_threads=Self.num_threads,
-                ](
-                    k_tile,
-                    self.smem_manager.get_k_ptr[k_tile.dtype](),
-                    UInt32(get_warp_id()),
-                )
-                self.mma_qk[prefetch_function=prefetch_function](k_buffer)
-            else:
-                var k_buffer = KBuffer[
-                    kv_tile_layout=kv_layout,
-                    tensor_core_mma=Self.get_tensor_core_mma_qk(),
-                    swizzle=Swizzle(3, 0, 4),
-                    BN=Self.BN,
-                    WN=Self.WN,
-                    BK=Self.BK,
-                    depth=Self.depth,
-                    num_threads=Self.num_threads,
-                    num_stages=Self.num_stages,
-                ](
-                    k_tile,
-                    self.smem_manager.get_k_ptr[k_tile.dtype](),
-                )
-                self.mma_qk[prefetch_function=prefetch_function](k_buffer)
+            self.mma_qk[prefetch_function=prefetch_function](k_buffer)
 
             self.scale_p_reg()
 
@@ -262,8 +238,8 @@ __extension Attention:
 
             var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
-            var k_tile = self.gmem_manager.get_kv_tile(
-                self.k.block_paged_ptr[Self.BN](
+            var k_tile = self.gmem_manager.get_kv_tensor(
+                self.k.block_paged_ptr[Int(Self.BN)](
                     UInt32(self.get_batch_idx()),
                     UInt32(kv_tile_start_row),
                     UInt32(self.kv_head_idx()),
@@ -272,8 +248,8 @@ __extension Attention:
                 UInt32(kv_tile_num_rows),
             )
 
-            var v_tile = self.gmem_manager.get_kv_tile(
-                self.v.block_paged_ptr[Self.BN](
+            var v_tile = self.gmem_manager.get_kv_tensor(
+                self.v.block_paged_ptr[Int(Self.BN)](
                     UInt32(self.get_batch_idx()),
                     UInt32(kv_tile_start_row),
                     UInt32(self.kv_head_idx()),
@@ -285,10 +261,12 @@ __extension Attention:
             self.zero_p_buffer()
 
             comptime swizzle = Swizzle(2, 0, 2)
-            comptime kv_layout = Self.GlobalMemoryManagerType.KvTileLayout
+
+            var num_b_rows = Optional[Int](
+                kv_tile_num_rows
+            ) if not not_last_iter else Optional[Int]()
 
             var k_buffer = KBuffer[
-                kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=swizzle,
                 BN=Self.BN,
@@ -300,10 +278,11 @@ __extension Attention:
                 token_gen=Self.token_gen,
             ](
                 k_tile,
+                num_b_rows,
                 self.smem_manager.get_k_ptr[k_tile.dtype](),
             )
+            var v_tile_slice = v_tile.slice[:, : Self.output_depth]()
             var v_buffer = VBuffer[
-                kv_tile_layout=kv_layout,
                 tensor_core_mma=Self.get_tensor_core_mma_pv(),
                 swizzle=None,
                 BN=Self.BN,
@@ -314,7 +293,8 @@ __extension Attention:
                 num_stages=Self.num_stages,
                 token_gen=Self.token_gen,
             ](
-                v_tile,
+                v_tile_slice,
+                num_b_rows,
                 self.smem_manager.get_v_ptr[v_tile.dtype](),
             )
 

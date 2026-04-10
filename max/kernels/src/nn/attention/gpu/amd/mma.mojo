@@ -11,191 +11,63 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.compute.mma import mma as gpu_mma
-from std.gpu import lane_id, WARP_SIZE
-from std.utils import IndexList
-from layout import TileTensor
-from layout.swizzle import Swizzle
-from layout.tensor_core import num_matrix_reg
-from layout.tile_layout import row_major, col_major
+from std.collections import OptionalReg
+from std.math import ceildiv
+
+from std.gpu import barrier
+from layout.tensor_core import TiledTensorCore
+
+from .buffers import KVBuffer, RegisterBuffer, RegisterMMABuffer
 
 
-struct TiledMmaOp[
-    out_type: DType,
-    in_type: DType,
-    shape: IndexList[3],
-    group_size: Int,
-    transpose_b: Bool = False,
-]:
-    """TileTensor-native MMA operation for AMD attention kernels.
+@always_inline
+def mma[
+    c_register_buffer_type: RegisterBuffer,
+    a_register_buffer_type: RegisterMMABuffer,
+    b_buffer_type: KVBuffer,
+    //,
+    tensor_core_mma: TiledTensorCore,
+    BK: Int,
+    prefetch_function: OptionalReg[def() capturing -> None],
+    swap_a_b: Bool = False,
+    beg_iter: Int = 0,
+    num_iters: Int = 1,
+    prefetched_b_tile: Bool = False,
+](
+    c: c_register_buffer_type,
+    mut a_tile: a_register_buffer_type,
+    mut b_tile: b_buffer_type,
+):
+    comptime assert (
+        b_buffer_type._num_stages == 2
+    ), "b_tile.num_stages must be 2"
+    comptime num_k_mmas2 = ceildiv(
+        BK, tensor_core_mma.shape[2] * tensor_core_mma.group_size
+    )
 
-    Wraps the raw GPU MMA intrinsic and operates directly on TileTensor
-    register tiles.
+    comptime if not prefetched_b_tile:
+        b_tile.load_from_dram()
 
-    Parameters:
-        out_type: Accumulator data type.
-        in_type: Input matrix element data type.
-        shape: MMA instruction shape [M, N, K].
-        group_size: Number of MMA operations along the K dimension.
-        transpose_b: Whether to transpose the B matrix.
-    """
+    comptime for i in range(beg_iter, beg_iter + num_iters):
+        comptime if i < beg_iter + num_iters - 1:
+            b_tile.load_from_dram()
 
-    comptime a_frag_size = num_matrix_reg[Self.shape[0], Self.shape[2]]()
-    comptime b_frag_size = num_matrix_reg[Self.shape[2], Self.shape[1]]()
-    comptime c_frag_size = num_matrix_reg[Self.shape[0], Self.shape[1]]()
+            comptime if i == beg_iter + num_iters - 2:
+                comptime if prefetch_function:
+                    comptime prefetch_func = prefetch_function.value()
+                    prefetch_func()
 
-    @staticmethod
-    @always_inline
-    def mma[
-        swap_a_b: Bool = False
-    ](
-        a: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-        b: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-        c: TileTensor[mut=True, _, _, address_space=AddressSpace.LOCAL, ...],
-    ):
-        """Perform grouped MMA on TileTensor operands.
+        b_tile.copy_to_shared[i % 2]()
 
-        Tiles down to individual MMA fragments so the compiler can
-        prove static shapes, then calls the raw gpu_mma intrinsic
-        directly.
+        barrier()
 
-        Parameters:
-            swap_a_b: Whether to swap A and B operands.
+        comptime for k_mma in range(num_k_mmas2):
+            var a_reg_tile = a_tile.get_mma_tile[i, k_mma]()
 
-        Args:
-            a: A operand tile [num_m_mmas, group_size * a_frag_size].
-            b: B operand tile [num_n_mmas, group_size * b_frag_size].
-            c: Accumulator tile [num_m_mmas * num_n_mmas, c_frag_size],
-                modified in-place.
-        """
-        comptime num_m_mmas = type_of(a).static_shape[0]
-        comptime num_n_mmas = type_of(b).static_shape[0]
+            b_tile.load_from_shared[k_mma,]()
 
-        comptime a_frag = Self.a_frag_size
-        comptime b_frag = Self.b_frag_size
-        comptime c_frag = Self.c_frag_size
-
-        comptime for k in range(Self.group_size):
-            var a_k = a.tile[num_m_mmas, a_frag](0, k).vectorize[1, a_frag]()
-            var b_k = b.tile[num_n_mmas, b_frag](0, k).vectorize[1, b_frag]()
-
-            comptime for m_mma in range(num_m_mmas):
-                comptime for n_mma in range(num_n_mmas):
-                    # col_major(M, N): m + n*M; row_major(N, M): m*M + n.
-                    comptime c_idx = (
-                        m_mma * num_m_mmas + n_mma
-                    ) if swap_a_b else (m_mma + n_mma * num_m_mmas)
-                    # Tile to a single [1, c_frag] fragment, then
-                    # vectorize to [1, 1] — provably rank-2.
-                    var c_frag_vec = c.tile[1, c_frag](c_idx, 0).vectorize[
-                        1, c_frag
-                    ]()
-                    gpu_mma(
-                        c_frag_vec[0, 0],
-                        b_k[n_mma, 0],
-                        a_k[m_mma, 0],
-                        c_frag_vec[0, 0],
-                    )
-
-    @staticmethod
-    @always_inline
-    def load_b[
-        swizzle: Optional[Swizzle] = None,
-    ](
-        warp_tile: TileTensor[
-            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
-        ],
-        reg_tile: TileTensor[
-            mut=True, Self.in_type, _, _, address_space=AddressSpace.LOCAL, ...
-        ],
-        k_group_idx: UInt = 0,
-    ):
-        """Load B-matrix fragments from SMEM to registers.
-
-        Distributes the warp tile across threads with optional swizzle,
-        loading one MMA fragment per iteration. Handles both transposed
-        and non-transposed B layouts via comptime dispatch.
-
-        Parameters:
-            swizzle: Optional swizzle for SMEM bank-conflict avoidance.
-
-        Args:
-            warp_tile: Source warp tile in shared memory.
-            reg_tile: Destination register tile for MMA fragments.
-            k_group_idx: K-dimension group index within the warp tile.
-        """
-        comptime mma_n = Self.shape[1]
-        comptime mma_k = Self.shape[2]
-        comptime simd_width = (num_matrix_reg[mma_k, mma_n]() * Self.group_size)
-
-        comptime num_frags = type_of(reg_tile).static_shape[0]
-        var reg_vec = reg_tile.vectorize[1, simd_width]()
-        comptime assert type_of(reg_vec).flat_rank == 2
-
-        comptime if Self.transpose_b:
-            comptime for i in range(num_frags):
-                var mma_tile = warp_tile.tile[mma_n, mma_k * Self.group_size](
-                    i, Int(k_group_idx)
-                )
-                var dist = mma_tile.vectorize[1, simd_width]().distribute[
-                    col_major[mma_n, WARP_SIZE // mma_n](),
-                    swizzle=swizzle,
-                ](lane_id())
-                comptime assert type_of(dist).flat_rank == 2
-                reg_vec[i, 0] = dist[0, 0]
-        else:
-            comptime for i in range(num_frags):
-                var mma_tile = warp_tile.tile[mma_k * Self.group_size, mma_n](
-                    Int(k_group_idx), i
-                )
-                var dist = mma_tile.vectorize[simd_width, 1]().distribute[
-                    row_major[WARP_SIZE // mma_n, mma_n](),
-                    swizzle=swizzle,
-                ](lane_id())
-                comptime assert type_of(dist).flat_rank == 2
-                reg_vec[i, 0] = dist[0, 0]
-
-    @staticmethod
-    @always_inline
-    def load_a[
-        swizzle: Optional[Swizzle] = None,
-    ](
-        warp_tile: TileTensor[
-            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
-        ],
-        reg_tile: TileTensor[
-            mut=True, Self.in_type, _, _, address_space=AddressSpace.LOCAL, ...
-        ],
-        k_group_idx: UInt = 0,
-    ):
-        """Load A-matrix fragments from SMEM to registers.
-
-        Distributes the warp tile across threads with optional swizzle,
-        loading one MMA fragment per iteration. Always uses col_major
-        thread distribution.
-
-        Parameters:
-            swizzle: Optional swizzle for SMEM access.
-
-        Args:
-            warp_tile: Source warp tile in shared memory.
-            reg_tile: Destination register tile for MMA fragments.
-            k_group_idx: K-dimension group index within the warp tile.
-        """
-        comptime mma_m = Self.shape[0]
-        comptime mma_k = Self.shape[2]
-        comptime simd_width = (num_matrix_reg[mma_m, mma_k]() * Self.group_size)
-        comptime num_frags = type_of(reg_tile).static_shape[0]
-        var reg_vec = reg_tile.vectorize[1, simd_width]()
-        comptime assert type_of(reg_vec).flat_rank == 2
-
-        comptime for i in range(num_frags):
-            var mma_tile = warp_tile.tile[mma_m, mma_k * Self.group_size](
-                i, Int(k_group_idx)
+            tensor_core_mma.mma[swap_a_b=swap_a_b](
+                a_reg_tile, b_tile.get_mma_tile(), c.get_reg_tile()
             )
-            var dist = mma_tile.vectorize[1, simd_width]().distribute[
-                col_major[mma_m, WARP_SIZE // mma_m](),
-                swizzle=swizzle,
-            ](lane_id())
-            comptime assert type_of(dist).flat_rank == 2
-            reg_vec[i, 0] = dist[0, 0]
+
+        barrier()
