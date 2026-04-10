@@ -68,7 +68,7 @@ def _init_and_register_max_context(mlir_ctx: max._mlir.ir.Context) -> None:
     Initializes a process-wide M::Context when none exists, then registers it with the given MLIR context so compiler code can use loadContext.
 
     Internal API; does not expose M::Context to Python. New contexts are
-    created via Init::createContext (same Init path the Engine uses before
+    created via Init::getOrCreateContext (same Init path the Engine uses before
     attaching devices).
     """
 
