@@ -513,3 +513,121 @@ def test_scatter_reduction_specific_error_messages(
                 graph.inputs[2].tensor,
                 axis=100,
             )
+
+
+# ---------------------------------------------------------------------------
+# scatter_nd_max / scatter_nd_min / scatter_nd_mul graph-level tests
+# ---------------------------------------------------------------------------
+
+_ND_REDUCTION_OPS = [
+    pytest.param(ops.scatter_nd_max, id="scatter_nd_max"),
+    pytest.param(ops.scatter_nd_min, id="scatter_nd_min"),
+    pytest.param(ops.scatter_nd_mul, id="scatter_nd_mul"),
+]
+
+
+@given(
+    input_type=tensor_types(shapes=st.lists(dims, min_size=1)),
+    num_updates=st.integers(min_value=0, max_value=10),
+    index_rank=st.integers(min_value=1, max_value=3),
+)
+@pytest.mark.parametrize("op", _ND_REDUCTION_OPS)
+def test_scatter_nd_reduction_shape_preservation(
+    op,  # noqa: ANN001
+    input_type: TensorType,
+    num_updates: int,
+    index_rank: int,
+) -> None:
+    """Tests that scatter_nd_max/min/mul preserve input shape and dtype."""
+    index_rank = min(index_rank, input_type.rank)
+
+    indices_type = TensorType(
+        DType.int64, [num_updates, index_rank], input_type.device
+    )
+    updates_shape = [num_updates] + list(input_type.shape[index_rank:])
+    updates_type = TensorType(
+        input_type.dtype, updates_shape, input_type.device
+    )
+
+    with Graph(
+        "scatter_nd_reduction",
+        input_types=[input_type, updates_type, indices_type],
+    ) as graph:
+        input_tensor, updates, indices = (inp.tensor for inp in graph.inputs)
+        result = op(input_tensor, updates, indices)
+        graph.output(result)
+
+        assert result.type.dtype == input_tensor.type.dtype
+        assert result.type.shape == input_tensor.type.shape
+
+
+@given(
+    input_type=tensor_types(),
+    updates_type=tensor_types(),
+    indices_type=tensor_types(
+        dtypes=st.sampled_from([DType.int32, DType.int64])
+    ),
+)
+@pytest.mark.parametrize("op", _ND_REDUCTION_OPS)
+def test_scatter_nd_reduction_dtype_mismatch(
+    op,  # noqa: ANN001
+    input_type: TensorType,
+    updates_type: TensorType,
+    indices_type: TensorType,
+) -> None:
+    """Tests that scatter_nd_max/min/mul raise on input/updates dtype mismatch."""
+    assume(input_type.dtype != updates_type.dtype)
+
+    with Graph(
+        "scatter_nd_reduction_dtype_mismatch",
+        input_types=[input_type, updates_type, indices_type],
+    ) as graph:
+        input_tensor, updates, indices = (inp.tensor for inp in graph.inputs)
+        with pytest.raises(ValueError):
+            op(input_tensor, updates, indices)
+
+
+@pytest.mark.parametrize("op", _ND_REDUCTION_OPS)
+def test_scatter_nd_reduction_invalid_indices_dtype(
+    op,  # noqa: ANN001
+) -> None:
+    """Tests that scatter_nd_max/min/mul raise on non-integer indices."""
+    with Graph(
+        "scatter_nd_reduction_invalid_indices",
+        input_types=[
+            TensorType(DType.float32, [5, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [2, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [2, 1], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "Invalid indices dtype: 'DType.float32'."
+                " Indices must be of type int32 or int64."
+            ),
+        ):
+            input_tensor, updates, indices = (
+                inp.tensor for inp in graph.inputs
+            )
+            op(input_tensor, updates, indices)
+
+
+@pytest.mark.parametrize("op", _ND_REDUCTION_OPS)
+def test_scatter_nd_reduction_device_mismatch(
+    op,  # noqa: ANN001
+) -> None:
+    """Tests that scatter_nd_max/min/mul raise on device mismatch."""
+    with Graph(
+        "scatter_nd_reduction_device_mismatch",
+        input_types=[
+            TensorType(DType.float32, [5, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [2, 3], device=DeviceRef.GPU()),
+            TensorType(DType.int64, [2, 1], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        with pytest.raises(ValueError, match="must be on the same device"):
+            input_tensor, updates, indices = (
+                inp.tensor for inp in graph.inputs
+            )
+            op(input_tensor, updates, indices)

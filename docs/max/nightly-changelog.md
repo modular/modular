@@ -114,6 +114,10 @@ This version is still a work in progress.
   `max.graph.ops.scatter_mul` graph operations (and corresponding
   `max.experimental.functional` wrappers) for element-wise scatter with
   max, min, and multiply reductions at duplicate indices along an axis.
+- Added `max.graph.ops.scatter_nd_max`, `max.graph.ops.scatter_nd_min`, and
+  `max.graph.ops.scatter_nd_mul` graph operations (and corresponding
+  `max.experimental.functional` wrappers) for N-dimensional scatter with
+  max, min, and multiply reductions at duplicate index vectors.
 - `max.graph.ops.pad` (and `max.graph.experimental.functional.pad`) now
   accepts `mode='reflect'` and `mode='edge'` in addition to
   `mode='constant'`.

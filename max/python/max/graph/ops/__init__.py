@@ -93,6 +93,9 @@ from .scatter import (
     scatter_mul,
     scatter_nd,
     scatter_nd_add,
+    scatter_nd_max,
+    scatter_nd_min,
+    scatter_nd_mul,
 )
 from .shape_to_tensor import shape_to_tensor
 from .shard_and_stack import shard_and_stack

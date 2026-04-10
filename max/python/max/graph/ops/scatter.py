@@ -192,6 +192,174 @@ def scatter_nd_add(
     )[0].tensor
 
 
+def scatter_nd_max(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+) -> TensorValue:
+    """Creates a new symbolic tensor by scattering the maximum of updates into input at N-D indices.
+
+    Produces an output tensor by scattering slices from updates into a copy
+    of input according to N-dimensional index vectors, keeping the maximum
+    at duplicate index positions.  Each index vector is the last dimension of
+    ``indices`` and selects a slice (or scalar) in input.
+
+    Example for ``input.shape = [4, 2]``, ``indices.shape = [3, 1]``
+    (1-D partial indexing, writes whole rows):
+
+    .. code-block:: text
+
+        output[indices[i, 0], :] = max(output[indices[i, 0], :], updates[i, :])
+
+    Args:
+        input: The input symbolic tensor to scatter into.
+        updates: A symbolic tensor of values to compare.
+        indices: An index tensor whose last dimension is the index vector
+            length ``k`` (``k <= input.rank``).
+
+    Returns:
+        A new symbolic tensor with the same shape and dtype as input.
+    """
+    input = TensorValue(input)
+    updates = TensorValue(updates)
+    indices = TensorValue(indices)
+
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype ({input.dtype}) and updates dtype"
+            f" ({updates.dtype}) must match"
+        )
+
+    if indices.dtype not in (DType.int32, DType.int64):
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'."
+            " Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+
+    return Graph.current._add_op_generated(
+        rmo.MoScatterNdMaxOp,
+        input.type,
+        input,
+        updates,
+        indices,
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+
+
+def scatter_nd_min(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+) -> TensorValue:
+    """Creates a new symbolic tensor by scattering the minimum of updates into input at N-D indices.
+
+    Produces an output tensor by scattering slices from updates into a copy
+    of input according to N-dimensional index vectors, keeping the minimum
+    at duplicate index positions.  Each index vector is the last dimension of
+    ``indices`` and selects a slice (or scalar) in input.
+
+    Example for ``input.shape = [4, 2]``, ``indices.shape = [3, 1]``
+    (1-D partial indexing, writes whole rows):
+
+    .. code-block:: text
+
+        output[indices[i, 0], :] = min(output[indices[i, 0], :], updates[i, :])
+
+    Args:
+        input: The input symbolic tensor to scatter into.
+        updates: A symbolic tensor of values to compare.
+        indices: An index tensor whose last dimension is the index vector
+            length ``k`` (``k <= input.rank``).
+
+    Returns:
+        A new symbolic tensor with the same shape and dtype as input.
+    """
+    input = TensorValue(input)
+    updates = TensorValue(updates)
+    indices = TensorValue(indices)
+
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype ({input.dtype}) and updates dtype"
+            f" ({updates.dtype}) must match"
+        )
+
+    if indices.dtype not in (DType.int32, DType.int64):
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'."
+            " Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+
+    return Graph.current._add_op_generated(
+        rmo.MoScatterNdMinOp,
+        input.type,
+        input,
+        updates,
+        indices,
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+
+
+def scatter_nd_mul(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+) -> TensorValue:
+    """Creates a new symbolic tensor by scattering the product of updates into input at N-D indices.
+
+    Produces an output tensor by scattering slices from updates into a copy
+    of input according to N-dimensional index vectors, multiplying values
+    at duplicate index positions.  Each index vector is the last dimension of
+    ``indices`` and selects a slice (or scalar) in input.
+
+    Example for ``input.shape = [4, 2]``, ``indices.shape = [3, 1]``
+    (1-D partial indexing, writes whole rows):
+
+    .. code-block:: text
+
+        output[indices[i, 0], :] *= updates[i, :]
+
+    Args:
+        input: The input symbolic tensor to scatter into.
+        updates: A symbolic tensor of values to multiply.
+        indices: An index tensor whose last dimension is the index vector
+            length ``k`` (``k <= input.rank``).
+
+    Returns:
+        A new symbolic tensor with the same shape and dtype as input.
+    """
+    input = TensorValue(input)
+    updates = TensorValue(updates)
+    indices = TensorValue(indices)
+
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype ({input.dtype}) and updates dtype"
+            f" ({updates.dtype}) must match"
+        )
+
+    if indices.dtype not in (DType.int32, DType.int64):
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'."
+            " Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+
+    return Graph.current._add_op_generated(
+        rmo.MoScatterNdMulOp,
+        input.type,
+        input,
+        updates,
+        indices,
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+
+
 def scatter_add(
     input: TensorValueLike,
     updates: TensorValueLike,
