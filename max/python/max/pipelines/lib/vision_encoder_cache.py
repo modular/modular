@@ -247,10 +247,6 @@ class VisionEncoderCache(Generic[VLMContextType]):
             image_hashes: Content hash per image.
             request_ids: Request ID per image.
         """
-        # The vision encoder graph may execute on a different GPU stream.
-        # Synchronize so the output is fully written before we slice it.
-        if vision_outputs:
-            vision_outputs[0].device.synchronize()
         offset = 0
         for count, img_hash, req_id in zip(
             per_image_token_counts, image_hashes, request_ids, strict=True
@@ -294,12 +290,26 @@ class VisionEncoderCache(Generic[VLMContextType]):
             int32 scatter-index array.
         """
         if not self.enabled:
-            # Cache disabled — pass through embeddings directly.
             embeddings = (
                 vision_embeds if uncached_contexts else empty_embeddings
             )
             indices = compute_multimodal_merge_indices(context_batch)
             return embeddings, indices
+
+        if not per_image_token_counts:
+            # All images cached or text-only — assemble from cache,
+            # no sync or slicing needed.
+            embeddings = self._assemble_embeddings(
+                context_batch, n_devices, empty_embeddings
+            )
+            indices = compute_multimodal_merge_indices(context_batch)
+            return embeddings, indices
+
+        # Record an event and synchronize so the vision encoder output
+        # is visible before we slice or cache it.
+        for buf in vision_embeds:
+            if not buf.is_host:
+                buf.device.default_stream.record_event().synchronize()
 
         hashes: list[int] = []
         req_ids: list[RequestID] = []
