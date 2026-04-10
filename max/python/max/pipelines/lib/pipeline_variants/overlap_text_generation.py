@@ -1292,11 +1292,8 @@ class OverlapTextGenerationPipeline(
             # Empty outputs as there is no previous batch.
             outputs = {}
 
-        # Only add a future token if we are not using spec decoding. Spec decoding
-        # does not properly support future tokens and overlap yet!
-        if self._spec_decode_state is None:
-            for context in inputs.flat_batch:
-                context.update_with_future_token()
+        for context in inputs.flat_batch:
+            context.update_with_future_token()
 
         # Commit the new KV blocks into the prefix cache, ignoring the final
         # placeholder future token.
