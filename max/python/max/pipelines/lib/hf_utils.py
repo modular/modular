@@ -300,8 +300,12 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
         ):
             return False
         except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
-            # Do not retry if Too Many Requests error received
-            if e.response.status_code == 429:
+            # Do not retry if Too Many Requests error received.
+            # Not all exceptions have an HTTP response (e.g. ConnectionError).
+            if (
+                getattr(e, "response", None) is not None
+                and e.response.status_code == 429
+            ):
                 logger.error(e)
                 raise
 
