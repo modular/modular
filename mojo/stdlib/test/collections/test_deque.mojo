@@ -898,8 +898,8 @@ def test_insert() raises:
     assert_equal(q[2], 2)
     assert_equal(q[1], 0)
 
-    # positive index outbound
-    q.insert(10, 3)
+    # positive index at end
+    q.insert(len(q), 3)
     # Deque(1, 0, 2, 3)
     assert_equal(q[3], 3)
     assert_equal(q[2], 2)
