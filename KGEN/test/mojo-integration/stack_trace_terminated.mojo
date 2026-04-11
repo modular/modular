@@ -13,7 +13,7 @@
 def main():
     var x = List[Int]()
 
-    print(x[10000000000])
+    print(x.unsafe_ptr()[10000000000])
 
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
