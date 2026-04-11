@@ -846,6 +846,14 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     }
   }
 
+  // Reject invalid *'s, varargs will have been already handled.
+  if (sugarIsa<UnpackedAttr>(bindingVal)) {
+    getMojoDiag(binding.expr->getLoc())
+        << "invalid unpack in non-variadic parameter binding"
+        << binding.expr->getRange();
+    return failure();
+  }
+
   // Check the type matches what is expected, and perform an implicit
   // conversion if needed.
   if (expectedType.isEqualCanon(bindingVal.getType()))

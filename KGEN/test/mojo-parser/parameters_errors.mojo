@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics --split-input-file %s
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -648,7 +648,7 @@ struct Foo[a: Int, b: SomeStruct[a, 1, 1]]:
 # expected-error @+1 {{failed to infer from type 'SomeStruct[1, 1, 1]', it overwrites an explicitly unbound parameter '_' at #0}}
 comptime foo = Foo[_, SomeStruct[1, 1, 1]()]
 
-
+# expected-note @+1 {{function declared here}}
 def depends_on_a[a: Int]() -> Int:
     return a
 
@@ -656,11 +656,6 @@ def depends_on_a[a: Int]() -> Int:
 struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
     pass
 
-# TODO: we could potentially support this.
-# expected-error @+1 {{'NestedDeps' failed to infer parameter 'b', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
-comptime _ = NestedDeps[_]
-
-# // -----
 
 # It seems that we hit the limit of #error being reported without splitting the
 # input file here.
@@ -675,5 +670,14 @@ struct TakeAutoParamVA[
 ]:
     pass
 
+
+def bad_unpack():
+    # expected-error @+1 {{invalid unpack in non-variadic parameter binding}}
+    depends_on_a[*42]()
+
 # expected-error @+1 {{value passed to 'shape' cannot be converted from 'IntLiteral[23456]' to 'AutoParamVA[$1]', it depends on an unresolved parameter '$0'}}
-comptime _ = TakeAutoParamVA[23456]
+comptime bad = TakeAutoParamVA[23456]
+
+# TODO: we could potentially support this.
+# expected-error @+1 {{'NestedDeps' failed to infer parameter 'b', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
+comptime something = NestedDeps[_]
