@@ -608,6 +608,34 @@ static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
         return;
       }
 
+      // If the argument is a t-string, explicitly convert it to String first.
+      // TString cannot be implicitly converted to StringSlice, but String has
+      // an explicit constructor that accepts TString. This enables the same
+      // result as writing @__name(String(t"...")) but without requiring the
+      // explicit String() wrapper.
+      //
+      // Note: in test stubs __make_tstring returns String directly, so we only
+      // need this conversion when the value is not already a String type.
+      if (isa<TStringExprNode>(operand.expr)) {
+        auto stringType = shared.lookupBuiltinType("String", decl, nodeLoc)
+                              .getWithoutParameters(emitter.shared);
+        if (linkageNameVal.getType().getDecl(emitter.shared) !=
+            stringType.getDecl(emitter.shared)) {
+          ValueDest tsDest(EC_Decorator);
+          linkageNameVal = paramEmitter.emitConstructorCall(
+              stringType,
+              CallOperands(CallSyntax::kTypeCall, operand.expr,
+                           {{linkageNameVal, operand.expr}}),
+              tsDest);
+          if (!linkageNameVal) {
+            shared.emitError(nodeLoc)
+                << "cannot convert t-string to String for " << spelling
+                << " name";
+            return;
+          }
+        }
+      }
+
       auto stringSliceType =
           shared.lookupBuiltinType("StringSlice", decl, nodeLoc)
               .getWithoutParameters(emitter.shared);
