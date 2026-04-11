@@ -256,13 +256,13 @@ async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
 
 
 @pytest.mark.asyncio
-async def test_alloc_with_saved_draft_tokens_reserves_more_blocks() -> None:
-    """alloc accounts for saved_draft_tokens in the context."""
+async def test_alloc_with_draft_tokens_to_verify_reserves_more_blocks() -> None:
+    """alloc accounts for draft_tokens_to_verify in the context."""
     page_size = 4
     kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
-    ctx.spec_decoding_state.saved_draft_tokens = [10, 20, 30]
+    ctx.spec_decoding_state.draft_tokens_to_verify = [10, 20, 30]
     kv_manager.claim(ctx.request_id, replica_idx=0)
     # seq_len = 3 tokens + 3 draft + 4 spec + 1 - 1 = 10 → 3 blocks
     kv_manager.alloc(ctx, replica_idx=0, num_steps=1, num_speculative_steps=4)

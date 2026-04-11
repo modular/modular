@@ -217,7 +217,7 @@ def update_spec_decode_context_and_prepare_responses(
 
         if not ctx.is_done:
             # Save the generated draft tokens for verification in next iteration.
-            ctx.spec_decoding_state.saved_draft_tokens = next_draft_tokens[
+            ctx.spec_decoding_state.draft_tokens_to_verify = next_draft_tokens[
                 batch_idx
             ].tolist()
 

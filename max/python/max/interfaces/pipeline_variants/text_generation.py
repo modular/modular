@@ -763,12 +763,7 @@ class TextGenerationContext(BaseContext, Protocol):
 class SpecDecodingState:
     """Per-request state for speculative decoding."""
 
-    saved_draft_tokens: list[int] = field(default_factory=list)
-
-    @property
-    def num_draft_tokens(self) -> int:
-        """Returns the number of speculative tokens."""
-        return len(self.saved_draft_tokens)
+    draft_tokens_to_verify: list[int] = field(default_factory=list)
 
 
 TextGenerationContextType = TypeVar(

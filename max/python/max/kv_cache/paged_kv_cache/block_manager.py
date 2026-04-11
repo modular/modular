@@ -56,7 +56,7 @@ def _compute_seq_len(
 ) -> int:
     seq_len = (
         len(ctx.tokens)
-        + ctx.spec_decoding_state.num_draft_tokens
+        + len(ctx.spec_decoding_state.draft_tokens_to_verify)
         + num_speculative_steps
         + num_steps
         - 1
@@ -492,7 +492,9 @@ class BlockManager:
         # This should literally never happen unless the user sets an absurdly
         # large max seq len or the KV cache is very small.
         total_kv_slots = self.total_num_blocks * self.block_size
-        seq_len = len(ctx.tokens) + ctx.spec_decoding_state.num_draft_tokens
+        seq_len = len(ctx.tokens) + len(
+            ctx.spec_decoding_state.draft_tokens_to_verify
+        )
         if seq_len > total_kv_slots:
             raise InsufficientBlocksError(
                 f"Insufficient KV pages for a single request with {seq_len} tokens.\n"
