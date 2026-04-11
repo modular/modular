@@ -236,30 +236,6 @@ def _get_tile_n_k[
     c_type: DType,
     kernel_cols: Int,
     transpose_b: Bool,
-    layout: Layout,
-](b: LayoutTensor[b_type, layout, ...]) -> IndexList[2]:
-    comptime assert b.rank == 2
-    var tile_n_k: IndexList[2]
-
-    comptime if not transpose_b:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(1), b.dim(0)
-        )
-    else:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(0), b.dim(1)
-        )
-
-    return tile_n_k
-
-
-@always_inline
-def _get_tile_n_k[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    kernel_cols: Int,
-    transpose_b: Bool,
 ](b: TileTensor) -> IndexList[2]:
     comptime assert b.rank == 2
     var tile_n_k: IndexList[2]
