@@ -93,6 +93,7 @@ def normalize_index[
         return i
 
 
+@deprecated("normalize_index is deprecated, use e.g. x[len(x) - 1]")
 @always_inline
 def normalize_index[
     I: Indexer, //, container_name: StaticString
