@@ -231,7 +231,6 @@ def test_list_resize() raises:
 
 # TODO: Rework to use property testing framework.
 def test_list_reverse_property_test() raises:
-    @parameter
     def properties(forward: List[Scalar[DType.int]]) raises:
         var rev = forward.copy()
         rev.reverse()
