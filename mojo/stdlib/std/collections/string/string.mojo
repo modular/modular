@@ -161,8 +161,8 @@ struct String(
 
     # String properties and indexing
     print(len(text))            # 5
-    print(text[1])              # e (byte slice)
-    print(text[len(text) - 1])  # o (last character)
+    print(text[byte=1])              # e (byte slice)
+    print(text[byte=len(text) - 1])  # o (last character)
 
     # In-place concatenation
     text += " World"
