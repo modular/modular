@@ -1139,16 +1139,14 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               }
             }
 
-            Lexer lexer(shared.diags, decl.getCursor());
-
-            // Generate pretty stack traces if a crash happens in this
-            // scope.
-            LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                             "resolving decl signature");
+            // Generate pretty stack traces if a crash happens in this scope.
+            CrashReporter crashReporter(decl.getLoc(),
+                                        "resolving decl signature", shared);
 
             // Resolve the signature: on a parse error, we note that the
             // decl is malformed and should not be referenced to silence
             // downstream errors.
+            Lexer lexer(shared.diags, decl.getCursor());
             if (failed(resolveSignature(op, lexer, decl)))
               decl.setErroneous();
             decl.getCursor() = lexer.getCursor();
@@ -1230,12 +1228,12 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               }
             }
 
+            // Generate pretty stack traces if a crash happens in this scope.
+            CrashReporter crashReporter(decl.getLoc(), "resolving decl body",
+                                        shared);
+
             // Parse the body of the declaration from the correct point.
             Lexer lexer(shared.diags, decl.getCursor());
-
-            // Generate pretty stack traces if a crash happens in this scope.
-            LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                             "resolving decl body");
             if (resolveBody(op, lexer, decl))
               return;
 

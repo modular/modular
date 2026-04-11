@@ -1114,6 +1114,9 @@ LogicalResult ParamInf::inferFromParamList() {
 }
 
 ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
+  CrashReporter handler(paramBindings.getExprLoc(), "ParamInf::inferForStruct",
+                        getShared());
+
   auto attachNoteOnError = llvm::scope_exit([&]() {
     if (diag.hasErrorEmitted() && declIfKnown) {
       if (llvm::isa_and_nonnull<FnOp>(declIfKnown->getIfOperation())) {
@@ -1153,6 +1156,9 @@ LogicalResult ParamInf::inferForCall(
     const OperandValueList &variadicKwOperands, bool returnsSelf,
     bool hasCTADParams, OperandsNeedingOriginsList &operandsNeedingOrigins) {
   isInferForStruct = false;
+
+  CrashReporter handler(paramBindings.getExprLoc(), "ParamInf::inferForCall",
+                        getShared());
 
   // First try to infer parameters from the already provided bindings.
   if (failed(inferFromParamList()))

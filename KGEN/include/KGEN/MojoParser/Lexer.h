@@ -16,7 +16,6 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SMLoc.h"
 #include <optional>
 
@@ -283,7 +282,6 @@ private:
   Lexer(const Lexer &) = delete;
   void operator=(const Lexer &) = delete;
   friend class LexerCursor;
-  friend class LexerCrashReporter;
 };
 
 /// This is the state captured for a lexer cursor.
@@ -334,30 +332,6 @@ private:
 };
 
 inline LexerCursor Lexer::getCursor() const { return LexerCursor(*this); }
-
-/// This crash reporter snapshots the current token a lexer is at.  If a crash
-/// happens, it then prints out a region of code from that location to the
-/// next-unconsumed token to make it easier to debug parser/typechecker/IR
-/// emission related bugs.
-///
-/// The lexer passed in must outlive this crash reporter.
-class LexerCrashReporter : public llvm::PrettyStackTraceEntry {
-public:
-  LexerCrashReporter(Lexer &lexer, const char *message)
-      : startPtr(lexer.getToken().getSpelling().data()), lexer(lexer),
-        message(message) {}
-
-  LexerCrashReporter(Lexer &lexer, SMLoc loc, const char *message)
-      : startPtr(loc.getPointer()), lexer(lexer), message(message) {}
-
-  /// print - Emit information about this stack frame to OS.
-  virtual void print(raw_ostream &os) const override;
-
-public:
-  const char *startPtr;
-  Lexer &lexer;
-  const char *message;
-};
 
 } // namespace M::KGEN::LIT
 
