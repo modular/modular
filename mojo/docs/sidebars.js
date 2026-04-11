@@ -186,6 +186,15 @@ const mojoSidebars = {
             'mojo/reference/mojo-compound-statements',
           ],
         },
+        {
+          type: 'category',
+          label: 'Declarations',
+          link: null,
+          collapsible: false,
+          items: [
+            'mojo/reference/mojo-function-declarations',
+          ],
+        },
       ],
     },
     {
