@@ -19,7 +19,8 @@ traversal. The implementation includes iterator support for forward and reverse
 traversal.
 """
 
-from std.collections._index_normalization import normalize_index
+from std.collections import check_bounds
+from std.reflection import call_location
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.memory._nonnull import NonNullUnsafePointer
@@ -412,6 +413,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         nn.free()
         return node^._into_value()
 
+    @always_inline
     def pop[I: Indexer, //](mut self, var i: I) raises -> Self.ElementType:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
@@ -474,6 +476,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         nn.free()
         return node^._into_value()
 
+    @always_inline
     def maybe_pop[
         I: Indexer, //
     ](mut self, var i: I) -> Optional[Self.ElementType]:
@@ -529,6 +532,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self._tail = Self._NodePointer()
         self._size = 0
 
+    @always_inline
     def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType) raises:
         """Insert an element `elem` into the list at index `idx`.
 
@@ -548,7 +552,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         # `insert` follows Python's list.insert() semantics: out-of-range
         # negative indices clamp to 0 (head) rather than raising, so
-        # normalize_index (which asserts bounds) cannot be used here.
+        # we don't use `check_bounds` here.
         var i = index(idx)
         i = max(i if i >= 0 else i + len(self), 0)
 
@@ -717,6 +721,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             elt.__hash__(hasher)
             curr = curr.value()[].next()
 
+    @always_inline
     def _get_node_ptr[I: Indexer, //](ref self, idx: I) -> Self._NodePointer:
         """Get an optional pointer to the node at the specified index.
 
@@ -735,9 +740,9 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
             Time Complexity: O(n) in len(self).
         """
+        var i = index(idx)
         var l = len(self)
-        var i = normalize_index["LinkedList"](idx, l)
-        assert 0 <= i < l, "index out of bounds"
+        check_bounds(i, l, call_location[inline_count=2]())
         var mid = l // 2
         if i <= mid:
             var curr = self._head
@@ -750,6 +755,8 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
                 curr = curr.value()[].prev()
             return curr
 
+    # TODO(MSTDL-2576): remove this method to avoid accidentally quadratic for-loops
+    @always_inline
     def __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Get the element at the specified index.
 
@@ -765,7 +772,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        assert len(self) > 0, "unable to get item from empty list"
         return self._get_node_ptr(idx).value()[].value
 
     def __len__(self) -> Int:
