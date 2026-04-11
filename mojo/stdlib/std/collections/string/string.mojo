@@ -118,7 +118,7 @@ struct String(
     Be aware of the following characteristics when working with `String`:
 
     - **UTF-8 encoding**: Strings store UTF-8 encoded text, so byte length may
-      differ from character count. Use `len(string.codepoints())` to get
+      differ from character count. Use `string.count_codepoints())` to get
       the codepoint count:
 
       ```mojo
@@ -1605,8 +1605,8 @@ struct String(
 
         Args:
             prefix: The prefix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start byte offset from which to check.
+            end: The end byte offset from which to check.
 
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
@@ -1621,8 +1621,8 @@ struct String(
 
         Args:
             suffix: The suffix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start byte offset from which to check.
+            end: The end byte offset from which to check.
 
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.
