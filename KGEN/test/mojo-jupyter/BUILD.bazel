@@ -4,7 +4,14 @@ package(default_visibility = ["//visibility:private"])
 
 lit_tests(
     name = "mojo-jupyter",
-    srcs = glob(["**/*.test"]),
+    # TODO(MOTO-1544): test_completion_incremental.test is excluded from srcs
+    # until the sporadic crash in CompletionCache on m7g (aarch64 Graviton) is
+    # fixed. Kept in data so the linter sees it as referenced. To re-enable,
+    # move it back into the srcs glob and remove it from data.
+    srcs = glob(
+        ["**/*.test"],
+        exclude = ["test_completion_incremental.test"],
+    ),
     custom_substitutions = {
         "%mojo_jupyter_executor": "$(rlocationpath //KGEN/tools/mojo-jupyter-executor) --lldb-init-file ../../../utils/lit-lldb-init.in",
     },
@@ -12,6 +19,8 @@ lit_tests(
         "*.ipynb",
         "*.mojo",
     ]) + [
+        # TODO(MOTO-1544): kept here (not srcs) so the file is referenced.
+        "test_completion_incremental.test",
         "//oss/modular/mojo/stdlib/std:std_srcs",
         "//utils:lit-lldb-init.in",
     ],
