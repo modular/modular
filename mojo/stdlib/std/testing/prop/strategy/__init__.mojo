@@ -25,7 +25,7 @@ trait Strategy(ImplicitlyDeletable, Movable):
     produce the random input values for the properties being tested.
     """
 
-    comptime Value: Copyable & ImplicitlyDeletable
+    comptime Value: Copyable & ImplicitlyDeletable & Writable
     """The type the strategy produces."""
 
     def value(mut self, mut rng: Rng) raises -> Self.Value:
