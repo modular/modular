@@ -148,6 +148,7 @@ struct StackTrace(Copyable, Movable, Writable):
 
 struct Error(
     Copyable,
+    Equatable,
     Writable,
 ):
     """This type represents an Error."""
@@ -258,6 +259,20 @@ struct Error(
         if self._stack_trace:
             return String(self._stack_trace.value())
         return None
+
+    def __eq__(self, other: Self) -> Bool:
+        """Checks equality of two Error objects.
+
+        Two Error objects are considered equal if their error messages are
+        equal. Stack traces are not considered for equality.
+
+        Args:
+            other: The other Error object to compare with.
+
+        Returns:
+            `True` if the error messages are equal, `False` otherwise.
+        """
+        return self._error == other._error
 
 
 @doc_hidden
