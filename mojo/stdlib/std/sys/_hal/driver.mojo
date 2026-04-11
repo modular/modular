@@ -98,10 +98,13 @@ struct Driver(Movable):
         )
 
     def __del__(deinit self):
-        var _ = self._plugin.destroy.f(self._handle)
-        # TODO: move Driver to @explicit_destroy,
-        # if status != STATUS_SUCCESS:
-        #    raise Error(self._plugin.get_status_message(status))
+        # Move `_plugin` into a local so its `OwnedDLHandle` stays alive
+        # until after the `destroy` call returns — ASAP destruction would
+        # otherwise `dlclose` the `.so` (unmapping the code page) before
+        # we call through the function pointer.
+        var plugin = self._plugin^
+        _ = plugin.destroy.f(self._handle)
+        _ = plugin^
 
     # ===-------------------------------------------------------------------===#
     # Queries
