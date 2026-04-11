@@ -147,6 +147,8 @@ FailureOr<TypedAttr> IREvaluatorContext::concretizeLinkageNameImpl(
   ParameterEvaluator tempEval(gen.getInputParams(), symbol.getParamValues());
   tempEval.setEvaluationContext(&evalCtx);
   Attribute rebound = tempEval.getReboundAttribute(genLinkageName);
+  if (!rebound)
+    return TypedAttr(); // not-ready: a sub-dependency is still being elaborated
   if (auto lna = dyn_cast_if_present<LinkageNameAttr>(rebound))
     if (auto prefix = dyn_cast<StringAttr>(lna.getName()))
       return TypedAttr(StringAttr::get(prefix.getValue(),
