@@ -861,7 +861,10 @@ def _softmax_gpu[
     ctx.enqueue_function[kernel, kernel](
         shape,
         output,
-        sink_weights.value(),
+        # TODO: This should be fixed. When sink == False, we should not
+        # be unwrapping the optional but instead passing the entire
+        # optional through to `softmax_kernel`.
+        sink_weights.unsafe_value(),
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(PDLLevel(1)),

@@ -130,7 +130,7 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
 
     @always_inline
     def __init__(out self):
-        self._memory = {}
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
     def as_uninit[
