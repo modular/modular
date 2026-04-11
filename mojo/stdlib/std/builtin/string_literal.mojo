@@ -583,8 +583,8 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         Args:
             prefix: The prefix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start byte offset from which to check.
+            end: The end byte offset from which to check.
 
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
