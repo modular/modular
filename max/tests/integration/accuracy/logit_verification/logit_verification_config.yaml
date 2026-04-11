@@ -877,19 +877,23 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.3e-2
     kl_div_threshold: 9.0e-1
 
+  # TODO(MODELS-1339): Re-enable once transformers v4 tokenizer crash is fixed.
   google/gemma-4-26B-A4B-it-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
     pipeline: "google/gemma-4-26B-A4B-it"
     compatible_with: [gpu]
     encoding: bfloat16
+    tags: [manual]
 
+  # TODO(MODELS-1339): Re-enable once transformers v4 tokenizer crash is fixed.
   google/gemma-4-31B-it-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
     pipeline: "google/gemma-4-31B-it"
     compatible_with: [gpu]
     encoding: bfloat16
+    tags: [manual]
 
   HKUSTAudio/Llasa-8B-bfloat16:
     pre_submit_agents: []
