@@ -123,8 +123,8 @@ struct String(
 
       ```mojo
       var text = "café"                # 4 Unicode characters
-      print(len(text))                 # Prints 5 (é is 2 bytes in UTF-8)
-      print(len(text.codepoints()))    # Prints 4 (correct Unicode count)
+      print(text.byte_length())        # Prints 5 (é is 2 bytes in UTF-8)
+      print(text.count_codepoints())   # Prints 4 (correct Unicode count)
       ```
 
     - **Always mutable**: You can modify strings in-place:
@@ -160,7 +160,7 @@ struct String(
     var text = "Hello"
 
     # String properties and slicing
-    print(len(text))     # 5
+    print(text.byte_length()) # 5
     print(text[byte=1:2])     # e (byte slice)
     print(text[byte=-1:])     # o (last character)
 
@@ -1609,7 +1609,7 @@ struct String(
             end: The end offset from which to check.
 
         Returns:
-            True if the `self[start:end]` is prefixed by the input prefix.
+            True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
         return StringSlice(self).startswith(prefix, start, end)
 
@@ -1625,7 +1625,7 @@ struct String(
             end: The end offset from which to check.
 
         Returns:
-            True if the `self[start:end]` is suffixed by the input suffix.
+            True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
         return StringSlice(self).endswith(suffix, start, end)
 
@@ -1638,8 +1638,8 @@ struct String(
             prefix: The prefix to remove from the string.
 
         Returns:
-            `string[len(prefix):]` if the string starts with the prefix string,
-            or a copy of the original string otherwise.
+            `string[byte=prefix.byte_length():]` if the string starts with
+            the prefix string, or a copy of the original string otherwise.
 
         Examples:
 
@@ -1659,7 +1659,7 @@ struct String(
             suffix: The suffix to remove from the string.
 
         Returns:
-            `string[:-len(suffix)]` if the string ends with the suffix string,
+            `string[byte=:-suffix.byte_length()]` if the string ends with the suffix string,
             or a copy of the original string otherwise.
 
         Examples:

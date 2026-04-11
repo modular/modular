@@ -587,7 +587,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             end: The end offset from which to check.
 
         Returns:
-            True if the `self[start:end]` is prefixed by the input prefix.
+            True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
         return StringSlice(self).startswith(prefix, start, end)
 
@@ -603,7 +603,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             end: The end offset from which to check.
 
         Returns:
-            True if the `self[start:end]` is suffixed by the input suffix.
+            True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
         return StringSlice(self).endswith(suffix, start, end)
 
