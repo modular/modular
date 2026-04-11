@@ -10,6 +10,7 @@
 
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/SharedState.h"
 #include "Support/IPRational.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/APFloat.h"
@@ -1379,22 +1380,36 @@ SMLoc Lexer::findEndOfPreviousLine(SMLoc loc) const {
 }
 
 //===----------------------------------------------------------------------===//
-// LexerCrashReporter
+// CrashReporter
 //===----------------------------------------------------------------------===//
 
-void LexerCrashReporter::print(raw_ostream &os) const {
-  os << "Crash " << message << " at "
-     << lexer.diags.translateLocation(SMLoc::getFromPointer(startPtr)) << '\n';
+void CrashReporter::print(raw_ostream &os) const {
+  // Ignore invalid source locations, so clients can deal with conditional
+  // locations cleanly.
+  if (!loc.isValid())
+    return;
 
-  // We know where the statement started, though the statement may not be the
+  auto &diags = shared.diags;
+
+  os << "Crash " << message << " at " << diags.translateLocation(loc) << '\n';
+
+  // TODO get buffer from SourceMgr;
+  auto &sourceMgr = shared.getSourceMgr();
+  unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
+  if (!bufferID)
+    return; // Don't crash if we fail to find the source buffer for some reason.
+  const llvm::MemoryBuffer &memBuffer = *sourceMgr.getMemoryBuffer(bufferID);
+
+  // We know where the location is, though it may not be the
   // first token on the line.  We know the current lexer position which is the
   // first token we haven't processed (generally the next statement, but might
   // be in the middle of a statement.
-  StringRef buffer = lexer.getBuffer();
+  StringRef buffer = memBuffer.getBuffer();
+  Lexer lexer(diags, buffer, loc.getPointer());
 
-  // Figure out where the current unconsumed token is: if it is on something
-  // that is the start of a line, back it up to the end of the previous line.
-  const char *curTokenPtr = lexer.getToken().getSpelling().data();
+  // Figure out where the current location is: if it is on something that is the
+  // start of a line, back it up to the end of the previous line.
+  const char *curTokenPtr = loc.getPointer();
   auto curLineWithoutWhitespace =
       buffer.drop_back(buffer.end() - curTokenPtr).rtrim(" \t");
   if (curLineWithoutWhitespace.rtrim("\n\r") != curLineWithoutWhitespace)
@@ -1407,17 +1422,17 @@ void LexerCrashReporter::print(raw_ostream &os) const {
     os << "    >> " << sourceLine << '\n';
     // Print out ^'s at the start and current token pointer if they exist in the
     // line.
-    if (startPtr < sourceLine.begin() && curTokenPtr > sourceLine.end())
+    if (loc.getPointer() < sourceLine.begin() && curTokenPtr > sourceLine.end())
       return; // Don't print fully "." lines.
 
     os << "       ";
     for (const char &c : sourceLine) {
       char charToPrint;
-      if (&c == startPtr)
+      if (&c == loc.getPointer())
         charToPrint = '^';
       else if (&c == curTokenPtr)
         charToPrint = '<';
-      else if (&c > startPtr && &c < curTokenPtr)
+      else if (&c > loc.getPointer() && &c < curTokenPtr)
         charToPrint = '.';
       else if (c == '\t')
         charToPrint = '\t';
@@ -1433,7 +1448,7 @@ void LexerCrashReporter::print(raw_ostream &os) const {
 
   // Start by printing the first line of code
   // that we started on, being careful to stay in the source file.
-  size_t stmtStartOffset = startPtr - buffer.data();
+  size_t stmtStartOffset = loc.getPointer() - buffer.data();
 
   size_t prevNewLine = buffer.find_last_of("\n\r", stmtStartOffset);
   prevNewLine = prevNewLine == StringRef::npos ? 0 : prevNewLine + 1;

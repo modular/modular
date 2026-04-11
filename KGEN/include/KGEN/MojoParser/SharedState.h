@@ -13,13 +13,14 @@
 #define KGEN_MOJOPARSER_SHAREDSTATE_H
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/MojoDiags.h"
 
-#include "KGEN/LITDialect/OriginTrackable.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/Support/PrettyStackTrace.h"
 
 namespace M::KGEN {
 class CompilationOptions;
@@ -740,6 +741,26 @@ public:
   bool isFailure() const { return kind == kFailure; }
   bool isErroneous() const { return kind == kErroneous; }
 };
+
+/// If a crash happens while this object is live, it will print out the message
+/// and format contextual information for the code at the specified source
+/// location. This makes it easier to debug parser/typechecker/IR emission
+/// related bugs.
+class CrashReporter : public llvm::PrettyStackTraceEntry {
+public:
+  // When 'loc' is null, this reporter doesn't do anything.
+  CrashReporter(SMLoc loc, const char *message, SharedState &shared)
+      : loc(loc), message(message), shared(shared) {}
+
+  /// print - Emit information about this stack frame to OS.
+  virtual void print(raw_ostream &os) const override;
+
+public:
+  SMLoc loc;
+  const char *message;
+  SharedState &shared;
+};
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_SHAREDSTATE_H

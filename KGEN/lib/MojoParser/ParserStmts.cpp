@@ -615,7 +615,7 @@ static bool parseFromImportDecorators(SharedState &shared,
 ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                                   size_t stmtIndent) {
   // Generate pretty stack traces if a crash happens in this scope.
-  LexerCrashReporter crashReporter(getLexer(), "parsing statement");
+  CrashReporter crashReporter(getToken().getLoc(), "parsing statement", shared);
 
   // This is the cursor for the start of the declaration, that will be used in
   // the signature resolution phase.
