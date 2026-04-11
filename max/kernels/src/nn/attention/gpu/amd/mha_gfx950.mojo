@@ -27,10 +27,12 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    TileTensor,
 )
+from layout.tile_layout import row_major as tt_row_major
 from layout.layout import blocked_product
 from layout.swizzle import Swizzle
-from layout.tensor_core import TiledTensorCore
+from .mma import TiledMmaOp
 from std.memory import bitcast
 from nn.attention.mha_mask import TileMaskStatus, CausalMask
 from nn.attention.mha_operand import MHAOperand
@@ -371,6 +373,41 @@ struct KVBuffer[
             self.num_k_mmas2
         ]()[k_mma_tile_idx]
 
+    comptime _total_rows = Self.num_mmas * Self.num_k_mmas2 * Self.num_k_tiles
+    comptime _rows_per_k_tile = Self.num_mmas * Self.num_k_mmas2
+    comptime _layout = tt_row_major[Self._total_rows, Self.simd_width]()
+
+    @always_inline
+    def mma_subtile[
+        k_mma_tile_idx: Int,
+        bk_tile_idx: Int,
+    ](self) -> TileTensor[
+        Self.kv_t.dtype,
+        type_of(tt_row_major[Self.num_mmas, Self.simd_width]()),
+        MutAnyOrigin,
+        address_space=AddressSpace.LOCAL,
+    ]:
+        """Return MMA-sized sub-tile for the given k_mma and bk indices."""
+        comptime full_layout = Self._layout
+        var full = TileTensor[
+            Self.kv_t.dtype,
+            type_of(full_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.LOCAL,
+        ](self.mma_tile.ptr, full_layout)
+        return rebind[
+            TileTensor[
+                Self.kv_t.dtype,
+                type_of(tt_row_major[Self.num_mmas, Self.simd_width]()),
+                MutAnyOrigin,
+                address_space=AddressSpace.LOCAL,
+            ]
+        ](
+            full.tile[Self._rows_per_k_tile, Self.simd_width](
+                bk_tile_idx, 0
+            ).tile[Self.num_mmas, Self.simd_width](k_mma_tile_idx, 0)
+        )
+
     @always_inline
     def copy_to_shared(
         self,
@@ -480,9 +517,9 @@ __extension Attention:
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Self.num_warps_n, Self.WM
         ](0, 0)
-        var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
-        self.softmax.calculate_qk_max(score_reg_tile, warp_scratch)
-        self.softmax.exp[start=0, stride=2](score_reg_tile)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.exp[start=0, stride=2](score_tile)
 
     @always_inline
     def online_softmax_step_0_fma[stage: Int, mask: Bool = True](mut self):
@@ -500,18 +537,18 @@ __extension Attention:
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Self.num_warps_n, Self.WM
         ](0, 0)
-        var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
-        self.softmax.calculate_qk_max(score_reg_tile, warp_scratch)
-        self.softmax.exp_scaled[start=0, stride=2](score_reg_tile, self.scale)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.exp_scaled[start=0, stride=2](score_tile, self.scale)
 
     @always_inline
     def online_softmax_step_1[stage: Int](mut self):
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Self.num_warps_n, Self.WM
         ](0, 0)
-        var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
-        self.softmax.exp[start=1, stride=2](score_reg_tile)
-        self.softmax.calculate_qk_sum(score_reg_tile, warp_scratch)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.exp[start=1, stride=2](score_tile)
+        self.softmax.calculate_qk_sum(score_tile, warp_scratch)
         self.softmax.calculate_correction()
         self.softmax.update_max()
         self.softmax.update_sum()
@@ -527,10 +564,10 @@ __extension Attention:
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Self.num_warps_n, Self.WM
         ](0, 0)
-        var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
-        self.softmax.exp_scaled[start=1, stride=2](score_reg_tile, self.scale)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.exp_scaled[start=1, stride=2](score_tile, self.scale)
         self.softmax.scale_rowmax(self.scale)
-        self.softmax.calculate_qk_sum(score_reg_tile, warp_scratch)
+        self.softmax.calculate_qk_sum(score_tile, warp_scratch)
         self.softmax.calculate_correction()
         self.softmax.update_max()
         self.softmax.update_sum()
@@ -549,9 +586,9 @@ __extension Attention:
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Self.num_warps_n, Self.WM
         ](0, 0)
-        var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
-        self.softmax.calculate_qk_max(score_reg_tile, warp_scratch)
-        self.softmax.exp[start=0, stride=2](score_reg_tile)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.exp[start=0, stride=2](score_tile)
 
     @always_inline
     def online_softmax_step_1_prescaled[stage: Int](mut self):
@@ -559,17 +596,16 @@ __extension Attention:
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Self.num_warps_n, Self.WM
         ](0, 0)
-        var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
-        self.softmax.exp[start=1, stride=2](score_reg_tile)
-        self.softmax.calculate_qk_sum(score_reg_tile, warp_scratch)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.exp[start=1, stride=2](score_tile)
+        self.softmax.calculate_qk_sum(score_tile, warp_scratch)
         self.softmax.calculate_correction()
         self.softmax.update_max()
         self.softmax.update_sum()
 
     @always_inline
     def online_softmax_update_output(mut self):
-        var output_reg_tile = self.out_reg_buffer.vectorize()
-        self.softmax.update_output(output_reg_tile)
+        self.softmax.update_output(self.out_reg_buffer.reg_tile)
 
     @always_inline
     def online_softmax_full[stage: Int](mut self):
@@ -577,18 +613,17 @@ __extension Attention:
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Self.num_warps_n, Self.WM
         ](0, 0)
-        var score_reg_tile = self.p_reg_buffer.vectorize[stage]()
-        self.softmax.calculate_qk_max(score_reg_tile, warp_scratch)
-        self.softmax.exp[start=0, stride=2](score_reg_tile)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.exp[start=0, stride=2](score_tile)
 
-        self.softmax.exp[start=1, stride=2](score_reg_tile)
-        self.softmax.calculate_qk_sum(score_reg_tile, warp_scratch)
+        self.softmax.exp[start=1, stride=2](score_tile)
+        self.softmax.calculate_qk_sum(score_tile, warp_scratch)
         self.softmax.calculate_correction()
         self.softmax.update_max()
         self.softmax.update_sum()
 
-        var output_reg_tile = self.out_reg_buffer.vectorize()
-        self.softmax.update_output(output_reg_tile)
+        self.softmax.update_output(self.out_reg_buffer.reg_tile)
 
     @always_inline
     def mha_prefill_experimental_old(mut self):
@@ -649,44 +684,39 @@ __extension Attention:
         @always_inline
         @parameter
         def mma_qk[stage: Int]():
-            comptime tensor_core_mma = TiledTensorCore[
+            comptime MmaOp = TiledMmaOp[
                 accum_type,
                 q_type,
                 Self.mma_shape,
                 group_size=Self.k_group_size,
                 transpose_b=True,
-            ]()
+            ]
             self.zero_p_buffer[stage]()
 
             comptime for i in range(Self.depth // Self.BK):
                 comptime for k_mma in range(Self.num_k_mmas2):
-                    var q_mma_tile = self.q_buffer.get_mma_tile[
-                        Int(i), Int(k_mma)
-                    ]()
-
-                    var k_mma_tile = k_buffer.get_mma_tile[Int(k_mma), Int(i)]()
-                    tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
-                        q_mma_tile,
-                        k_mma_tile,
-                        self.p_reg_buffer.get_reg_tile[stage](),
+                    MmaOp.mma[swap_a_b=Self.swap_a_b](
+                        self.q_buffer.mma_tile[Int(i), Int(k_mma)](),
+                        k_buffer.mma_subtile[Int(k_mma), Int(i)](),
+                        self.p_reg_buffer.stage_tile[stage](),
                     )
 
         @always_inline
         @parameter
         def mma_pv[stage: Int]():
-            comptime tensor_core_mma = TiledTensorCore[
+            comptime PVMmaOp = TiledMmaOp[
                 accum_type,
                 q_type,
                 Self.mma_shape,
                 group_size=Self.k_group_size,
                 transpose_b=True,
-            ]()
+            ]
 
             comptime for i in range(Self.BN // Self.BK):
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
-                    tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
-                        self.p_reg_buffer.get_mma_tile[Int(i), k_mma, stage](),
-                        v_buffer.get_mma_tile[k_mma, Int(i)](),
+                    PVMmaOp.mma[swap_a_b=Self.swap_a_b](
+                        self.p_reg_buffer.mma_tile[Int(i), k_mma, stage](),
+                        v_buffer.mma_subtile[k_mma, Int(i)](),
                         self.out_reg_buffer.reg_tile,
                     )
 
@@ -979,43 +1009,39 @@ __extension Attention:
         @always_inline
         @parameter
         def mma_qk():
-            comptime tensor_core_mma = TiledTensorCore[
+            comptime MmaOp = TiledMmaOp[
                 accum_type,
                 q_type,
                 Self.mma_shape,
                 group_size=Self.k_group_size,
                 transpose_b=True,
-            ]()
+            ]
             self.zero_p_buffer[0]()
 
             comptime for i in range(Self.depth // Self.BK):
                 comptime for k_mma in range(Self.num_k_mmas2):
-                    var q_mma_tile = self.q_buffer.get_mma_tile[
-                        Int(i), Int(k_mma)
-                    ]()
-                    var k_mma_tile = k_buffer.get_mma_tile[Int(k_mma), Int(i)]()
-                    tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
-                        q_mma_tile,
-                        k_mma_tile,
-                        self.p_reg_buffer.get_reg_tile[0](),
+                    MmaOp.mma[swap_a_b=Self.swap_a_b](
+                        self.q_buffer.mma_tile[Int(i), Int(k_mma)](),
+                        k_buffer.mma_subtile[Int(k_mma), Int(i)](),
+                        self.p_reg_buffer.stage_tile[0](),
                     )
 
         @always_inline
         @parameter
         def mma_pv():
-            comptime tensor_core_mma = TiledTensorCore[
+            comptime PVMmaOp = TiledMmaOp[
                 accum_type,
                 q_type,
                 Self.mma_shape,
                 group_size=Self.k_group_size,
                 transpose_b=True,
-            ]()
+            ]
 
             comptime for i in range(Self.BN // Self.BK):
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
-                    tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
-                        self.p_reg_buffer.get_mma_tile[Int(i), k_mma, 0](),
-                        v_buffer.get_mma_tile[k_mma, Int(i)](),
+                    PVMmaOp.mma[swap_a_b=Self.swap_a_b](
+                        self.p_reg_buffer.mma_tile[Int(i), k_mma, 0](),
+                        v_buffer.mma_subtile[k_mma, Int(i)](),
                         self.out_reg_buffer.reg_tile,
                     )
 

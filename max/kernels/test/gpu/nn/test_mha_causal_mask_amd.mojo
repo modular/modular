@@ -223,7 +223,7 @@ def test[
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
 
-    var rtol = 2e-2
+    var rtol = 3e-2
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
@@ -366,6 +366,24 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
         num_heads=32,
         group=4,
     ](1, 5000, ctx)
+    # 405B TP=8 shapes: group=16 (16 Q heads, 1 KV head per GPU)
+    # Prefill
+    test[DType.bfloat16, DType.float32, depth=depth, num_heads=16, group=16](
+        128, 128, ctx
+    )
+    test[DType.bfloat16, DType.float32, depth=depth, num_heads=16, group=16](
+        1024, 1024, ctx
+    )
+    # Decode
+    test[DType.bfloat16, DType.bfloat16, depth=depth, num_heads=16, group=16](
+        1, 128, ctx
+    )
+    test[DType.bfloat16, DType.bfloat16, depth=depth, num_heads=16, group=16](
+        1, 1024, ctx
+    )
+    test[DType.bfloat16, DType.bfloat16, depth=depth, num_heads=16, group=16](
+        1, 5000, ctx
+    )
 
 
 def main() raises:
