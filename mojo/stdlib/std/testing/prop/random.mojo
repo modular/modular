@@ -13,6 +13,8 @@
 """Implements random number generation for property-based testing."""
 
 from std.random import random_ui64, seed
+from std.sys.info import bit_width_of
+from ._errors import PLAYBACK_EXHAUSTED
 
 
 struct Rng(Movable):
@@ -22,15 +24,32 @@ struct Rng(Movable):
     value provided by the `Strategy` trait.
     """
 
+    var history: List[UInt64]
+    """The recorded history of values generated."""
+
+    var playback_mode: Bool
+    """Whether this RNG producer is currently in playback mode."""
+
+    var playback_index: Int
+    """The current index in the history during playback mode."""
+
+    @doc_hidden
+    def __init__(out self, var history: List[UInt64]):
+        self.history = history^
+        self.playback_mode = True
+        self.playback_index = 0
+
     @doc_hidden
     def __init__(out self, *, seed: Int):
         # TODO: Figure out how to ensure this 'global' seed value is not
         # accidentally overwritten by the user in their test code.
         random.seed(seed)
+        self.history = []
+        self.playback_mode = False
+        self.playback_index = 0
 
-    # TODO: Add playback support.
     @doc_hidden
-    def _next(mut self, max: UInt64 = UInt64.MAX) raises -> UInt64:
+    def _next(mut self, max: UInt64 = UInt64.MAX, out value: UInt64) raises:
         """If in playback mode, returns the next value in the history, otherwise
         generates a random value and records it.
 
@@ -49,7 +68,14 @@ struct Rng(Movable):
         Raises:
             If in playback mode and the history is exhausted.
         """
-        return random_ui64(0, max)
+        if self.playback_mode:
+            if self.playback_index >= len(self.history):
+                raise materialize[PLAYBACK_EXHAUSTED]()
+            value = self.history[self.playback_index]
+            self.playback_index += 1
+        else:
+            value = random_ui64(0, max)
+            self.history.append(value)
 
     def _xoshiro_float(mut self) raises -> Float64:
         """Returns a random `Float64` between `[0.0, 1.0]` using the Xoshiro
@@ -85,7 +111,7 @@ struct Rng(Movable):
             return True
 
         var percentage = self._xoshiro_float()
-        return true_probability > percentage
+        return percentage > (1.0 - true_probability)
 
     # TODO: Revisit when we have a better random module.
     def rand_scalar[
@@ -121,15 +147,68 @@ struct Rng(Movable):
         comptime if dtype == DType.bool:
             return rebind[Scalar[dtype]](Scalar[DType.bool](self.rand_bool()))
         elif dtype.is_integral():
-            var offset = UInt64(0) - UInt64(Scalar[dtype].MIN)
-            var a = UInt64(min) + offset
-            var b = UInt64(max) + offset
-            var diff = a - b if a > b else b - a
-            var uint64 = self._next(diff)
-            return Scalar[dtype](uint64) + min
+            comptime bits = bit_width_of[dtype]()
+            comptime U = (
+                DType.uint64 if bits
+                <= 64 else DType.uint128 if bits
+                == 128 else DType.uint256
+            )
+            comptime N = (bits + 63) / 64
+
+            var span = max.cast[U]() - min.cast[U]()
+
+            # Generate exactly enough 64-bit words to cover `span`. `k` is the
+            # position of `span`'s highest nonzero word; capping the top word
+            # there keeps the generated range within 2x of `span + 1`, bounding
+            # the modular-reduction bias.
+            var k = 0
+            var hi_cap = span.cast[DType.uint64]()
+            for i in range(1, N):
+                var w = (span >> Scalar[U](64 * i)).cast[DType.uint64]()
+                if w != 0:
+                    k = i
+                    hi_cap = w
+
+            var result = self._next(hi_cap).cast[U]() << Scalar[U](64 * k)
+            for j in range(k):
+                result = result | (self._next().cast[U]() << Scalar[U](64 * j))
+
+            if span != Scalar[U].MAX:
+                result = result % (span + 1)
+            return result.cast[dtype]() + min
         elif dtype.is_floating_point():
-            var f = self._xoshiro_float()
-            var result = Float64(min) * (1.0 - f) + Float64(max) * f
+            # Shrink-monotonic decoding: smaller UInt64 must produce a float
+            # with smaller (or equal) |result|, with u=0 producing 0.0. The
+            # shrinker reduces the raw stream bits, so the encoding is what
+            # makes shrinking converge to small magnitudes rather than to the
+            # midpoint of [min, max].
+            #
+            # Layout: low bit is sign; upper 63 bits are a positive IEEE 754
+            # Float64 bit pattern. For non-negative finite doubles, bit-pattern
+            # ordering matches numeric ordering, so |result| is monotonic in
+            # the upper 63 bits.
+            var u = self._next()
+            var sign_bit = u & 1
+            var mag_bits = u >> 1
+
+            # Bit patterns above +inf (0x7FF0000000000000) are NaN, which isn't
+            # comparable and would break the clamp below; cap at +inf's pattern.
+            # +inf itself is kept so callers who pass max=+inf can actually see
+            # infinity; the final clamp removes it otherwise.
+            comptime _POS_INF_F64_BITS = UInt64(0x7FF0000000000000)
+            if mag_bits > _POS_INF_F64_BITS:
+                mag_bits = _POS_INF_F64_BITS
+
+            var magnitude = Float64(from_bits=mag_bits)
+            var result = -magnitude if sign_bit else magnitude
+
+            var min_f64 = Float64(min)
+            var max_f64 = Float64(max)
+            if result < min_f64:
+                result = min_f64
+            elif result > max_f64:
+                result = max_f64
+
             return Scalar[dtype](result)
         else:
             comptime assert (
