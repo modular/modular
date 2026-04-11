@@ -25,7 +25,7 @@ from std.bit.mask import splat
 from std.bit import pop_count
 from std.memory import pack_bits, uninit_copy_n
 from std.memory._nonnull import NonNullUnsafePointer
-from std.collections._index_normalization import normalize_index
+from std.collections import check_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of
 from std.sys.info import simd_width_of
@@ -118,12 +118,12 @@ struct _SpanIter[
 
             var curr = self.index
             self.index += 1
-            return self.src[curr]
+            return self.src._data[curr]
         else:
             if self.index <= 0:
                 raise StopIteration()
             self.index -= 1
-            return self.src[self.index]
+            return self.src._data[self.index]
 
 
 struct Span[
@@ -282,22 +282,34 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__[I: Indexer](self, idx: I) -> ref[Self.origin] Self.T:
-        """Get a reference to an element in the span.
+    def __getitem__(self, idx: Some[Indexer]) -> ref[Self.origin] Self.T:
+        """Gets the span element at the given index.
 
         Args:
-            idx: The index of the value to return.
-
-        Parameters:
-            I: A type that can be used as an index.
+            idx: The index of the element.
 
         Returns:
-            An element reference.
+            A reference to the element at the given index.
         """
-        var normalized_idx = normalize_index["Span", assert_always=False](
-            idx, UInt(len(self))
+        check_bounds(idx, len(self))
+        return self._data[idx]
+
+    @always_inline
+    def __getitem__(self, idx: IntLiteral) -> ref[Self.origin] Self.T:
+        """Gets the span element at the given index.
+
+        Args:
+            idx: The index of the element.
+
+        Returns:
+            A reference to the element at the given index.
+        """
+        comptime assert IntLiteral[idx.value]() >= 0, (
+            "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+            " instead"
         )
-        return self._data[normalized_idx]
+        check_bounds(idx, len(self))
+        return self._data[idx]
 
     @always_inline
     def __getitem__(self, slc: ContiguousSlice) -> Self:
@@ -516,11 +528,7 @@ struct Span[
             in undefined behavior.
             - This function does not support wraparound for negative indices.
         """
-        debug_assert(
-            0 <= index(idx) < len(self),
-            "Index out of bounds: ",
-            index(idx),
-        )
+        check_bounds[cpu_default=False](idx, len(self))
         return self._data[idx]
 
     @always_inline("builtin")
