@@ -16,15 +16,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from layout.int_tuple import IntTuple
 
-
-# CHECK-LABEL: test_negative_index_int_tuple
+# CHECK-LABEL: test_negative_index_string_slice
 def main():
-    print("== test_negative_index_int_tuple")
-    var t = IntTuple(1, 2, 3)
+    print("== test_negative_index_string_slice")
+    var s = "abc"
     var i = -1
-    # CHECK: test_negative_index_int_tuple.mojo:28:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
-    _ = t[i]
+    # test_negative_index_string_slice.mojo:26:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
+    _ = s[byte=i]
     # CHECK-NOT: is never reached
     print("is never reached")

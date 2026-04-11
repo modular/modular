@@ -8,6 +8,13 @@ _FILECHECK_TESTS = [
     "test_list_getitem_invalid_index_uint.mojo",
     "test_optional_none_abort.mojo",
     "test_check_bounds_assert_error.mojo",
+    "test_negative_index_deque.mojo",
+    "test_negative_index_deque_insert.mojo",
+    "test_negative_index_inline_array.mojo",
+    "test_negative_index_linked_list.mojo",
+    "test_negative_index_list.mojo",
+    "test_negative_index_string.mojo",
+    "test_negative_index_string_slice.mojo",
 ]
 
 _LIT_TESTS = [
@@ -38,6 +45,13 @@ _EXPECT_CRASH = [
     "test_list_getitem_invalid_index_uint.mojo",
     "test_optional_none_abort.mojo",
     "test_check_bounds_assert_error.mojo",
+    "test_negative_index_deque.mojo",
+    "test_negative_index_deque_insert.mojo",
+    "test_negative_index_inline_array.mojo",
+    "test_negative_index_linked_list.mojo",
+    "test_negative_index_list.mojo",
+    "test_negative_index_string.mojo",
+    "test_negative_index_string_slice.mojo",
 ]
 
 [

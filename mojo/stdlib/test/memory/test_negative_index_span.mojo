@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-# Verifies that negative indexing on Span triggers a deprecation assert.
+# Verifies that a negative index triggers an out of bounds assertion error,
+# and reports the correct location where the negative index was provided.
 #
 # ===----------------------------------------------------------------------=== #
 
@@ -22,7 +23,7 @@ def main():
     var l = [1, 2, 3]
     var s = Span(l)
     var i = -1
-    # CHECK: index -1 is out of bounds, valid range is 0 to 2
+    # CHECK: test_negative_index_span.mojo:27:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
     _ = s[i]
     # CHECK-NOT: is never reached
     print("is never reached")

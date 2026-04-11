@@ -16,15 +16,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from layout.int_tuple import IntTuple
+from std.collections import LinkedList
 
 
-# CHECK-LABEL: test_negative_index_int_tuple
+# CHECK-LABEL: test_negative_index_linked_list
 def main():
-    print("== test_negative_index_int_tuple")
-    var t = IntTuple(1, 2, 3)
-    var i = -1
-    # CHECK: test_negative_index_int_tuple.mojo:28:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
-    _ = t[i]
+    print("== test_negative_index_linked_list")
+    var l = LinkedList[Int]()
+    l.append(1)
+    l.append(2)
+    l.append(3)
+    # CHECK: test_negative_index_linked_list.mojo:30:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
+    _ = l[-1]
     # CHECK-NOT: is never reached
     print("is never reached")

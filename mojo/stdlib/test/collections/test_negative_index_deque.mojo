@@ -16,15 +16,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from layout.int_tuple import IntTuple
+from std.collections import Deque
 
 
-# CHECK-LABEL: test_negative_index_int_tuple
+# CHECK-LABEL: test_negative_index_deque
 def main():
-    print("== test_negative_index_int_tuple")
-    var t = IntTuple(1, 2, 3)
+    print("== test_negative_index_deque")
+    var q = Deque(1, 2, 3)
     var i = -1
-    # CHECK: test_negative_index_int_tuple.mojo:28:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
-    _ = t[i]
+    # CHECK: test_negative_index_deque.mojo:28:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
+    _ = q[i]
     # CHECK-NOT: is never reached
     print("is never reached")

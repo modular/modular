@@ -11,20 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-# Verifies that a negative index triggers an out of bounds assertion error,
-# and reports the correct location where the negative index was provided.
+# Verifies that negative indexing on InlineArray triggers a deprecation assert.
 #
 # ===----------------------------------------------------------------------=== #
 
-from layout.int_tuple import IntTuple
 
-
-# CHECK-LABEL: test_negative_index_int_tuple
+# CHECK-LABEL: test_negative_index_inline_array
 def main():
-    print("== test_negative_index_int_tuple")
-    var t = IntTuple(1, 2, 3)
+    print("== test_negative_index_inline_array")
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
     var i = -1
-    # CHECK: test_negative_index_int_tuple.mojo:28:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
-    _ = t[i]
+    # CHECK: test_negative_index_inline_array.mojo:25:12: Assert Error: index -1 is out of bounds, valid range is 0 to 2
+    _ = arr[i]
     # CHECK-NOT: is never reached
     print("is never reached")
