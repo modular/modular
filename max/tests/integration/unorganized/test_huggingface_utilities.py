@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from huggingface_hub import constants as hf_hub_constants
@@ -85,6 +85,36 @@ def test_huggingface_repo__encodings_supported(
     hf_repo = HuggingFaceRepo(repo_id=tiny_llama_1_1b_chat_v1_0_local_path)
     assert "q4_k" not in hf_repo.supported_encodings
     assert "bfloat16" in hf_repo.supported_encodings
+
+
+def test_huggingface_repo__encodings_supported_online_fp8_fallback() -> None:
+    with patch("max.pipelines.lib.hf_utils.validate_hf_repo_access"):
+        hf_repo = HuggingFaceRepo(
+            repo_id="RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic",
+            repo_type="online",
+        )
+
+    with (
+        patch.object(
+            HuggingFaceRepo, "weight_files", new_callable=PropertyMock
+        ) as mock_weight_files,
+        patch.object(
+            HuggingFaceRepo, "info", new_callable=PropertyMock
+        ) as mock_info,
+        patch.object(
+            HuggingFaceRepo,
+            "_detect_safetensors_encodings_from_files",
+            return_value={"bfloat16"},
+        ),
+    ):
+        mock_weight_files.return_value = {
+            WeightsFormat.safetensors: ["model-00001-of-00002.safetensors"]
+        }
+        mock_info.return_value = MagicMock(safetensors=None, config=None)
+        supported_encodings = hf_repo.supported_encodings
+
+    assert "bfloat16" in supported_encodings
+    assert "float8_e4m3fn" in supported_encodings
 
 
 def test_huggingface_repo__get_files_for_encoding(
