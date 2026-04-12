@@ -160,9 +160,9 @@ struct String(
     var text = "Hello"
 
     # String properties and indexing
-    print(text.byte_lenght())        # 5
-    print(text[byte=1])              # e (byte slice)
-    print(text[byte=len(text) - 1])  # o (last character)
+    print(text.byte_length())                 # 5
+    print(text[byte=1])                       # e (byte slice)
+    print(text[byte=text.byte_length() - 1])  # o (last character)
 
     # In-place concatenation
     text += " World"
