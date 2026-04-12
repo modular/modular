@@ -181,7 +181,7 @@ struct RTLD:
     """
     comptime NOW = 2
     """Load library immediately (resolve all symbols on load)."""
-    comptime LOCAL = 4
+    comptime LOCAL = 0 if CompilationTarget.is_linux() else 4
     """Make symbols not available for symbol resolution of subsequently loaded
     libraries."""
     comptime GLOBAL = 256 if CompilationTarget.is_linux() else 8

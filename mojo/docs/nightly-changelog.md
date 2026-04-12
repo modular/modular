@@ -327,6 +327,10 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed
 
+- Fixed `RTLD.LOCAL` having the wrong value on Linux. It was set to `4`
+  (`RTLD_NOLOAD`) instead of `0`, causing `dlopen` with `RTLD.NOW | RTLD.LOCAL`
+  to fail. ([Issue #6410](https://github.com/modular/modular/issues/6410))
+
 - Fixed `mojo format` crashing after upgrading Mojo versions due to a stale
   grammar cache. ([Issue #6144](https://github.com/modular/modular/issues/6144))
 
