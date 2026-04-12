@@ -14,7 +14,8 @@
 
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.format_int import _write_int
-from std.collections._index_normalization import normalize_index
+from std.reflection import call_location
+from std.collections import check_bounds
 from std.collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -690,6 +691,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices()
 
+    @always_inline
     def __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 
@@ -702,27 +704,61 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             I: A type that can be used as an index.
 
         Args:
-            byte: The byte index (0-based). Negative indices count from the end.
+            byte: The byte index (0-based).
 
         Returns:
             A StringSlice containing the codepoint starting at the specified
             byte position.
         """
-        var normalized_idx = normalize_index["StringSlice"](
-            byte, self.byte_length()
+        var idx = index(byte)
+        self._check_valid_index(idx)
+        return self._unchecked_get_byte(idx)
+
+    @always_inline
+    def __getitem__(self, *, byte: IntLiteral) -> Self:
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
+
+        Args:
+            byte: The byte index (0-based).
+
+        Returns:
+            A StringSlice containing a single byte at the specified position.
+        """
+        comptime assert IntLiteral[byte.value]() >= 0, (
+            "negative indexing is not supported, use e.g."
+            " `slice[byte=slice.byte_length() - 1]`"
         )
-        # _utf8_first_byte_sequence_length also checks for this, but
-        # we want subscripting to check unconditionally.
+        var idx = index(byte)
+        self._check_valid_index(idx)
+        return self._unchecked_get_byte(idx)
+
+    @always_inline
+    def _check_valid_index(self, idx: Int):
+        # Show source location where user provided incorrect index by skipping
+        # two levels of inlining above this function call.
+        var location = call_location[inline_count=2]()
+        check_bounds(idx, self.byte_length(), location)
+        # Subscripting checks codepoint boundaries unconditionally, to avoid
+        # breaking methods that assume valid utf8.
         debug_assert[assert_mode="safe"](
-            _is_utf8_start_byte(self._slice.unsafe_get(normalized_idx)),
+            _is_utf8_start_byte(self._slice.unsafe_get(idx)),
             "String slice index, ",
-            normalized_idx,
+            idx,
             " does not lie on a codepoint boundary.",
+            location=location,
         )
+
+    @always_inline
+    def _unchecked_get_byte(self, idx: Int) -> Self:
         return StringSlice(
-            ptr=self.unsafe_ptr() + normalized_idx,
+            ptr=self.unsafe_ptr() + idx,
             length=_utf8_first_byte_sequence_length(
-                self._slice.unsafe_get(normalized_idx)
+                self._slice.unsafe_get(idx)
             ),
         )
 
@@ -1339,7 +1375,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         if end == -1:
             return self.find(prefix, start) == start
-        # FIXME: use normalize_index
         return StringSlice[Self.origin](
             ptr=self.unsafe_ptr() + start, length=end - start
         ).startswith(prefix)

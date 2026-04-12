@@ -10,20 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+#
+# Verifies that a negative index triggers an out of bounds assertion error,
+# and reports the correct location where the negative index was provided.
+#
+# ===----------------------------------------------------------------------=== #
 
-from std.testing import TestSuite
+from std.collections import Deque
 
 
-# CHECK-LABEL: test_fail_list_index_uint
-def test_fail_list_index_uint() raises:
-    print("== test_fail_list_index_uint")
-    # CHECK: index 4 is out of bounds, valid range is 0 to 2
-    nums = [1, 2, 3]
-    print(nums[UInt(4)])
-
+# CHECK-LABEL: test_negative_index_deque
+def main():
+    print("== test_negative_index_deque")
+    var q = Deque(1, 2, 3)
+    var i = -1
+    # CHECK: test_negative_index_deque.mojo:28:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
+    _ = q[i]
     # CHECK-NOT: is never reached
     print("is never reached")
-
-
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()

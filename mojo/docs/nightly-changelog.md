@@ -82,6 +82,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `assert_raises` now catches custom `Writable` error types, not just `Error`.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 
@@ -205,6 +207,58 @@ This version is still a work in progress.
 
 - `external_call`'s `return_type`'s requirements has been relaxed from
   `TrivialRegisterPassable` to `RegisterPassable`.
+
+- Negative indexing on all stdlib collections has been removed to enable cheap
+  CPU bounds checks by default:
+  - `List`
+  - `Span`
+  - `InlineArray`
+  - `String`
+  - `StringSlice`
+  - `LinkedList`
+  - `Deque`
+  - `IntTuple`
+
+  Using a negative `IntLiteral` for indexing will now trigger a compile-time
+  error, for example:
+
+  ```text
+  /tmp/main.mojo:3:12: note: call expansion failed with parameter value(s): (..., ...)
+          print(x[-1])
+              ^
+  constraint failed: negative indexing is not supported, use e.g. `x[len(x) - 1]` instead
+  ```
+
+  Update any `x[-1]` to `x[len(x) - 1]`, following the compiler errors to
+  your call sites as above.
+
+  This does not affect any MAX ops that support negative indexing.
+
+- Bounds checking is now on by default for all collections on CPU, and will show
+  you the call site in your code where you triggered the out of bounds access:
+
+  ```mojo
+  def main():
+      var x = [1, 2, 3]
+      print(x[3])
+  ```
+
+  ```text
+  At: /tmp/main.mojo:3:12: Assert Error: index 3 is out of bounds, valid range is 0 to 2
+  ```
+
+  Bounds checking is still off by default for GPU to avoid performance
+  penalties. To enable it for tests:
+
+  ```bash
+  mojo build -D ASSERT=all main.mojo
+  ```
+
+  To turn off all asserts, including CPU bounds checking:
+
+  ```bash
+  mojo build -D ASSERT=none main.mojo
+  ```
 
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
