@@ -25,6 +25,13 @@
 using namespace M;
 using namespace KGEN;
 
+namespace {
+constexpr llvm::StringLiteral kStructElemLayoutError =
+    "failed to get size/alignment for struct element type";
+constexpr llvm::StringLiteral kPackElemLayoutError =
+    "failed to get size/alignment for pack element type";
+} // namespace
+
 //===----------------------------------------------------------------------===//
 // ArgConvention
 //===----------------------------------------------------------------------===//
@@ -1511,13 +1518,17 @@ ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
     for (TypedAttr value : sv.getValues()) {
       auto dl = ::cast<DataLayoutInterface>(value.getType());
       // Store each element spaced apart by padding according to its alignment.
-      offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+      std::optional<int64_t> align = dl.getTypeAlign(state.getTarget());
+      std::optional<int64_t> size = dl.getTypeSize(state.getTarget());
+      if (!align || !size)
+        return Error(kStructElemLayoutError);
+      offset = llvm::alignTo(offset, *align);
 
       ErrorOrSuccess result =
           state.writeAttributeToMemory(addr + offset, value);
       if (result.isError())
         return result.takeError();
-      offset += *dl.getTypeSize(state.getTarget());
+      offset += *size;
     }
     return success();
   }
@@ -1535,13 +1546,17 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
   int64_t offset = 0;
   for (Type elType : *elementTypes) {
     auto dl = llvm::cast<DataLayoutInterface>(elType);
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    std::optional<int64_t> align = dl.getTypeAlign(state.getTarget());
+    std::optional<int64_t> size = dl.getTypeSize(state.getTarget());
+    if (!align || !size)
+      return Error(kStructElemLayoutError);
+    offset = llvm::alignTo(offset, *align);
     ErrorOr<TypedAttr> value =
         state.readAttributeFromMemory(addr + offset, elType);
     if (value.isError())
       return value.takeError();
     values.push_back(value.takeValue());
-    offset += *dl.getTypeSize(state.getTarget());
+    offset += *size;
   }
   return StructAttr::get(values, *this);
 }
@@ -1858,13 +1873,17 @@ ErrorOrSuccess PackType::writeTo(TypedAttr value, int64_t addr,
     for (TypedAttr value : packValueAttr.getValues()) {
       auto dl = ::cast<DataLayoutInterface>(value.getType());
       // Store each element spaced apart by padding according to its alignment.
-      offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+      std::optional<int64_t> align = dl.getTypeAlign(state.getTarget());
+      std::optional<int64_t> size = dl.getTypeSize(state.getTarget());
+      if (!align || !size)
+        return Error(kPackElemLayoutError);
+      offset = llvm::alignTo(offset, *align);
 
       ErrorOrSuccess result =
           state.writeAttributeToMemory(addr + offset, value);
       if (result.isError())
         return result.takeError();
-      offset += *dl.getTypeSize(state.getTarget());
+      offset += *size;
     }
     return success();
   }
@@ -1883,13 +1902,17 @@ ErrorOr<TypedAttr> PackType::readFrom(int64_t addr,
   for (TypedAttr elTypeAttr : typeList.getValues()) {
     Type elType = ::cast<TypeParamAttr>(elTypeAttr).getMlirType();
     auto dl = llvm::cast<DataLayoutInterface>(elType);
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    std::optional<int64_t> align = dl.getTypeAlign(state.getTarget());
+    std::optional<int64_t> size = dl.getTypeSize(state.getTarget());
+    if (!align || !size)
+      return Error(kPackElemLayoutError);
+    offset = llvm::alignTo(offset, *align);
     ErrorOr<TypedAttr> value =
         state.readAttributeFromMemory(addr + offset, elType);
     if (value.isError())
       return value.takeError();
     values.push_back(value.takeValue());
-    offset += *dl.getTypeSize(state.getTarget());
+    offset += *size;
   }
   return PackAttr::get(values, *this);
 }
@@ -2062,9 +2085,12 @@ std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
   if (!discrAlign)
     return {};
 
+  std::optional<int64_t> align = getTypeAlign(target);
+  if (!align)
+    return {};
   return llvm::alignTo(llvm::alignTo(*contentSize, *discrAlign) +
                            getVariantDiscrSize(*this),
-                       *getTypeAlign(target));
+                       *align);
 }
 
 std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {

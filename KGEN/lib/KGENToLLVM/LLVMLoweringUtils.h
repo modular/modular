@@ -18,6 +18,8 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Value.h"
+#include <optional>
+#include <string>
 
 namespace mlir::LLVM {
 class CallOp;
@@ -333,10 +335,18 @@ public:
   DebugInfoTypeConverter(POPToLLVMTypeConverter &tc, TargetInfoAttr targetInfo,
                          SymbolTable &symtab);
 
+  /// Returns the first error encountered during type conversion, if any.
+  /// Converter lambdas have no way to signal failure directly, so callers
+  /// should check this after conversion is complete.
+  std::optional<std::string> getError() const { return error; }
+
 private:
   POPToLLVMTypeConverter &tc;
   SymbolTable &symtab;
   TargetInfoAttr targetInfo;
+
+  /// Holds the first error message encountered during conversion, if any.
+  std::optional<std::string> error;
 
   /// Build the debug type for a struct-like type.
   DebugInfo::DIType buildDebugStructTypeFromTypeAttrs(ArrayRef<Type> attrs,

@@ -237,9 +237,20 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::UnionType type) {
         std::max(maxMemberSizeInBits, debugType.getSizeInBits());
   }
 
-  return DIVariantType::get(
-      StringAttr::get(type.getContext(), ""), maxMemberSizeInBits,
-      *type.getTypeAlign(tc.getTarget()) * CHAR_BIT, variantMembers);
+  std::optional<int64_t> alignInBytes = type.getTypeAlign(tc.getTarget());
+  if (!alignInBytes) {
+    // A variant type inside the union has no registered data layout info.
+    // This should not happen after elaboration (MOCO-3524). Record the error
+    // for the caller to signal pass failure, and fall back to an unspecified
+    // type to avoid a hard crash.
+    if (!error)
+      error = "failed to compute alignment for union type: " +
+              mlir::debugString(type);
+    return DIUnspecifiedType::get(type.getContext(), "unresolved union");
+  }
+  return DIVariantType::get(StringAttr::get(type.getContext(), ""),
+                            maxMemberSizeInBits, *alignInBytes * CHAR_BIT,
+                            variantMembers);
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::NoneType type) {
