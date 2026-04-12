@@ -323,6 +323,10 @@ def run_producer[
         )
     )
 )
+@__name(
+    t"amd_warp_specialized_matmul_{in_type}_{out_type}_{BM}x{BN}x{BK}",
+    mangle=True,
+)
 def warp_specialized_matmul_kernel[
     in_type: DType,
     out_type: DType,

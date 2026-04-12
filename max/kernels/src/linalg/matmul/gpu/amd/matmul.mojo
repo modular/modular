@@ -245,6 +245,9 @@ struct MMATileBuffers[
         Int32(config.num_threads())
     )
 )
+@__name(
+    t"gemm_kernel_amd_{c_type}_{a_type}_{b_type}_{transpose_b}", mangle=True
+)
 def gemm_kernel_amd[
     c_type: DType,
     CLT: TensorLayout,
