@@ -511,9 +511,8 @@ class PagedKVCacheManager:
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.
-            prompt_tokens = (
-                ctx.tokens.active_length
-                + ctx.spec_decoding_state.num_draft_tokens
+            prompt_tokens = ctx.tokens.active_length + len(
+                ctx.spec_decoding_state.draft_tokens_to_verify
             )
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)

@@ -80,7 +80,6 @@ def named_barrier[
     ), "named barrier is only supported by NVIDIA GPUs"
     _ = __mlir_op.`nvvm.barrier`[
         _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
-        _type=__mlir_type.i32,
     ](to_i32(id), to_i32(num_threads))
 
 
@@ -461,7 +460,9 @@ def syncwarp(mask: Int = -1):
 
     comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.bar.warp.sync`(
-            __mlir_op.`index.casts`[_type=__mlir_type.i32](mask._mlir_value)
+            __mlir_op.`index.casts`[_type=__mlir_type.i32](
+                mask._int_mlir_index()
+            )
         )
     elif is_amd_gpu():
         # In AMD GPU this is a nop (everything executed in lock-step).

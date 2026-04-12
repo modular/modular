@@ -10,4 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Structured AMD GPU attention kernels (TileTensor hot path)."""
+"""AMD RDNA GPU attention kernels for Wave32 WMMA operations.
+
+Includes MHA prefill/decode, MMA primitives, and buffer management
+for RDNA consumer GPUs (Radeon RX 7000/8000 series).
+"""

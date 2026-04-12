@@ -804,7 +804,7 @@ def store_release[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
             ordering=Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     elif is_apple_gpu():
@@ -875,7 +875,7 @@ def store_relaxed[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
             ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](value, ptr.address)
     else:
@@ -939,7 +939,7 @@ def load_acquire[
         return result
     elif is_amd_gpu():
         var result = __mlir_op.`pop.load`[
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
             ordering=Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
         comptime if dtype.is_floating_point():
@@ -1020,7 +1020,7 @@ def load_relaxed[
         return result
     elif is_amd_gpu():
         var result = __mlir_op.`pop.load`[
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
             ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](ptr.address)
         comptime if dtype.is_floating_point():
@@ -1293,7 +1293,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     @always_inline("nodebug")
     def store[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         cache_policy: CacheOperation = CacheOperation.ALWAYS,
     ](
@@ -1496,7 +1496,7 @@ def permlane_swap[
 
 
 def permlane_shuffle[
-    dtype: DType, simd_width: Int, //, stride: Int
+    dtype: DType, simd_width: SIMDSize, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: type_of(val)):
     """Shuffles SIMD values across lanes using AMD permlane operations.
 

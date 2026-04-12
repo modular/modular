@@ -56,7 +56,7 @@ struct NicheIndex(Equatable, TrivialRegisterPassable):
     """
 
 
-comptime NicheStorageTraits = Defaultable & TrivialRegisterPassable
+comptime NicheStorageTraits = TrivialRegisterPassable
 """Trait requirements for a custom niche backing storage type."""
 
 

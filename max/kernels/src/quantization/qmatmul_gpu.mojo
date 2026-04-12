@@ -383,13 +383,13 @@ def multistage_mma_q[
             mma_op.load_a[swizzle_a_pattern](
                 a_warp_tile,
                 a_reg_tiles[next].vectorize[1, a_frag_size](),
-                UInt((k_mma + 1) % num_k_mmas),
+                (k_mma + 1) % num_k_mmas,
             )
             mma_op.load_b(
                 b_warp_tile,
                 b_reg_tiles[next],
                 scales_reg_tiles,
-                UInt((k_mma + 1) % num_k_mmas),
+                (k_mma + 1) % num_k_mmas,
             )
 
             mma_op.mma(

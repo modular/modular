@@ -802,7 +802,7 @@ class OverlapTextGenerationPipeline(
                         eos_tracker=EOSTracker(),
                         model_name=self._pipeline_config.model.model_name,
                         _spec_decoding_state=SpecDecodingState(
-                            saved_draft_tokens=[0] * num_speculative_tokens,
+                            draft_tokens_to_verify=[0] * num_speculative_tokens,
                         ),
                     )
                     for idx in range(batch_size)
@@ -1139,7 +1139,8 @@ class OverlapTextGenerationPipeline(
 
         context_batch = inputs.flat_batch
         verify_draft_tokens = all(
-            ctx.spec_decoding_state.num_draft_tokens == num_speculative_tokens
+            len(ctx.spec_decoding_state.draft_tokens_to_verify)
+            == num_speculative_tokens
             and ctx.tokens.generated_length > 1
             for ctx in context_batch
         )
@@ -1150,8 +1151,8 @@ class OverlapTextGenerationPipeline(
         # Delete the saved draft tokens if we are not verifying them.
         if not verify_draft_tokens:
             for ctx in context_batch:
-                if ctx.spec_decoding_state.num_draft_tokens:
-                    ctx.spec_decoding_state.saved_draft_tokens = []
+                if len(ctx.spec_decoding_state.draft_tokens_to_verify):
+                    ctx.spec_decoding_state.draft_tokens_to_verify = []
 
         # Load or create draft tokens.
         draft_tokens_pinned = DevicePinnedBuffer(
@@ -1162,7 +1163,7 @@ class OverlapTextGenerationPipeline(
         draft_tokens_np = draft_tokens_pinned.to_numpy()
         if num_draft_tokens_to_verify:
             for i, ctx in enumerate(context_batch):
-                tokens = ctx.spec_decoding_state.saved_draft_tokens
+                tokens = ctx.spec_decoding_state.draft_tokens_to_verify
                 assert len(tokens) == num_draft_tokens_to_verify
                 draft_tokens_np[i, :] = tokens
 
@@ -1292,11 +1293,8 @@ class OverlapTextGenerationPipeline(
             # Empty outputs as there is no previous batch.
             outputs = {}
 
-        # Only add a future token if we are not using spec decoding. Spec decoding
-        # does not properly support future tokens and overlap yet!
-        if self._spec_decode_state is None:
-            for context in inputs.flat_batch:
-                context.update_with_future_token()
+        for context in inputs.flat_batch:
+            context.update_with_future_token()
 
         # Commit the new KV blocks into the prefix cache, ignoring the final
         # placeholder future token.

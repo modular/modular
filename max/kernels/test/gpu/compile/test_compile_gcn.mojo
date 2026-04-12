@@ -134,8 +134,8 @@ def load_store(
 def test_shuffle_compile() raises:
     print("== test_shuffle_compile")
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = add i32 %5, %3
     # CHECK: %7 = icmp ult i32 %6, 64
     # CHECK: %8 = select i1 %7, i32 %3, i32 0
@@ -149,8 +149,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = sub i32 %5, %3
     # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = icmp slt i32 %6, %7
@@ -164,8 +164,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = xor i32 %5, %3
     # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = add nuw nsw i32 %7, 64
@@ -180,8 +180,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = and i32 %5, 64
     # CHECK: %7 = or i32 %6, %3
     # CHECK: %8 = shl i32 %7, 2
@@ -242,8 +242,8 @@ def test_exp_f16_compile() raises:
 def test_laneid_compile() raises:
     print("== test_laneid_compile")
 
-    # CHECK: %3 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
+    # CHECK: %3 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %4 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
     print(
         _compile_code[
             kernel_laneid, target=MI300X_TARGET, emission_kind="llvm-opt"

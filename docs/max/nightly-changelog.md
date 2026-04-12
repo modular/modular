@@ -114,6 +114,11 @@ This version is still a work in progress.
   `max.graph.ops.scatter_mul` graph operations (and corresponding
   `max.experimental.functional` wrappers) for element-wise scatter with
   max, min, and multiply reductions at duplicate indices along an axis.
+- Added `scatter_max`, `scatter_min`, and `scatter_mul` op handlers to
+  the experimental eager interpreter (CPU), applying max, min, and
+  multiply reductions at duplicate scatter indices via
+  `max.experimental.functional.scatter_max`, `.scatter_min`, and
+  `.scatter_mul`.
 - Added `max.graph.ops.scatter_nd_max`, `max.graph.ops.scatter_nd_min`, and
   `max.graph.ops.scatter_nd_mul` graph operations (and corresponding
   `max.experimental.functional` wrappers) for N-dimensional scatter with
@@ -136,6 +141,17 @@ This version is still a work in progress.
   `InterpolationMode.BILINEAR` by delegating to `resize_linear`.
 - Added `resize_linear` op handler to the experimental eager interpreter
   (CPU) via `max.experimental.functional.resize_linear`.
+- Added `max.graph.ops.resize_nearest` for nearest-neighbor interpolation
+  resizing with configurable `coordinate_transform_mode` and `round_mode`;
+  `max.graph.ops.resize` now supports `InterpolationMode.NEAREST`.
+- Added `resize_nearest` op handler to the experimental eager interpreter
+  (CPU) via `max.experimental.functional.resize_nearest`.
+- Added `max.graph.ops.resize_bicubic` for bicubic interpolation resizing
+  (rank-4 NCHW, half_pixel coord mapping, a=-0.75 Catmull-Rom kernel);
+  `max.graph.ops.resize` now delegates its `InterpolationMode.BICUBIC` path
+  to `resize_bicubic`.
+- Added `resize_bicubic` op handler to the experimental eager interpreter
+  (CPU) via `max.experimental.functional.resize_bicubic`.
 - Added `distributed.allreduce.sum` op handler to the experimental eager
   interpreter, enabling multi-GPU eager execution of allreduce collectives
 - Added `distributed.allgather` op handler to the experimental eager

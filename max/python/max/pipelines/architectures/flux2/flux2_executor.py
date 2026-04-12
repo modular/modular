@@ -258,7 +258,12 @@ class Flux2Executor(
         # Extract transformer config for helper methods.
         transformer_config = manifest["transformer"]
         encoding = transformer_config.quantization_encoding or "bfloat16"
-        self._model_dtype: DType = supported_encoding_dtype(encoding)
+        # For NVFP4, weights are stored as FP4 but compute stays bfloat16.
+        self._model_dtype: DType = (
+            DType.bfloat16
+            if encoding == "float4_e2m1fnx2"
+            else supported_encoding_dtype(encoding)
+        )
         self._model_device: Device = load_devices(
             transformer_config.device_specs
         )[0]

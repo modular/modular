@@ -780,7 +780,7 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: def[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: def[w: SIMDSize](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[mut=True, Scalar[dtype], _]):
         """Apply the function to the `Span` inplace.
 
@@ -809,9 +809,9 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: def[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: def[w: SIMDSize](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
-        cond: def[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        cond: def[w: SIMDSize](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[mut=True, Scalar[dtype], _]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -845,7 +845,7 @@ struct Span[
     def count[
         dtype: DType,
         //,
-        F: def[w: Int](v: SIMD[dtype, w]) unified -> SIMD[DType.bool, w],
+        F: def[w: SIMDSize](v: SIMD[dtype, w]) unified -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], _], func: F) -> UInt:
         """Count the amount of times the function returns `True`.
 

@@ -286,7 +286,9 @@ def _reflection_write_to[
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")
 
-        ref field = trait_downcast[Writable](__struct_field_ref(i, this))
+        ref field = trait_downcast[Writable](
+            __struct_field_ref(i._int_mlir_index(), this)
+        )
         f(field, writer)
 
     writer.write_string(")")

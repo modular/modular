@@ -445,23 +445,27 @@ def execute_flash_attention_suite[
                 tg_seq_lens, tg_cache_sizes, 2, 0, ctx
             )
 
-            comptime if has_nvidia_gpu_accelerator():
-                print("TG", bs, type, "q_heads//kv_heads = 16//1")
-                execute_ragged_flash_attention[
-                    16,
-                    type,
-                    KVCacheStaticParams(
-                        num_heads=1, head_size=kv_params.head_size
-                    ),
-                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
-                print("TG", bs, type, "q_heads//kv_heads = 32//2")
-                execute_ragged_flash_attention[
-                    32,
-                    type,
-                    KVCacheStaticParams(
-                        num_heads=2, head_size=kv_params.head_size
-                    ),
-                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            # GQA group=16 (405B TP=8 shape)
+            print(
+                "TG",
+                bs,
+                type,
+                "q_heads//kv_heads = 16//1",
+                "cache_sizes=",
+                tg_cache_sizes,
+            )
+            execute_ragged_flash_attention[
+                16,
+                type,
+                KVCacheStaticParams(num_heads=1, head_size=kv_params.head_size),
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            # GQA group=16 (32Q/2KV variant)
+            print("TG", bs, type, "q_heads//kv_heads = 32//2")
+            execute_ragged_flash_attention[
+                32,
+                type,
+                KVCacheStaticParams(num_heads=2, head_size=kv_params.head_size),
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases
     print("CE", 1, DType.bfloat16, "depth=", kv_params.head_size)
@@ -481,17 +485,40 @@ def execute_flash_attention_suite[
 
 
 def main() raises:
-    seed(42)
     with DeviceContext() as ctx:
-        # depth=64 (llama-3.2 1B config: 32 Q heads, 8 KV heads)
+        # Stress test group=16 paged decode with many seeds
+        var fail_count = 0
+        for s in range(20):
+            seed(s)
+            tg_cache_sizes = List[Int]()
+            tg_seq_lens = List[Int]()
+            for _ in range(4):
+                tg_seq_lens.append(1)
+                tg_cache_sizes.append(Int(random_ui64(1, 1024)))
+            try:
+                execute_ragged_flash_attention[
+                    16,
+                    DType.bfloat16,
+                    KVCacheStaticParams(num_heads=1, head_size=128),
+                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            except e:
+                print("FAIL seed=", s, "caches=", tg_cache_sizes)
+                fail_count += 1
+        print("Results:", fail_count, "failures out of 20 seeds")
+        if fail_count > 0:
+            raise Error(String(fail_count) + " failures")
+
+        # Then run the full suite
+        seed(42)
+        # depth=64
         execute_flash_attention_suite[
             32, KVCacheStaticParams(num_heads=8, head_size=64)
         ](ctx)
-        # depth=128 (llama-3.1 config: 32 Q heads, 8 KV heads)
+        # depth=128
         execute_flash_attention_suite[
             32, KVCacheStaticParams(num_heads=8, head_size=128)
         ](ctx)
-        # depth=256 (gemma-3 config: 8 Q heads, 4 KV heads)
+        # depth=256
         execute_flash_attention_suite[
             8, KVCacheStaticParams(num_heads=4, head_size=256)
         ](ctx)

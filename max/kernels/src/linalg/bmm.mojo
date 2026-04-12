@@ -65,7 +65,7 @@ from .matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
 from .matmul.gpu.sm100_structured.default.dispatch import (
-    batched_matmul_dispatch_sm100_bf16,
+    dispatch_sm100_batched_matmul,
 )
 from .utils import GemmShape
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
@@ -646,6 +646,7 @@ def _batched_matmul_gpu[
     ].is_static_value
 
     if batch_size == 1:
+        logger.info("Dispatching Batched Matmul via Normal Matmul Kernels")
         with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):
             # If the batch size is 1, then this is just a matmul and we can use the
             # matmul kernel directly.
@@ -705,15 +706,21 @@ def _batched_matmul_gpu[
         has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()
     )
     comptime if use_SM100_kernels and has_static_NK and transpose_b:
-        comptime bf16_ok = (a_type == b_type == c_type == DType.bfloat16)
-        comptime align_ok = (
-            c_n * size_of[c_type]() % 16 == 0
-            and a_k * size_of[a_type]() % 16 == 0
+        logger.info(
+            "Dispatching Batched Matmul via SM100",
+            a_type,
+            b_type,
+            c_type,
+            a_k,
+            c_n,
         )
-        comptime if bf16_ok and align_ok:
-            batched_matmul_dispatch_sm100_bf16[
-                c_type, a_type, b_type, transpose_b
-            ](
+        comptime if (
+            c_type in (DType.bfloat16, DType.float8_e4m3fn)
+            and c_n * size_of[c_type]() % 16 == 0
+            and a_k * size_of[a_type]() % 16 == 0
+            and transpose_b
+        ):
+            dispatch_sm100_batched_matmul[c_type, a_type, b_type, transpose_b](
                 c_tensor_reshaped,
                 a_tensor_reshaped,
                 b_tensor_reshaped,
@@ -755,6 +762,7 @@ def _batched_matmul_gpu[
     )
 
     comptime if has_static_NK and use_A100_kernels and multistage_gemm_cond:
+        logger.info("Dispatching Batched Matmul via A100 Kernels")
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
         comptime batched_matmul_type = batched_matmul_kernel_gpu[
@@ -844,6 +852,7 @@ def _batched_matmul_gpu[
             kernel_helper[128, 128]()
 
     else:
+        logger.info("Dispatching Batched Matmul via Naive Kernels")
         c_shape = coord_to_index_list(c_buf.layout.shape_coord())
 
         comptime BLOCK_DIM = 16

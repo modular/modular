@@ -52,7 +52,7 @@ comptime _InvalidTypeIndex: Int = -1
 @always_inline
 def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
     comptime for i in range(TypeList[*Ts].size):
-        comptime if _type_is_eq[Ts[i], T]():
+        comptime if _type_is_eq[Ts[i._int_mlir_index()], T]():
             return i
     return _InvalidTypeIndex
 
@@ -130,7 +130,7 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
 
     @always_inline
     def __init__(out self):
-        self._memory = {}
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
     def as_uninit[
@@ -341,7 +341,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         comptime idx = _get_type_index[T, *Self.Ts]()
         return __mlir_op.`pop.variant.bitcast`[
             _type=UnsafePointer[T, origin_of(self)]._mlir_type,
-            index=idx._mlir_value,
+            index=idx._int_mlir_index(),
         ](UnsafePointer(to=self._impl).address)
 
 
@@ -940,7 +940,7 @@ struct Variant[*Ts: Movable](
 
 def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
     comptime for i in range(TypeList[*Ts].size):
-        comptime T = Ts[i]
+        comptime T = Ts[i._int_mlir_index()]
         if not conforms_to(T, ImplicitlyDestructible):
             return False
     return True
@@ -948,7 +948,7 @@ def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
 
 def _all_movable[*Ts: AnyType]() -> Bool:
     comptime for i in range(TypeList[*Ts].size):
-        comptime T = Ts[i]
+        comptime T = Ts[i._int_mlir_index()]
         if not conforms_to(T, Movable):
             return False
     return True
@@ -956,8 +956,12 @@ def _all_movable[*Ts: AnyType]() -> Bool:
 
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     comptime for i in range(TypeList[*Ts].size):
-        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
+        comptime if conforms_to(
+            Ts[i._int_mlir_index()], ImplicitlyDestructible
+        ):
+            if not downcast[
+                Ts[i._int_mlir_index()], ImplicitlyDestructible
+            ].__del__is_trivial:
                 return False
         else:
             return False
@@ -966,8 +970,10 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(TypeList[*Ts].size):
-        comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
+        comptime if conforms_to(Ts[i._int_mlir_index()], Copyable):
+            if not downcast[
+                Ts[i._int_mlir_index()], Copyable
+            ].__copy_ctor_is_trivial:
                 return False
         else:
             return False
@@ -977,8 +983,10 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(TypeList[*Ts].size):
-        comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
+        comptime if conforms_to(Ts[i._int_mlir_index()], Movable):
+            if not downcast[
+                Ts[i._int_mlir_index()], Movable
+            ].__move_ctor_is_trivial:
                 return False
         else:
             return False

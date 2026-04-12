@@ -72,7 +72,9 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             bytes: The byte span to write to this file.
         """
         written = external_call["write", c_ssize_t](
-            self.value, bytes.unsafe_ptr(), len(bytes)
+            self.value._int_mlir_index(),
+            bytes.unsafe_ptr(),
+            len(bytes)._int_mlir_index(),
         )
         assert written == len(bytes), "expected amount of bytes not written"
 
