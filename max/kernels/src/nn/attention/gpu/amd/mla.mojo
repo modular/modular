@@ -181,16 +181,16 @@ __extension Attention:
             # Build k_rope TileTensor with RuntimeInt valid_rows.
             comptime _k_rope_stride0 = Int(cache_num_heads * cache_depth)
             comptime KRopeTileLayout = MixedLayout[
-                Variadic.types[
-                    T=CoordLike,
+                TypeList[
+                    type=CoordLike,
                     RuntimeInt[DType.int64],
                     ComptimeInt[Int(Self.depth)],
-                ],
-                Variadic.types[
-                    T=CoordLike,
+                ](),
+                TypeList[
+                    type=CoordLike,
                     ComptimeInt[_k_rope_stride0],
                     ComptimeInt[1],
-                ],
+                ](),
             ]
 
             var k_rope_tile = TileTensor[

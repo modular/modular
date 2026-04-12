@@ -465,7 +465,6 @@ struct Variadic:
 # ===-----------------------------------------------------------------------===#
 
 
-@fieldwise_init
 struct TypeList[type: type_of(AnyType), //, *values: type](
     Sized, TrivialRegisterPassable
 ):
@@ -510,21 +509,68 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
     )
     """The number of types in the list."""
 
-    comptime __getitem_param__[idx: Int] = Self.values[idx]
+    comptime __getitem_param__[idx: Int] = __mlir_attr[
+        `#kgen.param_list.get<:`,
+        type_of(Self.values),
+        ` `,
+        +Self.values,
+        `, `,
+        idx._mlir_value,
+        `> : `,
+        +Self.type,
+    ]
     """Gets a type at the given index.
 
     Parameters:
         idx: The index of the type to access.
     """
 
-    comptime reverse = TypeList[
+    @always_inline("builtin")
+    def __init__(out self):
+        """Constructs a TypeList."""
+        pass
+
+    # TODO: Support implicit conversion from a more derived trait to a base one.
+    @always_inline("builtin")
+    def upcast[
+        dst_trait: type_of(AnyType)
+    ](
+        self,
+        out result: TypeList[
+            type=dst_trait,
+            *__mlir_attr[
+                `#kgen.upcast<`,
+                Self.values,
+                `> : `,
+                Variadic.TypesOfTrait[dst_trait],
+            ],
+        ],
+    ):
+        """Downcasts a TypeList to a base trait.
+
+        Parameters:
+            dst_trait: The trait to downcast to.
+
+        Returns:
+            A new TypeList with the types downcasted to the base trait.
+        """
+        result = type_of(result)()
+
+    def reverse(
+        sefl,
+    ) -> TypeList[
         *_MapVariadicAndIdxToType[
             To=Self.type,
             ParamListType=Self.values,
             Mapper=_ReversedVariadic[Self.type, ...],
         ]
-    ]
-    """The types in reverse order."""
+    ]:
+        """The types in reverse order.
+
+        Returns:
+            A new TypeList with the types in reverse order.
+        """
+        return {}
 
     comptime contains[type: Self.type] = _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[False],

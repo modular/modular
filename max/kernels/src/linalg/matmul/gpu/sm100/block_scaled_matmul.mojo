@@ -46,7 +46,7 @@ from std.gpu.sync import (
     syncwarp,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import TileTensor
+from layout import CoordLike, TileTensor
 from layout.coord import ComptimeInt, Coord, Idx, RuntimeInt
 from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import (
@@ -1543,11 +1543,14 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
-        ComptimeInt[SF_ATOM_M[0]],
-        ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+        TypeList[
+            type=CoordLike,
+            RuntimeInt[DType.int64],
+            RuntimeInt[DType.int64],
+            RuntimeInt[DType.int64],
+            ComptimeInt[SF_ATOM_M[0]],
+            ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+        ]()
     ]:
         comptime if is_batched_matmul:
             return Coord(

@@ -1201,10 +1201,8 @@ struct ManagedTensorSlice[
             ],
         ],
     ):
-        var shape_tuple = Coord[*Self.static_spec.static_layout._shape_types]()
-        var stride_tuple = Coord[
-            *Self.static_spec.static_layout._stride_types
-        ]()
+        var shape_tuple = Coord[Self.static_spec.static_layout._shape_types]()
+        var stride_tuple = Coord[Self.static_spec.static_layout._stride_types]()
         var shape = self.shape()
         var stride = self.strides()
 
@@ -1891,8 +1889,8 @@ def view_copy_impl[
 
 
 def _shape_types_compatible[
-    x_types: Variadic.TypesOfTrait[CoordLike],
-    y_types: Variadic.TypesOfTrait[CoordLike],
+    x_types: TypeList[type=CoordLike, ...],
+    y_types: TypeList[type=CoordLike, ...],
     rank: Int,
 ]() -> Bool:
     comptime for i in range(rank):

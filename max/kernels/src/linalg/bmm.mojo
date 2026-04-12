@@ -113,36 +113,41 @@ def _get_batch_dims[
 
 @always_inline
 def _slice_types[
-    stride_types: Variadic.TypesOfTrait[CoordLike], n_dims: Int
+    stride_types: TypeList[type=CoordLike, ...], n_dims: Int
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
     Slice the last n_dims dimensions of the Coord element types.
     """
-    comptime rank = TypeList[*stride_types].size
-    comptime assert 0 <= rank - n_dims <= TypeList[*stride_types].size
-    comptime assert rank <= TypeList[*stride_types].size
+    comptime rank = stride_types.size
+    comptime assert 0 <= rank - n_dims <= stride_types.size
+    comptime assert rank <= stride_types.size
 
-    return Variadic.slice_types[stride_types, rank - n_dims]
+    return Variadic.slice_types[stride_types.values, rank - n_dims]
+
+
+@always_inline
+def _slice_types_tl[
+    stride_types: TypeList[type=CoordLike, ...], n_dims: Int
+]() -> TypeList[type=CoordLike, *_slice_types[stride_types, n_dims]()]:
+    return {}
 
 
 @always_inline
 def _shape_types_to_3d[
-    shape_types: Variadic.TypesOfTrait[CoordLike]
+    shape_types: TypeList[type=CoordLike, ...]
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
     Reshape the shape types to 3D. The last two dimensions stay the same. The
     first dimension will be the product of the batch dimensions if all the batch
     dimensions are static, otherwise it's a runtime dimension.
     """
-    comptime rank = TypeList[*shape_types].size
+    comptime rank = shape_types.size
     comptime last_two_dims = _slice_types[shape_types, 2]()
-    comptime batch_dims = _slice_types[
-        Variadic.reverse[*shape_types], rank - 2
-    ]()
+    comptime batch_dims = _slice_types[shape_types.reverse(), rank - 2]()
 
     comptime _get_first_dim[dtype: DType, *coords: CoordLike] = Variadic.types[
-        T=CoordLike, ComptimeInt[Coord[*coords].static_product]
-    ] if Coord[*coords].all_dims_known else Variadic.types[
+        T=CoordLike, ComptimeInt[Coord[TypeList[*coords]()].static_product]
+    ] if Coord[TypeList[*coords]()].all_dims_known else Variadic.types[
         T=CoordLike, RuntimeInt[dtype]
     ]
 
@@ -157,8 +162,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     out result: TileTensor[
         mut=tensor.mut,
         LayoutType=TileLayout[
-            _shape_types_to_3d[tensor.LayoutType._shape_types](),
-            _slice_types[tensor.LayoutType._stride_types, 3](),
+            TypeList[*_shape_types_to_3d[tensor.LayoutType._shape_types]()](),
+            _slice_types_tl[tensor.LayoutType._stride_types, 3](),
         ],
         dtype=tensor.dtype,
         origin=tensor.origin,
@@ -175,8 +180,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     comptime out_stride_types = type_of(result).LayoutType._stride_types
     comptime rank = tensor.rank
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
-    var shape = Tuple[*out_shape_types]()
-    var strides = Tuple[*out_stride_types]()
+    var shape = Tuple[*out_shape_types.values]()
+    var strides = Tuple[*out_stride_types.values]()
 
     comptime for i in range(3):
         comptime idx = rank - 3 + i
@@ -225,7 +230,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
     return type_of(result)(
         tensor.ptr,
         TileLayout[out_shape_types, out_stride_types](
-            Coord(shape^), Coord(strides^)
+            Coord[out_shape_types](shape^), Coord[out_stride_types](strides^)
         ),
     )
 
@@ -558,21 +563,21 @@ def batched_matmul_kernel_gpu[
         a_ptr,
         TileLayout(
             (Idx(m), Idx[a_tensor.static_shape[2]]()),
-            Coord[*_slice_types[ATensorType._stride_types, 2]()](),
+            Coord[_slice_types_tl[ATensorType._stride_types, 2]()](),
         ),
     )
     var b = TileTensor(
         b_ptr,
         TileLayout(
-            Coord[*_slice_types[BTensorType._shape_types, 2]()](),
-            Coord[*_slice_types[BTensorType._stride_types, 2]()](),
+            Coord[_slice_types_tl[BTensorType._shape_types, 2]()](),
+            Coord[_slice_types_tl[BTensorType._stride_types, 2]()](),
         ),
     )
     var c = TileTensor(
         c_ptr,
         TileLayout(
             (Idx(m), Idx[c_tensor.static_shape[2]]()),
-            Coord[*_slice_types[CTensorType._stride_types, 2]()](),
+            Coord[_slice_types_tl[CTensorType._stride_types, 2]()](),
         ),
     )
 

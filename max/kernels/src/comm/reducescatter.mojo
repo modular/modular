@@ -330,11 +330,11 @@ def _reducescatter_kernel[
             # 2D axis-aware: slice + reverse for coalesced access.
             comptime InputTile = TileTensor[dtype, in_layout, ImmutAnyOrigin]
             comptime DynShapeTypes = _CoordToDynamic[
-                InputTile.linear_idx_type, *in_layout._shape_types
+                InputTile.linear_idx_type, in_layout._shape_types
             ]
             comptime RevLayout = Layout[
-                Variadic.reverse[*DynShapeTypes],
-                Variadic.reverse[*in_layout._stride_types],
+                DynShapeTypes.reverse(),
+                in_layout._stride_types.reverse(),
             ]
             comptime SlicedRevTile = TileTensor[
                 dtype, RevLayout, ImmutAnyOrigin

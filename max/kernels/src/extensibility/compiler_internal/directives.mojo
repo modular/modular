@@ -33,9 +33,9 @@ from std.utils import IndexList
 # TileLayout helper aliases
 # ===----------------------------------------------------------------------=== #
 
-comptime _AllRuntimeInt[rank: Int] = Variadic.splat_type[
-    Trait=CoordLike, count=rank, type=RuntimeInt[]
-]
+comptime _AllRuntimeInt[rank: Int] = TypeList[
+    *Variadic.splat_type[Trait=CoordLike, count=rank, type=RuntimeInt[]]
+]()
 """A variadic of `rank` RuntimeInt types."""
 
 comptime _UnknownTileLayout[rank: Int] = TileLayout[
@@ -46,10 +46,10 @@ comptime _UnknownTileLayout[rank: Int] = TileLayout[
 
 
 comptime _RowMajorTileLayout[
-    shape_types: Variadic.TypesOfTrait[CoordLike]
+    shape_types: TypeList[type=CoordLike, ...]
 ] = TileLayout[
     shape_types=shape_types,
-    stride_types=_RowMajor[*shape_types],
+    stride_types=_RowMajor[*shape_types.values],
 ]
 """A TileLayout with row-major strides derived from the given shape types."""
 
@@ -68,16 +68,16 @@ comptime _IndexListToCoordLikeMapper[
 Negative values (-1 = dynamic) become RuntimeInt, others become ComptimeInt."""
 
 
-comptime _IndexListToCoordLike[
-    list: IndexList
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    ParamListType=Variadic.types[
-        T=CoordLike,
-        *Variadic.splat_type[Trait=CoordLike, list.size, RuntimeInt[]],
-    ],
-    Reducer=_IndexListToCoordLikeMapper[list, ...],
-]
+comptime _IndexListToCoordLike[list: IndexList] = TypeList[
+    *_ReduceVariadicAndIdxToVariadic[
+        BaseVal=Variadic.empty_of_trait[CoordLike],
+        ParamListType=Variadic.types[
+            T=CoordLike,
+            *Variadic.splat_type[Trait=CoordLike, list.size, RuntimeInt[]],
+        ],
+        Reducer=_IndexListToCoordLikeMapper[list, ...],
+    ]
+]()
 """Converts a compile-time IndexList to a variadic of CoordLike types.
 Negative values become RuntimeInt, non-negative become ComptimeInt."""
 
@@ -90,14 +90,6 @@ comptime _IndexListToTileLayout[
 ]
 """Convert a pair of compile-time IndexLists to a TileLayout.
 Negative values (-1) become RuntimeInt, non-negative become ComptimeInt."""
-
-
-comptime _IntTupleToTileLayout[shape: IntTuple, strides: IntTuple] = TileLayout[
-    shape_types=_IntTupleToCoordLike[DType.int, shape],
-    stride_types=_IntTupleToCoordLike[DType.int, strides],
-]
-"""Convert a pair of IntTuples to a TileLayout.
-UNKNOWN_VALUE (-1) entries become RuntimeInt, others become ComptimeInt."""
 
 
 comptime _RowMajorIntTupleTileLayout[
@@ -281,10 +273,10 @@ struct StaticTensorSpec[
 ](ImplicitlyCopyable):
     # IntTuple aliases for static shape/strides.
     comptime shape_tuple = coord_to_int_tuple[
-        *Self.static_layout._shape_types
+        *Self.static_layout._shape_types.values
     ]()
     comptime strides_tuple = coord_to_int_tuple[
-        *Self.static_layout._stride_types
+        *Self.static_layout._stride_types.values
     ]()
 
     var alignment: Int
@@ -519,13 +511,13 @@ struct StaticTensorSpec[
     @always_inline
     def to_layout(self) -> Layout:
         return Layout(
-            coord_to_int_tuple[*Self.static_layout._shape_types](),
-            coord_to_int_tuple[*Self.static_layout._stride_types](),
+            coord_to_int_tuple[*Self.static_layout._shape_types.values](),
+            coord_to_int_tuple[*Self.static_layout._stride_types.values](),
         )
 
     comptime static_size: Int = Layout(
-        coord_to_int_tuple[*Self.static_layout._shape_types](),
-        coord_to_int_tuple[*Self.static_layout._stride_types](),
+        coord_to_int_tuple[*Self.static_layout._shape_types.values](),
+        coord_to_int_tuple[*Self.static_layout._stride_types.values](),
     ).size()
 
     def get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:

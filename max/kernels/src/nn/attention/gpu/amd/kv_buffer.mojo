@@ -52,7 +52,6 @@ from structured_kernels.amd_tile_io import (
     tt_load_b_tr,
 )
 
-from std.builtin.variadics import Variadic
 from std.utils import IndexList
 
 
@@ -66,16 +65,16 @@ struct KVCacheIterator[
     """
 
     comptime GmemTileLayout = MixedLayout[
-        Variadic.types[
-            T=CoordLike,
+        TypeList[
+            type=CoordLike,
             RuntimeInt[DType.int64],
             ComptimeInt[Self.depth],
-        ],
-        Variadic.types[
-            T=CoordLike,
+        ](),
+        TypeList[
+            type=CoordLike,
             ComptimeInt[Self.kv_num_heads * Self.depth],
             ComptimeInt[1],
-        ],
+        ](),
     ]
     comptime GmemTileType = TileTensor[
         Self.cache_t.dtype,

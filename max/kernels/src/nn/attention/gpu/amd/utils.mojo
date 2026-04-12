@@ -250,16 +250,16 @@ struct GlobalMemoryManager[
         )
     )
     comptime OutputTileLayout = TileLayout[
-        Variadic.types[
-            T=CoordLike,
+        TypeList[
+            type=CoordLike,
             RuntimeInt[DType.int64],
             ComptimeInt[Int(Self.output_depth)],
-        ],
-        Variadic.types[
-            T=CoordLike,
+        ](),
+        TypeList[
+            type=CoordLike,
             ComptimeInt[Self._output_stride0],
             ComptimeInt[1],
-        ],
+        ](),
     ]
 
     comptime kv_gmem_layout = Layout(
@@ -270,16 +270,16 @@ struct GlobalMemoryManager[
     # TileTensor KV layout with RuntimeInt for valid_rows (OOB clamping).
     comptime _kv_stride0 = Int(Self.kv_num_heads) * Int(Self.depth)
     comptime KvTileLayout = TileLayout[
-        Variadic.types[
-            T=CoordLike,
+        TypeList[
+            type=CoordLike,
             RuntimeInt[DType.int64],
             ComptimeInt[Int(Self.depth)],
-        ],
-        Variadic.types[
-            T=CoordLike,
+        ](),
+        TypeList[
+            type=CoordLike,
             ComptimeInt[Self._kv_stride0],
             ComptimeInt[1],
-        ],
+        ](),
     ]
 
     var q_offset: UInt32
@@ -343,16 +343,16 @@ struct GlobalMemoryManager[
         * Int(Self.q_depth) if not Self.token_gen else Int(Self.q_depth)
     )
     comptime QTileLayout = TileLayout[
-        Variadic.types[
-            T=CoordLike,
+        TypeList[
+            type=CoordLike,
             RuntimeInt[DType.int64],
             ComptimeInt[Int(Self.q_depth)],
-        ],
-        Variadic.types[
-            T=CoordLike,
+        ](),
+        TypeList[
+            type=CoordLike,
             ComptimeInt[Self._q_stride0],
             ComptimeInt[1],
-        ],
+        ](),
     ]
 
     @always_inline
