@@ -694,6 +694,10 @@ def multistage_mma[
                 )
 
 
+@__name(
+    t"multistage_gemm_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
+    mangle=True,
+)
 def multistage_gemm_kernel[
     c_type: DType,
     CLT: TensorLayout,
@@ -1071,6 +1075,10 @@ def multistage_gemm_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
     )
+)
+@__name(
+    t"multistage_gemm_split_k_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
+    mangle=True,
 )
 def multistage_gemm_split_k_kernel[
     c_type: DType,
