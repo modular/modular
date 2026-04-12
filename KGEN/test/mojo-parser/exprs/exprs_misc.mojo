@@ -489,6 +489,26 @@ def chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
     var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
 
 
+# MOCO-3608: chained comparison with `in` should not require the RHS to be
+# ImplicitlyCopyable.
+struct NonCopyableContainer:
+    def __contains__(self, x: Int) -> Bool:
+        return False
+
+
+# CHECK-LABEL: lit.fn @"chained_cmp_in_non_copyable
+def chained_cmp_in_non_copyable(a: Int, b: Int, c: NonCopyableContainer):
+    # CHECK:      [[CMP_A_B:%.*]] = lit.call {{.*}}__lt__{{.*}}(%a, %b)
+    # CHECK:      [[CMP_A_B_I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
+    # CHECK-NEXT: {{%.*}} = hlcf.if [[CMP_A_B_I1]]
+    # CHECK-NEXT:   {{%.*}} = lit.call {{.*}}__contains__{{.*}}(%c,
+    # CHECK:        hlcf.yield
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
+    # CHECK-NEXT: }
+    _ = a < b in c
+
+
 ##===----------------------------------------------------------------------===##
 # or/and
 ##===----------------------------------------------------------------------===##

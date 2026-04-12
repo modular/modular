@@ -685,7 +685,8 @@ struct ChainedCmpOpNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
   RValue emitNextCmp(IREmitter &emitter, size_t opIdx, RValue lastCmp,
-                     RValue lastExpr, bool hasPrevIfOp, ValueDest &dest) const;
+                     AnyValue lastExpr, bool hasPrevIfOp,
+                     ValueDest &dest) const;
 };
 
 struct FunctionTypeNode final : public ExprNode {
