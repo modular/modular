@@ -518,7 +518,7 @@ class HuggingFaceRepo:
             # paths preserve the model name: models--org--model-FP8/...).
             # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
             # do not have safetensors metadata populated.
-            if self.repo_type == "online" and safetensors_info is None:
+            if safetensors_info is None:
                 if re.search(r"FP8|fp8", self.repo_id, re.IGNORECASE):
                     supported_encodings.add("float8_e4m3fn")
                 elif re.search(r"FP4|fp4", self.repo_id, re.IGNORECASE):
