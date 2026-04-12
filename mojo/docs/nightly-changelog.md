@@ -82,6 +82,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `assert_raises` now catches custom `Writable` error types, not just `Error`.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 

@@ -545,7 +545,8 @@ struct assert_raises:
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
-    errors are raised. For instance:
+    errors are raised. Works with `Error` and any custom `Writable` error type.
+    For instance:
 
     ```mojo
     from std.testing import assert_raises
@@ -613,18 +614,32 @@ struct assert_raises:
         """
         raise Error("AssertionError: Didn't raise at ", self.call_location)
 
-    def __exit__(self, error: Error) raises -> Bool:
+    def __exit__[E: AnyType](self, error: E) raises -> Bool:
         """Exit the context manager with an error.
+
+        Works with `Error` and any custom `Writable` error type. When
+        `contains` is specified, the error type must be `Writable` so
+        it can be converted to a string for matching.
+
+        Parameters:
+            E: The error type.
 
         Args:
             error: The error raised.
 
         Raises:
-            Error: If the error raised doesn't include the expected string.
+            Error: If `contains` is set and the error message doesn't
+                include the expected string, or if `contains` is set
+                but the error type is not `Writable`.
 
         Returns:
-            True if the error message contained the expected string.
+            True if the error was successfully caught and matched.
         """
         if self.message_contains:
-            return self.message_contains.value() in String(error)
+            comptime assert conforms_to(
+                E, Writable
+            ), "assert_raises(contains=...) requires a Writable error type"
+            return self.message_contains.value() in String.write(
+                trait_downcast[Writable](error)
+            )
         return True

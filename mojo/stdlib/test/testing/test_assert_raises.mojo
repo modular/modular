@@ -11,7 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import assert_equal, assert_raises, assert_true
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
+
+
+@fieldwise_init
+struct CustomError(Movable, Writable):
+    var message: String
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write("CustomError: ", self.message)
 
 
 def test_assert_raises_catches_error() raises:
@@ -52,8 +60,24 @@ def test_assert_raises_no_match() raises:
         assert_equal(String(e), "OtherError")
 
 
+def test_assert_raises_catches_custom_error() raises:
+    with assert_raises():
+        raise CustomError("something broke")
+
+
+def test_assert_raises_catches_matched_custom_error() raises:
+    with assert_raises(contains="something"):
+        raise CustomError("something broke")
+
+
+def test_assert_raises_no_match_custom_error() raises:
+    try:
+        with assert_raises(contains="other"):
+            raise CustomError("something broke")
+        raise Error("This should not be reachable.")
+    except e:
+        assert_equal(String(e), "CustomError: something broke")
+
+
 def main() raises:
-    test_assert_raises_catches_error()
-    test_assert_raises_catches_matched_error()
-    test_assert_raises_no_error()
-    test_assert_raises_no_match()
+    TestSuite.discover_tests[__functions_in_module()]().run()
