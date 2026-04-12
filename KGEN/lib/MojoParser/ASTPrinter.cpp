@@ -1012,7 +1012,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto reduce = dyn_cast<VariadicReduceAttr>(param)) {
+  if (auto reduce = dyn_cast<ParamListReduceAttr>(param)) {
     os << "#" << reduce.name << "(";
     printParam(os, reduce.getParamList(), diagShared);
     os << ", base=";
@@ -1023,21 +1023,21 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto concat = dyn_cast<VariadicConcatAttr>(param)) {
+  if (auto concat = dyn_cast<ParamListConcatAttr>(param)) {
     os << "#" << concat.name << "(";
     printParam(os, concat.getParamLists(), diagShared);
     os << ")";
     return;
   }
 
-  if (auto zip = dyn_cast<VariadicZipAttr>(param)) {
+  if (auto zip = dyn_cast<ParamListZipAttr>(param)) {
     os << "#" << zip.name << "(";
     printParam(os, zip.getParamLists(), diagShared);
     os << ")";
     return;
   }
 
-  if (auto tabulate = dyn_cast<VariadicTabulateAttr>(param)) {
+  if (auto tabulate = dyn_cast<ParamListTabulateAttr>(param)) {
     os << "#" << tabulate.name << "(";
     printParam(os, tabulate.getCount(), diagShared);
     os << ", ";
@@ -1053,7 +1053,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto get = dyn_cast<VariadicGetAttr>(param)) {
+  if (auto get = dyn_cast<ParamListGetAttr>(param)) {
     printParam(os, get.getParamList(), diagShared);
     os << "[";
     printParam(os, get.getIndex(), diagShared);
