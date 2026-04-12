@@ -15,6 +15,30 @@
 using namespace M;
 using namespace KGEN;
 
+namespace {
+constexpr llvm::StringLiteral kPackElemLayoutError =
+    "failed to get size/alignment for pack element type";
+constexpr llvm::StringLiteral kStructElemLayoutError =
+    "failed to get size/alignment for struct element type";
+constexpr llvm::StringLiteral kPackTargetAlignError =
+    "failed to get alignment for pack target element type";
+constexpr llvm::StringLiteral kStructTargetAlignError =
+    "failed to get alignment for struct target element type";
+
+/// Returns the offset after aligning to the type's alignment and advancing by
+/// its size. Returns an error containing `errorMessage` if the size or
+/// alignment cannot be determined (e.g. for unresolved parametric types).
+ErrorOr<int64_t> advanceOffset(int64_t offset, DataLayoutInterface dl,
+                               TargetInfoAttr target,
+                               llvm::StringLiteral errorMessage) {
+  std::optional<int64_t> align = dl.getTypeAlign(target);
+  std::optional<int64_t> size = dl.getTypeSize(target);
+  if (!align || !size)
+    return Error(errorMessage);
+  return llvm::alignTo(offset, *align) + *size;
+}
+} // namespace
+
 //===----------------------------------------------------------------------===//
 // ParamApplyOp
 //===----------------------------------------------------------------------===//
@@ -1135,16 +1159,21 @@ ErrorTreeOrSuccess PackGEPOp::interpret(ArrayRef<Attribute> operands,
   unsigned index = idxAttr.getInt();
   for (unsigned i = 0; i != index; ++i) {
     auto eltType = cast<TypeParamAttr>(typeElts[i]).getMlirType();
-    auto dl = cast<DataLayoutInterface>(eltType);
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
-    offset += *dl.getTypeSize(state.getTarget());
+    ErrorOr<int64_t> next =
+        advanceOffset(offset, cast<DataLayoutInterface>(eltType),
+                      state.getTarget(), kPackElemLayoutError);
+    if (next.isError())
+      return ErrorTree(getLoc(), next.takeError());
+    offset = next.takeValue();
   }
 
   // Align the address to the target element.
   Type targetType = cast<TypeParamAttr>(typeElts[index]).getMlirType();
-  offset = llvm::alignTo(
-      offset,
-      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  std::optional<int64_t> targetAlign =
+      cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget());
+  if (!targetAlign)
+    return ErrorTree(getLoc(), kPackTargetAlignError);
+  offset = llvm::alignTo(offset, *targetAlign);
   state.mapResults(
       PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));
   return success();
@@ -1172,16 +1201,21 @@ PackGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
   unsigned index = idxAttr.getInt();
   for (unsigned i = 0; i != index; ++i) {
     auto eltType = cast<TypeParamAttr>(typeElts[i]).getMlirType();
-    auto dl = cast<DataLayoutInterface>(eltType);
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
-    offset += *dl.getTypeSize(state.getTarget());
+    ErrorOr<int64_t> next =
+        advanceOffset(offset, cast<DataLayoutInterface>(eltType),
+                      state.getTarget(), kPackElemLayoutError);
+    if (next.isError())
+      return ErrorTree(getLoc(), next.takeError());
+    offset = next.takeValue();
   }
 
   // Align the address to the target element.
   Type targetType = cast<TypeParamAttr>(typeElts[index]).getMlirType();
-  offset = llvm::alignTo(
-      offset,
-      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  std::optional<int64_t> targetAlign =
+      cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget());
+  if (!targetAlign)
+    return ErrorTree(getLoc(), kPackTargetAlignError);
+  offset = llvm::alignTo(offset, *targetAlign);
   state.mapResults(
       PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));
   return success();
@@ -1524,16 +1558,21 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
   }
 
   for (unsigned i = 0; i != index; ++i) {
-    auto dl = cast<DataLayoutInterface>(elementTypes[i]);
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
-    offset += *dl.getTypeSize(state.getTarget());
+    ErrorOr<int64_t> next =
+        advanceOffset(offset, cast<DataLayoutInterface>(elementTypes[i]),
+                      state.getTarget(), kStructElemLayoutError);
+    if (next.isError())
+      return ErrorTree(getLoc(), next.takeError());
+    offset = next.takeValue();
   }
 
   // Align the address to the target element.
   Type targetType = elementTypes[index];
-  offset = llvm::alignTo(
-      offset,
-      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  std::optional<int64_t> targetAlign =
+      cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget());
+  if (!targetAlign)
+    return ErrorTree(getLoc(), kStructTargetAlignError);
+  offset = llvm::alignTo(offset, *targetAlign);
   state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
   return success();
 }
@@ -1563,16 +1602,21 @@ StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "struct element types not resolved");
 
   for (unsigned i = 0; i != index; ++i) {
-    auto dl = cast<DataLayoutInterface>((*elementTypes)[i]);
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
-    offset += *dl.getTypeSize(state.getTarget());
+    ErrorOr<int64_t> next =
+        advanceOffset(offset, cast<DataLayoutInterface>((*elementTypes)[i]),
+                      state.getTarget(), kStructElemLayoutError);
+    if (next.isError())
+      return ErrorTree(getLoc(), next.takeError());
+    offset = next.takeValue();
   }
 
   // Align the address to the target element.
   Type targetType = (*elementTypes)[index];
-  offset = llvm::alignTo(
-      offset,
-      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  std::optional<int64_t> targetAlign =
+      cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget());
+  if (!targetAlign)
+    return ErrorTree(getLoc(), kStructTargetAlignError);
+  offset = llvm::alignTo(offset, *targetAlign);
   state.mapResults(PointerAttr::get(ptr.getAddr() + offset,
                                     state.getReboundType(getType())));
   return success();

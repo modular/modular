@@ -1387,7 +1387,17 @@ void LowerKGENToLLVMPass::runOnOperation() {
   }
 
   // Convert the debug info within the IR.
+  assert(!debugTypeConverter.getError() &&
+         "DebugInfoTypeConverter already has an error before applyRecursively; "
+         "the converter must not be reused across calls");
   debugTypeConverter.applyRecursively(theModule);
+
+  // Check for errors from the debug type converter. Converter lambdas have no
+  // way to signal failure directly, so errors are recorded and checked here.
+  if (std::optional<std::string> err = debugTypeConverter.getError()) {
+    theModule.emitError("debug info type conversion failed: ") << *err;
+    return signalPassFailure();
+  }
 
   // All type symbols should be inaccessible now (they do not yet lower to
   // runtime). Erase them.

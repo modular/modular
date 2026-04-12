@@ -104,11 +104,12 @@ POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
                                        InterpreterState &state) const {
 
-  auto dl = ::cast<DataLayoutInterface>(getElementType());
-
   // Store each element spaced apart by padding according to its alignment.
-  int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
-                                 *dl.getTypeAlign(state.getTarget()));
+  std::optional<int64_t> stride = DataLayoutInterface::getTypeAllocSize(
+      state.getTarget(), getElementType());
+  if (!stride)
+    return Error("failed to get array element stride");
+  int64_t offset = *stride;
 
   auto tv = dyn_cast_if_present<POP::ArrayAttr>(value);
   if (!tv) {
@@ -128,9 +129,11 @@ ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
 ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
                                             InterpreterState &state) const {
   Type elemType = getElementType();
-  auto dl = ::cast<DataLayoutInterface>(elemType);
-  int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
-                                 *dl.getTypeAlign(state.getTarget()));
+  std::optional<int64_t> stride =
+      DataLayoutInterface::getTypeAllocSize(state.getTarget(), elemType);
+  if (!stride)
+    return Error("failed to get array element stride");
+  int64_t offset = *stride;
   SmallVector<TypedAttr> values;
   for (int64_t i = 0, e = *getResolvedSize(); i != e; ++i, addr += offset) {
     ErrorOr<TypedAttr> result = state.readAttributeFromMemory(addr, elemType);
@@ -267,10 +270,13 @@ std::optional<int64_t> UnionType::getTypeSize(TargetInfoAttr target) const {
     std::optional<int64_t> size =
         DataLayoutInterface::getTypeAllocSize(target, type);
     if (!size)
-      llvm::report_fatal_error("failed to get size for union variant type");
+      return std::nullopt;
     maxSize = std::max(maxSize, *size);
   }
-  return llvm::alignTo(maxSize, *getTypeAlign(target));
+  std::optional<int64_t> align = getTypeAlign(target);
+  if (!align)
+    return std::nullopt;
+  return llvm::alignTo(maxSize, *align);
 }
 
 std::optional<int64_t> UnionType::getTypeAlign(TargetInfoAttr target) const {
@@ -282,8 +288,7 @@ std::optional<int64_t> UnionType::getTypeAlign(TargetInfoAttr target) const {
     std::optional<int64_t> align =
         DataLayoutInterface::getTypeABIAlign(target, type);
     if (!align)
-      llvm::report_fatal_error(
-          "failed to get alignment for union variant type");
+      return std::nullopt;
     maxAlign = std::max(maxAlign, *align);
   }
   return maxAlign;

@@ -2195,11 +2195,11 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
 
   auto arrayType = getArray().getType().getElementAs<POP::ArrayType>();
   Type elementType = arrayType.getElementType();
-  auto dl = cast<DataLayoutInterface>(elementType);
-  int64_t addr =
-      ptr.getAddr() +
-      index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
-                                      *dl.getTypeAlign(state.getTarget())));
+  std::optional<int64_t> stride =
+      DataLayoutInterface::getTypeAllocSize(state.getTarget(), elementType);
+  if (!stride)
+    return ErrorTree(getLoc(), "failed to get array element stride");
+  int64_t addr = ptr.getAddr() + index.getInt() * *stride;
   state.mapResults(PointerAttr::get(addr, PointerType::get(elementType)));
   return success();
 }
@@ -2219,11 +2219,11 @@ ArrayGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
   auto arrayType = cast<PointerType>(cast<TypedAttr>(operands[0]).getType())
                        .getElementAs<POP::ArrayType>();
   Type elementType = arrayType.getElementType();
-  auto dl = cast<DataLayoutInterface>(elementType);
-  int64_t addr =
-      ptr.getAddr() +
-      index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
-                                      *dl.getTypeAlign(state.getTarget())));
+  std::optional<int64_t> stride =
+      DataLayoutInterface::getTypeAllocSize(state.getTarget(), elementType);
+  if (!stride)
+    return ErrorTree(getLoc(), "failed to get array element stride");
+  int64_t addr = ptr.getAddr() + index.getInt() * *stride;
   state.mapResults(PointerAttr::get(addr, PointerType::get(elementType)));
   return success();
 }
