@@ -64,11 +64,6 @@ struct Variadic:
         ParamListType=element_types.values,
         Mapper=_ReversedVariadic[T, ...],
     ]
-    comptime splat_type[
-        Trait: type_of(AnyType), //, count: Int, type: Trait
-    ]: Variadic.TypesOfTrait[Trait] = Self.tabulate_type[
-        Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
-    ]
     comptime splat_value[
         T: AnyType, //, count: Int, value: T
     ]: Variadic.ValuesOfType[T] = Self.tabulate[
