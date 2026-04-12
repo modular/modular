@@ -3992,7 +3992,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 ///  of a < b.
 ///  Note that a < b  is handled by ChainedCmpOpNode::emitIR.
 RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
-                                     RValue prevCmpVal, RValue prevRHS,
+                                     RValue prevCmpVal, AnyValue prevRHS,
                                      bool hasPrevIfOp, ValueDest &dest) const {
   ExprContext context = dest.getContext();
   bool isLastOne = opIdx + 1 == ops.size();
@@ -4018,8 +4018,7 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
                               prevCmpVal.getType().mlirType, prevCmpI1SRValue);
     emitter.builder->createBlock(&ifOp.getThenRegion());
   }
-  RValue newRHS =
-      emitter.emitExprRValue(exprs[opIdx + 1], EC_OperatorOperandValue);
+  AnyValue newRHS = emitter.emitExpr(exprs[opIdx + 1], EC_OperatorOperandValue);
   if (!newRHS)
     return {};
   ValueDest newCmpDest(context);
