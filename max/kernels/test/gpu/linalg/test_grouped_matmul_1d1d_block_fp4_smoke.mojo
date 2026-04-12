@@ -29,6 +29,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -228,6 +229,7 @@ def _test_grouped_1d1d_block_fp4_impl[
         k_group_size=1,
         num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
         is_gmm=True,
+        gemm_kind=GEMMKind.GMM,
     )
 
     grouped_matmul_block_scaled[transpose_b=True, config=config](

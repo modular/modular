@@ -49,6 +49,7 @@ from linalg.fp4_utils import (
 from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
@@ -221,6 +222,7 @@ def test_grouped_gemm_epilogue[
         mma_shape=mma_shape,
         cta_group=cta_group,
         register_based_epilogue=register_based_epilogue,
+        gemm_kind=GEMMKind.GMM,
     )
 
     # Problem sizes tensor

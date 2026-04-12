@@ -53,6 +53,7 @@ from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
 from .utils import elementwise_epilogue_type
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
+    GEMMKind,
 )
 from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -1722,6 +1723,7 @@ def blockwise_scaled_fp8_with_epilogue[
             ),
             mma_shape=umma_shape,
             cta_group=2,
+            gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
 
         comptime if not elementwise_lambda_fn:

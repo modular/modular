@@ -28,7 +28,7 @@ from structured_kernels.tile_types import create_tma_tile
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
-from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.config import MatmulConfig, GEMMKind
 from .blockwise_fp8_smem import BlockwiseFP8Smem
 from .blockwise_fp8_matmul_kernel import BlackwellBlockwiseFP8MatmulKernel
 
@@ -128,6 +128,7 @@ def blockwise_fp8_matmul[
         raster_order=config.raster_order,
         k_group_size=config.k_group_size,
         extra_smem_per_stage=a_scales_smem_per_stage,
+        gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
     )
 
     var M = Int(c.dim[0]())

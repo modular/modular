@@ -23,7 +23,7 @@ from std.random import rand
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -218,6 +218,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         AB_swapped=swapAB,
         k_group_size=k_group_size,
         num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
+        gemm_kind=GEMMKind.BMM,
     )
 
     comptime K_phys = KType.static_value

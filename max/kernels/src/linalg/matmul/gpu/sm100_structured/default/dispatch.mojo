@@ -42,6 +42,7 @@ from ..structured_kernels.config import (
     build_sm100_batched_matmul_configs,
     choose_config,
     default_matmul_config_bf16_fp8,
+    GEMMKind,
 )
 from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ....vendor.matmul import matmul as matmul_vendor
@@ -907,6 +908,7 @@ def dispatch_sm100_batched_matmul[
                     num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
                     k_group_size=tuning_config.k_group_size,
                     num_split_k=tuning_config.num_split_k,
+                    gemm_kind=GEMMKind.BMM,
                 )
 
                 logger.info("Using batched tuning config: ", matmul_config)
@@ -923,9 +925,9 @@ def dispatch_sm100_batched_matmul[
         a_type, b_type, c_type, static_N, static_K, transpose_b
     ]()
     var aligned_m = align_up(m, 64) if m >= 256 else m
-    var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
-        aligned_m, static_N, static_K, batch_size
-    )
+    var config_runtime = choose_config[
+        a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
+    ](aligned_m, static_N, static_K, batch_size)
 
     comptime for config in configs:
         if config_runtime == config:
@@ -940,7 +942,11 @@ def dispatch_sm100_batched_matmul[
 
     # fallback to default config
     comptime default_config = default_matmul_config_bf16_fp8[
-        a_type, b_type, c_type, transpose_b
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        gemm_kind=GEMMKind.BMM,
     ]()
 
     blackwell_batched_matmul_tma_umma_warp_specialized[
