@@ -941,11 +941,11 @@ def tail_types[T: TrivialRegisterPassable, *U: AnyType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
 def call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :param_list<!AnyType> [], :origin<0> {},
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!TrivialRegisterPassable !Int, 
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :param_list<!AnyType> [!FloatDyn]
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!FloatDyn], :!TrivialRegisterPassable !Int, 
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :param_list<!AnyType> [!Int]
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!Int], :!TrivialRegisterPassable !Int, 
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -1680,7 +1680,7 @@ struct DepUser[b: Int]:
 # parameter-value.
 
 def infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.param_list<`, Movable, `>`], //,
+    ArgTypes: TypeList[type=Movable, ...], //,
     T: type_of(Tuple[*ArgTypes]),
 ]():
     pass
@@ -1837,5 +1837,5 @@ def upcast_typelist_callee[y: TypeList[type=AnyType, ...]]():
 def upcast_typelist_caller[x: TypeList[type=Movable, ...]]():
     # TODO(MOCO-3712): Causes segfault.
     #comptime a: TypeList[type=AnyType, ...] = x
-    upcast_typelist_callee[x]()
+    upcast_typelist_callee[x.upcast[AnyType]()]()
 

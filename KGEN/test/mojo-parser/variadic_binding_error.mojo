@@ -24,21 +24,21 @@ struct SomeVA[*elt_types: AnyType]:
 
 
 # @expected-note @below{{function declared here}}
-def all_copyable[*elt_type: Copyable](t: SomeVA[*elt_type]):
+def all_copyable[*elt_type: Copyable](t: SomeVA[*elt_type.upcast[AnyType]()]):
     pass
 
 
 # @expected-note @below{{function declared here}}
-def all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
+def all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type.upcast[AnyType]()]):
     pass
 
 
 def foo():
-    # @expected-error @below{{invalid call to 'all_copyable': value passed to 't' cannot be converted from 'SomeVA[SomeCopyable, SomeNonCopyable]' to 'SomeVA[elt_type]'}}
-    # @expected-note @below{{.elt_types of left value is 'SomeCopyable, SomeNonCopyable' but the right value is 'elt_type'}}
+    # @expected-error @below{{invalid call to 'all_copyable': value passed to 't' cannot be converted from 'SomeVA[SomeCopyable, SomeNonCopyable]' to 'SomeVA[*elt_type.values]'}}
+    # @expected-note @below{{.elt_types.values` of left value is 'SomeCopyable, SomeNonCopyable' but the right value is 'elt_type.values'}}
     all_copyable(SomeVA[SomeCopyable, SomeNonCopyable]())
 
-    # @expected-error @below{{invalid call to 'all_int': value passed to 't' cannot be converted from 'SomeVA[Int, SomeNonCopyable]' to 'SomeVA[elt_type]'}}
+    # @expected-error @below{{invalid call to 'all_int': value passed to 't' cannot be converted from 'SomeVA[Int, SomeNonCopyable]' to 'SomeVA[*elt_type.values]'}}
     all_int(SomeVA[Int, SomeNonCopyable]())
 
 

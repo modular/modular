@@ -10,10 +10,10 @@ from std.builtin.variadics import *
 
 # CHECK-LABEL: lit.alias.decl *"T`0x": meta<!lit.struct<#Tuple <:param_list<!Movable>
 # CHECH-SAME: [!Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int]
-comptime T = Tuple[*Variadic.splat_type[10, Int]]
+comptime T = Tuple[*TypeList[type=Movable, Variadic.splat_type[10, Int]]()]
 
 
-comptime VA_SIZE[*Ts: AnyType] = TypeList[*Ts].size
+comptime VA_SIZE[*Ts: AnyType] = Ts.size
 # CHECK: lit.alias.decl *"Folded`{{.*}}": !Int = <sugar_member_alias{{.*}}{3})>
 comptime Folded = VA_SIZE[Int, Int, Int]
 
@@ -29,8 +29,6 @@ def foo(
     t1: Tuple[Int, Int, Int], t2: Tuple[FloatDyn, FloatDyn, FloatDyn]
 ) -> Tuple[
     # CHECK: %__result__: !lit.ref<{{.*}}> [!Int, !Int, !Int, !FloatDyn, !FloatDyn, !FloatDyn]>
-    *Variadic.concat_types[
-        T=Movable, type_of(t1).element_types, type_of(t2).element_types
-    ]
+    *TypeList[Variadic.concat_types[T=Movable, type_of(t1).element_types.values, type_of(t2).element_types.values]]()
 ]:
     pass

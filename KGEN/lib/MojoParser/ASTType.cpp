@@ -863,13 +863,6 @@ RefType ASTType::VariadicListInfo::getElementRefType() const {
 /// Given a type of ParameterList, return the element type and the values
 /// list that are bound to it.
 ASTType::ParameterListInfo ASTType::getParameterListInfo() const {
-#if !ENABLE_TYPELIST
-  // Return a null value list for the old representation.
-  auto paramList = sugarDynCast<ParamListType>(*this);
-  if (paramList)
-    return {paramList.getElementType(), {}};
-#endif
-
   auto structType = sugarDynCast<LIT::StructType>(*this);
   if (!structType)
     return {{}, {}};
@@ -910,16 +903,17 @@ ASTType::VariadicListInfo ASTType::getVariadicListInfo() const {
 RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
   auto bindings = getParamBindings();
-  assert(bindings.size() == 6 &&
+  assert(bindings.size() == 7 &&
          sugarIsa<LIT::StructType>(bindings[0].getType()) && // elt_is_mut
          sugarIsa<OriginType>(bindings[1].getType()) &&      // mlir_origin
-         sugarIsa<LIT::StructType>(bindings[2].getType()) && // origin
+         sugarIsa<LIT::StructType>(bindings[2].getType()) && // Origin
          sugarIsa<AnyTraitType>(bindings[3].getType()) &&    // element_trait
-         sugarIsa<LIT::StructType>(bindings[4].getType()) && // is_owned
-         sugarIsa<ParamListType>(bindings[5].getType()) &&   // element_types
+         sugarIsa<ParamListType>(bindings[4].getType()) &&   // elt_types.value
+         sugarIsa<LIT::StructType>(bindings[5].getType()) && // is_owned
+         sugarIsa<LIT::StructType>(bindings[6].getType()) && // element_types
          "Not a VariadicPack struct?");
   return RefPackType::get(
-      /*variadicList*/ bindings[5], /*mlirOrigin*/ bindings[1],
+      /*variadicList*/ bindings[4], /*mlirOrigin*/ bindings[1],
       /*addrSpace*/ IntegerAttr::get(IndexType::get(shared.getContext()), 0));
 }
 
@@ -927,19 +921,19 @@ RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
 ASTType::VariadicPackInfo ASTType::getVariadicPackInfo() const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
   auto bindings = getParamBindings();
-  // NOTE: `bindings[0]` and `bindings[3]` are expected to be the Mojo `Bool`
-  // type, and `bindings[1]` is an Origin.
-  assert(bindings.size() == 6 &&
+  assert(bindings.size() == 7 &&
          sugarIsa<LIT::StructType>(bindings[0].getType()) && // elt_is_mut
          sugarIsa<OriginType>(bindings[1].getType()) &&      // mlir_origin
-         sugarIsa<LIT::StructType>(bindings[2].getType()) && // origin
+         sugarIsa<LIT::StructType>(bindings[2].getType()) && // Origin
          sugarIsa<AnyTraitType>(bindings[3].getType()) &&    // element_trait
-         sugarIsa<LIT::StructType>(bindings[4].getType()) && // is_owned
-         sugarIsa<ParamListType>(bindings[5].getType()) &&   // element_types
+         sugarIsa<ParamListType>(bindings[4].getType()) &&   // elt_types.value
+         sugarIsa<LIT::StructType>(bindings[5].getType()) && // is_owned
+         sugarIsa<LIT::StructType>(bindings[6].getType()) && // element_types
          "Not a VariadicPack struct?");
   VariadicPackInfo result;
-  result.typeList = bindings[5];
-  result.isOwned = bindings[4];
+  result.typeList = bindings[4];
+  result.typeListStruct = bindings[6];
+  result.isOwned = bindings[5];
   return result;
 }
 

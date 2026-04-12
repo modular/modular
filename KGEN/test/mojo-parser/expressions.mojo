@@ -1004,7 +1004,8 @@ def function_types():
   # CHECK: lit.alias.decl *"p1{{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   comptime p1 = def[a: Int, b: ParamType[a]]() thin raises -> None
 
-  # CHECK: lit.alias.decl *"p2{{.*}}"Ts": param_list<!AnyType> pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
+  # CHECK: lit.alias.decl *"p2{{.*}}"Ts": !lit.struct<#TypeList{{.*}} pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
+  # CHECK-SAME: <:!Bool {:i1 0},  :origin<0> *(0,2){{.*}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> *(0,0), :!Bool {:i1 0}, {{.*}}>>, imm *[0,0]>
   # CHECK-SAME: read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   comptime p2 = async def[*Ts: AnyType](* *Ts) thin -> None
 

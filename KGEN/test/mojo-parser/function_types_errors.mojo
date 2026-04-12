@@ -40,7 +40,7 @@ comptime read_ship_fn_alias: def(read MemType) thin -> None = mut_ship_function
 
 # expected-note @below {{function declared here}}
 def infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.param_list<`, AnyType, `>`],
+    ArgTypes: TypeList[type=AnyType, ...],
     //,
     func: def(x: Int, y: Int, * args: * ArgTypes) thin -> None,
 ]():
@@ -52,7 +52,7 @@ def device_func(i: Int):
 
 
 def test_infer_variadic():
-    # expected-error @below {{invalid call to 'infer_variadic': value passed to 'func' cannot be converted from 'def device_func(i: Int) -> None' to 'def[?, args.origin._mlir_origin``: LITImmutOrigin, args.origin`1: ImmutOrigin](x: Int, y: Int, *args: *ArgTypes) -> None'}}
+    # expected-error @below {{converted from 'def device_func(i: Int) -> None' to 'def[?, args.origin._mlir_origin``1: LITImmutOrigin, args.origin`2: ImmutOrigin](x: Int, y: Int, *args: *ArgTypes.values) -> None'}}
     infer_variadic[device_func]()
 
 
@@ -74,7 +74,7 @@ trait Sprongling:
 
 # expected-note @below {{function declared here}}
 def infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.param_list<`, Sprongling, `>`],
+    ArgTypes: TypeList[type=Sprongling, ...],
     //,
     func: def(* args: * ArgTypes) thin -> None,
 ]():
@@ -87,7 +87,7 @@ def device_func(i: ZInt, j: ZInt):
 
 def test_infer_variadic():
     # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
-    # expected-error @below {{invalid call to 'infer_variadic': value passed to 'func' cannot be converted from 'def device_func(i: ZInt, j: ZInt) -> None' to 'def[?, args.origin._mlir_origin``: LITImmutOrigin, args.origin`1: ImmutOrigin](*args: *ArgTypes) -> None'}}
+    # expected-error @below {{converted from 'def device_func(i: ZInt, j: ZInt) -> None' to 'def[?, args.origin._mlir_origin``1: LITImmutOrigin, args.origin`2: ImmutOrigin](*args: *ArgTypes.values) -> None'}}
     infer_variadic[device_func]()
 
 
@@ -106,7 +106,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 def compile[
-    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
+    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -141,7 +141,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 # expected-note @below {{function declared here}}
 def compile[
-    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
+    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -150,14 +150,14 @@ def compile[
 
 def test_reject_generic_device_func_unusedT():
     # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'def device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int' to 'def[?, args.origin._mlir_origin``: LITImmutOrigin, args.origin`1: ImmutOrigin](*args: *ArgTypes) -> Int}}
+    # expected-error @below {{converted from 'def device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int' to 'def[?, args.origin._mlir_origin``1: LITImmutOrigin, args.origin`2: ImmutOrigin](*args: *ArgTypes.values) -> Int'}}
     var thing = compile[device_func_unusedT]()
 
 
 # Slightly different case, for no particular reason
 def test_reject_generic_device_func_usedT():
     # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'def device_func_usedT[T: AnyType](a: T, b: Bool) -> Int' to 'def[?, args.origin._mlir_origin``: LITImmutOrigin, args.origin`1: ImmutOrigin](*args: *ArgTypes) -> Int'}}
+    # expected-error @below {{converted from 'def device_func_usedT[T: AnyType](a: T, b: Bool) -> Int' to 'def[?, args.origin._mlir_origin``1: LITImmutOrigin, args.origin`2: ImmutOrigin](*args: *ArgTypes.values) -> Int'}}
     var thing = compile[device_func_usedT]()
 
 
@@ -176,7 +176,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 def compile[
-    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
+    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -201,7 +201,7 @@ def device_func(a: Int, b: Bool) raises -> Int:
 
 # expected-note @below {{function declared here}}
 def compile[
-    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
+    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]():
@@ -209,7 +209,7 @@ def compile[
 
 
 def main():
-    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'def device_func(a: Int, b: Bool) raises -> Int' to 'def[?, args.origin._mlir_origin``: LITImmutOrigin, args.origin`1: ImmutOrigin](*args: *ArgTypes) -> Int'}}
+    # expected-error @below {{converted from 'def device_func(a: Int, b: Bool) raises -> Int' to 'def[?, args.origin._mlir_origin``1: LITImmutOrigin, args.origin`2: ImmutOrigin](*args: *ArgTypes.values) -> Int'}}
     compile[device_func]()
 
 
@@ -298,7 +298,7 @@ def kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
 
 
 def compile[
-    ArgTypes: __mlir_type[`!kgen.param_list<`, TrivialRegisterPassable, `>`],
+    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:

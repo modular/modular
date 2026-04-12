@@ -38,7 +38,7 @@ struct Variadic:
     comptime empty_of_type[T: AnyType] = __mlir_attr[
         `#kgen.param_list<>: `, _MLIR.KGENParamListType[T], `>`
     ]
-    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts
+    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
     comptime values[T: AnyType, //, *elts: T]: Variadic.ValuesOfType[
         T
     ] = elts.values
@@ -60,7 +60,9 @@ struct Variadic:
     comptime reverse[
         T: type_of(AnyType), //, *element_types: T
     ] = _MapVariadicAndIdxToType[
-        To=T, ParamListType=element_types, Mapper=_ReversedVariadic[T, ...]
+        To=T,
+        ParamListType=element_types.values,
+        Mapper=_ReversedVariadic[T, ...],
     ]
     comptime splat_type[
         Trait: type_of(AnyType), //, count: Int, type: Trait
@@ -128,24 +130,22 @@ struct Variadic:
         From: type_of(AnyType),
         To: type_of(AnyType),
         //,
-        element_types: Variadic.TypesOfTrait[From],
+        element_types: TypeList[type=From, ...],
         Mapper: _TypeToTypeGenerator[From, To],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[To],
-        ParamListType=element_types,
+        ParamListType=element_types.values,
         Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
     ]
     comptime slice_types[
         T: type_of(AnyType),
         //,
-        element_types: Variadic.TypesOfTrait[T],
+        element_types: TypeList[type=T, ...],
         start: Int where start >= 0 = 0,
-        end: Int where start <= end <= TypeList[*element_types].size = TypeList[
-            *element_types
-        ].size,
+        end: Int where start <= end <= element_types.size = element_types.size,
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
-        ParamListType=element_types,
+        ParamListType=element_types.values,
         Reducer=_SliceReducer[T, start, end, ...],
     ]
     comptime zip_types[
@@ -171,7 +171,7 @@ struct Variadic:
         predicate: _TypePredicateGenerator[T],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
-        ParamListType=element_types,
+        ParamListType=element_types.values,
         Reducer=_FilterReducer[T, predicate, ...],
     ]
     comptime _ValueIdxToValueGeneratorType[
@@ -420,7 +420,7 @@ comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],
     idx: Int,
-] = element_types[TypeList[*element_types].size - 1 - idx]
+] = element_types[TypeList[element_types].size - 1 - idx]
 comptime _ContainsReducer[
     Trait: type_of(AnyType),
     Type: Trait,

@@ -962,10 +962,9 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     ]
 
 
-@fieldwise_init
-struct TypeList[type: type_of(AnyType), //, *values: type](
-    TrivialRegisterPassable
-):
+struct TypeList[
+    type: type_of(AnyType), //, values: _MLIR.KGENTypeListType[type]
+](TrivialRegisterPassable):
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
@@ -987,30 +986,40 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
         +Self.type,
     ]
 
-    # Support implicit conversion from a more derived trait to a more base one
-    # FIXME: How to constraint this with "where" to avoid upcasts? Right now
-    # this produces a terrible error message:
-    #       def simple[a: TypeList[type=AnyType, ...]]():
-    #         comptime other = TypeList[type=Copyable, ...](a)
-    @implicit
     @always_inline("builtin")
-    def __init__[
-        src_trait: type_of(AnyType)
-    ](
-        out self,
-        existing: TypeList[
-            type=src_trait,
-            *__mlir_attr[
-                `#kgen.downcast<:`,
-                type_of(Self.values),
-                ` `,
-                +Self.values,
-                `> : `,
-                Variadic.TypesOfTrait[src_trait],
-            ],
+    def __init__(out self):
+        pass
+
+    # TODO: Support implicit conversion from a more derived trait to a base one.
+    @always_inline("builtin")
+    def upcast[
+        dst_trait: type_of(AnyType)
+    ](self) -> TypeList[
+        type=dst_trait,
+        __mlir_attr[
+            `#kgen.upcast<`,
+            Self.values,
+            `> : `,
+            Variadic.TypesOfTrait[dst_trait],
         ],
-    ):
-        return
+    ]:
+        return {}
+
+    # @always_inline("builtin")
+    # def downcast[
+    #    dst_trait: type_of(AnyType)
+    # ](self) -> TypeList[
+    #    type=dst_trait,
+    #    __mlir_attr[
+    #        `#kgen.downcast<:`,
+    #        type_of(Self.values),
+    #        ` `,
+    #        +Self.values,
+    #        `> : `,
+    #        Variadic.TypesOfTrait[dst_trait],
+    #    ],
+    # ]:
+    #    return {}
 
 
 @fieldwise_init
@@ -1128,7 +1137,7 @@ struct VariadicPack[
         `!lit.ref.pack<:param_list<`,
         Self.element_trait,
         `> `,
-        Self.element_types,
+        Self.element_types.values,
         `, `,
         Self.origin._mlir_origin,
         `>`,
@@ -1244,7 +1253,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
     comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
         Variadic.TypesOfTrait[Movable],
-        Self.element_types,
+        Self.element_types.values,
         `>`,
     ]
     var _mlir_value: Self._mlir_type

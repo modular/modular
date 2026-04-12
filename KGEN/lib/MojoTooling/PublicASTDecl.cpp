@@ -305,13 +305,7 @@ generateTypeString(SharedState &shared, ASTType type, VariadicKind varKind,
       type = RefType::stripRefConvention(type, *convention);
       type = type.getVariadicListInfo().elementType;
       convention = ArgConvention::ReadReg;
-#if !ENABLE_TYPELIST
-    } else if (auto variadicType = sugarDynCast<ParamListType>(type)) {
-      // Variadic in a parameter list.
-      type = variadicType.getElementType();
-    }
-#endif
-    else {
+    } else {
       type = type.getParameterListInfo().elementType;
     }
 

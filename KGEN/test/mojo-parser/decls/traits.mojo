@@ -861,8 +861,8 @@ def test_anytrait_subtyping[ty: type_of(AnyType)]():
 
 # CHECK-LABEL: lit.fn @"take_many_things_of_specified_trait
 # CHECK-SAME: <element_type: !lit.anytrait<!AnyType>,
-# CHECK-SAME: element_types: param_list<:!lit.anytrait<!AnyType> element_type> pos_vararg>()
-def take_many_things_of_specified_trait[element_type: type_of(AnyType),
+# CHECK-SAME: element_types: !lit.struct<#TypeList {{.*}}:param_list<:!lit.anytrait<!AnyType> element_type>{{.*}} pos_vararg>()
+def take_many_things_of_specified_trait[element_type: type_of(AnyType), //,
                                        *element_types: element_type]():
     pass
 
@@ -871,17 +871,17 @@ def take_many_things_of_specified_trait[element_type: type_of(AnyType),
 def call_many_things_of_specified_trait(a: TraitStruct):
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
     # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [!TraitStruct]
-    take_many_things_of_specified_trait[AnyType, TraitStruct]()
+    take_many_things_of_specified_trait[element_type=AnyType, TraitStruct]()
 
     # Int is movable.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
     # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :param_list<!Movable> [!Int]
-    take_many_things_of_specified_trait[Movable, Int]()
+    take_many_things_of_specified_trait[element_type=Movable, Int]()
 
     # TraitStruct conforms to SimpleTrait.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
     # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :param_list<!SimpleTrait> [!TraitStruct, !TraitStruct]
-    take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
+    take_many_things_of_specified_trait[element_type=SimpleTrait, TraitStruct, TraitStruct]()
 
 
 comptime _AnyTypeMetaType = type_of(AnyType)

@@ -14,7 +14,7 @@ trait CoordLike(ImplicitlyCopyable, Movable):
 struct Coord[*element_types: CoordLike]():
     @implicit
     @always_inline("nodebug")
-    def __init__(out self, var tuple: Tuple[*Self.element_types]):
+    def __init__(out self, var tuple: Tuple[*Self.element_types.upcast[Movable]()]):
         pass
 
 

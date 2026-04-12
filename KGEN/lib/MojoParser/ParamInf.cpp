@@ -1034,15 +1034,6 @@ LogicalResult ParamInf::inferFromParamList() {
       }
 
       if (!isDeferred) {
-#if !ENABLE_TYPELIST
-        if (auto oldVA = sugarDynCast<ParamListType>(
-                evaluator.getReboundType(expectedType))) {
-          auto paramVA = ParamListAttr::get(elements, oldVA);
-          if (failed(applyBinding(idx, paramVA)))
-            return failure();
-          continue;
-        }
-#endif
         // Infer the values list to the elements.
         auto vaType = evaluator.getReboundType(expectedValueList.getType());
         auto paramVA =
@@ -1400,6 +1391,13 @@ LogicalResult ParamInf::inferForCall(
           return failure();
         }
 
+        // Now that we bound the elements of the TypeList, we can infer the
+        // value of the TypeList struct.
+        auto typeListType =
+            evaluator.getReboundType(expectedInfo.typeListStruct.getType());
+        auto typeListValue = UnknownAttr::get(typeListType);
+        (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
+
         ++posOperandIdx;
         continue;
       }
@@ -1518,8 +1516,15 @@ LogicalResult ParamInf::inferForCall(
       if (!packArgExpr)
         packArgExpr = getGivenBindings().getExpr();
       auto actualVA = ParamListAttr::get(types, variadicType);
-      if (succeeded(matcher.matchParams(actualVA, packType.getVariadic())))
+      if (succeeded(matcher.matchParams(actualVA, packType.getVariadic()))) {
+        // Now that we bound the elements of the TypeList, we can infer the
+        // value of the TypeList struct.
+        auto typeListType =
+            evaluator.getReboundType(expectedInfo.typeListStruct.getType());
+        auto typeListValue = UnknownAttr::get(typeListType);
+        (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
         continue;
+      }
 
       // Match failed, diagnose why:
       std::optional<std::pair<size_t, size_t>> posNumBoundOr =
@@ -1849,12 +1854,6 @@ LogicalResult ParamInf::inferFromDefaults() {
       // prepending contextual parameters such that we don't need the check
       // here? But on the other hand, what does it mean to have a
       // inferred-pos-var-arg parameter?
-
-#if !ENABLE_TYPELIST
-      if (isa<ParamListType>(declaredParamTypes[idx]) &&
-          pog.getPassingKind() == PassingKind::Inferred)
-        return !isInferForStruct;
-#endif
       if (pog.getPassingKind() == PassingKind::Inferred &&
           ASTType(declaredParamTypes[idx]).getParameterListInfo().valueList)
         return !isInferForStruct;
@@ -1863,16 +1862,6 @@ LogicalResult ParamInf::inferFromDefaults() {
     }();
 
     if (isInferableVA) {
-#if !ENABLE_TYPELIST
-      if (auto oldVA = sugarDynCast<ParamListType>(
-              evaluator.getReboundType(declaredParamTypes[idx]))) {
-        auto empty = ParamListAttr::get({}, oldVA);
-        if (failed(setInferredValue(idx, empty)))
-          return failure();
-        continue;
-      }
-#endif
-
       // Infer the param_list to an empty list, and the ParameterList itself to
       // UnknownAttr.
       auto [varArgsEltType, expectedValueList] =
