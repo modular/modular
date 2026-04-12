@@ -1005,21 +1005,19 @@ struct TypeList[
     ]:
         return {}
 
-    # @always_inline("builtin")
-    # def downcast[
-    #    dst_trait: type_of(AnyType)
-    # ](self) -> TypeList[
-    #    type=dst_trait,
-    #    __mlir_attr[
-    #        `#kgen.downcast<:`,
-    #        type_of(Self.values),
-    #        ` `,
-    #        +Self.values,
-    #        `> : `,
-    #        Variadic.TypesOfTrait[dst_trait],
-    #    ],
-    # ]:
-    #    return {}
+    comptime splat[
+        Trait: type_of(AnyType), //, count: Int, type: Trait
+    ] = TypeList[
+        type=Trait,
+        Variadic.tabulate_type[
+            Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
+        ],
+    ]
+
+
+comptime _SplatTypeTabulator[
+    Trait: type_of(AnyType), T: Trait, index: Int
+]: Trait = T
 
 
 @fieldwise_init

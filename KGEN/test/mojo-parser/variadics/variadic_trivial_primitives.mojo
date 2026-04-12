@@ -10,7 +10,7 @@ from std.builtin.variadics import *
 
 # CHECK-LABEL: lit.alias.decl *"T`0x": meta<!lit.struct<#Tuple <:param_list<!Movable>
 # CHECH-SAME: [!Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int]
-comptime T = Tuple[*TypeList[type=Movable, Variadic.splat_type[10, Int]]()]
+comptime T = Tuple[*TypeList.splat[Trait=Movable, 10, Int]()]
 
 
 comptime VA_SIZE[*Ts: AnyType] = Ts.size
