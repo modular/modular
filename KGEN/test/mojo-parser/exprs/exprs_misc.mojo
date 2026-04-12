@@ -296,7 +296,7 @@ def test_string_literal1(cond: Bool):
     _ = 4
 
     # String literals should be fine at start of expression.
-    # expected-warning @+1 {{'Bool' value is unused}}
+    # expected-warning @+1 {{'Bool' value is unused; assign to '_' to discard the result}}
     "a" == "abc"
 
     # String literals should merge.
@@ -305,7 +305,7 @@ def test_string_literal1(cond: Bool):
 
 # Issue #1850: Mojo assumes string literal at start of a function is a doc comment
 def test_expr_not_doc_string():
-    # expected-warning @+1 {{'Bool' value is unused}}
+    # expected-warning @+1 {{'Bool' value is unused; assign to '_' to discard the result}}
     "a".__eq__("b")
 
 

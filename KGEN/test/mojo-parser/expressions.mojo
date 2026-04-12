@@ -88,7 +88,7 @@ def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.ownership.use %a
   _ = a
 
-  a  # expected-warning {{'MemoryOnlyPair' value is unused}}
+  a  # expected-warning {{'MemoryOnlyPair' value is unused; assign to '_' to discard the result}}
 
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
   # CHECK-NEXT: %regX = lit.var.decl {{.*}}
@@ -162,7 +162,7 @@ struct DirectInit:
 def direct_call_init():
   var value: DirectInit
   # This is a call of a static method on an instance, so 'value' is unused.
-  # expected-warning @+1 {{'DirectInit' value is unused}}
+  # expected-warning @+1 {{'DirectInit' value is unused; assign to '_' to discard the result}}
   value.__init__()
 
 struct DummyFunc:
@@ -868,7 +868,7 @@ world"
         # CHECK: kgen.param.constant: {{.*}}#StringLiteral <:string "123">> = <*?>
         return "123"
         # lit.end_fn
-    # expected-warning @+1 {{'StringLiteral["other comment"]' value is unused}}
+    # expected-warning @+1 {{'StringLiteral["other comment"]' value is unused; assign to '_' to discard the result}}
     """other comment"""
 
 

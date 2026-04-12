@@ -40,18 +40,18 @@ def decorator_on_statements() raises:
     _ = 1 + 1  # expected-error {{statement does not allow decorators}}
 
 
-# expected-error @+1 {{decorators must be on their own line, not ahead of a statement}}
+# expected-error @+1 {{decorators must be on their own line; add a newline after the decorator}}
 @always_inline def same_line_decorator(): pass
 
 # @parameter if causes confusing indentation error message
 # https://github.com/modularml/modular/issues/19163
 def some_fn():
-    # expected-error @below {{decorators must be on their own line, not ahead of a statement}}
+    # expected-error @below {{decorators must be on their own line; add a newline after the decorator}}
     @decorator if True:
         pass
 
 def some_fn_2():
-        # expected-error @below {{orphaned decorator not associated with a declaration or statement}}
+        # expected-error @below {{decorator must be followed by a definition on the next line; remove any blank lines between them}}
         @decorator
     if True: # expected-error {{unknown tokens at the end of a declaration}}
         pass
@@ -272,7 +272,7 @@ struct BadStructDecorator: pass
 
 
 struct DecoratorSameLine:
-  # expected-error @+1 {{decorators must be on their own line, not ahead of a statement}}
+  # expected-error @+1 {{decorators must be on their own line; add a newline after the decorator}}
   @staticmethod def same_line_decorator(): pass
 
 

@@ -84,7 +84,7 @@ r"AB\"
 # Issue #12818
 def inconsistent_indent():
     var x = __mlir_attr.`1 : index`
-   	var y = __mlir_attr.`2 : index`  # expected-error {{leading indentation uses inconsistent whitespace (tabs and spaces) than previous line}}
+   	var y = __mlir_attr.`2 : index`  # expected-error {{indentation must not mix tabs and spaces; select one style}}
 
 # // -----
 

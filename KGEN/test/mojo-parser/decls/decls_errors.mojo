@@ -36,8 +36,8 @@ async def testAsyncVoid(): pass
 async def testAsyncInt() -> Int: return 42
 
 def callsWith():
-  testAsyncVoid() # expected-warning {{awaitable 'Coroutine[None, {}]' value was never awaited}}
-  testAsyncInt() # expected-warning {{awaitable 'Coroutine[Int, {}]' value was never awaited}}
+  testAsyncVoid() # expected-warning {{'Coroutine[None, {}]' value must be awaited; use 'await' to get its result}}
+  testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value must be awaited; use 'await' to get its result}}
 
 
 struct ThingWithStaticMethod:
@@ -658,7 +658,7 @@ struct Rec2[
 struct Struct: def foo(mut self): pass
 
 struct ReturnFromStruct:
-  # expected-error @+1 {{cannot return from this context}}
+  # expected-error @+1 {{'return' must be inside a function; move this into a function body}}
   return 42
 
 struct ReDef: pass # expected-note {{conflicts with this previous struct declaration}}
@@ -756,7 +756,7 @@ struct BadInit[size: __mlir_type.index]:
     self = x
 
 struct MLIRAttrWithinStruct:
-  # expected-error @below {{expressions must be inside a function or method — use 'var' to declare an instance variable, or move this into a method}}
+  # expected-error @below {{bare expressions not permitted within structs; use a field declaration ('var') or move this into a method body}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
 
@@ -785,7 +785,7 @@ struct InvalidMember(TrivialRegisterPassable):
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
   def __del__(deinit self): pass
 
-def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
+def noop():  # expected-error {{body must not be empty; use 'pass' or check that the lines below are indented}}
 
 struct BadDtor1:
   def __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
@@ -932,7 +932,7 @@ struct StructWithUnknownTrait(UnknownTrait):
 trait EverythingIsWrongTrait:
     var value: Int # expected-error {{fields in traits are not supported yet}}
 
-    def trait_fn_no_dot_dot_dot(self): # expected-error {{expected body statements; use 'pass' if none is required}}
+    def trait_fn_no_dot_dot_dot(self): # expected-error {{body must not be empty; use 'pass' or check that the lines below are indented}}
 
     trait NestedTrait: # expected-error {{nested trait not supported here}}
         ...
@@ -1160,14 +1160,14 @@ def top_level_func() raises -> Int:
 def use_error(e: Error):
    pass
 
-# expected-error @below {{expressions must be inside a function — move this into 'main()' or another function}}
+# expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
 _ = top_level_func()
 
 # expected-error @below {{'try' must be contained in a function}}
 try:
     pass
 except e:
-    # expected-error @below {{expressions must be inside a function — move this into 'main()' or another function}}
+    # expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
     use_error(e)
 
 
@@ -1175,7 +1175,7 @@ def top_level_func_param[p: Int]():
     pass
 
 comptime a = 100
-# expected-error @below {{expressions must be inside a function — move this into 'main()' or another function}}
+# expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
 top_level_func_param[a]()
 
 # expected-error @below {{global vars are not supported}}

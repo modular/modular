@@ -163,9 +163,9 @@ void Lexer::formToken(Token::Kind kind, StringRef spelling, ssize_t indentation,
         spelling.data() - indentation - tokenStartOffset;
     if (lastLineStart && memcmp(lastLineStart, thisLineStart,
                                 std::min(indentation, lastLineIndent))) {
-      diags.emitError(SMLoc::getFromPointer(spelling.data()),
-                      "leading indentation uses inconsistent whitespace (tabs "
-                      "and spaces) than previous line");
+      diags.emitError(
+          SMLoc::getFromPointer(spelling.data()),
+          "indentation must not mix tabs and spaces; select one style");
     }
 
     lastLineStart = thisLineStart;

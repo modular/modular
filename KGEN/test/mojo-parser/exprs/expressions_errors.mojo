@@ -310,18 +310,18 @@ def unused_values():
   var x : Int = 42
 
   _ = 4+4 # OK: Explicitly ignored.
-  # expected-warning @+1 {{'Int' value is unused}}
+  # expected-warning @+1 {{'Int' value is unused; assign to '_' to discard the result}}
   4+4  # MValue
 
   _ = x # OK: Explicitly ignored.
-  # expected-warning @+1 {{'Int' value is unused}}
+  # expected-warning @+1 {{'Int' value is unused; assign to '_' to discard the result}}
   x  # LValue
 
   _ = x+1 # OK: Explicitly ignored.
-  # expected-warning @+1 {{'Int' value is unused}}
+  # expected-warning @+1 {{'Int' value is unused; assign to '_' to discard the result}}
   x+1 # DRValue
 
-  # expected-warning @+1 {{function pointer was formed but not called, did you forget '()'s?}}
+  # expected-warning @+1 {{function must be called; add '()' after name}}
   testLValuesRvalues
   _ = testLValuesRvalues # OK
 
@@ -338,15 +338,15 @@ def unused_values2() raises:
   # No warning.
   getPythonObject()
 
-  # expected-warning @+1 {{'Int' value is unused}}
+  # expected-warning @+1 {{'Int' value is unused; assign to '_' to discard the result}}
   4+1
 
 def no_unused_values_in_def() raises:
   var x : Int = 42
-  4+4  # expected-warning {{'Int' value is unused}}
-  x    # expected-warning {{'Int' value is unused}}
-  x+1  # expected-warning {{'Int' value is unused}}
-  testLValuesRvalues # expected-warning {{function pointer was formed but not called, did you forget '()'s?}}
+  4+4  # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
+  x    # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
+  x+1  # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
+  testLValuesRvalues # expected-warning {{function must be called; add '()' after name}}
 
   _ # expected-error {{cannot read from discard pattern '_'}}
 
@@ -531,7 +531,7 @@ def bad_assignment1(a: Int, b: Int) raises:
 
 # MOCO-1936 / Issue #4501: Incorrect parsing of incomplete assignment
 def bad_assignment2():
-  # expected-error @+1 {{expected expression after assignment statement}}
+  # expected-error @+1 {{end of line found after '='; the right-hand side must be on the same line}}
   _ =    # should error here
   a = 1
 
@@ -544,7 +544,7 @@ def bad_walrus_implicit_decl_in_fn():
 def unused_assignments():
   var a = 1
   a = a  # ok of course.
-  a := a # expected-warning {{'Int' value is unused}}
+  a := a # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
 
 async def async_function() -> Int:
     return 0
@@ -625,11 +625,11 @@ def type_subscript(t0 : t):
 ##===----------------------------------------------------------------------===##
 
 def testLambda() raises:
-  # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
+  # expected-error @+1 {{lambda expressions are not supported; define a nested function with 'def'}}
   _ = lambda x, y: x+y
 
 def testLambda2() raises:
-  # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
+  # expected-error @+1 {{lambda expressions are not supported; define a nested function with 'def'}}
   _ = lambda (x: Int, y: Float64) raises: x+y
 
 def testInExpr(x: Int, y: Int) raises:

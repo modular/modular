@@ -8,12 +8,12 @@
 
 # Test that the 'alias' keyword issues a deprecation warning
 
-# CHECK: warning: 'alias' is deprecated, use 'comptime' instead
+# CHECK: warning: 'alias' is deprecated; use 'comptime'
 alias MY_CONSTANT = 42
 
 
 struct MyStruct:
-    # CHECK: warning: 'alias' is deprecated, use 'comptime' instead
+    # CHECK: warning: 'alias' is deprecated; use 'comptime'
     alias SIZE = Int
 
 

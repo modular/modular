@@ -140,7 +140,8 @@ ParserBase::parseDecorators(ssize_t indentation) {
   llvm::SMLoc atLoc;
   while (consumeIf(Token::at, &atLoc)) {
     if (getToken().isStartOfLine()) {
-      emitError(atLoc, "missing decorator expression after '@'");
+      emitError(atLoc,
+                "found stray '@'; '@' must be followed by a decorator name");
       skipUntilIndentation(indentation, /*stopOnSemicolon=*/false,
                            stopOnStatement);
       continue;
@@ -440,7 +441,8 @@ ParseResult StmtParser::parseSuite(ssize_t curIndent) {
   // more nested than this suite, and reject it if there are none.
   if (indent <= curIndent) {
     emitError(getTokenLocOrEndOfPreviousLineIfOnNewLine())
-        << "expected body statements; use 'pass' if none is required";
+        << "body must not be empty; use 'pass' or check that the lines below "
+           "are indented";
     return success();
   }
 
@@ -459,10 +461,8 @@ ParseResult StmtParser::parseSuite(ssize_t curIndent) {
 
     // Diagnose cases where the indentation is too great.
     if (indent > bodyIndent) {
-      auto diag = emitError(getToken().getLoc())
-                  << "statement has excess indentation";
-      diag.attachNote(bodyIndentLoc)
-          << "indentation should match previous statement";
+      emitError(getToken().getLoc()) << "statement indentation must match the "
+                                        "rest of the block; adjust to align";
     } else {
       bodyIndentLoc = getToken().getLoc();
     }
@@ -540,8 +540,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
          ((unsigned)sig->hasMemoryOnlyResult() + (unsigned)sig->isThrows())) &&
         isImplicitlyIgnorableType(resultType)) {
       shared.emitWarning(expr->getLoc())
-          << "function pointer was formed but not called, did you forget '()'s?"
-          << expr->getRange()
+          << "function must be called; add '()' after name" << expr->getRange()
           << FixIt::insertAfterToken(expr->getRange().getEnd(), "()",
                                      shared.diags);
       return;
@@ -553,7 +552,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // TODO: This should be handled with linear types.
   if (shared.typeHasMember(valueType, "__await__", expr->getLoc())) {
     shared.emitWarning(expr->getLoc())
-        << "awaitable " << valueType << " value was never awaited"
+        << valueType << " value must be awaited; use 'await' to get its result"
         << expr->getRange()
         << FixIt::insertBeforeToken(expr->getRangeStart(), "await ");
     return;
@@ -562,8 +561,8 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // Otherwise emit a warning, and suggest assigning to _.
   auto startLoc = expr->getRange().getStart();
   shared.emitWarning(expr->getLoc())
-      << valueType << " value is unused" << expr->getRange()
-      << FixIt::insertBeforeToken(startLoc, "_ = ");
+      << valueType << " value is unused; assign to '_' to discard the result"
+      << expr->getRange() << FixIt::insertBeforeToken(startLoc, "_ = ");
 }
 
 /// When `onlySimpleStmt` is true, this parses the simple_stmt production,
@@ -656,7 +655,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     // Reject with a specific error message and ignore the whole thing.
     if (!getToken().isStartOfLine() && stopOnStatement()) {
       emitError(startCursor.getToken().getLoc())
-          << "decorators must be on their own line, not ahead of a statement";
+          << "decorators must be on their own line; add a newline after the "
+             "decorator";
       // Skip the body of the statement entirely.
       skipUntilIndentation(stmtIndent);
       return success();
@@ -669,8 +669,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (getToken().isStartOfLine() &&
         getToken().getIndentation().value() < stmtIndent) {
       emitError(startCursor.getToken().getLoc())
-          << "orphaned decorator not associated with a declaration or "
-             "statement";
+          << "decorator must be followed by a definition on the next line; "
+             "remove any blank lines between them";
       return success();
     }
   }
@@ -759,7 +759,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()))
       rejectDecorator(/*inFunctionBody=*/true);
     SMLoc kwLoc = consumeToken(Token::kw_alias).getLoc();
-    shared.emitWarning(kwLoc, "'alias' is deprecated, use 'comptime' instead")
+    shared.emitWarning(kwLoc, "'alias' is deprecated; use 'comptime'")
         << FixIt::replaceToken(kwLoc, "comptime");
     return parseAliasDeclStmtBody(startCursor, stmtIndent, kwLoc);
   }
@@ -781,9 +781,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw___comptime_assert: {
     rejectDecorator(); // Decorators not allowed.
     SMLoc kwLoc = consumeToken(Token::kw___comptime_assert).getLoc();
-    shared.emitWarning(kwLoc,
-                       "'__comptime_assert' is deprecated, use 'comptime "
-                       "assert' instead")
+    shared.emitWarning(
+        kwLoc, "'__comptime_assert' is deprecated; use 'comptime assert'")
         << FixIt::replaceToken(kwLoc, "comptime assert");
     return parseComptimeAssertStmtBody(startCursor, stmtIndent, kwLoc);
   }
@@ -814,15 +813,24 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     // TODO: Top level expressions will be supported in the future.
     if (isa_and_nonnull<FileModuleOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "expressions must be inside a function — move this into 'main()' "
-             "or another function";
+          << "expressions are not allowed at global scope; move this into a "
+             "function body";
     } else if (isa_and_nonnull<StructDeclOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "expressions must be inside a function or method — use 'var' to "
-             "declare an instance variable, or move this into a method";
+          << "bare expressions not permitted within structs; use a field "
+             "declaration ('var') or move this into a method body";
+    } else if (isa_and_nonnull<TraitDeclOp>(parentDecl.getIfOperation())) {
+      emitError(startCursor.getToken().getLoc())
+          << "bare expressions not permitted within traits; use an associated "
+             "type declaration ('comptime') or move this into a method body";
+    } else if (isa_and_nonnull<ExtensionDeclOp>(parentDecl.getIfOperation())) {
+      emitError(startCursor.getToken().getLoc())
+          << "bare expressions not permitted within extensions; move this into "
+             "a method body";
     } else {
-      emitError(expr->getLoc(), "expressions must be inside a function — move "
-                                "this into 'main()' or another function")
+      emitError(expr->getLoc(),
+                "bare expression not permitted here; move this into a function "
+                "body or replace with a valid declaration")
           << expr->getRange();
     }
     return success();
@@ -1125,7 +1133,9 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // analysis.  First ensure we're in a function.
   auto func = dyn_cast_or_null<FnOp>(getParentDecl().getIfOperation());
   if (!func) {
-    emitError(loc, "cannot return from this context");
+    emitError(
+        loc,
+        "'return' must be inside a function; move this into a function body");
     return success();
   }
 
@@ -1360,12 +1370,9 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   auto emitter = getEmitter();
   MLValue errSlot = emitter.findNearestErrorSlot();
   if (!errSlot) {
-    MojoInflightDiag diag =
-        emitError(loc.Start, "cannot raise error in this context") << loc;
-    diag.attachNote(loc.Start) << "try surrounding 'raise' in a 'try' block";
-    if (auto func = getBlockParentOfType<FnOp>(builder.getInsertionBlock()))
-      diag.attachNote(func.getLoc())
-          << "or mark surrounding function as 'raises'";
+    emitError(loc.Start, "'raise' requires a surrounding 'try' block or the "
+                         "enclosing function to declare 'raises'")
+        << loc;
     return success();
   }
 
@@ -1389,10 +1396,9 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     // rethrowing the current error.  This isn't correct Python semantics, see
     // the caveat above.
     if (!inExceptRegion) {
-      MojoInflightDiag diag =
-          emitError(loc.Start, "no contextual error to reraise") << loc;
-      diag.attachNote(loc.Start) << "provide an error to raise or place "
-                                    "'raise' statement inside an except region";
+      emitError(loc.Start, "'raise' must live within an 'except' block or a "
+                           "function marked 'raises'")
+          << loc;
       dest.resetForError(emitter);
       return success();
     }
@@ -1425,7 +1431,9 @@ ParseResult StmtParser::parseAssertStmt(size_t assertIndent) {
 
   // Must be inside a function body.
   if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
-    emitError(kwLoc, "'assert' statements must be inside a function");
+    emitError(
+        kwLoc,
+        "'assert' must be inside a function; move this into a function body");
     return success();
   }
 
@@ -1564,8 +1572,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   if (isParamFor) {
     SMLoc atLoc = startCursor.getToken().getLoc();
     SMLoc forTokLoc = getToken().getLoc();
-    emitWarning(atLoc,
-                "'@parameter for' is deprecated, use 'comptime for' instead")
+    emitWarning(atLoc, "'@parameter for' is deprecated; use 'comptime for'")
         << FixIt(SourceRange::getByteLevel(atLoc, forTokLoc), "comptime ");
   }
 
@@ -1692,7 +1699,8 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     if (!nextFn) {
       emitError(seqExpr->getLoc())
           << iterType
-          << " does not implement the '__next__' method required for iteration"
+          << " is not 'Iterable'; conform and add a '__next__' method to use "
+             "it in a 'for' loop"
           << seqExpr->getRange();
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
@@ -2942,8 +2950,7 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   if (isParamIf) {
     SMLoc atLoc = startCursor.getToken().getLoc();
     SMLoc ifTokLoc = getToken().getLoc();
-    emitWarning(atLoc,
-                "'@parameter if' is deprecated, use 'comptime if' instead")
+    emitWarning(atLoc, "'@parameter if' is deprecated; use 'comptime if'")
         << FixIt(SourceRange::getByteLevel(atLoc, ifTokLoc), "comptime ");
   }
 
