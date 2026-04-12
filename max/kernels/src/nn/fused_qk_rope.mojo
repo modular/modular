@@ -305,9 +305,9 @@ def fused_qk_rope_ragged[
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
-    mrope_section: Optional[Coord[TypeList[*mrope_types]()]] = None,
+    mrope_section: Optional[Coord[TypeList[mrope_types]()]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[
+        TypeListOf[
             type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
         ]()
     ],

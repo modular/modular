@@ -1412,7 +1412,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     making it safe to pass across the host-device boundary via GPU closures.
     """
 
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.Ts, `>`]
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.Ts.values, `>`]
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
@@ -1445,7 +1445,9 @@ struct _FusedInputVariadicTensors[
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
-    var _fusions: _FusionPack[*Self.FusionTypes]
+    var _fusions: _FusionPack[
+        *Self.FusionTypes.upcast[TrivialRegisterPassable]()
+    ]
 
     def __init__(
         out self,
@@ -1454,7 +1456,9 @@ struct _FusedInputVariadicTensors[
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
-        fusions: _FusionPack[*Self.FusionTypes],
+        fusions: _FusionPack[
+            *Self.FusionTypes.upcast[TrivialRegisterPassable]()
+        ],
     ):
         comptime for i in range(Self.size):
             comptime assert not _type_is_eq[
@@ -1535,7 +1539,9 @@ struct _FusedOutputVariadicTensors[
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
-    var _fusions: _FusionPack[*Self.FusionTypes]
+    var _fusions: _FusionPack[
+        *Self.FusionTypes.upcast[TrivialRegisterPassable]()
+    ]
 
     def __init__(
         out self,
@@ -1544,7 +1550,9 @@ struct _FusedOutputVariadicTensors[
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
-        fusions: _FusionPack[*Self.FusionTypes],
+        fusions: _FusionPack[
+            *Self.FusionTypes.upcast[TrivialRegisterPassable]()
+        ],
     ):
         comptime for i in range(Self.size):
             comptime assert not _type_is_eq[

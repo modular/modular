@@ -797,12 +797,12 @@ def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 
 
 struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a, `>`]
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a.values, `>`]
 
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
-    def __getitem_param__[i: Int](self) -> Self.a[i._int_mlir_index()]:
+    def __getitem_param__[i: Int](self) -> Self.a[i]:
         """Get the element.
 
         Parameters:

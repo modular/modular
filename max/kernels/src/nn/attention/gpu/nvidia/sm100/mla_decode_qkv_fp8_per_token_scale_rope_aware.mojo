@@ -309,7 +309,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
             DType.int64,
-            RowMajorLayout[TypeList[type=CoordLike, ComptimeInt[3]]()],
+            RowMajorLayout[TypeListOf[type=CoordLike, ComptimeInt[3]]()],
             MutAnyOrigin,
         ],
     ):

@@ -166,17 +166,17 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
 # bypassing the LTToTTLayout comptime alias chain where the compiler can't
-# simplify TypeList[*_Flattened[...]].size to 1.
+# simplify TypeList[_Flattened[...]].size to 1.
 comptime _1d_tt_layout = InternalLayout[
-    shape_types=TypeList[type=CoordLike, RuntimeInt[DType.int64]](),
-    stride_types=TypeList[type=CoordLike, ComptimeInt[1]](),
+    shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
+    stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
 ]
 
 comptime _2d_row_major_tt_layout = InternalLayout[
-    shape_types=TypeList[
+    shape_types=TypeListOf[
         type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
     ](),
-    stride_types=TypeList[
+    stride_types=TypeListOf[
         type=CoordLike, RuntimeInt[DType.int64], ComptimeInt[1]
     ](),
 ]
@@ -968,7 +968,7 @@ struct PagedKVCache[
         Self.quantization_granularity,
     )
     comptime scales_tt_layout = RowMajorLayout[
-        TypeList[
+        TypeListOf[
             type=CoordLike,
             RuntimeInt[DType.int64],
             ComptimeInt[Self.page_size],

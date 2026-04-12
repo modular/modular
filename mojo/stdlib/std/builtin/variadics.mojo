@@ -74,7 +74,7 @@ struct Variadic:
         T: The type of values in the variadic sequence.
     """
 
-    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts
+    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
     """Turn discrete type values (bound by `T`) into a single variadic.
 
     Parameters:
@@ -123,7 +123,9 @@ struct Variadic:
     comptime reverse[
         T: type_of(AnyType), //, *element_types: T
     ]: Variadic.TypesOfTrait[T] = _MapVariadicAndIdxToType[
-        To=T, ParamListType=element_types, Mapper=_ReversedVariadic[T, ...]
+        To=T,
+        ParamListType=element_types.values,
+        Mapper=_ReversedVariadic[T, ...],
     ]
     """A wrapper to reverse a variadic sequence of types.
 
@@ -302,8 +304,8 @@ struct Variadic:
         //,
         element_types: Variadic.TypesOfTrait[T],
         start: Int where start >= 0 = 0,
-        end: Int where start <= end <= TypeList[*element_types].size = TypeList[
-            *element_types
+        end: Int where start <= end <= TypeList[element_types].size = TypeList[
+            element_types
         ].size,
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
@@ -322,7 +324,7 @@ struct Variadic:
         end: The ending index (exclusive).
 
     Constraints:
-        - 0 <= start <= end <= TypeList[*element_types].size
+        - 0 <= start <= end <= TypeList[element_types].size
 
     Examples:
         ```mojo
@@ -377,7 +379,7 @@ struct Variadic:
         predicate: _TypePredicateGenerator[T],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[T],
-        ParamListType=element_types,
+        ParamListType=element_types.values,
         Reducer=_FilterReducer[T, predicate, ...],
     ]
     """Filter types from a variadic sequence based on a predicate function.
@@ -465,9 +467,9 @@ struct Variadic:
 # ===-----------------------------------------------------------------------===#
 
 
-struct TypeList[type: type_of(AnyType), //, *values: type](
-    Sized, TrivialRegisterPassable
-):
+struct TypeList[
+    type: type_of(AnyType), //, values: _MLIR.KGENTypeListType[type]
+](Sized, TrivialRegisterPassable):
     """A compile-time list of types conforming to a common trait.
 
     `TypeList` provides type-level operations on variadic sequences of types,
@@ -538,7 +540,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
         self,
         out result: TypeList[
             type=dst_trait,
-            *__mlir_attr[
+            __mlir_attr[
                 `#kgen.upcast<`,
                 Self.values,
                 `> : `,
@@ -546,7 +548,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
             ],
         ],
     ):
-        """Downcasts a TypeList to a base trait.
+        """Upcasts a TypeList to a base trait.
 
         Parameters:
             dst_trait: The trait to downcast to.
@@ -559,7 +561,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
     def reverse(
         sefl,
     ) -> TypeList[
-        *_MapVariadicAndIdxToType[
+        _MapVariadicAndIdxToType[
             To=Self.type,
             ParamListType=Self.values,
             Mapper=_ReversedVariadic[Self.type, ...],
@@ -588,7 +590,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
         //,
         Mapper: _TypeToTypeGenerator[Self.type, To],
     ] = TypeList[
-        *_ReduceVariadicAndIdxToVariadic[
+        _ReduceVariadicAndIdxToVariadic[
             BaseVal=Variadic.empty_of_trait[To],
             ParamListType=Self.values,
             Reducer=_MapTypeToTypeReducer[Self.type, To, Mapper, ...],
@@ -609,7 +611,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
         start: Int where start >= 0 = 0,
         end: Int where start <= end <= Self.size = Self.size,
     ] = TypeList[
-        *_ReduceVariadicAndIdxToVariadic[
+        _ReduceVariadicAndIdxToVariadic[
             BaseVal=Variadic.empty_of_trait[Self.type],
             ParamListType=Self.values,
             Reducer=_SliceReducer[Self.type, start, end, ...],
@@ -631,7 +633,7 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
     comptime filter[
         predicate: _TypePredicateGenerator[Self.type],
     ] = TypeList[
-        *_ReduceVariadicAndIdxToVariadic[
+        _ReduceVariadicAndIdxToVariadic[
             BaseVal=Variadic.empty_of_trait[Self.type],
             ParamListType=Self.values,
             Reducer=_FilterReducer[Self.type, predicate, ...],
@@ -655,6 +657,16 @@ struct TypeList[type: type_of(AnyType), //, *values: type](
         """
         return Self.size
 
+
+comptime TypeListOf[type: type_of(AnyType), //, *values: type] = TypeList[
+    type=type, values.values
+]
+"""A compile-time type list with some elements, uninstantiated.
+
+Parameters:
+    type: The type of the elements in the list.
+    values: The values in the list.
+"""
 
 # ===-----------------------------------------------------------------------===#
 # ParameterList
@@ -1229,7 +1241,7 @@ struct VariadicPack[
         `!lit.ref.pack<:param_list<`,
         Self.element_trait,
         `> `,
-        Self.element_types,
+        Self.element_types.values,
         `, `,
         Self.origin._mlir_origin,
         `>`,
@@ -1298,9 +1310,7 @@ struct VariadicPack[
                 ).mut_cast[True]().destroy_pointee()
 
     def consume_elements[
-        elt_handler: def[idx: Int](
-            var elt: Self.element_types[idx._int_mlir_index()]
-        ) capturing
+        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -1333,9 +1343,7 @@ struct VariadicPack[
         Returns:
             The number of elements in the variadic pack.
         """
-
-        comptime result = TypeList[*Self.element_types].size
-        return result
+        return Self.element_types.size
 
     @always_inline
     def __len__(self) -> Int:
@@ -1353,7 +1361,7 @@ struct VariadicPack[
     @always_inline
     def __getitem_param__[
         index: Int
-    ](self) -> ref[Self.origin] Self.element_types[index._int_mlir_index()]:
+    ](self) -> ref[Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
 
         Parameters:
@@ -1375,7 +1383,7 @@ struct VariadicPack[
     # FIXME: bound by AnyType
     comptime _kgen_element_types = rebind[
         Variadic.ValuesOfType[__mlir_type.`!kgen.type`]
-    ](Self.element_types)
+    ](Self.element_types.values)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
 
@@ -1823,7 +1831,7 @@ comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],
     idx: SIMDSize,
-] = element_types[(TypeList[*element_types].size - 1 - idx)._int_mlir_index()]
+] = element_types[TypeList[element_types].size - 1 - idx]
 """A generator that reverses a variadic sequence of types.
 
 Parameters:

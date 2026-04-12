@@ -144,7 +144,9 @@ def top_k[
     k: Optional[
         TileTensor[
             DType.int64,
-            RowMajorLayout[TypeList[type=CoordLike, RuntimeInt[DType.int64]]()],
+            RowMajorLayout[
+                TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
+            ],
             ImmutAnyOrigin,
         ],
     ] = None,
@@ -243,7 +245,7 @@ def _top_k_cpu[
     out_idx_type: DType,
     largest: Bool,
     KLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     input: TileTensor[dtype, ...],
@@ -362,16 +364,16 @@ def fused_token_sampling_cpu[
     dtype: DType,
     out_idx_type: DType,
     KLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TopPLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     SeedLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     max_k: Int,
@@ -461,16 +463,16 @@ def fused_token_sampling_cpu[
 def _top_k_sampling[
     dtype: DType,
     KLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TopPLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     SeedLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     max_k: Int,
@@ -1576,16 +1578,16 @@ def _topk_gpu[
     largest: Bool = True,
     _force_old_impl: Bool = False,
     KLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TopPLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     SeedLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     ctx: DeviceContext,
@@ -1892,16 +1894,16 @@ def topk_gpu[
     largest: Bool = True,
     _force_old_impl: Bool = False,
     KLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TopPLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     SeedLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     ctx: DeviceContext,
@@ -2146,16 +2148,16 @@ def _topk_topp_sampling_fi[
     dtype: DType,
     out_idx_type: DType,
     KLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TopPLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     SeedLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     ctx: DeviceContext,
@@ -2223,16 +2225,16 @@ def fused_token_sampling_gpu[
     out_idx_type: DType,
     //,
     KLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     TopPLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     SeedLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     ctx: DeviceContext,
@@ -2460,10 +2462,10 @@ def gumbel_sampling_gpu[
     out_idx_type: DType,
     //,
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
     SeedLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     ctx: DeviceContext,

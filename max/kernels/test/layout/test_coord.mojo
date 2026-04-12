@@ -47,7 +47,7 @@ def test_int_tuple_conversion() raises:
 
 def test_list_literal_construction() raises:
     var t = Coord[
-        TypeList[type=CoordLike, ComptimeInt[2], RuntimeInt[DType.int]]()
+        TypeListOf[type=CoordLike, ComptimeInt[2], RuntimeInt[DType.int]]()
     ](
         Idx[2](),
         Idx(Int(3)),
@@ -89,7 +89,7 @@ def test_static_product() raises:
 
 def test_default_init() raises:
     var c = Coord[
-        TypeList[
+        TypeListOf[
             type=CoordLike,
             ComptimeInt[5],
             RuntimeInt[DType.int32],
@@ -105,11 +105,11 @@ def test_default_init() raises:
 
 def test_default_init_nested() raises:
     var c = Coord[
-        TypeList[
+        TypeListOf[
             type=CoordLike,
             ComptimeInt[5],
             Coord[
-                TypeList[
+                TypeListOf[
                     type=CoordLike, RuntimeInt[DType.int32], ComptimeInt[3]
                 ]()
             ],
@@ -340,7 +340,7 @@ def test_idx2crd_mixed_static_dynamic_idx() raises:
     # shape=(3, 4), stride=(RuntimeInt, ComptimeInt[1])
     var shape = Coord(Idx[3](), Idx[4]())
     var stride = Coord[
-        TypeList[type=CoordLike, RuntimeInt[DType.int], ComptimeInt[1]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int], ComptimeInt[1]]()
     ](Idx(Int(4)), Idx[1]())
 
     # Static idx=5, but first stride is runtime -> first dim is RuntimeInt.

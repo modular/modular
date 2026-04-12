@@ -260,7 +260,7 @@ def _printf[
                     return UInt64(rebind[UInt](value))
                 return 0
 
-            comptime args_len = TypeList[*types].size
+            comptime args_len = types.size
 
             var message = printf_begin()
             message = printf_append_string_n(

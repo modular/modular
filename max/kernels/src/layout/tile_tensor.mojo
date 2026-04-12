@@ -140,9 +140,7 @@ struct TileTensor[
     comptime rank = Self.LayoutType.rank
     """The number of dimensions in the tensor's layout."""
 
-    comptime flat_rank = TypeList[
-        *_Flattened[*Self.LayoutType._shape_types.values]
-    ].size
+    comptime flat_rank = _Flattened[*Self.LayoutType._shape_types].size
     """The flattened rank - total number of dimensions after flattening nested Coords.
 
     For non-nested layouts, flat_rank == rank.
@@ -170,7 +168,7 @@ struct TileTensor[
 
     comptime is_compatible_with[
         C: Variadic.TypesOfTrait[CoordLike]
-    ] = WeaklyCompatible[Self.LayoutType, TypeList[*C]()]
+    ] = WeaklyCompatible[Self.LayoutType, TypeList[C]()]
     """True if coordinate types `C` are structurally compatible with this
     tensor's layout shape.
 
@@ -417,7 +415,7 @@ struct TileTensor[
     def __getitem__[
         *IndexTypes: Indexer & Copyable
     ](self, *items: *IndexTypes) -> Self.ElementType where (
-        TypeList[*IndexTypes].size == Self.flat_rank
+        IndexTypes.size == Self.flat_rank
     ):
         """Retrieves a single element from the tensor at the specified indices.
 
@@ -435,7 +433,7 @@ struct TileTensor[
         Returns:
             The element at the specified position.
         """
-        comptime arg_count = TypeList[*IndexTypes].size
+        comptime arg_count = IndexTypes.size
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
         comptime for i in range(arg_count):
@@ -462,19 +460,19 @@ struct TileTensor[
         Self.dtype,
         Layout[
             shape_types=_SelectKeptShape[
-                IndexTypes, Self.LayoutType._shape_types.values
+                IndexTypes, Self.LayoutType._shape_types
             ],
             stride_types=_SelectKeptStride[
-                IndexTypes, Self.LayoutType._stride_types.values
+                IndexTypes, Self.LayoutType._stride_types
             ],
         ],
         Self.origin,
         address_space=Self.address_space,
         element_size=Self.element_size,
     ] where (
-        TypeList[*IndexTypes].size == Self.flat_rank
-        and Coord[TypeList[*IndexTypes]()].is_flat
-        and Coord[TypeList[*IndexTypes]()].contains_slices
+        IndexTypes.size == Self.flat_rank
+        and Coord[IndexTypes].is_flat
+        and Coord[IndexTypes].contains_slices
     ):
         """Fix some dimensions at scalar indices and keep others, returning a
         lower-rank view.
@@ -526,17 +524,17 @@ struct TileTensor[
 
         # Build kept shape and stride coords.
         comptime KeptShapeTypes = _SelectKeptShape[
-            IndexTypes, Self.LayoutType._shape_types.values
+            IndexTypes, Self.LayoutType._shape_types
         ]
         comptime KeptStrideTypes = _SelectKeptStride[
-            IndexTypes, Self.LayoutType._stride_types.values
+            IndexTypes, Self.LayoutType._stride_types
         ]
         var new_shape = Coord[KeptShapeTypes]()
         var new_stride = Coord[KeptStrideTypes]()
 
         comptime for i in range(Self.rank):
             comptime if _type_is_eq_parse_time[IndexTypes[i], _All]():
-                comptime kept_idx = _count_all_before[IndexTypes, i]()
+                comptime kept_idx = _count_all_before[i, *IndexTypes]()
                 UnsafePointer(to=new_shape[kept_idx]).init_pointee_copy(
                     rebind[KeptShapeTypes[kept_idx]](self.layout.shape[i]())
                 )
@@ -573,7 +571,7 @@ struct TileTensor[
     def __setitem__[
         *IndexTypes: Indexer & Copyable
     ](self, *items: *IndexTypes, value: Self.ElementType) where (
-        TypeList[*IndexTypes].size == Self.flat_rank
+        IndexTypes.size == Self.flat_rank
     ) & Self.mut:
         """Sets a single element in the tensor at the specified indices.
 
@@ -589,7 +587,7 @@ struct TileTensor[
             items: The indices specifying the element's position.
             value: The value to store.
         """
-        comptime arg_count = TypeList[*IndexTypes].size
+        comptime arg_count = IndexTypes.size
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
         comptime for i in range(arg_count):
@@ -1650,11 +1648,11 @@ struct TileTensor[
         dtype=Self.dtype,
         origin=Self.origin,
         LayoutType=Layout[
-            shape_types=TypeList[
+            shape_types=TypeListOf[
                 type=CoordLike,
                 ComptimeInt[Coord[Self.LayoutType._shape_types].static_product],
             ](),
-            stride_types=TypeList[type=CoordLike, ComptimeInt[1]](),
+            stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
         ],
         address_space=Self.address_space,
         element_size=Self.element_size,
@@ -1681,8 +1679,8 @@ struct TileTensor[
         dtype=Self.dtype,
         origin=Self.origin,
         LayoutType=Layout[
-            shape_types=TypeList[type=CoordLike, *new_shape_types](),
-            stride_types=TypeList[*_RowMajor[*new_shape_types].values](),
+            shape_types=new_shape_types,
+            stride_types=_RowMajor[*new_shape_types],
         ],
         address_space=Self.address_space,
         element_size=Self.element_size,
@@ -1696,7 +1694,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def reshape[
         *new_shape: Int
-    ](self) -> Self.ReshapedType[*_IntToComptimeInt[*new_shape].values] where (
+    ](self) -> Self.ReshapedType[*_IntToComptimeInt[*new_shape]] where (
         Self.all_dims_known
         and Self.is_row_major
         and Coord[Self.LayoutType._shape_types].static_product
@@ -1744,21 +1742,21 @@ struct TileTensor[
         - Zero-cost abstraction at compile time when used with static shapes.
         """
         comptime NewShapeTypes = _IntToComptimeInt[*new_shape]
-        comptime NewStrideTypes = _RowMajor[*NewShapeTypes.values]
+        comptime NewStrideTypes = _RowMajor[*NewShapeTypes]
 
         var new_layout = Layout(
             Coord[NewShapeTypes](),
             Coord[NewStrideTypes](),
         )
 
-        return Self.ReshapedType[*NewShapeTypes.values](self.ptr, new_layout)
+        return Self.ReshapedType[*NewShapeTypes](self.ptr, new_layout)
 
     @always_inline("nodebug")
     def reshape[
         *new_shape_types: CoordLike
-    ](
-        self, new_shape: Coord[TypeList[*new_shape_types]()]
-    ) -> Self.ReshapedType[*new_shape_types] where Self.is_row_major:
+    ](self, new_shape: Coord[new_shape_types]) -> Self.ReshapedType[
+        *new_shape_types
+    ] where Self.is_row_major:
         """Reshape the tensor to a new shape specified as a Coord.
 
         This method creates a view of the tensor with a different logical shape
@@ -1905,8 +1903,8 @@ struct TileTensor[
         out result: LayoutTensor[
             Self.dtype,
             layout.Layout(
-                coord_to_int_tuple[*Self.LayoutType._shape_types.values](),
-                coord_to_int_tuple[*Self.LayoutType._stride_types.values](),
+                coord_to_int_tuple[*Self.LayoutType._shape_types](),
+                coord_to_int_tuple[*Self.LayoutType._stride_types](),
             ),
             Self.origin,
             address_space=Self.address_space,
@@ -2066,9 +2064,7 @@ struct NullableTileTensor[
     comptime rank = Self.LayoutType.rank
     """The number of dimensions in the tensor's layout."""
 
-    comptime flat_rank = TypeList[
-        *_Flattened[*Self.LayoutType._shape_types.values]
-    ].size
+    comptime flat_rank = _Flattened[*Self.LayoutType._shape_types].size
     """The flattened rank."""
 
     comptime ElementType = SIMD[Self.dtype, Self.element_size]
@@ -2085,7 +2081,7 @@ struct NullableTileTensor[
 
     comptime is_compatible_with[
         C: Variadic.TypesOfTrait[CoordLike]
-    ] = WeaklyCompatible[Self.LayoutType, TypeList[*C]()]
+    ] = WeaklyCompatible[Self.LayoutType, TypeList[C]()]
     """True if coordinate types `C` are structurally compatible with this
     tensor's layout shape.
 
@@ -2299,8 +2295,8 @@ struct NullableTileTensor[
         out result: LayoutTensor[
             Self.dtype,
             layout.Layout(
-                coord_to_int_tuple[*Self.LayoutType._shape_types.values](),
-                coord_to_int_tuple[*Self.LayoutType._stride_types.values](),
+                coord_to_int_tuple[*Self.LayoutType._shape_types](),
+                coord_to_int_tuple[*Self.LayoutType._stride_types](),
             ),
             Self.origin,
             address_space=Self.address_space,
@@ -2777,7 +2773,7 @@ def _tile_with_offset[
     The offset is the linear element offset used to advance the pointer.
     """
 
-    # Use TypeList[*coord_types].size consistently (must match return type)
+    # Use TypeList[coord_types].size consistently (must match return type)
     var offset: UInt = 0
     var corner_coords = IndexList[coord_types.size]()
 
@@ -2826,12 +2822,12 @@ def _tile[
         dtype,
         ...,
     ],
-    tile_shape: Coord[TypeList[*tile_shape_types]()],
+    tile_shape: Coord[TypeList[tile_shape_types]()],
     tile_coords: Coord[coord_types],
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types=TypeList[*tile_shape_types](),
+        shape_types=TypeList[tile_shape_types](),
         stride_types=stride_layout._shape_types,
     ],
     data_layout_tensor.origin,
@@ -2863,7 +2859,7 @@ def _tile[
     return TileTensor[
         dtype,
         Layout[
-            shape_types=TypeList[*tile_shape_types](),
+            shape_types=TypeList[tile_shape_types](),
             stride_types=stride_layout._shape_types,
         ],
         data_layout_tensor.origin,
@@ -3105,7 +3101,7 @@ comptime _Slice[
     slices: Variadic.ValuesOfType[ContiguousSlice],
     element_types: TypeList[type=CoordLike, ...],
 ] = TypeList[
-    *_MapVariadicAndIdxToType[
+    _MapVariadicAndIdxToType[
         To=CoordLike,
         ParamListType=element_types.values,
         Mapper=_SliceMapper[slices=slices, ...],
@@ -3118,9 +3114,7 @@ comptime _Slice[
 # ===-----------------------------------------------------------------------===#
 
 
-def _count_all_before[
-    index_types: Variadic.TypesOfTrait[CoordLike], up_to: Int
-]() -> Int:
+def _count_all_before[up_to: Int, *index_types: CoordLike]() -> Int:
     """Count how many _All entries appear in index_types before position up_to.
     """
     var count = 0
@@ -3146,13 +3140,15 @@ comptime _SelectKeptShapeReducer[
 
 
 comptime _SelectKeptShape[
-    index_types: Variadic.TypesOfTrait[CoordLike],
-    shape_types: Variadic.TypesOfTrait[CoordLike],
+    index_types: TypeList[type=CoordLike, ...],
+    shape_types: TypeList[type=CoordLike, ...],
 ] = TypeList[
-    *_ReduceVariadicAndIdxToVariadic[
+    _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=shape_types,
-        Reducer=_SelectKeptShapeReducer[index_types, shape_types, ...],
+        ParamListType=shape_types.values,
+        Reducer=_SelectKeptShapeReducer[
+            index_types.values, shape_types.values, ...
+        ],
     ]
 ]()
 """Filters shape_types to only dimensions where the corresponding index is _All."""
@@ -3174,13 +3170,15 @@ comptime _SelectKeptStrideReducer[
 
 
 comptime _SelectKeptStride[
-    index_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    index_types: TypeList[type=CoordLike, ...],
+    stride_types: TypeList[type=CoordLike, ...],
 ] = TypeList[
-    *_ReduceVariadicAndIdxToVariadic[
+    _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=stride_types,
-        Reducer=_SelectKeptStrideReducer[index_types, stride_types, ...],
+        ParamListType=stride_types.values,
+        Reducer=_SelectKeptStrideReducer[
+            index_types.values, stride_types.values, ...
+        ],
     ]
 ]()
 """Filters stride_types to only dimensions where the corresponding index is _All."""
@@ -3201,11 +3199,11 @@ comptime _IsRowMajorHelper[
     shape_types: Variadic.TypesOfTrait[CoordLike],
     stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = TypeList[
-    *_MapVariadicAndIdxToType[
+    _MapVariadicAndIdxToType[
         To=CoordLike,
         ParamListType=stride_types,
         Mapper=_IsRowMajorMapper[
-            expected_strides=_RowMajor[*shape_types].values, ...
+            expected_strides=_RowMajor[*TypeList[shape_types]()].values, ...
         ],
     ]
 ]()
@@ -3234,7 +3232,7 @@ False otherwise. For row-major, stride[i] = product(shape[i+1:]).
 
 
 comptime _FlatLeadingLayout[L: TensorLayout] = RowMajorLayout[
-    TypeList[
+    TypeListOf[
         type=CoordLike, RuntimeInt[DType.int64], L._shape_types[L.rank - 1]
     ]()
 ]
@@ -3254,7 +3252,7 @@ def flatten_leading[
     tensor: TileTensor[dtype=dtype, LayoutType=layout, ...],
 ) -> tensor.ViewType[
     RowMajorLayout[
-        TypeList[
+        TypeListOf[
             type=CoordLike,
             RuntimeInt[DType.int64],
             layout._shape_types[layout.rank - 1],
@@ -3285,7 +3283,7 @@ def flatten_leading[
         * Int64(tensor.layout.shape[1]().value())
     )
     comptime ResultLayout = RowMajorLayout[
-        TypeList[
+        TypeListOf[
             type=CoordLike,
             RuntimeInt[DType.int64],
             layout._shape_types[layout.rank - 1],

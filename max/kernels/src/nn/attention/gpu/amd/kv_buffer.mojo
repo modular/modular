@@ -65,12 +65,12 @@ struct KVCacheIterator[
     """
 
     comptime GmemTileLayout = MixedLayout[
-        TypeList[
+        TypeListOf[
             type=CoordLike,
             RuntimeInt[DType.int64],
             ComptimeInt[Self.depth],
         ](),
-        TypeList[
+        TypeListOf[
             type=CoordLike,
             ComptimeInt[Self.kv_num_heads * Self.depth],
             ComptimeInt[1],

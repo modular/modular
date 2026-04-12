@@ -216,12 +216,15 @@ def assert_equal[
     lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
     rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
 ](
-    lhs: Tuple[*lhs_types],
-    rhs: Tuple[*rhs_types],
+    lhs: Tuple[*TypeList[lhs_types]().upcast[Movable]()],
+    rhs: Tuple[*TypeList[rhs_types]().upcast[Movable]()],
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
-) raises where (AllWritable[*lhs_types] and AllWritable[*rhs_types]):
+) raises where (
+    AllWritable[*TypeList[lhs_types]().upcast[AnyType]()]
+    and AllWritable[*TypeList[rhs_types]().upcast[AnyType]()]
+):
     """Asserts that two tuples are equal. If not, an Error is raised.
 
     Parameters:
@@ -289,12 +292,15 @@ def assert_not_equal[
     lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
     rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
 ](
-    lhs: Tuple[*lhs_types],
-    rhs: Tuple[*rhs_types],
+    lhs: Tuple[*TypeList[lhs_types]().upcast[Movable]()],
+    rhs: Tuple[*TypeList[rhs_types]().upcast[Movable]()],
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
-) raises where (AllWritable[*lhs_types] and AllWritable[*rhs_types]):
+) raises where (
+    AllWritable[*TypeList[lhs_types]().upcast[AnyType]()]
+    and AllWritable[*TypeList[rhs_types]().upcast[AnyType]()]
+):
     """Asserts that two tuples are not equal. If they are, an Error is raised.
 
     Parameters:

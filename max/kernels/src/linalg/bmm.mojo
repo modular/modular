@@ -128,7 +128,7 @@ def _slice_types[
 @always_inline
 def _slice_types_tl[
     stride_types: TypeList[type=CoordLike, ...], n_dims: Int
-]() -> TypeList[type=CoordLike, *_slice_types[stride_types, n_dims]()]:
+]() -> TypeList[type=CoordLike, _slice_types[stride_types, n_dims]()]:
     return {}
 
 
@@ -146,13 +146,13 @@ def _shape_types_to_3d[
     comptime batch_dims = _slice_types[shape_types.reverse(), rank - 2]()
 
     comptime _get_first_dim[dtype: DType, *coords: CoordLike] = Variadic.types[
-        T=CoordLike, ComptimeInt[Coord[TypeList[*coords]()].static_product]
-    ] if Coord[TypeList[*coords]()].all_dims_known else Variadic.types[
+        T=CoordLike, ComptimeInt[Coord[coords].static_product]
+    ] if Coord[coords].all_dims_known else Variadic.types[
         T=CoordLike, RuntimeInt[dtype]
     ]
 
     return Variadic.concat_types[
-        _get_first_dim[DType.int64, *batch_dims], last_two_dims
+        _get_first_dim[DType.int64, *TypeList[batch_dims]()], last_two_dims
     ]
 
 
@@ -162,7 +162,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
     out result: TileTensor[
         mut=tensor.mut,
         LayoutType=TileLayout[
-            TypeList[*_shape_types_to_3d[tensor.LayoutType._shape_types]()](),
+            TypeList[_shape_types_to_3d[tensor.LayoutType._shape_types]()](),
             _slice_types_tl[tensor.LayoutType._stride_types, 3](),
         ],
         dtype=tensor.dtype,
@@ -180,8 +180,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     comptime out_stride_types = type_of(result).LayoutType._stride_types
     comptime rank = tensor.rank
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
-    var shape = Tuple[*out_shape_types.values]()
-    var strides = Tuple[*out_stride_types.values]()
+    var shape = Tuple[*out_shape_types.upcast[Movable]()]()
+    var strides = Tuple[*out_stride_types.upcast[Movable]()]()
 
     comptime for i in range(3):
         comptime idx = rank - 3 + i

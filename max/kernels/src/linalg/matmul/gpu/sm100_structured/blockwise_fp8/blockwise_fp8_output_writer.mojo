@@ -474,14 +474,14 @@ struct BlockwiseFP8TileWriter[
         # inherited from the row_major parent tile).
         comptime split_layout = Layout[
             shape_types=Coord[
-                TypeList[
+                TypeListOf[
                     type=CoordLike,
                     ComptimeInt[TMA_BM],
                     ComptimeInt[Self.stageN],
                 ]()
             ].element_types,
             stride_types=Coord[
-                TypeList[
+                TypeListOf[
                     type=CoordLike,
                     ComptimeInt[Self.c_smem_dim1],
                     ComptimeInt[1],

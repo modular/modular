@@ -263,8 +263,8 @@ Parameters:
 # ============================================================================
 
 comptime GMEMLayout1D = Layout[
-    TypeList[type=CoordLike, RuntimeInt[DType.int64]](),
-    TypeList[type=CoordLike, ComptimeInt[1]](),
+    TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
+    TypeListOf[type=CoordLike, ComptimeInt[1]](),
 ]
 """1D layout for flat global memory arrays.
 
@@ -278,8 +278,8 @@ Rank is provably 1 at compile time.
 # ============================================================================
 
 comptime static_row_major[dim0: Int, dim1: Int] = Layout[
-    TypeList[type=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]](),
-    TypeList[type=CoordLike, ComptimeInt[dim1], ComptimeInt[1]](),
+    TypeListOf[type=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]](),
+    TypeListOf[type=CoordLike, ComptimeInt[dim1], ComptimeInt[1]](),
 ]
 """2D row-major layout with fully static dimensions.
 
@@ -288,8 +288,8 @@ types with rank=2 provable at compile time.
 """
 
 comptime _StridedLayout[dim0: Int, dim1: Int, stride0: Int] = Layout[
-    TypeList[type=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]](),
-    TypeList[type=CoordLike, ComptimeInt[stride0], ComptimeInt[1]](),
+    TypeListOf[type=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]](),
+    TypeListOf[type=CoordLike, ComptimeInt[stride0], ComptimeInt[1]](),
 ]
 """2D layout with explicit stride for dim0.
 
@@ -353,12 +353,12 @@ comptime tma_desc_layout_2d[
     tile_dim0: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    TypeList[
+    TypeListOf[
         type=CoordLike,
         ComptimeInt[tile_dim0],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
     ](),
-    TypeList[type=CoordLike, ComptimeInt[1], ComptimeInt[1]](),
+    TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]](),
 ]
 """2D TMA descriptor layout: [dim0, swizzle_elems], strides [1, 1]."""
 
@@ -368,13 +368,15 @@ comptime tma_desc_layout_3d[
     tile_dim1: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    TypeList[
+    TypeListOf[
         type=CoordLike,
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
     ](),
-    TypeList[type=CoordLike, ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]](),
+    TypeListOf[
+        type=CoordLike, ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]
+    ](),
 ]
 """3D TMA descriptor layout: [dim0, dim1, swizzle_elems], strides [1,1,1]."""
 
@@ -385,14 +387,14 @@ comptime tma_desc_layout_4d[
     tile_dim2: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    TypeList[
+    TypeListOf[
         type=CoordLike,
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
         ComptimeInt[tile_dim2],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
     ](),
-    TypeList[
+    TypeListOf[
         type=CoordLike,
         ComptimeInt[1],
         ComptimeInt[1],
@@ -410,7 +412,7 @@ comptime tma_desc_layout_5d[
     tile_dim3: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    TypeList[
+    TypeListOf[
         type=CoordLike,
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
@@ -418,7 +420,7 @@ comptime tma_desc_layout_5d[
         ComptimeInt[tile_dim3],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
     ](),
-    TypeList[
+    TypeListOf[
         type=CoordLike,
         ComptimeInt[1],
         ComptimeInt[1],
@@ -787,9 +789,7 @@ struct SMemTileArray[
     ]
 
     # Flattened shape types (leaf scalars only, handles nested Coords).
-    comptime _flat_shape_types = TypeList[
-        *_Flattened[*Self.shape_types.values]
-    ]()
+    comptime _flat_shape_types = _Flattened[*Self.shape_types]
 
     # Size calculations using static shape product.
     comptime tile_size: Int = Coord[Self._flat_shape_types].static_product

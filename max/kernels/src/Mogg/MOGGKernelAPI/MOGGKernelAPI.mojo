@@ -1995,11 +1995,13 @@ comptime _TransposeStrideTypes[
     rank: Int,
     input_stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = TypeList[
-    *_ReduceVariadicAndIdxToVariadic[
+    _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=Variadic.types[
             T=CoordLike,
-            *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
+            *TypeList[
+                Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]]
+            ](),
         ],
         Reducer=_TransposeStrideMapper[permutations, input_stride_types, ...],
     ]
@@ -2138,11 +2140,13 @@ comptime _SliceStrideTypes[
     input_stride_types: Variadic.TypesOfTrait[CoordLike],
     step_types: Variadic.TypesOfTrait[CoordLike],
 ] = TypeList[
-    *_ReduceVariadicAndIdxToVariadic[
+    _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=Variadic.types[
             T=CoordLike,
-            *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
+            *TypeList[
+                Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]]
+            ](),
         ],
         Reducer=_SliceStrideMapper[input_stride_types, step_types, ...],
     ]
@@ -6771,7 +6775,7 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
-    mrope_section: Optional[Coord[TypeList[*mrope_types]()]] = None,
+    mrope_section: Optional[Coord[TypeList[mrope_types]()]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],

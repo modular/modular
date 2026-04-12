@@ -177,19 +177,22 @@ def test_tuple_comparison_different_types_and_lengths() raises:
 def test_tuple_reverse_odd() raises:
     var t = ("hi", 1, 4.5)
     var reversed_t = t^.reverse()
-    assert_equal(reversed_t, (4.5, 1, "hi"))
+    var expected = (4.5, 1, "hi")
+    assert_equal(rebind[type_of(expected)](reversed_t), expected)
 
 
 def test_tuple_reverse_empty() raises:
     var t = Tuple[]()
     var t_reversed = t^.reverse()
-    assert_equal(t_reversed, ())
+    assert_equal(rebind[type_of(())](t_reversed), ())
 
 
 def test_tuple_reverse_even() raises:
     var t = (Bool(True), Int(42))
     var t_reversed = t^.reverse()
-    assert_equal(t_reversed, (Int(42), Bool(True)))
+    var expected = (Int(42), Bool(True))
+    # TODO: Eliminate rebind by making reverse more transparent.
+    assert_equal(rebind[type_of(expected)](t_reversed), expected)
 
 
 def test_tuple_reverse_copy_count() raises:

@@ -109,13 +109,13 @@ from .grouped_tile_scheduler import (
 
 
 comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
-    TypeList[type=CoordLike, ComptimeInt[max_groups], ComptimeInt[1]]()
+    TypeListOf[type=CoordLike, ComptimeInt[max_groups], ComptimeInt[1]]()
 ]
 comptime _GroupPtrTile[max_groups: Int] = TileTensor[
     DType.uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
 ]
 comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
-    TypeList[type=CoordLike, ComptimeInt[max_groups], ComptimeInt[4]]()
+    TypeListOf[type=CoordLike, ComptimeInt[max_groups], ComptimeInt[4]]()
 ]
 comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
     DType.int32, _ProblemSizesLayout[max_groups], MutAnyOrigin

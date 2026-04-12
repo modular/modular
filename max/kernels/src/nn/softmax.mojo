@@ -1066,7 +1066,7 @@ def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
     TempLayoutType: TensorLayout = RowMajorLayout[
-        TypeList[type=CoordLike, RuntimeInt[DType.int64]]()
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
     ],
 ](
     ctx: DeviceContext,

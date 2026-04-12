@@ -450,7 +450,7 @@ def init_clc_barriers[
 
 
 comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
-    TypeList[
+    TypeListOf[
         type=CoordLike, ComptimeInt[1], L._shape_types[0], L._shape_types[1]
     ]()
 ]

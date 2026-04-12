@@ -46,10 +46,10 @@ def test_distribute() raises:
     var ptr = array.unsafe_ptr()
 
     comptime data_layout_shape = Coord[
-        TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
+        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
     ]
     comptime data_layout_stride = Coord[
-        TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
+        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
     ]
     var layout_tensor = TileTensor(
         ptr=ptr,
@@ -96,10 +96,10 @@ def test_distribute_with_swizzle() raises:
     var ptr = array.unsafe_ptr()
 
     comptime data_layout_shape = Coord[
-        TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
+        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
     ]
     comptime data_layout_stride = Coord[
-        TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
+        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
     ]
     var layout_tensor = TileTensor[dtype=DType.uint32](
         ptr=ptr,
@@ -157,10 +157,10 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
     var ptr_with_swizzle = array_with_swizzle.unsafe_ptr()
 
     comptime data_layout_shape = Coord[
-        TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
+        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
     ]
     comptime data_layout_stride = Coord[
-        TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
+        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
     ]
 
     var tensor_no_swizzle = TileTensor[dtype=DType.uint32](
@@ -863,10 +863,10 @@ def test_load_store_linear_non_trivial_stride() raises:
 
     # Column-major layout: stride[0]=1, stride[1]=2
     comptime col_major_shape = Coord[
-        TypeList[type=CoordLike, ComptimeInt[2], ComptimeInt[3]]()
+        TypeListOf[type=CoordLike, ComptimeInt[2], ComptimeInt[3]]()
     ]
     comptime col_major_stride = Coord[
-        TypeList[type=CoordLike, ComptimeInt[1], ComptimeInt[2]]()
+        TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[2]]()
     ]
     var tensor = TileTensor(
         ptr=data.unsafe_ptr(),
@@ -904,7 +904,7 @@ def test_linear_idx_type_small_static_layout() raises:
     comptime TensorType = TileTensor[
         DType.float32,
         RowMajorLayout[
-            TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
+            TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
         ],
         MutAnyOrigin,
     ]
@@ -916,7 +916,7 @@ def test_linear_idx_type_dynamic_layout_generic() raises:
     comptime TensorType = TileTensor[
         DType.float32,
         RowMajorLayout[
-            TypeList[type=CoordLike, RuntimeInt[DType.int], ComptimeInt[4]]()
+            TypeListOf[type=CoordLike, RuntimeInt[DType.int], ComptimeInt[4]]()
         ],
         MutAnyOrigin,
     ]
@@ -929,7 +929,7 @@ def test_linear_idx_type_shared_address_space() raises:
     comptime TensorType = TileTensor[
         DType.float32,
         RowMajorLayout[
-            TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
+            TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
         ],
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,

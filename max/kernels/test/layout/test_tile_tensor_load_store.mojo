@@ -36,7 +36,7 @@ from layout import (
 comptime _SM80 = get_gpu_target["sm_80"]()
 
 comptime _4x4 = RowMajorLayout[
-    TypeList[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
+    TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
 ]
 
 

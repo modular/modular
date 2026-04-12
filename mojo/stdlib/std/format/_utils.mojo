@@ -30,7 +30,7 @@ from std.memory import Span, bitcast, memcpy
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime T = Ts[i]
         _constrained_conforms_to[
             conforms_to(T, Writable),
@@ -205,7 +205,7 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
             writer.write_string(_unqualified_type_name[Self.Types[i]]())
 
         write_sequence_to[
-            size=TypeList[*Self.Types].size,
+            size=Self.Types.size,
             ElementFn=elements,
         ](writer, open="", close="")
 

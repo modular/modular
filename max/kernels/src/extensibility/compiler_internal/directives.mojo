@@ -34,7 +34,7 @@ from std.utils import IndexList
 # ===----------------------------------------------------------------------=== #
 
 comptime _AllRuntimeInt[rank: Int] = TypeList[
-    *Variadic.splat_type[Trait=CoordLike, count=rank, type=RuntimeInt[]]
+    Variadic.splat_type[Trait=CoordLike, count=rank, type=RuntimeInt[]]
 ]()
 """A variadic of `rank` RuntimeInt types."""
 
@@ -49,7 +49,7 @@ comptime _RowMajorTileLayout[
     shape_types: TypeList[type=CoordLike, ...]
 ] = TileLayout[
     shape_types=shape_types,
-    stride_types=_RowMajor[*shape_types.values],
+    stride_types=_RowMajor[*shape_types],
 ]
 """A TileLayout with row-major strides derived from the given shape types."""
 
@@ -69,11 +69,13 @@ Negative values (-1 = dynamic) become RuntimeInt, others become ComptimeInt."""
 
 
 comptime _IndexListToCoordLike[list: IndexList] = TypeList[
-    *_ReduceVariadicAndIdxToVariadic[
+    _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=Variadic.types[
             T=CoordLike,
-            *Variadic.splat_type[Trait=CoordLike, list.size, RuntimeInt[]],
+            *TypeList[
+                Variadic.splat_type[Trait=CoordLike, list.size, RuntimeInt[]]
+            ](),
         ],
         Reducer=_IndexListToCoordLikeMapper[list, ...],
     ]
@@ -273,10 +275,10 @@ struct StaticTensorSpec[
 ](ImplicitlyCopyable):
     # IntTuple aliases for static shape/strides.
     comptime shape_tuple = coord_to_int_tuple[
-        *Self.static_layout._shape_types.values
+        *Self.static_layout._shape_types
     ]()
     comptime strides_tuple = coord_to_int_tuple[
-        *Self.static_layout._stride_types.values
+        *Self.static_layout._stride_types
     ]()
 
     var alignment: Int
@@ -511,13 +513,13 @@ struct StaticTensorSpec[
     @always_inline
     def to_layout(self) -> Layout:
         return Layout(
-            coord_to_int_tuple[*Self.static_layout._shape_types.values](),
-            coord_to_int_tuple[*Self.static_layout._stride_types.values](),
+            coord_to_int_tuple[*Self.static_layout._shape_types](),
+            coord_to_int_tuple[*Self.static_layout._stride_types](),
         )
 
     comptime static_size: Int = Layout(
-        coord_to_int_tuple[*Self.static_layout._shape_types.values](),
-        coord_to_int_tuple[*Self.static_layout._stride_types.values](),
+        coord_to_int_tuple[*Self.static_layout._shape_types](),
+        coord_to_int_tuple[*Self.static_layout._stride_types](),
     ).size()
 
     def get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:
