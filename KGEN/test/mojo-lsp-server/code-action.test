@@ -18,7 +18,7 @@
   "context":{
     "diagnostics":[{
       "range":{"start":{"line":2,"character":1}, "end":{"line":2,"character":6}},
-      "message":"'Int' value is unused",
+      "message":"'Int' value is unused; assign to '_' to discard the result",
       "severity":2,
       "source":"mojo"
     }],
@@ -32,7 +32,7 @@
 // CHECK-NEXT:    {
 // CHECK-NEXT:      "diagnostics": [
 // CHECK-NEXT:        {
-// CHECK-NEXT:          "message": "'Int' value is unused",
+// CHECK-NEXT:          "message": "'Int' value is unused; assign to '_' to discard the result",
 // CHECK-NEXT:          "range": {
 // CHECK-NEXT:            "end": {
 // CHECK-NEXT:              "character": 6,
@@ -68,7 +68,7 @@
 // CHECK-NEXT:      },
 // CHECK-NEXT:      "isPreferred": true,
 // CHECK-NEXT:      "kind": "quickfix",
-// CHECK-NEXT:      "title": "'Int' value is unused"
+// CHECK-NEXT:      "title": "'Int' value is unused; assign to '_' to discard the result"
 // CHECK-NEXT:    }
 // CHECK-NEXT:  ]
 // -----

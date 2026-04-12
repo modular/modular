@@ -780,7 +780,8 @@ ParseResult ExprParser::parseTStringFromSpelling(
       if (!Lexer::findTStringInterpolationEnd(ptr, contentEnd)) {
         // The lexer should have caught this, but be defensive.
         emitError(SMLoc::getFromPointer(exprStart - 1),
-                  "unmatched '{' in t-string");
+                  "unmatched '{' in t-string; add '}' to close the expression "
+                  "or use '{{' for a literal brace");
         return failure();
       }
 
@@ -811,7 +812,8 @@ ParseResult ExprParser::parseTStringFromSpelling(
       // Check if user attempted to use format spec (not yet supported).
       if (getToken().is(Token::colon)) {
         emitError(getToken().getLoc(),
-                  "format specs are not yet supported in t-strings");
+                  "format specifiers are not supported in t-strings; format "
+                  "the value manually before interpolating");
         return failure();
       }
 
@@ -1344,7 +1346,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   // TODO(26.4): Upgrade to an error.
   // TODO(26.5): Remove support for 'fn' entirely.
   if (getToken().is(Token::kw_fn)) {
-    emitWarning(getToken().getLoc(), "'fn' is deprecated, use 'def' instead")
+    emitWarning(getToken().getLoc(), "'fn' is deprecated; use 'def'")
         << FixIt::replaceToken(getToken().getLoc(), "def");
   }
   consumeToken();
@@ -1414,7 +1416,8 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
 
   // Ok, we have a syntactically correct lambda, but we still don't support
   // them yet.
-  emitError(lambdaLoc, "Mojo doesn't support lambda expressions yet");
+  emitError(lambdaLoc, "lambda expressions are not supported; define a nested "
+                       "function with 'def'");
   return failure();
 }
 
@@ -1657,7 +1660,8 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
   //   x =
   // y.foo()
   if (!p.isTokenInCurrentStatement()) {
-    emitError(assignLoc, "expected expression after assignment statement");
+    emitError(assignLoc, "end of line found after '='; the right-hand side "
+                         "must be on the same line");
     return failure();
   }
 

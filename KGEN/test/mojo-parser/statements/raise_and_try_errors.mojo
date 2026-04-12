@@ -23,15 +23,12 @@ def callRaisingFunction():
 
 
 def cannotReRaise() raises:
-    # expected-error @below {{no contextual error to reraise}}
-    # expected-note @below {{provide an error to raise or place 'raise' statement inside an except region}}
+    # expected-error @below {{'raise' must live within an 'except' block or a function marked 'raises'}}
     raise
 
 
-# expected-note @below {{or mark surrounding function as 'raises'}}
 def cannotRaise(err: Error):
-    # expected-error @below {{cannot raise error in this context}}
-    # expected-note @below {{try surrounding 'raise' in a 'try' block}}
+    # expected-error @below {{'raise' requires a surrounding 'try' block or the enclosing function to declare 'raises'}}
     raise err
 
 

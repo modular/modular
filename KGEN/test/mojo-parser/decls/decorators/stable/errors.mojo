@@ -28,7 +28,7 @@ def test_local_var():
 # @stable on alias is now supported (as of escape hatches feature).
 # Verify it doesn't error - this alias will be verified in a separate test.
 @stable
-# expected-warning @+1 {{'alias' is deprecated, use 'comptime' instead}}
+# expected-warning @+1 {{'alias' is deprecated; use 'comptime'}}
 alias MY_STABLE_ALIAS = 42
 
 

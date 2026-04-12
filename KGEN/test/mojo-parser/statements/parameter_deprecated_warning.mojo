@@ -25,14 +25,14 @@ struct IterRange(ImplicitlyCopyable, Iterator):
 
 
 def test_parameter_if[a: __mlir_type.i1]():
-    # CHECK: warning: '@parameter if' is deprecated, use 'comptime if' instead
+    # CHECK: warning: '@parameter if' is deprecated; use 'comptime if'
     @parameter
     if a:
         var inside: Int
 
 
 def test_parameter_for[a: Int]():
-    # CHECK: warning: '@parameter for' is deprecated, use 'comptime for' instead
+    # CHECK: warning: '@parameter for' is deprecated; use 'comptime for'
     @parameter
     for i in IterRange(a):
         pass

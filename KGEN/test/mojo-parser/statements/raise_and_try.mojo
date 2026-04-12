@@ -150,7 +150,7 @@ def rethrowsToRethrow():
         # CHECK: lit.try [[TRY_ERROR2:%.*]] :
         try:
             # CHECK: lit.call {{.*}}maybeRaises{{.*}}([[TRY_ERROR2]], %__call_result_tmp__
-            maybeRaises()  # expected-warning {{'Int' value is unused}}
+            maybeRaises()  # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
         # CHECK: } except {
         except:
             # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}([[TRY_ERROR2]], [[TRY_ERROR1]]){{.*}}*, "take"

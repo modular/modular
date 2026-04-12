@@ -14,7 +14,7 @@ def foo() raises:
 # expected-error @+1 {{unexpected token in expression}}
   return pass
 
-return 32 # expected-error {{cannot return from this context}}
+return 32 # expected-error {{'return' must be inside a function; move this into a function body}}
 
 ##===----------------------------------------------------------------------===##
 # If / While
@@ -92,7 +92,7 @@ def test():
     var my_list_no_iter = MyList_no_iter()
 
 
-    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method required for iteration}}
+    # expected-error @+1 {{'my_iter_no_next' is not 'Iterable'; conform and add a '__next__' method to use it in a 'for' loop}}
     for item in my_list_no_next:
         pass
 
@@ -100,7 +100,7 @@ def test():
     for item in my_list_no_iter:
         pass
 
-    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method required for iteration}}
+    # expected-error @+1 {{'my_iter_no_next' is not 'Iterable'; conform and add a '__next__' method to use it in a 'for' loop}}
     for key, item in my_list_no_next:
         pass
 
@@ -159,16 +159,14 @@ def withWithNoColon(var a: ExampleCM) raises:
   # expected-error @below {{expected ':' or ',' after 'with' expression}}
   with a^ as b
 
-def withNoRaise(var mgr: ExampleCM): # expected-note {{or mark surrounding function as 'raises'}}
+def withNoRaise(var mgr: ExampleCM):
   with mgr^:
-    # expected-error @below {{cannot raise error in this context}}
-    # expected-note @below {{try surrounding 'raise' in a 'try' block}}
+    # expected-error @below {{'raise' requires a surrounding 'try' block or the enclosing function to declare 'raises'}}
     raise Error()
 
   # Allow try-finally, but in a non-raising region.
   try:
-    # expected-error @below {{cannot raise error in this context}}
-    # expected-note @below {{try surrounding 'raise' in a 'try' block}}
+    # expected-error @below {{'raise' requires a surrounding 'try' block or the enclosing function to declare 'raises'}}
     raise Error()
   finally:
     pass

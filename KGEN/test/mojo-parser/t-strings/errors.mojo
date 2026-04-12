@@ -63,26 +63,26 @@ def test_lone_brace_with_nested_quotes():
 
 def test_format_spec_with_precision():
     var x = 42
-    # expected-error @below {{format specs are not yet supported in t-strings}}
+    # expected-error @below {{format specifiers are not supported in t-strings; format the value manually before interpolating}}
     _ = t"{x:.2}"
 
 
 def test_format_spec_empty():
     var x = 42
-    # expected-error @below {{format specs are not yet supported in t-strings}}
+    # expected-error @below {{format specifiers are not supported in t-strings; format the value manually before interpolating}}
     _ = t"{x:}"
 
 
 def test_format_spec_in_multiple_interpolations():
     var x = 42
     var y = 3.14159
-    # expected-error @below {{format specs are not yet supported in t-strings}}
+    # expected-error @below {{format specifiers are not supported in t-strings; format the value manually before interpolating}}
     _ = t"x={x:}, y={y:.3f}"
 
 
 def test_format_spec_with_complex_expression():
     var x = 10
-    # expected-error @below {{format specs are not yet supported in t-strings}}
+    # expected-error @below {{format specifiers are not supported in t-strings; format the value manually before interpolating}}
     _ = t"{x + 10:.2}"
 
 
@@ -154,13 +154,13 @@ def test_raw_newline_in_single_quote():
 
 def test_raw_format_spec():
     var x = 42
-    # expected-error @below {{format specs are not yet supported in t-strings}}
+    # expected-error @below {{format specifiers are not supported in t-strings; format the value manually before interpolating}}
     _ = rt"{x:.2}"
 
 
 def test_raw_format_spec_empty():
     var x = 42
-    # expected-error @below {{format specs are not yet supported in t-strings}}
+    # expected-error @below {{format specifiers are not supported in t-strings; format the value manually before interpolating}}
     _ = rt"{x:}"
 
 

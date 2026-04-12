@@ -43,14 +43,14 @@ def bracketError2():
 def nothing(): pass
 
 def test_indentation1():
-  nothing()   # expected-note {{indentation should match previous statement}}
-    nothing() # expected-error {{statement has excess indentation}}
+  nothing()
+    nothing() # expected-error {{statement indentation must match the rest of the block; adjust to align}}
 
 def test_indentation2(p: Bool):
   nothing()
-  if p:   # expected-note {{indentation should match previous statement}}
+  if p:
       nothing()
-   nothing() # expected-error {{statement has excess indentation}}
+   nothing() # expected-error {{statement indentation must match the rest of the block; adjust to align}}
 
 # Decorator processing.
 # https://github.com/modular/mojo/issues/1655
@@ -59,7 +59,7 @@ def test_indentation2(p: Bool):
 
 # https://github.com/modular/mojo/issues/1230
 # Parser crashes on incomplete decorator
-@ # expected-error {{missing decorator expression after '@'}}
+@ # expected-error {{found stray '@'; '@' must be followed by a decorator name}}
 def m # expected-error {{expected '(' for argument list}}
 
 # Issue #6909
