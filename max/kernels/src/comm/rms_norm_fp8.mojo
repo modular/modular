@@ -270,6 +270,7 @@ def _rms_norm_fused_fp8_gpu[
         launch[1, False]()
 
 
+@__name(t"rms_norm_fused_fp8_warp_tiling_{in_dtype}_{out_dtype}", mangle=True)
 def _rms_norm_fused_fp8_kernel_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -478,6 +479,7 @@ def _rms_norm_fused_fp8_gpu_launch[
             )
 
 
+@__name(t"rms_norm_fused_fp8_block_{in_dtype}_{out_dtype}", mangle=True)
 def _rms_norm_fused_fp8_kernel_block[
     mut: Bool,
     origin: Origin[mut=mut],

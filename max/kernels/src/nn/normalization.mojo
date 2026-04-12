@@ -304,6 +304,7 @@ def welford_block_all_reduce[
     )
 
 
+@__name(t"layer_norm_gpu_warp_tiling_{dtype}", mangle=True)
 def layer_norm_gpu_warp_tiling[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -384,6 +385,7 @@ def layer_norm_gpu_warp_tiling[
             output_fn[Int(simd_width), align](row, idx, norm_val.cast[dtype]())
 
 
+@__name(t"layer_norm_gpu_block_{dtype}", mangle=True)
 def layer_norm_gpu_block[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -946,6 +948,9 @@ def _rms_norm_warp_tiling_subkernel[
     return norm_val
 
 
+@__name(
+    t"rms_norm_gpu_warp_tiling_128_{dtype}_{multiply_before_cast}", mangle=True
+)
 def rms_norm_gpu_warp_tiling_128[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -1012,6 +1017,7 @@ def rms_norm_gpu_warp_tiling_128[
             output_fn[simd_width, align](row, idx, norm_val)
 
 
+@__name(t"rms_norm_gpu_warp_tiling_{dtype}_{multiply_before_cast}", mangle=True)
 def rms_norm_gpu_warp_tiling[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -1138,6 +1144,7 @@ def _rms_norm_gpu_block_subkernel[
             output_fn[simd_width, align](row, offset, norm_val)
 
 
+@__name(t"rms_norm_gpu_block_{dtype}_{multiply_before_cast}", mangle=True)
 def rms_norm_gpu_block[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -1542,6 +1549,10 @@ def _rms_norm_impl[
         comptime assert False, "unsupported target " + target
 
 
+@__name(
+    t"rms_norm_fused_residual_add_gpu_warp_tiling_{dtype}_{multiply_before_cast}",
+    mangle=True,
+)
 def rms_norm_fused_residual_add_gpu_warp_tiling[
     mut1: Bool,
     LayoutType1: TensorLayout,
@@ -1641,6 +1652,10 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
             output_fn[simd_width, align](row, idx, norm2_val)
 
 
+@__name(
+    t"rms_norm_fused_residual_add_gpu_block_{dtype}_{multiply_before_cast}",
+    mangle=True,
+)
 def rms_norm_fused_residual_add_gpu_block[
     mut1: Bool,
     LayoutType1: TensorLayout,
@@ -1807,6 +1822,10 @@ def rms_norm_fused_residual_add_gpu_block[
                 output_fn[simd_width, align](row, offset, norm2_val)
 
 
+@__name(
+    t"rms_norm_fused_residual_add_gpu_block_no_shmem_{dtype}_{multiply_before_cast}",
+    mangle=True,
+)
 def rms_norm_fused_residual_add_gpu_block_no_shmem[
     mut1: Bool,
     LayoutType1: TensorLayout,
@@ -2575,6 +2594,7 @@ def group_norm_reshape[
     }
 
 
+@__name(t"group_norm_gpu_warp_tiling_{dtype}", mangle=True)
 def group_norm_gpu_warp_tiling[
     LayoutType: TensorLayout,
     origin: MutOrigin,
@@ -2648,6 +2668,7 @@ def group_norm_gpu_warp_tiling[
             )
 
 
+@__name(t"group_norm_gpu_block_{dtype}", mangle=True)
 def group_norm_gpu_block[
     LayoutType: TensorLayout,
     origin: MutOrigin,
@@ -2743,6 +2764,7 @@ def group_norm_gpu_block[
                 )
 
 
+@__name(t"group_norm_gpu_multi_block_stats_{dtype}", mangle=True)
 def group_norm_gpu_multi_block_stats[
     StatsLayoutType: TensorLayout,
     stats_origin: MutOrigin,
@@ -2822,6 +2844,7 @@ def group_norm_gpu_multi_block_stats[
             stats.store(Coord(Idx(base_idx + 2)), row_count)
 
 
+@__name(t"group_norm_gpu_multi_block_norm_{dtype}", mangle=True)
 def group_norm_gpu_multi_block_norm[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
