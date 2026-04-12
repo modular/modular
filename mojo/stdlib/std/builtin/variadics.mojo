@@ -120,33 +120,6 @@ struct Variadic:
         Ts: The variadic sequences to concatenate.
     """
 
-    comptime reverse[
-        T: type_of(AnyType), //, *element_types: T
-    ]: Variadic.TypesOfTrait[T] = _MapVariadicAndIdxToType[
-        To=T,
-        ParamListType=element_types.values,
-        Mapper=_ReversedVariadic[T, ...],
-    ]
-    """A wrapper to reverse a variadic sequence of types.
-
-    Parameters:
-        T: The trait that the types conform to.
-        element_types: The variadic sequence of types to reverse.
-    """
-
-    comptime splat_type[
-        Trait: type_of(AnyType), //, count: Int, type: Trait
-    ]: Variadic.TypesOfTrait[Trait] = Self.tabulate_type[
-        Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
-    ]
-    """Splat a type into a variadic sequence.
-
-    Parameters:
-        Trait: The trait that the types conform to.
-        count: The number of times to splat the type.
-        type: The type to splat.
-    """
-
     comptime splat_value[
         T: AnyType, //, count: Int, value: T
     ]: Variadic.ValuesOfType[T] = Self.tabulate[
@@ -558,21 +531,30 @@ struct TypeList[
         """
         result = type_of(result)()
 
-    def reverse(
-        sefl,
-    ) -> TypeList[
+    comptime splat[
+        Trait: type_of(AnyType), //, count: Int, type: Trait
+    ] = TypeList[
+        type=Trait,
+        Variadic.tabulate_type[
+            Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
+        ],
+    ]
+    """Splats a type a given number of times.
+
+    Parameters:
+        Trait: The trait that the types conform to.
+        count: The number of times to splat the type.
+        type: The type to splat.
+    """
+
+    comptime reverse = TypeList[
         _MapVariadicAndIdxToType[
             To=Self.type,
             ParamListType=Self.values,
             Mapper=_ReversedVariadic[Self.type, ...],
         ]
-    ]:
-        """The types in reverse order.
-
-        Returns:
-            A new TypeList with the types in reverse order.
-        """
-        return {}
+    ]
+    """Returns this type list in reverse order."""
 
     comptime contains[type: Self.type] = _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[False],

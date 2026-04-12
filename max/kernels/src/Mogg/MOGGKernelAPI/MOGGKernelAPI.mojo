@@ -1999,9 +1999,7 @@ comptime _TransposeStrideTypes[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=Variadic.types[
             T=CoordLike,
-            *TypeList[
-                Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]]
-            ](),
+            *TypeList.splat[Trait=CoordLike, rank, RuntimeInt[]](),
         ],
         Reducer=_TransposeStrideMapper[permutations, input_stride_types, ...],
     ]
@@ -2144,9 +2142,7 @@ comptime _SliceStrideTypes[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=Variadic.types[
             T=CoordLike,
-            *TypeList[
-                Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]]
-            ](),
+            *TypeList.splat[Trait=CoordLike, rank, RuntimeInt[]](),
         ],
         Reducer=_SliceStrideMapper[input_stride_types, step_types, ...],
     ]

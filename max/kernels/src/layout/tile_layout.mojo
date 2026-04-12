@@ -778,7 +778,7 @@ comptime _StaticCosize[
 comptime _RowMajor[*element_types: CoordLike] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Variadic.reverse[*_UnwrapSingleTuple[*element_types]],
+        ParamListType=_UnwrapSingleTuple[*element_types].reverse().values,
         Reducer=_RowMajorMapper,
     ]
 ]()
@@ -1970,7 +1970,7 @@ comptime _CoalescedInterleaved[
 
 comptime _HalfSizeDriver[
     N: Int,
-] = Variadic.splat_type[Trait=CoordLike, count=N // 2, type=ComptimeInt[0]]
+] = TypeList.splat[Trait=CoordLike, count=N // 2, type=ComptimeInt[0]]()
 """A dummy variadic of size N//2 used to drive even/odd extraction."""
 
 
@@ -2006,7 +2006,7 @@ comptime _CoalescedShapeTypes[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=_HalfSizeDriver[
             _CoalescedInterleaved[shape_types, stride_types].size
-        ],
+        ].values,
         Reducer=_ExtractEvenReducer[
             _CoalescedInterleaved[shape_types, stride_types].values, ...
         ],
@@ -2023,7 +2023,7 @@ comptime _CoalescedStrideTypes[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=_HalfSizeDriver[
             _CoalescedInterleaved[shape_types, stride_types].size
-        ],
+        ].values,
         Reducer=_ExtractOddReducer[
             _CoalescedInterleaved[shape_types, stride_types].values, ...
         ],

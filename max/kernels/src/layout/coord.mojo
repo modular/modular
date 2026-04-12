@@ -470,9 +470,7 @@ struct Coord[element_types: TypeList[type=CoordLike, ...]](
         rank: Int, dtype: DType
     ](
         out self: Coord[
-            TypeList[
-                Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[dtype]]
-            ]()
+            TypeList.splat[Trait=CoordLike, rank, RuntimeInt[dtype]]()
         ],
         index_list: IndexList[rank, element_type=dtype],
     ):
@@ -1352,10 +1350,8 @@ def coord[
 ](
     var values: Tuple[*element_types],
     out result: Coord[
-        TypeList[
-            Variadic.splat_type[
-                Trait=CoordLike, type_of(values).__len__(), RuntimeInt[dtype]
-            ]
+        TypeList.splat[
+            Trait=CoordLike, type_of(values).__len__(), RuntimeInt[dtype]
         ]()
     ],
 ) where _AllEqual[Int, *element_types.upcast[AnyType]()]:
@@ -1395,7 +1391,7 @@ def coord[*values: Int]() -> Coord[_IntToComptimeInt[*values]]:
 
 
 comptime DynamicCoord[dtype: DType, size: Int] = Coord[
-    TypeList[Variadic.splat_type[Trait=CoordLike, size, RuntimeInt[dtype]]]()
+    TypeList.splat[Trait=CoordLike, size, RuntimeInt[dtype]]()
 ]
 """
 Create a Coord full of `size` dynamic elements with `dtype`.
@@ -1409,7 +1405,7 @@ Returns:
 """
 
 comptime StaticCoord[value: Int, size: Int] = Coord[
-    TypeList[Variadic.splat_type[Trait=CoordLike, size, ComptimeInt[value]]]()
+    TypeList.splat[Trait=CoordLike, size, ComptimeInt[value]]()
 ]
 """
 Create a Coord full of `size` static elements with `dtype`.
@@ -1650,11 +1646,7 @@ comptime _IntTupleToCoordLike[dtype: DType, tuple: IntTuple] = TypeList[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=Variadic.types[
             T=CoordLike,
-            *TypeList[
-                Variadic.splat_type[
-                    Trait=CoordLike, len(tuple), RuntimeInt[dtype]
-                ]
-            ](),
+            *TypeList.splat[Trait=CoordLike, len(tuple), RuntimeInt[dtype]](),
         ],
         Reducer=_IntTupleToCoordLikeMapper[dtype, tuple, ...],
     ]

@@ -33,8 +33,8 @@ from std.utils import IndexList
 # TileLayout helper aliases
 # ===----------------------------------------------------------------------=== #
 
-comptime _AllRuntimeInt[rank: Int] = TypeList[
-    Variadic.splat_type[Trait=CoordLike, count=rank, type=RuntimeInt[]]
+comptime _AllRuntimeInt[rank: Int] = TypeList.splat[
+    Trait=CoordLike, count=rank, type=RuntimeInt[]
 ]()
 """A variadic of `rank` RuntimeInt types."""
 
@@ -73,9 +73,7 @@ comptime _IndexListToCoordLike[list: IndexList] = TypeList[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=Variadic.types[
             T=CoordLike,
-            *TypeList[
-                Variadic.splat_type[Trait=CoordLike, list.size, RuntimeInt[]]
-            ](),
+            *TypeList.splat[Trait=CoordLike, list.size, RuntimeInt[]](),
         ],
         Reducer=_IndexListToCoordLikeMapper[list, ...],
     ]
