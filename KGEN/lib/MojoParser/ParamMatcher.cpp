@@ -995,8 +995,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
-  if (auto actualTab = dyn_cast<VariadicTabulateAttr>(actualAttr)) {
-    if (auto expectedTab = dyn_cast<VariadicTabulateAttr>(expectedAttr)) {
+  if (auto actualTab = dyn_cast<ParamListTabulateAttr>(actualAttr)) {
+    if (auto expectedTab = dyn_cast<ParamListTabulateAttr>(expectedAttr)) {
       PROP(matchParams(actualTab.getCount(), expectedTab.getCount()));
       PROP(matchParams(actualTab.getGenerator(), expectedTab.getGenerator()));
       return success();

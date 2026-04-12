@@ -152,19 +152,19 @@ def ParamListAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
-def VariadicReduceAttr : DialectAttribute<(attr
+def ParamListReduceAttr : DialectAttribute<(attr
     Type:$type,
     TypedAttr:$base,
     TypedAttr:$paramList,
     TypedAttr:$generator
 )>;
 
-def VariadicZipAttr : DialectAttribute<(attr
+def ParamListZipAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type,
   TypedAttr:$paramLists
 )>;
 
-def VariadicTabulateAttr : DialectAttribute<(attr
+def ParamListTabulateAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type,
   TypedAttr:$count,
   TypedAttr:$generator
@@ -175,13 +175,13 @@ def ParamListSizeAttr : DialectAttribute<(attr
   TypedAttr:$paramList
 )>;
 
-def VariadicGetAttr : DialectAttribute<(attr
+def ParamListGetAttr : DialectAttribute<(attr
   Type:$type,
   TypedAttr:$paramList,
   TypedAttr:$index
 )>;
 
-def VariadicConcatAttr : DialectAttribute<(attr
+def ParamListConcatAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type,
   TypedAttr:$paramLists
 )>;
@@ -412,12 +412,12 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParamDeclAttr,
     ParamDeclArrayAttr,
     ParamListAttr,
-    VariadicReduceAttr,
-    VariadicZipAttr,
-    VariadicTabulateAttr,
+    ParamListReduceAttr,
+    ParamListZipAttr,
+    ParamListTabulateAttr,
     ParamListSizeAttr,
-    VariadicGetAttr,
-    VariadicConcatAttr,
+    ParamListGetAttr,
+    ParamListConcatAttr,
     UnknownAttr,
     UnboundAttr,
     NoneAttr,

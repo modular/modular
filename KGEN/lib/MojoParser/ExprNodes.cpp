@@ -2877,7 +2877,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // Inside a parameter context, emit a parameter operator.
     if (auto indexPV = index.getIfPValue())
       if (auto basePV = baseValue.getIfPValue()) {
-        auto res = VariadicGetAttr::get(basePV, indexPV);
+        auto res = ParamListGetAttr::get(basePV, indexPV);
         return emitter.emitResult(PValue(res), this, dest);
       }
     emitter.emitError(getLoc())
@@ -4680,7 +4680,7 @@ MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
 
   // Compute element type as VariadicGet(fieldTypes, index)
   auto elementTypeAttr =
-      VariadicGetAttr::get(fieldTypesAttr, indexPValue.get());
+      ParamListGetAttr::get(fieldTypesAttr, indexPValue.get());
 
   // Return the type as a PValue (can be used in type position)
   return emitter.emitResult(PValue(elementTypeAttr), this, dest);
@@ -4807,7 +4807,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
             ctx, structTypeAttr, variadicType);
 
     // Compute element type as VariadicGet(fieldTypes, index)
-    auto elementTypeAttr = VariadicGetAttr::get(fieldTypesAttr, indexAttr);
+    auto elementTypeAttr = ParamListGetAttr::get(fieldTypesAttr, indexAttr);
     Type resultElementType = ParamType::get(elementTypeAttr);
 
     // The result ref type uses the container's origin (not field-sensitive)

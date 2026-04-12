@@ -192,17 +192,17 @@ LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 // If not folded, they are not a constant.
-bool VariadicReduceAttr::isConstant() const { return false; }
-bool VariadicZipAttr::isConstant() const { return false; }
+bool ParamListReduceAttr::isConstant() const { return false; }
+bool ParamListZipAttr::isConstant() const { return false; }
 bool ParamListSizeAttr::isConstant() const { return false; }
-bool VariadicGetAttr::isConstant() const { return false; }
-bool VariadicTabulateAttr::isConstant() const { return false; }
-bool VariadicConcatAttr::isConstant() const { return false; }
+bool ParamListGetAttr::isConstant() const { return false; }
+bool ParamListTabulateAttr::isConstant() const { return false; }
+bool ParamListConcatAttr::isConstant() const { return false; }
 
 LogicalResult
-VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                           Type type, TypedAttr base, TypedAttr variadic,
-                           TypedAttr mapper) {
+ParamListReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                            Type type, TypedAttr base, TypedAttr variadic,
+                            TypedAttr mapper) {
   if (type != base.getType())
     return emitError() << "mismatch between reduce base value type and output "
                           "type, expected output type: "
@@ -242,8 +242,8 @@ VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 LogicalResult
-VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                        ParamListType type, TypedAttr variadics) {
+ParamListZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                         ParamListType type, TypedAttr variadics) {
   if (variadics.getType() != type)
     return emitError() << "expected same input/output type, input type: "
                        << type << ", output type: " << variadics.getType();
@@ -253,7 +253,7 @@ VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-TypedAttr VariadicZipAttr::get(ParamListType type, TypedAttr variadics) {
+TypedAttr ParamListZipAttr::get(ParamListType type, TypedAttr variadics) {
   auto va = sugarDynCast<ParamListAttr>(variadics);
   if (!va || va.getValues().empty())
     return Base::get(type.getContext(), type, variadics);
@@ -290,7 +290,7 @@ TypedAttr VariadicZipAttr::get(ParamListType type, TypedAttr variadics) {
   return ParamListAttr::get(zippedElts, type);
 }
 
-TypedAttr VariadicZipAttr::getChecked(
+TypedAttr ParamListZipAttr::getChecked(
     function_ref<::mlir::InFlightDiagnostic()> emitError, ParamListType type,
     TypedAttr variadics) {
   if (failed(verify(emitError, type, variadics)))
@@ -299,9 +299,9 @@ TypedAttr VariadicZipAttr::getChecked(
 }
 
 LogicalResult
-VariadicTabulateAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                             ParamListType type, TypedAttr count,
-                             TypedAttr generator) {
+ParamListTabulateAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                              ParamListType type, TypedAttr count,
+                              TypedAttr generator) {
   if (!isa<IndexType>(count.getType()))
     return emitError() << "expected 'index' type for count, got: "
                        << count.getType();
@@ -327,8 +327,8 @@ VariadicTabulateAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-TypedAttr VariadicTabulateAttr::get(ParamListType type, TypedAttr count,
-                                    TypedAttr generator) {
+TypedAttr ParamListTabulateAttr::get(ParamListType type, TypedAttr count,
+                                     TypedAttr generator) {
   // We can always fold an empty tabulate.
   auto cntAttr = sugarDynCast<IntegerAttr>(count);
   if (cntAttr && cntAttr.getInt() == 0)
@@ -339,7 +339,7 @@ TypedAttr VariadicTabulateAttr::get(ParamListType type, TypedAttr count,
   return Base::get(type.getContext(), type, count, generator);
 }
 
-TypedAttr VariadicTabulateAttr::getChecked(
+TypedAttr ParamListTabulateAttr::getChecked(
     function_ref<::mlir::InFlightDiagnostic()> emitError, ParamListType type,
     TypedAttr count, TypedAttr generator) {
   if (failed(verify(emitError, type, count, generator)))
@@ -373,8 +373,8 @@ TypedAttr ParamListSizeAttr::getChecked(
 }
 
 LogicalResult
-VariadicGetAttr::verify(function_ref<InFlightDiagnostic()> emitError, Type type,
-                        TypedAttr variadic, TypedAttr index) {
+ParamListGetAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                         Type type, TypedAttr variadic, TypedAttr index) {
   auto variadicType = dyn_cast<ParamListType>(variadic.getType());
   if (!variadicType)
     return emitError()
@@ -390,7 +390,7 @@ VariadicGetAttr::verify(function_ref<InFlightDiagnostic()> emitError, Type type,
   return success();
 }
 
-TypedAttr VariadicGetAttr::get(TypedAttr variadic, TypedAttr index) {
+TypedAttr ParamListGetAttr::get(TypedAttr variadic, TypedAttr index) {
   if (auto vaAttr = sugarDynCast<ParamListAttr>(variadic)) {
     auto idxAttr = sugarDynCast<IntegerAttr>(index);
     // If the index is known-constant and in-range, we can simplify it.
@@ -415,14 +415,14 @@ TypedAttr VariadicGetAttr::get(TypedAttr variadic, TypedAttr index) {
     TypedAttr originalVA = upcast.getInputTypeValue();
     assert(isa<ParamListType>(originalVA.getType()) &&
            "must casted from a variadic type to a variadic type");
-    auto beforeCast = VariadicGetAttr::get(originalVA, index);
+    auto beforeCast = ParamListGetAttr::get(originalVA, index);
     return UpcastAttr::get(resultType, beforeCast);
   }
 
   return Base::get(variadic.getContext(), resultType, variadic, index);
 }
 
-TypedAttr VariadicGetAttr::getChecked(
+TypedAttr ParamListGetAttr::getChecked(
     function_ref<::mlir::InFlightDiagnostic()> emitError, TypedAttr variadic,
     TypedAttr index) {
   if (failed(verify(emitError, /*type*/ {}, variadic, index)))
@@ -431,8 +431,8 @@ TypedAttr VariadicGetAttr::getChecked(
 }
 
 LogicalResult
-VariadicConcatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                           ParamListType type, TypedAttr variadics) {
+ParamListConcatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                            ParamListType type, TypedAttr variadics) {
 
   auto toConcatVA = dyn_cast<ParamListType>(variadics.getType());
   if (!toConcatVA)
@@ -446,7 +446,7 @@ VariadicConcatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-TypedAttr VariadicConcatAttr::get(ParamListType type, TypedAttr variadics) {
+TypedAttr ParamListConcatAttr::get(ParamListType type, TypedAttr variadics) {
   auto va = sugarDynCast<ParamListAttr>(variadics);
   if (!va)
     return Base::get(type.getContext(), type, variadics);
@@ -473,7 +473,7 @@ TypedAttr VariadicConcatAttr::get(ParamListType type, TypedAttr variadics) {
   return ParamListAttr::get(concatElts, type);
 }
 
-TypedAttr VariadicConcatAttr::getChecked(
+TypedAttr ParamListConcatAttr::getChecked(
     function_ref<::mlir::InFlightDiagnostic()> emitError, ParamListType type,
     TypedAttr variadics) {
   if (failed(verify(emitError, type, variadics)))

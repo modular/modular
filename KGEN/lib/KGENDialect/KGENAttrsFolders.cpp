@@ -20,10 +20,10 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// VariadicReduceAttr
+// ParamListReduceAttr
 //===----------------------------------------------------------------------===//
 
-FailureOr<TypedAttr> VariadicReduceAttr::evaluateWithContext(
+FailureOr<TypedAttr> ParamListReduceAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
   auto paramList = sugarDynCast<ParamListAttr>(getParamList());
   auto reducer = sugarDynCast<GeneratorAttr>(getGenerator());
@@ -50,10 +50,10 @@ FailureOr<TypedAttr> VariadicReduceAttr::evaluateWithContext(
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicTabulateAttr
+// ParamListTabulateAttr
 //===----------------------------------------------------------------------===//
 
-FailureOr<TypedAttr> VariadicTabulateAttr::evaluateWithContext(
+FailureOr<TypedAttr> ParamListTabulateAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
   auto cntAttr = sugarDynCast<IntegerAttr>(getCount());
   auto genAttr = sugarDynCast<GeneratorAttr>(getGenerator());

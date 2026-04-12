@@ -132,14 +132,14 @@ def KGEN_ParamListAttr : KGEN_ExprAttr<"ParamList", "param_list", [
   let genVerifyDecl = 1;
 }
 
-def KGEN_VariadicReduceAttr : KGEN_ExprAttr<"VariadicReduce", "param_list.reduce",
+def KGEN_ParamListReduceAttr : KGEN_ExprAttr<"ParamListReduce", "param_list.reduce",
   [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                ["evaluateWithContext"]>]> {
-  let summary = "Map a variadic of (type) values to a new variadic of (type) values";
+  let summary = "Map a param_list of values to a new param_list of values";
   let description = [{
-    The `#kgen.param_list.reduce` attribute is used to reduce a variadic of
-    (type) value to a (type) value by repeatedly applying the provided reducer
-    on each element of the variadic.
+    The `#kgen.param_list.reduce` attribute is used to reduce a param_list of
+    value to a value by repeatedly applying the provided reducer
+    on each element of the list.
   }];
 
   let parameters = (ins
@@ -153,11 +153,11 @@ def KGEN_VariadicReduceAttr : KGEN_ExprAttr<"VariadicReduce", "param_list.reduce
   let genVerifyDecl = 1;
 }
 
-def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "param_list.zip"> {
-  let summary = "Zip a variadic of variadics.";
+def KGEN_ParamListZipAttr : KGEN_ExprAttr<"ParamListZip", "param_list.zip"> {
+  let summary = "Zip a param_list of param_list values.";
   let description = [{
     The `#kgen.param_list.zip` attribute is used to zip a param_list of
-    param_list value.
+    param_list values.
 
     Example:
     ```mlir
@@ -166,8 +166,8 @@ def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "param_list.zip"> {
     #kgen.param_list<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
     ```
 
-    At the moment, when the provided variadics are of different lengths, we zip
-    till the shortest variadic are consumed. In the future, we might want to
+    At the moment, when the provided param_list are of different lengths, we zip
+    until the shortest list are consumed. In the future, we might want to
     extend the attribute to accept an "default" value for "zip_longest".
   }];
 
@@ -178,7 +178,7 @@ def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "param_list.zip"> {
 
   let builders = [
     // Override the default builder used by the generated parser because this
-    // may not return an variadic.zip.
+    // may not return an #kgen.param_list.zip.
     AttrBuilderWithInferredContext<(ins
        "ParamListType":$type, "TypedAttr":$paramLists), "", "TypedAttr">,
 
@@ -193,15 +193,15 @@ def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "param_list.zip"> {
   let skipDefaultBuilders = 1;
 }
 
-def KGEN_VariadicTabulateAttr : KGEN_ExprAttr<"VariadicTabulate", "param_list.tabulate",
+def KGEN_ParamListTabulateAttr : KGEN_ExprAttr<"ParamListTabulate", "param_list.tabulate",
   [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                ["evaluateWithContext"]>]> {
-  let summary = "Create a variadic by applying a function to each index 0..count-1";
+  let summary = "Create a param_list by applying a function to each index 0..count-1";
   let description = [{
-    The `#kgen.param_list.tabulate` attribute produces a variadic of (type) values
+    The `#kgen.param_list.tabulate` attribute produces a param_list of values
     by invoking the provided generator function N times with indices 0, 1, ...,
     N-1, where N is the integer count. The generator is a function from index to
-    (element type); each result is collected into the result variadic.
+    value; each result is collected into the result param_list.
 
     Example:
     ```mlir
@@ -257,7 +257,7 @@ def KGEN_ParamListSizeAttr : KGEN_ExprAttr<"ParamListSize", "param_list.size",
   }];
 }
 
-def KGEN_VariadicGetAttr : KGEN_ExprAttr<"VariadicGet", "param_list.get",
+def KGEN_ParamListGetAttr : KGEN_ExprAttr<"ParamListGet", "param_list.get",
     [ContextuallyEvaluatedAttrInterface]> {
   let summary = "return the element at index of a param_list";
 
@@ -285,11 +285,11 @@ def KGEN_VariadicGetAttr : KGEN_ExprAttr<"VariadicGet", "param_list.get",
   let skipDefaultBuilders = 1;
 }
 
-def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "param_list.concat"> {
-  let summary = "Concatenate a variadic of variadics.";
+def KGEN_ParamListConcatAttr : KGEN_ExprAttr<"ParamListConcat", "param_list.concat"> {
+  let summary = "Concatenate a param_list of param_list values.";
   let description = [{
-    The `#kgen.param_list.concat` attribute is used to concatenate a variadic of
-    variadic (type) value.
+    The `#kgen.param_list.concat` attribute is used to concatenate a param_list of
+    param_list values.
 
     Example:
     ```mlir
@@ -306,7 +306,7 @@ def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "param_list.concat
 
   let builders = [
     // Override the default builder used by the generated parser because this
-    // may not return an variadic.concat.
+    // may not return an #kgen.param_list.concat.
     AttrBuilderWithInferredContext<(ins
        "ParamListType":$type, "TypedAttr":$paramLists), "", "TypedAttr">,
 
@@ -610,8 +610,8 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
 def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
   let summary = "Rebind a type with metatype information to base trait.";
   let description = [{
-    The `#kgen.upcast` attribute is used to convert from a (variadic of) typeValue
-    to a (variadic of) typeValue of a less-derived trait.
+    The `#kgen.upcast` attribute is used to convert from a (param_list of) typeValue
+    to a (param_list of) typeValue of a less-derived trait.
     For example, this can represent a cast from Movable to AnyType, handling the
     rebind of the `__del__` member.
 
@@ -661,8 +661,8 @@ def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
   [ContextuallyEvaluatedAttrInterface]> {
   let summary = "Rebind a type with metatype information to a new trait.";
   let description = [{
-    The `#kgen.upcast` attribute is used to convert from a (variadic of) typeValue
-    to a (variadic of) typeValue of a more-derived trait.
+    The `#kgen.downcast` attribute is used to convert from a (param of) typeValue
+    to a (param_list of) typeValue of a more-derived trait.
     For example, this can represent a cast from AnyType to Movable.
 
     Note that parser does not (also can not) verify whether the downcast is
@@ -984,10 +984,10 @@ def KGEN_StructFieldTypesAttr : KGEN_ExprAttr<"StructFieldTypes",
     "struct_field_types",
     [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                  ["evaluateWithContext"]>]> {
-  let summary = "Get the field types of a struct as a variadic.";
+  let summary = "Get the field types of a struct as a param_list.";
   let description = [{
     The `#kgen.struct_field_types` attribute returns the types of all fields
-    in a struct type as a variadic sequence.
+    in a struct type as a param_list sequence.
 
     Example:
 
@@ -1012,10 +1012,10 @@ def KGEN_StructFieldNamesAttr : KGEN_ExprAttr<"StructFieldNames",
     "struct_field_names",
     [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                  ["evaluateWithContext"]>]> {
-  let summary = "Get the field names of a struct as a variadic of strings.";
+  let summary = "Get the field names of a struct as a param_list of strings.";
   let description = [{
     The `#kgen.struct_field_names` attribute returns the names of all fields
-    in a struct type as a variadic sequence of strings.
+    in a struct type as a param_list sequence of strings.
 
     Example:
 
