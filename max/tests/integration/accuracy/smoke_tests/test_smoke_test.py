@@ -26,3 +26,13 @@ def test_model_aliases_contain_exactly_one_double_underscore() -> None:
             f"Model alias {alias!r} must contain exactly one '__'"
             f" (found {count})"
         )
+
+
+def test_model_aliases_hf_model_path_is_lowercase() -> None:
+    """hf_model_path must be lowercase (following hf-repo-lock.tsv convention)."""
+    for alias, config in MODEL_ALIASES.items():
+        path = config["hf_model_path"]
+        assert path == path.casefold(), (
+            f"MODEL_ALIASES[{alias!r}]['hf_model_path'] = {path!r} "
+            f"must be lowercase, use {path.casefold()!r} instead"
+        )
