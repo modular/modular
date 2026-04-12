@@ -191,11 +191,11 @@ def test_func_type():
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
     # expected-error @below {{def[?, .origin._mlir_origin``26: LITImmutOrigin, .origin`27: ImmutOrigin](*MemType) raises capturing -> None}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'def[Ts: KGENParamList[AnyType], ?, .origin._mlir_origin``31: LITMutOrigin, .origin`32: MutOrigin](var * *Ts) capturing -> None'}}
+    # expected-error @below {{'def test_func_type() -> None' value to 'def[_, +, Ts: TypeList[values], ?, .origin._mlir_origin``32: LITMutOrigin, .origin`33: MutOrigin](var * *values) capturing -> None'}}
     comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[Ts: KGENParamList[AnyType], ?, .origin._mlir_origin``34: LITMutOrigin, .origin`35: MutOrigin](var * *Ts) capturing -> None'}}
+    # expected-error @below {{'def test_func_type() -> None' value to 'def[_, +, Ts: TypeList[values], ?, .origin._mlir_origin``36: LITMutOrigin, .origin`37: MutOrigin](var * *values) capturing -> None'}}
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[T: TrivialRegisterPassable, ?, .origin._mlir_origin``37: LITMutOrigin, .origin`38: MutOrigin](mut *T) capturing -> None'}}
+    # expected-error @below {{'def test_func_type() -> None' value to 'def[T: TrivialRegisterPassable, ?, .origin._mlir_origin``39: LITMutOrigin, .origin`40: MutOrigin](mut *T) capturing -> None'}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}

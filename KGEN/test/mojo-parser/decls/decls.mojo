@@ -74,7 +74,7 @@ def variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
 # CHECK-SAME: <{{.*}}, Ts:
 
 # CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:i1 0}, :origin<0> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !ImplicitlyCopyable, {{.*}}, :param_list<!ImplicitlyCopyable> Ts>>, imm *"rest`3"> read_mem|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :param_list<!ImplicitlyCopyable> *"Ts.values`"
 def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
 
@@ -178,9 +178,9 @@ def take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 def variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn], :!Int {4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn]>>
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn],
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
 
 

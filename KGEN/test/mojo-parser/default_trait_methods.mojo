@@ -203,7 +203,7 @@ trait DefaultWithVariadicPack:
 # CHECK-LABEL: lit.struct.decl @UsingDefaultWithVariadicPack
 @fieldwise_init
 struct UsingDefaultWithVariadicPack(DefaultWithVariadicPack):
-    # CHECK: lit.fn @"variadic_method[*::AnyType{{.*}}](default_trait_methods::UsingDefaultWithVariadicPack
+    # CHECK: lit.fn @"variadic_method[{{.*}},*::AnyType{{.*}}](default_trait_methods::UsingDefaultWithVariadicPack
     # CHECK: lit.call @default_trait_methods::@DefaultWithVariadicPack::@"variadic_method
     # CHECK: kgen.conformance{{.*}}DefaultWithVariadicPack
     # CHECK-DAG: kgen.witness "variadic_method{{.*}}"

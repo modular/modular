@@ -545,7 +545,7 @@ def default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
 # CHECK:     "args":
 # CHECK:         "name": "*vals",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "type": "*Ts"
+# CHECK:         "type": "*Ts.values"
 
 # CHECK:     "parameters":
 # CHECK:         "name": "*Ts",
@@ -553,7 +553,7 @@ def default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
 # CHECK:         "path": "/std/builtin/anytype/AnyType",
 # CHECK:         "type": "AnyType"
 
-# CHECK:     "signature": "variadic_pack[*Ts: AnyType](*vals: *Ts)",
+# CHECK:     "signature": "variadic_pack[*Ts: AnyType](*vals: *Ts.values)",
 
 
 def variadic_pack[*Ts: AnyType](*vals: *Ts):

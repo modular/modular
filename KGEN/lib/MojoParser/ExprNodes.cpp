@@ -2279,7 +2279,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
           auto tca = sugarCast<TypeParamAttr>(value);
           auto drt = sugarCast<LIT::StructType>(tca.getMlirType());
           ArrayRef<TypedAttr> paramValues = drt.getParamValues();
-          assert(paramValues.size() == 1 &&
+          assert(paramValues.size() == 2 &&
                  "_types tuple ParamValues must be size 1");
           auto variadic = sugarCast<ParamListAttr>(paramValues[0]);
           for (TypedAttr type : variadic.getValues()) {
@@ -4878,8 +4878,8 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
     return failure();
   }
 
-  assert(expectedType.getParamBindings().size() == 1 &&
-         "Tuple has one variadic parameter");
+  assert(expectedType.getParamBindings().size() == 2 &&
+         "Tuple has two parameter");
   // This must be a fully resolved tuple type.
   auto vaAttr = sugarCast<ParamListAttr>(expectedType.getParamBindings()[0]);
   if (vaAttr.getValues().size() == exprs.size()) {
@@ -4984,6 +4984,8 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // RValue.  It could even be a type!
   ASTType tupleType =
       emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, getLoc());
+  if (sugarIsa<TypeCheckErrorType>(tupleType))
+    return {};
 
   // If the tuple has an inferred type, as in `(a, b)=foo()`, propagate the
   // element types into the subexpressions if possible to enable implicit var
@@ -4997,8 +4999,8 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // implementation.
     if (tupleType.isEqualCanon(
             expectedType.getWithoutParameters(emitter.shared))) {
-      assert(expectedType.getParamBindings().size() == 1 &&
-             "Tuple has one variadic parameter");
+      assert(expectedType.getParamBindings().size() == 2 &&
+             "Tuple has a param_list and TypeList parameter");
       if (auto variadicAttr =
               sugarDynCast<ParamListAttr>(expectedType.getParamBindings()[0])) {
         if (variadicAttr.getValues().size() == exprs.size()) {

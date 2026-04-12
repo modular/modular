@@ -329,9 +329,9 @@ def useNonmaterializable(p: Bool):
 
     # Test that parameter inference using nonmaterializable gives the target,
     # not the nonmaterializable type.
-    # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType !NmTarget, :param_list<!AnyType> []
+    # CHECK: lit.call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!AnyType !NmTarget, 
     tail_types(NmStruct(5))
-    # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType !NmTarget, :param_list<!AnyType> [!NmTarget]
+    # CHECK: lit.call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!NmTarget], :!AnyType !NmTarget, 
     tail_types(NmStruct(5), NmStruct(6))
 
     # However, if the type is the explicitly not the nm-target, it should also work

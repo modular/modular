@@ -11,9 +11,6 @@
 #ifndef KGEN_MOJOPARSER_ASTTYPE_H
 #define KGEN_MOJOPARSER_ASTTYPE_H
 
-// FIXME: Enable this to make parameter variadics of types to be TypeList.
-#define ENABLE_TYPELIST 0
-
 #include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -235,8 +232,9 @@ public:
   RefPackType getVariadicPackInfo(SharedState &shared) const;
 
   struct VariadicPackInfo {
-    TypedAttr typeList; // This is the !kgen.param_type of types.
-    TypedAttr isOwned;  // This is the value of the is_owned parameter.
+    TypedAttr typeList;       // This is the !kgen.param_type of types.
+    TypedAttr typeListStruct; // This is the TypeList for the types
+    TypedAttr isOwned;        // This is the value of the is_owned parameter.
   };
   /// Decode the parameters list of VariadicPack.
   VariadicPackInfo getVariadicPackInfo() const;

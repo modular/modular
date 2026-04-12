@@ -272,18 +272,14 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
       // Inline variadic parameter values if they are known.
       if (pog.isPosVarArg()) {
         auto info = ASTType(paramValue.getType()).getParameterListInfo();
-#if !ENABLE_TYPELIST
-        if (!info.valueList) {
-          // Legacy rep can return null here.
-        } else
-#endif
-            if (auto values = dyn_cast<ParamListAttr>(info.valueList)) {
+        if (auto values = dyn_cast<ParamListAttr>(info.valueList)) {
           // Each value is passed as an individual value to the vararg, not an
           // unpack.
           for (auto elt : values.getValues())
             paramsToPrint.push_back({StringAttr(), elt, VariadicKind::None});
           continue;
-        } else if (sugarIsa<UnknownAttr>(paramValue)) {
+        }
+        if (sugarIsa<UnknownAttr>(paramValue)) {
           paramsToPrint.push_back(
               {StringAttr(), info.valueList, VariadicKind::PosVarArg});
           continue;

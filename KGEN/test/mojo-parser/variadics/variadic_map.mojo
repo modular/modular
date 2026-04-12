@@ -4,33 +4,25 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
 from std.builtin.variadics import *
 
 comptime ToFloatMapper[From: Movable] = FloatDyn
-comptime AnyToFloat[
-    Ts: Variadic.TypesOfTrait[Movable]
-] = Variadic.map_types_to_types[
+comptime AnyToFloat[*Ts: Movable] = TypeList[type=Movable, Variadic.map_types_to_types[
     From=Movable, To=type_of(FloatDyn), element_types=Ts, Mapper=ToFloatMapper
-]
+]]()
 
 
-def unfoldable[*Ts: Movable](int_tuple: Tuple[*Ts]) -> Tuple[*AnyToFloat[Ts]]:
+def unfoldable[*Ts: Movable](int_tuple: Tuple[*Ts]) -> Tuple[*AnyToFloat[*Ts]]:
     pass
 
 
-# CHECK: lit.fn @"foldable(::Tuple[::Int, ::Int, ::Int])"
-# CHECK-SAME: %__result__: !lit.ref<!lit.struct<#Tuple <:param_list<!Movable> [!FloatDyn, !FloatDyn, !FloatDyn]>>
+# CHECK: lit.fn @"foldable(::Tuple[::Int, ::Int, ::Int, *?])"
+# CHECK-SAME: %__result__: !lit.ref<!lit.struct<#Tuple <:param_list<!Movable> [!FloatDyn, !FloatDyn, !FloatDyn], 
 def foldable(int_tuple: Tuple[Int, Int, Int]) -> type_of(unfoldable(int_tuple)):
     pass
-
-
-# // -----
-
-from std.builtin.variadics import *
-
 
 struct DepT[T: AnyType](Movable):
     pass
@@ -44,12 +36,12 @@ comptime AnyToDepT[
 ]
 
 
-def unfoldable[*Ts: Movable](t: Tuple[*Ts]) -> Tuple[*AnyToDepT[Ts]]:
+def unfoldable2[*Ts: Movable](t: Tuple[*Ts]) -> Tuple[*TypeList[AnyToDepT[Ts.values]]()]:
     pass
 
 
-# CHECK: lit.fn @"foldable(::Tuple[::Int, ::FloatDyn, ::Int])"
+# CHECK: lit.fn @"foldable2(::Tuple[::Int, ::FloatDyn, ::Int, *?])"
 # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#Tuple <:param_list<!Movable>
-# CHECK-SAME: [{{.*}}@DepT<:!AnyType !Int>, {{.*}}@DepT<:!AnyType !FloatDyn>, {{.*}}@DepT<:!AnyType !Int>]>
-def foldable(t: Tuple[Int, FloatDyn, Int]) -> type_of(unfoldable(t)):
+# CHECK-SAME: [{{.*}}@DepT<:!AnyType !Int>, {{.*}}@DepT<:!AnyType !FloatDyn>, {{.*}}@DepT<:!AnyType !Int>]
+def foldable2(t: Tuple[Int, FloatDyn, Int]) -> type_of(unfoldable2(t)):
     pass

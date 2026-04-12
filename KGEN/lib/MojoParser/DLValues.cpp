@@ -260,8 +260,8 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     return BValue();
   }
 
-  assert(srcRValueType.getParamBindings().size() == 1 &&
-         "Tuple has one pack parameter");
+  assert(srcRValueType.getParamBindings().size() == 2 &&
+         "Tuple has one param_list of types and one TypeList parameter");
   TypedAttr packAttr = srcRValueType.getParamBindings()[0];
   auto packVariadic = dyn_cast<ParamListAttr>(packAttr);
   if (!packVariadic) {

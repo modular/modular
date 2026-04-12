@@ -959,15 +959,9 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
       sugarIsa<TraitType>(elementMetaType))
     listType = emitter.shared.lookupBuiltinType("ParameterList",
                                                 emitter.declScope, arg.loc);
-  else {
-#if ENABLE_TYPELIST
+  else
     listType = emitter.shared.lookupBuiltinType("TypeList", emitter.declScope,
                                                 arg.loc);
-#else
-    // FIXME: Enable TypeList for non-value vararg params.
-    return ParamListType::get(elementType);
-#endif
-  }
 
   if (isa<TypeCheckErrorType>(listType))
     return listType; // Sanity check the returned VariadicList declaration.
@@ -1565,8 +1559,8 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
 
   // We expect:
   // VariadicPack[
-  //   elt_is_mutable: Bool, _mlir_origin: !lit.origin, origin: Origin[mut], //,
-  //   is_owned: Bool, element_trait: type_of(AnyType), *element_types:
+  //   elt_is_mutable: Bool, _mlir_origin: !lit.origin, origin: Origin[mut],
+  //   element_trait: type_of(AnyType), //, is_owned: Bool, *element_types:
   //   element_type]
   if (!packDecl) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
@@ -1574,7 +1568,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   }
   auto packStruct =
       dyn_cast_if_present<StructDeclOp>(*packDecl->getIfOperation());
-  if (!packStruct || packStruct.getParams().size() != 6) {
+  if (!packStruct || packStruct.getParams().size() != 7) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
@@ -1585,17 +1579,18 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
                    arg.convention != ParsedArgument::kConventionUnspec;
   bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isMutable),
                StringAttr::get(emitter.getContext(), "elt_is_mutable"));
-
   bindings.add(arg.typeExpr,
                UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
                StringAttr::get(emitter.getContext(), "origin"));
   bindings.add(arg.typeExpr, PValue(elementType),
                StringAttr::get(emitter.getContext(), "element_trait"));
 
-  bool isVar = arg.convention == ParsedArgument::kConventionVar;
-  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isVar));
+  bool isOwned = arg.convention == ParsedArgument::kConventionVar;
+  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isOwned));
+
+  // Splat in the list of types.
   bindings.add(arg.typeExpr,
-               UnpackedAttr::get(param.get(), /*kwOnly=*/false, elementType));
+               UnpackedAttr::get(param, /*kwOnly=*/false, elementType));
 
   TypeSignatureType sig = packStruct.getSignature();
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
