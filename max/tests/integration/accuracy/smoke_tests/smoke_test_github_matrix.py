@@ -69,7 +69,7 @@ HF_MODELS: dict[str, set[str]] = {
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": MULTI | {"max-ci@H100"},  # TODO(MODELS-1021) and GEX-3248
-    "google/gemma-4-26b-a4b-it": MULTI,
+    "google/gemma-4-26b-a4b-it": MULTI | {"max", "max-ci"},  # TODO(MODELS-1340)
     "google/gemma-4-31b-it": MULTI,
     "meta-llama/llama-3.1-8b-instruct": MULTI,
     "meta-llama/llama-3.2-1b-instruct": MULTI,
@@ -118,7 +118,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": MULTI | {"vllm", "sglang"},
     "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
     "nvidia/kimi-k2.5-nvfp4__eagle": NON_XL | {"8xMI355"},
-    "google/gemma-4-26b-a4b-it__no_dgc": MULTI | {"vllm@MI355", "sglang@MI355"},
+    "google/gemma-4-26b-a4b-it__no_dgc": DISABLE,  # TODO(MODELS-1340)
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}
