@@ -6650,6 +6650,111 @@ class TestPadRepeatOp:
         )
 
 
+class TestShapeIndexOps:
+    """Tests for internal shape/index interpreter handlers.
+
+    ``mo.ShapeFromTensorOp`` and ``mo.IndexToTensorOp`` are internal MO
+    dialect ops that are usually folded away by canonicalization.  The
+    handlers are defensive — they prevent ``NotImplementedError`` if these
+    ops survive into the interpreter.  Tests call the handler functions
+    directly with constructed buffers since no user-facing graph API
+    produces these ops.
+    """
+
+    def test_index_to_tensor(self) -> None:
+        """IndexToTensorOp wraps a scalar int64 into a rank-0 tensor."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_index_to_tensor
+        from max.driver import Buffer
+
+        input_np = np.array([42], dtype=np.int64)
+        input_buf = Buffer.from_numpy(input_np)
+
+        mock_op = MagicMock()
+        result = _handle_index_to_tensor(mock_op, [input_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        out_np = out.to_numpy()
+        assert out_np.shape == ()
+        assert int(out_np.item()) == 42
+
+    def test_index_to_tensor_negative(self) -> None:
+        """IndexToTensorOp handles negative integers."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_index_to_tensor
+        from max.driver import Buffer
+
+        input_np = np.array([-7], dtype=np.int64)
+        input_buf = Buffer.from_numpy(input_np)
+
+        mock_op = MagicMock()
+        result = _handle_index_to_tensor(mock_op, [input_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        assert int(out.to_numpy().item()) == -7
+
+    def test_index_to_tensor_zero(self) -> None:
+        """IndexToTensorOp handles zero."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_index_to_tensor
+        from max.driver import Buffer
+
+        input_np = np.array([0], dtype=np.int64)
+        input_buf = Buffer.from_numpy(input_np)
+
+        mock_op = MagicMock()
+        result = _handle_index_to_tensor(mock_op, [input_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        assert int(out.to_numpy().item()) == 0
+        assert out.to_numpy().shape == ()
+
+    def test_shape_from_tensor_passthrough(self) -> None:
+        """ShapeFromTensorOp passes through the input buffer."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_shape_from_tensor
+        from max.driver import Buffer
+
+        shape_np = np.array([2, 3, 4], dtype=np.int64)
+        shape_buf = Buffer.from_numpy(shape_np)
+
+        mock_op = MagicMock()
+        result = _handle_shape_from_tensor(mock_op, [shape_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        np.testing.assert_array_equal(out.to_numpy(), shape_np)
+
+    def test_shape_from_tensor_single_dim(self) -> None:
+        """ShapeFromTensorOp handles single-dimension shapes."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_shape_from_tensor
+        from max.driver import Buffer
+
+        shape_np = np.array([10], dtype=np.int64)
+        shape_buf = Buffer.from_numpy(shape_np)
+
+        mock_op = MagicMock()
+        result = _handle_shape_from_tensor(mock_op, [shape_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        np.testing.assert_array_equal(out.to_numpy(), [10])
+
+
 class TestResizeLinearOp:
     """Tests for linear (bilinear) resize interpreter op (mo.resize.linear).
 

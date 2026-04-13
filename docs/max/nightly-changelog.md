@@ -152,6 +152,10 @@ This version is still a work in progress.
   to `resize_bicubic`.
 - Added `resize_bicubic` op handler to the experimental eager interpreter
   (CPU) via `max.experimental.functional.resize_bicubic`.
+- Added defensive `mo.shape.from_tensor` and `mo.index.to_tensor` handlers
+  to the experimental eager interpreter. These internal ops are typically
+  folded away by canonicalization; the handlers prevent crashes if they
+  survive into the interpreter.
 - Added `distributed.allreduce.sum` op handler to the experimental eager
   interpreter, enabling multi-GPU eager execution of allreduce collectives
 - Added `distributed.allgather` op handler to the experimental eager

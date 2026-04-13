@@ -1053,6 +1053,39 @@ def _handle_shape_to_tensor(
     return [inputs[0]]
 
 
+@register_op_handler(mo.ShapeFromTensorOp)
+def _handle_shape_from_tensor(
+    op: mo.ShapeFromTensorOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handle mo.shape.from_tensor - converts a tensor to a shape value.
+
+    The input is a rank-1 integer tensor containing shape dimension values.
+    The output is a !mosh.ape shape value.  In the interpreter both are
+    represented as 1-D int64 Buffers, so this is a pass-through (symmetric
+    with ``_handle_shape_to_tensor``).
+    """
+    assert isinstance(inputs[0], Buffer)
+    return [inputs[0]]
+
+
+@register_op_handler(mo.IndexToTensorOp)
+def _handle_index_to_tensor(
+    op: mo.IndexToTensorOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handle mo.index.to_tensor - wraps an SI64 scalar into a rank-0 tensor.
+
+    The input is a scalar int64 value (stored by the interpreter as a
+    1-element Buffer from ``ParamToValueOp`` or similar).  The result is
+    a rank-0 ``!mo.tensor<[], si64>`` scalar tensor.
+    """
+    assert isinstance(inputs[0], Buffer)
+    val = int(inputs[0].to_numpy().item())
+    result_np = np.array(val, dtype=np.int64)
+    return [Buffer.from_numpy(result_np)]
+
+
 @register_op_handler(mosh.ParamToValueOp)
 def _handle_param_to_value(
     op: mosh.ParamToValueOp,
