@@ -135,6 +135,7 @@ def flare_mla_decoding[
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
+    sparse: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -161,6 +162,29 @@ def flare_mla_decoding[
     q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
         _unsafe_null = ()
     },
+    # Sparse indices: when non-null, the kernel uses gather4 TMA with
+    # pre-computed physical row indices instead of page-table lookups.
+    # d_indices[batch * indices_stride + token] = physical KV row index.
+    d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    indices_stride: Int = 0,
+    # Per-batch topk lengths: when non-null, topk_lengths[batch_idx] gives
+    # the actual number of valid sparse indices for that batch. indices_stride
+    # is the allocation stride (max topk across all batches).
+    topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
+    # Extra KV: separate always-attend cache. Tokens from extra_k are
+    # appended after the topk tokens in a unified attention loop.
+    extra_k: OptionalReg[cache_t] = None,
+    extra_d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
+    extra_scales_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = {_unsafe_null = ()},
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -238,12 +262,18 @@ def flare_mla_decoding[
         # but the logical depth is 576. Override config to use 576.
         comptime if per_token_scale_rope_aware:
             comptime rope_aware_config = MHAConfig[dtype](config.num_heads, 576)
+            # Build extra_k_operand when extra_k is provided.
+            var extra_k_operand: OptionalReg[type_of(k_operand)] = None
+            if extra_k is not None:
+                extra_k_operand = KVCacheMHAOperand(extra_k.value())
+
             flare_mla_decoding_dispatch[
                 kv_num_heads=kv_num_heads,
                 config=rope_aware_config,
                 ragged=ragged,
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=True,
+                sparse=sparse,
             ](
                 output,
                 q,
@@ -258,14 +288,29 @@ def flare_mla_decoding[
                 kv_input_row_offsets,
                 num_partitions,
                 q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k_operand,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
             )
         else:
+            # Build extra_k_operand when extra_k is provided.
+            var extra_k_operand: OptionalReg[type_of(k_operand)] = None
+            if extra_k is not None:
+                extra_k_operand = KVCacheMHAOperand(extra_k.value())
+
             flare_mla_decoding_dispatch[
                 kv_num_heads=kv_num_heads,
                 config=config,
                 ragged=ragged,
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=False,
+                sparse=sparse,
             ](
                 output,
                 q,
@@ -280,6 +325,15 @@ def flare_mla_decoding[
                 kv_input_row_offsets,
                 num_partitions,
                 q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k_operand,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
             )
 
 
@@ -367,6 +421,7 @@ def flare_mla_decoding_dispatch[
     _use_valid_length: Bool = True,
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
+    sparse: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -391,6 +446,22 @@ def flare_mla_decoding_dispatch[
     q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
         _unsafe_null = ()
     },
+    d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    indices_stride: Int = 0,
+    topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
+    # Extra KV: separate always-attend cache operand.
+    extra_k: OptionalReg[k_t] = None,
+    extra_d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
+        _unsafe_null = ()
+    },
+    extra_scales_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = {_unsafe_null = ()},
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -451,6 +522,7 @@ def flare_mla_decoding_dispatch[
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
+                sparse=sparse,
             ](
                 q,
                 k,
@@ -464,6 +536,15 @@ def flare_mla_decoding_dispatch[
                 max_cache_valid_length,
                 ctx,
                 q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -495,6 +576,7 @@ def flare_mla_decoding_dispatch[
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
+                sparse=sparse,
             ](
                 q,
                 k,
@@ -513,6 +595,15 @@ def flare_mla_decoding_dispatch[
                 max_cache_valid_length,
                 ctx,
                 q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
             )
             _ = local_args^
 

@@ -27,6 +27,7 @@ Algorithm:
 """
 
 from std.math import ceildiv, exp2, log2, max, min
+from std.math.constants import log2e
 
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE, block_idx, lane_id, warp_id
@@ -50,6 +51,7 @@ struct CombineParams[
     num_splits: Int,
     ragged: Bool = False,
     warps_per_head: Int = 2,
+    has_attn_sink: Bool = False,
 ](Copyable, DevicePassable, TrivialRegisterPassable):
     # Invariant: warps_per_head must divide 8 (checked in mla_combine_kernel).
     comptime heads_per_block = 8 // Self.warps_per_head
@@ -69,6 +71,10 @@ struct CombineParams[
     var input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ]
+    # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
+    # Contains log-sum-exp of non-selected tokens' attention scores (natural log).
+    # Only used when has_attn_sink is True at compile time.
+    var attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
     var batch_size: Int
     var seq_len: Int
     var num_heads: Int
@@ -110,6 +116,9 @@ struct CombineParams[
         input_row_offsets_ptr: UnsafePointer[
             Scalar[DType.uint32], origin=MutAnyOrigin
         ],
+        attn_sink_ptr: UnsafePointer[
+            Scalar[DType.float32], origin=MutAnyOrigin
+        ],
         batch_size: Int,
         seq_len: Int,
         num_heads: Int,
@@ -119,6 +128,7 @@ struct CombineParams[
         self.lse_accum_split_ptr = lse_accum_split_ptr
         self.output_ptr = output_ptr
         self.input_row_offsets_ptr = input_row_offsets_ptr
+        self.attn_sink_ptr = attn_sink_ptr
         self.batch_size = batch_size
         self.seq_len = seq_len
         self.num_heads = num_heads
@@ -146,16 +156,27 @@ def mla_combine_kernel[
     num_splits: Int,
     ragged: Bool = False,
     warps_per_head: Int = 2,
+    has_attn_sink: Bool = False,
 ](
     params: CombineParams[
-        output_type, accum_type, num_splits, ragged, warps_per_head
+        output_type,
+        accum_type,
+        num_splits,
+        ragged,
+        warps_per_head,
+        has_attn_sink,
     ]
 ):
     # PDL: Wait for the MLA decode kernel (dependent kernel) to complete.
     wait_on_dependent_grids()
 
     comptime ParamsType = CombineParams[
-        output_type, accum_type, num_splits, ragged, warps_per_head
+        output_type,
+        accum_type,
+        num_splits,
+        ragged,
+        warps_per_head,
+        has_attn_sink,
     ]
     comptime heads_per_block = ParamsType.heads_per_block
     comptime assert 8 % warps_per_head == 0, "warps_per_head must divide 8"
@@ -289,6 +310,28 @@ def mla_combine_kernel[
     else:
         global_lse = log2(sum_exp) + max_lse
 
+    # Attn sink correction (split-K path): adjust global_lse to account for
+    # non-selected tokens. This is deferred from the decode kernel to avoid
+    # double-counting across splits.
+    # FlashMLA reference: combine.cu:101-112
+    comptime if has_attn_sink:
+        var attn_sink_val = params.attn_sink_ptr[head_idx]
+        var attn_sink_log2_val = attn_sink_val * Float32(log2e)
+        if global_lse != Float32.MAX:
+            # Normal case: merge attn_sink into the global LSE.
+            # global_lse += log2(1 + exp2(attn_sink_log2 - global_lse))
+            global_lse += log2(
+                Float32(1.0) + exp2(attn_sink_log2_val - global_lse)
+            )
+        else:
+            # No tokens attended (all splits empty): output depends on
+            # attn_sink alone. If attn_sink is -inf, output is zero
+            # (global_lse = +inf makes all scales 0).
+            if attn_sink_val == min_or_neg_inf[DType.float32]():
+                global_lse = Float32.MAX  # +inf => output = 0
+            else:
+                global_lse = attn_sink_log2_val
+
     # Compute scale factors in-place in local_lse registers (no shared memory).
     # Each lane already holds its split's LSE value; we overwrite with the
     # scale factor and broadcast via shuffle_idx in the accumulation loop.
@@ -368,6 +411,7 @@ def launch_mla_combine_kernel[
     num_splits: Int,  # Compile-time number of splits for loop unrolling
     ragged: Bool = False,
     warps_per_head: Int = 2,
+    has_attn_sink: Bool = False,
 ](
     out_accum_split: TileTensor[
         output_type, address_space=AddressSpace.GENERIC, ...
@@ -379,13 +423,19 @@ def launch_mla_combine_kernel[
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],
+    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
     ctx: DeviceContext,
 ) raises:
     comptime ParamsType = CombineParams[
-        output_type, accum_type, num_splits, ragged, warps_per_head
+        output_type,
+        accum_type,
+        num_splits,
+        ragged,
+        warps_per_head,
+        has_attn_sink,
     ]
     comptime heads_per_block = ParamsType.heads_per_block
     comptime num_threads = ParamsType.num_threads
@@ -407,6 +457,7 @@ def launch_mla_combine_kernel[
         lse_ptr,
         out_ptr,
         input_row_offsets_ptr,
+        attn_sink_ptr,
         batch_size,
         seq_len,
         num_heads,
@@ -424,6 +475,7 @@ def launch_mla_combine_kernel[
             num_splits,
             ragged,
             warps_per_head,
+            has_attn_sink,
         ],
         mla_combine_kernel[
             output_type,
@@ -432,6 +484,7 @@ def launch_mla_combine_kernel[
             num_splits,
             ragged,
             warps_per_head,
+            has_attn_sink,
         ],
     ](
         params,
@@ -451,6 +504,7 @@ def mla_decode_combine_partial_outputs[
     num_splits: Int,
     ragged: Bool = False,
     warps_per_head: Int = 2,
+    has_attn_sink: Bool = False,
 ](
     out_accum_split: TileTensor[
         output_type, address_space=AddressSpace.GENERIC, ...
@@ -462,6 +516,7 @@ def mla_decode_combine_partial_outputs[
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],
+    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -474,11 +529,13 @@ def mla_decode_combine_partial_outputs[
         num_splits,
         ragged,
         warps_per_head,
+        has_attn_sink,
     ](
         out_accum_split,
         lse_accum_split,
         output,
         input_row_offsets_ptr,
+        attn_sink_ptr,
         batch_size,
         seq_len,
         num_heads,

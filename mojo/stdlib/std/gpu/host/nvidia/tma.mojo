@@ -332,6 +332,7 @@ def create_tma_descriptor[
     dtype: DType,
     rank: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
 ](
     global_buf: DeviceBuffer[dtype],
     global_shape: IndexList[rank],
@@ -352,6 +353,7 @@ def create_tma_descriptor[
         dtype: The element data type of the tensor.
         rank: The number of dimensions (1-5).
         swizzle_mode: The swizzle pattern to apply in shared memory.
+        l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
 
     Args:
         global_buf: Device buffer containing the global memory tensor.
@@ -425,7 +427,7 @@ def create_tma_descriptor[
             element_stride_arg.unsafe_ptr(),
             TensorMapInterleave.INTERLEAVE_NONE._value,
             swizzle_mode._value,
-            TensorMapL2Promotion.NONE._value,
+            l2_promotion._value,
             TensorMapFloatOOBFill.NONE._value,
         )
     )
