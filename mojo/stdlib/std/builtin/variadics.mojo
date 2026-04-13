@@ -120,19 +120,6 @@ struct Variadic:
         Ts: The variadic sequences to concatenate.
     """
 
-    comptime splat_value[
-        T: AnyType, //, count: Int, value: T
-    ]: Variadic.ValuesOfType[T] = Self.tabulate[
-        count, _SplatValueTabulator[value, _]
-    ]
-    """Splat a value into a variadic sequence.
-
-    Parameters:
-        T: The type of the value to splat.
-        count: The number of times to splat the value.
-        value: The value to splat.
-    """
-
     comptime tabulate[
         ToT: AnyType,
         //,
@@ -149,29 +136,6 @@ struct Variadic:
     """Apply an "index -> value" generator, N times to build a variadic.
 
     Parameters:
-        ToT: The type of the values in the variadic sequence.
-        count: The number of times to apply the generator.
-        Mapper: The generator to apply, mapping from Int to ToT.
-    """
-
-    comptime tabulate_type[
-        Trait: type_of(AnyType),
-        ToT: Trait,
-        //,
-        count: Int,
-        Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
-    ]: Variadic.TypesOfTrait[Trait] = __mlir_attr[
-        `#kgen.param_list.tabulate<`,
-        count._int_mlir_index(),
-        `,`,
-        _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
-        `> : `,
-        Variadic.TypesOfTrait[Trait],
-    ]
-    """Apply an "index -> value" generator, N times to build a variadic.
-
-    Parameters:
-        Trait: The trait that the types conform to.
         ToT: The type of the values in the variadic sequence.
         count: The number of times to apply the generator.
         Mapper: The generator to apply, mapping from Int to ToT.
@@ -531,13 +495,36 @@ struct TypeList[
         """
         result = type_of(result)()
 
-    comptime splat[
-        Trait: type_of(AnyType), //, count: Int, type: Trait
+    comptime tabulate[
+        Trait: type_of(AnyType),
+        ToT: Trait,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
     ] = TypeList[
         Trait=Trait,
-        Variadic.tabulate_type[
-            Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
+        __mlir_attr[
+            `#kgen.param_list.tabulate<`,
+            count._int_mlir_index(),
+            `,`,
+            _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+            `> : `,
+            Variadic.TypesOfTrait[Trait],
         ],
+    ]
+    """Builds a type list by applying an index-to-type mapper `count` times.
+
+    Parameters:
+        Trait: The trait of the generated TypeList.
+        ToT: The type of the values in the generated TypeList.
+        count: The number of times to apply the generator, the length of the result..
+        Mapper: The generator to apply, mapping from Int to ToT.
+    """
+
+    comptime splat[
+        Trait: type_of(AnyType), //, count: Int, type: Trait
+    ] = TypeList.tabulate[
+        Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
     ]
     """Splats a type a given number of times.
 
@@ -802,6 +789,50 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         +Self.type,
     ]
     """Gets a single element on the variadic list."""
+
+    comptime tabulate[
+        type: AnyType,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToValueGeneratorType[type],
+    ] = ParameterList[
+        type=type,
+        __mlir_attr[
+            `#kgen.param_list.tabulate<`,
+            count._int_mlir_index(),
+            `,`,
+            _IndexToIntTabulateWrap[Mapper, ...],
+            `> : `,
+            Variadic.ValuesOfType[type],
+        ],
+    ]
+    """Builds a parameter list by applying an index-to-value mapper `count` times.
+
+    Parameters:
+        type: The element type of the resulting list.
+        count: The length of the result; the mapper is invoked for each index in
+            `0..<count`.
+        Mapper: Compile-time generator mapping `Int` index to a value of `type`.
+    """
+
+    comptime splat[type: AnyType, //, count: Int, value: type] = ParameterList[
+        type=type,
+        __mlir_attr[
+            `#kgen.param_list.tabulate<`,
+            count._int_mlir_index(),
+            `,`,
+            _IndexToIntTabulateWrap[_SplatValueTabulator[value, _], ...],
+            `> : `,
+            Variadic.ValuesOfType[type],
+        ],
+    ]
+    """Builds a homogeneous parameter list by repeating `value` `count` times.
+
+    Parameters:
+        type: The element type.
+        count: The number of copies of `value` in the result.
+        value: The value to repeat at every index.
+    """
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[

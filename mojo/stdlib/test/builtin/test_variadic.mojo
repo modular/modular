@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.variadics import (
+    ParameterList,
     TypeList,
     Variadic,
     _ReduceValueAndIdxToVariadic,
@@ -140,6 +141,31 @@ def test_variadic_splatted() raises:
 def test_variadic_splatted_zero() raises:
     comptime splatted_variadic = TypeList.splat[0, Float64]()
     assert_equal(splatted_variadic.size, 0)
+
+
+comptime _TabulateTimesThree[index: Int]: Int = index * 3
+
+
+def test_parameter_list_tabulate() raises:
+    comptime pl = ParameterList.tabulate[4, _TabulateTimesThree]()
+    assert_equal(pl.size, 4)
+    assert_equal(pl[0], 0)
+    assert_equal(pl[1], 3)
+    assert_equal(pl[2], 6)
+    assert_equal(pl[3], 9)
+
+
+def test_parameter_list_splat() raises:
+    comptime pl = ParameterList.splat[3, 42]()
+    assert_equal(pl.size, 3)
+    assert_equal(pl[0], 42)
+    assert_equal(pl[1], 42)
+    assert_equal(pl[2], 42)
+
+
+def test_parameter_list_splat_zero() raises:
+    comptime pl = ParameterList.splat[0, 1]()
+    assert_equal(pl.size, 0)
 
 
 def test_variadic_contains() raises:
