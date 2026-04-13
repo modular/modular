@@ -453,11 +453,11 @@ def test_matmul_sm90_swapAB_comparison_v2[
         warp_tile_shape=Index(MMA_M, MMA_N, BK),
         mma_shape=Index(MMA_M, MMA_N, MMA_K),
         cluster_shape=Index(1, 1, 1),
-        num_pipeline_stages=UInt(num_pipeline_stages),
-        num_k_partitions=UInt(num_k_partitions),
-        k_group_size=UInt(k_group_size),
+        num_pipeline_stages=num_pipeline_stages,
+        num_k_partitions=num_k_partitions,
+        k_group_size=k_group_size,
         num_warp_k_partitions=1,
-        num_consumer=UInt(num_consumer),
+        num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
     )
 
@@ -468,11 +468,11 @@ def test_matmul_sm90_swapAB_comparison_v2[
         warp_tile_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, BK_SWAPAB),
         mma_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, MMA_K_SWAPAB),
         cluster_shape=Index(1, 1, 1),
-        num_pipeline_stages=UInt(num_pipeline_stages_swapAB),
-        num_k_partitions=UInt(num_k_partitions_swapAB),
-        k_group_size=UInt(k_group_size_swapAB),
+        num_pipeline_stages=num_pipeline_stages_swapAB,
+        num_k_partitions=num_k_partitions_swapAB,
+        k_group_size=k_group_size_swapAB,
         num_warp_k_partitions=1,
-        num_consumer=UInt(num_consumer_swapAB),
+        num_consumer=num_consumer_swapAB,
         partitioned_multicast=partitioned_multicast_swapAB,
     )
 

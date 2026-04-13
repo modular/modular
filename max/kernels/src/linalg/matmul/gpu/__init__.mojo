@@ -283,7 +283,7 @@ def _amdgpu_matmul_config_from_block_shape[
     var block_n = block_shape[1]
     var block_k = _bk_base[a_type, True]()
     var num_warps: UInt = 1
-    var num_warp_k_partitions: UInt = 1
+    var num_warp_k_partitions: Int = 1
 
     # TODO(KERN-2432): Merge these configurations into the below logic.
     if block_m == 16 and a_type.is_float8() and transpose_b:
@@ -640,8 +640,8 @@ def _matmul_gpu[
                             block_m // 2, block_n // 2, _bk_base[a_type, True]()
                         ),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
-                        num_pipeline_stages=UInt(num_pipeline_stages),
-                        num_k_partitions=UInt(num_k_partitions),
+                        num_pipeline_stages=num_pipeline_stages,
+                        num_k_partitions=num_k_partitions,
                         pdl_level=pdl_level,
                     )
                     return _multistage_gemm[config]()
@@ -715,7 +715,7 @@ def _matmul_gpu[
                         ),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=1,
-                        num_k_partitions=UInt(num_k_partitions),
+                        num_k_partitions=num_k_partitions,
                         pdl_level=pdl_level,
                     )
                     return _multistage_gemm[config]()
@@ -1291,7 +1291,7 @@ def multistage_gemm[
         )
         comptime work_space_type = config.split_k_reduction_type
         var work_space_data = ctx.enqueue_create_buffer[work_space_type](
-            Int(runtime_config.num_k_partitions * UInt(M) * UInt(N))
+            runtime_config.num_k_partitions * M * N
         )
         comptime static_N = tensor_c.layout.shape[1].value()
         comptime work_space_layout = Layout.row_major(
@@ -1327,7 +1327,7 @@ def multistage_gemm[
                 tensor_a,
                 tensor_b,
                 tensor_work_space,
-                Int(runtime_config.num_k_partitions),
+                runtime_config.num_k_partitions,
                 grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
             )
@@ -1337,7 +1337,7 @@ def multistage_gemm[
                 tensor_a,
                 tensor_b,
                 tensor_work_space,
-                Int(runtime_config.num_k_partitions),
+                runtime_config.num_k_partitions,
                 grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
@@ -1350,7 +1350,7 @@ def multistage_gemm[
             work_space_data,
             row_major(
                 Coord(
-                    Idx(Int(runtime_config.num_k_partitions)),
+                    Idx(runtime_config.num_k_partitions),
                     Idx(M),
                     Idx(N),
                 )

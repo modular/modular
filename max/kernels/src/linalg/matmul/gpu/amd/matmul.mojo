@@ -309,7 +309,7 @@ def gemm_kernel_amd[
     # Block-level tile dimensions
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
-    comptime BK = config.block_tile_shape[2] * Int(config.num_warp_k_partitions)
+    comptime BK = config.block_tile_shape[2] * config.num_warp_k_partitions
 
     # Warp-level tile dimensions
     comptime WM = config.warp_tile_shape[0]

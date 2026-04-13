@@ -744,13 +744,13 @@ def multistage_gemm_kernel[
     comptime BK = config.block_tile_shape[2]
     comptime WM = config.warp_tile_shape[0]
     comptime WN = config.warp_tile_shape[1]
-    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_pipeline_stages = config.num_pipeline_stages
 
     comptime num_warps_m = config.num_warps_m()
     comptime num_warps_n = config.num_warps_n()
     comptime num_threads = config.num_threads()
 
-    comptime num_warp_k_partitions = Int(config.num_warp_k_partitions)
+    comptime num_warp_k_partitions = config.num_warp_k_partitions
     comptime num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
 
     var tid = thread_idx.x
@@ -870,7 +870,7 @@ def multistage_gemm_kernel[
         num_threads_per_warp_k_part,
         num_pipeline_stages,
         transpose_b,
-        k_group_size=config.k_group_size,
+        k_group_size=UInt(config.k_group_size),
         swizzle_a=is_nvidia_gpu(),
     ](
         c_reg_tile,

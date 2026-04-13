@@ -157,8 +157,8 @@ def test_warp_specialize_gemm_with_multicasting[
         block_tile_shape=block_tile_shape,
         mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
-        num_pipeline_stages=UInt(num_pipeline_stages),
-        num_consumer=UInt(num_consumer),
+        num_pipeline_stages=num_pipeline_stages,
+        num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
     )
 

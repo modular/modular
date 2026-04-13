@@ -205,7 +205,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
 
-    comptime k_group_size = Int(config.k_group_size)
+    comptime k_group_size = config.k_group_size
 
     comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
@@ -279,7 +279,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_type,
         b_type,
         c_type,
-        Int(config.num_pipeline_stages),
+        config.num_pipeline_stages,
         k_group_size,
         swapAB,
     ]()
@@ -288,13 +288,13 @@ def _warp_specialize_gemm_with_multicasting_impl[
     # For normal: rows stay full, cols are divided by num_consumer
     # For swapAB: rows are divided by num_consumer, cols stay full
     comptime c_smem_rows_reg = c_smem_layout.shape[0].value()
-    comptime c_smem_cols_reg = c_smem_layout.shape[1].value() // Int(
-        config.num_consumer
-    )
+    comptime c_smem_cols_reg = c_smem_layout.shape[
+        1
+    ].value() // config.num_consumer
 
-    comptime c_smem_rows_swapAB = c_smem_layout.shape[0].value() // Int(
-        config.num_consumer
-    )
+    comptime c_smem_rows_swapAB = c_smem_layout.shape[
+        0
+    ].value() // config.num_consumer
     comptime c_smem_cols_swapAB = c_smem_layout.shape[1].value()
 
     comptime c_smem_rows = c_smem_rows_reg if not swapAB else c_smem_rows_swapAB
@@ -332,9 +332,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
 
     # one producer and num_consumer consumers each one warpgroup in size
-    comptime num_threads = WARPGROUP_SIZE * Int(
-        config.num_consumer
-    ) + WARPGROUP_SIZE
+    comptime num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
 
     comptime matmul_kernel[
         a_type: DType,
@@ -359,7 +357,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
         config.block_tile_shape,
         config.mma_shape,
         cluster_shape,
-        Int(config.num_pipeline_stages),
+        config.num_pipeline_stages,
         num_threads,
         transpose_b=True,
         a_swizzle=a_swizzle,
@@ -715,12 +713,12 @@ def warp_specialize_gemm_with_multicasting_splitk[
         a_type,
         b_type,
         c_type,
-        Int(config.num_pipeline_stages),
-        Int(k_group_size),
+        config.num_pipeline_stages,
+        k_group_size,
     ]()
     comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // Int(config.num_consumer),
+        c_smem_layout.shape[1].value() // config.num_consumer,
     )
 
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -806,7 +804,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
         config.block_tile_shape,
         config.mma_shape,
         cluster_shape,
-        Int(config.num_pipeline_stages),
+        config.num_pipeline_stages,
         Int(num_threads),
         transpose_b=True,
         a_swizzle=a_swizzle,

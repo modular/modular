@@ -529,11 +529,11 @@ def multistage_qgemm_kernel[
     comptime BK = config.block_tile_shape[2]
     comptime WM = config.warp_tile_shape[0]
     comptime WN = config.warp_tile_shape[1]
-    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_pipeline_stages = config.num_pipeline_stages
 
     comptime num_warps_m = config.num_warps_m()
-    comptime num_warps_n = Int(config.num_warps_n())
-    comptime num_threads = Int(config.num_threads())
+    comptime num_warps_n = config.num_warps_n()
+    comptime num_threads = config.num_threads()
 
     # Unpack quantized weights
     comptime scales_type = DType.bfloat16
@@ -549,7 +549,7 @@ def multistage_qgemm_kernel[
         b_scales_ptr.bitcast[Scalar[scales_type]](),
     )
 
-    comptime num_warp_k_partitions = Int(config.num_warp_k_partitions)
+    comptime num_warp_k_partitions = config.num_warp_k_partitions
     comptime num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
 
     var tid = thread_idx.x
@@ -1399,9 +1399,9 @@ def repack_GPTQ_for_sm8x[
 
 @always_inline
 def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
-    comptime num_warp_k_partitions = Int(config.num_warp_k_partitions)
+    comptime num_warp_k_partitions = config.num_warp_k_partitions
     comptime block_mnk = config.block_tile_shape
-    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_pipeline_stages = config.num_pipeline_stages
     comptime pack_factor = 8
 
     # fmt: off
@@ -1451,7 +1451,7 @@ def multistage_gemm_q[
         # 2. If still insufficient: Halve the number of warp partitions
         # and retry pipeline stages reduction
         comptime for partition_reduction in range(
-            log2_floor(Int(config.num_warp_k_partitions)) + 1
+            log2_floor(config.num_warp_k_partitions) + 1
         ):
             comptime for num_stages in range(config.num_pipeline_stages, 2, -1):
                 comptime adjusted_config = MatmulConfig[
@@ -1459,11 +1459,11 @@ def multistage_gemm_q[
                 ](
                     block_tile_shape=config.block_tile_shape,
                     warp_tile_shape=config.warp_tile_shape,
-                    num_pipeline_stages=UInt(num_stages),
+                    num_pipeline_stages=num_stages,
                     num_k_partitions=config.num_k_partitions,
                     num_warp_k_partitions=(
                         config.num_warp_k_partitions
-                        // UInt(2**partition_reduction)
+                        // (2**partition_reduction)
                     ),  # Reduce warp partitions by powers of 2
                 )
 
