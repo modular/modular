@@ -66,7 +66,7 @@ def wrapped_entry_point[
     ]
     comptime UnsafePointerTupleType = Tuple[
         *TypeList[
-            type=Movable & Defaultable & ImplicitlyCopyable,
+            Trait=Movable & Defaultable & ImplicitlyCopyable,
             Variadic.map_types_to_types[
                 kernel.declared_arg_types, to_unsafe_pointer_mapper
             ],

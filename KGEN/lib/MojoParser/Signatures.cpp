@@ -954,9 +954,11 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
   // Form a ParameterList/TypeList type.
   ASTType listType;
   auto elementMetaType = elementType.extractMetaType();
-  if (sugarIsa<StructMetaType>(elementMetaType) ||
-      sugarIsa<NonStructTypeType>(elementMetaType) ||
-      sugarIsa<TraitType>(elementMetaType))
+
+  bool isValueList = sugarIsa<StructMetaType>(elementMetaType) ||
+                     sugarIsa<NonStructTypeType>(elementMetaType) ||
+                     sugarIsa<TraitType>(elementMetaType);
+  if (isValueList)
     listType = emitter.shared.lookupBuiltinType("ParameterList",
                                                 emitter.declScope, arg.loc);
   else
@@ -981,8 +983,9 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
   }
 
   ParamBindings bindings(emitter.declScope, arg.typeExpr);
-  bindings.add(arg.typeExpr, PValue(elementType),
-               StringAttr::get(emitter.getContext(), "type"));
+  bindings.add(
+      arg.typeExpr, PValue(elementType),
+      StringAttr::get(emitter.getContext(), isValueList ? "type" : "Trait"));
   bindings.add(arg.typeExpr, // 'values' is left unbound.
                UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
                StringAttr::get(emitter.getContext(), "values"));

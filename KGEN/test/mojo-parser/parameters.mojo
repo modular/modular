@@ -1680,7 +1680,7 @@ struct DepUser[b: Int]:
 # parameter-value.
 
 def infer_variadic[
-    ArgTypes: TypeList[type=Movable, ...], //,
+    ArgTypes: TypeList[Trait=Movable, ...], //,
     T: type_of(Tuple[*ArgTypes]),
 ]():
     pass
@@ -1831,11 +1831,11 @@ comptime ImmutAnyOrigin = AnyOrigin[]
 comptime ImmutExternalOrigin = ExternalOrigin[]
 
 
-def upcast_typelist_callee[y: TypeList[type=AnyType, ...]]():
+def upcast_typelist_callee[y: TypeList[Trait=AnyType, ...]]():
     pass
 
-def upcast_typelist_caller[x: TypeList[type=Movable, ...]]():
+def upcast_typelist_caller[x: TypeList[Trait=Movable, ...]]():
     # TODO(MOCO-3712): Causes segfault.
-    #comptime a: TypeList[type=AnyType, ...] = x
+    #comptime a: TypeList[Trait=AnyType, ...] = x
     upcast_typelist_callee[x.upcast[AnyType]()]()
 

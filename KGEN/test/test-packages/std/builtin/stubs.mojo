@@ -963,7 +963,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
 
 
 struct TypeList[
-    type: type_of(AnyType), //, values: _MLIR.KGENTypeListType[type]
+    Trait: type_of(AnyType), //, values: _MLIR.KGENTypeListType[Trait]
 ](TrivialRegisterPassable):
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
@@ -975,7 +975,7 @@ struct TypeList[
         ]
     )
 
-    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+    comptime __getitem_param__[idx: Int]: Self.Trait = __mlir_attr[
         `#kgen.param_list.get<:`,
         type_of(Self.values),
         ` `,
@@ -983,7 +983,7 @@ struct TypeList[
         `, `,
         idx._mlir_value,
         `> : `,
-        +Self.type,
+        +Self.Trait,
     ]
 
     @always_inline("builtin")
@@ -995,7 +995,7 @@ struct TypeList[
     def upcast[
         dst_trait: type_of(AnyType)
     ](self) -> TypeList[
-        type=dst_trait,
+        Trait=dst_trait,
         __mlir_attr[
             `#kgen.upcast<`,
             Self.values,
@@ -1008,7 +1008,7 @@ struct TypeList[
     comptime splat[
         Trait: type_of(AnyType), //, count: Int, type: Trait
     ] = TypeList[
-        type=Trait,
+        Trait=Trait,
         Variadic.tabulate_type[
             Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
         ],
