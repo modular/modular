@@ -77,13 +77,27 @@ static LogicalResult verifyScope(ErrorOr<DIScopeAttr> scopeOr,
   if (failed(scopeOr))
     return op->emitOpError(scopeOr.getError());
 
-  if (!*scopeOr) {
-    // Allow constants to not carry scope (due to deduplication).
-    if (op->hasTrait<OpTrait::ConstantLike>())
-      return success();
+  // ConstantLike ops are exempt from scope consistency checks entirely — both
+  // null scope and non-null (mismatched) scope must be allowed:
+  //
+  //  - Null scope: CSE and other optimizations strip debug scopes from
+  //    constants when hoisting them across scope boundaries. Stripping is the
+  //    authoritative clean-up path (see updateBlockDebugInfo), but it may not
+  //    have run yet when verification fires (e.g. in deferred-update mode).
+  //
+  //  - Non-null mismatched scope: stripping is best-effort. A constant hoisted
+  //    out of an InlinedSubprogramScoped region (e.g. co.execute) before the
+  //    deferred update runs can arrive in the parent function's body still
+  //    carrying the callee's scope — non-null, but wrong.
+  //
+  // In both cases the scope on the constant is stale and irrelevant: scope
+  // belongs on the consumer (debuginfo.value), not on the constant producer.
+  if (op->hasTrait<OpTrait::ConstantLike>())
+    return success();
+
+  if (!*scopeOr)
     return op->emitOpError("missing source location scope").attachNote()
            << "function scope: " << funcScope;
-  }
 
   while (auto lexBlock = dyn_cast_or_null<DILexicalBlockAttr>(*scopeOr))
     scopeOr = lexBlock.getScope();

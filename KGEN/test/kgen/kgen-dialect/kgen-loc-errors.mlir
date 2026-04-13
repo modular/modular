@@ -59,24 +59,6 @@ kgen.func @foo() {
 
 // -----
 
-#file = #debuginfo.file<"foo.mlir" in "/">
-#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<sourceName = <"foo1">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#lexical_block = #debuginfo.lexical_block<scope = #subprogram1, file = #file, line = 104, column = 17>
-#lexical_block1 = #debuginfo.lexical_block<scope = #lexical_block, file = #file, line = 120, column = 22>
-
-#loc = loc("foo.mlir":7:8)
-#loc1 = loc("foo.mlir":10:13)
-#funcLoc = loc(fused<#subprogram>[#loc])
-
-kgen.func @foo() {
-  // CHECK: foo.mlir:10:13: error: 'kgen.param.constant' op location scope does not match scope of parent func location
-  %index1 = kgen.param.constant = <2> loc(fused<#lexical_block1>[#loc1])
-  kgen.return loc(#funcLoc)
-} loc(#funcLoc)
-
-// -----
-
 #file = #debuginfo.file<"foo.mlir" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
   sourceLanguage = DW_LANG_Mojo,
