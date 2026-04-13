@@ -52,6 +52,7 @@ genrule(
 pkg_tar(
     name = "mojosite",
     srcs = [
+        ":internal-docs",
         ":mojo",
         ":mojo-std-public-docs",
     ],
@@ -69,11 +70,20 @@ pkg_files(
             "README.md",
             "BUILD.bazel",
             "code/**",
+            "internal/**",
             "post-process-mojodocs.py",
         ],
     ),
     prefix = "mojo",
     strip_prefix = strip_prefix.from_pkg(""),
+)
+
+pkg_files(
+    name = "internal-docs",
+    srcs = glob(["internal/**"]),
+    prefix = "mojo",
+    strip_prefix = strip_prefix.from_pkg(""),
+    tags = ["manual"],
 )
 
 mojo_commands = [
