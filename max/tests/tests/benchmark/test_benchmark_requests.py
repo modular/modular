@@ -959,7 +959,7 @@ class TestSSEParserHelpers:
 
 
 class TestPixelGenerationPayloadBuilders:
-    """Tests for sglang and vllm-omni pixel generation payload builders."""
+    """Tests for sglang and vllm omni pixel generation payload builders."""
 
     def _make_input(
         self,
@@ -1075,15 +1075,6 @@ class TestValidateTaskAndEndpoint:
         with pytest.raises(ValueError, match="does not support"):
             self.validate("text-generation", "/v1/images/generations", "sglang")
 
-    def test_text_gen_vllm_omni_rejected(self) -> None:
-        """vllm-omni is pixel-gen-only — reject for text-generation."""
-        with pytest.raises(ValueError, match="only supports pixel"):
-            self.validate(
-                "text-generation",
-                "/v1/chat/completions",
-                "vllm-omni",
-            )
-
     def test_pixel_gen_responses_ok(self) -> None:
         self.validate("text-to-image", "/v1/responses", "modular")
 
@@ -1091,7 +1082,7 @@ class TestValidateTaskAndEndpoint:
         self.validate("text-to-image", "/v1/images/generations", "sglang")
 
     def test_pixel_gen_chat_ok(self) -> None:
-        self.validate("text-to-image", "/v1/chat/completions", "vllm-omni")
+        self.validate("text-to-image", "/v1/chat/completions", "vllm")
 
     def test_pixel_gen_completions_rejected(self) -> None:
         with pytest.raises(ValueError, match="requires --endpoint"):

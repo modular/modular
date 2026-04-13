@@ -43,7 +43,6 @@ BaseBackend = Literal[
     "sglang",
     "trtllm",
     "vllm",
-    "vllm-omni",
 ]
 
 Backend = Literal[
@@ -55,9 +54,6 @@ Backend = Literal[
     "trtllm-chat",
     "vllm",
     "vllm-chat",
-    # vllm-omni has no -chat variant: it always uses /v1/chat/completions
-    # for pixel generation and does not support text generation.
-    "vllm-omni",
 ]
 
 Endpoint = Literal[
@@ -96,7 +92,7 @@ PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
 PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[str, Endpoint] = {
     "modular": "/v1/responses",
     "sglang": "/v1/images/generations",
-    "vllm-omni": "/v1/chat/completions",
+    "vllm": "/v1/chat/completions",
 }
 
 # Valid endpoints for pixel generation tasks (union of all backend defaults).
