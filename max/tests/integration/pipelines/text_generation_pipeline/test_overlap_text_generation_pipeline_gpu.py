@@ -213,7 +213,7 @@ def build_graph(device_ref: DeviceRef) -> Model:
             ),
             # input row offsets
             TensorType(
-                DType.int64,
+                DType.uint32,
                 [SymbolicDim("input_row_offsets_len")],
                 device=device_ref,
             ),
@@ -301,7 +301,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         )
         input_row_offsets = DevicePinnedBuffer(
             shape=[len(batch) + 1],
-            dtype=DType.int64,
+            dtype=DType.uint32,
             device=self.device,
         )
         np.cumsum(

@@ -28,7 +28,7 @@ Here is the CPU and GPU timeline for overlap scheduling:
 
 During I3, we have to prepare the model inputs for batch3. However, K2 may
 still be in flight. If batch 2 and 3 share the same requests, then we rely on the
-ScatterFutureTokenProcessor to prepare the ragged_input_tokens for batch 3 on
+RealizeFutureTokenProcessor to prepare the ragged_input_tokens for batch 3 on
 the GPU. This essentially scatters the generated tokens from the output of batch 2
 on the slots corresponding to placeholder future tokens in batch 3's inputs.
 
@@ -46,7 +46,7 @@ For example:
                       idx=4                           idx=9
     [I, like, to, go, FUTURE_TOKEN, I, like, to, eat, FUTURE_TOKEN, I, like, to, read]
 
-  ScatterFutureTokenProcessor would scatter the outputs of batch2 to the right slots:
+  RealizeFutureTokenProcessor would scatter the outputs of batch2 to the right slots:
     scatter_nd(
        inputs=ragged_input_tokens,
        indices=[[-99999], [4], [9]],
@@ -69,6 +69,7 @@ from typing import (
     Any,
     Generic,
     Protocol,
+    TypeVar,
     final,
     runtime_checkable,
 )
@@ -78,7 +79,15 @@ import numpy.typing as npt
 from max.driver import Buffer, DeviceEvent, DevicePinnedBuffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Dim,
+    Graph,
+    SymbolicDim,
+    TensorType,
+    ops,
+)
 from max.graph.weights import (
     WeightsAdapter,
     WeightsFormat,
@@ -136,6 +145,7 @@ from ..sampling import (
 logger = logging.getLogger("max.pipelines")
 
 _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
+_OOB_IDX = np.iinfo(np.int32).min
 
 
 @runtime_checkable
@@ -257,6 +267,7 @@ class SpecDecodeState:
 @runtime_checkable
 class _HasRaggedTokens(Protocol):
     tokens: Buffer
+    input_row_offsets: Buffer
 
 
 @runtime_checkable
@@ -363,8 +374,10 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
         if self.spec_decode is None:
             # Update the context object, realizing the placeholder future tokens.
+            batch_size = len(self.inputs.flat_batch)
+            assert generated_tokens_np.shape == (batch_size,)
             outputs = update_context_and_prepare_responses(
-                generated_tokens_np,
+                generated_tokens_np.reshape((batch_size, 1)),
                 self.inputs.flat_batch,
                 num_steps=1,
                 overwrite_future=True,
@@ -408,45 +421,105 @@ class AsyncBatch(Generic[TextGenerationContextType]):
         return wrapped_outputs
 
 
-@traced
-def build_scatter_future_tokens_graph(device: DeviceRef) -> Graph:
-    """Builds a trivial scatter_nd graph."""
-    with Graph(
-        "my_scatter_future_tokens_graph",
-        input_types=[
-            # Ragged input tokens for batch N
-            TensorType(
-                DType.int64,
-                shape=[SymbolicDim("curr_batch_size")],
-                device=device,
-            ),
-            # Generated tokens for batch N-1
-            TensorType(
-                DType.int64,
-                shape=[SymbolicDim("prev_batch_size"), Dim(1)],
-                device=device,
-            ),
-            # Indices that maps generated tokens from batch N-1 to batch N
-            TensorType(
-                DType.int32,
-                shape=[SymbolicDim("prev_batch_size")],
-                device=device,
-            ),
-        ],
-    ) as graph:
-        tokens = graph.inputs[0].tensor
-        future_token_inputs = graph.inputs[1].tensor
-        future_token_indices = graph.inputs[2].tensor
-        out = kernels.scatter_nd_skip_oob_indices(
-            input=tokens,
-            updates=ops.squeeze(future_token_inputs, axis=-1),
-            indices=ops.unsqueeze(future_token_indices, axis=-1),
+_Tensor = TypeVar("_Tensor")
+_Buffer = TypeVar("_Buffer")
+
+
+@dataclass
+class _RealizeFutureTokenInputs(Generic[_Tensor, _Buffer]):
+    prev_to_curr_map: _Tensor
+    curr_to_prev_map: _Tensor
+    curr_tokens: _Tensor
+    curr_input_row_offsets: _Tensor
+    prev_generated_tokens: _Tensor
+
+    def flatten(self) -> list[_Tensor | _Buffer]:
+        return [
+            self.prev_to_curr_map,
+            self.curr_to_prev_map,
+            self.curr_tokens,
+            self.curr_input_row_offsets,
+            self.prev_generated_tokens,
+        ]
+
+    def unflatten(
+        self, it: Iterator[Any]
+    ) -> _RealizeFutureTokenInputs[Any, Any]:
+        return _RealizeFutureTokenInputs(
+            prev_to_curr_map=next(it),
+            curr_to_prev_map=next(it),
+            curr_tokens=next(it),
+            curr_input_row_offsets=next(it),
+            prev_generated_tokens=next(it),
         )
-        graph.output(out)
+
+
+def build_realize_future_token_graph(
+    *,
+    device: DeviceRef,
+) -> Graph:
+    """Builds a graph that prepares the input for the next batch."""
+    input_types = _RealizeFutureTokenInputs[TensorType, BufferType](
+        prev_to_curr_map=TensorType(
+            DType.int64,
+            shape=[SymbolicDim("prev_batch_size")],
+            device=device,
+        ),
+        curr_to_prev_map=TensorType(
+            DType.int64,
+            shape=[SymbolicDim("curr_batch_size")],
+            device=device,
+        ),
+        curr_tokens=TensorType(
+            DType.int64,
+            shape=[SymbolicDim("seq_len")],
+            device=device,
+        ),
+        curr_input_row_offsets=TensorType(
+            DType.uint32,
+            shape=[SymbolicDim("curr_batch_size_plus_one")],
+            device=device,
+        ),
+        prev_generated_tokens=TensorType(
+            DType.int64,
+            shape=[SymbolicDim("prev_batch_size")],
+            device=device,
+        ),
+    )
+    with Graph(
+        "realize_future_token_graph",
+        input_types=input_types.flatten(),
+    ) as graph:
+        it = iter(graph.inputs)
+        input_values = input_types.unflatten(it)
+
+        curr_input_row_offsets = ops.rebind(
+            input_values.curr_input_row_offsets, [Dim("curr_batch_size") + 1]
+        )
+        possible_future_token_indices = ops.rebind(
+            curr_input_row_offsets[1:] - 1, ["curr_batch_size"]
+        )
+
+        oob_idx = ops.constant(_OOB_IDX, dtype=DType.int64, device=device)
+
+        # scatter the prev generated tokens into the curr tokens
+        prev_to_curr_token_indices = oob_idx.broadcast_to(("prev_batch_size",))
+        prev_to_curr_token_indices = kernels.scatter_nd_skip_oob_indices(
+            input=prev_to_curr_token_indices,
+            updates=possible_future_token_indices.cast(DType.int64),
+            indices=ops.unsqueeze(input_values.curr_to_prev_map, axis=-1),
+        )
+        realized_tokens = kernels.scatter_nd_skip_oob_indices(
+            input=input_values.curr_tokens,
+            updates=input_values.prev_generated_tokens,
+            indices=ops.unsqueeze(prev_to_curr_token_indices, axis=-1),
+        )
+        graph.output(realized_tokens)
+
     return graph
 
 
-class ScatterFutureTokenProcessor:
+class RealizeFutureTokenProcessor:
     """Processor for realizing placeholder future tokens in ragged input on the GPU.
 
     We scatter the generated tokens from the previous batch into the slots
@@ -457,16 +530,15 @@ class ScatterFutureTokenProcessor:
     """
 
     def __init__(self, session: InferenceSession, device: DeviceRef) -> None:
-        self._scatter_future_tokens = session.load(
-            build_scatter_future_tokens_graph(device)
+        self._graph = session.load(
+            build_realize_future_token_graph(device=device)
         )
 
-    def _compute_scatter_future_tok_indices(
+    def _compute_mappings(
         self,
         prev_batch: AsyncBatch[TextGenerationContextType],
         inputs: TextGenerationInputs[TextGenerationContextType],
-        ragged_input_tokens: Buffer,
-    ) -> DevicePinnedBuffer | None:
+    ) -> tuple[DevicePinnedBuffer, DevicePinnedBuffer] | None:
         """Computes scatter indices mapping previous-batch tokens to current slots.
 
         Returns None if all indices are out-of-bounds (no overlap between
@@ -476,44 +548,36 @@ class ScatterFutureTokenProcessor:
         device = prev_generated_tokens.device
         if device.is_host:
             raise ValueError(
-                "Scatter future tokens processor must be on the gpu."
-            )
-        if ragged_input_tokens.device != device:
-            raise ValueError(
-                "Ragged input tokens must be on the same device as the generated "
-                "tokens from the previous batch."
+                "Realize future tokens processor must be on the gpu."
             )
 
         # Prepare the scatter indices.
         prev_batch_size = prev_generated_tokens.shape[0]
-        future_tok_indices = DevicePinnedBuffer(
+        prev_to_curr_map_host = DevicePinnedBuffer(
             shape=(prev_batch_size,),
-            dtype=DType.int32,
+            dtype=DType.int64,
             device=device,
         )
-        future_tok_indices_np = future_tok_indices.to_numpy()
+        prev_to_curr_map = prev_to_curr_map_host.to_numpy()
+
+        curr_batch_size = len(inputs.flat_batch)
+        curr_to_prev_map_host = DevicePinnedBuffer(
+            shape=(curr_batch_size,),
+            dtype=DType.int64,
+            device=device,
+        )
+        curr_to_prev_map = curr_to_prev_map_host.to_numpy()
 
         # Initialize the scatter indices with an oob_idx. These updates will be
         # skipped by the scatter_nd kernel.
-        oob_idx = np.iinfo(np.int32).min
-        future_tok_indices_np.fill(oob_idx)
+        prev_to_curr_map.fill(_OOB_IDX)
+        curr_to_prev_map.fill(_OOB_IDX)
 
         # If a request is present in both the previous and current batch,
-        # then we must scatter the generated token into the placeholder future
-        # token slot.
-
-        # Here we compute the index in the ragged inputs where the last token of
-        # each request is located. If a placeholder future token is present, then
-        # it is at the last index.
-        last_token_indices: list[int] = (
-            np.cumsum([ctx.tokens.active_length for ctx in inputs.flat_batch])
-            - 1
-        ).tolist()
-        req_id_to_last_token_index = {
-            context.request_id: last_token_index
-            for context, last_token_index in zip(
-                inputs.flat_batch, last_token_indices, strict=True
-            )
+        # we record the mapping from the prev to curr batch idx.
+        req_id_to_curr_batch_idx = {
+            context.request_id: curr_batch_idx
+            for curr_batch_idx, context in enumerate(inputs.flat_batch)
         }
 
         prev_flat_batch = prev_batch.inputs.flat_batch
@@ -522,55 +586,56 @@ class ScatterFutureTokenProcessor:
             # If generated_length is still 0, then there is no placeholder future
             # token. This is possible due to chunked prefill.
             if (
-                req_id in req_id_to_last_token_index
+                req_id in req_id_to_curr_batch_idx
                 and context.tokens.generated_length
             ):
-                future_tok_indices_np[prev_idx] = req_id_to_last_token_index[
-                    req_id
-                ]
+                prev_to_curr_map[prev_idx] = req_id_to_curr_batch_idx[req_id]
+                curr_to_prev_map[req_id_to_curr_batch_idx[req_id]] = prev_idx
 
-        return (
-            None
-            if np.all(future_tok_indices_np == oob_idx)
-            else future_tok_indices
-        )
+        if np.all(prev_to_curr_map == _OOB_IDX):
+            return None
+        else:
+            return prev_to_curr_map_host, curr_to_prev_map_host
 
     @traced
-    def scatter_future_tokens(
+    def realize_future_tokens(
         self,
         prev_batch: AsyncBatch[TextGenerationContextType],
         inputs: TextGenerationInputs[TextGenerationContextType],
-        ragged_input_tokens: Buffer,
-    ) -> Buffer:
+        model_inputs: _HasRaggedTokens,
+    ) -> None:
         """Scatters generated tokens from the previous batch into placeholder slots.
 
         Fills placeholder future tokens in the current batch on the GPU.
         Returns ragged_input_tokens unchanged if there is no overlap between
         the previous and current batch.
         """
-        future_tok_indices = self._compute_scatter_future_tok_indices(
-            prev_batch,
-            inputs,
-            ragged_input_tokens,
+        mappings = self._compute_mappings(prev_batch, inputs)
+
+        if mappings is None:
+            return
+
+        assert self._graph is not None, (
+            "RealizeFutureTokenProcessor is None but there are tokens to scatter."
         )
 
-        if future_tok_indices is None:
-            return ragged_input_tokens
-
-        assert self._scatter_future_tokens is not None, (
-            "ScatterFutureTokenProcessor is None but there are tokens to scatter."
+        prev_to_curr_map, curr_to_prev_map = mappings
+        device = prev_to_curr_map.device
+        my_inputs = _RealizeFutureTokenInputs[Buffer, Buffer](
+            prev_to_curr_map=prev_to_curr_map.to(device),
+            curr_to_prev_map=curr_to_prev_map.to(device),
+            curr_tokens=model_inputs.tokens,
+            curr_input_row_offsets=model_inputs.input_row_offsets,
+            prev_generated_tokens=prev_batch.generated_tokens_device,
         )
 
-        # Execute the scatter_nd kernel.
-        prev_generated_tokens = prev_batch.generated_tokens_device
-        device = future_tok_indices.device
-        (new_ragged_input_tokens,) = self._scatter_future_tokens.execute(
-            ragged_input_tokens,
-            prev_generated_tokens,
-            future_tok_indices.to(device),
-        )
+        # Execute the realize_future_tokens kernel.
+        (new_ragged_input_tokens,) = self._graph.execute(*my_inputs.flatten())
 
-        return new_ragged_input_tokens
+        # Update the model inputs with the new ragged input tokens.
+        model_inputs.tokens = new_ragged_input_tokens
+
+        return
 
 
 @final
@@ -718,10 +783,12 @@ class OverlapTextGenerationPipeline(
 
         # Overlap scheduling specific initialization.
 
-        # Load the scatter future tokens graph — not needed on prefill-only
+        # Load the realize future tokens graph — not needed on prefill-only
         # workers (no decode phase, so no future tokens to scatter).
-        self._scatter_future_tokens: ScatterFutureTokenProcessor | None = (
-            ScatterFutureTokenProcessor(
+        self._realize_future_token_processor: (
+            RealizeFutureTokenProcessor | None
+        ) = (
+            RealizeFutureTokenProcessor(
                 session, DeviceRef.from_device(self._devices[0])
             )
             if self._pipeline_config.runtime.pipeline_role
@@ -910,21 +977,6 @@ class OverlapTextGenerationPipeline(
         graph_capture_runner.warmup_pre_ready()
         logger.info("Completed serve device graph capture warmup.")
 
-    def _maybe_scatter_future_tokens(
-        self,
-        inputs: TextGenerationInputs[TextGenerationContextType],
-        ragged_input_tokens: Buffer,
-    ) -> Buffer:
-        scatter = self._scatter_future_tokens
-        if self._prev_batch is None or scatter is None:
-            return ragged_input_tokens
-        with Tracer("scatter_future_tokens"):
-            return scatter.scatter_future_tokens(
-                prev_batch=self._prev_batch,
-                inputs=inputs,
-                ragged_input_tokens=ragged_input_tokens,
-            )
-
     def _run_forward(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
@@ -1016,14 +1068,18 @@ class OverlapTextGenerationPipeline(
                 "OverlapTextGenerationPipeline requires debug-verify model "
                 "inputs with a Buffer `tokens` field."
             )
-        ragged_input_tokens = model_inputs.tokens
-        new_ragged_input_tokens = self._maybe_scatter_future_tokens(
-            inputs, ragged_input_tokens
-        )
-        if new_ragged_input_tokens is not ragged_input_tokens:
-            model_inputs.tokens = new_ragged_input_tokens
+
+        if (
+            self._prev_batch is not None
+            and self._realize_future_token_processor is not None
+        ):
+            self._realize_future_token_processor.realize_future_tokens(
+                prev_batch=self._prev_batch,
+                inputs=inputs,
+                model_inputs=model_inputs,
+            )
             if debug_verify_model_inputs is not None:
-                debug_verify_model_inputs.tokens = new_ragged_input_tokens
+                debug_verify_model_inputs.tokens = model_inputs.tokens
 
         # Wrap the model inputs when speculative decoding is enabled.
         if draft_tokens is not None:
@@ -1103,6 +1159,11 @@ class OverlapTextGenerationPipeline(
                 batch_processors=[sampling_processor],
             )
         generated_tokens_device = sampling_processor.generated_tokens
+        # [B, 1] -> [B]
+        generated_tokens_device = generated_tokens_device.view(
+            dtype=generated_tokens_device.dtype,
+            shape=(generated_tokens_device.shape[0],),
+        )
 
         # Do the copy to host for each token generated.
         with Tracer("D2H generated_tokens"):
