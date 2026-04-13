@@ -8,10 +8,10 @@
 This is a module summary, that
 spills over to the next line."""
 
-# RUN: mojo doc %s | FileCheck %s
+# RUN: kgen-doc %s | FileCheck %s
 
 # Check that no diagnostics are output:
-# RUN: mojo doc %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG
+# RUN: kgen-doc %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG
 # CHECK-DIAG-NOT: warning
 
 # """
@@ -76,7 +76,7 @@ comptime alias_str = ""
 @deprecated("deprecated alias")
 comptime deprecated_alias = 1
 
-# Issue #5361: mojo doc crashes on alias of parametrized function with origin
+# Issue #5361: kgen-doc crashes on alias of parametrized function with origin
 
 # CHECK-LABEL: "name": "parametric_ref_origin_alias",
 # CHECK: "value": "fn_literal"

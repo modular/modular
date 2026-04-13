@@ -25,6 +25,16 @@ package(default_visibility = ["//KGEN:consumers"])
     ]
 ]
 
+# A thin wrapper around Doc.inc_files that adds includes = ["."] so that
+# external tools (e.g. kgen-doc) can access the generated option headers via
+# short paths like "Doc/DocOptions.inc" rather than the full workspace-root
+# path.
+modular_cc_library(
+    name = "DocIncFiles",
+    includes = ["."],
+    deps = [":Doc.inc_files"],
+)
+
 td_library(
     name = "MojoDescriptionTdFiles",
     srcs = glob([
