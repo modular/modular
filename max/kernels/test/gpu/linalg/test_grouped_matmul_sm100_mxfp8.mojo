@@ -1036,6 +1036,79 @@ def main() raises:
             ctx,
         )
 
+        # MMA_N=8: cp.async SFB (group_size < 128)
+        # Single token per expert
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [1, 2, 3, 4],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # MMA_N=8: Mixed cp.async (gs<128) + TMA (gs>=128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [4, 256, 1, 200],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # MMA_N=8: Boundary gs=127/128
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [127, 128, 64, 256],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
         # MMA_N=16 tests (new structured kernel only, small BN, MXFP8)
         print("\n========================================")
         print("Testing NEW kernel with MMA_N=16 (MXFP8)")
@@ -1090,6 +1163,29 @@ def main() raises:
             ctx,
         )
 
+        # MMA_N=16: cp.async SFB (group_size < 128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n16,
+            umma_shape_n16,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+        ](
+            4,
+            [1, 64, 4, 256],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
         # MMA_N=32 tests (new structured kernel only, small BN, MXFP8)
         print("\n========================================")
         print("Testing NEW kernel with MMA_N=32 (MXFP8)")
@@ -1141,6 +1237,29 @@ def main() raises:
             3,
             [64 + 1, 1024 + 3, 128 * 3 + 2],
             [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=32: cp.async SFB (group_size < 128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n32,
+            umma_shape_n32,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+        ](
+            4,
+            [1, 64, 32, 256],
+            [0, 1, 2, 3],
             ctx,
         )
 
@@ -1221,6 +1340,31 @@ def main() raises:
             4,
             [512, 1000, 2000, 3000],
             [0, 3, 2, 4],
+            ctx,
+        )
+
+        # MMA_N=8 AB_swapped: cp.async SFB (mixed small/large)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+            test_rtol=0.08,
+        ](
+            4,
+            [4, 256, 1, 200],
+            [0, 1, 2, 3],
             ctx,
         )
 
