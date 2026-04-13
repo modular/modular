@@ -1348,6 +1348,7 @@ modular_shared_library(
         "//Support:Context",
         "//Support:CrashReporting",
         "//Support:Globals",
+        "@llvm-project//lldb:Utility",
         "@llvm-project//lldb:liblldb.wrapper",
         "@llvm-project//lldb:lldb23.0.0git",
         "@llvm-project//llvm:ExecutionEngine",
