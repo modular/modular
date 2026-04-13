@@ -243,3 +243,12 @@ def default_capture_convention_violation():
         y = 20
         # expected-error @below {{expression must be mutable in assignment}}
         x = 10
+
+# ===----------------------------------------------------------------------=== #
+# Capture RTP with no-read convention
+# ===----------------------------------------------------------------------=== #
+
+def capture_RTP(x : Int) :
+    # expected-error @below{{register passible value 'x' can not be captured by 'mut'. Do you mean 'read'?}}
+    def my_func() unified {mut x}:
+        pass

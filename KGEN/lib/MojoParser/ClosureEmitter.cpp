@@ -2376,10 +2376,15 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       }
     }
 
-    // TODO: shouldn't we emit an error here? or at least we should emit a
-    // MLValue here before capturing? There are code depending on this at the
-    // moment that we should revisit.
-    return value;
+    // Not a reference capture, then it must be a read effect.
+    if (mutability.has_value() && *mutability == false)
+      return value;
+
+    shared.emitError(location, "register passible value '")
+        << name << "' can not be captured by "
+        << (mutability.has_value() ? "'mut'" : "'ref'")
+        << ". Do you mean 'read'?";
+    return {};
   };
 
   switch (parsedConvention) {
