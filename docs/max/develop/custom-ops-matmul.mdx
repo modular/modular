@@ -368,7 +368,7 @@ see that the naive matrix multiplication is roughly only 2.7% as fast as sixth
 algorithm on our list. There's clearly a lot of upside if this core algorithm
 can be improved.
 
-## Kernel 2: Applying memory coalescing
+## Kernel 2: Apply memory coalescing
 
 As one quick optimization that has an outsized impact, global memory accesses
 can be coalesced by swapping the thread indices for columns and rows:
@@ -383,7 +383,7 @@ matrices, which are contiguous in memory.
 
 This leads to an almost tenfold jump in benchmarks on A100.
 
-## Kernel 3: Reworking to use shared memory tiling
+## Kernel 3: Rework to use shared memory tiling
 
 Shared memory on the GPU is far faster to access than global memory, so a next
 step is to rework the matrix multiplication to tile the computation and load
@@ -512,7 +512,7 @@ all GPUs.
 
 :::
 
-## Kernel 4: Using shared memory tiling and register tiling
+## Kernel 4: Use shared memory tiling and register tiling
 
 Expanding upon the advantages of using shared memory tiling, the partial results
 can be accumulated in tiled registers and then the final results transferred
@@ -579,7 +579,7 @@ dst.copy_from(dst_reg)
 
 This gives a nearly 80% improvement over the previous tiling implementation.
 
-## Kernel 5: Introducing block tiling
+## Kernel 5: Introduce block tiling
 
 We can further increase the arithmetic intensity of the calculation using a 2-D
 block tiling strategy. In this kernel, each thread is responsible for
@@ -700,7 +700,7 @@ dst_vec.copy_from(dst_reg_vec)
 From beginning to end, we've realized more than a 36X improvement in matrix
 multiplication speed within our MAX custom operation!
 
-## Kernel 7: Using Tensor Cores for matrix multiplication
+## Kernel 7: Use Tensor Cores for matrix multiplication
 
 Modern GPUs have dedicated hardware units for performing accelerated matrix
 multiplication called Tensor Cores. These Tensor Cores can perform matrix
@@ -810,7 +810,7 @@ GPU. We ran benchmarks of each algorithm, showing the performance benefits of
 various algorithmic improvements. Each improvement was described in detail,
 showing pathways to get the most speed out of modern GPUs using MAX and Mojo.
 
-## Next Steps
+## Next steps
 
 - Follow [our tutorial for building a custom operation from
 scratch](/max/develop/build-custom-ops).
