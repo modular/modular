@@ -3,15 +3,16 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
-
-#include "mojo-doc.h"
+//
+// Standalone doc-generation tool. Produces the same JSON output as `mojo doc`
+// but avoids the LLDB and JIT dependencies that make the full `mojo` binary
+// slow to build, enabling faster iteration on doc-gen tests.
+//
+//===----------------------------------------------------------------------===//
 
 #include "Init/Init.h"
 #include "KGEN/MojoTooling/DocGen.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "MLRT/AsyncRT/Runtime/Allocator.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
-#include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "mlir/IR/DialectRegistry.h"
@@ -19,14 +20,16 @@
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
-#include "llvm/Option/Option.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 #include <filesystem>
 
 using namespace M;
 
+// Reuse the same option table as `mojo doc` so option definitions are
+// single-sourced from DocOptions.td.
 #define DRIVER_OPTIONS_PATH "Doc/DocOptions.inc"
 #include "Support/Driver/OptTable.inc"
 
@@ -38,18 +41,17 @@ struct DocOptTable : public llvm::opt::PrecomputedOptTable {
 };
 } // namespace
 
-/// Given the path to a Mojo source file, opens and parses that file's doc
-/// strings in order to generate structured output (currently JSON). Returns an
-/// integer representing a successful exit code is documentation generation
-/// succeeded, otherwise returns a failure code.
-static int doc(const State &subcommandState) {
-  // Parse command line arguments.
-  State state = subcommandState;
-  DocOptTable options;
+int main(int argc, char *argv[]) {
+  llvm::InitLLVM x(argc, argv);
+
+  // argv[0] is the program name; the option parser receives argv[1..].
+  State state("kgen-doc", llvm::ArrayRef<const char *>(argv + 1, argc - 1));
+
+  DocOptTable optTable;
   unsigned missingIndex = 0;
   unsigned missingCount = 0;
   llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
+      optTable.ParseArgs(state.arguments, missingIndex, missingCount);
 
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(
@@ -68,7 +70,7 @@ static int doc(const State &subcommandState) {
     return result;
 
   // Handle deprecated --validate-doc-strings flag as an alias for -Werror.
-  // Only apply if user hasn't explicitly specified -Werror or -Wno-error.
+  // Only apply if the user hasn't explicitly specified -Werror or -Wno-error.
   if (args.hasArg(options::OPT_validate_doc_strings) &&
       !args.hasArg(options::OPT_werror) &&
       !args.hasArg(options::OPT_wno_error)) {
@@ -89,16 +91,16 @@ static int doc(const State &subcommandState) {
         inputs[1]));
   }
 
-  // Create our context.
+  // Create context.
   ErrorOr<ContextRef> ctxOr =
-      Init::createContext("mojo", Init::Options(), "doc");
+      Init::createContext("kgen-doc", Init::Options(), "doc");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   // Keep ctx alive for the duration of the pipeline; it holds init/runtime
   // state that the parser depends on.
   ContextRef ctx = std::move(*ctxOr);
 
-  // Resolve the input, or exit with an error.
+  // Resolve the input.
   auto pathOrErr =
       resolveMojoInputFileOrPackage(args.getLastArgValue(options::OPT_INPUT));
   if (pathOrErr)
@@ -108,7 +110,7 @@ static int doc(const State &subcommandState) {
   registerAllKGENDialects(registry);
   mlir::MLIRContext context{registry};
 
-  // Open the output file, or exit with an error.
+  // Open the output file.
   std::string outputError;
   std::unique_ptr<llvm::ToolOutputFile> out = mlir::openOutputFile(
       args.getLastArgValue(options::OPT_o, "-"), &outputError);
@@ -127,19 +129,10 @@ static int doc(const State &subcommandState) {
   config.includePaths = args.getAllArgValues(options::OPT_I);
   config.diagnosticFormat = state.diagnosticFormat;
 
-  // Note: timing scope removed during DocGen extraction — it was never
-  // surfaced to users.
   if (!generateMojoDocJSON(*pathOrErr, context, config, out->os()))
     return state.reportError("could not generate documentation");
 
   out->keep();
-
-  // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
-
   return EXIT_SUCCESS;
-}
-
-void M::registerDocSubcommand(SubcommandRegistry &registry) {
-  registry.addCallback("doc", doc);
 }
