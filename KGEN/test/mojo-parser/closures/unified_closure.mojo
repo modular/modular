@@ -1386,3 +1386,25 @@ def captures_with_default_convention():
     # COM: d is omitted because it uses default convention.
     def my_fn() unified {mut a, b, c^, read}:
         pass
+
+
+# // -----
+#
+# COM: Verify stateless promoted closures are registered for apply attributes.
+
+
+def trigger_dtype():
+    comptime k = 64
+
+    def nonsense(n: Int) unified {} -> DType:
+        if n >= 64:
+            return DType.int32
+        elif n >= 32:
+            return DType.uint32
+        else:
+            return DType.float32
+
+    # CHECK: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<("n": !Int) -> !DType> @{{.*}}::@"nonsense(::Int)`{{.*}}", {64})>
+    comptime dtype = nonsense(k)
+    var x = SIMD[dtype, 1]()
+    _ = x

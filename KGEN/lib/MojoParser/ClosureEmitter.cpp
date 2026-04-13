@@ -1667,6 +1667,10 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
   // was moved (not cloned), all mlir::Value pointers are still valid.
   decl.takeDecls(nestedFnDecl);
   nestedFnDecl.setIRValue(nullptr);
+  // Register the lifted function to the symbol table.
+  [[maybe_unused]] Operation *existing =
+      shared.declResolver->finalizeFuncSignature(promotedFn, decl);
+  assert(!existing && "unexpected redefinition of promoted closure");
 
   return &decl;
 }
