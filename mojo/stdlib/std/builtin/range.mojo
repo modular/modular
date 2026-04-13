@@ -74,10 +74,9 @@ struct _ZeroStartingRange(
         return self.curr
 
     @always_inline
-    def __getitem__[I: Indexer](self, idx: I) -> Int:
-        var i = index(idx)
-        assert i < self.__len__(), "index out of range"
-        return i
+    def __getitem__(var self, idx: Some[Indexer]) -> Int:
+        assert index(idx) < self.__len__(), "index out of bounds."
+        return index(idx)
 
     @always_inline
     def __reversed__(self) -> _StridedRange:
@@ -121,8 +120,8 @@ struct _SequentialRange(
         return self.end - self.start
 
     @always_inline
-    def __getitem__[I: Indexer](self, idx: I) -> Int:
-        assert self.__len__() > index(idx), "index out of range"
+    def __getitem__(var self, idx: Some[Indexer]) -> Int:
+        assert index(idx) < self.__len__(), "index out of bounds."
         return self.start + index(idx)
 
     @always_inline
@@ -233,8 +232,8 @@ struct _StridedRange(
         return ceildiv(select(cnd, 0, numerator), select(cnd, 1, denominator))
 
     @always_inline
-    def __getitem__[I: Indexer](self, idx: I) -> Int:
-        assert self.__len__() > index(idx), "index out of range"
+    def __getitem__(var self, idx: Some[Indexer]) -> Int:
+        assert index(idx) < self.__len__(), "index out of bounds."
         return self.start + index(idx) * self.step
 
     @always_inline
@@ -361,8 +360,8 @@ struct _ZeroStartingScalarRange[dtype: DType](
         return self.curr
 
     @always_inline
-    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
-        assert idx < self.__len__(), "index out of range"
+    def __getitem__(var self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
+        assert idx < self.__len__(), "index out of bounds."
         return idx
 
     @always_inline
@@ -411,8 +410,8 @@ struct _SequentialScalarRange[dtype: DType](
         return self.end - self.start
 
     @always_inline
-    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
-        assert idx < self.__len__(), "index out of range"
+    def __getitem__(var self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
+        assert idx < self.__len__(), "index out of bounds."
         return self.start + idx
 
     @always_inline
@@ -482,8 +481,8 @@ struct _StridedScalarRange[dtype: DType](
         return _scalar_range_bounds(self.__len__())
 
     @always_inline
-    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
-        assert idx < self.__len__(), "index out of range"
+    def __getitem__(var self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
+        assert idx < self.__len__(), "index out of bounds."
         return self.start + idx * self.step
 
 

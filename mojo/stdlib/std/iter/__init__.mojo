@@ -54,6 +54,8 @@ for squared in map[square](values):
 """
 
 from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
+from std.os import abort
 
 # ===-----------------------------------------------------------------------===#
 # Iterable
@@ -128,6 +130,83 @@ struct StopIteration(TrivialRegisterPassable, Writable):
         writer.write("StopIteration")
 
 
+@fieldwise_init
+struct _ContiguousIterator[IndexIter: Iterator](Iterator):
+    comptime Element = Self.IndexIter.Element
+
+    var _idx: Int
+    var _how: ContiguousSlice
+    var _inner_iter: Self.IndexIter
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        for _ in range(self._how.start.or_else(0)):
+            self._idx += 1
+            _ = trait_downcast_var[ImplicitlyDestructible & Movable](
+                next(self._inner_iter)
+            )
+        self._how.start = None
+        if self._idx >= self._how.end.or_else(self._idx + 1):
+            raise StopIteration()
+        self._idx += 1
+        return next(self._inner_iter)
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        ref lb, ub = self._inner_iter.bounds()
+        var new_lb = min(
+            lb, self._how.end.or_else(lb)
+        ) - self._how.start.or_else(0)
+        var new_ub = min(ub.or_else(0), self._how.end.or_else(ub.or_else(0)))
+        return {
+            max(new_lb, 0),
+            Optional(
+                max(new_ub - self._how.start.or_else(0), 0)
+            ) if ub else None,
+        }
+
+
+@fieldwise_init
+struct _StridedIterator[IndexIter: Iterator](Iterator):
+    comptime Element = Self.IndexIter.Element
+
+    var _idx: Int
+    var _how: Slice
+    var _inner_iter: Self.IndexIter
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        for _ in range(self._how.start.or_else(0)):
+            self._idx += 1
+            _ = trait_downcast_var[ImplicitlyDestructible & Movable](
+                next(self._inner_iter)
+            )
+        self._how.start = None
+        if self._idx >= self._how.end.or_else(self._idx + 1):
+            raise StopIteration()
+        self._idx += 1
+        var value = next(self._inner_iter)
+        for _ in range(self._how.step.or_else(1) - 1):
+            self._idx += 1
+            try:
+                _ = trait_downcast_var[ImplicitlyDestructible & Movable](
+                    next(self._inner_iter)
+                )
+            except:
+                break
+        return value^
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        ref lb, ub = self._inner_iter.bounds()
+        var new_lb = min(
+            lb, self._how.end.or_else(lb)
+        ) - self._how.start.or_else(0)
+        var new_ub = min(ub.or_else(0), self._how.end.or_else(ub.or_else(0)))
+        return {
+            max(new_lb // self._how.step.or_else(1), 0),
+            Optional(
+                max(new_ub // self._how.step.or_else(1), 0)
+            ) if ub else None,
+        }
+
+
 trait Iterator(ImplicitlyDestructible, Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
@@ -165,7 +244,7 @@ trait Iterator(ImplicitlyDestructible, Movable):
         Examples:
 
         ```mojo
-        def to_int_list[I: Iterable](iter: I) -> List[Int]:
+        def to_int_list(iter: Some[Iterable & Iterator]) -> List[Int]:
             var lower, _upper = iter.bounds()
             var list = List[Int](capacity=lower)
             for element in iter:
@@ -174,6 +253,82 @@ trait Iterator(ImplicitlyDestructible, Movable):
         ```
         """
         return (0, None)
+
+    def __getitem__(var self, idx: Some[Indexer]) -> Self.Element:
+        """Get the value from the iterator at a given index.
+
+        Args:
+            idx: The index.
+
+        Returns:
+            The element.
+
+        Notes:
+            Aborts on OOB.
+        """
+        comptime assert conforms_to(Self.Element, ImplicitlyDestructible), (
+            "The default indexing implementations require the Iterator.Element"
+            " to be ImplicitlyDestructible"
+        )
+
+        var i = index(idx)
+        comptime if conforms_to(Self, Sized):
+            assert UInt(i) < UInt(
+                len(trait_downcast[Sized](self))
+            ), "index out of bounds."
+        else:
+            assert i >= 0, "no negative indexing."
+
+        var j = 0
+        while True:
+            try:
+                var val = trait_downcast_var[ImplicitlyDestructible & Movable](
+                    next(self)
+                )
+                if i == j:
+                    return val^
+                j += 1
+            except StopIteration:
+                abort("index out of bounds.")
+
+    def __getitem__(
+        var self, span: ContiguousSlice
+    ) -> _ContiguousIterator[Self]:
+        """Get the values from the iterator from a given slice.
+
+        Args:
+            span: The slice.
+
+        Returns:
+            The elements.
+        """
+
+        comptime assert conforms_to(Self.Element, ImplicitlyDestructible), (
+            "The default indexing implementations require the Iterator.Element"
+            " to be ImplicitlyDestructible"
+        )
+        assert span.start.or_else(0) >= 0, "no negative indexing."
+        assert span.end.or_else(0) >= 0, "no negative indexing."
+        return {0, span, self^}
+
+    def __getitem__(var self, span: StridedSlice) -> _StridedIterator[Self]:
+        """Get the values from the iterator from a given slice.
+
+        Args:
+            span: The slice.
+
+        Returns:
+            The elements.
+        """
+
+        comptime assert conforms_to(Self.Element, ImplicitlyDestructible), (
+            "The default indexing implementations require the Iterator.Element"
+            " to be ImplicitlyDestructible"
+        )
+        assert span._inner.start.or_else(0) >= 0, "no negative indexing."
+        assert span._inner.end.or_else(0) >= 0, "no negative indexing."
+        assert span._inner.step.or_else(1) >= 1, "no negative indexing."
+        return {0, span._inner, self^}
 
 
 @always_inline
