@@ -72,7 +72,7 @@ _NO_DOCSTRING_LIST = [
     "iter/__init__.mojo",  # docstring fix needed: wrong constraint ('Iterable' should be 'Iterator')
     "itertools/itertools.mojo",  # docstring fix needed: missing imports for 'product'/'cycle'/'repeat'
     "math/math.mojo",  # docstring fix needed: missing 'from std.math import sqrt'; DivModable self-reference
-    "memory/_nonnull.mojo",  # docstring fix needed: missing 'NonNullUnsafePointer' import
+    "memory/_nonnull.mojo",  # docstring fix needed: missing 'UnsafePointer' import
     "pathlib/path.mojo",  # docstring fix needed: imports assert_false but calls assert_true
     "python/_cpython.mojo",  # docstring fix needed: missing imports for Python/GILAcquired/GILReleased
     "python/bindings.mojo",  # docstring fix needed: undefined placeholders; missing PythonObject/OwnedKwargsDict imports
