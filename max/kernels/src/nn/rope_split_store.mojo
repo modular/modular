@@ -140,7 +140,7 @@ def _rope_split_store_ragged[
                     (q_out_ptr + q_base).store(rope_value(val, freq))
                 else:
                     # Non-interleaved: gather re/im halves, rope, scatter.
-                    comptime width_2 = simd_width // 2
+                    comptime width_2 = simd_width / 2
                     var head_start_qkv = qkv_base - hdi
                     var head_start_q = q_base - hdi
                     var re_idx, im_idx = get_safetensors_idx(hdi, head_size)
@@ -188,7 +188,7 @@ def _rope_split_store_ragged[
                     )
                 else:
                     # Non-interleaved K: gather re/im, rope, deinterleave, store.
-                    comptime width_2 = simd_width // 2
+                    comptime width_2 = simd_width / 2
                     var k_head_base = (
                         global_token_idx * combined_dim
                         + q_dim

@@ -2694,7 +2694,7 @@ struct SIMD[dtype: DType, size: Int](
     def deinterleave(
         self,
     ) -> Tuple[
-        SIMD[Self.dtype, Self.size // 2], SIMD[Self.dtype, Self.size // 2]
+        SIMD[Self.dtype, Self.size / 2], SIMD[Self.dtype, Self.size / 2]
     ]:
         """Constructs two vectors by deinterleaving the even and odd lanes of
         the vector.
@@ -2715,8 +2715,8 @@ struct SIMD[dtype: DType, size: Int](
         var res = llvm_intrinsic[
             "llvm.vector.deinterleave2",
             _RegisterPackType[
-                SIMD[Self.dtype, Self.size // 2],
-                SIMD[Self.dtype, Self.size // 2],
+                SIMD[Self.dtype, Self.size / 2],
+                SIMD[Self.dtype, Self.size / 2],
             ],
             has_side_effect=False,
         ](self)

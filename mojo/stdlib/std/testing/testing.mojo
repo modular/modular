@@ -212,44 +212,6 @@ def assert_equal(
 
 
 @always_inline
-def assert_equal[
-    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
-    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
-](
-    lhs: Tuple[*TypeList[lhs_types]().upcast[Movable]()],
-    rhs: Tuple[*TypeList[rhs_types]().upcast[Movable]()],
-    msg: String = "",
-    *,
-    location: Optional[SourceLocation] = None,
-) raises where (
-    AllWritable[*TypeList[lhs_types]().upcast[AnyType]()]
-    and AllWritable[*TypeList[rhs_types]().upcast[AnyType]()]
-):
-    """Asserts that two tuples are equal. If not, an Error is raised.
-
-    Parameters:
-        lhs_types: The types of the elements in the left tuple.
-        rhs_types: The types of the elements in the right tuple.
-
-    Args:
-        lhs: The left-hand side tuple.
-        rhs: The right-hand side tuple.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            repr(lhs),
-            repr(rhs),
-            msg=msg,
-            loc=location.or_else(call_location()),
-        )
-
-
-@always_inline
 def assert_equal_pyobj[
     LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
 ](
@@ -282,44 +244,6 @@ def assert_equal_pyobj[
         raise _assert_cmp_error["`left == right` comparison"](
             String(lhs_obj),
             String(rhs_obj),
-            msg=msg,
-            loc=location.or_else(call_location()),
-        )
-
-
-@always_inline
-def assert_not_equal[
-    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
-    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
-](
-    lhs: Tuple[*TypeList[lhs_types]().upcast[Movable]()],
-    rhs: Tuple[*TypeList[rhs_types]().upcast[Movable]()],
-    msg: String = "",
-    *,
-    location: Optional[SourceLocation] = None,
-) raises where (
-    AllWritable[*TypeList[lhs_types]().upcast[AnyType]()]
-    and AllWritable[*TypeList[rhs_types]().upcast[AnyType]()]
-):
-    """Asserts that two tuples are not equal. If they are, an Error is raised.
-
-    Parameters:
-        lhs_types: The types of the elements in the left tuple.
-        rhs_types: The types of the elements in the right tuple.
-
-    Args:
-        lhs: The left-hand side tuple.
-        rhs: The right-hand side tuple.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs == rhs:
-        raise _assert_cmp_error["`left != right` comparison"](
-            repr(lhs),
-            repr(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )

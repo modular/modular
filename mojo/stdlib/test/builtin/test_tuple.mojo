@@ -156,24 +156,6 @@ def test_tuple_comparison_different_types() raises:
     assert_true((1, "foo") > (1, "bar"))
 
 
-def test_tuple_comparison_different_lengths() raises:
-    assert_false((1, 2, 3) == (1, 2))
-    assert_true((1, 2, 3) != (1, 2))
-    assert_false((1, 2, 3) < (1, 2))
-    assert_true((1, 2, 3) > (1, 2))
-    assert_false((1, 2, 3) <= (1, 2))
-    assert_true((1, 2, 3) >= (1, 2))
-
-
-def test_tuple_comparison_different_types_and_lengths() raises:
-    assert_false((1, "foo") == (1, "bar", "baz"))
-    assert_true((1, "foo") != (1, "bar", "baz"))
-    assert_false((1, "foo") < (1, "bar", "baz"))
-    assert_true((1, "foo") > (1, "bar", "baz"))
-    assert_false((1, "foo") <= (1, "bar", "baz"))
-    assert_true((1, "foo") >= (1, "bar", "baz"))
-
-
 def test_tuple_reverse_odd() raises:
     var t = ("hi", 1, 4.5)
     var reversed_t = t^.reverse()
@@ -298,7 +280,6 @@ def test_tuple_assert_equal() raises:
 def test_tuple_assert_not_equal() raises:
     assert_not_equal((1, 2), (1, 3))
     assert_not_equal((1, "foo"), (1, "bar"))
-    assert_not_equal((1, 2, 3), (1, 2))
 
 
 def test_tuple_conditional_conformances() raises:

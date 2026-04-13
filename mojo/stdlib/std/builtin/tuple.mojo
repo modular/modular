@@ -272,67 +272,6 @@ struct Tuple[*element_types: Movable](
                 return False
         return True
 
-    @always_inline
-    def __eq__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-    ](
-        self: Tuple[*TypeList[self_elt_types]().upcast[Movable]()],
-        other: Tuple[*TypeList[other_elt_types]().upcast[Movable]()],
-    ) -> Bool:
-        """Compare this tuple to another tuple of a potentially different type.
-
-        This overload enables cross-type and cross-length comparisons such as
-        `(1, "a") == (1, "b")` or `(1, 2, 3) == (1, 2)`.
-
-        Parameters:
-            self_elt_types: The types of the elements in this tuple.
-            other_elt_types: The types of the elements in the other tuple.
-
-        Args:
-            other: The other tuple to compare against.
-
-        Returns:
-            True if the tuples are equal, False otherwise.
-        """
-        comptime self_len = type_of(self).__len__()
-        comptime other_len = type_of(other).__len__()
-
-        comptime if self_len != other_len:
-            return False
-
-        comptime for i in range(type_of(self).__len__()):
-            comptime self_type = type_of(self[i])
-            comptime other_type = type_of(other[i])
-            comptime assert _type_is_eq[
-                self_type, other_type
-            ](), "Tuple elements must be of the same type to compare."
-            if self[i] != rebind[self_type](other[i]):
-                return False
-        return True
-
-    @always_inline
-    def __ne__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-    ](
-        self: Tuple[*TypeList[self_elt_types]().upcast[Movable]()],
-        other: Tuple[*TypeList[other_elt_types]().upcast[Movable]()],
-    ) -> Bool:
-        """Compare this tuple to another tuple of a potentially different type.
-
-        Parameters:
-            self_elt_types: The types of the elements in this tuple.
-            other_elt_types: The types of the elements in the other tuple.
-
-        Args:
-            other: The other tuple to compare against.
-
-        Returns:
-            True if the tuples are not equal, False otherwise.
-        """
-        return not self == other
-
     def __hash__[
         H: Hasher
     ](self, mut hasher: H) where AllHashable[
@@ -421,11 +360,10 @@ struct Tuple[*element_types: Movable](
 
     @always_inline
     def _compare[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
     ](
-        self: Tuple[*TypeList[self_elt_types]().upcast[Movable]()],
-        other: Tuple[*TypeList[other_elt_types]().upcast[Movable]()],
+        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
+        other: type_of(self),
     ) -> Int:
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
@@ -436,16 +374,9 @@ struct Tuple[*element_types: Movable](
         comptime min_length = min(self_len, other_len)
 
         comptime for i in range(min_length):
-            comptime self_type = type_of(self[i])
-            comptime other_type = type_of(other[i])
-            comptime assert _type_is_eq[self_type, other_type](), String(
-                "Mismatch between tuple elements at index ",
-                i,
-                " must be of the same type to compare.",
-            )
-            if self[i] < rebind[self_type](other[i]):
+            if self[i] < other[i]:
                 return -1
-            if rebind[self_type](other[i]) < self[i]:
+            if other[i] < self[i]:
                 return 1
 
         comptime if self_len < other_len:
@@ -457,18 +388,15 @@ struct Tuple[*element_types: Movable](
 
     @always_inline
     def __lt__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
+        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
     ](
-        self: Tuple[*TypeList[self_elt_types]().upcast[Movable]()],
-        other: Tuple[*TypeList[other_elt_types]().upcast[Movable]()],
+        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
+        other: type_of(self),
     ) -> Bool:
         """Compare this tuple to another tuple using less than comparison.
 
         Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
+            elt_types: The types of the elements contained in the Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -480,18 +408,15 @@ struct Tuple[*element_types: Movable](
 
     @always_inline
     def __le__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
+        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
     ](
-        self: Tuple[*TypeList[self_elt_types]().upcast[Movable]()],
-        other: Tuple[*TypeList[other_elt_types]().upcast[Movable]()],
+        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
+        other: type_of(self),
     ) -> Bool:
         """Compare this tuple to another tuple using less than or equal to comparison.
 
         Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
+            elt_types: The types of the elements contained in the Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -503,19 +428,15 @@ struct Tuple[*element_types: Movable](
 
     @always_inline
     def __gt__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
+        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
     ](
-        self: Tuple[*TypeList[self_elt_types]().upcast[Movable]()],
-        other: Tuple[*TypeList[other_elt_types]().upcast[Movable]()],
+        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
+        other: type_of(self),
     ) -> Bool:
         """Compare this tuple to another tuple using greater than comparison.
 
         Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other
-                Tuple.
+            elt_types: The types of the elements contained in the Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -528,18 +449,15 @@ struct Tuple[*element_types: Movable](
 
     @always_inline
     def __ge__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
+        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
     ](
-        self: Tuple[*TypeList[self_elt_types]().upcast[Movable]()],
-        other: Tuple[*TypeList[other_elt_types]().upcast[Movable]()],
+        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
+        other: type_of(self),
     ) -> Bool:
         """Compare this tuple to another tuple using greater than or equal to comparison.
 
         Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
+            elt_types: The types of the elements contained in the Tuple.
 
         Args:
             other: The other tuple to compare against.
