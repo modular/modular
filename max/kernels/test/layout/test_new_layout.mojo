@@ -566,59 +566,34 @@ def test_coord_flat_rank_deep_nesting() raises:
     """Test that flat_rank is correct for deeply nested Coords."""
     # Depth 1: Coord(Coord(1, 2), 3) -> flat_rank = 3
     comptime depth1 = Coord[
-        TypeListOf[
-            type=CoordLike,
-            ComptimeInt[1],
-            Coord[TypeListOf[type=CoordLike, ComptimeInt[2], ComptimeInt[3]]()],
-        ]()
+        ComptimeInt[1],
+        Coord[ComptimeInt[2], ComptimeInt[3]],
     ]
     comptime assert depth1.flat_rank == 3
 
     # Depth 2: Coord(Coord(Coord(1, 2), 3), 4) -> flat_rank = 4
     comptime depth2 = Coord[
-        TypeListOf[
-            type=CoordLike,
-            Coord[
-                TypeListOf[
-                    type=CoordLike,
-                    Coord[
-                        TypeListOf[
-                            type=CoordLike, ComptimeInt[1], ComptimeInt[2]
-                        ]()
-                    ],
-                    ComptimeInt[3],
-                ]()
-            ],
-            ComptimeInt[4],
-        ]()
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[2]],
+            ComptimeInt[3],
+        ],
+        ComptimeInt[4],
     ]
     comptime assert depth2.flat_rank == 4
 
     # Depth 3: Coord(Coord(Coord(Coord(1, 2), 3), 4), 5) -> flat_rank = 5
     comptime depth3 = Coord[
-        TypeListOf[
-            type=CoordLike,
+        Coord[
             Coord[
-                TypeListOf[
-                    type=CoordLike,
-                    Coord[
-                        TypeListOf[
-                            type=CoordLike,
-                            Coord[
-                                TypeListOf[
-                                    type=CoordLike,
-                                    ComptimeInt[1],
-                                    ComptimeInt[2],
-                                ]()
-                            ],
-                            ComptimeInt[3],
-                        ]()
-                    ],
-                    ComptimeInt[4],
-                ]()
+                Coord[
+                    ComptimeInt[1],
+                    ComptimeInt[2],
+                ],
+                ComptimeInt[3],
             ],
-            ComptimeInt[5],
-        ]()
+            ComptimeInt[4],
+        ],
+        ComptimeInt[5],
     ]
     comptime assert depth3.flat_rank == 5
 
@@ -1430,17 +1405,11 @@ def test_weakly_compatible_scalar_coord() raises:
     comptime L = type_of(row_major[3, 4]())
     comptime assert WeaklyCompatible[
         L,
-        Coord[
-            TypeListOf[type=CoordLike, ComptimeInt[5], ComptimeInt[7]]()
-        ].element_types,
+        Coord[ComptimeInt[5], ComptimeInt[7]].element_types,
     ]
     comptime assert WeaklyCompatible[
         L,
-        Coord[
-            TypeListOf[
-                type=CoordLike, RuntimeInt[DType.int32], RuntimeInt[DType.int32]
-            ]()
-        ].element_types,
+        Coord[RuntimeInt[DType.int32], RuntimeInt[DType.int32]].element_types,
     ]
 
 
@@ -1449,9 +1418,7 @@ def test_weakly_compatible_flat_match() raises:
     comptime L = type_of(row_major[3, 4]())
     comptime assert WeaklyCompatible[
         L,
-        Coord[
-            TypeListOf[type=CoordLike, ComptimeInt[2], ComptimeInt[3]]()
-        ].element_types,
+        Coord[ComptimeInt[2], ComptimeInt[3]].element_types,
     ]
 
 
@@ -1460,25 +1427,17 @@ def test_weakly_compatible_flat_mismatch() raises:
     comptime L = type_of(row_major[3, 4]())
     comptime assert not WeaklyCompatible[
         L,
-        Coord[
-            TypeListOf[
-                type=CoordLike, ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]
-            ]()
-        ].element_types,
+        Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]].element_types,
     ]
 
 
 def test_weakly_compatible_1d_layout() raises:
     """1D layout vs 1-element and 2-element coord types."""
     comptime L = type_of(row_major[8]())
-    comptime assert WeaklyCompatible[
-        L, Coord[TypeListOf[type=CoordLike, ComptimeInt[4]]()].element_types
-    ]
+    comptime assert WeaklyCompatible[L, Coord[ComptimeInt[4]].element_types]
     comptime assert not WeaklyCompatible[
         L,
-        Coord[
-            TypeListOf[type=CoordLike, ComptimeInt[2], ComptimeInt[4]]()
-        ].element_types,
+        Coord[ComptimeInt[2], ComptimeInt[4]].element_types,
     ]
 
 
@@ -1493,15 +1452,8 @@ def test_weakly_compatible_nested_depth2() raises:
     comptime assert WeaklyCompatible[
         L,
         Coord[
-            TypeListOf[
-                type=CoordLike,
-                Coord[
-                    TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]]()
-                ],
-                Coord[
-                    TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]]()
-                ],
-            ]()
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+            Coord[ComptimeInt[1], ComptimeInt[1]],
         ].element_types,
     ]
 
@@ -1509,20 +1461,12 @@ def test_weakly_compatible_nested_depth2() raises:
     comptime assert not WeaklyCompatible[
         L,
         Coord[
-            TypeListOf[
-                type=CoordLike,
-                Coord[
-                    TypeListOf[
-                        type=CoordLike,
-                        ComptimeInt[1],
-                        ComptimeInt[1],
-                        ComptimeInt[1],
-                    ]()
-                ],
-                Coord[
-                    TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]]()
-                ],
-            ]()
+            Coord[
+                ComptimeInt[1],
+                ComptimeInt[1],
+                ComptimeInt[1],
+            ],
+            Coord[ComptimeInt[1], ComptimeInt[1]],
         ].element_types,
     ]
 
@@ -1537,9 +1481,7 @@ def test_weakly_compatible_mixed_scalar_and_tuple() raises:
     # Outer rank matches (2 modes), but sub-coords are scalar — compatible.
     comptime assert WeaklyCompatible[
         L,
-        Coord[
-            TypeListOf[type=CoordLike, ComptimeInt[5], ComptimeInt[7]]()
-        ].element_types,
+        Coord[ComptimeInt[5], ComptimeInt[7]].element_types,
     ]
 
 
@@ -1553,20 +1495,8 @@ def test_weakly_compatible_nested_inner_mismatch() raises:
     comptime assert not WeaklyCompatible[
         L,
         Coord[
-            TypeListOf[
-                type=CoordLike,
-                Coord[
-                    TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]]()
-                ],
-                Coord[
-                    TypeListOf[
-                        type=CoordLike,
-                        ComptimeInt[1],
-                        ComptimeInt[1],
-                        ComptimeInt[1],
-                    ]()
-                ],
-            ]()
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+            Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
         ].element_types,
     ]
 
@@ -1581,13 +1511,8 @@ def test_weakly_compatible_coord_tuple_vs_layout_scalar() raises:
     comptime assert not WeaklyCompatible[
         L,
         Coord[
-            TypeListOf[
-                type=CoordLike,
-                Coord[
-                    TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[2]]()
-                ],
-                ComptimeInt[3],
-            ]()
+            Coord[ComptimeInt[1], ComptimeInt[2]],
+            ComptimeInt[3],
         ].element_types,
     ]
 
@@ -1611,20 +1536,13 @@ def test_weakly_compatible_not_symmetric() raises:
     comptime assert not WeaklyCompatible[
         flat_L,
         Coord[
-            TypeListOf[
-                type=CoordLike,
-                Coord[
-                    TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]]()
-                ],
-                ComptimeInt[1],
-            ]()
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+            ComptimeInt[1],
         ].element_types,
     ]
 
     # Flat coord vs nested layout — compatible (scalars match anything).
     comptime assert WeaklyCompatible[
         nested_L,
-        Coord[
-            TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]]()
-        ].element_types,
+        Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
     ]

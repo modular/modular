@@ -471,8 +471,8 @@ struct TileTensor[
         element_size=Self.element_size,
     ] where (
         IndexTypes.size == Self.flat_rank
-        and Coord[IndexTypes].is_flat
-        and Coord[IndexTypes].contains_slices
+        and Coord[*IndexTypes].is_flat
+        and Coord[*IndexTypes].contains_slices
     ):
         """Fix some dimensions at scalar indices and keep others, returning a
         lower-rank view.
@@ -529,8 +529,8 @@ struct TileTensor[
         comptime KeptStrideTypes = _SelectKeptStride[
             IndexTypes, Self.LayoutType._stride_types
         ]
-        var new_shape = Coord[KeptShapeTypes]()
-        var new_stride = Coord[KeptStrideTypes]()
+        var new_shape = Coord[*KeptShapeTypes]()
+        var new_stride = Coord[*KeptStrideTypes]()
 
         comptime for i in range(Self.rank):
             comptime if _type_is_eq_parse_time[IndexTypes[i], _All]():
@@ -925,7 +925,7 @@ struct TileTensor[
         tile_shape_types: TypeList[Trait=CoordLike, ...],
         //,
     ](
-        self, tile_shape: Coord[tile_shape_types], coordinates: Coord
+        self, tile_shape: Coord[*tile_shape_types], coordinates: Coord
     ) -> TileTensor[
         dtype=Self.dtype,
         origin=Self.origin,
@@ -1240,7 +1240,7 @@ struct TileTensor[
         *,
         use_runtime_layout: Bool = (
             not Self.all_dims_known
-            or Coord[Self.LayoutType._shape_types].static_product > BATCH_SIZE
+            or Coord[*Self.LayoutType._shape_types].static_product > BATCH_SIZE
         ),
     ](self, val: Scalar[Self.dtype]) -> Self where Self.mut:
         """Fill the entire tensor with a single value.
@@ -1303,7 +1303,7 @@ struct TileTensor[
 
         comptime if not use_runtime_layout:
             comptime num_elements = Coord[
-                Self.LayoutType._shape_types
+                *Self.LayoutType._shape_types
             ].static_product
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
@@ -1460,7 +1460,7 @@ struct TileTensor[
         comptime NewShapeTypes = _Slice[
             slices.values, Self.LayoutType._shape_types
         ]
-        var new_shape = Coord[NewShapeTypes]()
+        var new_shape = Coord[*NewShapeTypes]()
 
         comptime for i in range(Self.rank):
             comptime slice_i = slices[i]
@@ -1533,7 +1533,7 @@ struct TileTensor[
             Self.linear_idx_type, Self.LayoutType._shape_types
         ]
         # comptime NewShapeTypes = Self.DynamicShapeTypes
-        var new_shape = Coord[NewShapeTypes]()
+        var new_shape = Coord[*NewShapeTypes]()
 
         comptime for i in range(Self.rank):
             new_shape[i] = rebind[NewShapeTypes[i]](
@@ -1574,7 +1574,7 @@ struct TileTensor[
             ],
         ],
         address_space=Self.address_space,
-        element_size=Coord[_IntToComptimeInt[*vector_shape]].static_product,
+        element_size=Coord[*_IntToComptimeInt[*vector_shape]].static_product,
     ]
     """Type alias for vectorized tensor types.
 
@@ -1650,7 +1650,9 @@ struct TileTensor[
         LayoutType=Layout[
             shape_types=TypeListOf[
                 type=CoordLike,
-                ComptimeInt[Coord[Self.LayoutType._shape_types].static_product],
+                ComptimeInt[
+                    Coord[*Self.LayoutType._shape_types].static_product
+                ],
             ](),
             stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
         ],
@@ -1697,8 +1699,8 @@ struct TileTensor[
     ](self) -> Self.ReshapedType[*_IntToComptimeInt[*new_shape]] where (
         Self.all_dims_known
         and Self.is_row_major
-        and Coord[Self.LayoutType._shape_types].static_product
-        == Coord[_IntToComptimeInt[*new_shape]].static_product
+        and Coord[*Self.LayoutType._shape_types].static_product
+        == Coord[*_IntToComptimeInt[*new_shape]].static_product
     ):
         """Reshape the tensor to a new shape with compile-time dimensions.
 
@@ -1745,8 +1747,8 @@ struct TileTensor[
         comptime NewStrideTypes = _RowMajor[*NewShapeTypes]
 
         var new_layout = Layout(
-            Coord[NewShapeTypes](),
-            Coord[NewStrideTypes](),
+            Coord[*NewShapeTypes](),
+            Coord[*NewStrideTypes](),
         )
 
         return Self.ReshapedType[*NewShapeTypes](self.ptr, new_layout)
@@ -1754,7 +1756,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def reshape[
         *new_shape_types: CoordLike
-    ](self, new_shape: Coord[new_shape_types]) -> Self.ReshapedType[
+    ](self, new_shape: Coord[*new_shape_types]) -> Self.ReshapedType[
         *new_shape_types
     ] where Self.is_row_major:
         """Reshape the tensor to a new shape specified as a Coord.
@@ -1841,7 +1843,9 @@ struct TileTensor[
         - Enables simple sequential iteration over all elements.
         - Zero-cost abstraction at compile time.
         """
-        comptime total_size = Coord[Self.LayoutType._shape_types].static_product
+        comptime total_size = Coord[
+            *Self.LayoutType._shape_types
+        ].static_product
 
         var new_layout = Layout(
             Coord(ComptimeInt[total_size]()),
@@ -2391,7 +2395,7 @@ def stack_allocation[
         address_space=address_space,
     ](
         _std_stack_allocation[
-            Coord[LayoutType._shape_types].static_product,
+            Coord[*LayoutType._shape_types].static_product,
             Scalar[dtype],
             address_space=address_space,
         ](),
@@ -2503,8 +2507,8 @@ def _distribute[
         data_layout_tensor.LayoutType._stride_types,
         thread_layout.shape_types,
     ]
-    var shape = Coord[NewShapeTypes]()
-    var stride = Coord[NewStrideTypes]()
+    var shape = Coord[*NewShapeTypes]()
+    var stride = Coord[*NewStrideTypes]()
 
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.size):
@@ -2611,8 +2615,8 @@ def _distribute_with_offset[
         data_layout_tensor.LayoutType._stride_types,
         thread_layout.shape_types,
     ]
-    var shape = Coord[NewShapeTypes]()
-    var stride = Coord[NewStrideTypes]()
+    var shape = Coord[*NewShapeTypes]()
+    var stride = Coord[*NewStrideTypes]()
 
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.size):
@@ -2668,8 +2672,8 @@ def _tile[
         dtype,
         ...,
     ],
-    tile_shape: Coord[tile_shape_types],
-    tile_coords: Coord[coord_types],
+    tile_shape: Coord[*tile_shape_types],
+    tile_coords: Coord[*coord_types],
 ) -> TileTensor[
     dtype,
     Layout[
@@ -2712,7 +2716,7 @@ def _tile[
 
     var offset: UInt = 0
 
-    comptime for i in range(Coord[coord_types].__len__()):
+    comptime for i in range(Coord[*coord_types].__len__()):
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
@@ -2750,8 +2754,8 @@ def _tile_with_offset[
         dtype,
         ...,
     ],
-    tile_shape: Coord[tile_shape_types],
-    tile_coords: Coord[coord_types],
+    tile_shape: Coord[*tile_shape_types],
+    tile_coords: Coord[*coord_types],
 ) -> Tuple[
     TileTensor[
         dtype,
@@ -2822,8 +2826,8 @@ def _tile[
         dtype,
         ...,
     ],
-    tile_shape: Coord[TypeList[tile_shape_types]()],
-    tile_coords: Coord[coord_types],
+    tile_shape: Coord[*TypeList[tile_shape_types]()],
+    tile_coords: Coord[*coord_types],
 ) -> TileTensor[
     dtype,
     Layout[
@@ -2844,7 +2848,7 @@ def _tile[
 
     var offset: UInt = 0
 
-    comptime for i in range(Coord[coord_types].__len__()):
+    comptime for i in range(Coord[*coord_types].__len__()):
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
@@ -2853,7 +2857,7 @@ def _tile[
 
     var tile_layout = Layout(
         shape=tile_shape,
-        stride=Coord[stride_layout._shape_types](),
+        stride=Coord[*stride_layout._shape_types](),
     )
 
     return TileTensor[
@@ -2884,8 +2888,8 @@ def _tile_with_offset[
         dtype,
         ...,
     ],
-    tile_shape: Coord[tile_shape_types],
-    tile_coords: Coord[coord_types],
+    tile_shape: Coord[*tile_shape_types],
+    tile_coords: Coord[*coord_types],
 ) -> Tuple[
     TileTensor[
         dtype,
@@ -2915,7 +2919,7 @@ def _tile_with_offset[
 
     var tile_layout = Layout(
         shape=tile_shape,
-        stride=Coord[stride_layout._shape_types](),
+        stride=Coord[*stride_layout._shape_types](),
     )
 
     return (
@@ -2944,7 +2948,7 @@ def _vectorize[
     //,
 ](
     data_layout_tensor: TileTensor[dtype, ...],
-    vector_shape: Coord[vector_shape_types],
+    vector_shape: Coord[*vector_shape_types],
 ) -> TileTensor[
     dtype,
     Layout[
@@ -2959,7 +2963,7 @@ def _vectorize[
     ],
     data_layout_tensor.origin,
     address_space=data_layout_tensor.address_space,
-    element_size=Coord[vector_shape_types].static_product,
+    element_size=Coord[*vector_shape_types].static_product,
 ]:
     """Create a vectorized view of a TileTensor.
 
@@ -2991,8 +2995,8 @@ def _vectorize[
         vector_shape_types,
     ]
 
-    var new_shape = Coord[NewShapeTypes]()
-    var new_stride = Coord[NewStrideTypes]()
+    var new_shape = Coord[*NewShapeTypes]()
+    var new_stride = Coord[*NewStrideTypes]()
 
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.size):
@@ -3034,7 +3038,7 @@ def _vectorize[
         ResultLayout,
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
-        element_size=Coord[vector_shape_types].static_product,
+        element_size=Coord[*vector_shape_types].static_product,
     ](data_layout_tensor.ptr, new_layout)
 
 
@@ -3214,7 +3218,7 @@ comptime _IsRowMajor[
     shape_types: TypeList[Trait=CoordLike, ...],
     stride_types: TypeList[Trait=CoordLike, ...],
 ] = Coord[
-    _IsRowMajorHelper[shape_types.values, stride_types.values]
+    *_IsRowMajorHelper[shape_types.values, stride_types.values]
 ].static_product == (
     1 if shape_types.size
     == 0 else StaticCoord[1, shape_types.size].static_product
@@ -3232,7 +3236,7 @@ False otherwise. For row-major, stride[i] = product(shape[i+1:]).
 
 
 comptime _FlatLeadingLayout[L: TensorLayout] = RowMajorLayout[
-    TypeListOf[
+    *TypeListOf[
         type=CoordLike, RuntimeInt[DType.int64], L._shape_types[L.rank - 1]
     ]()
 ]
@@ -3252,7 +3256,7 @@ def flatten_leading[
     tensor: TileTensor[dtype=dtype, LayoutType=layout, ...],
 ) -> tensor.ViewType[
     RowMajorLayout[
-        TypeListOf[
+        *TypeListOf[
             type=CoordLike,
             RuntimeInt[DType.int64],
             layout._shape_types[layout.rank - 1],
@@ -3283,7 +3287,7 @@ def flatten_leading[
         * Int64(tensor.layout.shape[1]().value())
     )
     comptime ResultLayout = RowMajorLayout[
-        TypeListOf[
+        *TypeListOf[
             type=CoordLike,
             RuntimeInt[DType.int64],
             layout._shape_types[layout.rank - 1],
@@ -3366,8 +3370,8 @@ def lt_to_tt[
         stride_types=ResultLayout._stride_types,
     ]
     comptime rank = ConcLayout.rank
-    var shape_c = Coord[ConcLayout.shape_types]()
-    var stride_c = Coord[ConcLayout.stride_types]()
+    var shape_c = Coord[*ConcLayout.shape_types]()
+    var stride_c = Coord[*ConcLayout.stride_types]()
 
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:

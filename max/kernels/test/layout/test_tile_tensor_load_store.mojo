@@ -35,9 +35,7 @@ from layout import (
 # regardless of the host GPU.
 comptime _SM80 = get_gpu_target["sm_80"]()
 
-comptime _4x4 = RowMajorLayout[
-    TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
-]
+comptime _4x4 = RowMajorLayout[ComptimeInt[4], ComptimeInt[4]]
 
 
 # ===-----------------------------------------------------------------------===#

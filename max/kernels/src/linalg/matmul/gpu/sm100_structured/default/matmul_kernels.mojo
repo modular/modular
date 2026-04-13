@@ -506,19 +506,19 @@ struct BlackwellMatmulSM100Kernel[
 
     # 3D TMA layouts (primary, used by run())
     comptime ATileLayout = RowMajorLayout[
-        _IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
+        *_IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
     ]
     comptime ADescLayout = tma_desc_layout_3d[
         Self.a_type, 1, Self.a_tile_dim0, Self.config.a_swizzle
     ]
     comptime BTileLayout = RowMajorLayout[
-        _IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
+        *_IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
     ]
     comptime BDescLayout = tma_desc_layout_3d[
         Self.b_type, 1, Self.b_tile_dim0, Self.config.b_swizzle
     ]
     comptime CTileLayout = RowMajorLayout[
-        _IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
+        *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
     ]
     comptime CDescLayout = tma_desc_layout_3d[
         Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle

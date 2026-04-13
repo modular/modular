@@ -62,7 +62,7 @@ from .block_scaled_smem import BlockScaledSmem
 
 
 comptime _Scales5DLayoutBatched[L: TensorLayout] = RowMajorLayout[
-    TypeListOf[
+    *TypeListOf[
         type=CoordLike,
         L._shape_types[0],
         L._shape_types[1],
@@ -77,7 +77,7 @@ Preserves the static/dynamic nature of B, sf_m, sf_k from the input layout.
 """
 
 comptime _Scales5DLayoutNonBatched[L: TensorLayout] = RowMajorLayout[
-    TypeListOf[
+    *TypeListOf[
         type=CoordLike,
         ComptimeInt[1],
         L._shape_types[0],

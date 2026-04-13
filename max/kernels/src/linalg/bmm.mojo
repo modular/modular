@@ -146,8 +146,8 @@ def _shape_types_to_3d[
     comptime batch_dims = _slice_types[shape_types.reverse(), rank - 2]()
 
     comptime _get_first_dim[dtype: DType, *coords: CoordLike] = Variadic.types[
-        T=CoordLike, ComptimeInt[Coord[coords].static_product]
-    ] if Coord[coords].all_dims_known else Variadic.types[
+        T=CoordLike, ComptimeInt[Coord[*coords].static_product]
+    ] if Coord[*coords].all_dims_known else Variadic.types[
         T=CoordLike, RuntimeInt[dtype]
     ]
 
@@ -230,7 +230,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
     return type_of(result)(
         tensor.ptr,
         TileLayout[out_shape_types, out_stride_types](
-            Coord[out_shape_types](shape^), Coord[out_stride_types](strides^)
+            Coord[*out_shape_types](shape^), Coord[*out_stride_types](strides^)
         ),
     )
 
@@ -571,21 +571,21 @@ def batched_matmul_kernel_gpu[
         a_ptr,
         TileLayout(
             (Idx(m), Idx[a_tensor.static_shape[2]]()),
-            Coord[_slice_types_tl[ATensorType._stride_types, 2]()](),
+            Coord[*_slice_types_tl[ATensorType._stride_types, 2]()](),
         ),
     )
     var b = TileTensor(
         b_ptr,
         TileLayout(
-            Coord[_slice_types_tl[BTensorType._shape_types, 2]()](),
-            Coord[_slice_types_tl[BTensorType._stride_types, 2]()](),
+            Coord[*_slice_types_tl[BTensorType._shape_types, 2]()](),
+            Coord[*_slice_types_tl[BTensorType._stride_types, 2]()](),
         ),
     )
     var c = TileTensor(
         c_ptr,
         TileLayout(
             (Idx(m), Idx[c_tensor.static_shape[2]]()),
-            Coord[_slice_types_tl[CTensorType._stride_types, 2]()](),
+            Coord[*_slice_types_tl[CTensorType._stride_types, 2]()](),
         ),
     )
 

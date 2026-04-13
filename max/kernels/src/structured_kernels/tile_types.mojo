@@ -792,7 +792,7 @@ struct SMemTileArray[
     comptime _flat_shape_types = _Flattened[*Self.shape_types]
 
     # Size calculations using static shape product.
-    comptime tile_size: Int = Coord[Self._flat_shape_types].static_product
+    comptime tile_size: Int = Coord[*Self._flat_shape_types].static_product
     comptime num_elements: Int = Self.tile_size * Self.num_tiles
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
@@ -844,8 +844,8 @@ struct SMemTileArray[
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         # Construct layout from shape/stride types (all compile-time known)
         var layout = Self.TileLayout(
-            Coord[Self.shape_types](),
-            Coord[Self.stride_types](),
+            Coord[*Self.shape_types](),
+            Coord[*Self.stride_types](),
         )
         return Self.Tile(tile_ptr, layout)
 

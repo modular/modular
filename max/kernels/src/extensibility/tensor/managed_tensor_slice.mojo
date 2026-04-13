@@ -1201,8 +1201,10 @@ struct ManagedTensorSlice[
             ],
         ],
     ):
-        var shape_tuple = Coord[Self.static_spec.static_layout._shape_types]()
-        var stride_tuple = Coord[Self.static_spec.static_layout._stride_types]()
+        var shape_tuple = Coord[*Self.static_spec.static_layout._shape_types]()
+        var stride_tuple = Coord[
+            *Self.static_spec.static_layout._stride_types
+        ]()
         var shape = self.shape()
         var stride = self.strides()
 

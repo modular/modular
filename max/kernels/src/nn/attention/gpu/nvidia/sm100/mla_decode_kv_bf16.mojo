@@ -197,7 +197,7 @@ struct MLA_SM100_Decode_KV_BF16[
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
             DType.int64,
-            RowMajorLayout[TypeListOf[type=CoordLike, ComptimeInt[3]]()],
+            RowMajorLayout[ComptimeInt[3]],
             MutAnyOrigin,
         ],
     ):

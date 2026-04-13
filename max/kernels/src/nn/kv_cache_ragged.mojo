@@ -1506,7 +1506,7 @@ def _matmul_blockwise_scaled_fp8_common[
     ](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
         dtype,
         RowMajorLayout[
-            TypeListOf[
+            *TypeListOf[
                 type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
             ]()
         ],
@@ -1521,7 +1521,7 @@ def _matmul_blockwise_scaled_fp8_common[
         return TileTensor[
             dtype,
             RowMajorLayout[
-                TypeListOf[
+                *TypeListOf[
                     type=CoordLike,
                     RuntimeInt[DType.int64],
                     RuntimeInt[DType.int64],
@@ -1540,7 +1540,7 @@ def _matmul_blockwise_scaled_fp8_common[
     var c_tt = NullableTileTensor[
         output_dtype,
         RowMajorLayout[
-            TypeListOf[
+            *TypeListOf[
                 type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
             ]()
         ],
@@ -1605,7 +1605,7 @@ def _matmul_blockwise_scaled_fp4_common[
     var c_tt = NullableTileTensor[
         output_dtype,
         RowMajorLayout[
-            TypeListOf[
+            *TypeListOf[
                 type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
             ]()
         ],
@@ -2608,7 +2608,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
-    mrope_section: Optional[Coord[TypeList[mrope_types]()]] = None,
+    mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
 ](
     q_proj: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[

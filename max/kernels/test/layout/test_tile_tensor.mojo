@@ -45,12 +45,8 @@ def test_distribute() raises:
     var array = InlineArray[UInt32, 16](fill=-1)
     var ptr = array.unsafe_ptr()
 
-    comptime data_layout_shape = Coord[
-        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
-    ]
-    comptime data_layout_stride = Coord[
-        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
-    ]
+    comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
+    comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = TileTensor(
         ptr=ptr,
         layout=TileLayout(
@@ -95,12 +91,8 @@ def test_distribute_with_swizzle() raises:
     var array = InlineArray[UInt32, 16](fill=-1)
     var ptr = array.unsafe_ptr()
 
-    comptime data_layout_shape = Coord[
-        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
-    ]
-    comptime data_layout_stride = Coord[
-        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
-    ]
+    comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
+    comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = TileTensor[dtype=DType.uint32](
         ptr=ptr,
         layout=TileLayout(
@@ -156,12 +148,8 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
     var array_with_swizzle = InlineArray[UInt32, 16](fill=0)
     var ptr_with_swizzle = array_with_swizzle.unsafe_ptr()
 
-    comptime data_layout_shape = Coord[
-        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
-    ]
-    comptime data_layout_stride = Coord[
-        TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[1]]()
-    ]
+    comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
+    comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
 
     var tensor_no_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_no_swizzle,
@@ -862,12 +850,8 @@ def test_load_store_linear_non_trivial_stride() raises:
         data[i] = Int32(i)
 
     # Column-major layout: stride[0]=1, stride[1]=2
-    comptime col_major_shape = Coord[
-        TypeListOf[type=CoordLike, ComptimeInt[2], ComptimeInt[3]]()
-    ]
-    comptime col_major_stride = Coord[
-        TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[2]]()
-    ]
+    comptime col_major_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
+    comptime col_major_stride = Coord[ComptimeInt[1], ComptimeInt[2]]
     var tensor = TileTensor(
         ptr=data.unsafe_ptr(),
         layout=TileLayout(
@@ -903,9 +887,7 @@ def test_linear_idx_type_small_static_layout() raises:
     # Cosize = (4-1)*4 + (4-1)*1 + 1 = 16, fits in int32
     comptime TensorType = TileTensor[
         DType.float32,
-        RowMajorLayout[
-            TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
-        ],
+        RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
         MutAnyOrigin,
     ]
     comptime assert TensorType.linear_idx_type == DType.int32
@@ -915,9 +897,7 @@ def test_linear_idx_type_dynamic_layout_generic() raises:
     """Dynamic layouts in GENERIC address space use int64."""
     comptime TensorType = TileTensor[
         DType.float32,
-        RowMajorLayout[
-            TypeListOf[type=CoordLike, RuntimeInt[DType.int], ComptimeInt[4]]()
-        ],
+        RowMajorLayout[RuntimeInt[DType.int], ComptimeInt[4]],
         MutAnyOrigin,
     ]
     # Not all dims known -> falls through to address_space check -> GENERIC -> int64
@@ -928,9 +908,7 @@ def test_linear_idx_type_shared_address_space() raises:
     """Shared memory address space always uses int32."""
     comptime TensorType = TileTensor[
         DType.float32,
-        RowMajorLayout[
-            TypeListOf[type=CoordLike, ComptimeInt[4], ComptimeInt[4]]()
-        ],
+        RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]

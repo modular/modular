@@ -6771,7 +6771,7 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
-    mrope_section: Optional[Coord[TypeList[mrope_types]()]] = None,
+    mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],

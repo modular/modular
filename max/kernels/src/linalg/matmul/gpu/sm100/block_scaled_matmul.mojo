@@ -1544,14 +1544,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[
-        TypeListOf[
-            type=CoordLike,
-            RuntimeInt[DType.int64],
-            RuntimeInt[DType.int64],
-            RuntimeInt[DType.int64],
-            ComptimeInt[SF_ATOM_M[0]],
-            ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
-        ]()
+        RuntimeInt[DType.int64],
+        RuntimeInt[DType.int64],
+        RuntimeInt[DType.int64],
+        ComptimeInt[SF_ATOM_M[0]],
+        ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
     ]:
         comptime if is_batched_matmul:
             return Coord(

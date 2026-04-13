@@ -126,8 +126,8 @@ def _make_cache_tt[
         shape_types=ResultLayout._shape_types,
         stride_types=ResultLayout._stride_types,
     ]
-    var shape_c = Coord[ConcLayout.shape_types]()
-    var stride_c = Coord[ConcLayout.stride_types]()
+    var shape_c = Coord[*ConcLayout.shape_types]()
+    var stride_c = Coord[*ConcLayout.stride_types]()
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
             shape_c[i] = rebind[shape_c.element_types[i]](
@@ -968,7 +968,7 @@ struct PagedKVCache[
         Self.quantization_granularity,
     )
     comptime scales_tt_layout = RowMajorLayout[
-        TypeListOf[
+        *TypeListOf[
             type=CoordLike,
             RuntimeInt[DType.int64],
             ComptimeInt[Self.page_size],
