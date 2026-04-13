@@ -164,37 +164,13 @@ const mojoSidebars = {
       className: 'sidebar-heading',
       collapsed: false,
       items: [
-        {
-          type: 'category',
-          label: 'Lexical',
-          link: null,
-          collapsible: false,
-          items: [
-            'mojo/reference/mojo-keywords',
-            'mojo/reference/mojo-literals',
-            'mojo/reference/mojo-operators',
-            'mojo/reference/mojo-expressions',
-          ],
-        },
-        {
-          type: 'category',
-          label: 'Statements',
-          link: null,
-          collapsible: false,
-          items: [
-            'mojo/reference/mojo-simple-statements',
-            'mojo/reference/mojo-compound-statements',
-          ],
-        },
-        {
-          type: 'category',
-          label: 'Declarations',
-          link: null,
-          collapsible: false,
-          items: [
-            'mojo/reference/mojo-function-declarations',
-          ],
-        },
+        'mojo/reference/mojo-keywords',
+        'mojo/reference/mojo-literals',
+        'mojo/reference/mojo-operators',
+        'mojo/reference/mojo-expressions',
+        'mojo/reference/mojo-simple-statements',
+        'mojo/reference/mojo-compound-statements',
+        'mojo/reference/mojo-function-declarations',
       ],
     },
     {
