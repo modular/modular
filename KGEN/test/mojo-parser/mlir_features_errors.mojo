@@ -23,7 +23,7 @@ def test_mlir():
 
   __mlir_op.`op`[
     value=index42,  # expected-note {{previously specified here}}
-    value=index42,  # expected-error {{duplicate keyword parameter 'value'}}
+    value=index42,  # expected-error {{keyword parameter 'value' was already used; remove the duplicate}}
   ]
 
 def test_mlir2():

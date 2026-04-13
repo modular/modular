@@ -330,7 +330,7 @@ struct VarParamStruct[s: StringLiteral, *args: Int]:
 def test_struct_kw_params():
     _ = KwParamStruct[
         a=42,  # expected-note {{previously specified here}}
-        a=43,  # expected-error {{duplicate keyword parameter 'a'}}
+        a=43,  # expected-error {{keyword parameter 'a' was already used; remove the duplicate}}
     ]()
 
 

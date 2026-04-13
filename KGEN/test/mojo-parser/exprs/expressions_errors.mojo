@@ -22,14 +22,14 @@ def takes_pos_or_kw_arg(i: Int, j: Int):
 def test_duplicate_kw_arg(x: Int):
     takes_pos_or_kw_arg(
         j=x,  # expected-note {{previously specified here}}
-        j=x,  # expected-error {{duplicate keyword argument 'j'}}
+        j=x,  # expected-error {{keyword argument 'j' was already used; remove the duplicate}}
     )
 
 
 def test_pos_after_kw_arg(x: Int):
     takes_pos_or_kw_arg(
         j=x,
-        x,  # expected-error {{positional argument follows keyword argument}}
+        x,  # expected-error {{positional argument must not follow a keyword argument; move it before or convert to a keyword argument}}
     )
 
 
@@ -40,7 +40,7 @@ def takes_pos_or_kw_param[i: Int, j: Int]():
 def test_duplicate_kw_param[x: Int]():
     takes_pos_or_kw_param[
         j=x,  # expected-note {{previously specified here}}
-        j=x,  # expected-error {{duplicate keyword parameter 'j'}}
+        j=x,  # expected-error {{keyword parameter 'j' was already used; remove the duplicate}}
     ]
 
 
@@ -321,7 +321,7 @@ def unused_values():
   # expected-warning @+1 {{'Int' value is unused; assign to '_' to discard the result}}
   x+1 # DRValue
 
-  # expected-warning @+1 {{function must be called; add '()' after name}}
+  # expected-warning @+1 {{function is not called; add '()' after name}}
   testLValuesRvalues
   _ = testLValuesRvalues # OK
 
@@ -346,7 +346,7 @@ def no_unused_values_in_def() raises:
   4+4  # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
   x    # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
   x+1  # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
-  testLValuesRvalues # expected-warning {{function must be called; add '()' after name}}
+  testLValuesRvalues # expected-warning {{function is not called; add '()' after name}}
 
   _ # expected-error {{cannot read from discard pattern '_'}}
 
@@ -485,7 +485,7 @@ def list_literals():
 
   _ = [x for x in SimpleRange() if x * 2 == 0]
 
-  # expected-error @+1 {{comprehensions are not supported at compile time; move into a function and call it}}
+  # expected-error @+1 {{list comprehension must execute in runtime contexts; remove 'comptime' and move this into a function body}}
   comptime some_alias = [1 for x in range(10)]
 
 
@@ -740,7 +740,7 @@ def test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
   var y : Pointer[T, AnyOrigin[mut=True], a.address_space] = a[]
 
 def test_subscript_conflict(a: Int):
-  # expected-error @below {{duplicate keyword parameter 'idx'}}
+  # expected-error @below {{keyword parameter 'idx' was already used; remove the duplicate}}
   # expected-note @below {{previously specified here}}
   _ = a[idx=4, idx=7]
 
@@ -771,14 +771,14 @@ def field_sensitive_origins(a: ThingWithFields)
 def bad_named_return(out output: String):
    output = "emplaced!"
    # expected-note @below {{remove the expression if the return slot is already initialized}}
-   # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
+   # expected-error @below {{'out' argument cannot be returned by name; remove the return statement entirely or change it to just 'return'}}
    return output
 
 
 def bad_named_return2(out output: Int):
    output = 42
    # expected-note @below {{remove the expression if the return slot is already initialized}}
-   # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
+   # expected-error @below {{'out' argument cannot be returned by name; remove the return statement entirely or change it to just 'return'}}
    return output
 
 def unbound_function_type():

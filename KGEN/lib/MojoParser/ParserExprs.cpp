@@ -1239,17 +1239,17 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
     if (isArgument && operand.passKind == Operand::kStar) {
       if (unpackedPosOperand) {
         auto diag =
-            emitError(loc, "multiple unpacked positional arguments are not "
-                           "supported");
+            emitError(loc, "unpack markers (*name syntax) must not appear more "
+                           "than once in a call; remove the second unpack");
         diag.attachNote(unpackedPosOperand->getLoc())
             << "previous unpacked positional argument specified here";
         return std::move(diag);
       }
       unpackedPosOperand = &operand;
     } else if (isArgument && unpackedPosOperand && !operand.isKeyword()) {
-      auto diag = emitError(
-          loc, "an unpacked positional argument may only be followed by "
-               "keyword arguments");
+      auto diag =
+          emitError(loc, "positional argument must not follow an unpack; move "
+                         "it before or convert to a keyword argument");
       diag.attachNote(unpackedPosOperand->getLoc())
           << "unpacked positional argument specified here";
       return std::move(diag);
@@ -1261,20 +1261,23 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
         // inferred parameters can be passed with keyword syntax before
         // positional operands. Avoid checking parameter operand ordering here.
         // It will be checked later when verifying bindings.
-        return emitError(loc, "positional ")
-               << argOrParam << " follows keyword " << argOrParam;
+        return emitError(
+            loc, "positional argument must not follow a keyword argument; move "
+                 "it before or convert to a keyword argument");
       }
       if (hasUnpackedKw) {
         return emitError(loc, "positional ")
-               << argOrParam << " follows keyword " << argOrParam
-               << " unpacking";
+               << argOrParam
+               << " must not follow keyword unpacking; move it before or "
+                  "convert to a keyword argument";
       }
     }
     if (operand.isKeyword()) {
       auto [it, addedNew] = kwOperandMap.try_emplace(operand.name, &operand);
       if (!addedNew) {
-        auto diag = emitError(loc, "duplicate keyword ")
-                    << argOrParam << " " << operand.name;
+        auto diag = emitError(loc, "keyword ")
+                    << argOrParam << " " << operand.name
+                    << " was already used; remove the duplicate";
         diag.attachNote(it->getSecond()->getLoc())
             << "previously specified here";
         return std::move(diag);

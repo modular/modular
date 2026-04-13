@@ -31,13 +31,13 @@ def test():
     # expected-warning @+1 {{left hand side expression of 'if False' is dead}}
     use(1 if 0 else 0)
 
-    # expected-warning @+1 {{if statement with constant condition 'if False'}}
+    # expected-warning @+1 {{'if' condition always evaluates to 'False'; 'if' branch is unreachable}}
     if 0:
         use("dead")
-    # expected-warning @+1 {{if statement with constant condition 'if False'}}
+    # expected-warning @+1 {{'if' condition always evaluates to 'False'; 'if' branch is unreachable}}
     elif 0:
         use("dead elif")
-    # expected-warning @+1 {{if statement with constant condition 'if True'}}
+    # expected-warning @+1 {{'if' condition always evaluates to 'True'; 'else' branch is unreachable}}
     elif 1:
         use("live elif")
     else:
