@@ -18,8 +18,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, Weight, ops
+from max.graph.graph import Graph
 
 from ..layer import Module
 
@@ -120,17 +122,17 @@ class GroupNorm(Module):
             ).to(x.device)
         )
 
-        return ops.custom(
-            "group_norm",
-            x.device,
-            [
-                x,
-                gamma,
-                beta,
-                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
-                ops.constant(
-                    self.num_groups, dtype=DType.int32, device=DeviceRef.CPU()
-                ),
-            ],
-            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
+        return Graph.current._add_op_generated(
+            mo.ReduceGroupNormOp,
+            result=TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
+            input=x,
+            gamma=gamma,
+            beta=beta,
+            epsilon=ops.constant(
+                self.eps, dtype=x.dtype, device=DeviceRef.CPU()
+            ),
+            num_groups=ops.constant(
+                self.num_groups, dtype=DType.int32, device=DeviceRef.CPU()
+            ),
+            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor

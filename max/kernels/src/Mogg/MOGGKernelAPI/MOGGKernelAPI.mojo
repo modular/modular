@@ -3627,6 +3627,346 @@ struct GroupNorm:
         return input.shape()
 
 
+@compiler.register("mo.reduce.rms_norm")
+struct ReduceRMSNorm:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        rms_norm[
+            dtype,
+            rank,
+            input_fn,
+            output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.group_norm")
+struct ReduceGroupNorm:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
+        beta: FusedInputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return gamma._lambda_load[width=width](coords)
+
+        @parameter
+        @always_inline
+        def beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return beta._lambda_load[width=width](coords)
+
+        group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
+            shape=input.shape(),
+            epsilon=epsilon,
+            groups=num_groups,
+            output=output.to_tile_tensor[DType.int64](),
+            ctx=ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        beta: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.reduce_min_and_max")
+struct ReduceMinAndMax:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+        dtype: DType,
+        rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        axis0: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
+        writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
+        the minimum reduction and [:, :, 1, :] contains the maximum reduction.
+        """
+
+        comptime num_reductions = 2
+        var axis = normalize_neg_index(Int(axis0), rank)
+
+        @parameter
+        @always_inline
+        def input_0_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._fused_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_0_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._fused_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @always_inline
+        @parameter
+        def input_0_fn_wrapper[
+            _type: DType, width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[_type, width]:
+            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+        @always_inline
+        @parameter
+        def output_0_fn_wrapper[
+            _type: DType,
+            width: Int,
+            rank: Int,
+        ](
+            indices: IndexList[rank],
+            val: StaticTuple[SIMD[_type, width], num_reductions],
+        ):
+            # TODO: once we support multiple outputs, change this to route to
+            # TODO: multiple output tensors.
+            var indices_min = indices
+            indices_min[axis] = 0
+            output_0_fn[width, rank](
+                indices_min, rebind[SIMD[dtype, width]](val[0])
+            )
+
+            var indices_max = indices
+            indices_max[axis] = 1
+            output_0_fn[width, rank](
+                indices_max, rebind[SIMD[dtype, width]](val[1])
+            )
+
+        @always_inline
+        @parameter
+        def reduce_fn[
+            ty: DType,
+            width: Int,
+            reduction_idx: Int,
+        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
+            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
+
+            comptime if reduction_idx == 0:
+                return min(left, right)
+            else:
+                return max(left, right)
+
+        var init_min = Scalar[dtype].MAX
+        var init_max = Scalar[dtype].MIN
+        var init = StaticTuple[Scalar[dtype], num_reductions](
+            init_min, init_max
+        )
+
+        _reduce_generator[
+            num_reductions,
+            dtype,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_fn,
+            target=target,
+        ](
+            input.shape(),
+            init=init,
+            reduce_dim=axis,
+            context=ctx,
+        )
+        _ = axis
+
+    @staticmethod
+    def shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
+        var new_shape = input.shape()
+        new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
+
+        return new_shape
+
+
+@compiler.register("mo.reduce.rms_norm_fused_residual_add")
+struct ReduceRMSNormFusedResidualAdd:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma1: InputTensor[dtype=dtype, rank=1, ...],
+        gamma2: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon1: Scalar[dtype=dtype],
+        epsilon2: Scalar[dtype=dtype],
+        weight_offset1: Scalar[dtype=dtype],
+        weight_offset2: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        if input.shape() != residual_input.shape():
+            raise Error("Input and residual input buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def residual_input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return residual_input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        def residual_output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            residual_output._fused_store[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[residual_output.rank]](coords),
+                rebind[SIMD[residual_output.dtype, width]](val),
+            )
+
+        rms_norm_fused_residual_add[
+            input_fn,
+            residual_input_fn,
+            output_fn,
+            residual_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma1.to_tile_tensor[DType.int64](),
+            epsilon1,
+            weight_offset1,
+            gamma2.to_tile_tensor[DType.int64](),
+            epsilon2,
+            weight_offset2,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma1: InputTensor[dtype=dtype, rank=1, ...],
+        gamma2: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon1: Scalar[dtype=dtype],
+        epsilon2: Scalar[dtype=dtype],
+        weight_offset1: Scalar[dtype=dtype],
+        weight_offset2: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
 # ===-----------------------------------------------------------------------===#
 # TopK kernels
 # ===-----------------------------------------------------------------------===#

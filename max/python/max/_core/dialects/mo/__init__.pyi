@@ -4835,6 +4835,54 @@ class ReduceAddOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
+class ReduceGroupNormOp(max._core.Operation):
+    """
+    Applies Group Normalization to the input tensor.
+
+    Divides channels into groups and computes normalization statistics
+    within each group.
+
+    Example:
+
+    ```mlir
+      %res = mo.reduce.group_norm(%input, %gamma, %beta, %epsilon, %num_groups) :
+        (!mo.tensor<[1, 32, 64, 64], f32, gpu:0>, !mo.tensor<[32], f32, gpu:0>,
+         !mo.tensor<[32], f32, gpu:0>, !mo.tensor<[], f32>, !mo.tensor<[], si32>)
+        -> !mo.tensor<[1, 32, 64, 64], f32, gpu:0>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        beta: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        num_groups: max._core.Value[TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def beta(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def num_groups(self) -> max._core.Value[TensorType]: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class ReduceMaxOp(max._core.Operation):
     """
     Reduces `input` elements across `axis` to their maximum, changing that
@@ -4881,6 +4929,45 @@ class ReduceMaxOp(max._core.Operation):
         input: max._core.Value[TensorType],
         axis: int,
         output_ty: TensorType = ...,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def axis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class ReduceReduceMinAndMaxOp(max._core.Operation):
+    """
+    Reduces the input tensor along the given axis, returning a single tensor
+    where the last dimension contains both the minimum and maximum values (in
+    that order).
+
+    For an input of shape [d0, ..., dN] reduced along axis `a`, the output
+    shape is [d0, ..., 2] (the reduced axis is replaced by a dimension of 2).
+
+    Example:
+
+    ```mlir
+      %res = mo.reduce.reduce_min_and_max(%input, %axis) :
+        (!mo.tensor<[2, 10], f32>, !mo.tensor<[], si32>) -> !mo.tensor<[2, 2], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        axis: max._core.Value[TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
@@ -5006,6 +5093,129 @@ class ReduceMulOp(max._core.Operation):
     def input(self) -> max._core.Value[TensorType]: ...
     @property
     def axis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class ReduceRmsNormFusedResidualAddOp(max._core.Operation):
+    """
+    Fused operation computing:
+      intermediate = rms_norm(input, gamma1, epsilon1, weight_offset1) + residual_input
+      output = rms_norm(intermediate, gamma2, epsilon2, weight_offset2)
+
+    Returns both the final output and the post-add intermediate tensor.
+
+    Example:
+
+    ```mlir
+      %output, %intermediate = mo.reduce.rms_norm_fused_residual_add(
+          %input, %residual, %gamma1, %gamma2, %eps1, %eps2, %offset1, %offset2) {
+          multiply_before_cast1 = false, multiply_before_cast2 = false} :
+        (...) -> (!mo.tensor<[3, 2], f32>, !mo.tensor<[3, 2], f32>)
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        intermediate: TensorType,
+        input: max._core.Value[TensorType],
+        residual_input: max._core.Value[TensorType],
+        gamma1: max._core.Value[TensorType],
+        gamma2: max._core.Value[TensorType],
+        epsilon1: max._core.Value[TensorType],
+        epsilon2: max._core.Value[TensorType],
+        weight_offset1: max._core.Value[TensorType],
+        weight_offset2: max._core.Value[TensorType],
+        multiply_before_cast: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def residual_input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma1(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma2(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon1(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon2(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset1(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset2(self) -> max._core.Value[TensorType]: ...
+    @property
+    def multiply_before_cast(self) -> bool: ...
+    @multiply_before_cast.setter
+    def multiply_before_cast(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class ReduceRmsNormOp(max._core.Operation):
+    """
+    Applies Root Mean Square normalization to the input tensor.
+
+    output = input / rms(input) * weight
+
+    where rms(x) = sqrt(mean(x^2) + epsilon).
+
+    When `multiply_before_cast` is false (Llama-style), the input is cast to
+    the output dtype before multiplication by the weight. When true
+    (Gemma-style), the multiplication is performed before the cast.
+
+    Example:
+
+    ```mlir
+      %res = mo.reduce.rms_norm(%input, %weight, %epsilon, %weight_offset)
+        {multiply_before_cast = false} :
+        (!mo.tensor<[2, 3], bf16, gpu:0>, !mo.tensor<[3], bf16, gpu:0>,
+         !mo.tensor<[], bf16>, !mo.tensor<[], bf16>) -> !mo.tensor<[2, 3], bf16, gpu:0>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        weight: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        multiply_before_cast: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def multiply_before_cast(self) -> bool: ...
+    @multiply_before_cast.setter
+    def multiply_before_cast(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
     @property
     def output_param_decls(
         self,
