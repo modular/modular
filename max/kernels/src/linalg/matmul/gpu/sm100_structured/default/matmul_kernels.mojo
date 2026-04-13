@@ -1110,7 +1110,17 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
+    @__name(
+        StaticString(Self.config.get_kernal_name())
+        + StaticString(
+            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
+            is not None else ""
+        )
+        + StaticString(
+            "_fused_epi" if Self.elementwise_lambda_fn is not None else ""
+        ),
+        mangle=True,
+    )
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -1402,7 +1412,17 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
+    @__name(
+        StaticString(Self.config.get_kernal_name())
+        + StaticString(
+            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
+            is not None else ""
+        )
+        + StaticString(
+            "_fused_epi" if Self.elementwise_lambda_fn is not None else ""
+        ),
+        mangle=True,
+    )
     def run_splitk[
         reduction_layout: TensorLayout,
     ](

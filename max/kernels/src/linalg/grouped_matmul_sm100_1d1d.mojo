@@ -1724,7 +1724,14 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-@__name(StaticString(config.get_kernal_name()), mangle=True)
+@__name(
+    StaticString(config.get_kernal_name())
+    + StaticString(
+        "_fused_compute_epi" if elementwise_compute_lambda_fn
+        is not None else ""
+    ),
+    mangle=True,
+)
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
