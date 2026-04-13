@@ -275,6 +275,23 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+comptime OptionalUnsafePointer[
+    mut: Bool,
+    //,
+    type: AnyType,
+    origin: Origin[mut=mut],
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Optional[UnsafePointer[type, origin, address_space=address_space]]
+"""An optional (nullable) `UnsafePointer`.
+
+Parameters:
+    mut: The mutability of the pointer.
+    type: The type of the pointee.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
 
 struct UnsafePointer[
     mut: Bool,

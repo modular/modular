@@ -1323,28 +1323,30 @@ def iota[
     vectorize[simd_width_of[dtype]()](len, fill)
 
 
-def iota[dtype: DType, //](mut v: List[Scalar[dtype], ...], offset: Int = 0):
-    """Fill a list with consecutive numbers starting from the specified offset.
+def iota[
+    dtype: DType, //
+](span: Span[mut=True, Scalar[dtype], _], offset: Int = 0):
+    """Fill a Span with consecutive numbers starting from the specified offset.
 
     Parameters:
         dtype: DType of the underlying data.
 
     Args:
-        v: The list to fill with numbers.
+        span: The Span to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    iota(v.unsafe_ptr(), len(v), offset)
+    iota(span.unsafe_ptr(), len(span), offset)
 
 
-def iota(mut v: List[Int, ...], offset: Int = 0):
-    """Fill a list with consecutive numbers starting from the specified offset.
+def iota(span: Span[mut=True, Int, _], offset: Int = 0):
+    """Fill a Span with consecutive numbers starting from the specified offset.
 
     Args:
-        v: The list to fill with numbers.
+        span: The Span to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    var buff = v.unsafe_ptr().bitcast[Scalar[DType.int]]()
-    iota(buff, len(v), offset=offset)
+    var buff = span.unsafe_ptr().bitcast[Scalar[DType.int]]()
+    iota(buff, len(span), offset=offset)
 
 
 # ===----------------------------------------------------------------------=== #

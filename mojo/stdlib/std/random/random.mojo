@@ -138,6 +138,29 @@ def random_ui64(min: UInt64, max: UInt64) -> UInt64:
 def randint[
     dtype: DType
 ](
+    span: Span[mut=True, Scalar[dtype], _],
+    low: Int,
+    high: Int,
+) where dtype.is_integral():
+    """Fills memory with uniformly distributed random integers in the range [low, high].
+
+    Constraints:
+        The type must be integral.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        low: The inclusive lower bound.
+        high: The inclusive upper bound.
+    """
+    randint(span.unsafe_ptr(), len(span), low, high)
+
+
+def randint[
+    dtype: DType
+](
     ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     size: Int,
     low: Int,
@@ -178,6 +201,36 @@ def randint[
     else:
         for ui in range(size):
             ptr[ui] = random_ui64(UInt64(low), UInt64(high)).cast[dtype]()
+
+
+def rand[
+    dtype: DType
+](
+    span: Span[mut=True, Scalar[dtype], _],
+    /,
+    *,
+    min: Float64 = 0.0,
+    max: Float64 = 1.0,
+    int_scale: Optional[Int] = None,
+):
+    """Fills memory with random values from a uniform distribution.
+
+    Behavior depends on the dtype:
+    - Floating-point types sample values uniformly from [min, max).
+    - Integral types sample values uniformly from [min, max],
+    clamped to the representable range of the dtype.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        min: The lower bound of the range.
+        max: The upper bound of the range.
+        int_scale: Optional quantization scale for floating-point types.
+            When provided, values are quantized to increments of 2^(-int_scale).
+    """
+    rand(span.unsafe_ptr(), len(span), min=min, max=max, int_scale=int_scale)
 
 
 def rand[
@@ -284,6 +337,29 @@ def randn_float64(
     ```
     """
     return _get_global_random_state()[].normal_float64(mean, standard_deviation)
+
+
+def randn[
+    dtype: DType
+](
+    span: Span[mut=True, Scalar[dtype], _],
+    mean: Float64 = 0.0,
+    standard_deviation: Float64 = 1.0,
+):
+    """Fills memory with random values from a Normal distribution.
+
+    Constraints:
+        The type should be floating point.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        mean: The mean of the normal distribution.
+        standard_deviation: The standard deviation of the normal distribution.
+    """
+    randn(span.unsafe_ptr(), len(span), mean, standard_deviation)
 
 
 def randn[

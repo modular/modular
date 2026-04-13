@@ -170,6 +170,7 @@ from std.memory import (
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalUnsafePointer,
     Pointer,
     Span,
     ImmutUnsafePointer,

@@ -22,7 +22,7 @@ def _serialize_elements_compact[
     dtype: DType,
     //,
     serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
-](ptr: UnsafePointer[Scalar[dtype], ...], len: Int):
+](ptr: OptionalUnsafePointer[Scalar[dtype], ...], len: Int):
     serialize_fn(_kStartTensorMarker)
     if len < _kCompactMaxElemsToPrint:
         _serialize_elements_complete[serialize_fn=serialize_fn](ptr, len)
@@ -35,7 +35,7 @@ def _serialize_elements_compact[
     serialize_fn(", ")
     serialize_fn(_kTensorFiller)
     _serialize_elements_complete[serialize_fn=serialize_fn](
-        ptr + len - _kCompactElemPerSide, _kCompactElemPerSide
+        ptr.unsafe_value() + len - _kCompactElemPerSide, _kCompactElemPerSide
     )
     serialize_fn(_kEndTensorMarker)
 
@@ -44,13 +44,13 @@ def _serialize_elements_complete[
     dtype: DType,
     //,
     serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
-](ptr: UnsafePointer[Scalar[dtype], ...], len: Int):
+](ptr: OptionalUnsafePointer[Scalar[dtype], ...], len: Int):
     if len == 0:
         return
-    serialize_fn(ptr.load())
+    serialize_fn(ptr.unsafe_value().load())
     for i in range(1, len):
         serialize_fn(", ")
-        serialize_fn(ptr.load(i))
+        serialize_fn(ptr.unsafe_value().load(i))
 
 
 def _serialize_elements[
@@ -58,7 +58,7 @@ def _serialize_elements[
     //,
     serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
     compact: Bool = False,
-](ptr: UnsafePointer[Scalar[dtype], ...], len: Int):
+](ptr: OptionalUnsafePointer[Scalar[dtype], ...], len: Int):
     comptime if compact:
         _serialize_elements_compact[serialize_fn=serialize_fn](ptr, len)
     else:
@@ -72,7 +72,7 @@ def _serialize[
     serialize_dtype: Bool = True,
     serialize_shape: Bool = True,
     serialize_end_line: Bool = True,
-](ptr: UnsafePointer[Scalar[dtype], ...], shape: List[Int, ...]):
+](ptr: OptionalUnsafePointer[Scalar[dtype], ...], shape: List[Int, ...]):
     var rank = len(shape)
     if rank == 0:
         if serialize_end_line:
@@ -121,7 +121,7 @@ def _serialize[
                 serialize_fn("\n")
 
             _serialize_elements[serialize_fn=serialize_fn, compact=True](
-                ptr
+                ptr.unsafe_value()
                 + matrix_idx * matrix_elem_count
                 + row_idx * column_elem_count,
                 column_elem_count,

@@ -53,6 +53,7 @@ from .unsafe_pointer import (
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,
