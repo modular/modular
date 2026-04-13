@@ -43,6 +43,7 @@ class SampledRequest:
     output_len: int | None
     encoded_images: list[OpenAIImage]
     ignore_eos: bool
+    response_format: dict[str, Any] | None = None
 
 
 @dataclass

@@ -199,6 +199,46 @@ def _prepend_run_prefix_to_formatted_prompt(
     return [new_msg, *prompt[1:]]
 
 
+def parse_response_format(
+    response_format_arg: str | None,
+) -> dict[str, Any] | None:
+    """Parse response format from CLI arg (inline JSON or @filepath).
+
+    Args:
+        response_format_arg: Either a JSON string or '@path/to/schema.json' to load
+            from file. If None, returns None.
+
+    Returns:
+        Parsed response format dictionary, or None if input is None.
+
+    Raises:
+        ValueError: If the JSON is invalid or the file cannot be read.
+    """
+    if response_format_arg is None:
+        return None
+
+    if response_format_arg.startswith("@"):
+        # Load from file
+        file_path = response_format_arg[1:]
+        try:
+            with open(file_path) as f:
+                return json.load(f)
+        except FileNotFoundError as e:
+            raise ValueError(
+                f"Response format file not found: {file_path}"
+            ) from e
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Invalid JSON in response format file {file_path}: {e}"
+            ) from e
+
+    # Parse inline JSON
+    try:
+        return json.loads(response_format_arg)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in response format: {e}") from e
+
+
 def get_default_trace_path() -> str:
     """Get the default trace output path."""
     workspace_path = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
@@ -341,6 +381,7 @@ def build_single_turn_request_input(
             prompt_len=prompt_len,
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
+            response_format=request.response_format,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
@@ -2793,6 +2834,21 @@ def main_with_parsed_args(
         )
     else:
         raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
+
+    # Inject response_format into all sampled requests if specified
+    if args.response_format:
+        response_format = parse_response_format(args.response_format)
+        if isinstance(samples, RequestSamples):
+            for request in samples.requests:
+                request.response_format = response_format
+            logger.info(
+                f"Injected response_format into {len(samples.requests)} requests"
+            )
+        else:
+            logger.warning(
+                "response_format is only supported for single-turn benchmarks, "
+                "ignoring for multi-turn chat sessions"
+            )
 
     if args.print_workload_stats:
         print_workload_stats(samples)

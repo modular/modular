@@ -102,6 +102,7 @@ class RequestFuncInput(BaseRequestFuncInput):
     prompt_len: int
     max_tokens: int | None
     ignore_eos: bool
+    response_format: dict[str, Any] | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         return RequestFuncOutput
@@ -659,7 +660,10 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         else:  # conversation
             messages_data = request_func_input.prompt
 
-        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
+        payload: dict[
+            str,
+            bool | str | int | float | list[dict[str, Any]] | dict[str, Any],
+        ] = {
             "model": request_func_input.model,
             "messages": messages_data,
             "stream": True,
@@ -674,6 +678,8 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             payload["top_k"] = request_func_input.top_k
         if request_func_input.top_p is not None:
             payload["top_p"] = request_func_input.top_p
+        if request_func_input.response_format is not None:
+            payload["response_format"] = request_func_input.response_format
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)
