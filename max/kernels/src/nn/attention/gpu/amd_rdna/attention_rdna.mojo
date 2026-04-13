@@ -594,10 +594,8 @@ struct AttentionRDNA[
             UInt32(Self.q_tile_idx()),
             UInt32(Self.kv_head_idx()),
             seq_len,
-            Self.attention_config_t.get_q_offset[UInt(Self.q_depth)](),
-            Self.attention_config_t.get_output_offset[
-                UInt(Self.output_depth)
-            ](),
+            Self.attention_config_t.get_q_offset[Self.q_depth](),
+            Self.attention_config_t.get_output_offset[Self.output_depth](),
         )
         self.smem_manager = Self.SharedMemoryManagerType()
 

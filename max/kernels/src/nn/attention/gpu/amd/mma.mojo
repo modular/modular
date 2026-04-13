@@ -108,7 +108,7 @@ struct TiledMmaOp[
         reg_tile: TileTensor[
             mut=True, Self.in_type, _, _, address_space=AddressSpace.LOCAL, ...
         ],
-        k_group_idx: UInt = 0,
+        k_group_idx: Int = 0,
     ):
         """Load B-matrix fragments from SMEM to registers.
 
@@ -135,7 +135,7 @@ struct TiledMmaOp[
         comptime if Self.transpose_b:
             comptime for i in range(num_frags):
                 var mma_tile = warp_tile.tile[mma_n, mma_k * Self.group_size](
-                    i, Int(k_group_idx)
+                    i, k_group_idx
                 )
                 var dist = mma_tile.vectorize[1, simd_width]().distribute[
                     col_major[mma_n, WARP_SIZE // mma_n](),
@@ -146,7 +146,7 @@ struct TiledMmaOp[
         else:
             comptime for i in range(num_frags):
                 var mma_tile = warp_tile.tile[mma_k * Self.group_size, mma_n](
-                    Int(k_group_idx), i
+                    k_group_idx, i
                 )
                 var dist = mma_tile.vectorize[simd_width, 1]().distribute[
                     row_major[WARP_SIZE // mma_n, mma_n](),
@@ -166,7 +166,7 @@ struct TiledMmaOp[
         reg_tile: TileTensor[
             mut=True, Self.in_type, _, _, address_space=AddressSpace.LOCAL, ...
         ],
-        k_group_idx: UInt = 0,
+        k_group_idx: Int = 0,
     ):
         """Load A-matrix fragments from SMEM to registers.
 
@@ -191,7 +191,7 @@ struct TiledMmaOp[
 
         comptime for i in range(num_frags):
             var mma_tile = warp_tile.tile[mma_m, mma_k * Self.group_size](
-                i, Int(k_group_idx)
+                i, k_group_idx
             )
             var dist = mma_tile.vectorize[1, simd_width]().distribute[
                 col_major[mma_m, WARP_SIZE // mma_m](),

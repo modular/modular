@@ -95,9 +95,9 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    def get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: Int]() -> UInt32:
         return UInt32(
-            Int(q_depth)
+            q_depth
             * (
                 (
                     Self.kv_head_idx()
@@ -111,7 +111,7 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    def get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: Int]() -> UInt32:
         return Self.get_q_offset[output_depth]()
 
 

@@ -114,10 +114,10 @@ __extension Attention:
             full_kv=Self.attention_config_t.full_kv,
         ](
             self.k,
-            UInt(self.batch_idx),
-            UInt(self.kv_head_idx()),
+            self.batch_idx,
+            self.kv_head_idx(),
             self.smem_manager.get_k_ptr[type_of(self.k).dtype](),
-            UInt(self.num_keys),
+            self.num_keys,
             warp_id,
         )
 
@@ -135,10 +135,10 @@ __extension Attention:
             full_kv=Self.attention_config_t.full_kv,
         ](
             self.v,
-            UInt(self.batch_idx),
-            UInt(self.kv_head_idx()),
+            self.batch_idx,
+            self.kv_head_idx(),
             self.smem_manager.get_v_ptr[type_of(self.v).dtype](),
-            UInt(self.num_keys),
+            self.num_keys,
             warp_id,
         )
 
@@ -196,7 +196,7 @@ __extension Attention:
 
         @always_inline
         @parameter
-        def mma_pv_incremental[stage: Int](slot: UInt):
+        def mma_pv_incremental[stage: Int](slot: Int):
             comptime for i in range(Self.BN // Self.BK):
                 v_buffer.load_from_shared[i](slot)
                 mma_pv_strip[stage, i]()
@@ -300,7 +300,7 @@ __extension Attention:
             ]()
 
             # C0 [COMPUTE]: K LDS + QK MFMAs + finish_softmax(prev)
-            k_buffer.load_from_shared(UInt(stage))
+            k_buffer.load_from_shared(stage)
 
             var warp_scratch = self.warp_scratch_tensor.tile[
                 2 * Self.num_warps_n, Self.WM
@@ -347,10 +347,10 @@ __extension Attention:
 
             var cur_tile = self.p_reg_buffer.stage_tile[stage]()
 
-            v_buffer.load_from_shared[0](UInt(prev))
+            v_buffer.load_from_shared[0](prev)
             mma_pv_strip[prev, 0]()
 
-            v_buffer.load_from_shared[1](UInt(prev))
+            v_buffer.load_from_shared[1](prev)
 
             comptime if prescale_q:
                 self.apply_mask[stage, scale=False]()

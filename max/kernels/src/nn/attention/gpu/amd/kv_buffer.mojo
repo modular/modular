@@ -218,14 +218,14 @@ struct KVBuffer[
     def __init__(
         out self,
         k_cache: Self.kv_t,
-        batch_idx: UInt,
-        head_idx: UInt,
+        batch_idx: Int,
+        head_idx: Int,
         shared_ptr: UnsafePointer[
             Scalar[Self.kv_t.dtype],
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ],
-        end: UInt,
+        end: Int,
         warp_id: UInt32,
     ):
         self.mma_tile = tt_stack_allocation[
@@ -234,7 +234,7 @@ struct KVBuffer[
         self.smem_ptr = shared_ptr
 
         self.kv_cache_iter = type_of(self.kv_cache_iter)(
-            k_cache, Int(batch_idx), Int(head_idx), Int(end)
+            k_cache, batch_idx, head_idx, end
         )
 
         self.warp_id = warp_id
@@ -352,13 +352,13 @@ struct KVBuffer[
         ...
 
     @always_inline
-    def load_from_shared(self, buffer: UInt):
+    def load_from_shared(self, buffer: Int):
         comptime for bk_tile in range(Self.num_k_tiles):
             self.load_from_shared[bk_tile](buffer)
 
     @always_inline
-    def load_from_shared[bk_tile: Int](self, buffer: UInt):
-        var smem_base = self.smem_ptr + Int(buffer) * Self.smem_stage_size
+    def load_from_shared[bk_tile: Int](self, buffer: Int):
+        var smem_base = self.smem_ptr + buffer * Self.smem_stage_size
 
         comptime if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN

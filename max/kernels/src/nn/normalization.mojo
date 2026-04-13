@@ -311,7 +311,7 @@ def layer_norm_gpu_warp_tiling[
     origin: Origin[mut=mut],
     dtype: DType,
     //,
-    simd_width: UInt,
+    simd_width: Int,
     max_warps_per_block: Int,
     input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
@@ -328,23 +328,23 @@ def layer_norm_gpu_warp_tiling[
     epsilon: Scalar[dtype],
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
-    comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
     var num_cols = shape[1]
     var tid = thread_idx.x
     var row = block_idx.x
 
-    var vec_data = SIMD[accum_type, Int(simd_width)]()
+    var vec_data = SIMD[accum_type, simd_width]()
 
-    var idx: Int = tid * Int(simd_width)
+    var idx: Int = tid * simd_width
 
     with PDL():
         var row_mean: Scalar[accum_type]
         var row_var: Scalar[accum_type]
 
         if idx < num_cols:
-            vec_data = input_fn[Int(simd_width)](row, idx).cast[accum_type]()
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
         var thread_sum = vec_data.reduce_add()
         var n = Scalar[accum_type](num_cols)
@@ -377,12 +377,12 @@ def layer_norm_gpu_warp_tiling[
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         if idx < num_cols:
-            var gamma_val = gamma_fn[Int(simd_width)](Index(idx))
-            var beta_val = beta.load[width=Int(simd_width)](Coord(Idx(idx)))
+            var gamma_val = gamma_fn[simd_width](Index(idx))
+            var beta_val = beta.load[width=simd_width](Coord(Idx(idx)))
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
                 accum_type
             ]() + beta_val.cast[accum_type]()
-            output_fn[Int(simd_width), align](row, idx, norm_val.cast[dtype]())
+            output_fn[simd_width, align](row, idx, norm_val.cast[dtype]())
 
 
 @__name(t"layer_norm_gpu_block_{dtype}", mangle=True)
@@ -392,7 +392,7 @@ def layer_norm_gpu_block[
     origin: Origin[mut=mut],
     dtype: DType,
     //,
-    simd_width: UInt,
+    simd_width: Int,
     input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
@@ -408,10 +408,10 @@ def layer_norm_gpu_block[
     epsilon: Scalar[dtype],
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
-    comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var num_cols = UInt(shape[1])
+    var num_cols = shape[1]
     var tid = thread_idx.x
     var row = block_idx.x
 
@@ -426,21 +426,17 @@ def layer_norm_gpu_block[
     with PDL():
         # First pass: compute per-tile mean and m2 using SIMD reductions,
         # then combine via Welford for numerical stability.
-        for x in range(
-            ceildiv(ufloordiv(Int(num_cols), Int(simd_width)), block_dim.x)
-        ):
-            var offset = x * block_dim.x * Int(simd_width) + tid * Int(
-                simd_width
-            )
+        for x in range(ceildiv(ufloordiv(num_cols, simd_width), block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
 
-            if offset < Int(num_cols):
-                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
+            if offset < num_cols:
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
 
                 # SIMD-optimized per-tile statistics.
                 var tile_sum = vec_data.reduce_add()
-                var tile_count = Scalar[accum_type](Int(simd_width))
+                var tile_count = Scalar[accum_type](simd_width)
                 var tile_mean = tile_sum / tile_count
                 var tile_m2 = ((vec_data - tile_mean) ** 2).reduce_add()
                 welford_combine(
@@ -465,21 +461,17 @@ def layer_norm_gpu_block[
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         # Second pass: normalize.
-        for x in range(
-            ceildiv(ufloordiv(Int(num_cols), Int(simd_width)), block_dim.x)
-        ):
-            var offset = x * block_dim.x * Int(simd_width) + tid * Int(
-                simd_width
-            )
+        for x in range(ceildiv(ufloordiv(num_cols, simd_width), block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
 
-            if offset < Int(num_cols):
-                var gamma_val = gamma_fn[Int(simd_width)](Index(offset))
+            if offset < num_cols:
+                var gamma_val = gamma_fn[simd_width](Index(offset))
                 var beta_offset = beta.layout(Idx(offset))
-                var beta_val = beta.ptr.load[
-                    width=Int(simd_width), alignment=align
-                ](beta_offset)
+                var beta_val = beta.ptr.load[width=simd_width, alignment=align](
+                    beta_offset
+                )
 
-                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
                 var norm_val = (
@@ -487,7 +479,7 @@ def layer_norm_gpu_block[
                     * norm_factor
                     * gamma_val.cast[accum_type]()
                 ) + beta_val.cast[accum_type]()
-                output_fn[Int(simd_width), align](
+                output_fn[simd_width, align](
                     row, offset, norm_val.cast[dtype]()
                 )
 
@@ -574,7 +566,7 @@ def layer_norm_gpu[
                 mut=beta.mut,
                 LayoutType=beta.LayoutType,
                 origin=beta.origin,
-                UInt(simd_width),
+                simd_width,
                 max_warps_per_block,
                 input_fn_2d,
                 gamma_fn,
@@ -596,7 +588,7 @@ def layer_norm_gpu[
                 mut=beta.mut,
                 LayoutType=beta.LayoutType,
                 origin=beta.origin,
-                UInt(simd_width * 2),
+                simd_width * 2,
                 max_warps_per_block,
                 input_fn_2d,
                 gamma_fn,
@@ -615,7 +607,7 @@ def layer_norm_gpu[
                 mut=beta.mut,
                 LayoutType=beta.LayoutType,
                 origin=beta.origin,
-                UInt(simd_width),
+                simd_width,
                 input_fn_2d,
                 gamma_fn,
                 output_fn_2d,
@@ -2674,7 +2666,7 @@ def group_norm_gpu_block[
     origin: MutOrigin,
     //,
     dtype: DType,
-    simd_width: UInt,
+    simd_width: Int,
     input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
@@ -2688,7 +2680,7 @@ def group_norm_gpu_block[
     spatial: Int,
 ):
     comptime assert output.rank == 2, "output.rank must be 2"
-    comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
     var tid = thread_idx.x
@@ -2704,18 +2696,16 @@ def group_norm_gpu_block[
         var thread_m2 = Scalar[accum_type]()
         var thread_count = Scalar[accum_type]()
 
-        for x in range(ceildiv(group_size // Int(simd_width), block_dim.x)):
-            var offset = x * block_dim.x * Int(simd_width) + tid * Int(
-                simd_width
-            )
+        for x in range(ceildiv(group_size // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < group_size:
-                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
 
                 comptime for i in range(simd_width):
                     welford_update(
-                        vec_data[Int(i)], thread_mean, thread_m2, thread_count
+                        vec_data[i], thread_mean, thread_m2, thread_count
                     )
 
         welford_block_all_reduce(
@@ -2730,26 +2720,24 @@ def group_norm_gpu_block[
         var row_var = row_m2 / row_count
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
-        for x in range(ceildiv(group_size // Int(simd_width), block_dim.x)):
-            var offset = x * block_dim.x * Int(simd_width) + tid * Int(
-                simd_width
-            )
+        for x in range(ceildiv(group_size // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < group_size:
-                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
 
                 var g = umod(row, num_groups)
                 var c_base = g * channels_per_group
 
-                var norm_val = SIMD[accum_type, Int(simd_width)]()
+                var norm_val = SIMD[accum_type, simd_width]()
                 for i in range(simd_width):
-                    var offset_c = (offset + Int(i)) // spatial
+                    var offset_c = (offset + i) // spatial
                     var c = c_base + offset_c
                     var gamma_val = gamma_fn[1](Index(c))
                     var beta_val = beta_fn[1](Index(c))
-                    norm_val[Int(i)] = (
-                        vec_data[Int(i)] - row_mean
+                    norm_val[i] = (
+                        vec_data[i] - row_mean
                     ) * norm_factor * gamma_val.cast[
                         accum_type
                     ]() + beta_val.cast[
@@ -2770,7 +2758,7 @@ def group_norm_gpu_multi_block_stats[
     stats_origin: MutOrigin,
     //,
     dtype: DType,
-    simd_width: UInt,
+    simd_width: Int,
     input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
@@ -2793,12 +2781,10 @@ def group_norm_gpu_multi_block_stats[
 
     # Compute chunk boundaries (each split handles a contiguous chunk,
     # aligned to simd_width).
-    var total_simd_elems = group_size // Int(simd_width)
+    var total_simd_elems = group_size // simd_width
     var chunk_simd_size = ceildiv(total_simd_elems, num_splits)
-    var chunk_start = split_id * chunk_simd_size * Int(simd_width)
-    var chunk_end = min(
-        chunk_start + chunk_simd_size * Int(simd_width), group_size
-    )
+    var chunk_start = split_id * chunk_simd_size * simd_width
+    var chunk_end = min(chunk_start + chunk_simd_size * simd_width, group_size)
     var chunk_iters = ceildiv(chunk_simd_size, block_dim.x)
 
     with PDL():
@@ -2808,17 +2794,15 @@ def group_norm_gpu_multi_block_stats[
 
         for x in range(chunk_iters):
             var offset = (
-                chunk_start
-                + x * block_dim.x * Int(simd_width)
-                + tid * Int(simd_width)
+                chunk_start + x * block_dim.x * simd_width + tid * simd_width
             )
             if offset < chunk_end:
-                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
                 comptime for i in range(simd_width):
                     welford_update(
-                        vec_data[Int(i)],
+                        vec_data[i],
                         thread_mean,
                         thread_m2,
                         thread_count,
@@ -2852,7 +2836,7 @@ def group_norm_gpu_multi_block_norm[
     stats_origin: MutOrigin,
     //,
     dtype: DType,
-    simd_width: UInt,
+    simd_width: Int,
     input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
@@ -2875,7 +2859,7 @@ def group_norm_gpu_multi_block_norm[
     chunk of elements.
     """
     comptime assert output.rank == 2, "output.rank must be 2"
-    comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
     var block_id = block_idx.x
@@ -2883,12 +2867,10 @@ def group_norm_gpu_multi_block_norm[
     var tid = thread_idx.x
 
     # Same chunk boundaries as stats kernel.
-    var total_simd_elems = group_size // Int(simd_width)
+    var total_simd_elems = group_size // simd_width
     var chunk_simd_size = ceildiv(total_simd_elems, num_splits)
-    var chunk_start = split_id * chunk_simd_size * Int(simd_width)
-    var chunk_end = min(
-        chunk_start + chunk_simd_size * Int(simd_width), group_size
-    )
+    var chunk_start = split_id * chunk_simd_size * simd_width
+    var chunk_end = min(chunk_start + chunk_simd_size * simd_width, group_size)
     var chunk_iters = ceildiv(chunk_simd_size, block_dim.x)
 
     with PDL():
@@ -2917,22 +2899,20 @@ def group_norm_gpu_multi_block_norm[
 
         for x in range(chunk_iters):
             var offset = (
-                chunk_start
-                + x * block_dim.x * Int(simd_width)
-                + tid * Int(simd_width)
+                chunk_start + x * block_dim.x * simd_width + tid * simd_width
             )
             if offset < chunk_end:
-                var vec_data = input_fn[Int(simd_width)](row, offset).cast[
+                var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
                 ]()
 
-                var norm_val = SIMD[accum_type, Int(simd_width)]()
+                var norm_val = SIMD[accum_type, simd_width]()
 
                 # Vectorized gamma/beta: when all SIMD elements share the
                 # same channel (common case for large spatial dims), load
                 # gamma/beta once and broadcast.
                 var c_first = c_base + offset // spatial
-                var c_last = c_base + (offset + Int(simd_width) - 1) // spatial
+                var c_last = c_base + (offset + simd_width - 1) // spatial
                 if c_first == c_last:
                     var gamma_val = gamma_fn[1](Index(c_first)).cast[
                         accum_type
@@ -2943,11 +2923,11 @@ def group_norm_gpu_multi_block_norm[
                     ) * norm_factor * gamma_val + beta_val
                 else:
                     for i in range(simd_width):
-                        var c = c_base + (offset + Int(i)) // spatial
+                        var c = c_base + (offset + i) // spatial
                         var gamma_val = gamma_fn[1](Index(c))
                         var beta_val = beta_fn[1](Index(c))
-                        norm_val[Int(i)] = (
-                            vec_data[Int(i)] - row_mean
+                        norm_val[i] = (
+                            vec_data[i] - row_mean
                         ) * norm_factor * gamma_val.cast[
                             accum_type
                         ]() + beta_val.cast[
@@ -3124,7 +3104,7 @@ def group_norm_gpu[
                     StatsLayoutType=stats.LayoutType,
                     stats_origin=stats.origin,
                     dtype=dtype,
-                    simd_width=UInt(simd_width),
+                    simd_width=simd_width,
                     input_fn=input_fn_2d,
                 ]
                 ctx.enqueue_function[stats_kernel, stats_kernel](
@@ -3143,7 +3123,7 @@ def group_norm_gpu[
                     StatsLayoutType=stats.LayoutType,
                     stats_origin=stats.origin,
                     dtype=dtype,
-                    simd_width=UInt(simd_width),
+                    simd_width=simd_width,
                     input_fn=input_fn_2d,
                     gamma_fn=gamma_fn,
                     beta_fn=beta_fn,
@@ -3168,7 +3148,7 @@ def group_norm_gpu[
                     LayoutType=output_rs.LayoutType,
                     origin=output_rs.origin,
                     dtype=dtype,
-                    simd_width=UInt(simd_width),
+                    simd_width=simd_width,
                     input_fn=input_fn_2d,
                     gamma_fn=gamma_fn,
                     beta_fn=beta_fn,

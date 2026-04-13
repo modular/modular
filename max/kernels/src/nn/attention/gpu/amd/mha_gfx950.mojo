@@ -272,21 +272,21 @@ struct KVBuffer[
     def __init__(
         out self,
         k_cache: Self.kv_t,
-        batch_idx: UInt,
-        head_idx: UInt,
+        batch_idx: Int,
+        head_idx: Int,
         shared_ptr: UnsafePointer[
             Scalar[Self.kv_t.dtype],
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ],
-        end: UInt,
+        end: Int,
         warp_id: UInt32,
     ):
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
         self.smem_ptr = shared_ptr
 
         self.kv_cache_iter = type_of(self.kv_cache_iter)(
-            k_cache, Int(batch_idx), Int(head_idx), Int(end)
+            k_cache, batch_idx, head_idx, end
         )
 
         self.warp_id = warp_id
@@ -415,17 +415,17 @@ struct KVBuffer[
         ...
 
     @always_inline
-    def load_from_shared(self, buffer: UInt):
+    def load_from_shared(self, buffer: Int):
         comptime for bk_tile in range(Self.num_k_tiles):
             self.load_from_shared[bk_tile](buffer)
 
     @always_inline
-    def load_from_shared[bk_tile: Int](self, buffer: UInt):
+    def load_from_shared[bk_tile: Int](self, buffer: Int):
         comptime if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN
             var warp_col = umod(get_warp_id(), num_warps_n)
             var smem_base = Self.SharedTileType(
-                self.smem_ptr + Int(buffer) * Self.smem_stage_size
+                self.smem_ptr + buffer * Self.smem_stage_size
             )
             var smem_tile = smem_base.tile[Self.BN, Self.BK](0, bk_tile)
 
@@ -449,7 +449,7 @@ struct KVBuffer[
             comptime for k in range(Self.BK // MMA_K):
                 var smem_tile = (
                     Self.SharedTileType(
-                        self.smem_ptr + Int(buffer) * Self.smem_stage_size
+                        self.smem_ptr + buffer * Self.smem_stage_size
                     )
                     .tile[Self.BK, Self.depth](bk_tile, 0)
                     .tile[MMA_K, Self.depth](k, 0)
@@ -651,10 +651,10 @@ __extension Attention:
             transpose=True,
         ](
             self.k,
-            UInt(self.batch_idx),
-            UInt(self.kv_head_idx()),
+            self.batch_idx,
+            self.kv_head_idx(),
             self.smem_manager.get_k_ptr[type_of(self.k).dtype](),
-            UInt(self.num_keys),
+            self.num_keys,
             warp_id,
         )
 
@@ -671,10 +671,10 @@ __extension Attention:
             transpose=False,
         ](
             self.v,
-            UInt(self.batch_idx),
-            UInt(self.kv_head_idx()),
+            self.batch_idx,
+            self.kv_head_idx(),
             self.smem_manager.get_v_ptr[type_of(self.v).dtype](),
-            UInt(self.num_keys),
+            self.num_keys,
             warp_id,
         )
 
@@ -977,10 +977,10 @@ __extension Attention:
             transpose=True,
         ](
             self.k,
-            UInt(self.batch_idx),
-            UInt(self.kv_head_idx()),
+            self.batch_idx,
+            self.kv_head_idx(),
             self.smem_manager.get_k_ptr[type_of(self.k).dtype](),
-            UInt(self.num_keys),
+            self.num_keys,
             warp_id,
         )
 
@@ -997,10 +997,10 @@ __extension Attention:
             transpose=False,
         ](
             self.v,
-            UInt(self.batch_idx),
-            UInt(self.kv_head_idx()),
+            self.batch_idx,
+            self.kv_head_idx(),
             self.smem_manager.get_v_ptr[type_of(self.v).dtype](),
-            UInt(self.num_keys),
+            self.num_keys,
             warp_id,
         )
 
@@ -1121,7 +1121,7 @@ __extension Attention:
                         ]()
                     return
 
-            k_buffer.load_from_shared(UInt(slot))
+            k_buffer.load_from_shared(slot)
             mma_qk()
 
             # Prefetch next tile before softmax to hide page table
@@ -1154,7 +1154,7 @@ __extension Attention:
                 schedule_barrier_before=False,
                 schedule_barrier_after=False,
             ]()
-            v_buffer.load_from_shared(UInt(slot))
+            v_buffer.load_from_shared(slot)
 
             self.online_softmax_update_output()
             mma_pv()

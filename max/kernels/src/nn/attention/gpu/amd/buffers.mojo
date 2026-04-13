@@ -329,7 +329,7 @@ struct KVBufferImpl[
                 Self.wtile_dim0, Self.wtile_dim1
             ](wtile_coord0, wtile_coord1)
             Self._TiledMma.load_b[swizzle=Self.swizzle](
-                warp_tile, self.mma_tile, UInt(k_mma)
+                warp_tile, self.mma_tile, k_mma
             )
         else:
             # Token-gen: use LayoutTensor path (TileTensor distribute
@@ -599,7 +599,7 @@ struct KVBufferLDS[
             wtile_coord0, wtile_coord1
         )
         Self._TiledMma.load_b[swizzle=Self.swizzle](
-            warp_tile, self.mma_tile, UInt(k_mma)
+            warp_tile, self.mma_tile, k_mma
         )
 
 
@@ -1151,7 +1151,7 @@ struct PRegisterBuffer[
             tt_row_major[Self.BM, Self.BK](),
         )
         var warp_tile = smem_block.tile[Self.WM, Self.BK](warp_row, 0)
-        Self._TiledMma.load_a[swizzle=None](warp_tile, result, UInt(k_idx))
+        Self._TiledMma.load_a[swizzle=None](warp_tile, result, k_idx)
         return result
 
     @always_inline
