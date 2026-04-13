@@ -17,17 +17,12 @@ from __future__ import annotations
 
 import dataclasses
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Generic, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, Generic, NamedTuple
 
-import numpy as np
 import torch
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.engine import InferenceSession, Model
 from max.graph import Graph
-from max.interfaces import RequestID, TextGenerationContext, TokenBuffer
-from max.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TextContext
 from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
@@ -222,102 +217,3 @@ class LayerTestHarness(ABC, Generic[StaticParamsT, DynamicParamsT, ContextT]):
 
 # ------------------------------------------------------------------ #
 # Shared helpers for TP attention harnesses
-# ------------------------------------------------------------------ #
-
-
-def prepare_tp_attention_inputs(
-    bundle: CompiledLayerBundle,
-    dynamic_params: Mapping[str, int],
-    *,
-    kv_manager: PagedKVCacheManager,
-    hidden_size: int,
-    max_seq_len: int,
-    signal_buffers: list[Buffer],
-    tp_degree: int,
-) -> tuple[list[Buffer], list[TextGenerationContext]]:
-    """Prepare inputs for a TP attention benchmark shape.
-
-    Allocates KV cache claims, builds input tensors, and assembles
-    per-device KV args + signal buffers into a flat execute_args list.
-
-    Args:
-        bundle: The compiled layer bundle.
-        dynamic_params: Per-shape params (batch_size, seq_len, ctx_len).
-        kv_manager: The KV cache manager.
-        hidden_size: Model hidden dimension.
-        max_seq_len: Maximum sequence length for the model.
-        signal_buffers: Cross-device signal buffers.
-        tp_degree: Tensor parallel degree.
-
-    Returns:
-        (execute_args, batch) where batch is the list of TextGenerationContext
-        objects for cleanup.
-    """
-    batch_size = dynamic_params["batch_size"]
-    seq_len = dynamic_params["seq_len"]
-    ctx_len = dynamic_params.get("ctx_len", 0)
-
-    device = bundle.device
-
-    total_len = ctx_len + seq_len
-
-    batch: list[TextGenerationContext] = []
-    for _ in range(batch_size):
-        ctx = TextContext(
-            request_id=RequestID(),
-            max_length=max(total_len, max_seq_len),
-            tokens=TokenBuffer(np.empty(total_len, dtype=np.int64)),
-        )
-        kv_manager.claim(ctx.request_id, replica_idx=0)
-        kv_manager.alloc(ctx, replica_idx=0)
-        if ctx_len > 0:
-            ctx.tokens.skip_processing(ctx_len)
-        batch.append(ctx)
-
-    kv_runtime = kv_manager.runtime_inputs(
-        cast(list[list[TextGenerationContext]], [batch])
-    )
-
-    total_tokens = batch_size * seq_len
-    input_tensor = Buffer.from_dlpack(
-        torch.randn(total_tokens, hidden_size, dtype=torch.bfloat16)
-    ).to(device)
-    row_offsets = Buffer.from_numpy(
-        np.array(
-            [i * seq_len for i in range(batch_size + 1)],
-            dtype=np.uint32,
-        )
-    ).to(device)
-
-    kv_args: list[Buffer] = []
-    for dev_idx in range(tp_degree):
-        dev_runtime = kv_runtime.inputs[dev_idx]
-        dev = Accelerator(id=dev_idx)
-        assert dev_runtime.attention_dispatch_metadata is not None
-        kv_args.extend(
-            [
-                dev_runtime.blocks.to(dev),
-                dev_runtime.cache_lengths.to(dev),
-                dev_runtime.lookup_table.to(dev),
-                dev_runtime.max_lengths,
-                dev_runtime.attention_dispatch_metadata,
-            ]
-        )
-
-    execute_args: list[Buffer] = [
-        input_tensor,
-        row_offsets,
-        *kv_args,
-        *signal_buffers,
-    ]
-
-    return execute_args, batch
-
-
-def cleanup_tp_attention_inputs(
-    kv_manager: PagedKVCacheManager,
-    batch: list[TextGenerationContext],
-) -> None:
-    """Release KV cache claims allocated by prepare_tp_attention_inputs."""
-    for ctx in batch:
-        kv_manager.release(ctx.request_id, replica_idx=0)

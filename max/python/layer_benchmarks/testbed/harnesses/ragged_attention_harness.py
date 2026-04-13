@@ -72,16 +72,6 @@ AttentionStaticParamsT = TypeVar(
 )
 
 
-# Base mapping from HuggingFace parameter names to harness weight names.
-# Subclasses can extend this with model-specific entries (e.g. q_norm, k_norm).
-HF_TO_HARNESS_BASE: dict[str, str] = {
-    "q_proj.weight": "qkv_proj.q.weight",
-    "k_proj.weight": "qkv_proj.k.weight",
-    "v_proj.weight": "qkv_proj.v.weight",
-    "o_proj.weight": "o_proj.weight",
-}
-
-
 class RaggedAttentionHarness(
     LayerTestHarness[
         AttentionStaticParamsT,

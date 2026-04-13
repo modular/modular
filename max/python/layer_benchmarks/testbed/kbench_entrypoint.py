@@ -94,7 +94,7 @@ def parse_testbed_config_bundle(
             groups[group_key] = (static, [])
         groups[group_key][1].append(dynamic)
 
-    return [(s, d) for s, d in groups.values()]
+    return list(groups.values())
 
 
 @app.default
