@@ -70,7 +70,7 @@ HF_MODELS: dict[str, set[str]] = {
     "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": MULTI | {"max-ci@H100"},  # TODO(MODELS-1021) and GEX-3248
     "google/gemma-4-26b-a4b-it": MULTI | {"max", "max-ci"},  # TODO(MODELS-1340)
-    "google/gemma-4-31b-it": MULTI,
+    "google/gemma-4-31b-it": MULTI | {"max-ci@H100"},
     "meta-llama/llama-3.1-8b-instruct": MULTI,
     "meta-llama/llama-3.2-1b-instruct": MULTI,
     "microsoft/phi-3.5-mini-instruct": MULTI,
