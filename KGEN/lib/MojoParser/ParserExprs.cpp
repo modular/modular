@@ -1524,13 +1524,23 @@ ParseResult ParserBase::parseExpressionList(ExprNode *&result,
 }
 
 ParseResult ParserBase::parseOptionalIdentifier(StringAttr &result,
-                                                Token::Kind delimiter,
                                                 SMLoc *loc) {
   LexerCursor cursor(lexer);
   result = StringAttr::get(getContext(), getToken().getSpelling());
   if (consumeIf(Token::identifier, loc)) {
     if (loc)
       *loc = getToken().getLoc();
+    return success();
+  }
+  cursor.restore(lexer);
+  return failure();
+}
+
+ParseResult ParserBase::parseOptionalIdentifier(StringAttr &result,
+                                                Token::Kind delimiter,
+                                                SMLoc *loc) {
+  LexerCursor cursor(lexer);
+  if (succeeded(parseOptionalIdentifier(result, loc))) {
     if (getToken().is(delimiter))
       return success();
   }

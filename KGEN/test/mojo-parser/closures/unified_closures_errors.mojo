@@ -209,3 +209,37 @@ def incompatible_param_signature() raises:
     # expected-error @below {{does not conform to trait 'def() -> None'}}
     callee_no_params(my_func)
 
+# ===----------------------------------------------------------------------=== #
+# Multiple default capture conventions specified
+# ===----------------------------------------------------------------------=== #
+
+
+def multiple_default_capture_conventions(x: Int):
+    # expected-error @below {{multiple default capture conventions specified}}
+    def my_closure(y: Int) unified {var, ref} -> Int:
+        return y
+
+# ===----------------------------------------------------------------------=== #
+# Incompatible capture conventions
+# ===----------------------------------------------------------------------=== #
+
+
+def incompatible_capture_conventions(x: Int):
+    # expected-error @below {{expected 'var' capture convention for moved objects}}
+    def my_closure(y: Int) unified {ref x^} -> Int:
+        return y
+
+
+# ===----------------------------------------------------------------------=== #
+# Default capture convention violation
+# ===----------------------------------------------------------------------=== #
+
+def default_capture_convention_violation():
+    var y = 20
+    var x = 10
+
+    def my_fn() unified {read, mut y}:
+        # Assigning to `y` work
+        y = 20
+        # expected-error @below {{expression must be mutable in assignment}}
+        x = 10

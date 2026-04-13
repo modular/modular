@@ -1214,23 +1214,15 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
 // Capture Signature Parsing
 //===----------------------------------------------------------------------===//
 
+// capture_list ::= "{" capture_item ("," capture_item)* [","] "}" | "{}"
+// capture_item ::= capture_convention [identifier^] | identifier | identifier^
 ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
   if (!p.consumeIf(Token::l_brace)) {
     p.emitError(p.getToken().getLoc(), "expected a capture convention list");
     return failure();
   }
-  auto parseConvention =
-      [&](std::optional<StringAttr *> name) -> CaptureConvention {
+  auto parseConvention = [&]() -> CaptureConvention {
     if (p.consumeIf(Token::kw_var)) {
-      if (!name.has_value()) {
-        if (p.consumeIf(Token::caret))
-          return CaptureConvention::kConventionMove;
-        else
-          return CaptureConvention::kConventionCopy;
-      }
-      if (p.parseIdentifier(**name,
-                            "Expected captures to be identified by name"))
-        return CaptureConvention::kConventionUnspecified;
       if (p.consumeIf(Token::caret))
         return CaptureConvention::kConventionMove;
       else
@@ -1246,38 +1238,55 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
     return CaptureConvention::kConventionUnspecified;
   };
 
-  // is this capture all by?
-  LexerCursor afterLBrace;
-  if (p.getCursor(afterLBrace))
-    return failure();
-  std::optional<StringAttr *> name;
-  captureAllByConvention = parseConvention(name);
-  if (captureAllByConvention != CaptureConvention::kConventionUnspecified) {
-    if (p.consumeIf(Token::r_brace))
-      return success();
-  }
-  // Nope, check individual capture conventions.
-  captureAllByConvention.reset();
-  afterLBrace.restore(p.getLexer());
-
   auto parseArgument = [&]() -> ParseResult {
     SMLoc captureLocation = p.getToken().getLoc();
+    CaptureConvention parsedConvention = parseConvention();
     StringAttr nameValue;
-    std::optional<StringAttr *> nameRef = &nameValue;
-    CaptureConvention convention = parseConvention(nameRef);
-    if (convention == CaptureConvention::kConventionUnspecified) {
-      p.emitError(p.getLexer().getToken().getLoc(),
-                  "Unrecognized capture convention");
-      return failure();
+    if (succeeded(p.parseOptionalIdentifier(nameValue))) {
+      if (p.getToken().is(Token::comma) || p.getToken().is(Token::r_brace)) {
+        CaptureConvention convention = [parsedConvention]() {
+          if (parsedConvention == CaptureConvention::kConventionUnspecified)
+            return CaptureConvention::kConventionRead;
+          return parsedConvention;
+        }();
+
+        parsedCaptures.push_back(
+            {nameValue.getValue(), convention, captureLocation});
+        return success();
+      }
+      // consume '^'
+      if (p.consumeIf(Token::caret)) {
+        // This has to be either `{var x^}` or a `{x^}`
+        if (parsedConvention != CaptureConvention::kConventionCopy &&
+            parsedConvention != CaptureConvention::kConventionUnspecified) {
+          p.emitError(captureLocation,
+                      "expected 'var' capture convention for moved objects");
+          return failure();
+        }
+        // Refines the convention to move.
+        parsedCaptures.push_back({nameValue.getValue(),
+                                  CaptureConvention::kConventionMove,
+                                  captureLocation});
+        return success();
+      }
+      return p.emitError(captureLocation,
+                         "unexpected token, expected ',' to separate captures");
     }
 
-    if (!nameValue)
-      if (p.parseIdentifier(nameValue,
-                            "Expected captures to be identified by name"))
+    // We parsed a convention but there is no identifier after it, then it must
+    // be a default capture.
+    if (parsedConvention != CaptureConvention::kConventionUnspecified) {
+      if (captureAllByConvention.has_value()) {
+        p.emitError(captureLocation,
+                    "multiple default capture conventions specified");
         return failure();
-    parsedCaptures.push_back(
-        {nameValue.getValue(), convention, captureLocation});
-    return success();
+      }
+
+      captureAllByConvention = parsedConvention;
+      return success();
+    }
+
+    return p.emitError(captureLocation, "expected a capture convention");
   };
 
   if (!p.consumeIf(Token::r_brace)) {

@@ -1188,19 +1188,20 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   if (needsCapture) {
     FnOp parent = cast<FnOp>(nearestEscapingFnOrNone->getIfOperation());
     if (parent.getFuncTypeGenerator().isUnified()) {
-      CaptureConvention defaultConvention =
-          emitter.shared.defaultCaptureConventionInScope(
-              *nearestEscapingFnOrNone);
-      if (defaultConvention != CaptureConvention::kConventionUnspecified) {
-        decl = ClosureEmitter::addCaptureValue(
-            emitter.shared, *nearestEscapingFnOrNone, spelling, expr->getLoc());
-        if (!decl)
-          return {};
-      } else {
-        // there is no default set which means this capture should be registered
-        // already. Verify that it is and if it isn't emit an error.
-        if (!emitter.shared.captureInstanceExistsInScope(
-                *nearestEscapingFnOrNone, spelling)) {
+      if (!emitter.shared.captureInstanceExistsInScope(*nearestEscapingFnOrNone,
+                                                       spelling)) {
+        CaptureConvention defaultConvention =
+            emitter.shared.defaultCaptureConventionInScope(
+                *nearestEscapingFnOrNone);
+        if (defaultConvention != CaptureConvention::kConventionUnspecified) {
+          decl = ClosureEmitter::addCaptureValue(emitter.shared,
+                                                 *nearestEscapingFnOrNone,
+                                                 spelling, expr->getLoc());
+          if (!decl)
+            return {};
+        } else {
+          // There is no default set nor this capture was registered already.
+          // This is an error.
           emitter.shared.emitError(
               expr->getLoc(),
               "Could not infer capture convention of the captured value ")

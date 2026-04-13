@@ -153,6 +153,9 @@ public:
   ParseResult parseIdentifier(StringAttr &result, const Twine &message,
                               SMLoc *loc = nullptr, bool allowKeyword = false);
 
+  /// Consume an identifier token regardless of the delimiter. The location
+  /// is set to the delimiter (the delimiter is not consumed)
+  ParseResult parseOptionalIdentifier(StringAttr &result, SMLoc *loc = nullptr);
   /// Consume an identifier token if delimiter is the next token and the parsed
   /// identifier is not a keyword. The location is set to the delimiter (the
   /// delimiter is not consumed)
