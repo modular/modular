@@ -50,7 +50,7 @@ check_server_status() {
         return 0
     fi
 
-    if echo "$logs" | grep -q "Building\|Compiling\|Starting download of model"; then
+    if echo "$logs" | grep -q "Building\|Compiling\|Downloading weight files for"; then
         echo "⏳ Server is initializing (compiling model)..."
         return 1
     fi

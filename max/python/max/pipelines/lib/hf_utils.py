@@ -229,14 +229,40 @@ def download_weight_files(
           The number of worker threads to concurrently download files.
 
     """
+    # 1. Check if all files exist as direct local paths (absolute or CWD-relative).
     if not force_download and all(
         os.path.exists(Path(filename)) for filename in filenames
     ):
         logger.info("All files exist locally, skipping download.")
         return [Path(filename) for filename in filenames]
 
+    # 2. Check the HuggingFace local cache (no network calls).
+    #    try_to_load_from_cache resolves branch refs (e.g. "main") from the
+    #    local refs file, so this works even with non-hash revisions after
+    #    the first successful download.
+    if not force_download:
+        cached_paths: list[Path] = []
+        for filename in filenames:
+            cached = huggingface_hub.try_to_load_from_cache(
+                huggingface_model_id,
+                filename,
+                revision=revision,
+            )
+            if isinstance(cached, (str, os.PathLike)):
+                cached_paths.append(Path(cached))
+            else:
+                # Cache miss or cached-as-nonexistent — need to download.
+                break
+        else:
+            # All files found in HF cache.
+            logger.info(
+                "All weight files for %s found in local HF cache.",
+                huggingface_model_id,
+            )
+            return cached_paths
+
     start_time = datetime.datetime.now()
-    logger.info(f"Starting download of model: {huggingface_model_id}")
+    logger.info(f"Downloading weight files for: {huggingface_model_id}")
     with _hf_tqdm_using_threading_only_lock():
         weight_paths = list(
             thread_map(
@@ -255,7 +281,8 @@ def download_weight_files(
         )
 
     logger.info(
-        f"Finished download of model: {huggingface_model_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
+        f"Finished downloading weight files for: {huggingface_model_id} "
+        f"in {(datetime.datetime.now() - start_time).total_seconds():.1f}s."
     )
 
     return weight_paths

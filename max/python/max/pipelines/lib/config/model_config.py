@@ -281,6 +281,14 @@ class MAXModelConfig(MAXModelConfigBase):
     _quant: QuantizationConfig | None = PrivateAttr(default=None)
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
 
+    _cached_weight_repo: HuggingFaceRepo | None = PrivateAttr(default=None)
+    """Cached HuggingFaceRepo for weight files. Avoids recreating instances
+    (and redundant HF API calls) on every property access."""
+
+    _cached_model_repo: HuggingFaceRepo | None = PrivateAttr(default=None)
+    """Cached HuggingFaceRepo for the model. Avoids recreating instances
+    (and redundant HF API calls) on every property access."""
+
     _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -326,6 +334,10 @@ class MAXModelConfig(MAXModelConfigBase):
         if private is not None:
             private_state = dict(private)
             private_state["_huggingface_config"] = None
+            # HuggingFaceRepo instances carry cached HF API responses
+            # (weight_files, info, etc.) that may not be picklable.
+            private_state["_cached_weight_repo"] = None
+            private_state["_cached_model_repo"] = None
             state["__pydantic_private__"] = private_state
         return state
 
@@ -345,6 +357,8 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_applied_dtype_cast_from", None)
         private_state.setdefault("_applied_dtype_cast_to", None)
         private_state.setdefault("_quant", None)
+        private_state.setdefault("_cached_weight_repo", None)
+        private_state.setdefault("_cached_model_repo", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
@@ -743,7 +757,14 @@ class MAXModelConfig(MAXModelConfigBase):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_weight_repo(self) -> HuggingFaceRepo:
-        """Returns the Hugging Face repo handle for weight files."""
+        """Returns the Hugging Face repo handle for weight files.
+
+        The result is cached in a PrivateAttr to avoid recreating
+        ``HuggingFaceRepo`` instances (and triggering redundant HF API
+        calls for file listing, encoding detection, etc.) on every
+        access.  The cache is invalidated when the underlying config
+        fields change (e.g. after ``model_copy()``).
+        """
         weights_repo_id = self.huggingface_weight_repo_id
         # When weights come from an external repo, don't apply the
         # component subfolder — the external repo has its own layout.
@@ -752,23 +773,51 @@ class MAXModelConfig(MAXModelConfigBase):
             and self._weights_repo_id != self.model_path
         )
         subfolder = None if weights_from_external_repo else self.subfolder
-        return HuggingFaceRepo(
+
+        cached = self._cached_weight_repo
+        if (
+            cached is not None
+            and cached.repo_id == weights_repo_id
+            and cached.revision == self.huggingface_weight_revision
+            and cached.subfolder == subfolder
+        ):
+            return cached
+
+        repo = HuggingFaceRepo(
             repo_id=weights_repo_id,
             revision=self.huggingface_weight_revision,
             trust_remote_code=self.trust_remote_code,
             subfolder=subfolder,
         )
+        self._cached_weight_repo = repo
+        return repo
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_model_repo(self) -> HuggingFaceRepo:
-        """Returns the Hugging Face repo handle for the model."""
-        return HuggingFaceRepo(
+        """Returns the Hugging Face repo handle for the model.
+
+        The result is cached in a PrivateAttr to avoid recreating
+        ``HuggingFaceRepo`` instances on every access.  The cache is
+        invalidated when the underlying config fields change.
+        """
+        cached = self._cached_model_repo
+        if (
+            cached is not None
+            and cached.repo_id == self.model_path
+            and cached.revision == self.huggingface_model_revision
+            and cached.subfolder == self.subfolder
+        ):
+            return cached
+
+        repo = HuggingFaceRepo(
             repo_id=self.model_path,
             revision=self.huggingface_model_revision,
             trust_remote_code=self.trust_remote_code,
             subfolder=self.subfolder,
         )
+        self._cached_model_repo = repo
+        return repo
 
     @property
     def architecture_name(self) -> str | None:
