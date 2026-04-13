@@ -50,6 +50,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"broadcast_multimem_{dtype}", mangle=True)
 def broadcast_multimem_kernel[
     dtype: DType,
     Layout: TensorLayout,
@@ -147,6 +148,7 @@ def broadcast_multimem_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"broadcast_pull_1stage_{dtype}", mangle=True)
 def broadcast_pull_1stage_kernel[
     dtype: DType,
     layout: TensorLayout,
@@ -198,6 +200,7 @@ def broadcast_pull_1stage_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"broadcast_pull_2stage_{dtype}", mangle=True)
 def broadcast_pull_2stage_kernel[
     dtype: DType,
     OutputLayout: TensorLayout,

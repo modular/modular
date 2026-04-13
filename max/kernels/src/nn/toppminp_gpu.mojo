@@ -38,6 +38,9 @@ comptime DEBUG_FILE = False
 comptime SEED = 42
 
 
+@__name(
+    t"topk_wrapper_no_shmem_{input_type}_{index_type}_{is_top_p}", mangle=True
+)
 def topk_wrapper_no_shmem[
     input_type: DType,
     index_type: DType,
@@ -101,6 +104,7 @@ def topk_wrapper_no_shmem[
             partial.p = -1
 
 
+@__name(t"topk_wrapper_{input_type}_{index_type}_{is_top_p}", mangle=True)
 def topk_wrapper[
     input_type: DType,
     index_type: DType,
@@ -301,6 +305,7 @@ def normalize(
 
 
 @always_inline
+@__name(t"radix_sort_pairs_{dtype}_{out_idx_type}_{ascending}", mangle=True)
 def radix_sort_pairs_kernel[
     dtype: DType,
     out_idx_type: DType,
@@ -619,6 +624,7 @@ def run_radix_sort_pairs_gpu[
 
 
 @always_inline
+@__name(t"topp_minp_sampling_{dtype}_{out_idx_type}_{is_top_p}", mangle=True)
 def topp_minp_sampling_kernel[
     dtype: DType,
     out_idx_type: DType,

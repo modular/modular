@@ -212,6 +212,7 @@ comptime allreduce_tuning_table = Table(
 )
 
 
+@__name(t"naive_reduce_{dtype}", mangle=True)
 def _naive_reduce_kernel[
     dtype: DType
 ](
@@ -240,6 +241,7 @@ def _naive_reduce_kernel[
         dst_buf[i] += src_buf[i]
 
 
+@__name(t"naive_reduce_with_lambda_{dtype}", mangle=True)
 def _naive_reduce_kernel_with_lambda[
     dtype: DType,
     out_layout: TensorLayout,
@@ -414,6 +416,7 @@ def _allreduce_naive_single[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"allreduce_2stage_{dtype}_{use_multimem}", mangle=True)
 def _allreduce_2stage_kernel[
     dtype: DType,
     ngpus: Int,
@@ -588,6 +591,7 @@ def _allreduce_2stage_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"allreduce_1stage_{dtype}_{use_multimem}", mangle=True)
 def _allreduce_1stage_kernel[
     dtype: DType,
     ngpus: Int,

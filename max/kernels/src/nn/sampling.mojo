@@ -106,6 +106,7 @@ def apply_penalties_to_logits[
     ](dispatch_shape, ctx)
 
 
+@__name(t"update_frequency_data_{token_type}", mangle=True)
 def update_frequency_data_kernel[
     freq_data_origin: MutOrigin,
     FreqDataLayoutType: TensorLayout,

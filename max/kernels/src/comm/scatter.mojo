@@ -57,6 +57,7 @@ from .sync import (
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"scatter_pull_{dtype}", mangle=True)
 def scatter_pull_kernel[
     dtype: DType,
     BLOCK_SIZE: Int,

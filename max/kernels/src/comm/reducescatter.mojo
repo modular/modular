@@ -256,6 +256,7 @@ def _reduce_scatter_impl[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"reducescatter_{dtype}_{use_multimem}", mangle=True)
 def _reducescatter_kernel[
     dtype: DType,
     in_layout: TensorLayout,
