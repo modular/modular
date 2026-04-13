@@ -1370,3 +1370,19 @@ def call_inner[
         return f(y) + payload.value
 
     return outer(x)
+
+
+# // -----
+
+
+def captures_with_default_convention():
+    var a, b, c, d = ("a", "b", "c", "d")
+    # COM: a
+    # CHECK: lit.closure.init[{{.*}}](%{{.*}}[ref: mut *"a
+    # COM: b
+    # CHECK-SAME: %{{.*}}[ref: muttoimm *"b
+    # COM: c
+    # CHECK-SAME: %{{.*}}[{{.*}} move])
+    # COM: d is omitted because it uses default convention.
+    def my_fn() unified {mut a, b, c^, read}:
+        pass
