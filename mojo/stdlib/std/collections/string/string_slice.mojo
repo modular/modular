@@ -48,7 +48,6 @@ from std.memory import (
     memcpy,
     pack_bits,
 )
-from std.memory._nonnull import NonNullUnsafePointer
 from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
@@ -2258,7 +2257,7 @@ def _unsafe_strlen(
 def _memchr[
     dtype: DType, //
 ](source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]) -> Optional[
-    NonNullUnsafePointer[Scalar[dtype], source.origin]
+    UnsafePointer[Scalar[dtype], source.origin]
 ]:
     if (
         __is_run_in_comptime_interpreter
@@ -2268,7 +2267,7 @@ def _memchr[
 
         for i in range(len(source)):
             if ptr[i] == char:
-                return {{unsafe_from_nullable = ptr + i}}
+                return ptr + i
         return {}
     else:
         return _memchr_impl(source, char)
@@ -2280,7 +2279,7 @@ def _memchr_impl[
 ](
     source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], source.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], source.origin]]:
     var haystack = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
@@ -2291,16 +2290,11 @@ def _memchr_impl[
         var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
         var mask = pack_bits(bool_mask)
         if mask:
-            return {
-                {
-                    unsafe_from_nullable = haystack
-                    + Int(type_of(mask)(i) + count_trailing_zeros(mask))
-                }
-            }
+            return haystack + Int(type_of(mask)(i) + count_trailing_zeros(mask))
 
     for i in range(vectorized_end, length):
         if haystack[i] == char:
-            return {{unsafe_from_nullable = haystack + i}}
+            return haystack + i
 
     return {}
 
@@ -2315,7 +2309,7 @@ def _memmem[
         Scalar[dtype],
         ...,
     ],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], haystack_span.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], haystack_span.origin]]:
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
@@ -2330,7 +2324,7 @@ def _memmem[
                 continue
 
             if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-                return {{unsafe_from_nullable = haystack + i}}
+                return haystack + i
 
         return {}
     else:
@@ -2347,7 +2341,7 @@ def _memmem_impl[
         Scalar[dtype],
         ...,
     ],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], haystack_span.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], haystack_span.origin]]:
     var haystack = haystack_span.unsafe_ptr()
     var haystack_len = len(haystack_span)
     var needle = needle_span.unsafe_ptr()
@@ -2380,7 +2374,7 @@ def _memmem_impl[
         while mask:
             var offset = i + Int(count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
-                return {{unsafe_from_nullable = haystack + offset}}
+                return haystack + offset
             mask = mask & (mask - 1)
 
     for i in range(vectorized_end, haystack_len - needle_len + 1):
@@ -2388,7 +2382,7 @@ def _memmem_impl[
             continue
 
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-            return {{unsafe_from_nullable = haystack + i}}
+            return haystack + i
     return {}
 
 
@@ -2399,11 +2393,11 @@ def _memrchr[
     source: Span[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
 ) -> Optional[
-    NonNullUnsafePointer[Scalar[dtype], source.origin]
+    UnsafePointer[Scalar[dtype], source.origin]
 ]:
     for i in reversed(range(len(source))):
         if source.unsafe_get(i) == char:
-            return {{unsafe_from_nullable = source.unsafe_ptr() + i}}
+            return source.unsafe_ptr() + i
     return {}
 
 
@@ -2413,9 +2407,9 @@ def _memrmem[
 ](
     haystack: Span[mut=False, Scalar[dtype], _],
     needle: Span[mut=False, Scalar[dtype], _],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], haystack.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
     if not needle:
-        return {{unsafe_from_nullable = haystack.unsafe_ptr()}}
+        return haystack.unsafe_ptr()
     if len(needle) > len(haystack):
         return {}
     if len(needle) == 1:
@@ -2431,7 +2425,7 @@ def _memrmem[
             )
             == 0
         ):
-            return {{unsafe_from_nullable = haystack.unsafe_ptr() + i}}
+            return haystack.unsafe_ptr() + i
     return {}
 
 

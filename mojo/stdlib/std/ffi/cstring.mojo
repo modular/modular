@@ -14,7 +14,6 @@
 
 from std.collections.string.string_slice import _unsafe_strlen
 from std.memory import UnsafeMaybeUninit
-from std.memory._nonnull import NonNullUnsafePointer
 from std.sys import size_of
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
@@ -47,7 +46,7 @@ struct CStringSlice[origin: ImmutOrigin](
         origin: The origin of the `CStringSlice`.
     """
 
-    comptime _PointerType = NonNullUnsafePointer[Int8, Self.origin]
+    comptime _PointerType = UnsafePointer[Int8, Self.origin]
 
     var _data: Self._PointerType
 
@@ -93,7 +92,7 @@ struct CStringSlice[origin: ImmutOrigin](
             "Cannot construct a CStringSlice from a null pointer. Use"
             " Optional[CStringSlice] instead to represent nullability."
         )
-        self._data = {unsafe_from_nullable = unsafe_from_ptr}
+        self._data = unsafe_from_ptr
 
     @always_inline
     def __init__(out self, slice: StringSlice[Self.origin]) raises:
@@ -121,7 +120,7 @@ struct CStringSlice[origin: ImmutOrigin](
         """
         _validate_bytes(slice.as_bytes())
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = {unsafe_from_nullable = slice.unsafe_ptr().bitcast[Int8]()}
+        self._data = slice.unsafe_ptr().bitcast[Int8]()
 
     @always_inline
     def __init__(out self, span: Span[Byte, Self.origin]) raises:
@@ -136,7 +135,7 @@ struct CStringSlice[origin: ImmutOrigin](
         """
         _validate_bytes(span)
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = {unsafe_from_nullable = span.unsafe_ptr().bitcast[Int8]()}
+        self._data = span.unsafe_ptr().bitcast[Int8]()
 
     @always_inline
     def __eq__(self, rhs_same: Self) -> Bool:

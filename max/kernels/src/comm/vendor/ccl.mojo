@@ -21,7 +21,7 @@ from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor
-from std.memory._nonnull import bitcast
+from std.memory.unsafe_pointer import unsafe_cast
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
@@ -223,9 +223,9 @@ def _ccl_stream_ptr(
     ctx: DeviceContext,
 ) raises -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
-        return bitcast[NoneType](HIP(ctx.stream()))
+        return unsafe_cast[Type=NoneType](HIP(ctx.stream()))
     else:
-        return bitcast[NoneType](CUDA(ctx.stream()))
+        return unsafe_cast[Type=NoneType](CUDA(ctx.stream()))
 
 
 @fieldwise_init

@@ -25,7 +25,7 @@ from std.ffi import (
     external_call,
     _CPointer,
 )
-from std.memory._nonnull import NonNullUnsafePointer, bitcast
+from std.memory.unsafe_pointer import unsafe_cast
 from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
@@ -149,7 +149,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            libc.free(bitcast[NoneType](buffer))
+            libc.free(unsafe_cast[Type=NoneType](buffer))
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
@@ -159,7 +159,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
             )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
-        libc.free(bitcast[NoneType](buffer))
+        libc.free(unsafe_cast[Type=NoneType](buffer))
         return s^
 
 

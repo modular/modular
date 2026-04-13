@@ -19,7 +19,7 @@ process creation, output capture, and resource cleanup automatically.
 
 import std.sys._libc as libc
 from std.ffi import external_call, _CPointer
-from std.memory._nonnull import NonNullUnsafePointer, bitcast
+from std.memory.unsafe_pointer import unsafe_cast
 from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
 from std.sys.info import CompilationTarget
@@ -81,7 +81,7 @@ struct _POpenHandle:
                 from_utf8=Span(ptr=line.value().bitcast[Byte](), length=read)
             )
 
-        libc.free(bitcast[NoneType](line))
+        libc.free(unsafe_cast[Type=NoneType](line))
         return String(res.rstrip())
 
 

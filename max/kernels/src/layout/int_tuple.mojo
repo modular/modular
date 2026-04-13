@@ -60,7 +60,6 @@ from std.os import abort
 
 from std.builtin.range import _StridedRange
 from std.memory import memcpy
-from std.memory._nonnull import NonNullUnsafePointer
 from std.sys.intrinsics import _type_is_eq_parse_time
 from std.collections import check_bounds
 from std.utils.numerics import max_finite
@@ -132,7 +131,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: Optional[NonNullUnsafePointer[Int, MutExternalOrigin]]
+    var _data: Optional[UnsafePointer[Int, MutExternalOrigin]]
     var _size: Int
 
     @always_inline("nodebug")
@@ -143,9 +142,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             size: Number of integers to allocate space for. Defaults to 0.
         """
         if size > 0:
-            self._data = NonNullUnsafePointer(
-                unsafe_from_nullable=alloc[Int](size)
-            )
+            self._data = alloc[Int](size)
         else:
             self._data = {}
         self._size = size
@@ -162,9 +159,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = copy._size
         if copy.owning():
             var size = copy.size()
-            self._data = NonNullUnsafePointer(
-                unsafe_from_nullable=alloc[Int](size)
-            )
+            self._data = alloc[Int](size)
             self.copy_from(0, copy, size)
         else:
             self._data = copy._data

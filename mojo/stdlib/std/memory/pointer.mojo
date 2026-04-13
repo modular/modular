@@ -21,7 +21,6 @@ from std.memory import Pointer
 
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.memory import UnsafeMaybeUninit
-from std.memory._nonnull import NonNullUnsafePointer
 from std.utils._nicheable import UnsafeSingleNicheable, NicheIndex
 
 # ===-----------------------------------------------------------------------===#
@@ -372,7 +371,7 @@ struct Pointer[
     # UnsafeNicheable
     # ===------------------------------------------------------------------===#
 
-    comptime _NonNull = NonNullUnsafePointer[
+    comptime _NonNull = UnsafePointer[
         Self.type,
         ExternalOrigin[mut=Self.mut],
         address_space=Self.address_space,

@@ -140,7 +140,6 @@ Curabitur auctor volutpat diam vitae vehicula. Vivamus est arcu, efficitur nec i
 comptime needle = "school"  # a word intentionally not in the test data
 
 from std.benchmark import black_box, keep
-from std.memory._nonnull import NonNullUnsafePointer
 
 
 # ===-----------------------------------------------------------------------===#
@@ -152,9 +151,9 @@ def _memmem_baseline[
 ](
     haystack: Span[mut=False, Scalar[dtype], _],
     needle: Span[mut=False, Scalar[dtype], _],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], haystack.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
     if not needle:
-        return {{unsafe_from_nullable = haystack.unsafe_ptr()}}
+        return haystack.unsafe_ptr()
     if len(needle) > len(haystack):
         return {}
     if len(needle) == 1:
@@ -182,7 +181,7 @@ def _memmem_baseline[
                 )
                 == 0
             ):
-                return {{unsafe_from_nullable = haystack.unsafe_ptr() + offset}}
+                return haystack.unsafe_ptr() + offset
             mask = mask & (mask - 1)
 
     for i in range(vectorized_end, len(haystack) - len(needle) + 1):
@@ -197,7 +196,7 @@ def _memmem_baseline[
             )
             == 0
         ):
-            return {{unsafe_from_nullable = haystack.unsafe_ptr() + i}}
+            return haystack.unsafe_ptr() + i
     return {}
 
 

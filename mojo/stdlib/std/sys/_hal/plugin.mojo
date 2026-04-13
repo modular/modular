@@ -25,7 +25,6 @@ from std.memory import (
     UnsafePointer,
     UnsafeMaybeUninit,
 )
-from std.memory._nonnull import NonNullUnsafePointer
 
 from .status import STATUS_SUCCESS, STATUS_UNKNOWN_ERROR, HALError
 
@@ -88,7 +87,7 @@ struct DriverVersion(TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 comptime Handle[T: AnyType] = UnsafePointer[T, MutExternalOrigin]
-comptime OutParam[T: TrivialRegisterPassable] = NonNullUnsafePointer[
+comptime OutParam[T: TrivialRegisterPassable] = UnsafePointer[
     UnsafeMaybeUninit[T], MutAnyOrigin
 ]
 

@@ -65,7 +65,7 @@ trait UnsafeCustomNicheStorage:
 
     By default, niche-optimized containers (like `Optional`) store a nicheable
     type's value in an `UnsafeMaybeUninit[T]`, which lowers to `pop.array<1,T>`.
-    This is not always desirable. For example, `NonNullUnsafePointer` needs to
+    This is not always desirable. For example, `UnsafePointer` needs to
     lower directly to `kgen.pointer` to preserve its ABI across exported
     function boundaries.
 

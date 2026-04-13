@@ -42,7 +42,7 @@ from std.compile import get_type_name
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
-from std.memory._nonnull import NonNullUnsafePointer, unsafe_origin_cast
+from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location
 from std.sys.intrinsics import _type_is_eq
 from std.utils.variant import _all_trivial_copyinit
@@ -238,33 +238,24 @@ struct Optional[T: Movable](
         """
         self = Self()
 
-    @implicit
-    @doc_hidden
-    @always_inline
-    def __init__[
-        U: AnyType, origin: Origin, address_space: AddressSpace, //
-    ](
-        out self: Optional[
-            NonNullUnsafePointer[U, origin, address_space=address_space]
-        ],
-        nullable: UnsafePointer[U, origin, address_space=address_space],
-    ):
-        self = nullable.as_nonnull()
-
     @always_inline
     @implicit
     @doc_hidden
     def __init__(
         nullable: UnsafePointer[...],
         out self: Optional[
-            NonNullUnsafePointer[
+            UnsafePointer[
                 nullable.type,
                 AnyOrigin[mut=False],
                 address_space=nullable.address_space,
             ]
         ],
     ):
-        self = unsafe_origin_cast[AnyOrigin[mut=False]](nullable.as_nonnull())
+        self = {
+            value = nullable.as_immutable().unsafe_origin_cast[
+                AnyOrigin[mut=False]
+            ]()
+        }
 
     @always_inline
     @implicit
@@ -272,14 +263,14 @@ struct Optional[T: Movable](
     def __init__(
         nullable: UnsafePointer[mut=True, ...],
         out self: Optional[
-            NonNullUnsafePointer[
+            UnsafePointer[
                 nullable.type,
                 AnyOrigin[mut=True],
                 address_space=nullable.address_space,
             ]
         ],
     ):
-        self = unsafe_origin_cast[AnyOrigin[mut=True]](nullable.as_nonnull())
+        self = {value = nullable.unsafe_origin_cast[AnyOrigin[mut=True]]()}
 
     # TODO(MOCO-3640): Remove once the compiler can synthesize copy
     # constructors through variadic conditional conformances

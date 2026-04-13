@@ -30,7 +30,6 @@ from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
-from std.memory._nonnull import NonNullUnsafePointer
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -325,9 +324,7 @@ struct List[T: Copyable](
         T: The type of elements stored in the list.
     """
 
-    comptime _UnsafePointerType = NonNullUnsafePointer[
-        Self.T, MutExternalOrigin
-    ]
+    comptime _UnsafePointerType = UnsafePointer[Self.T, MutExternalOrigin]
 
     # Fields
     var _data: Self._UnsafePointerType
@@ -389,7 +386,7 @@ struct List[T: Copyable](
 
     def __init__(out self):
         """Constructs an empty list."""
-        self._data = Self._UnsafePointerType.dangling()
+        self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = 0
 
@@ -400,9 +397,9 @@ struct List[T: Copyable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = {unsafe_from_nullable = alloc[Self.T](capacity)}
+            self._data = alloc[Self.T](capacity)
         else:
-            self._data = Self._UnsafePointerType.dangling()
+            self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = capacity
         self._annotate_new()
@@ -752,7 +749,7 @@ struct List[T: Copyable](
         if self.capacity > 0:
             self._annotate_delete()
             self._data.free()
-        self._data = {unsafe_from_nullable = new_data}
+        self._data = new_data
         self.capacity = new_capacity
         self._annotate_new()
 
@@ -1254,7 +1251,7 @@ struct List[T: Copyable](
         """
         self._annotate_delete()
         var ptr = self._data
-        self._data = Self._UnsafePointerType.dangling()
+        self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = 0
         return ptr

@@ -24,7 +24,6 @@ from std.reflection import call_location
 from std.bit.mask import splat
 from std.bit import pop_count
 from std.memory import pack_bits, uninit_copy_n
-from std.memory._nonnull import NonNullUnsafePointer
 from std.collections import check_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of
@@ -154,7 +153,7 @@ struct Span[
     # Aliases
     comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
     """The immutable version of the `Span`."""
-    comptime _UnsafePointerType = NonNullUnsafePointer[
+    comptime _UnsafePointerType = UnsafePointer[
         Self.T,
         Self.origin,
     ]
@@ -206,7 +205,7 @@ struct Span[
     @always_inline("nodebug")
     def __init__(out self):
         """Create an empty / zero-length span."""
-        self._data = Self._UnsafePointerType.dangling()
+        self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
 
     @doc_hidden
@@ -232,7 +231,7 @@ struct Span[
             ptr: The underlying pointer of the span.
             length: The length of the view.
         """
-        self._data = {unsafe_from_nullable = ptr}
+        self._data = ptr
         self._len = length
 
     @always_inline
@@ -245,11 +244,7 @@ struct Span[
         Args:
             list: The list to which the span refers.
         """
-        self._data = {
-            unsafe_from_nullable = rebind[Self._UnsafePointerType](
-                list.unsafe_ptr()
-            )
-        }
+        self._data = rebind[Self._UnsafePointerType](list.unsafe_ptr())
         self._len = list._len
 
     @always_inline
@@ -274,7 +269,7 @@ struct Span[
             array: The array to which the span refers.
         """
 
-        self._data = {unsafe_from_nullable = array.unsafe_ptr()}
+        self._data = array.unsafe_ptr()
         self._len = size
 
     # ===------------------------------------------------------------------===#

@@ -26,7 +26,7 @@ from std.builtin.variadics import (
 from std.builtin.int import index as _index
 from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
-from std.memory._nonnull import NonNullUnsafePointer, unsafe_origin_cast
+from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout._fillers import BATCH_SIZE
@@ -2113,7 +2113,7 @@ struct NullableTileTensor[
     ]
     """True if the tensor has row-major (contiguous) strides."""
 
-    comptime PtrType = NonNullUnsafePointer[
+    comptime PtrType = UnsafePointer[
         Scalar[Self.dtype], Self.origin, address_space=Self.address_space
     ]
     """The non-null pointer type for the underlying data storage."""
@@ -2159,7 +2159,7 @@ struct NullableTileTensor[
         Args:
             other: The mutable NullableTileTensor to cast from.
         """
-        self.ptr = unsafe_origin_cast[type_of(self).origin](other.ptr)
+        self.ptr = unsafe_cast[origin=type_of(self).origin](other.ptr)
         self.layout = other.layout
 
     @always_inline
