@@ -80,6 +80,7 @@ class TorchMLP(nn.Module):
         bias: bool = False,
         bias_tensors: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
         | None = None,
+        swiglu_limit: float = 0.0,
     ) -> None:
         super().__init__()
         self.gate_proj = torch_linear(
@@ -98,12 +99,15 @@ class TorchMLP(nn.Module):
             bias=bias,
         )
         self.activation_function = activation_function
+        self.swiglu_limit = swiglu_limit
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.down_proj(
-            ACTIVATION_FUNCTION[self.activation_function](self.gate_proj(x))
-            * self.up_proj(x)
-        )
+        gate = ACTIVATION_FUNCTION[self.activation_function](self.gate_proj(x))
+        up = self.up_proj(x)
+        if self.swiglu_limit > 0:
+            gate = torch.clamp(gate, max=self.swiglu_limit)
+            up = torch.clamp(up, min=-self.swiglu_limit, max=self.swiglu_limit)
+        return self.down_proj(gate * up)
 
 
 class WrapModuleForSubgraph(Module):
@@ -149,6 +153,7 @@ def mlp_output(
     has_bias: bool = False,
     bias: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     use_subgraphs: bool = True,
+    swiglu_limit: float = 0.0,
 ) -> Sequence[Buffer]:
     # Initialize the device-contexts
     devices: list[Device] = (
@@ -182,6 +187,7 @@ def mlp_output(
         devices=devices_refs,
         activation_function=activation_function,
         has_bias=has_bias,
+        swiglu_limit=swiglu_limit,
     )
 
     if n_gpus > 1:
@@ -258,6 +264,7 @@ def compare_mlp_outputs(
     has_bias: bool = False,
     use_subgraphs: bool = True,
     seq_len: int = 1,
+    swiglu_limit: float = 0.0,
 ) -> None:
     if n_gpus > accelerator_count():
         pytest.skip(f"Not enough GPUs to run test with {n_gpus} GPUs.")
@@ -297,6 +304,7 @@ def compare_mlp_outputs(
             has_bias=has_bias,
             bias=(gate_proj_b, down_proj_b, up_proj_b),
             use_subgraphs=use_subgraphs,
+            swiglu_limit=swiglu_limit,
         )
     else:
         max_output = mlp_output(
@@ -308,6 +316,7 @@ def compare_mlp_outputs(
             dtype,
             n_gpus=n_gpus,
             use_subgraphs=use_subgraphs,
+            swiglu_limit=swiglu_limit,
         )
 
     if has_bias:
@@ -323,6 +332,7 @@ def compare_mlp_outputs(
                     down_proj_b.to(device),
                     up_proj_b.to(device),
                 ),
+                swiglu_limit=swiglu_limit,
             )(x)
             .detach()
             .to(torch_dtype)
@@ -336,6 +346,7 @@ def compare_mlp_outputs(
                 up_proj_w.to(device),
                 activation_function,
                 bias=has_bias,
+                swiglu_limit=swiglu_limit,
             )(x)
             .detach()
             .to(torch_dtype)

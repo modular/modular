@@ -190,6 +190,17 @@ class MoEQuantized(MoE):
         router_weight: TensorValue,
     ) -> TensorValue:
         """Executes the expert-parallel quantized MoE path."""
+        # TODO: swiglu_limit is not supported here because
+        # fused_silu_quantize fuses silu + multiply + quantize into one
+        # kernel, leaving no place to insert the clamp.  For NVFP4 the
+        # kernel also produces expert-aware padded scales that cannot be
+        # replicated with unfused ops.
+        if self.swiglu_limit > 0:
+            raise ValueError(
+                "swiglu_limit is not supported in the expert-parallel"
+                " quantized MoE path because fused_silu_quantize does not"
+                " support clamping."
+            )
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
@@ -312,7 +323,20 @@ class MoEQuantized(MoE):
             expert_inputs=expert_inputs,
         )
 
-        gate_up = silu_gate(gate_up, self.moe_dim)
+        if self.swiglu_limit > 0:
+            gate = ops.silu(gate_up[:, : self.moe_dim])
+            up = gate_up[:, self.moe_dim :]
+            lim = ops.constant(
+                self.swiglu_limit, gate.dtype, device=gate.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up.dtype, device=up.device
+            )
+            gate = ops.min(gate, lim)
+            up = ops.min(ops.max(up, neg_lim), lim)
+            gate_up = gate * up
+        else:
+            gate_up = silu_gate(gate_up, self.moe_dim)
 
         if nvfp4:
             # down_expert = weight_scale * down_input_i (per-expert),

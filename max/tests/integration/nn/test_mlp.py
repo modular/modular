@@ -53,6 +53,20 @@ def test_mlp(
     )
 
 
+@pytest.mark.parametrize("swiglu_limit", [3.0, 7.0])
+def test_mlp_swiglu_limit(
+    swiglu_limit: float,
+) -> None:
+    compare_mlp_outputs(
+        256,
+        256,
+        "silu",
+        torch.float32,
+        DType.float32,
+        swiglu_limit=swiglu_limit,
+    )
+
+
 # TODO: Investigate why the following tests fail
 # compare_mlp_outputs(4096, 2048, "relu", TORCH_DTYPE, DTYPE)
 # compare_mlp_outputs(2048, 4096, "sigmoid", TORCH_DTYPE, DTYPE)

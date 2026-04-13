@@ -198,6 +198,7 @@ class MoE(Module, Shardable):
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
+        swiglu_limit: float = 0.0,
         ep_batch_manager: EPBatchManager | None = None,
         quant_config: QuantConfig | None = None,
         is_sharding: bool = False,
@@ -215,6 +216,7 @@ class MoE(Module, Shardable):
         self.ep_size = ep_size
         self.dtype = dtype
         self.apply_router_weight_first = apply_router_weight_first
+        self.swiglu_limit = swiglu_limit
         self.gate = gate_cls(
             devices=devices,
             hidden_dim=hidden_dim,
@@ -349,6 +351,7 @@ class MoE(Module, Shardable):
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
+                swiglu_limit=self.swiglu_limit,
                 quant_config=self.quant_config,
                 is_sharding=True,
             )
@@ -471,7 +474,20 @@ class MoE(Module, Shardable):
             *expert_inputs[1:],
         )
 
-        silu_out = fused_silu(gate_up_projs, expert_inputs[1])
+        if self.swiglu_limit > 0:
+            gate = ops.silu(gate_up_projs[:, : self.moe_dim])
+            up = gate_up_projs[:, self.moe_dim :]
+            lim = ops.constant(
+                self.swiglu_limit, gate.dtype, device=gate.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up.dtype, device=up.device
+            )
+            gate = ops.min(gate, lim)
+            up = ops.min(ops.max(up, neg_lim), lim)
+            silu_out = gate * up
+        else:
+            silu_out = fused_silu(gate_up_projs, expert_inputs[1])
 
         down_projs = grouped_matmul_ragged(
             silu_out,
@@ -542,10 +558,18 @@ class MoE(Module, Shardable):
             expert_usage_stats.to(DeviceRef.CPU()),
         )
 
-        gate_up_projs = (
-            ops.silu(gate_up_projs[:, : self.moe_dim])
-            * gate_up_projs[:, self.moe_dim :]
-        )
+        gate = ops.silu(gate_up_projs[:, : self.moe_dim])
+        up = gate_up_projs[:, self.moe_dim :]
+        if self.swiglu_limit > 0:
+            lim = ops.constant(
+                self.swiglu_limit, gate.dtype, device=gate.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up.dtype, device=up.device
+            )
+            gate = ops.min(gate, lim)
+            up = ops.min(ops.max(up, neg_lim), lim)
+        gate_up_projs = gate * up
 
         down_projs = grouped_matmul_ragged(
             gate_up_projs,
