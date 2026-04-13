@@ -18,6 +18,7 @@ from layout.tile_layout import Layout
 from std.utils.index import IndexList
 
 
+@__name(t"spatial_merge_{dtype}", mangle=True)
 def spatial_merge_kernel[
     dtype: DType,
     InputLayoutType: TensorLayout,

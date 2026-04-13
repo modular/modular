@@ -32,6 +32,7 @@ from linalg.utils import elementwise_epilogue_type
 # =========================================================================
 
 
+@__name(t"transpose_rscf_to_krsc_{dtype}", mangle=True)
 def _transpose_rscf_to_krsc[
     dtype: DType,
 ](
@@ -54,6 +55,7 @@ def _transpose_rscf_to_krsc[
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
+@__name(t"transpose_fcrs_to_krsc_{dtype}", mangle=True)
 def _transpose_fcrs_to_krsc[
     dtype: DType,
 ](

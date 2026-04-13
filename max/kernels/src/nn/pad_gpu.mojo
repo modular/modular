@@ -103,6 +103,7 @@ def _vectorized_copy_row[
         output_ptr[i] = input_ptr[i]
 
 
+@__name(t"padded_copy_{dtype}_w{simd_width}", mangle=True)
 def padded_copy_kernel[
     InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,

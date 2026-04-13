@@ -43,6 +43,7 @@ struct IndexSmemStorage[
     var scratch: InlineArray[Scalar[DType.float32], Self.BN * 8]
 
 
+@__name(t"fp8_index_{dtype}", mangle=True)
 def fp8_index_kernel[
     dtype: DType,
     OutputLT: TensorLayout,
@@ -368,6 +369,7 @@ def fp8_index[
     )
 
 
+@__name(t"fp8_index_matmul_max_{dtype}", mangle=True)
 def _index_matmul_max[
     dtype: DType,
     output_layout: Layout,
@@ -438,6 +440,7 @@ def _index_matmul_max[
     o_batch[seq_idx, key_idx, head_idx] = accum
 
 
+@__name(t"fp8_index_reduce_logits", mangle=True)
 def _reduce_logits[
     logits_layout: Layout,
     output_layout: Layout,

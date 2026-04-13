@@ -40,6 +40,7 @@ from std.runtime.tracing import Trace, TraceLevel
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"lmcache_offload_{dtype}", mangle=True)
 def _lmcache_offload_kernel[
     dtype: DType,
     page_size: Int,
@@ -101,6 +102,7 @@ def _lmcache_offload_kernel[
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"lmcache_onload_{dtype}", mangle=True)
 def _lmcache_onload_kernel[
     dtype: DType,
     page_size: Int,

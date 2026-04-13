@@ -39,6 +39,7 @@ from .conv2d_kernel import conv2d_kernel_rdna
 # =========================================================================
 
 
+@__name(t"rdna_im2col_nhwc_{dtype}", mangle=True)
 def _im2col_nhwc_kernel[
     dtype: DType,
 ](
@@ -89,6 +90,7 @@ def _im2col_nhwc_kernel[
     output_ptr.store(tid, val)
 
 
+@__name(t"rdna_transpose_rscf_to_nk_{dtype}", mangle=True)
 def _transpose_rscf_to_nk[
     dtype: DType,
 ](
@@ -111,6 +113,7 @@ def _transpose_rscf_to_nk[
     dst_ptr.store(tid, src_ptr.load(k * F + f))
 
 
+@__name(t"rdna_transpose_fcrs_to_nk_{dtype}", mangle=True)
 def _transpose_fcrs_to_nk[
     dtype: DType,
 ](

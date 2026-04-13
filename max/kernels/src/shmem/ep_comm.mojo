@@ -3521,6 +3521,7 @@ def combine_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(t"fused_silu_{input_dtype}_{output_dtype}", mangle=True)
 def fused_silu_kernel[
     output_dtype: DType,
     input_dtype: DType,
@@ -3605,6 +3606,7 @@ def fused_silu_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(t"fused_silu_fp8_{input_dtype}_{fp8_dtype}", mangle=True)
 def fused_silu_fp8_kernel[
     fp8_dtype: DType,
     scales_dtype: DType,
@@ -3717,6 +3719,7 @@ def fused_silu_fp8_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(t"fused_silu_nvfp4_{input_dtype}_{fp4_dtype}", mangle=True)
 def fused_silu_nvfp4_kernel[
     fp4_dtype: DType,
     scales_dtype: DType,

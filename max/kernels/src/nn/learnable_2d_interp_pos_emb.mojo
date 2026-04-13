@@ -62,6 +62,7 @@ def _cubic_weight(x: Float32) -> Float32:
 # ---------------------------------------------------------------------------
 
 
+@__name(t"learnable_2d_interp_pos_emb_{dtype}", mangle=True)
 def _gpu_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,

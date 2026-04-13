@@ -3240,6 +3240,10 @@ def conv_nhwc_direct[
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(
+    t"conv2d_gpu_naive_nhwc_rscf_{input_type}_{filter_type}_{output_type}",
+    mangle=True,
+)
 def conv2d_gpu_naive_nhwc_rscf[
     input_layout: Layout,
     filter_layout: Layout,
@@ -4752,6 +4756,10 @@ def conv_gpu[
             )
 
 
+@__name(
+    t"conv3d_gpu_naive_ndhwc_qrscf_{input_type}_{filter_type}_{output_type}",
+    mangle=True,
+)
 def conv3d_gpu_naive_ndhwc_qrscf[
     input_layout: Layout,
     filter_layout: Layout,

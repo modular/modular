@@ -38,6 +38,7 @@ from std.utils.index import IndexList
 from tensor import InputTensor, OutputTensor
 
 
+@__name(t"nan_check_gpu_{dtype}", mangle=True)
 def _nan_check_gpu_kernel[
     dtype: DType,
 ](
@@ -141,6 +142,7 @@ def nan_check_count[
         ](inf_count_out.unsafe_ptr())
 
         @parameter
+        @__name(t"nan_check_zero_counts", mangle=True)
         def zero_counts(
             nan_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
             inf_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
