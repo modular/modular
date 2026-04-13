@@ -925,9 +925,9 @@ trait ImplicitlyDestructible:
     comptime __del__is_trivial: Bool
 
 
-# ===----------------------------------------------------------------------=== #
-# Builtin Collection Stubs
-# ===----------------------------------------------------------------------=== #
+# ===-----------------------------------------------------------------------===#
+# ParameterList
+# ===-----------------------------------------------------------------------===#
 
 
 struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
@@ -960,6 +960,56 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         `> : `,
         +Self.type,
     ]
+
+    comptime tabulate[
+        type: AnyType,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToValueGeneratorType[type],
+    ] = ParameterList[
+        type=type,
+        __mlir_attr[
+            `#kgen.param_list.tabulate<`,
+            count._mlir_value,
+            `,`,
+            _IndexToIntTabulateWrap[Mapper, ...],
+            `> : `,
+            Variadic.ValuesOfType[type],
+        ],
+    ]
+
+    comptime splat[T: AnyType, //, count: Int, value: T] = ParameterList[
+        T,
+        __mlir_attr[
+            `#kgen.param_list.tabulate<`,
+            count._mlir_value,
+            `,`,
+            _IndexToIntTabulateWrap[_SplatValueTabulator[value, _], ...],
+            `> : `,
+            Variadic.ValuesOfType[T],
+        ],
+    ]
+
+
+comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
+    `!lit.generator<<"Idx":`,
+    Int,
+    `>`,
+    +ToT,
+    `>`,
+]
+
+comptime _IndexToIntTabulateWrap[
+    ToT: AnyType,
+    //,
+    ToWrap: _TabulateIntToValueGeneratorType[ToT],
+    idx: __mlir_type.index,
+]: ToT = ToWrap[Int(mlir_value=idx)]
+
+
+# ===-----------------------------------------------------------------------===#
+# TypeList
+# ===-----------------------------------------------------------------------===#
 
 
 struct TypeList[
@@ -1005,19 +1055,53 @@ struct TypeList[
     ]:
         return {}
 
-    comptime splat[
-        Trait: type_of(AnyType), //, count: Int, type: Trait
+    comptime tabulate[
+        Trait: type_of(AnyType),
+        ToT: Trait,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
     ] = TypeList[
         Trait=Trait,
-        Variadic.tabulate_type[
-            Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
+        __mlir_attr[
+            `#kgen.param_list.tabulate<`,
+            count._mlir_value,
+            `,`,
+            _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+            `> : `,
+            Variadic.TypesOfTrait[Trait],
         ],
+    ]
+
+    comptime splat[
+        Trait: type_of(AnyType), //, count: Int, type: Trait
+    ] = TypeList.tabulate[
+        Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
     ]
 
 
 comptime _SplatTypeTabulator[
     Trait: type_of(AnyType), T: Trait, index: Int
 ]: Trait = T
+
+
+comptime _TabulateIntToTypeGeneratorType[
+    Trait: type_of(AnyType), ToT: Trait
+] = __mlir_type[
+    `!lit.generator<<"Idx":`,
+    Int,
+    `> `,
+    Trait,
+    `>`,
+]
+
+comptime _IndexToIntTypeTabulateWrap[
+    Trait: type_of(AnyType),
+    ToT: Trait,
+    //,
+    ToWrap: _TabulateIntToTypeGeneratorType[Trait, ToT],
+    idx: __mlir_type.index,
+] = ToWrap[Int(mlir_value=idx)]
 
 
 @fieldwise_init
