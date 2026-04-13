@@ -283,7 +283,12 @@ class PixelGenerationTokenizer(
         if self._pipeline_class_name == PipelineClassName.ZIMAGE:
             self._num_channels_latents = transformer_config["in_channels"]
         else:
-            self._num_channels_latents = transformer_config["in_channels"] // 4
+            out_channels = transformer_config.get("out_channels")
+            self._num_channels_latents = (
+                out_channels
+                if out_channels is not None
+                else transformer_config["in_channels"] // 4
+            )
 
         # Create scheduler from its component config.
         scheduler_config = models["scheduler"].huggingface_config
@@ -968,9 +973,17 @@ class PixelGenerationTokenizer(
                 " but may produce lower quality or unexpected results."
             )
 
+        # Resolve negative_prompt: prefer video options for video pipelines.
+        video_options = request.body.provider_options.video
+        negative_prompt_resolved = (
+            video_options.negative_prompt
+            if video_options and video_options.negative_prompt
+            else None
+        ) or image_options.negative_prompt
+
         if (
             image_options.true_cfg_scale > 1.0
-            and image_options.negative_prompt is None
+            and negative_prompt_resolved is None
         ):
             logger.warning(
                 f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
@@ -994,7 +1007,7 @@ class PixelGenerationTokenizer(
         else:
             do_true_cfg = (
                 image_options.true_cfg_scale > 1.0
-                and image_options.negative_prompt is not None
+                and negative_prompt_resolved is not None
             )
 
         # 1. Tokenize prompts
@@ -1019,7 +1032,7 @@ class PixelGenerationTokenizer(
         ) = await self._generate_tokens_ids(
             prompt,
             image_options.secondary_prompt,
-            image_options.negative_prompt,
+            negative_prompt_resolved,
             image_options.secondary_negative_prompt,
             do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
