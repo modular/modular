@@ -657,9 +657,6 @@ struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
     pass
 
 
-# It seems that we hit the limit of #error being reported without splitting the
-# input file here.
-
 @fieldwise_init
 struct AutoParamVA[*values: Int]:
     pass
