@@ -72,7 +72,7 @@ def test_while_loop_multiple_args() -> None:
 
 def test_while_loop_empty_init() -> None:
     """Test while loop with empty initial values raises error."""
-    with Graph("while_loop_empty_init", input_types=()) as graph:
+    with Graph("while_loop_empty_init", input_types=()):
         try:
             ops.while_loop([], lambda: True, lambda: [])  # type: ignore
         except ValueError as e:

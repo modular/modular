@@ -27,7 +27,7 @@ from max.graph.weight import (
 
 def test_row_sharding_strategy_divisible() -> None:
     """Tests row sharding with dimensions divisible by num_devices."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         weight = Weight(
             "test_weight",
             dtype=DType.float32,
@@ -50,7 +50,7 @@ def test_row_sharding_strategy_non_divisible() -> None:
     This test verifies that row sharding handles cases like InternVL's
     vocab_size=151674 which is not divisible by 4 devices.
     """
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         weight = Weight(
             "test_weight",
             dtype=DType.float32,
@@ -86,7 +86,7 @@ def test_row_sharding_strategy_non_divisible() -> None:
 
 def test_col_sharding_strategy_divisible() -> None:
     """Tests column sharding with dimensions divisible by num_devices."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         weight = Weight(
             "test_weight",
             dtype=DType.float32,
@@ -105,7 +105,7 @@ def test_col_sharding_strategy_divisible() -> None:
 
 def test_col_sharding_strategy_non_divisible() -> None:
     """Tests column sharding with dimensions NOT divisible by num_devices."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         weight = Weight(
             "test_weight",
             dtype=DType.float32,
@@ -141,7 +141,7 @@ def test_col_sharding_strategy_non_divisible() -> None:
 
 def test_row_sharding_small_non_divisible() -> None:
     """Tests row sharding with a small example for clarity."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         weight = Weight(
             "test_weight",
             dtype=DType.float32,
@@ -212,7 +212,7 @@ def test_sharding_strategy_is_replicate() -> None:
 
 def test_stacked_qkv_sharding_strategy_divisible() -> None:
     """Tests stacked QKV sharding with dimensions divisible by num_devices."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         num_heads = 32
         head_dim = 64
         hidden_size = num_heads * head_dim  # 2048
@@ -258,7 +258,7 @@ def test_stacked_qkv_sharding_strategy_divisible() -> None:
 
 def test_stacked_qkv_sharding_strategy_non_divisible() -> None:
     """Tests stacked QKV sharding with dimensions NOT divisible by num_devices."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         num_heads = 30  # Not divisible by 4
         head_dim = 64
         hidden_size = num_heads * head_dim  # 1920
@@ -301,7 +301,7 @@ def test_stacked_qkv_sharding_strategy_non_divisible() -> None:
 
 def test_stacked_qkv_sharding_small_example() -> None:
     """Tests stacked QKV sharding with a small example for clarity."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         num_heads = 7  # 7 heads / 3 devices = 2.33...
         head_dim = 2
         hidden_size = num_heads * head_dim  # 14
@@ -331,7 +331,7 @@ def test_stacked_qkv_sharding_small_example() -> None:
 
 def test_head_aware_col_sharding_strategy_divisible() -> None:
     """Tests head-aware column sharding with dimensions divisible by num_devices."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         num_heads = 32
         head_dim = 64
         hidden_size = num_heads * head_dim  # 2048
@@ -359,7 +359,7 @@ def test_head_aware_col_sharding_strategy_divisible() -> None:
 
 def test_head_aware_col_sharding_strategy_non_divisible() -> None:
     """Tests head-aware column sharding with dimensions NOT divisible by num_devices."""
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         num_heads = 30  # Not divisible by 4
         head_dim = 64
         hidden_size = num_heads * head_dim  # 1920

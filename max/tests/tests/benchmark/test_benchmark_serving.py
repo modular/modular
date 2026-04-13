@@ -58,7 +58,7 @@ def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:
     test_args = ["benchmark_serving.py", "--help"]
     with patch.object(sys, "argv", test_args):
         with pytest.raises(SystemExit) as excinfo:
-            args = parse_args()
+            parse_args()
 
         # Verify it exited with code 0 (success)
         assert excinfo.value.code == 0

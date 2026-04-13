@@ -152,7 +152,7 @@ def test_distributed_attention_with_rope_call_validation(
     )
 
     # Dummy inputs for __call__
-    with Graph(name="test_graph") as g:
+    with Graph(name="test_graph"):
         layer_idx = ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU())
         dummy_tensor = ops.constant(
             0.0, dtype=DType.float32, device=DeviceRef.CPU()

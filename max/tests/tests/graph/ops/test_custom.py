@@ -144,7 +144,7 @@ class TestCustomOp:
         """Test custom operation with no input values."""
         output_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
-        with graph_builder() as graph:
+        with graph_builder():
             with pytest.raises(ValueError):
                 ops.custom(
                     name="test_kernel",
@@ -159,7 +159,7 @@ class TestCustomOp:
         """Test custom operation with None values."""
         output_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
-        with graph_builder() as graph:
+        with graph_builder():
             with pytest.raises(TypeError):
                 ops.custom(
                     name="test_kernel",
@@ -210,7 +210,7 @@ class TestInplaceCustomOp:
         self, graph_builder: GraphBuilder
     ) -> None:
         """Test inplace custom operation with no input values."""
-        with graph_builder() as graph:
+        with graph_builder():
             with pytest.raises(TypeError):
                 ops.inplace_custom(
                     name="test_kernel",
@@ -266,7 +266,7 @@ class TestInplaceCustomOp:
         self, graph_builder: GraphBuilder
     ) -> None:
         """Test inplace custom operation with None values."""
-        with graph_builder() as graph:
+        with graph_builder():
             with pytest.raises(TypeError):
                 ops.inplace_custom(
                     name="test_kernel",
@@ -283,7 +283,7 @@ class TestInplaceCustomOp:
         with graph_builder(input_types=[buffer_type]) as graph:
             # This will fail at kernel verification but should succeed at graph construction
             with pytest.raises(ValueError) as exc_info:
-                result = ops.inplace_custom(
+                ops.inplace_custom(
                     name="test_kernel",
                     device=DeviceRef.CPU(),
                     values=[graph.inputs[0]],
@@ -363,7 +363,7 @@ class TestInplaceCustomOp:
         with graph_builder(input_types=[buffer_type]) as graph:
             # This should construct the operation properly (but fail at verification)
             with pytest.raises(ValueError) as exc_info:
-                result = ops.inplace_custom(
+                ops.inplace_custom(
                     name="test_kernel",
                     device=DeviceRef.CPU(),
                     values=[graph.inputs[0]],

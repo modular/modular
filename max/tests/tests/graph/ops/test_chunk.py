@@ -68,7 +68,7 @@ def test_chunk__not_exact(
     assume(int(input_type.shape[axis]) % chunks != 0)
     with Graph("chunk", input_types=[input_type]) as graph:
         with pytest.raises(ValueError, match="must statically divide"):
-            outs = ops.chunk(graph.inputs[0].tensor, chunks, axis=axis)
+            ops.chunk(graph.inputs[0].tensor, chunks, axis=axis)
 
 
 @given(
@@ -78,7 +78,7 @@ def test_chunk__split_scalar(input_type: TensorType, chunks: int) -> None:
     assume(chunks > 1)
     with Graph("chunk", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            outs = ops.chunk(graph.inputs[0].tensor, chunks)
+            ops.chunk(graph.inputs[0].tensor, chunks)
 
 
 @given(input_type=shared_types, chunks=..., axis=non_static_axes(shared_types))
@@ -88,4 +88,4 @@ def test_chunk__non_static_dim(
     assert not isinstance(input_type.shape[axis], StaticDim)
     with Graph("chunk", input_types=[input_type]) as graph:
         with pytest.raises(TypeError):
-            outs = ops.chunk(graph.inputs[0].tensor, chunks, axis=axis)
+            ops.chunk(graph.inputs[0].tensor, chunks, axis=axis)

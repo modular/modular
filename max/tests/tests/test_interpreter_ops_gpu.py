@@ -323,7 +323,7 @@ class TestElementwiseGPU:
                 rc.EagerRealizationContext(use_interpreter=True) as ctx,
                 realization_context(ctx),
             ):
-                b = F.atanh(a)
+                _ = F.atanh(a)  # atanh is lazy, needs a live reference
 
     @pytest.mark.parametrize(
         "op,torch_func",

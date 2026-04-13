@@ -122,7 +122,7 @@ async def test_exception_propagate() -> None:
     with pytest.raises(ValueError, match="KABOOM!"):
         async with subprocess_manager("test1") as proc:
             alive = ctx.Event()
-            task = proc.start(run_exception, alive)
+            proc.start(run_exception, alive)
             await proc.ready(alive, timeout=10)
             await asyncio.sleep(11)
             raise AssertionError("Should not reach here")
@@ -136,7 +136,7 @@ async def test_segfault() -> None:
     with pytest.raises(SubprocessExit):
         async with subprocess_manager("test1") as proc:
             alive = ctx.Event()
-            task = proc.start(run_segfault, alive)
+            proc.start(run_segfault, alive)
             await proc.ready(alive, timeout=50)
             raise AssertionError("Should not reach here")
 
@@ -146,7 +146,7 @@ async def test_hard_exit() -> None:
     with pytest.raises(SubprocessExit, match="1"):
         async with subprocess_manager("test1") as proc:
             alive = ctx.Event()
-            task = proc.start(run_exit, alive)
+            proc.start(run_exit, alive)
             await proc.ready(alive, timeout=10)
             await asyncio.sleep(11)
             raise AssertionError("Should not reach here")

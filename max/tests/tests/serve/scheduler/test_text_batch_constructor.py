@@ -314,7 +314,7 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
         batch_constructor.enqueue_new_request(context)
 
     with pytest.raises(InsufficientBlocksError):
-        inputs = batch_constructor.construct_batch()
+        batch_constructor.construct_batch()
 
 
 def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_preemption(
