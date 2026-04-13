@@ -1724,7 +1724,7 @@ def parse_sweepable_values(
     """
     Parse comma-separated values according to sweepable_type.
 
-    This function mimics the parsing logic used in sweep-benchmark-serving.py
+    This function mimics the parsing logic used in sweep_benchmark_serving.py
     for handling sweepable_type fields.
 
     Args:

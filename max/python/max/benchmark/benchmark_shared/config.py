@@ -954,7 +954,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 
 
 class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
-    """Configuration class for sweep serving benchmarks (sweep-benchmark-serving.py).
+    """Configuration class for sweep serving benchmarks (sweep_benchmark_serving.py).
 
     Inherits from ServingBenchmarkConfig and adds sweep-specific parameters:
     - Workload configuration
@@ -1075,7 +1075,7 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
         # TODO: This is really lame. dataset_name is a required flag in benchmark_serving.py,
         # so you'd think it would also be required here, but it's not. This is
         # because we only parse dataset_name from the workload config file and not
-        # through the command line in sweep-benchmark-serving.py. Turns out we
+        # through the command line in sweep_benchmark_serving.py. Turns out we
         # also can't quite easily pull that apart trivially when we roll this
         # part. Will circle back in a follow up PR. the --dataset-name flag
         # is set to optional here and is a no-op.
