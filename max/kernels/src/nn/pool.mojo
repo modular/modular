@@ -258,7 +258,7 @@ def max_pool_cpu[
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) unified {
-        mut input,
+        input,
     } -> SIMD[
         dtype, simd_width
     ]:
@@ -288,12 +288,12 @@ def max_pool_cpu[
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
-    ) unified {mut output}:
+    ) unified {output, mut}:
         var i = output.layout(Coord(point))
         output.ptr.store(i, val)
 
     @always_inline
-    def dilation_fn(dim: Int) unified {mut dilations} -> Int:
+    def dilation_fn(dim: Int) unified {dilations, mut} -> Int:
         return Int(dilations[dim])
 
     comptime stencil_with_padding = stencil[
@@ -445,7 +445,7 @@ def max_pool_gpu[
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) unified register_passable {
-        mut input,
+        input,
     } -> SIMD[dtype, simd_width]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
@@ -474,7 +474,7 @@ def max_pool_gpu[
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
-    ) unified register_passable {mut output}:
+    ) unified register_passable {output, mut}:
         var i = output.layout(Coord(point))
         output.ptr.store(i, val)
 
@@ -631,7 +631,7 @@ def avg_pool_cpu[
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) unified {
-        mut input,
+        input,
     } -> SIMD[
         dtype, simd_width
     ]:
@@ -674,7 +674,7 @@ def avg_pool_cpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) unified {
-        mut output,
+        output,
         var output_height,
         var padding_h_low,
         var padding_h_high,
@@ -708,7 +708,7 @@ def avg_pool_cpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) unified {
-        mut output,
+        output,
         var pool_window_h,
         var pool_window_w,
     }:
@@ -716,7 +716,7 @@ def avg_pool_cpu[
         var i = output.layout(Coord(point))
         output.ptr.store(i, res)
 
-    def dilation_fn(dim: Int) unified {mut dilations} -> Int:
+    def dilation_fn(dim: Int) unified {dilations, mut} -> Int:
         return Int(dilations[dim])
 
     comptime stencil_with_padding = stencil[
@@ -926,7 +926,7 @@ def avg_pool_gpu[
     def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) unified register_passable {
-        mut input,
+        input,
     } -> SIMD[dtype, simd_width]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
@@ -967,7 +967,7 @@ def avg_pool_gpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) unified register_passable {
-        mut output,
+        output,
         var output_height,
         var padding_h_low,
         var padding_h_high,
@@ -999,7 +999,7 @@ def avg_pool_gpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) unified register_passable {
-        mut output,
+        output,
         var pool_window_h,
         var pool_window_w,
     }:

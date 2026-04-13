@@ -84,7 +84,7 @@ def kl_div[
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    def kl_div_elementwise[simd_width: Int](idx: Int) unified {mut}:
+    def kl_div_elementwise[simd_width: Int](idx: Int) unified {x, y, mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
         var kl = kl_div(xi, yi)
@@ -155,7 +155,7 @@ def correlation[
 
     @parameter
     def accumulate[weighted: Bool]():
-        def apply_wfn[simd_width: Int](idx: Int) unified {mut}:
+        def apply_wfn[simd_width: Int](idx: Int) unified {u, v, mut}:
             var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
             var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
             var uw = ui
@@ -376,7 +376,7 @@ def _dot[
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    def apply_fn[simd_width: Int](idx: Int) unified {mut}:
+    def apply_fn[simd_width: Int](idx: Int) unified {x, y, mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
 

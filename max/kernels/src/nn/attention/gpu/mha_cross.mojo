@@ -106,7 +106,9 @@ def _bmm0_bs[
         var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
         var k_ptr = k_cache.block_paged_ptr[tile_size=1](batch, x, kv_head, 0)
 
-        def accum_fn[width: Int](offset: Int) unified {mut}:
+        def accum_fn[
+            width: Int
+        ](offset: Int) unified {q, y, num_heads, depth, k_ptr, mut}:
             comptime alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
                 y * num_heads * depth + offset

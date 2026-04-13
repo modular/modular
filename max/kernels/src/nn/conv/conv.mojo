@@ -372,7 +372,9 @@ def _reduce_output[
         var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
         @always_inline
-        def sum[width: Int](offset: Int) unified {mut}:
+        def sum[
+            width: Int
+        ](offset: Int) unified {F, scratch, num_partitions, output, mut}:
             var tid_output_offset = reduce_range[0] * F + offset
             var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
@@ -3205,7 +3207,7 @@ def conv_nhwc_direct[
             comptime simd_size = simd_width_of[output_type]()
 
             @always_inline
-            def body[width: Int](idx: Int) unified {mut}:
+            def body[width: Int](idx: Int) unified {coords, output_lt, mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_lt.rank]](coords)
                 curr_coords[input_lt.rank - 1] += idx

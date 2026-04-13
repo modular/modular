@@ -86,7 +86,9 @@ def elementwise_epilogue_c_tile[
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
 ):
     @always_inline
-    def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) unified {mut}:
+    def activation_on_col_chunk[
+        col_chunk_size: Int
+    ](idx_n: Int) unified {c, offset, tile_len, mut}:
         var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M

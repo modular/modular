@@ -723,7 +723,7 @@ def layer_norm_cpu[
         )  # use biased estimator
         var norm_factor = rsqrt(var_val + epsilon)
 
-        def _normalize[simd_width: Int](col: Int) unified {mut}:
+        def _normalize[simd_width: Int](col: Int) unified {beta, mut}:
             var out_val = input_fn[simd_width](row, col)
             var gamma_val = gamma_fn[simd_width, 1](Index(col))
             var beta_col = beta.layout(Idx(col))
@@ -1388,7 +1388,9 @@ def rms_norm_cpu[
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
-        def _normalize[simd_width: Int](col: Int) unified {mut}:
+        def _normalize[
+            simd_width: Int
+        ](col: Int) unified {gamma, weight_offset, mut}:
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()

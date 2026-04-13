@@ -105,7 +105,7 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
                     def dot[
                         simd_size: Int
                     ](n: Int) unified {
-                        mut C, mut A_val, read B, read m, mut x, mut k
+                        x, mut C, mut A_val, read B, read m, mut k
                     }:
                         var idx = n + x
                         C.store(

@@ -678,7 +678,9 @@ struct _FlashAttention[
             sum_vals[m] = sum_vals[m] * fixup_val + accum_val
 
             @always_inline
-            def do_correction[_simd_width: Int](idx: Int) unified {mut}:
+            def do_correction[
+                _simd_width: Int
+            ](idx: Int) unified {o_row_ptr, fixup_val, mut}:
                 var val = o_row_ptr.load[width=_simd_width](idx)
                 o_row_ptr.store(idx, val * fixup_val)
 
@@ -918,7 +920,9 @@ struct _FlashAttention[
                     var reciprocal = 1 / sum_vals[m][0]
 
                     @always_inline
-                    def do_final[_simd_width: Int](idx: Int) unified {mut}:
+                    def do_final[
+                        _simd_width: Int
+                    ](idx: Int) unified {oz_ptr, o_ptr, reciprocal, mut}:
                         var v = oz_ptr.load[width=_simd_width](idx)
                         o_ptr.store(idx, v * reciprocal)
 

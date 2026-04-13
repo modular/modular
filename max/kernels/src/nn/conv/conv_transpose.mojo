@@ -544,7 +544,7 @@ struct ConvTransposedPacked[
         for _ in range(num_rows):
 
             @always_inline
-            def zero[width: Int](offset: Int) unified {mut}:
+            def zero[width: Int](offset: Int) unified {output_ptr, mut}:
                 output_ptr.store(offset, SIMD[Self.output_type, width](0))
 
             vectorize[simd_size](self.partition.f_size, zero)
@@ -1464,7 +1464,7 @@ def conv_transposed_cpu[
             comptime input_rank = input.rank
 
             @always_inline
-            def body[width: Int](idx: Int) unified {mut}:
+            def body[width: Int](idx: Int) unified {coords, output, mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
