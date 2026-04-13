@@ -45,6 +45,7 @@ from std.gpu.primitives import block
 from layout._utils import idx2crd
 from layout import (
     Coord,
+    CoordLike,
     Idx,
     Layout,
     LayoutTensor,
@@ -861,7 +862,10 @@ def _softmax_gpu[
     ctx.enqueue_function[kernel, kernel](
         shape,
         output,
-        sink_weights.value(),
+        # TODO: This should be fixed. When sink == False, we should not
+        # be unwrapping the optional but instead passing the entire
+        # optional through to `softmax_kernel`.
+        sink_weights.unsafe_value(),
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(PDLLevel(1)),
@@ -1061,7 +1065,9 @@ def _softmax_temperature_kernel[
 def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
-    TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    TempLayoutType: TensorLayout = RowMajorLayout[
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int64]]()
+    ],
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],

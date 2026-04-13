@@ -126,8 +126,8 @@ def _make_cache_tt[
         shape_types=ResultLayout._shape_types,
         stride_types=ResultLayout._stride_types,
     ]
-    var shape_c = Coord[*ConcLayout.shape_types]()
-    var stride_c = Coord[*ConcLayout.stride_types]()
+    var shape_c = Coord[ConcLayout.shape_types]()
+    var stride_c = Coord[ConcLayout.stride_types]()
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
             shape_c[i] = rebind[shape_c.element_types[i]](
@@ -166,19 +166,19 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
 # bypassing the LTToTTLayout comptime alias chain where the compiler can't
-# simplify TypeList[*_Flattened[...]].size to 1.
+# simplify TypeList[_Flattened[...]].size to 1.
 comptime _1d_tt_layout = InternalLayout[
-    shape_types=Variadic.types[T=CoordLike, RuntimeInt[DType.int64]],
-    stride_types=Variadic.types[T=CoordLike, ComptimeInt[1]],
+    shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
+    stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
 ]
 
 comptime _2d_row_major_tt_layout = InternalLayout[
-    shape_types=Variadic.types[
-        T=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ],
-    stride_types=Variadic.types[
-        T=CoordLike, RuntimeInt[DType.int64], ComptimeInt[1]
-    ],
+    shape_types=TypeListOf[
+        type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+    ](),
+    stride_types=TypeListOf[
+        type=CoordLike, RuntimeInt[DType.int64], ComptimeInt[1]
+    ](),
 ]
 
 
@@ -968,10 +968,13 @@ struct PagedKVCache[
         Self.quantization_granularity,
     )
     comptime scales_tt_layout = RowMajorLayout[
-        RuntimeInt[DType.int64],
-        ComptimeInt[Self.page_size],
-        ComptimeInt[Int(Self.kv_params.num_heads)],
-        ComptimeInt[Self.head_dim_granularity],
+        TypeListOf[
+            type=CoordLike,
+            RuntimeInt[DType.int64],
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Int(Self.kv_params.num_heads)],
+            ComptimeInt[Self.head_dim_granularity],
+        ]()
     ]
     comptime scales_tt_type = TileTensor[
         Self.scale_dtype, Self.scales_tt_layout, MutAnyOrigin

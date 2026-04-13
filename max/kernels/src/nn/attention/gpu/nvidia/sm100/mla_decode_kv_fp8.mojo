@@ -40,6 +40,7 @@ from layout.tma_async import (
 from std.memory import bitcast
 from layout import (
     ComptimeInt,
+    CoordLike,
     RowMajorLayout,
     TileTensor,
     row_major,
@@ -266,7 +267,9 @@ struct MLA_SM100_Decode_KV_FP8[
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            DType.int64,
+            RowMajorLayout[TypeListOf[type=CoordLike, ComptimeInt[3]]()],
+            MutAnyOrigin,
         ],
     ):
         # Softmax now includes the epilogue, so it needs more registers

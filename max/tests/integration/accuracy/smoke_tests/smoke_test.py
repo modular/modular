@@ -86,7 +86,7 @@ class ModelAlias(TypedDict):
 # max_serve_args are only applied to MAX frameworks, not vllm/sglang.
 MODEL_ALIASES: dict[str, ModelAlias] = {
     "google/gemma-4-26b-a4b-it__no_dgc": {
-        "hf_model_path": "google/gemma-4-26B-A4B-it",
+        "hf_model_path": "google/gemma-4-26b-a4b-it",
         "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
     },
     "meta-llama/llama-3.1-8b-instruct__modulev3": {
@@ -130,18 +130,18 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
     },
     "meta-llama/llama-3.1-8b-instruct__eagle": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
+        "hf_model_path": "meta-llama/llama-3.1-8b-instruct",
         "max_serve_args": (
-            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--draft-model-path atomicapple0/eagle-llama3.1-instruct-8b "
             "--speculative-method eagle"
         ),
     },
     # Llama Eagle + CUDA Graph only works when num_speculative_tokens == 1
     # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
     "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
+        "hf_model_path": "meta-llama/llama-3.1-8b-instruct",
         "max_serve_args": (
-            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--draft-model-path atomicapple0/eagle-llama3.1-instruct-8b "
             "--speculative-method eagle "
             "--num-speculative-tokens 1"
         ),
@@ -157,7 +157,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     "nvidia/kimi-k2.5-nvfp4__eagle": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
         "max_serve_args": (
-            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-model-path nvidia/kimi-k2.5-thinking-eagle3 "
             "--draft-trust-remote-code "
             "--draft-devices gpu:0,1,2,3,4,5,6,7 "
             "--draft-data-parallel-degree 8 "
@@ -307,7 +307,7 @@ def get_server_cmd(
     if "gpt-oss" in model and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
 
-    revision = _load_hf_repo_lock().get(model)
+    revision = _load_hf_repo_lock().get(model.casefold())
     if revision:
         if framework in ("max", "max-ci"):
             cmd += [

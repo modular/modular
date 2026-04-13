@@ -56,7 +56,7 @@ from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
 from std.memory import OwnedPointer
-from std.memory._nonnull import bitcast, NonNullUnsafePointer
+from std.memory.unsafe_pointer import unsafe_cast
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
 from std.sys.intrinsics import _type_is_eq
@@ -181,7 +181,7 @@ struct RTLD:
     """
     comptime NOW = 2
     """Load library immediately (resolve all symbols on load)."""
-    comptime LOCAL = 4
+    comptime LOCAL = 0 if CompilationTarget.is_linux() else 4
     """Make symbols not available for symbol resolution of subsequently loaded
     libraries."""
     comptime GLOBAL = 256 if CompilationTarget.is_linux() else 8
@@ -914,9 +914,7 @@ struct _Global[
         #   with the ABI destination result pointer already set to `ptr`?
         var ptr = OwnedPointer(Self.init_fn())
 
-        return NonNullUnsafePointer(
-            unsafe_from_nullable=ptr^.steal_data().bitcast[NoneType]()
-        )
+        return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
     def _deinit_wrapper(
@@ -936,7 +934,7 @@ struct _Global[
             if not ptr:
                 raise Self.on_error_msg.value()()
 
-        return bitcast[Self.StorageType](ptr).value()
+        return unsafe_cast[Type=Self.StorageType](ptr).value()
 
     # Currently known values for get_or_create_indexed_ptr. See
     # NUM_INDEXED_GLOBALS in CompilerRT.
@@ -964,7 +962,7 @@ struct _Global[
             if not ptr:
                 raise Self.on_error_msg.value()()
 
-        return bitcast[Self.StorageType](ptr).value()
+        return unsafe_cast[Type=Self.StorageType](ptr).value()
 
 
 @always_inline
@@ -999,7 +997,7 @@ def _get_global_or_null(
 
 comptime _CPointer[
     mut: Bool, //, T: AnyType, origin: Origin[mut=mut]
-] = Optional[NonNullUnsafePointer[T, origin]]
+] = Optional[UnsafePointer[T, origin]]
 
 
 @always_inline("nodebug")

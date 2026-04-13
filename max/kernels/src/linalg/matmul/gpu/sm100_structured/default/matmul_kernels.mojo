@@ -506,19 +506,19 @@ struct BlackwellMatmulSM100Kernel[
 
     # 3D TMA layouts (primary, used by run())
     comptime ATileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
+        _IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
     ]
     comptime ADescLayout = tma_desc_layout_3d[
         Self.a_type, 1, Self.a_tile_dim0, Self.config.a_swizzle
     ]
     comptime BTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
+        _IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
     ]
     comptime BDescLayout = tma_desc_layout_3d[
         Self.b_type, 1, Self.b_tile_dim0, Self.config.b_swizzle
     ]
     comptime CTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
+        _IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
     ]
     comptime CDescLayout = tma_desc_layout_3d[
         Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle
@@ -1110,6 +1110,7 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -1401,6 +1402,7 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
     def run_splitk[
         reduction_layout: TensorLayout,
     ](
@@ -1697,8 +1699,10 @@ struct BlackwellMatmulSM100FallbackKernel[
     # Used as stride_layout in tile/tile_with_offset to override
     # the parent TileTensor's dynamic strides with static values.
     comptime CGmemStrideLayout = _NewLayout[
-        Variadic.types[T=CoordLike, ComptimeInt[Self.static_N], ComptimeInt[1]],
-        Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]],
+        TypeListOf[
+            type=CoordLike, ComptimeInt[Self.static_N], ComptimeInt[1]
+        ](),
+        TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]](),
     ]
 
     # Typed layouts (new Layout from tile_layout.mojo).

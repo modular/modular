@@ -28,12 +28,11 @@ from std.utils import IndexList
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
 
-def execute_ragged_flash_attention(
-    ctx: DeviceContext,
-) raises:
-    comptime num_q_heads = 32
-    comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
-    comptime type = DType.float32
+def execute_ragged_flash_attention[
+    num_q_heads: Int,
+    kv_params: KVCacheStaticParams,
+    type: DType,
+](ctx: DeviceContext,) raises:
     comptime num_paged_blocks = 32
     comptime page_size = 128
     comptime PagedCollectionType = PagedKVCacheCollection[
@@ -267,4 +266,13 @@ def execute_ragged_flash_attention(
 
 def main() raises:
     with DeviceContext() as ctx:
-        execute_ragged_flash_attention(ctx)
+        # group=4 fp32 (original config)
+        execute_ragged_flash_attention[
+            32, KVCacheStaticParams(num_heads=8, head_size=128), DType.float32
+        ](ctx)
+        print("PASS: group=4 fp32 paged KV cache")
+        # group=16 bf16 (405B TP=8 config)
+        execute_ragged_flash_attention[
+            16, KVCacheStaticParams(num_heads=1, head_size=128), DType.bfloat16
+        ](ctx)
+        print("PASS: group=16 bf16 paged KV cache")

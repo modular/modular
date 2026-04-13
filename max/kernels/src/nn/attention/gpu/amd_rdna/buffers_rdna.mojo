@@ -38,8 +38,12 @@ from std.memory.pointer import AddressSpace as BaseAddressSpace
 
 from std.utils import IndexList
 
-from .buffers import KVBuffer, RegisterBuffer, RegisterMMABuffer
-from .utils import (
+from nn.attention.gpu.amd.buffers import (
+    KVBuffer,
+    RegisterBuffer,
+    RegisterMMABuffer,
+)
+from nn.attention.gpu.amd.utils import (
     LocalLayoutTensor,
     SharedLayoutTensor,
     pad,

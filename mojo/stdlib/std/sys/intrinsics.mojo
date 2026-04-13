@@ -177,7 +177,7 @@ def gather[
 @always_inline("nodebug")
 def scatter[
     dtype: DType,
-    size: Int,
+    size: SIMDSize,
     //,
     alignment: Int = 0,
 ](
@@ -516,7 +516,7 @@ def prefetch[
 def masked_load[
     dtype: DType,
     //,
-    size: Int,
+    size: SIMDSize,
     alignment: Int = 1,
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
@@ -567,7 +567,7 @@ def masked_load[
 
 @always_inline("nodebug")
 def masked_store[
-    size: Int,
+    size: SIMDSize,
     alignment: Int = 1,
 ](
     value: SIMD,
@@ -611,7 +611,7 @@ def masked_store[
 
 @always_inline("nodebug")
 def compressed_store[
-    dtype: DType, size: Int
+    dtype: DType, size: SIMDSize
 ](
     value: SIMD[dtype, size],
     addr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -700,7 +700,7 @@ def strided_load[
 
 @always_inline("nodebug")
 def strided_store[
-    dtype: DType, //, simd_width: Int
+    dtype: DType, //, simd_width: SIMDSize
 ](
     value: SIMD[dtype, simd_width],
     addr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -797,7 +797,7 @@ def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 
 
 struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a, `>`]
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a.values, `>`]
 
     var _mlir_value: Self._mlir_type
 
@@ -811,7 +811,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index=i.__mlir_index__()](
+        return __mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](
             self._mlir_value
         )
 

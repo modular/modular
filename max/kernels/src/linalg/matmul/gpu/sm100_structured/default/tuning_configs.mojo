@@ -1991,3 +1991,26 @@ def _get_tuning_list_sm100_batched_bf16() -> List[TuningConfigSM100]:
     ]
 
     return materialize[config_list]()
+
+
+def _get_tuning_list_sm100_batched_fp8() -> List[TuningConfigSM100]:
+    comptime config_list = [
+        TuningConfigSM100(
+            batch_size=64,
+            M=1,
+            M_end=16 + 1,
+            N=128,
+            K=512,
+            mma_shape=Index(128, 16, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=4,
+        ),
+    ]
+
+    return materialize[config_list]()

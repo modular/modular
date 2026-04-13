@@ -28,7 +28,6 @@ from std.ffi import (
     _CPointer,
 )
 from std.sys import CompilationTarget
-from std.memory._nonnull import NonNullUnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -137,9 +136,9 @@ def posix_spawnp[
     argv_origin: ImmutOrigin,
     //,
 ](
-    pid: NonNullUnsafePointer[mut=True, c_pid_t, _],
+    pid: UnsafePointer[mut=True, c_pid_t, _],
     file: CStringSlice[_],
-    argv: NonNullUnsafePointer[Optional[CStringSlice[argv_origin]], _],
+    argv: UnsafePointer[Optional[CStringSlice[argv_origin]], _],
     envp: _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)

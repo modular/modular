@@ -31,6 +31,7 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
+    GEMMKind,
 )
 
 from std.utils.index import Index, IndexList
@@ -143,6 +144,7 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
+        gemm_kind=GEMMKind.BMM,
     )
 
     blackwell_batched_matmul_tma_umma_warp_specialized[

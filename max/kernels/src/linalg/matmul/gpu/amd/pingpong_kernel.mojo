@@ -1288,6 +1288,10 @@ struct AMDPingPongMatmul[
             Int32(Self.config.num_threads())
         )
     )
+    @__name(
+        t"amd_matmul_ping_pong_{Self.a_type}_{Self.b_type}_{Self.c_type}",
+        mangle=True,
+    )
     @staticmethod
     def matmul_ping_pong[
         ALT: TensorLayout,

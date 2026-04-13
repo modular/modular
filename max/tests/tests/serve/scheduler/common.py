@@ -246,7 +246,7 @@ class FakeTokenGeneratorPipeline(
         # If num spec tokens, populate the draft tokens for the reqs
         if self.num_speculative_tokens > 0:
             for context in inputs.flat_batch:
-                context.spec_decoding_state.saved_draft_tokens = [
+                context.spec_decoding_state.draft_tokens_to_verify = [
                     123
                 ] * self.num_speculative_tokens
 

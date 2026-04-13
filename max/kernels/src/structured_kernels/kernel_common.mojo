@@ -32,6 +32,7 @@ from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
     Coord,
+    CoordLike,
     Idx,
     RowMajorLayout,
     TensorLayout,
@@ -449,7 +450,9 @@ def init_clc_barriers[
 
 
 comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
-    ComptimeInt[1], L._shape_types[0], L._shape_types[1]
+    TypeListOf[
+        type=CoordLike, ComptimeInt[1], L._shape_types[0], L._shape_types[1]
+    ]()
 ]
 """3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
 

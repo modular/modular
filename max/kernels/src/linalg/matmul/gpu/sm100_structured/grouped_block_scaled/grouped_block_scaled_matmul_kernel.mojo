@@ -45,7 +45,7 @@ from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
-from layout import ComptimeInt, RowMajorLayout, TileTensor
+from layout import ComptimeInt, RowMajorLayout, TileTensor, CoordLike
 from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
@@ -109,13 +109,13 @@ from .grouped_tile_scheduler import (
 
 
 comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
-    ComptimeInt[max_groups], ComptimeInt[1]
+    TypeListOf[type=CoordLike, ComptimeInt[max_groups], ComptimeInt[1]]()
 ]
 comptime _GroupPtrTile[max_groups: Int] = TileTensor[
     DType.uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
 ]
 comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
-    ComptimeInt[max_groups], ComptimeInt[4]
+    TypeListOf[type=CoordLike, ComptimeInt[max_groups], ComptimeInt[4]]()
 ]
 comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
     DType.int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
@@ -935,19 +935,19 @@ struct GroupedBlockScaledMatmulKernel[
 
     # A, B, C: 3D TMA layouts (batch=1, rows, cols)
     comptime ATileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
+        _IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
     ]
     comptime ADescLayout = tma_desc_layout_3d[
         Self.a_type, 1, Self.a_tile_dim0, Self.config.a_swizzle
     ]
     comptime BTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
+        _IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
     ]
     comptime BDescLayout = tma_desc_layout_3d[
         Self.b_type, 1, Self.b_tile_dim0, Self.config.b_swizzle
     ]
     comptime CTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
+        _IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
     ]
     comptime CDescLayout = tma_desc_layout_3d[
         Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle
@@ -955,7 +955,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     # SFA, SFB: 5D TMA layouts (batch=1, then 4D scale factor dims)
     comptime SFATileLayout = RowMajorLayout[
-        *_IntToComptimeInt[
+        _IntToComptimeInt[
             1,
             Self.BM // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
@@ -972,7 +972,7 @@ struct GroupedBlockScaledMatmulKernel[
         TensorMapSwizzle.SWIZZLE_NONE,
     ]
     comptime SFBTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[
+        _IntToComptimeInt[
             1,
             Self.MMA_N // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
@@ -1180,6 +1180,7 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
+    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
     def run(
         # Template tensormaps for SMEM initialization
         a_tma_template: Self.ATmaOp,
@@ -1675,6 +1676,7 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
+    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
     def run_2sm(
         # Template tensormaps for SMEM initialization
         a_tma_template: Self.ATmaOp,

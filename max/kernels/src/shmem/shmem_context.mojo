@@ -366,7 +366,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     @always_inline
     @parameter
     def enqueue_function[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
@@ -454,7 +454,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     @parameter
     def enqueue_function_collective_checked[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) thin -> None,

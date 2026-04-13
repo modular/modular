@@ -19,7 +19,7 @@ Documentation for these functions can be found online at:
 
 from std.collections import InlineArray
 from std.memory import OpaquePointer, alloc
-from std.memory._nonnull import NonNullUnsafePointer, address_of, bitcast
+from std.memory.unsafe_pointer import unsafe_cast
 from std.os import abort, getenv, setenv
 from std.os.path import dirname
 from std.pathlib import Path
@@ -171,7 +171,7 @@ struct PyObjectPtr(
     def __init__[
         T: AnyType, //
     ](out self, *, upcast_from: _CPointer[T, MutAnyOrigin]):
-        self._unsized_obj_ptr = bitcast[PyObject](upcast_from)
+        self._unsized_obj_ptr = unsafe_cast[Type=PyObject](upcast_from)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -199,7 +199,10 @@ struct PyObjectPtr(
 
     @always_inline
     def __int__(self) -> Int:
-        return address_of(self._unsized_obj_ptr)
+        if self._unsized_obj_ptr:
+            return Int(self._unsized_obj_ptr.unsafe_value())
+        else:
+            return 0
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -214,7 +217,7 @@ struct PyObjectPtr(
         Returns:
             A pointer to the underlying object as type `T`.
         """
-        return bitcast[T](self._unsized_obj_ptr)
+        return unsafe_cast[Type=T](self._unsized_obj_ptr)
 
     def write_to(self, mut writer: Some[Writer]):
         """Formats to the provided Writer.
@@ -469,7 +472,7 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
     def tp_methods(methods: _CPointer[PyMethodDef, MutAnyOrigin]) -> Self:
         return PyType_Slot(
             Py_tp_methods,
-            bitcast[NoneType](methods),
+            unsafe_cast[Type=NoneType](methods),
         )
 
     @staticmethod

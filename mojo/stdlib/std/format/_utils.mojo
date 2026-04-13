@@ -30,7 +30,7 @@ from std.memory import Span, bitcast, memcpy
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime T = Ts[i]
         _constrained_conforms_to[
             conforms_to(T, Writable),
@@ -205,7 +205,7 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
             writer.write_string(_unqualified_type_name[Self.Types[i]]())
 
         write_sequence_to[
-            size=TypeList[*Self.Types].size,
+            size=Self.Types.size,
             ElementFn=elements,
         ](writer, open="", close="")
 
@@ -400,9 +400,9 @@ struct _WriteBufferHeap(Writable, Writer):
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
         self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES._mlir_value,
+            count=HEAP_BUFFER_BYTES._int_mlir_index(),
             _type=type_of(self._data)._mlir_type,
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
         ]()
         self._pos = 0
 

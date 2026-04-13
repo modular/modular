@@ -19,7 +19,7 @@ from .plugin import (
     DeviceHandle,
     QueueHandle,
     EventHandle,
-    BundleHandle,
+    RuntimeBundleHandle,
 )
 from .status import STATUS_SUCCESS, HALError
 
@@ -104,4 +104,4 @@ struct Event:
 
 
 struct Bundle:
-    var _handle: BundleHandle
+    var _handle: RuntimeBundleHandle

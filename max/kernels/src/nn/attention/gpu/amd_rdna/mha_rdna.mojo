@@ -30,7 +30,7 @@ from nn.attention.mha_utils import MHAConfig, get_start_and_end_for_partitions
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
-from .attention import AttentionConfig
+from nn.attention.gpu.amd.attention import AttentionConfig
 from .attention_rdna import AttentionRDNA
 from .buffers_rdna import (
     KBufferRDNA,

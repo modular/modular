@@ -1505,7 +1505,11 @@ def _matmul_blockwise_scaled_fp8_common[
         dtype: DType,
     ](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
         dtype,
-        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        RowMajorLayout[
+            TypeListOf[
+                type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+            ]()
+        ],
         lt.origin,
     ]:
         var layout = row_major(
@@ -1516,7 +1520,13 @@ def _matmul_blockwise_scaled_fp8_common[
         )
         return TileTensor[
             dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[
+                TypeListOf[
+                    type=CoordLike,
+                    RuntimeInt[DType.int64],
+                    RuntimeInt[DType.int64],
+                ]()
+            ],
             lt.origin,
         ](
             ptr=UnsafePointer[Scalar[dtype], lt.origin](
@@ -1529,7 +1539,11 @@ def _matmul_blockwise_scaled_fp8_common[
     # callee when an epilogue is present).
     var c_tt = NullableTileTensor[
         output_dtype,
-        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        RowMajorLayout[
+            TypeListOf[
+                type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+            ]()
+        ],
         MutAnyOrigin,
     ](
         ptr={},
@@ -1590,7 +1604,11 @@ def _matmul_blockwise_scaled_fp4_common[
     # callee when an epilogue is present).
     var c_tt = NullableTileTensor[
         output_dtype,
-        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        RowMajorLayout[
+            TypeListOf[
+                type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+            ]()
+        ],
         MutAnyOrigin,
     ](
         ptr={},
@@ -2590,7 +2608,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
-    mrope_section: Optional[Coord[*mrope_types]] = None,
+    mrope_section: Optional[Coord[TypeList[mrope_types]()]] = None,
 ](
     q_proj: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[

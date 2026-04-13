@@ -44,8 +44,8 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
     Returns True if no type appears more than once, False otherwise.
     """
 
-    comptime for i in range(TypeList[*Ts].size):
-        comptime for j in range(i + 1, TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
+        comptime for j in range(i + 1, Ts.size):
             if _type_is_eq[Ts[i], Ts[j]]():
                 return False
     return True
@@ -54,7 +54,7 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
@@ -66,7 +66,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial copy constructors."""
 
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
             if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
@@ -78,7 +78,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial move constructors."""
 
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
             if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False
@@ -96,9 +96,7 @@ def _check_union_types[*Ts: AnyType]():
     - All types must be unique (no duplicates)
     - All types must have trivial copy, move, and destroy operations
     """
-    comptime assert (
-        TypeList[*Ts].size > 0
-    ), "UnsafeUnion requires at least one type"
+    comptime assert Ts.size > 0, "UnsafeUnion requires at least one type"
     comptime assert _all_types_unique[
         *Ts
     ](), "UnsafeUnion requires all types to be unique"
@@ -181,7 +179,11 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
     # Use pop.union directly for C-compatible memory layout
     comptime _union_type = __mlir_type[
-        `!pop.union<[rebind(:`, type_of(Self.Ts), ` `, Self.Ts, `)]>`
+        `!pop.union<[rebind(:`,
+        type_of(Self.Ts.values),
+        ` `,
+        Self.Ts.values,
+        `)]>`,
     ]
     var _storage: Self._union_type
 
@@ -425,4 +427,4 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
         Returns True if found, False otherwise.
         """
-        return Variadic.contains[type=T, element_types=Self.Ts]
+        return Variadic.contains[type=T, element_types=Self.Ts.values]

@@ -23,7 +23,7 @@ from std.sys.intrinsics import (
 
 from std.gpu.primitives.id import lane_id
 from std.memory import Span
-from std.memory._nonnull import NonNullUnsafePointer, _Null
+from std.memory.unsafe_pointer import _Null
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.

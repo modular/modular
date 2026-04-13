@@ -92,7 +92,6 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import NullableTileTensor
-from std.memory._nonnull import NonNullUnsafePointer
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils import IndexList
 from std.utils.variant import Variant
@@ -291,18 +290,16 @@ def _ffi_void_ptr[
 @always_inline
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](
-    ptr: Optional[NonNullUnsafePointer[T, origin, address_space=addr]]
-) -> Optional[NonNullUnsafePointer[NoneType, MutAnyOrigin]]:
+](ptr: Optional[UnsafePointer[T, origin, address_space=addr]]) -> Optional[
+    UnsafePointer[NoneType, MutAnyOrigin]
+]:
     """Cast an optional non-null pointer to a nullable void pointer for vendor
     FFI calls.
 
     Returns None when the optional is empty.
     """
     if ptr:
-        return rebind[NonNullUnsafePointer[NoneType, MutAnyOrigin]](
-            ptr.unsafe_value()
-        )
+        return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr.unsafe_value())
     return None
 
 

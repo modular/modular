@@ -830,6 +830,10 @@ struct HopperMatmulSM90Kernel[
         ),
         `nvvm.cluster_dim`=Self.cluster_shape,
     )
+    @__name(
+        t"sm90_matmul_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",
+        mangle=True,
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -984,6 +988,10 @@ struct HopperMatmulSM90Kernel[
             Int32(Self.num_threads)
         ),
         `nvvm.cluster_dim`=Self.cluster_shape,
+    )
+    @__name(
+        t"sm90_matmul_split_k_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",
+        mangle=True,
     )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
@@ -1180,6 +1188,10 @@ struct HopperMatmulSM90Kernel[
             Int32(Self.num_threads)
         ),
         `nvvm.cluster_dim`=Self.cluster_shape,
+    )
+    @__name(
+        t"sm90_matmul_grouped_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",
+        mangle=True,
     )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)

@@ -18,10 +18,12 @@ from std.sys import is_amd_gpu, is_nvidia_gpu
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 
 from linalg.fp4_utils import (
+    MXFP4_SF_VECTOR_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
     cast_fp32_to_fp4e2m1,
+    cast_float_to_fp4e2m1_amd,
     set_scale_factor,
 )
 
@@ -119,7 +121,7 @@ def block_memcpy[
     """
     comptime simd_width = simd_width_of[DType.uint8]()
     for i in range(thread_idx, num_bytes // simd_width, block_size):
-        dst_p.store[width=simd_width, alignment=simd_width](
+        dst_p.store[alignment=simd_width](
             i * simd_width,
             src_p.load[
                 width=simd_width,
@@ -425,7 +427,7 @@ struct BF16TokenFormat[
         comptime bf16_width = simd_width_of[DType.bfloat16]()
         comptime byte_width = bf16_width * size_of[BFloat16]()
         for i in range(lane_id(), Self.hid_dim // bf16_width, WARP_SIZE):
-            self.output_tokens.store[width=bf16_width](
+            self.output_tokens.store(
                 (Idx(token_index), Idx(i * bf16_width)),
                 bitcast[DType.bfloat16, bf16_width](
                     buf_p.load[
@@ -603,7 +605,7 @@ struct BlockwiseFP8TokenFormat[
             var output_vec = loaded_vec / scale_factor
             output_vec = output_vec.clamp(-fp8_max_t, fp8_max_t)
 
-            buf_p.store[width=byte_width, alignment=byte_width](
+            buf_p.store[alignment=byte_width](
                 i * byte_width,
                 bitcast[DType.uint8, byte_width](
                     output_vec.cast[Self.fp8_dtype]()
@@ -614,7 +616,7 @@ struct BlockwiseFP8TokenFormat[
             comptime scale_bytes = size_of[Self.scales_dtype]()
             if umod(lane_id(), n_threads_per_group) == 0:
                 scale_idx = i * src_width // Self.group_size
-                buf_p.store[width=scale_bytes, alignment=scale_bytes](
+                buf_p.store[alignment=scale_bytes](
                     Self.scales_offset() + scale_idx * scale_bytes,
                     bitcast[DType.uint8, scale_bytes](scale_factor),
                 )
@@ -635,7 +637,7 @@ struct BlockwiseFP8TokenFormat[
         # First we copy the FP8 quants.
         comptime fp8_width = simd_width_of[Self.fp8_dtype]()
         for i in range(lane_id(), Self.hid_dim // fp8_width, WARP_SIZE):
-            self.output_tokens.store[width=fp8_width](
+            self.output_tokens.store(
                 (Idx(token_index), Idx(i * fp8_width)),
                 bitcast[Self.fp8_dtype, fp8_width](
                     buf_p.load[
@@ -918,10 +920,11 @@ struct NVFP4TokenFormat[
             ](i * src_width)
 
             # each thread finds maximum value in its local 8 elements
-            var thread_max = abs(loaded_vec).reduce_max()
-            # find the maximum value among all 16 elements (two threads for 16)
-            thread_max = max(warp.shuffle_xor(thread_max, 1), thread_max)
-            var group_max = thread_max.cast[DType.float32]()
+            var thread_max = abs(loaded_vec).reduce_max().cast[DType.float32]()
+            # find the maximum value among all 16 elements
+            var group_max = warp.lane_group_max[num_lanes=NUM_THREADS_PER_SF](
+                thread_max
+            )
 
             # get the scale factor for these 16 elements by dividing it by the maximum value of fp4-e2m1
             var scale_factor = input_scale * (group_max * recip(Float32(6.0)))
@@ -938,7 +941,7 @@ struct NVFP4TokenFormat[
             # write back the scale factor
             comptime scale_bytes = size_of[Self.scales_dtype]()
             if i % NUM_THREADS_PER_SF == 0:
-                buf_p.store[width=scale_bytes, alignment=scale_bytes](
+                buf_p.store[alignment=scale_bytes](
                     Self.scales_offset()
                     + i // NUM_THREADS_PER_SF * scale_bytes,
                     bitcast[DType.uint8, scale_bytes](fp8_scale_factor),
@@ -948,7 +951,7 @@ struct NVFP4TokenFormat[
             var output_vector = bitcast[Self.fp4_dtype, byte_width](
                 cast_fp32_to_fp4e2m1(input_f32)
             )
-            buf_p.store[width=byte_width, alignment=byte_width](
+            buf_p.store[alignment=byte_width](
                 i * byte_width,
                 bitcast[DType.uint8, byte_width](output_vector),
             )
@@ -980,7 +983,7 @@ struct NVFP4TokenFormat[
         ), "quant_bytes must be divisible by fp4_width"
 
         for i in range(lane_id(), quant_bytes // fp4_width, WARP_SIZE):
-            self.output_tokens.store[width=fp4_width](
+            self.output_tokens.store(
                 (Idx(token_index), Idx(i * fp4_width)),
                 bitcast[Self.fp4_dtype, fp4_width](
                     buf_p.load[
@@ -1013,6 +1016,372 @@ struct NVFP4TokenFormat[
         )
 
         comptime n_scales = Self.hid_dim // NVFP4_SF_VECTOR_SIZE
+        comptime n_scales_simd = n_scales // SF_ATOM_K
+        comptime assert (
+            n_scales % SF_ATOM_K == 0
+        ), "n_scales must be divisible by SF_ATOM_K"
+        comptime scale_bytes = size_of[Self.scales_dtype]() * SF_ATOM_K
+        for i in range(lane_id(), n_scales_simd, WARP_SIZE):
+            var scale_factors = bitcast[Self.scales_dtype, SF_ATOM_K](
+                buf_p.load[
+                    width=scale_bytes,
+                    invariant=True,
+                    alignment=scale_bytes,
+                ](
+                    Self.scales_offset() + i * scale_bytes,
+                )
+            )
+
+            # Here we set SF_VECTOR_SIZE=1 because i is already the index
+            # of the scale factor (not the index of the fp4 elements).
+            set_scale_factor[SF_VECTOR_SIZE=1](
+                _scales_tensor,
+                expert_token_index,
+                i * SF_ATOM_K,
+                scale_factors,
+            )
+
+
+struct MXFP4TokenFormat[
+    fp4_dtype: DType,
+    scales_dtype: DType,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    scales_offset_layout: TensorLayout,
+    //,
+    _hid_dim: Int,
+    _top_k: Int,
+    _alignment: Int = 0,
+](TokenFormat, TrivialRegisterPassable):
+    comptime hid_dim = Self._hid_dim
+    comptime top_k = Self._top_k
+    comptime alignment = Self._alignment or get_device_alignment()
+    comptime group_size = MXFP4_SF_VECTOR_SIZE
+
+    comptime TensorType = TileTensor[
+        Self.fp4_dtype, Self.output_layout, MutExternalOrigin
+    ]
+    comptime ScalesTensorType = TileTensor[
+        Self.scales_dtype, Self.scales_layout, MutExternalOrigin
+    ]
+    comptime ScalesOffsetTensorType = TileTensor[
+        DType.uint32, Self.scales_offset_layout, MutExternalOrigin
+    ]
+    var output_tokens: Self.TensorType
+    var output_scales: Self.ScalesTensorType
+    var output_scales_offset: Self.ScalesOffsetTensorType
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(self, target: MutOpaquePointer[_]):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    def get_type_name() -> String:
+        return String(
+            "MXFP4TokenFormat[fp4_dtype = ",
+            String(Self.fp4_dtype),
+            ", scales_dtype = ",
+            String(Self.scales_dtype),
+            ", hid_dim = ",
+            String(Self.hid_dim),
+            ", top_k = ",
+            String(Self.top_k),
+            ", alignment = ",
+            String(Self.alignment),
+            "]",
+        )
+
+    @always_inline
+    def __init__(
+        out self,
+        output_tokens: TileTensor[Self.fp4_dtype, Self.output_layout, ...],
+        output_scales: TileTensor[Self.scales_dtype, Self.scales_layout, ...],
+        output_scales_offset: TileTensor[
+            DType.uint32, Self.scales_offset_layout, ...
+        ],
+    ):
+        self.output_tokens = {
+            UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin](
+                unsafe_from_address=Int(output_tokens.ptr)
+            ),
+            output_tokens.layout,
+        }
+        self.output_scales = {
+            UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin](
+                unsafe_from_address=Int(output_scales.ptr)
+            ),
+            output_scales.layout,
+        }
+        self.output_scales_offset = {
+            UnsafePointer[Scalar[DType.uint32], MutExternalOrigin](
+                unsafe_from_address=Int(output_scales_offset.ptr)
+            ),
+            output_scales_offset.layout,
+        }
+
+    @always_inline
+    @staticmethod
+    def fp4_quant_size() -> Int:
+        return align_up(Self.hid_dim // 2, Self.alignment)
+
+    @always_inline
+    @staticmethod
+    def scales_size() -> Int:
+        comptime assert (
+            Self.hid_dim % Self.group_size == 0
+        ), "hid_dim must be divisible by group_size"
+        return align_up(
+            Self.hid_dim // Self.group_size * size_of[Self.scales_dtype](),
+            Self.alignment,
+        )
+
+    @always_inline
+    @staticmethod
+    def token_size() -> Int:
+        return Self.fp4_quant_size() + Self.scales_size()
+
+    @always_inline
+    @staticmethod
+    def scales_offset() -> Int:
+        return Self.fp4_quant_size()
+
+    @always_inline
+    def pad_expert_offsets[
+        n_groups: Int
+    ](self, row_offsets: UnsafePointer[mut=True, UInt32, ...]) -> None:
+        """
+        The mojo NVFP4 grouped matmul doesn't require padding for each group's
+        FP4 quants. However, it requires each group's scales to be aligned to
+        the SF_MN_GROUP_SIZE=128. This function updates the output_scales_offset
+        tensor to satisfy this requirement.
+
+        For example, if the row_offsets tensor is [0, 100, 300, 400], this
+        function will update the output_scales_offset tensor to [0, 1, 1]. The
+        formula is:
+            For group i, its first scales block index is row_offsets[i] //
+            SF_MN_GROUP_SIZE + output_scales_offset[i].
+        Group 0, 1 and 2 have 100, 200, 100 tokens respectively, so the number
+        of scales blocks are 1, 2, 1 respectively. The scales blocks for group 1
+        start at 100 // 128 + output_scales_offset[1] = 1, and the scales blocks
+        for group 2 start at 300 // 128 + output_scales_offset[2] = 3.
+        """
+        comptime assert (
+            Self.ScalesOffsetTensorType.flat_rank >= 1
+        ), "output_scales_offset expects rank >= 1"
+        var tid = thread_idx.x
+        comptime n_rounds = ceildiv(n_groups, WARP_SIZE)
+
+        if warp_id() == 0:
+            var prev_round_blocks_num: UInt32 = 0
+
+            comptime for round_i in range(n_rounds):
+                var per_expert_m: UInt32 = 0
+                var group_idx = round_i * WARP_SIZE + tid
+                if group_idx < n_groups:
+                    per_expert_m = (
+                        row_offsets[group_idx + 1] - row_offsets[group_idx]
+                    )
+
+                var scales_blocks = ceildiv(
+                    per_expert_m, UInt32(SF_MN_GROUP_SIZE)
+                )
+                var group_scales_start = (
+                    prev_round_blocks_num
+                    + warp.prefix_sum[exclusive=True](scales_blocks)
+                )
+
+                if group_idx < n_groups:
+                    self.output_scales_offset.store(
+                        (Idx(group_idx),),
+                        group_scales_start
+                        - row_offsets[group_idx] // UInt32(SF_MN_GROUP_SIZE),
+                    )
+
+                var group_scales_end = group_scales_start + scales_blocks
+                prev_round_blocks_num = warp.shuffle_idx(
+                    group_scales_end, UInt32(WARP_SIZE - 1)
+                )
+
+    @always_inline
+    def zero_pad_scales[
+        block_size: Int, n_sms: Int
+    ](self, row_offsets: UnsafePointer[UInt32, ...], sm_id: Int) -> None:
+        """
+        Zero pad the scales tensor to satisfy the grouped matmul requirement.
+        """
+        comptime n_groups = Self.ScalesOffsetTensorType.static_shape[0]
+        comptime n_sms_per_group = n_sms // n_groups
+
+        var tid = thread_idx.x
+        var group_id, sm_id_in_group = divmod(sm_id, n_sms_per_group)
+        var tid_in_group = sm_id_in_group * block_size + tid
+
+        if group_id >= n_groups:
+            return
+
+        comptime assert (
+            Self.ScalesOffsetTensorType.flat_rank == 1
+        ), "output_scales_offset expects rank == 1"
+        comptime assert (
+            Self.ScalesTensorType.flat_rank == 5
+        ), "output_scales expects rank == 5 for ptr_at_offset"
+        var per_expert_m = row_offsets[group_id + 1] - row_offsets[group_id]
+        if per_expert_m % UInt32(SF_MN_GROUP_SIZE) == 0:
+            return
+        var tokens_to_zero_pad = UInt32(SF_MN_GROUP_SIZE) - (
+            per_expert_m % UInt32(SF_MN_GROUP_SIZE)
+        )
+
+        var scales_block_id = (
+            row_offsets[group_id] // UInt32(SF_MN_GROUP_SIZE)
+            + self.output_scales_offset[group_id]
+        )
+        var _scales_tensor = Self.ScalesTensorType(
+            ptr=self.output_scales.ptr_at_offset(
+                (Idx(scales_block_id), Idx(0), Idx(0), Idx(0), Idx(0))
+            ),
+            layout=self.output_scales.layout,
+        )
+
+        comptime scales_simds_per_tok = Self.hid_dim // (
+            MXFP4_SF_VECTOR_SIZE * SF_ATOM_K
+        )
+        comptime assert (
+            Self.hid_dim % (MXFP4_SF_VECTOR_SIZE * SF_ATOM_K) == 0
+        ), "hid_dim must be divisible by (MXFP4_SF_VECTOR_SIZE * SF_ATOM_K)"
+        for i in range(
+            tid_in_group,
+            Int(UInt32(scales_simds_per_tok) * tokens_to_zero_pad),
+            block_size * n_sms_per_group,
+        ):
+            token_idx, scale_simd_idx = divmod(i, scales_simds_per_tok)
+            set_scale_factor[SF_VECTOR_SIZE=1](
+                _scales_tensor,
+                token_idx + Int(per_expert_m),
+                scale_simd_idx * SF_ATOM_K,
+                SIMD[Self.scales_dtype, SF_ATOM_K](0.0),
+            )
+
+    @always_inline
+    @staticmethod
+    def copy_token_to_send_buf[
+        src_type: DType,
+        block_size: UInt,
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+    ](
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
+        input_scale: Float32,
+    ) -> None:
+        comptime src_width = 8
+        comptime byte_width = src_width // 2
+        comptime NUM_THREADS_PER_SF = MXFP4_SF_VECTOR_SIZE // src_width
+
+        for i in range(
+            thread_idx.x, Self.hid_dim // src_width, Int(block_size)
+        ):
+            var loaded_vec = src_p.load[
+                width=src_width, alignment=Self.alignment, invariant=True
+            ](i * src_width).cast[DType.float32]()
+
+            # each thread finds maximum value in its local 8 elements
+            var thread_max = abs(loaded_vec).reduce_max().cast[DType.float32]()
+            # find the maximum value among all 32 elements
+            var group_max = warp.lane_group_max[num_lanes=NUM_THREADS_PER_SF](
+                thread_max
+            )
+
+            # get the scale factor for these 32 elements by dividing it by the maximum value of fp4-e2m1
+            var scale_factor = group_max * recip(Float32(6.0))
+            var fp8_scale_factor = scale_factor.cast[Self.scales_dtype]()
+
+            # write back the scale factor
+            comptime scale_bytes = size_of[Self.scales_dtype]()
+            if i % NUM_THREADS_PER_SF == 0:
+                buf_p.store[alignment=scale_bytes](
+                    Self.scales_offset()
+                    + i // NUM_THREADS_PER_SF * scale_bytes,
+                    bitcast[DType.uint8, scale_bytes](fp8_scale_factor),
+                )
+
+            var output_vector = bitcast[Self.fp4_dtype, byte_width](
+                cast_float_to_fp4e2m1_amd(
+                    loaded_vec,
+                    fp8_scale_factor.cast[DType.float32](),
+                )
+            )
+            buf_p.store[alignment=byte_width](
+                i * byte_width,
+                bitcast[DType.uint8, byte_width](output_vector),
+            )
+
+    @always_inline
+    def copy_msg_to_output_tensor[
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+    ](
+        self,
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
+        token_index: Int,
+        expert_id: Int,
+        expert_token_index: Int,
+    ) -> None:
+        comptime assert (
+            Self.TensorType.flat_rank >= 2
+        ), "output_tokens expects rank >= 2"
+        comptime assert (
+            Self.ScalesOffsetTensorType.flat_rank == 1
+        ), "output_scales_offset expects rank == 1"
+        comptime assert (
+            Self.ScalesTensorType.flat_rank == 5
+        ), "output_scales expects rank == 5 for ptr_at_offset"
+        # First we copy the FP4 quants.
+        comptime fp4_width = simd_width_of[Self.fp4_dtype]()
+        comptime quant_bytes = Self.hid_dim // 2
+        comptime assert (
+            quant_bytes % fp4_width == 0
+        ), "quant_bytes must be divisible by fp4_width"
+
+        for i in range(lane_id(), quant_bytes // fp4_width, WARP_SIZE):
+            self.output_tokens.store(
+                (Idx(token_index), Idx(i * fp4_width)),
+                bitcast[Self.fp4_dtype, fp4_width](
+                    buf_p.load[
+                        width=fp4_width,
+                        invariant=True,
+                        alignment=Self.alignment,
+                    ](
+                        i * fp4_width,
+                    )
+                ),
+            )
+
+        # The scales tensor is a 5D tensor.
+        var expert_start_index = token_index - expert_token_index
+        var output_scales_offset: UInt32 = 0
+        if expert_id != 0:
+            output_scales_offset = rebind[UInt32](
+                self.output_scales_offset[expert_id]
+            )
+        var scales_block_id = (
+            UInt32(expert_start_index // SF_MN_GROUP_SIZE)
+            + output_scales_offset
+        )
+
+        var _scales_tensor = Self.ScalesTensorType(
+            ptr=self.output_scales.ptr_at_offset(
+                (Idx(scales_block_id), Idx(0), Idx(0), Idx(0), Idx(0))
+            ),
+            layout=self.output_scales.layout,
+        )
+
+        comptime n_scales = Self.hid_dim // MXFP4_SF_VECTOR_SIZE
         comptime n_scales_simd = n_scales // SF_ATOM_K
         comptime assert (
             n_scales % SF_ATOM_K == 0
@@ -3478,9 +3847,10 @@ def fused_silu_nvfp4_kernel[
             var output_val = gate_proj * up_proj
 
             # Quantization logic (NVFP4).
-            var thread_max = abs(output_val).reduce_max()
-            thread_max = max(warp.shuffle_xor(thread_max, 1), thread_max)
-            var group_max = thread_max.cast[DType.float32]()
+            var thread_max = abs(output_val).reduce_max().cast[DType.float32]()
+            var group_max = warp.lane_group_max[num_lanes=NUM_THREADS_PER_SF](
+                thread_max
+            )
             var scale_factor = tensor_sf * (group_max * recip(Float32(6.0)))
 
             # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know
@@ -3496,9 +3866,7 @@ def fused_silu_nvfp4_kernel[
             var output_vector = bitcast[fp4_dtype, byte_width](
                 cast_fp32_to_fp4e2m1(input_f32)
             )
-            output_tensor.store[width=byte_width](
-                (Idx(m), Idx(k // 2)), output_vector
-            )
+            output_tensor.store((Idx(m), Idx(k // 2)), output_vector)
 
             # The first thread in each group stores the scale factor.
             if tid % NUM_THREADS_PER_SF == 0:

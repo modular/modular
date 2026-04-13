@@ -41,7 +41,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
     TuningConfigSM100,
     _get_tuning_list_sm100_nvfp4,

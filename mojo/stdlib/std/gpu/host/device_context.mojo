@@ -2293,7 +2293,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = TypeList[*Ts].size
+        comptime num_args = Ts.size
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2464,7 +2464,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = TypeList[*Ts].size
+        comptime num_args = Ts.size
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2572,7 +2572,7 @@ struct DeviceFunction[
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
         comptime declared_num_args = TypeList[
-            *Self.declared_arg_types.value()
+            Self.declared_arg_types.value()
         ].size
 
         comptime assert (
@@ -2664,7 +2664,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = TypeList[*Ts].size
+        comptime num_args = Ts.size
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2786,7 +2786,7 @@ struct DeviceFunction[
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
-        comptime num_passed_args = TypeList[*Ts].size
+        comptime num_passed_args = Ts.size
         var num_translated_args = 0
 
         var translated_arg_offsets = InlineArray[Int, num_passed_args](
@@ -3241,7 +3241,7 @@ struct DeviceExternalFunction:
         Raises:
             If the function launch fails.
         """
-        comptime num_args = TypeList[*Ts].size
+        comptime num_args = Ts.size
 
         var dense_args_addrs = InlineArray[
             OpaquePointer[MutAnyOrigin], num_args
@@ -3809,7 +3809,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def compile_function[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) thin -> None,
@@ -3828,7 +3828,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types,
+            declared_arg_types.values,
             compile_options=compile_options,
             link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -3888,7 +3888,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def compile_function_experimental[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
         *,
@@ -3906,7 +3906,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types,
+            declared_arg_types.values,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -3964,7 +3964,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def compile_function[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) capturing -> None,
@@ -3983,7 +3983,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types,
+            declared_arg_types.values,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -4044,7 +4044,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def compile_function_experimental[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
         *,
@@ -4062,7 +4062,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types,
+            declared_arg_types.values,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -4567,7 +4567,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def enqueue_function[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) thin -> None,
@@ -4700,7 +4700,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @parameter
     @always_inline
     def enqueue_function_experimental[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
@@ -4824,7 +4824,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def enqueue_function[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) capturing -> None,
@@ -5067,7 +5067,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @parameter
     @always_inline
     def enqueue_function_experimental[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[type=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,

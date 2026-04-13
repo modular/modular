@@ -309,13 +309,13 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # 3D tile layout types (batch=1, rows, cols)
     comptime ATileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
+        _IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
     ]
     comptime ADescLayout = tma_desc_layout_3d[
         Self.a_type, 1, Self.a_tile_dim0, Self.config.a_swizzle
     ]
     comptime BTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
+        _IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
     ]
     comptime BDescLayout = tma_desc_layout_3d[
         Self.b_type, 1, Self.b_tile_dim0, Self.config.b_swizzle
@@ -323,7 +323,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # C tile shape: when AB_swapped, last dim is swizzle elems
     comptime c_tile_dim1 = Self.OutputN if not Self.config.AB_swapped else Self.c_swizzle_elems
     comptime CTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
+        _IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
     ]
     comptime CDescLayout = tma_desc_layout_3d[
         Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle
@@ -331,7 +331,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # 5D scale factor layout types (SWIZZLE_NONE)
     comptime SFATileLayout = RowMajorLayout[
-        *_IntToComptimeInt[
+        _IntToComptimeInt[
             1,
             Self.BM // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
@@ -348,7 +348,7 @@ struct BlackwellBlockScaledMatmulKernel[
         TensorMapSwizzle.SWIZZLE_NONE,
     ]
     comptime SFBTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[
+        _IntToComptimeInt[
             1,
             Self.MMA_N // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
@@ -849,6 +849,7 @@ struct BlackwellBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
+    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,

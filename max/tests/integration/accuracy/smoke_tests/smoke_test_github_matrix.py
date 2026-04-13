@@ -25,16 +25,20 @@ RUNNERS = {
     "B200": "modrunner-b200",
     "MI355": "modrunner-mi355",
     "2xH100": "modrunner-h100-2x",
+    "2xMI355": "modrunner-mi355-2x",
     "8xB200": "modrunner-b200-8x",
     "8xMI355": "modrunner-mi355-8x",
 }
 
 # Framework → GPUs that framework cannot run on.
-HW_EX = {"vllm": {"MI355", "8xMI355"}, "sglang": {"MI355", "8xMI355"}}
+HW_EX = {
+    "vllm": {"MI355", "2xMI355", "8xMI355"},
+    "sglang": {"MI355", "2xMI355", "8xMI355"},
+}
 
 # Tags: skip model on multi-GPU runners.
 XL = {"8xB200", "8xMI355"}
-MULTI = {"2xH100"} | XL
+MULTI = {"2xH100", "2xMI355"} | XL
 NON_XL = set(RUNNERS) - XL
 DISABLE = set(RUNNERS)
 
@@ -65,7 +69,7 @@ HF_MODELS: dict[str, set[str]] = {
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": MULTI | {"max-ci@H100"},  # TODO(MODELS-1021) and GEX-3248
-    "google/gemma-4-26b-a4b-it": MULTI,
+    "google/gemma-4-26b-a4b-it": MULTI | {"max", "max-ci"},  # TODO(MODELS-1340)
     "google/gemma-4-31b-it": MULTI,
     "meta-llama/llama-3.1-8b-instruct": MULTI,
     "meta-llama/llama-3.2-1b-instruct": MULTI,
@@ -85,15 +89,15 @@ HF_MODELS: dict[str, set[str]] = {
     "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@H100"},  # MODELS-1020
     "qwen/qwen3-8b": MULTI,
     "qwen/qwen3-vl-4b-instruct": XL | {"max-ci@H100", "vllm@B200"},  # MODELS-1020
-    "qwen/qwen3-vl-4b-instruct-fp8": XL | {"MI355", "max-ci@2xH100", "max-ci@H100"},  # MI355: no FP8
+    "qwen/qwen3-vl-4b-instruct-fp8": XL | {"MI355", "2xMI355", "max-ci@2xH100", "max-ci@H100"},  # MI355: no FP8
     "qwen/qwen3-vl-30b-a3b-instruct": XL | {"max-ci@2xH100", "max-ci@H100", "max@2xH100", "max@H100"},
-    "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"MI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
+    "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"MI355", "2xMI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
     "qwen/qwen3-vl-30b-a3b-thinking": XL | {"max", "max-ci@2xH100", "max-ci@H100"},
     "redhatai/gemma-3-27b-it-fp8-dynamic": MULTI,  # TODO(MODELS-1021)
     "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": NON_XL,
-    "openai/gpt-oss-20b": XL | {"max@H100"},
-    "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},
+    "openai/gpt-oss-20b": XL | {"max@H100", "2xMI355"},
+    "unsloth/gpt-oss-20b-bf16": XL | {"max@H100", "2xMI355"},
 }
 
 # Models tested with custom MAX serve flags. MODEL_ALIASES in
@@ -114,7 +118,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": MULTI | {"vllm", "sglang"},
     "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
     "nvidia/kimi-k2.5-nvfp4__eagle": NON_XL | {"8xMI355"},
-    "google/gemma-4-26b-a4b-it__no_dgc": MULTI | {"vllm@MI355", "sglang@MI355"},
+    "google/gemma-4-26b-a4b-it__no_dgc": DISABLE,  # TODO(MODELS-1340)
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}
@@ -152,6 +156,7 @@ def parse_override(raw: str | None) -> list[str]:
 @click.option("--run-on-b200", is_flag=True)
 @click.option("--run-on-mi355", is_flag=True)
 @click.option("--run-on-2xh100", is_flag=True)
+@click.option("--run-on-2xmi355", is_flag=True)
 @click.option("--run-on-8xb200", is_flag=True)
 @click.option("--run-on-8xmi355", is_flag=True)
 def main(
@@ -161,6 +166,7 @@ def main(
     run_on_b200: bool,
     run_on_mi355: bool,
     run_on_2xh100: bool,
+    run_on_2xmi355: bool,
     run_on_8xb200: bool,
     run_on_8xmi355: bool,
 ) -> None:
@@ -169,6 +175,7 @@ def main(
         "B200": run_on_b200,
         "MI355": run_on_mi355,
         "2xH100": run_on_2xh100,
+        "2xMI355": run_on_2xmi355,
         "8xB200": run_on_8xb200,
         "8xMI355": run_on_8xmi355,
     }

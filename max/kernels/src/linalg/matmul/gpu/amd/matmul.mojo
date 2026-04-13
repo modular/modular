@@ -158,12 +158,12 @@ struct MmaOpAMD[
         Self.tensor_core_mma.mma_op.load_a[swizzle=Self.swizzle](
             a_smem_tiles,
             self.a_reg_tile(k_tile_idx).vectorize(),
-            UInt(k_tile_idx),
+            k_tile_idx,
         )
         Self.tensor_core_mma.mma_op.load_b[swizzle=Self.swizzle](
             b_smem_tiles,
             self.b_reg_tile(k_tile_idx).vectorize(),
-            UInt(k_tile_idx),
+            k_tile_idx,
         )
 
     @always_inline
@@ -244,6 +244,9 @@ struct MMATileBuffers[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
     )
+)
+@__name(
+    t"gemm_kernel_amd_{c_type}_{a_type}_{b_type}_{transpose_b}", mangle=True
 )
 def gemm_kernel_amd[
     c_type: DType,

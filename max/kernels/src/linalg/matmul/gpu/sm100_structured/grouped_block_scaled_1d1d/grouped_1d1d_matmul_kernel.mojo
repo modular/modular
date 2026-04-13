@@ -430,7 +430,7 @@ struct Grouped1D1DMatmulKernel[
     ) // 2  # 256 uint16 = 512 bytes
 
     comptime SFATileLayout = RowMajorLayout[
-        *_IntToComptimeInt[
+        _IntToComptimeInt[
             1,
             Self.BM // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
@@ -447,7 +447,7 @@ struct Grouped1D1DMatmulKernel[
     comptime SFB_TMA_K_ATOMS = 1 if Self.MMA_N < 64 else Self.config.num_sf_k_tiles
     comptime sfb_atom_u16 = (Self.SFB_TMA_ROWS * SF_ATOM_M[1] * SF_ATOM_K) // 2
     comptime SFBTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[
+        _IntToComptimeInt[
             1,
             Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
             Self.SFB_TMA_K_ATOMS,
@@ -563,6 +563,7 @@ struct Grouped1D1DMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
+    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
     def run(
         # Grid-constant TMA descriptors
         a_tma_op: Self.ATmaOp,

@@ -747,6 +747,10 @@ def promote_accumulators[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+@__name(
+    t"blackwell_warp_specialized_blockwise_fp8_{a_type}_{b_type}_{c_type}_{transpose_b}_s{num_pipeline_stages}",
+    mangle=True,
+)
 def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_type: DType,
     b_type: DType,

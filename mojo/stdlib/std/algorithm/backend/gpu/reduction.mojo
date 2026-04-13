@@ -54,11 +54,11 @@ comptime _PDL_LEVEL = PDLLevel(1)
 @always_inline
 def block_reduce[
     BLOCK_SIZE: Int,
-    reduce_fn: def[dtype: DType, width: Int](
+    reduce_fn: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
 ](val: SIMD[dtype, simd_width], init: Scalar[dtype]) -> Scalar[dtype]:
     """Performs a block-level reduction of a single SIMD value across all
     threads in a GPU thread block using warp-level primitives and shared memory.
@@ -81,7 +81,7 @@ def block_reduce[
     @always_inline
     @parameter
     def reduce_wrapper[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             reduction_idx < num_reductions
@@ -104,11 +104,11 @@ def block_reduce[
 def block_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
-    reduce_fn: def[dtype: DType, width: Int, reduction_idx: Int](
+    reduce_fn: def[dtype: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
 ](
     val: StaticTuple[SIMD[dtype, simd_width], num_reductions],
     init: StaticTuple[Scalar[dtype], num_reductions],
@@ -147,7 +147,7 @@ def block_reduce[
             @always_inline
             @parameter
             def reduce_wrapper[
-                dtype: DType, width: Int
+                dtype: DType, width: SIMDSize
             ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
                 dtype, width
             ]:
@@ -205,7 +205,7 @@ def row_reduce[
     input_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    reduce_fn: def[dtype: DType, width: Int](
+    reduce_fn: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
@@ -245,7 +245,7 @@ def row_reduce[
     @always_inline
     @parameter
     def reduce_wrapper[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             reduction_idx < num_reductions
@@ -273,7 +273,7 @@ def row_reduce[
     input_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    reduce_fn: def[dtype: DType, width: Int, reduction_idx: Int](
+    reduce_fn: def[dtype: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
@@ -366,10 +366,10 @@ def reduce_kernel[
     input_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: Int, rank: Int](
+    output_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_fn: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_fn: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     dtype: DType,
@@ -441,10 +441,10 @@ def small_reduce_kernel[
     input_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: Int, rank: Int](
+    output_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_fn: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_fn: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     dtype: DType,
@@ -520,7 +520,7 @@ def small_reduce_kernel[
                     @always_inline
                     @parameter
                     def reduce_wrapper[
-                        dtype: DType, width: Int
+                        dtype: DType, width: SIMDSize
                     ](
                         x: SIMD[dtype, width], y: SIMD[dtype, width]
                     ) capturing -> SIMD[dtype, width]:
@@ -553,10 +553,10 @@ def twophase_reduce_kernel[
     input_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: Int, rank: Int](
+    output_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_fn: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_fn: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     dtype: DType,
@@ -698,10 +698,10 @@ def saturated_reduce_kernel[
     input_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: Int, rank: Int](
+    output_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_fn: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_fn: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     dtype: DType,
@@ -784,10 +784,10 @@ def reduce_launch[
     input_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: Int, rank: Int](
+    output_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_fn: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_fn: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     rank: Int,
@@ -988,10 +988,10 @@ def _reduce_generator_gpu[
     input_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: Int, rank: Int](
+    output_0_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_function: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,

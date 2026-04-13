@@ -1994,14 +1994,16 @@ comptime _TransposeStrideTypes[
     permutations: IntTuple,
     rank: Int,
     input_stride_types: Variadic.TypesOfTrait[CoordLike],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    ParamListType=Variadic.types[
-        T=CoordLike,
-        *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
-    ],
-    Reducer=_TransposeStrideMapper[permutations, input_stride_types, ...],
-]
+] = TypeList[
+    _ReduceVariadicAndIdxToVariadic[
+        BaseVal=Variadic.empty_of_trait[CoordLike],
+        ParamListType=Variadic.types[
+            T=CoordLike,
+            *TypeList.splat[Trait=CoordLike, rank, RuntimeInt[]](),
+        ],
+        Reducer=_TransposeStrideMapper[permutations, input_stride_types, ...],
+    ]
+]()
 
 
 @compiler.register("mo.transpose")
@@ -2044,7 +2046,7 @@ struct Transpose:
                     stride_types=_TransposeStrideTypes[
                         static_permutations,
                         rank,
-                        input.static_spec.static_layout._stride_types,
+                        input.static_spec.static_layout._stride_types.values,
                     ],
                 ],
             ]()
@@ -2135,14 +2137,16 @@ comptime _SliceStrideTypes[
     rank: Int,
     input_stride_types: Variadic.TypesOfTrait[CoordLike],
     step_types: Variadic.TypesOfTrait[CoordLike],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    ParamListType=Variadic.types[
-        T=CoordLike,
-        *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
-    ],
-    Reducer=_SliceStrideMapper[input_stride_types, step_types, ...],
-]
+] = TypeList[
+    _ReduceVariadicAndIdxToVariadic[
+        BaseVal=Variadic.empty_of_trait[CoordLike],
+        ParamListType=Variadic.types[
+            T=CoordLike,
+            *TypeList.splat[Trait=CoordLike, rank, RuntimeInt[]](),
+        ],
+        Reducer=_SliceStrideMapper[input_stride_types, step_types, ...],
+    ]
+]()
 
 
 @compiler.register("mo.slice")
@@ -2211,8 +2215,8 @@ struct Slice:
                     ],
                     stride_types=_SliceStrideTypes[
                         rank,
-                        input.static_spec.static_layout._stride_types,
-                        _IntTupleToCoordLike[DType.int, static_steps],
+                        input.static_spec.static_layout._stride_types.values,
+                        _IntTupleToCoordLike[DType.int, static_steps].values,
                     ],
                 ],
             ](
@@ -6767,7 +6771,7 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
-    mrope_section: Optional[Coord[*mrope_types]] = None,
+    mrope_section: Optional[Coord[TypeList[mrope_types]()]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
@@ -6831,7 +6835,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
             interleaved=Self.interleaved,
             has_position_ids=True,
             target=target,
-            mrope_types=mrope.element_types,
+            mrope_types=mrope.element_types.values,
             mrope_section=mrope,
         ](
             q_proj,

@@ -779,6 +779,12 @@ reshape = functional(ops.reshape)
 #: Resizes a tensor using linear (bilinear) interpolation.
 #: See :func:`max.graph.ops.resize_linear` for details.
 resize_linear = functional(ops.resize_linear)
+#: Resizes a tensor using nearest-neighbor interpolation.
+#: See :func:`max.graph.ops.resize_nearest` for details.
+resize_nearest = functional(ops.resize_nearest)
+#: Resizes a tensor using bicubic interpolation.
+#: See :func:`max.graph.ops.resize_bicubic` for details.
+resize_bicubic = functional(ops.resize_bicubic)
 #: Rounds tensor values element-wise.
 #: See :func:`max.graph.ops.round` for details.
 round = functional(ops.round)

@@ -81,7 +81,14 @@ from std.gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import ComptimeInt, Layout, RowMajorLayout, TileTensor, row_major
+from layout import (
+    ComptimeInt,
+    CoordLike,
+    Layout,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm90.attention import (
     OptionalPointer,
@@ -301,7 +308,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Null pointer means no Q scale (sigma_Q = 1.0).
         q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            DType.int64,
+            RowMajorLayout[TypeListOf[type=CoordLike, ComptimeInt[3]]()],
+            MutAnyOrigin,
         ],
     ):
         # Extract scalar launch args from the stable device buffer.

@@ -182,8 +182,7 @@ def test_tuple_reverse_odd() raises:
 
 def test_tuple_reverse_empty() raises:
     var t = Tuple[]()
-    var t_reversed = t^.reverse()
-    assert_equal(t_reversed, ())
+    assert_equal(t^.reverse(), ())
 
 
 def test_tuple_reverse_even() raises:

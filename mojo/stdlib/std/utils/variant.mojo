@@ -51,7 +51,7 @@ comptime _InvalidTypeIndex: Int = -1
 
 @always_inline
 def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime if _type_is_eq[Ts[i], T]():
             return i
     return _InvalidTypeIndex
@@ -130,7 +130,7 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
 
     @always_inline
     def __init__(out self):
-        self._memory = {}
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
     def as_uninit[
@@ -269,7 +269,11 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     comptime __move_ctor_is_trivial = _all_trivial_moveinit[*Self.Ts]()
 
     comptime _mlir_type = __mlir_type[
-        `!kgen.variant<[rebind(:`, type_of(Self.Ts), ` `, Self.Ts, `)]>`
+        `!kgen.variant<[rebind(:`,
+        type_of(Self.Ts.values),
+        ` `,
+        Self.Ts.values,
+        `)]>`,
     ]
     var _impl: Self._mlir_type
 
@@ -288,7 +292,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = copy.get_discriminant()
 
-        comptime for i in range(TypeList[*Self.Ts].size):
+        comptime for i in range(Self.Ts.size):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, Copyable)
             comptime T = downcast[TUnknown, Copyable]
@@ -302,7 +306,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = take.get_discriminant()
 
-        comptime for i in range(TypeList[*Self.Ts].size):
+        comptime for i in range(Self.Ts.size):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, Movable)
             comptime T = downcast[TUnknown, Movable]
@@ -315,7 +319,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
     @always_inline
     def __del__(deinit self):
-        comptime for i in range(TypeList[*Self.Ts].size):
+        comptime for i in range(Self.Ts.size):
             comptime TUnknown = Self.Ts[i]
             comptime assert conforms_to(TUnknown, ImplicitlyDestructible)
             comptime T = downcast[TUnknown, ImplicitlyDestructible]
@@ -341,7 +345,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         comptime idx = _get_type_index[T, *Self.Ts]()
         return __mlir_op.`pop.variant.bitcast`[
             _type=UnsafePointer[T, origin_of(self)]._mlir_type,
-            index=idx._mlir_value,
+            index=idx._int_mlir_index(),
         ](UnsafePointer(to=self._impl).address)
 
 
@@ -359,7 +363,7 @@ comptime _IsNicheablePair[T: AnyType, U: AnyType]: Bool = conforms_to(
 """True if `T` is `UnsafeNicheable` and `U` is an empty type. Called twice with
 swapped args by `_IsNicheEligible` to handle either ordering."""
 
-comptime _IsNicheEligible[*Ts: AnyType]: Bool = (TypeList[*Ts].size == 2) and (
+comptime _IsNicheEligible[*Ts: AnyType]: Bool = (Ts.size == 2) and (
     _IsNicheablePair[Ts[0], Ts[1]] or _IsNicheablePair[Ts[1], Ts[0]]
 )
 """True if `Ts` qualifies for niche-optimized storage: exactly two types
@@ -395,18 +399,21 @@ when eligible, falling back to the general discriminant-tagged storage."""
 
 
 struct Variant[*Ts: Movable](
-    Copyable where AllCopyable[*Ts],
-    Equatable where AllEquatable[*Ts],
-    Hashable where AllHashable[*Ts],
+    Copyable where AllCopyable[*Ts.upcast[AnyType]()],
+    Equatable where AllEquatable[*Ts.upcast[AnyType]()],
+    Hashable where AllHashable[*Ts.upcast[AnyType]()],
     # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
     # ImplicitlyCopyable refines Copyable, but the compiler can't infer
     # parent trait constraints from derived ones yet. Remove AllCopyable
     # from this where clause once that's fixed.
-    ImplicitlyCopyable where AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts],
+    ImplicitlyCopyable where (
+        AllImplicitlyCopyable[*Ts.upcast[AnyType]()]
+        and AllCopyable[*Ts.upcast[AnyType]()]
+    ),
     ImplicitlyDestructible,
     Movable,
-    RegisterPassable where AllRegisterPassable[*Ts],
-    Writable where AllWritable[*Ts],
+    RegisterPassable where AllRegisterPassable[*Ts.upcast[AnyType]()],
+    Writable where AllWritable[*Ts.upcast[AnyType]()],
 ):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
@@ -520,7 +527,9 @@ struct Variant[*Ts: Movable](
             implement `Copyable` enable copy semantics for the variant.
     """
 
-    comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
+    comptime _Storage: _VariantStorage = _VariantStorageFor[
+        *Self.Ts.upcast[AnyType]()
+    ]
 
     comptime __del__is_trivial = Self._Storage.__del__is_trivial
     comptime __copy_ctor_is_trivial = Self._Storage.__copy_ctor_is_trivial
@@ -531,7 +540,7 @@ struct Variant[*Ts: Movable](
 
     @staticmethod
     def _check[T: AnyType]():
-        comptime idx = _get_type_index[T, *Self.Ts]()
+        comptime idx = _get_type_index[T, *Self.Ts.upcast[AnyType]()]()
         comptime assert (
             idx != _InvalidTypeIndex
         ), "Type does not exist in Variant."
@@ -566,7 +575,7 @@ struct Variant[*Ts: Movable](
         # Variant[_NoneType, T] can't prove AllCopyable from conforms_to(T,
         # Copyable)). Using comptime assert as a workaround.
         comptime assert AllCopyable[
-            *Self.Ts
+            *Self.Ts.upcast[AnyType]()
         ], "Cannot copy Variant with non-copyable types"
         self._storage = Self._Storage(copy=copy._storage)
 
@@ -577,7 +586,7 @@ struct Variant[*Ts: Movable](
             take: The variant to move from.
         """
         comptime assert _all_movable[
-            *Self.Ts
+            *Self.Ts.upcast[AnyType]()
         ](), "Cannot move Variant with non-movable types"
         self._storage = Self._Storage(take=take._storage^)
 
@@ -588,7 +597,7 @@ struct Variant[*Ts: Movable](
             All types in `Ts` must conform to `ImplicitlyDestructible`.
         """
         comptime assert _all_implicitly_destructible[
-            *Self.Ts
+            *Self.Ts.upcast[AnyType]()
         ](), "Cannot call __del__ on Variant with explicitly destroyed types"
         self._storage^.__del__()
 
@@ -619,7 +628,9 @@ struct Variant[*Ts: Movable](
         return self.unsafe_get[T]()
 
     @always_inline
-    def __eq__(self, other: Self) -> Bool where AllEquatable[*Self.Ts]:
+    def __eq__(
+        self, other: Self
+    ) -> Bool where AllEquatable[*Self.Ts.upcast[AnyType]()]:
         """Compares two variants for equality.
 
         Two variants are equal if they hold the same type and the held
@@ -631,7 +642,7 @@ struct Variant[*Ts: Movable](
         Returns:
             True if the variants hold the same type and equal values.
         """
-        comptime for i in range(TypeList[*Self.Ts].size):
+        comptime for i in range(Self.Ts.size):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 if not other.isa[T]():
@@ -642,7 +653,9 @@ struct Variant[*Ts: Movable](
         return False
 
     @always_inline
-    def __ne__(self, other: Self) -> Bool where AllEquatable[*Self.Ts]:
+    def __ne__(
+        self, other: Self
+    ) -> Bool where AllEquatable[*Self.Ts.upcast[AnyType]()]:
         """Compares two variants for inequality.
 
         Args:
@@ -653,7 +666,9 @@ struct Variant[*Ts: Movable](
         """
         return not self == other
 
-    def __hash__(self, mut hasher: Some[Hasher]) where AllHashable[*Self.Ts]:
+    def __hash__(
+        self, mut hasher: Some[Hasher]
+    ) where AllHashable[*Self.Ts.upcast[AnyType]()]:
         """Hashes the variant using the given hasher.
 
         The hash incorporates both the type discriminant and the held
@@ -663,7 +678,7 @@ struct Variant[*Ts: Movable](
         Args:
             hasher: The hasher instance.
         """
-        comptime for i in range(TypeList[*Self.Ts].size):
+        comptime for i in range(Self.Ts.size):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 hasher.update(UInt8(i))
@@ -676,8 +691,10 @@ struct Variant[*Ts: Movable](
 
     def _write_value_to[
         *, is_repr: Bool
-    ](self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
-        comptime for i in range(TypeList[*Self.Ts].size):
+    ](self, mut writer: Some[Writer]) where AllWritable[
+        *Self.Ts.upcast[AnyType]()
+    ]:
+        comptime for i in range(Self.Ts.size):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 ref value = trait_downcast[Writable](self.unsafe_get[T]())
@@ -690,7 +707,9 @@ struct Variant[*Ts: Movable](
                 return
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where AllWritable[*Self.Ts.upcast[AnyType]()]:
         """Writes the currently held variant value to the provided Writer.
 
         Args:
@@ -701,7 +720,7 @@ struct Variant[*Ts: Movable](
     @no_inline
     def write_repr_to(
         self, mut writer: Some[Writer]
-    ) where AllWritable[*Self.Ts]:
+    ) where AllWritable[*Self.Ts.upcast[AnyType]()]:
         """Write the string representation of the Variant.
 
         Args:
@@ -712,9 +731,9 @@ struct Variant[*Ts: Movable](
         def write_field(mut w: Some[Writer]):
             self._write_value_to[is_repr=True](w)
 
-        FormatStruct(writer, "Variant").params(TypeNames[*Self.Ts]()).fields[
-            FieldsFn=write_field
-        ]()
+        FormatStruct(writer, "Variant").params(
+            TypeNames[*Self.Ts.upcast[AnyType]()]()
+        ).fields[FieldsFn=write_field]()
 
     @always_inline
     def take[T: Movable](deinit self) -> T:
@@ -899,7 +918,7 @@ struct Variant[*Ts: Movable](
 
         For example, the `Variant[Int, Bool]` permits `Int` and `Bool`.
         """
-        return Variadic.contains[Trait=AnyType, T, Self.Ts]
+        return Variadic.contains[Trait=AnyType, T, Self.Ts.values]
 
     # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
     def destroy_with[T: Movable](deinit self, destroy_func: def(var T) thin):
@@ -939,7 +958,7 @@ struct Variant[*Ts: Movable](
 
 
 def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime T = Ts[i]
         if not conforms_to(T, ImplicitlyDestructible):
             return False
@@ -947,7 +966,7 @@ def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
 
 
 def _all_movable[*Ts: AnyType]() -> Bool:
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime T = Ts[i]
         if not conforms_to(T, Movable):
             return False
@@ -955,7 +974,7 @@ def _all_movable[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
@@ -965,7 +984,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
             if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
@@ -976,7 +995,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(TypeList[*Ts].size):
+    comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
             if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False

@@ -1201,10 +1201,8 @@ struct ManagedTensorSlice[
             ],
         ],
     ):
-        var shape_tuple = Coord[*Self.static_spec.static_layout._shape_types]()
-        var stride_tuple = Coord[
-            *Self.static_spec.static_layout._stride_types
-        ]()
+        var shape_tuple = Coord[Self.static_spec.static_layout._shape_types]()
+        var stride_tuple = Coord[Self.static_spec.static_layout._stride_types]()
         var shape = self.shape()
         var stride = self.strides()
 
@@ -1414,7 +1412,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     making it safe to pass across the host-device boundary via GPU closures.
     """
 
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.Ts, `>`]
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.Ts.values, `>`]
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
@@ -1447,7 +1445,9 @@ struct _FusedInputVariadicTensors[
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
-    var _fusions: _FusionPack[*Self.FusionTypes]
+    var _fusions: _FusionPack[
+        *Self.FusionTypes.upcast[TrivialRegisterPassable]()
+    ]
 
     def __init__(
         out self,
@@ -1456,7 +1456,9 @@ struct _FusedInputVariadicTensors[
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
-        fusions: _FusionPack[*Self.FusionTypes],
+        fusions: _FusionPack[
+            *Self.FusionTypes.upcast[TrivialRegisterPassable]()
+        ],
     ):
         comptime for i in range(Self.size):
             comptime assert not _type_is_eq[
@@ -1537,7 +1539,9 @@ struct _FusedOutputVariadicTensors[
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
-    var _fusions: _FusionPack[*Self.FusionTypes]
+    var _fusions: _FusionPack[
+        *Self.FusionTypes.upcast[TrivialRegisterPassable]()
+    ]
 
     def __init__(
         out self,
@@ -1546,7 +1550,9 @@ struct _FusedOutputVariadicTensors[
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
-        fusions: _FusionPack[*Self.FusionTypes],
+        fusions: _FusionPack[
+            *Self.FusionTypes.upcast[TrivialRegisterPassable]()
+        ],
     ):
         comptime for i in range(Self.size):
             comptime assert not _type_is_eq[
@@ -1891,8 +1897,8 @@ def view_copy_impl[
 
 
 def _shape_types_compatible[
-    x_types: Variadic.TypesOfTrait[CoordLike],
-    y_types: Variadic.TypesOfTrait[CoordLike],
+    x_types: TypeList[type=CoordLike, ...],
+    y_types: TypeList[type=CoordLike, ...],
     rank: Int,
 ]() -> Bool:
     comptime for i in range(rank):

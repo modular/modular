@@ -316,6 +316,19 @@ def test_nicheable_size() raises:
     assert_true(size_of[Optional[Int]]() > size_of[Int]())
 
 
+def test_optional_reg_nicheable_size() raises:
+    comptime PointerType = Pointer[Int, AnyOrigin[mut=True]]
+
+    assert_equal(size_of[OptionalReg[PointerType]](), size_of[PointerType]())
+    assert_true(size_of[OptionalReg[Int]]() > size_of[Int]())
+
+
+def test_optional_to_optional_reg_implicit_conversion() raises:
+    var optional = Optional[Int](42)
+    var optional_reg: OptionalReg[Int] = optional
+    assert_equal(optional_reg.value(), 42)
+
+
 struct NotEquatable(Movable):
     pass
 

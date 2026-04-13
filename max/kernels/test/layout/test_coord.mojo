@@ -46,7 +46,9 @@ def test_int_tuple_conversion() raises:
 
 
 def test_list_literal_construction() raises:
-    var t = Coord[ComptimeInt[2], RuntimeInt[DType.int]](
+    var t = Coord[
+        TypeListOf[type=CoordLike, ComptimeInt[2], RuntimeInt[DType.int]]()
+    ](
         Idx[2](),
         Idx(Int(3)),
     )
@@ -87,10 +89,13 @@ def test_static_product() raises:
 
 def test_default_init() raises:
     var c = Coord[
-        ComptimeInt[5],
-        RuntimeInt[DType.int32],
-        ComptimeInt[3],
-        RuntimeInt[DType.int64],
+        TypeListOf[
+            type=CoordLike,
+            ComptimeInt[5],
+            RuntimeInt[DType.int32],
+            ComptimeInt[3],
+            RuntimeInt[DType.int64],
+        ]()
     ]()
     assert_equal(c[0].value(), 5)
     assert_equal(c[1].value(), 0)
@@ -100,12 +105,16 @@ def test_default_init() raises:
 
 def test_default_init_nested() raises:
     var c = Coord[
-        ComptimeInt[5],
-        Coord[
-            RuntimeInt[DType.int32],
-            ComptimeInt[3],
-        ],
-        RuntimeInt[DType.int64],
+        TypeListOf[
+            type=CoordLike,
+            ComptimeInt[5],
+            Coord[
+                TypeListOf[
+                    type=CoordLike, RuntimeInt[DType.int32], ComptimeInt[3]
+                ]()
+            ],
+            RuntimeInt[DType.int64],
+        ]()
     ]()
     assert_equal(c[0].value(), 5)
     assert_equal(c[1][0].value(), 0)
@@ -330,9 +339,9 @@ def test_idx2crd_mixed_static_dynamic_idx() raises:
     """Test idx2crd with static idx but one runtime stride dimension."""
     # shape=(3, 4), stride=(RuntimeInt, ComptimeInt[1])
     var shape = Coord(Idx[3](), Idx[4]())
-    var stride = Coord[RuntimeInt[DType.int], ComptimeInt[1]](
-        Idx(Int(4)), Idx[1]()
-    )
+    var stride = Coord[
+        TypeListOf[type=CoordLike, RuntimeInt[DType.int], ComptimeInt[1]]()
+    ](Idx(Int(4)), Idx[1]())
 
     # Static idx=5, but first stride is runtime -> first dim is RuntimeInt.
     # Second stride is static, shape is static, idx is static -> ComptimeInt.

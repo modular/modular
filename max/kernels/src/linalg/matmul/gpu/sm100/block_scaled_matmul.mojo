@@ -46,7 +46,7 @@ from std.gpu.sync import (
     syncwarp,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import TileTensor
+from layout import CoordLike, TileTensor
 from layout.coord import ComptimeInt, Coord, Idx, RuntimeInt
 from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import (
@@ -510,6 +510,7 @@ def consumer_main_loop[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
+@__name(StaticString(config.get_kernal_name()), mangle=True)
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
@@ -1398,7 +1399,7 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch kernel
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1543,11 +1544,14 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
-        ComptimeInt[SF_ATOM_M[0]],
-        ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+        TypeListOf[
+            type=CoordLike,
+            RuntimeInt[DType.int64],
+            RuntimeInt[DType.int64],
+            RuntimeInt[DType.int64],
+            ComptimeInt[SF_ATOM_M[0]],
+            ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+        ]()
     ]:
         comptime if is_batched_matmul:
             return Coord(
