@@ -20,8 +20,8 @@ comptime Folded = VA_SIZE[Int, Int, Int]
 comptime AddOne[i: Int]: Int = i + 1
 
 # Tabulate: [0, 1, 2, 3, 4] from index identity
-comptime TabulateIndices = Variadic.tabulate[5, AddOne]
-# CHECK: lit.alias.decl *"TabulateIndices`{{.*}}": param_list<!Int> = <[{1}, {2}, {3}, {4}, {5}]>
+comptime TabulateIndices = ParameterList.tabulate[5, AddOne]
+# CHECK: lit.alias.decl *"TabulateIndices`{{.*}}:param_list<!Int> [{1}, {2}, {3}, {4}, {5}]>>
 
 
 # CHECK-LABEL: lit.fn @"foo

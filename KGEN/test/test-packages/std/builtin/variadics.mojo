@@ -64,45 +64,6 @@ struct Variadic:
         ParamListType=element_types.values,
         Mapper=_ReversedVariadic[T, ...],
     ]
-    comptime splat_value[
-        T: AnyType, //, count: Int, value: T
-    ]: Variadic.ValuesOfType[T] = Self.tabulate[
-        count, _SplatValueTabulator[value, _]
-    ]
-
-    # ===-----------------------------------------------------------------------===#
-    # Tabulate
-    # ===-----------------------------------------------------------------------===#
-
-    # tabulate: Apply an "index -> value" generator, N times to build a variadic.
-    comptime tabulate[
-        ToT: AnyType,
-        //,
-        count: Int,
-        Mapper: _TabulateIntToValueGeneratorType[ToT],
-    ]: Variadic.ValuesOfType[ToT] = __mlir_attr[
-        `#kgen.param_list.tabulate<`,
-        count._mlir_value,
-        `,`,
-        _IndexToIntTabulateWrap[Mapper, ...],
-        `> : `,
-        Variadic.ValuesOfType[ToT],
-    ]
-
-    comptime tabulate_type[
-        Trait: type_of(AnyType),
-        ToT: Trait,
-        //,
-        count: Int,
-        Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
-    ]: Variadic.TypesOfTrait[Trait] = __mlir_attr[
-        `#kgen.param_list.tabulate<`,
-        count._mlir_value,
-        `,`,
-        _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
-        `> : `,
-        Variadic.TypesOfTrait[Trait],
-    ]
 
     # ===-----------------------------------------------------------------------===#
     # Contains
@@ -192,52 +153,6 @@ struct Variadic:
         Prev,
         Variadic.values[Mapper[From[idx], idx]],
     ]
-
-
-# ===-----------------------------------------------------------------------===#
-# Tabulate Helpers
-# ===-----------------------------------------------------------------------===#
-
-
-comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
-    `!lit.generator<<"Idx":`,
-    Int,
-    `>`,
-    +ToT,
-    `>`,
-]
-
-comptime _TabulateIntToTypeGeneratorType[
-    Trait: type_of(AnyType), ToT: Trait
-] = __mlir_type[
-    `!lit.generator<<"Idx":`,
-    Int,
-    `> `,
-    Trait,
-    `>`,
-]
-
-
-comptime _IndexToIntTabulateWrap[
-    ToT: AnyType,
-    //,
-    ToWrap: _TabulateIntToValueGeneratorType[ToT],
-    idx: __mlir_type.index,
-]: ToT = ToWrap[Int(mlir_value=idx)]
-
-comptime _IndexToIntTypeTabulateWrap[
-    Trait: type_of(AnyType),
-    ToT: Trait,
-    //,
-    ToWrap: _TabulateIntToTypeGeneratorType[Trait, ToT],
-    idx: __mlir_type.index,
-] = ToWrap[Int(mlir_value=idx)]
-
-
-comptime _SplatValueTabulator[T: AnyType, //, value: T, index: Int] = value
-comptime _SplatTypeTabulator[
-    Trait: type_of(AnyType), T: Trait, index: Int
-]: Trait = T
 
 
 # ===-----------------------------------------------------------------------===#
