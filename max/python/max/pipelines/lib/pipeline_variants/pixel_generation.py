@@ -28,7 +28,10 @@ from max.interfaces import (
     RequestID,
 )
 from max.interfaces.generation import GenerationOutput
-from max.interfaces.request.open_responses import OutputImageContent
+from max.interfaces.request.open_responses import (
+    OutputImageContent,
+    OutputVideoContent,
+)
 
 from ..interfaces.cache_mixin import DenoisingCacheConfig
 from ..interfaces.diffusion_pipeline import DiffusionPipeline
@@ -154,6 +157,23 @@ class PixelGenerationPipeline(
             num_images_per_prompt = model_inputs.num_images_per_prompt
 
         expected_images = len(flat_batch) * num_images_per_prompt
+
+        # Video output: shape [B, C, T, H, W]
+        if isinstance(images, np.ndarray) and images.ndim == 5:
+            video_responses: dict[RequestID, GenerationOutput] = {}
+            for index, (request_id, _context) in enumerate(flat_batch):
+                # video_clip shape: [C, T, H, W]
+                video_clip = images[index]
+                # Video decoders are expected to return uint8 pixel values.
+                # Reorder to [T, H, W, C] and keep raw frames until the serving
+                # layer decides how to encode them for the final response.
+                frames = np.transpose(video_clip, (1, 2, 3, 0))
+                video_responses[request_id] = GenerationOutput(
+                    request_id=request_id,
+                    final_status=GenerationStatus.END_OF_SEQUENCE,
+                    output=[OutputVideoContent.from_numpy_frames(frames)],
+                )
+            return video_responses
 
         if images.shape[0] != expected_images:
             raise ValueError(

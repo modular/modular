@@ -28,6 +28,7 @@ from max.interfaces.request.open_responses import (
     OpenResponsesRequest,
     OutputImageContent,
     OutputTextContent,
+    OutputVideoContent,
     ReasoningSummaryContent,
     RefusalContent,
 )
@@ -57,6 +58,7 @@ def _build_type_registry() -> dict[str, type]:
         OpenResponsesRequest,
         OutputImageContent,
         OutputTextContent,
+        OutputVideoContent,
         RefusalContent,
         ReasoningSummaryContent,
         GenerationOutput,

@@ -14,6 +14,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .common import GeneratedMediaResponseFormat
+
 
 class VideoProviderOptions(BaseModel):
     """Options specific to video generation pipelines."""
@@ -65,4 +67,18 @@ class VideoProviderOptions(BaseModel):
             "Total video duration equals num_frames / frames_per_second."
         ),
         gt=0,
+    )
+
+    guidance_scale_2: float | None = Field(
+        None,
+        description="Secondary guidance scale for boundary timestep switching.",
+        gt=0.0,
+    )
+
+    response_format: GeneratedMediaResponseFormat = Field(
+        GeneratedMediaResponseFormat.url,
+        description=(
+            "How generated videos are returned. Use 'url' for file-backed "
+            "downloads or 'b64_json' for inline base64-encoded mp4 data."
+        ),
     )
