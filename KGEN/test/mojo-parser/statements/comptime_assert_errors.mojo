@@ -31,7 +31,7 @@ def test_non_string_literal_message_error():
 
 
 struct Notdef[x: Bool]:
-    # expected-error @below {{'comptime assert' statements must be inside a function}}
+    # expected-error @below {{'comptime assert' must be inside a function; move this into a function body}}
     comptime assert x
 
 

@@ -19,7 +19,7 @@ comptime t, True, c = 1, 2, 3
 
 
 struct A:
-    # expected-error @below {{only comptime declarations with a single name are allowed inside a struct}}
+    # expected-error @below {{'comptime' constants inside structs must be declared separately; break this into individual declarations}}
     comptime a, b = 1, 2
 
 
@@ -27,7 +27,7 @@ struct A:
 
 
 trait A:
-    # expected-error @below {{only comptime declarations with a single name are allowed inside a trait}}
+    # expected-error @below {{a trait's associated types must be declared separately; break this into individual declarations}}
     comptime a, b = 1, 2
 
 

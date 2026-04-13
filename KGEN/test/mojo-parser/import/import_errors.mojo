@@ -144,7 +144,7 @@ struct S[a: AnyType]: # expected-note {{'S' declared here}}
 # be rejected with a clear diagnostic in struct, trait, and extension bodies.
 
 struct StructWithFromImport:
-    # expected-error @below {{import statements are only supported at module or function scope}}
+    # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
     from std.collections import Dict
 
     def method(self):
@@ -153,7 +153,7 @@ struct StructWithFromImport:
 # // -----
 
 struct StructWithImport:
-    # expected-error @below {{import statements are only supported at module or function scope}}
+    # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
     import std.collections
 
     def method(self):
@@ -162,7 +162,7 @@ struct StructWithImport:
 # // -----
 
 trait TraitWithFromImport:
-    # expected-error @below {{import statements are only supported at module or function scope}}
+    # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
     from std.collections import Dict
 
     def method(self):
@@ -171,7 +171,7 @@ trait TraitWithFromImport:
 # // -----
 
 trait TraitWithImport:
-    # expected-error @below {{import statements are only supported at module or function scope}}
+    # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
     import std.collections
 
     def method(self):
@@ -183,7 +183,7 @@ struct Foo:
     pass
 
 __extension Foo:
-    # expected-error @below {{import statements are only supported at module or function scope}}
+    # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
     from std.collections import Dict
 
     def method(self):
@@ -195,7 +195,7 @@ struct Bar:
     pass
 
 __extension Bar:
-    # expected-error @below {{import statements are only supported at module or function scope}}
+    # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
     import std.collections
 
     def method(self):
@@ -207,14 +207,14 @@ __extension Bar:
 
 def importInIf(x: Int):
     if x > 0:
-        # expected-error @below {{import statements are only supported at module or function scope}}
+        # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
         from std.collections import Dict
 
 # // -----
 
 def importInWhile():
     while True:
-        # expected-error @below {{import statements are only supported at module or function scope}}
+        # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
         from std.collections import Dict
 
 # // -----
@@ -245,7 +245,7 @@ struct _Range(TrivialRegisterPassable, Iterator):
 
 def importInFor():
     for _ in _Range():
-        # expected-error @below {{import statements are only supported at module or function scope}}
+        # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
         from std.collections import Dict
 
 # // -----

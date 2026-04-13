@@ -540,7 +540,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
          ((unsigned)sig->hasMemoryOnlyResult() + (unsigned)sig->isThrows())) &&
         isImplicitlyIgnorableType(resultType)) {
       shared.emitWarning(expr->getLoc())
-          << "function must be called; add '()' after name" << expr->getRange()
+          << "function is not called; add '()' after name" << expr->getRange()
           << FixIt::insertAfterToken(expr->getRange().getEnd(), "()",
                                      shared.diags);
       return;
@@ -552,7 +552,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // TODO: This should be handled with linear types.
   if (shared.typeHasMember(valueType, "__await__", expr->getLoc())) {
     shared.emitWarning(expr->getLoc())
-        << valueType << " value must be awaited; use 'await' to get its result"
+        << valueType << " value is not awaited; use 'await' to get its result"
         << expr->getRange()
         << FixIt::insertBeforeToken(expr->getRangeStart(), "await ");
     return;
@@ -1040,7 +1040,8 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis. First ensure we're in a function. This may be relaxed later.
   if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
-    emitError(kwLoc, "'comptime assert' statements must be inside a function");
+    emitError(kwLoc, "'comptime assert' must be inside a function; move this "
+                     "into a function body");
     return success();
   }
 
@@ -1251,8 +1252,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     if (auto dre = dyn_cast<DeclRefNode>(operandExpr->getWithoutParens()))
       if (dre->spelling == resultName.strref()) {
         auto diag = emitter.emitError(loc);
-        diag << "'return' in function with a named return "
-                "slot should not return the slot itself";
+        diag << "'out' argument cannot be returned by name; remove the return "
+                "statement entirely or change it to just 'return'";
         diag.attachNote(operandExpr->getLoc())
             << "remove the expression if the return slot is already "
                "initialized"
@@ -2918,8 +2919,10 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     for (auto [condition, condExprLoc, index] :
          llvm::reverse(ifOpsWithDeadCode)) {
       shared.emitWarning(condExprLoc)
-          << "if statement with constant condition 'if "
-          << (condition ? "True" : "False") << "'";
+          << "'if' condition always evaluates to '"
+          << (condition ? "True" : "False")
+          << (condition ? "'; 'else' branch is unreachable"
+                        : "'; 'if' branch is unreachable");
       if (condition) {
         // Condition is true which means all subsequent regions, including else
         // region, are unreachable.
@@ -2993,8 +2996,8 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
       break; // runtime control-flow op
     }
   }
-  emitError(kwLoc)
-      << "import statements are only supported at module or function scope";
+  emitError(kwLoc) << "'import' statements must be at module or function "
+                      "scope; move this to a valid location";
   return failure();
 }
 
@@ -3466,7 +3469,8 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
 
   if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
     rejectDecorator();
-    emitError(loc, "TODO: fields in traits are not supported yet");
+    emitError(loc, "traits do not support 'var' fields; use 'comptime' to "
+                   "declare associated types");
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     return success();
   }
@@ -3481,7 +3485,10 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     // same indent level (or less) as the current definition.
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
   } else {
-    emitError(loc, "global vars are not supported");
+    emitError(loc,
+              "'var' not allowed at module scope; move this into a function, "
+              "declare it "
+              "as a 'struct' field, or use a module-level 'comptime' constant");
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     return success();
   }
@@ -3620,11 +3627,12 @@ ParseResult StmtParser::parseAliasDeclStmtBody(LexerCursor startCursor,
     // easily lead to parser cycles.
     if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(
             parentDecl.getIfOperation())) {
-      emitError(
-          kwLoc,
-          "only comptime declarations with a single name are allowed inside a ")
-          << (isa<StructDeclOp>(parentDecl.getIfOperation()) ? "struct"
-                                                             : "trait");
+      emitError(kwLoc,
+                isa<StructDeclOp>(parentDecl.getIfOperation())
+                    ? "'comptime' constants inside structs must be declared "
+                      "separately; break this into individual declarations"
+                    : "a trait's associated types must be declared separately; "
+                      "break this into individual declarations");
       return failure();
     }
 
@@ -3987,8 +3995,9 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   // support ala:
   // https://www.notion.so/modularai/Generalized-PValue-Support-62c85f77f13c4d9bad30e398f04ce1a9
   if (!emitter.builder) {
-    emitter.emitError(loc, "comprehensions are not supported at compile time; "
-                           "move into a function and call it")
+    emitter.emitError(loc,
+                      "list comprehension must execute in runtime contexts; "
+                      "remove 'comptime' and move this into a function body")
         << node->getRange();
     return {};
   }

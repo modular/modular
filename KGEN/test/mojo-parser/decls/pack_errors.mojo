@@ -17,13 +17,13 @@ def test_unpack(d: Int):
     test_unpack(**d)
     # expected-error @+1 {{unpacked positional arguments are only supported for callees that expect a variadic pack argument}}
     test_unpack(*d)
-    # expected-error @+2 {{unpacked positional argument may only be followed by keyword arguments}}
+    # expected-error @+2 {{positional argument must not follow an unpack; move it before or convert to a keyword argument}}
     # expected-note @+1 {{unpacked positional argument specified here}}
     test_unpack(*d, d)
 
 
 def test_unpack_twice(d: Int):
-    # expected-error @+2 {{multiple unpacked positional arguments are not supported}}
+    # expected-error @+2 {{unpack markers (*name syntax) must not appear more than once in a call; remove the second unpack}}
     # expected-note @+1 {{previous unpacked positional argument specified here}}
     test_unpack_twice(*d, *d)
 
@@ -74,12 +74,12 @@ def test_positional_concat[*Ts: AnyType](*pack: *Ts):
     # expected-error @below {{concatenating unpacked positional arguments is not supported}}
     takes_varpack("hello", *pack)
 
-    # expected-error @below {{an unpacked positional argument may only be followed by keyword arguments}}
+    # expected-error @below {{positional argument must not follow an unpack; move it before or convert to a keyword argument}}
     # expected-note @below {{unpacked positional argument specified here}}
     takes_varpack(*pack, "hello")
 
 
 def test_unpack_twice[*Ts: AnyType](*pack: *Ts):
-    # expected-error @below {{multiple unpacked positional arguments are not supported}}
+    # expected-error @below {{unpack markers (*name syntax) must not appear more than once in a call; remove the second unpack}}
     # expected-note @below {{previous unpacked positional argument specified here}}
     takes_varpack(*pack, *pack)

@@ -36,8 +36,8 @@ async def testAsyncVoid(): pass
 async def testAsyncInt() -> Int: return 42
 
 def callsWith():
-  testAsyncVoid() # expected-warning {{'Coroutine[None, {}]' value must be awaited; use 'await' to get its result}}
-  testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value must be awaited; use 'await' to get its result}}
+  testAsyncVoid() # expected-warning {{'Coroutine[None, {}]' value is not awaited; use 'await' to get its result}}
+  testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value is not awaited; use 'await' to get its result}}
 
 
 struct ThingWithStaticMethod:
@@ -930,7 +930,7 @@ struct StructWithUnknownTrait(UnknownTrait):
 
 
 trait EverythingIsWrongTrait:
-    var value: Int # expected-error {{fields in traits are not supported yet}}
+    var value: Int # expected-error {{traits do not support 'var' fields; use 'comptime' to declare associated types}}
 
     def trait_fn_no_dot_dot_dot(self): # expected-error {{body must not be empty; use 'pass' or check that the lines below are indented}}
 
@@ -1178,7 +1178,7 @@ comptime a = 100
 # expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
 top_level_func_param[a]()
 
-# expected-error @below {{global vars are not supported}}
+# expected-error @below {{'var' not allowed at module scope; move this into a function, declare it as a 'struct' field, or use a module-level 'comptime' constant}}
 var globalVar = 1
 
 
