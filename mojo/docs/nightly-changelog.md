@@ -8,6 +8,21 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Unified closures now accept default capturing conventions when there are
+  explicit captures already.
+
+  ```mojo
+  def captures_with_default_convention():
+    var a, b, c, d = ("a", "b", "c", "d")
+    def my_fn() unified {mut a, b, c^, read}:
+      # capture:
+      # `a` by mut reference
+      # `b` by immut reference
+      # `c` by moving
+      # `d` by immut reference (the default 'read' convention)
+      use(a, b, c, d)
+  ```
+
 - Added `abi("C")` as a function effect for declaring C calling convention on
   function definitions and function pointer types. Functions marked with
   `abi("C")` use the platform C ABI (System V x86-64 / ARM64 AAPCS) for
