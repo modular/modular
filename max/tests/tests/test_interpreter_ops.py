@@ -6755,6 +6755,105 @@ class TestShapeIndexOps:
         np.testing.assert_array_equal(out.to_numpy(), [10])
 
 
+class TestBufferOps:
+    """Tests for buffer create/transfer interpreter handlers.
+
+    ``mo.BufferCreateOp`` and ``mo.BufferTransferOp`` are internal MO dialect
+    ops that are normally lowered by the graph compiler.  The handlers are
+    defensive — they prevent ``NotImplementedError`` if these ops survive into
+    the interpreter.  Tests call the handler functions directly with
+    constructed buffers since no user-facing graph API produces these ops.
+    """
+
+    def test_buffer_create_shape_and_dtype(self) -> None:
+        """BufferCreateOp allocates a buffer with the requested shape/dtype."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_buffer_create
+        from max.driver import Buffer
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+
+        from max.graph import BufferType, DeviceRef
+
+        buf_type = BufferType(DType.float32, [2, 3], DeviceRef.CPU())
+        mock_result.type = buf_type.to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_buffer_create(mock_op, [])
+
+        assert len(result) == 1
+        buf = result[0]
+        assert isinstance(buf, Buffer)
+        assert buf.shape == (2, 3)
+        assert buf.dtype == DType.float32
+
+    def test_buffer_create_scalar(self) -> None:
+        """BufferCreateOp handles rank-0 (scalar) buffers."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_buffer_create
+        from max.driver import Buffer
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+
+        from max.graph import BufferType, DeviceRef
+
+        buf_type = BufferType(DType.int32, [], DeviceRef.CPU())
+        mock_result.type = buf_type.to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_buffer_create(mock_op, [])
+
+        assert len(result) == 1
+        buf = result[0]
+        assert isinstance(buf, Buffer)
+        assert buf.shape == ()
+        assert buf.dtype == DType.int32
+
+    def test_buffer_transfer_copies_data(self) -> None:
+        """BufferTransferOp copies src contents into dst."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_buffer_transfer
+        from max.driver import Buffer
+
+        src_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        src = Buffer.from_numpy(src_np)
+        dst = Buffer(dtype=DType.float32, shape=[2, 2])
+
+        mock_op = MagicMock()
+        result = _handle_buffer_transfer(mock_op, [src, dst, None])
+
+        assert result == [None]
+        np.testing.assert_array_equal(dst.to_numpy(), src_np)
+
+    def test_buffer_transfer_independent(self) -> None:
+        """After transfer, modifying src does not affect dst."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_buffer_transfer
+        from max.driver import Buffer
+
+        src_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        src = Buffer.from_numpy(src_np)
+        dst = Buffer(dtype=DType.float32, shape=[3])
+
+        mock_op = MagicMock()
+        _handle_buffer_transfer(mock_op, [src, dst, None])
+
+        dst_snapshot = dst.to_numpy().copy()
+
+        new_src = Buffer.from_numpy(
+            np.array([99.0, 99.0, 99.0], dtype=np.float32)
+        )
+        src.inplace_copy_from(new_src)
+
+        np.testing.assert_array_equal(dst.to_numpy(), dst_snapshot)
+
+
 class TestResizeLinearOp:
     """Tests for linear (bilinear) resize interpreter op (mo.resize.linear).
 

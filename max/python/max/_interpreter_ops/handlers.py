@@ -261,6 +261,57 @@ def _handle_transfer(
     return [input_buffer.to(target_device), None]
 
 
+# Buffer operations
+
+
+@register_op_handler(mo.BufferCreateOp)
+def _handle_buffer_create(
+    op: mo.BufferCreateOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handle mo.buffer.create by allocating a zero-filled buffer.
+
+    ``BufferCreateOp`` has no operands and a single ``!mo.buffer<shape, dtype,
+    device>`` result.  Shape, dtype, and target device are extracted from the
+    result type.  The interpreter allocates a zeroed buffer so that downstream
+    ops (e.g. ``buffer.transfer``) have valid storage to write into.
+    """
+    result_type = graph.BufferType.from_mlir(
+        list(op.results)[0].type  # type: ignore[arg-type]
+    )
+    shape = result_type.shape
+    if not graph.Shape.is_static(shape):
+        raise NotImplementedError(
+            "Dynamic shapes not supported for buffer.create in interpreter"
+        )
+    target_device = result_type.device.to_device()
+    buf = Buffer(
+        dtype=result_type.dtype,
+        shape=graph.Shape(shape).static_dims,
+        device=target_device,
+    )
+    return [buf]
+
+
+@register_op_handler(mo.BufferTransferOp)
+def _handle_buffer_transfer(
+    op: mo.BufferTransferOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.buffer.transfer by copying src contents into dst.
+
+    Operand order: ``(src, dst, inChain)``.  The operation copies data from
+    ``src`` into ``dst`` (both must have matching shape and dtype).  The sole
+    result is an ``outChain`` which the interpreter represents as ``None``.
+    """
+    src = inputs[0]
+    dst = inputs[1]
+    assert isinstance(src, Buffer)
+    assert isinstance(dst, Buffer)
+    dst.inplace_copy_from(src)
+    return [None]
+
+
 # Debug operations
 
 

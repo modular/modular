@@ -156,6 +156,10 @@ This version is still a work in progress.
   to the experimental eager interpreter. These internal ops are typically
   folded away by canonicalization; the handlers prevent crashes if they
   survive into the interpreter.
+- Added defensive `mo.buffer.create` and `mo.buffer.transfer` handlers to
+  the experimental eager interpreter. These internal ops are typically
+  lowered by the graph compiler; the handlers prevent crashes if they
+  survive into the interpreter.
 - Added `distributed.allreduce.sum` op handler to the experimental eager
   interpreter, enabling multi-GPU eager execution of allreduce collectives
 - Added `distributed.allgather` op handler to the experimental eager
