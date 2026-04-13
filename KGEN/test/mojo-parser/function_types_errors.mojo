@@ -40,7 +40,7 @@ comptime read_ship_fn_alias: def(read MemType) thin -> None = mut_ship_function
 
 # expected-note @below {{function declared here}}
 def infer_variadic[
-    ArgTypes: TypeList[type=AnyType, ...],
+    ArgTypes: TypeList[Trait=AnyType, ...],
     //,
     func: def(x: Int, y: Int, * args: * ArgTypes) thin -> None,
 ]():
@@ -74,7 +74,7 @@ trait Sprongling:
 
 # expected-note @below {{function declared here}}
 def infer_variadic[
-    ArgTypes: TypeList[type=Sprongling, ...],
+    ArgTypes: TypeList[Trait=Sprongling, ...],
     //,
     func: def(* args: * ArgTypes) thin -> None,
 ]():
@@ -106,7 +106,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 def compile[
-    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
+    ArgTypes: TypeList[Trait=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -141,7 +141,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 # expected-note @below {{function declared here}}
 def compile[
-    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
+    ArgTypes: TypeList[Trait=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -176,7 +176,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 def compile[
-    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
+    ArgTypes: TypeList[Trait=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -201,7 +201,7 @@ def device_func(a: Int, b: Bool) raises -> Int:
 
 # expected-note @below {{function declared here}}
 def compile[
-    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
+    ArgTypes: TypeList[Trait=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]():
@@ -298,7 +298,7 @@ def kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
 
 
 def compile[
-    ArgTypes: TypeList[type=TrivialRegisterPassable, ...],
+    ArgTypes: TypeList[Trait=TrivialRegisterPassable, ...],
     //,
     func: def(* args: * ArgTypes) thin -> Int,
 ]() -> DeviceFunction[*ArgTypes]:

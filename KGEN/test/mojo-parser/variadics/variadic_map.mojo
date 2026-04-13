@@ -10,7 +10,7 @@
 from std.builtin.variadics import *
 
 comptime ToFloatMapper[From: Movable] = FloatDyn
-comptime AnyToFloat[*Ts: Movable] = TypeList[type=Movable, Variadic.map_types_to_types[
+comptime AnyToFloat[*Ts: Movable] = TypeList[Trait=Movable, Variadic.map_types_to_types[
     From=Movable, To=type_of(FloatDyn), element_types=Ts, Mapper=ToFloatMapper
 ]]()
 

@@ -125,7 +125,7 @@ struct Variadic:
         From: type_of(AnyType),
         To: type_of(AnyType),
         //,
-        element_types: TypeList[type=From, ...],
+        element_types: TypeList[Trait=From, ...],
         Mapper: _TypeToTypeGenerator[From, To],
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[To],
@@ -135,7 +135,7 @@ struct Variadic:
     comptime slice_types[
         T: type_of(AnyType),
         //,
-        element_types: TypeList[type=T, ...],
+        element_types: TypeList[Trait=T, ...],
         start: Int where start >= 0 = 0,
         end: Int where start <= end <= element_types.size = element_types.size,
     ] = _ReduceVariadicAndIdxToVariadic[
